@@ -33,7 +33,7 @@ function mountMultipleInput() {
     return { model, source, tab, host, editor };
 }
 let multipleInput: ReturnType<typeof mountMultipleInput> | undefined;
-Object.assign(window, { consumer: { text: () => workspace.document(documentId).text(),
+const fixture = { text: () => workspace.document(documentId).text(),
     protocolExports: () => ({ connection: typeof JsonRpcConnection, websocket: typeof openWebSocketTransport }),
     editorExports: () => ({ mount: typeof browserApi.mountTextEditor,
         root: sourceEditor.element.tagName, input: sourceEditor.input.tagName,
@@ -380,4 +380,6 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
             batch: { text: batch.buffer.text(), mappedEnd: batch.mapping.map(6).offset, lineOffset: batch.buffer.offsetAt(1) },
             lineCount: changed.buffer.lineCount, lineOffset: changed.buffer.offsetAt(1),
             mappedEnd: mapping.map(6).offset, anchor: changed.mapping.mapRange(anchoredRange(original.length, 3, 5)) };
-    } } });
+    } };
+Object.assign(window, { consumer: fixture });
+declare global { interface Window { consumer: typeof fixture } }

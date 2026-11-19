@@ -67,7 +67,12 @@ library types; their integration tests import the actual script exports.
 The offline Unicode data generators and fixture-only textarea baseline/trace callers also belong
 to this checking project. Baseline counters and selected trace timing fields must be present;
 trace reports exclude event arguments and other content-bearing fields.
-Other scripts are outside its JavaScript checking scope.
+Package entry callers use their copied consumer fixtures in separate tooling programs. The
+full package route checks `test-package.mjs` through its `@ts-check` directive and the copied
+consumer bridge, with strict types and indexed-access checks. Its imported JavaScript callers
+retain their own fixture-specific checking contexts. This Node tooling program uses the
+development policy for dependency declarations; the independent browser-consumer declaration
+check keeps `skipLibCheck: false`. Compiler-input evidence identifies both scopes.
 
 The CI workflow runs types, the documentation gate, models, library build, the selected
 Chromium gate and the static-demo Chromium journey. A passing CI run has that scope;

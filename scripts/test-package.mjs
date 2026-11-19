@@ -1,3 +1,4 @@
+// @ts-check
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -17,6 +18,9 @@ import { consumerScenario } from "./package-scenarios.mjs";
 import { emptyConsumerDirectory } from "./package-consumer.mjs";
 import { createPackageRequestHandler, listenPackageServer, closePackageServer, closePackageResources } from "./package-host.mjs";
 
+/** @typedef {{path: string, bytes: number, sha256: string}} Asset */
+/** @typedef {{version: string, assets: Asset[], entries: {regexWorker: string}}} Manifest */
+
 const scenario = consumerScenario(process.argv);
 const hunkOnly = scenario === "hunk";
 const transitionsOnly = scenario === "transitions";
@@ -31,8 +35,8 @@ const workspaceOnly = scenario === "workspace", deferredOnly = activationOnly ||
 const pilotOnly = scenario !== "full" && !transitionsOnly, benchmark = process.argv.includes("--bench");
 const browserName = process.argv.find(arg => arg.startsWith("--browser="))?.slice("--browser=".length) ?? "chromium";
 const corpus = process.argv.find(arg => arg.startsWith("--corpus="))?.slice("--corpus=".length) ?? "all";
-assert.ok(["chromium", "firefox", "webkit"].includes(browserName), `Unknown browser: ${browserName}`);
-assert.ok(["all", "normal", "large"].includes(corpus) && (corpus === "all" || deferredOnly), "Corpus selection requires an activation/workspace scenario and all, normal or large.");
+assert.ok(browserName === "chromium" || browserName === "firefox" || browserName === "webkit", `Unknown browser: ${browserName}`);
+assert.ok((corpus === "all" || corpus === "normal" || corpus === "large") && (corpus === "all" || deferredOnly), "Corpus selection requires an activation/workspace scenario and all, normal or large.");
 assert.ok(!benchmark || pilotOnly, "Use --pilot-only, --hunk-only or --react-only with --bench to keep the workload explicit.");
 assert.ok(!prepareOnly || ((reactOnly || deferredOnly) && !benchmark), "Preparation-only checks require --react-only, --activation-only or --workspace-only without --bench.");
 assert.ok(!transitionsOnly || (!prepareOnly && !benchmark), "Transition-only checks cannot be combined with preparation or benchmark modes.");
@@ -47,9 +51,11 @@ assert.ok(!transitionsOnly || (!reused && !skipTransitions), "Transition qualifi
 if (reused) assert.equal(reused.packageSha256, packageSha256, "Staged consumer belongs to a different package; restore the selected artifact again.");
 assert.ok(!reused?.retention?.removed && reused?.retention?.state !== "removing", "Consumer was removed or is being removed; qualify a fresh stage.");
 const entries = unzipSync(archive);
-const assets = JSON.parse(strFromU8(entries["assets/manifest.json"]));
-assert.equal(strFromU8(entries["assets/UNICODE-LICENSE.txt"]), await readFile("licenses/Unicode-3.0.txt", "utf8"));
-assert.equal(strFromU8(entries["assets/LICENSE.txt"]), await readFile("LICENSE.txt", "utf8"));
+/** @param {string} path */
+const entry = path => { const bytes = entries[path]; assert.ok(bytes, `Missing package entry: ${path}`); return bytes; };
+/** @type {Manifest} */ const assets = JSON.parse(strFromU8(entry("assets/manifest.json")));
+assert.equal(strFromU8(entry("assets/UNICODE-LICENSE.txt")), await readFile("licenses/Unicode-3.0.txt", "utf8"));
+assert.equal(strFromU8(entry("assets/LICENSE.txt")), await readFile("LICENSE.txt", "utf8"));
 const allowlist = new Set(["[Content_Types].xml", "_rels/.rels", "StTropez.Assets.nuspec", "README.md",
     "build/StTropez.Assets.props", "build/StTropez.Assets.targets", "assets/manifest.json",
     ...assets.assets.map(asset => `assets/${asset.path}`)]);
@@ -59,12 +65,13 @@ for (const [path, bytes] of Object.entries(entries)) {
     assert.ok(!path.includes("..") && !path.startsWith("/"));
     if (path.startsWith("assets/") && path !== "assets/manifest.json") {
         const asset = assets.assets.find(asset => `assets/${asset.path}` === path);
+        assert.ok(asset, `Unexpected asset: ${path}`);
         assert.equal(bytes.length, asset.bytes);
         assert.equal(createHash("sha256").update(bytes).digest("hex"), asset.sha256);
     }
 }
 for (const path of allowlist) assert.ok(entries[path], `Missing package entry: ${path}`);
-const nuspec = strFromU8(entries["StTropez.Assets.nuspec"]);
+const nuspec = strFromU8(entry("StTropez.Assets.nuspec"));
 assert.ok(!/<dependency\b/.test(nuspec), "Package must not depend on managed or third-party packages.");
 assert.match(nuspec, /<license type="expression">MIT<\/license>/);
 
@@ -78,7 +85,8 @@ await mkdir(join(consumer, "feed"));
 await writeFile(join(consumer, "feed/StTropez.Assets.0.0.0-local.nupkg"), archive);
 await writeFile(join(consumer, "NuGet.Config"), '<configuration><packageSources><clear/><add key="local" value="feed"/></packageSources></configuration>');
 }
-const dotnet = args => execFileSync("dotnet", args, { cwd: consumer, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+/** @param {string[]} args */
+const dotnet = args => execFileSync("dotnet", args, { cwd: consumer, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
 const transitions = transitionsOnly || !reused && !skipTransitions && !pilotOnly && !prepareOnly && !benchmark
     ? await runPackageTransitions({ project, consumer, entries, assets, browserName, dotnet }) : undefined;
 if (!transitionsOnly) {
@@ -123,6 +131,31 @@ if (reactHost) {
     }
     assert.ok(typeInputs.length >= compilerFiles.length, "Compiler input evidence is missing.");
 }
+// The dispatcher has its own copied consumer bridge. Its @ts-check directive checks this
+// entry; imported JS callers keep their fixture-specific programs below and in other routes.
+// Tool declarations use the development skipLibCheck policy. The independent consumer
+// declaration compilation above always keeps skipLibCheck:false.
+let dispatcherHarness;
+if (scenario === "full") {
+    const script = await realpath(join(project, "scripts/test-package.mjs")), fixture = join(consumer, "main.ts");
+    const configuration = join(consumer, "tsconfig.dispatcher.json");
+    await writeFile(configuration, JSON.stringify({ compilerOptions: { ...compilerOptions, allowJs: true, checkJs: false,
+        allowImportingTsExtensions: true, skipLibCheck: true, noUncheckedIndexedAccess: true, exactOptionalPropertyTypes: true,
+        noUnusedLocals: true, noUnusedParameters: true, types: ["node"], typeRoots: [join(project, "node_modules/@types")] }, files: [fixture, script] }));
+    const output = execFileSync(process.execPath, [join(project, "node_modules/typescript/bin/tsc"), "-p", configuration, "--listFiles", "--pretty", "false"],
+        { cwd: consumer, encoding: "utf8", stdio: "pipe", windowsHide: true });
+    await writeFile(join(consumer, "dispatcher-compiler-inputs.txt"), output);
+    const inputs = await Promise.all(output.split(/\r?\n/).filter(Boolean).map(path => realpath(resolve(consumer, path))));
+    // This tooling program also sees the Node protocol fixture's source imports. They never
+    // enter the independently compiled/bundled browser consumer or the distributed assets.
+    const roots = await Promise.all(["scripts", "fixtures/protocol", "fixtures/language", "src", "tests/helpers", "node_modules"].map(path => realpath(join(project, path))));
+    const metadata = await realpath(join(project, "package.json"));
+    for (const input of inputs) assert.ok(within(consumer, input) || input === metadata || roots.some(root => within(root, input)), `Unexpected dispatcher tooling input: ${input}`);
+    assert.ok(inputs.includes(script) && inputs.includes(await realpath(fixture)), "Dispatcher checking requires its actual entry and copied consumer bridge.");
+    for (const entry of ["index.d.ts", "browser/index.d.ts", "protocol/index.d.ts"]) assert.ok(inputs.includes(await realpath(join(assetRoot, entry))), `Dispatcher checking requires restored declaration: ${entry}`);
+    dispatcherHarness = { checkedJavaScript: true, checkDirective: true, checkedScripts: [script], strict: true, skipLibCheck: true, inputs,
+        consumerDeclarationsCheckedSeparately: true };
+}
 // Development harness types use the actual copied fixture, after the independent consumer
 // compile above. Node/Playwright declarations belong only to this separate tooling program.
 let pageLifecycleHarness, lspHarness, editingHarness;
@@ -161,7 +194,7 @@ declare global { interface Window {
         ...(checkTransitions ? ["esbuild", "fflate"] : []),
     ].map(name => realpath(join(project, "node_modules", name))))];
     const metadataInputs = checkTransitions ? [await realpath(join(project, "package.json"))] : [];
-    const inputs = [];
+    /** @type {string[]} */ const inputs = [];
     for (const path of output.split(/\r?\n/).filter(Boolean)) {
         const input = await realpath(resolve(consumer, path));
         assert.ok(within(consumer, input) || scripts.includes(input) || metadataInputs.includes(input) || toolRoots.some(root => within(root, input)),
@@ -182,6 +215,7 @@ const bundle = await build({ absWorkingDir: consumer, entryPoints: lspOnly ? { l
     outdir: join(consumer, "site"), alias: { sttropez: assetRoot }, metafile: true,
     ...(reactHost ? { nodePaths: reactHost.nodePaths, define: { "process.env.NODE_ENV": '"development"' } } : {}),
     plugins: [{ name: "consumer-isolation", setup(builder) { builder.onEnd(result => {
+        assert.ok(result.metafile, "Consumer isolation requires the completed build manifest.");
         for (const path of Object.keys(result.metafile.inputs)) {
             const input = resolve(consumer, path);
             assert.ok(reactHost ? reactHost.allowInput(input) : !within(project, input), reactHost
@@ -202,7 +236,7 @@ const activationOutputs = deferredOnly ? Object.fromEntries(Object.entries(bundl
 })) : {};
 await mkdir("artifacts/package", { recursive: true });
 await writeFile("artifacts/package/restored-consumer.json", JSON.stringify({ schemaVersion: 1,
-    packageSha256, consumer, assetRoot, reusedStage: !!reused, exportsResolution, ...(pageLifecycleHarness ? { pageLifecycleHarness } : {}), ...(lspHarness ? { lspHarness } : {}), ...(editingHarness ? { editingHarness } : {}),
+    packageSha256, consumer, assetRoot, reusedStage: !!reused, exportsResolution, ...(dispatcherHarness ? { dispatcherHarness } : {}), ...(pageLifecycleHarness ? { pageLifecycleHarness } : {}), ...(lspHarness ? { lspHarness } : {}), ...(editingHarness ? { editingHarness } : {}),
     browser: browserName, mode: prepareOnly ? "prepare-only" : benchmark ? "benchmark" : pilotOnly ? "pilot" : "full", scenario: lspOnly ? "lsp" : workspaceOnly ? "workspace" : activationOnly ? "activation" : reactOnly ? "react" : hunkOnly ? "hunk" : pilotOnly ? "recovery" : "all", corpus,
     declarations: { files: compilerFiles, strict: true, skipLibCheck: false, passed: true, ...(reactHost ? { inputs: typeInputs } : {}) },
     inputs: Object.keys(bundle.metafile.inputs).sort(), assets, readinessFixture,
@@ -217,8 +251,9 @@ await writeFile("artifacts/package/restored-consumer.json", JSON.stringify({ sch
 if (prepareOnly) {
     console.log(`Restored ${workspaceOnly ? "workspace" : activationOnly ? "activation" : "React"} consumer declarations and isolated bundle prepared without a browser: ${consumer}`);
 } else {
-const failures = [];
+/** @type {unknown[]} */ const failures = [];
 const requests = createPackageRequestHandler(async (request, response) => {
+    assert.ok(request.url, "Consumer request requires its URL.");
     const path = new URL(request.url, "http://localhost").pathname;
     const file = { "/": lspOnly ? "lsp.html" : deferredOnly ? "activation.html" : "index.html", "/lsp.js": "lsp.js", "/app.js": "app.js", "/pilot": "pilot.html", "/pilot.js": "pilot.js", "/editor.css": "editor.css", "/regex-worker.js": "regex-worker.js", "/LICENSE.txt": "LICENSE.txt", "/UNICODE-LICENSE.txt": "UNICODE-LICENSE.txt",
         ...(deferredOnly ? Object.fromEntries(Object.keys(activationOutputs).map(name => ["/" + name, name])) : {}),
@@ -229,21 +264,23 @@ const requests = createPackageRequestHandler(async (request, response) => {
 }, failures);
 const server = createServer(requests.listener);
 const stopFixture = lspOnly || reactHost ? (await import("../fixtures/protocol/fixture-server.ts")).attachProtocolFixture(server) : () => {};
-let browser;
+/** @type {import('@playwright/test').Browser | undefined} */ let browser;
 try {
     await listenPackageServer(server);
+    const address = server.address(); assert.ok(address && typeof address !== "string", "Consumer requires its listening TCP address.");
+    const baseUrl = `http://127.0.0.1:${address.port}`;
     browser = await ({ chromium, firefox, webkit })[browserName].launch();
     if (!pilotOnly) {
     const page = await browser.newPage();
-    const errors = [];
+    /** @type {string[]} */ const errors = [];
     page.on("pageerror", error => errors.push(error.message));
     page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
-    await page.goto(`http://127.0.0.1:${server.address().port}`);
+    await page.goto(baseUrl);
     assert.deepEqual(await page.evaluate(() => window.consumer.protocolExports()), { connection: "function", websocket: "function" });
     assert.deepEqual(await page.evaluate(() => window.consumer.editorExports()), { mount: "function", root: "DIV", input: "TEXTAREA", removed: [], privateNavigation: [] });
-    const notice = await page.request.get(`http://127.0.0.1:${server.address().port}/UNICODE-LICENSE.txt`);
+    const notice = await page.request.get(`${baseUrl}/UNICODE-LICENSE.txt`);
     assert.equal(notice.status(), 200); assert.equal(await notice.text(), await readFile("licenses/Unicode-3.0.txt", "utf8"));
-    const license = await page.request.get(`http://127.0.0.1:${server.address().port}/LICENSE.txt`);
+    const license = await page.request.get(`${baseUrl}/LICENSE.txt`);
     assert.equal(license.status(), 200); assert.equal(await license.text(), await readFile("LICENSE.txt", "utf8"));
     const editor = page.getByRole("textbox", { name: "Consumer source" });
     await editor.fill("edited restored package");
@@ -276,7 +313,7 @@ try {
         await target.press("Control+Shift+z"); assert.equal(await page.evaluate(() => window.consumer.text()), "abeditededited restored package");
         await target.press("Control+z"); assert.equal(await page.evaluate(() => window.consumer.text()), "edited restored package");
     }
-    const capturedSelection = await candidateInput.evaluate(input => { input.setSelectionRange(2, 5, "backward"); return window.consumer.captureCandidate(); });
+    const capturedSelection = await candidateInput.evaluate(input => { if (!(input instanceof HTMLTextAreaElement)) throw new Error("Restored input requires its native textarea."); input.setSelectionRange(2, 5, "backward"); return window.consumer.captureCandidate(); });
     assert.equal(capturedSelection.anchor, 5); assert.equal(capturedSelection.head, 2);
     const navigation = await page.evaluate(() => window.consumer.navigation());
     assert.equal(navigation.offset, 100_002); assert.ok(navigation.advances > 1); assert.equal(navigation.exports, 0);
@@ -287,8 +324,11 @@ try {
     assert.deepEqual(await page.evaluate(() => { const s = window.consumer.captureCandidate(); return { anchor: s.anchor, head: s.head }; }), { anchor: 7, head: 16 });
     await page.waitForFunction(() => document.querySelector("#candidate .consumer-token")?.textContent === "restored");
     const wordPoint = await page.locator("#candidate .st-editor").evaluate(element => {
-        const row = element.querySelector(".st-viewport-row"), walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT), nodes = []; let node;
-        while (node = walker.nextNode()) nodes.push(node);
+        const row = element.querySelector(".st-viewport-row"); if (!row) throw new Error("Missing restored word row.");
+        const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+        /** @type {Text[]} */ const nodes = []; let node;
+        while (node = walker.nextNode()) nodes.push(/** @type {Text} */ (node));
+        /** @param {number} offset */
         const locate = offset => { for (const node of nodes) { if (offset <= node.length) return { node, offset }; offset -= node.length; } throw new Error("Missing restored word."); };
         const a = locate(9), b = locate(10), range = document.createRange(); range.setStart(a.node, a.offset); range.setEnd(b.node, b.offset); const r = range.getBoundingClientRect(); return { x: r.left + r.width * .25, y: r.top + r.height * .5 };
     });
@@ -323,7 +363,7 @@ try {
     assert.equal(selectionSets.browserSelections.length, 2);
     for (const state of selectionSets.browserSelections) {
         assert.deepEqual(state.captured, selectionSets.before); assert.deepEqual(state.fullSet, selectionSets.before);
-        assert.equal(state.legacy.ranges.length, 1); assert.equal(state.legacy.ranges[0].anchor, 2); assert.equal(state.legacy.ranges[0].head, 2);
+        assert.equal(state.legacy.ranges.length, 1); const range = state.legacy.ranges[0]; assert.ok(range); assert.equal(range.anchor, 2); assert.equal(range.head, 2);
     }
     await page.evaluate(() => window.consumer.beginMultipleInput()); await page.waitForFunction(() => !window.consumer.multipleInput().pending);
     const multipleBefore = await page.evaluate(() => window.consumer.multipleInput()), multipleEditor = page.getByRole("textbox", { name: "Restored multiple input", exact: true });
@@ -417,31 +457,31 @@ try {
     }
     if (reactOnly) {
         const { runPackagedReactPilot } = await import("./package-react-pilot.mjs");
-        await runPackagedReactPilot(browser, `http://127.0.0.1:${server.address().port}`, {
+        await runPackagedReactPilot(browser, baseUrl, {
             directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), benchmark,
         });
         if (!benchmark) {
             const { runPackagedTablePaste } = await import("./package-table-paste.mjs");
-            await runPackagedTablePaste(browser, `http://127.0.0.1:${server.address().port}`, { directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex") });
+            await runPackagedTablePaste(browser, baseUrl, { directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex") });
         }
     }
     if (activationOnly) {
         const { runPackagedActivation } = await import("./package-activation.mjs");
-        await runPackagedActivation(browser, `http://127.0.0.1:${server.address().port}`, { directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), outputs: activationOutputs, corpus,
+        await runPackagedActivation(browser, baseUrl, { directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), outputs: activationOutputs, corpus,
             assetBytes: { css: assets.assets.filter(a => a.path.endsWith(".css")), workers: assets.assets.filter(a => a.path === assets.entries.regexWorker) } });
     }
     if (workspaceOnly) {
         const { runPackagedWorkspace } = await import("./package-workspace.mjs");
-        await runPackagedWorkspace(browser, `http://127.0.0.1:${server.address().port}`, { directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), outputs: activationOutputs, corpus });
+        await runPackagedWorkspace(browser, baseUrl, { directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), outputs: activationOutputs, corpus });
     }
     if (lspOnly) {
         const { runPackagedLsp } = await import("./package-lsp.mjs");
-        await runPackagedLsp(browser, `http://127.0.0.1:${server.address().port}`, { packageSha256: createHash("sha256").update(archive).digest("hex") });
+        await runPackagedLsp(browser, baseUrl, { packageSha256: createHash("sha256").update(archive).digest("hex") });
     }
-    if (!deferredOnly && !reactOnly && !lspOnly && !hunkOnly) await runPackagedPilot(browser, `http://127.0.0.1:${server.address().port}`, {
+    if (!deferredOnly && !reactOnly && !lspOnly && !hunkOnly) await runPackagedPilot(browser, baseUrl, {
         directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), benchmark,
     });
-    if (!reactOnly && (hunkOnly || !pilotOnly)) await runPackagedHunkPilot(browser, `http://127.0.0.1:${server.address().port}`, {
+    if (!reactOnly && (hunkOnly || !pilotOnly)) await runPackagedHunkPilot(browser, baseUrl, {
         directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), benchmark,
     });
     console.log(`Restored integrated pilot passed in ${browserName}. Consumer: ${consumer}`);
