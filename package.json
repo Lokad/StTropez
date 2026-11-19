@@ -56,8 +56,6 @@
     "browsers:install": "playwright install chromium firefox webkit",
     "inspect": "node scripts/inspect.mjs",
     "bench": "node scripts/run-benchmarks.mjs --group=default",
-    "bench:paragraph": "node scripts/run-benchmarks.mjs --suite=paragraph --",
-    "bench:bidi": "node scripts/run-benchmarks.mjs --suite=bidi --",
     "bench:host-input": "node scripts/run-benchmarks.mjs --suite=host-input --",
     "bench:host-folding": "node scripts/run-benchmarks.mjs --suite=host-folding --",
     "bench:host-reference": "node scripts/run-benchmarks.mjs --suite=host-reference --",

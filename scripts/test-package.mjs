@@ -435,19 +435,6 @@ try {
     const saveReview = await page.evaluate(() => window.consumer.saveReview());
     assert.deepEqual(saveReview, { baselineBefore: "v0", precondition: "v1", saved: "saved", textAfter: "merged later", dirtyAfter: true,
         cleanAfterUndo: true, serverVersion: "v2", leases: 0, acknowledgement: "acknowledged", proposalRetired: true });
-    const bidi = await page.evaluate(() => window.consumer.bidi());
-    assert.deepEqual(bidi.levels, [0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0]);
-    assert.deepEqual(bidi.order, [0, 1, 2, 3, 6, 5, 4, 7, 8, 9, 10]);
-    await page.evaluate(() => window.consumer.bidiSample());
-    await page.waitForFunction(() => !window.consumer.candidate().viewport.pending);
-    await candidateInput.press("ArrowLeft");
-    assert.equal((await page.evaluate(() => window.consumer.captureCandidate())).head, 5);
-    await candidateInput.press("ArrowRight");
-    assert.equal((await page.evaluate(() => window.consumer.captureCandidate())).head, 4);
-    assert.ok((await page.evaluate(() => window.consumer.candidate())).visualMoves >= 2);
-    const paragraph = await page.evaluate(() => window.consumer.paragraph());
-    assert.ok(paragraph.advances > 1); assert.equal(paragraph.level, 1); assert.equal(paragraph.retainedLevel, 1); assert.equal(paragraph.exports, 0);
-    assert.equal(paragraph.current, true); assert.equal(paragraph.mainLevel, 1); assert.equal(paragraph.rejected, true); assert.equal(paragraph.releasedLease, true); assert.equal(paragraph.sourceRevision, true);
     const graphemes = await page.evaluate(() => window.consumer.graphemes());
     assert.deepEqual(graphemes, { version: "18.0.0", boundaries: [0, 4, 9, 11], coordinate: "buffer", released: true, exports: 0 });
     const font = await page.evaluate(() => window.consumer.font());
@@ -460,7 +447,7 @@ try {
         consumer, browser: browser.version(), node: process.version, dotnet: dotnet(["--version"]).trim(),
         typescript: JSON.parse(await readFile("node_modules/typescript/package.json", "utf8")).version,
         esbuild: JSON.parse(await readFile("node_modules/esbuild/package.json", "utf8")).version,
-        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, wordSelection, bidi, paragraph, font, graphemes, find, caseFind, regex, folding, clipboardBoundary, selectionSets, multipleInput, comparison, readonlyIndent, findAuthority, saveReview, style, errors }, null, 2));
+        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, wordSelection, font, graphemes, find, caseFind, regex, folding, clipboardBoundary, selectionSets, multipleInput, comparison, readonlyIndent, findAuthority, saveReview, style, errors }, null, 2));
     console.log("Restored package: declarations, storage/mappings, modules, visible CSS and actual edit passed. Evidence: artifacts/package/");
     console.log(`Isolated consumer: ${consumer}`);
     await page.close();

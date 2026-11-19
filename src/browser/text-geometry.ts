@@ -1,36 +1,30 @@
-import { resolveBidi } from "../core/bidi.ts";
 import { graphemeBoundaries } from "../core/graphemes.ts";
 import { partitionPoint } from "../core/bound-search.ts";
 import type { Affinity } from "../core/positions.ts";
 
 export type CaretRectangle = Readonly<{ offset: number; affinity: Affinity; left: number; top: number; height: number; revision: number; padding?: true }>;
 export { graphemeBoundaries };
-/** Geometry retains native shaping; resolved bidi levels distinguish the two sides of a logical boundary. */
+/** Native range geometry for grapheme clusters on a left-to-right row. */
 export function rowGeometry(element: HTMLElement, from: number, revision: number, lineHeight: number) {
     const text = element.textContent ?? "", boundaries = graphemeBoundaries(text), nodes: Text[] = [], owner = element.ownerDocument;
     const iterator = owner.createTreeWalker(element, NodeFilter.SHOW_TEXT);
     for (let node = iterator.nextNode(); node; node = iterator.nextNode()) nodes.push(node as Text);
     const styled = [element, ...new Set(nodes.map(node => node.parentElement!).filter(parent => parent !== element))];
-    const clusters = new Int32Array(text.length);
-    for (let index = 0; index + 1 < boundaries.length; index++) clusters.fill(index, boundaries[index]!, boundaries[index + 1]!);
     let nativeRange: Range | undefined;
-    type Glyph = Readonly<{ start: CaretRectangle; end: CaretRectangle; rtl: boolean; nativeStart: boolean; nativeEnd: boolean }>;
-    let bounds: DOMRect | undefined, glyphs = new Map<number, Glyph>(), boxes = new Map<number, readonly DOMRect[]>(), raw = new Map<number, readonly DOMRect[]>(), levels: readonly (number | null)[] = [], order: number[] = [], styleKey = "", flow = 1, prepared = false;
-    const positions = new Int32Array(boundaries.length - 1), corrected = new Set<number>();
+    type Glyph = Readonly<{ start: CaretRectangle; end: CaretRectangle; nativeStart: boolean; nativeEnd: boolean }>;
+    let bounds: DOMRect | undefined, glyphs = new Map<number, Glyph>(), boxes = new Map<number, readonly DOMRect[]>(), raw = new Map<number, readonly DOMRect[]>(), styleKey = "", prepared = false;
+    const corrected = new Set<number>();
     const ensure = () => {
         const next = element.getBoundingClientRect(), style = owner.defaultView!.getComputedStyle(element);
         // Inline typography can change while the row's outer dimensions stay identical.
         const key = styled.map(node => {
             const value = node === element ? style : owner.defaultView!.getComputedStyle(node);
-            return [value.direction, value.font, value.letterSpacing, value.wordSpacing, value.fontVariantLigatures, value.fontKerning,
-                value.fontFeatureSettings, value.fontVariationSettings, value.unicodeBidi, value.tabSize, value.textAlign, value.textTransform, value.verticalAlign].join("|");
+            return [value.font, value.letterSpacing, value.wordSpacing, value.fontVariantLigatures, value.fontKerning,
+                value.fontFeatureSettings, value.fontVariationSettings, value.tabSize, value.textAlign, value.textTransform, value.verticalAlign].join("|");
         }).join("\n");
         if (bounds && key === styleKey && next.left === bounds.left && next.top === bounds.top && next.width === bounds.width && next.height === bounds.height) return;
-        styleKey = key; flow = style.direction === "rtl" ? -1 : 1;
-        bounds = next; glyphs = new Map(); boxes = new Map(); raw = new Map(); prepared = false; corrected.clear(); positions.fill(-1); order = [];
-        const resolved = resolveBidi(text, flow < 0 ? "rtl" : "ltr"); levels = resolved.levels;
-        for (const offset of resolved.order) { const index = clusters[offset]!;
-            if (positions[index] === -1) { positions[index] = order.length; order.push(index); } }
+        styleKey = key;
+        bounds = next; glyphs = new Map(); boxes = new Map(); raw = new Map(); prepared = false; corrected.clear();
     };
     const locate = (offset: number): Readonly<{ node: Text; offset: number }> | undefined => {
         for (const node of nodes) { if (offset <= node.length) return { node, offset }; offset -= node.length; } return undefined;
@@ -45,14 +39,7 @@ export function rowGeometry(element: HTMLElement, from: number, revision: number
     const measured = (index: number): readonly DOMRect[] => {
         let result = boxes.get(index); if (result) return result;
         const start = boundaries[index]!, end = boundaries[index + 1]!;
-        // Formatting controls can expose remote rectangles in native ranges. They have no advance.
-        let invisible = true, offset = start;
-        for (const char of text.slice(start, end)) {
-            const cp = char.codePointAt(0)!;
-            if (levels[offset] !== null && !(cp >= 0x2066 && cp <= 0x2069) && cp !== 0x200e && cp !== 0x200f && cp !== 0x061c) invisible = false;
-            offset += char.length;
-        }
-        result = invisible ? [] : [...range(start, end)?.getClientRects() ?? []].filter(rect => rect.width > .01 && rect.height > 0);
+        result = [...range(start, end)?.getClientRects() ?? []].filter(rect => rect.width > .01 && rect.height > 0);
         boxes.set(index, result); return result;
     };
     const make = (offset: number, affinity: Affinity, left: number, top: number, height: number): CaretRectangle => Object.freeze({ offset: from + offset, affinity, left, top, height: height || lineHeight, revision });
@@ -61,15 +48,13 @@ export function rowGeometry(element: HTMLElement, from: number, revision: number
         const start = boundaries[index]!, end = boundaries[index + 1]!, rectangles = measured(index);
         if (rectangles.length) {
             const left = Math.min(...rectangles.map(r => r.left)), right = Math.max(...rectangles.map(r => r.right)), top = Math.min(...rectangles.map(r => r.top)), bottom = Math.max(...rectangles.map(r => r.bottom));
-            let level = 0; for (let offset = start; offset < end; offset++) if (levels[offset] !== null) { level = levels[offset] ?? 0; break; }
-            const rtl = level % 2 === 1, desiredStart = rtl ? right : left, desiredEnd = rtl ? left : right;
             const closest = (values: readonly DOMRect[], x: number) => values.reduce<DOMRect | undefined>((best, next) => !best || Math.abs(next.left - x) < Math.abs(best.left - x) ? next : best, undefined);
-            const a = closest(collapsed(start), desiredStart), b = closest(collapsed(end), desiredEnd);
+            const a = closest(collapsed(start), left), b = closest(collapsed(end), right);
             const inside = (rect: DOMRect | undefined) => rect && rect.left >= left - 1.5 && rect.left <= right + 1.5;
             // Native caret interiors preserve ligature subdivisions when both endpoints agree with the run direction.
-            const consistent = inside(a) && inside(b) && (rtl ? a!.left > b!.left : a!.left < b!.left);
-            const nativeStart = !!a && (!!consistent || Math.abs(a.left - desiredStart) <= 1.5), nativeEnd = !!b && (!!consistent || Math.abs(b.left - desiredEnd) <= 1.5);
-            value = { start: make(start, "after", nativeStart ? a!.left : desiredStart, top, bottom - top), end: make(end, "before", nativeEnd ? b!.left : desiredEnd, top, bottom - top), rtl, nativeStart, nativeEnd };
+            const consistent = inside(a) && inside(b) && a!.left < b!.left;
+            const nativeStart = !!a && (!!consistent || Math.abs(a.left - left) <= 1.5), nativeEnd = !!b && (!!consistent || Math.abs(b.left - right) <= 1.5);
+            value = { start: make(start, "after", nativeStart ? a!.left : left, top, bottom - top), end: make(end, "before", nativeEnd ? b!.left : right, top, bottom - top), nativeStart, nativeEnd };
         } else {
             let before = index - 1, after = index + 1;
             while (before >= 0 && !measured(before).length) before--; while (after + 1 < boundaries.length && !measured(after).length) after++;
@@ -78,37 +63,38 @@ export function rowGeometry(element: HTMLElement, from: number, revision: number
             if (before >= 0) correctVisible(before); if (after + 1 < boundaries.length) correctVisible(after);
             const previous = before >= 0 ? glyph(before).end : undefined, next = after + 1 < boundaries.length ? glyph(after).start : undefined;
             const a = previous ?? next, b = next ?? previous;
-            value = { start: make(start, "after", a?.left ?? bounds!.left, a?.top ?? bounds!.top, a?.height ?? lineHeight), end: make(end, "before", b?.left ?? bounds!.left, b?.top ?? bounds!.top, b?.height ?? lineHeight), rtl: false, nativeStart: false, nativeEnd: false };
+            value = { start: make(start, "after", a?.left ?? bounds!.left, a?.top ?? bounds!.top, a?.height ?? lineHeight), end: make(end, "before", b?.left ?? bounds!.left, b?.top ?? bounds!.top, b?.height ?? lineHeight), nativeStart: false, nativeEnd: false };
         }
         glyphs.set(index, value); return value;
     };
     const merge = (ai: number, bi: number) => {
         // Two adjacent visible clusters share one insertion position. Native rectangle rounding
         // must not create an extra caret stop; never merge the two edges of a narrow glyph.
-        const a = glyph(ai), b = glyph(bi), aSide = a.rtl ? "start" : "end", bSide = b.rtl ? "end" : "start", ap = a[aSide], bp = b[bSide];
+        const a = glyph(ai), b = glyph(bi), ap = a.end, bp = b.start;
         if (Math.abs(ap.left - bp.left) > 1.5 || Math.abs(ap.top - bp.top) > 1) return;
-        const an = a.rtl ? a.nativeStart : a.nativeEnd, bn = b.rtl ? b.nativeEnd : b.nativeStart;
+        const an = a.nativeEnd, bn = b.nativeStart;
         const x = an === bn ? (ap.left + bp.left) / 2 : an ? ap.left : bp.left;
-        glyphs.set(ai, { ...a, [aSide]: Object.freeze({ ...ap, left: x }) }); glyphs.set(bi, { ...b, [bSide]: Object.freeze({ ...bp, left: x }) });
+        glyphs.set(ai, { ...a, end: Object.freeze({ ...ap, left: x }) }); glyphs.set(bi, { ...b, start: Object.freeze({ ...bp, left: x }) });
     };
     function correctVisible(index: number): void {
         if (prepared || corrected.has(index)) return;
         // Each pair touches only its facing edges. Other pairs cannot change those edges;
         // repeating a merge is idempotent, including when full preparation follows a point.
-        const at = positions[index]!;
-        if (at >= 0) for (const direction of [-1, 1]) {
-            let next = at + direction;
-            while (next >= 0 && next < order.length && !measured(order[next]!).length) next += direction;
-            if (next >= 0 && next < order.length) merge(direction < 0 ? order[next]! : index, direction < 0 ? index : order[next]!);
+        for (const direction of [-1, 1]) {
+            let next = index + direction;
+            while (next >= 0 && next + 1 < boundaries.length && !measured(next).length) next += direction;
+            if (next >= 0 && next + 1 < boundaries.length) merge(direction < 0 ? next : index, direction < 0 ? index : next);
         }
         corrected.add(index);
     }
     const prepare = () => {
         ensure(); if (prepared) return;
-        const visible: number[] = [];
-        for (let index = 0; index + 1 < boundaries.length; index++) if (measured(index).length) glyph(index);
-        for (const index of order) if (measured(index).length) visible.push(index);
-        for (let position = 1; position < visible.length; position++) merge(visible[position - 1]!, visible[position]!);
+        let previous = -1;
+        for (let index = 0; index + 1 < boundaries.length; index++) if (measured(index).length) {
+            glyph(index);
+            if (previous >= 0) merge(previous, index);
+            previous = index;
+        }
         prepared = true;
         for (let index = 0; index + 1 < boundaries.length; index++) glyph(index);
     };
@@ -133,20 +119,16 @@ export function rowGeometry(element: HTMLElement, from: number, revision: number
                 }
             } return best ?? point(from)!;
         },
-        visual: (offset: number, affinity: Affinity, direction: -1 | 1): CaretRectangle | undefined => {
-            prepare(); const current = point(offset, affinity); if (!current) return;
-            let best: CaretRectangle | undefined, distance = Infinity;
-            for (let index = 0; index + 1 < boundaries.length; index++) {
-                const g = glyph(index), candidate = direction > 0 ? g.start.left > g.end.left ? g.start : g.end : g.start.left < g.end.left ? g.start : g.end;
-                const delta = (candidate.left - current.left) * direction; if (delta > .25 && delta < distance) { best = candidate; distance = delta; }
-            } return best;
+        visual: (offset: number, direction: -1 | 1): CaretRectangle | undefined => {
+            ensure();
+            const local = offset - from;
+            const next = direction < 0 ? partitionPoint(boundaries.length, i => boundaries[i]! < local) - 1
+                : partitionPoint(boundaries.length, i => boundaries[i]! <= local);
+            if (next < 0 || next >= boundaries.length) return;
+            return point(from + boundaries[next]!, direction < 0 ? "after" : "before");
         },
         edge: (direction: -1 | 1, low = from, high = from + text.length): CaretRectangle => {
-            prepare(); let best: CaretRectangle | undefined;
-            for (let index = 0; index + 1 < boundaries.length; index++) {
-                if (from + boundaries[index]! >= high || from + boundaries[index + 1]! <= low) continue;
-                const g = glyph(index); for (const candidate of [g.start, g.end]) if (!best || direction * candidate.left > direction * best.left
-                    || candidate.left === best.left && direction * flow * candidate.offset > direction * flow * best.offset) best = candidate;
-            } return best ?? point(direction < 0 ? Math.max(from, low) : Math.min(from + text.length, high))!;
+            ensure();
+            return point(direction < 0 ? Math.max(from, low) : Math.min(from + text.length, high), direction < 0 ? "after" : "before")!;
         } });
 }

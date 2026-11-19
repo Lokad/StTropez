@@ -59,7 +59,6 @@ catch (error) { console.log(JSON.stringify({ error: { code: error.code, message:
 test("benchmark selection preserves named aliases, explicit prerequisites and workload arguments", async () => {
     assert.deepEqual(selectBenchmarks([]).suites.map(suite => suite.id), ["model", "editing"]);
     assert.deepEqual(selectBenchmarks(["--group=pilot"]).suites.map(suite => suite.id), ["host-input", "comparison", "save-conflicts"]);
-    assert.deepEqual(selectBenchmarks(["--suite=paragraph"]).suites[0]!.args, ["--expose-gc", "scripts/benchmark-paragraph.mjs"]);
     const packaged = selectBenchmarks(["--suite=package-hunk", "--", "--browser=firefox"]).suites[0]!;
     assert.equal(packaged.setup, "pack:nuget");
     assert.deepEqual(packaged.args, ["scripts/test-package.mjs", "--hunk-only", "--bench", "--browser=firefox"]);

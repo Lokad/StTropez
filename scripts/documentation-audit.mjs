@@ -29,7 +29,7 @@ const ownerGroups = {
     folding: ["core/folding", "core/fold-discovery", "browser/folding-controller", "protocol/lsp-folding"],
     search: ["core/search", "browser/find", "browser/regex-find"],
     comparison: ["core/diff", "core/comparison", "browser/comparison"],
-    unicode: ["core/words", "core/graphemes", "core/grapheme-data", "core/bidi", "core/bidi-cursor", "core/bidi-controller", "core/character-warnings", "browser/font-asset"],
+    unicode: ["core/words", "core/graphemes", "core/grapheme-data", "core/character-warnings", "browser/font-asset"],
     "host-integration": ["browser/input-conflict", "browser/captured-view"],
     "language-server": ["protocol/wire", "protocol/json-rpc", "protocol/lsp-positions", "protocol/lsp-session", "protocol/lsp-workspace", "protocol/lsp-command", "browser/lsp-websocket"],
     "language-features": ["protocol/lsp-features", "protocol/lsp-code-actions", "protocol/lsp-workspace-edit", "protocol/lsp-completion", "protocol/lsp-hover", "protocol/lsp-highlights", "protocol/lsp-rename", "protocol/lsp-navigation", "protocol/lsp-actions", "protocol/lsp-language", "browser/lsp-editor", "browser/lsp-highlights", "browser/documentation"]

@@ -121,7 +121,7 @@ normalization and affinity mapping.
 
 Plain typing replaces every range with the same text. Deletion plans all targets before mutation
 and merges overlapping deletions, including carets inside one grapheme. Movement preserves
-extension anchors and bidi affinities, then normalizes and publishes the result once. Only the
+extension anchors and endpoint affinities, then normalizes and publishes the result once. Only the
 primary destination is revealed. Vertical commands retain each range's measured horizontal
 column across short lines until another selection, edit or layout breaks the sequence.
 
@@ -138,7 +138,7 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 
 | Input | Command |
 | --- | --- |
-| Left / Right | Grapheme or measured visual movement; see [Unicode navigation](unicode.md#graphemes-and-word-movement) |
+| Left / Right | Logical grapheme movement; see [Unicode navigation](unicode.md#graphemes-and-word-movement) |
 | Word modifier + Left / Right | Code-word movement from the active head |
 | Up / Down | Previous/next visible line at the retained horizontal column |
 | PageUp / PageDown | Move by the viewport's visible page, retaining the column |
@@ -384,7 +384,7 @@ defines interaction-specific readiness and continuous text/color checks.
 | Ordinary reads | Typing, navigation, scrolling and metadata updates do not export the whole document; copying/large edits can require proportional work |
 
 Scheduling bounds are not interaction-latency guarantees. [Viewport limits](viewport.md#rendering-limits)
-govern long contextual lines and geometry; [Unicode](unicode.md) owns grapheme/bidi behavior.
+govern long contextual lines and geometry; [Unicode](unicode.md) owns grapheme behavior.
 
 ## Host responsibilities
 

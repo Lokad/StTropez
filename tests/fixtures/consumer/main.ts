@@ -1,4 +1,4 @@
-import { Workspace, TextBuffer, TextDiff, WordCursor, BidiCursor, createBidiIndexController, resolveBidi, importText, exportText, anchoredRange, composePositionMaps, createGraphemeCursor } from "sttropez";
+import { Workspace, TextBuffer, TextDiff, WordCursor, importText, exportText, anchoredRange, composePositionMaps, createGraphemeCursor } from "sttropez";
 import { inputConflictEvent, createFontAssetController, createFindController, createRegexFindBackend, mountTextComparison, mountTextViewport, mountTextEditor } from "sttropez/browser";
 import * as browserApi from "sttropez/browser";
 import { fontFixture } from "./font-fixture.js";
@@ -321,25 +321,6 @@ const fixture = { text: () => workspace.document(documentId).text(),
     viewport: () => viewport.snapshot(),
     candidate: () => ({ ...candidate.snapshot(), viewport: candidate.viewport.snapshot() }),
     captureCandidate: candidate.captureView,
-    bidi: () => resolveBidi("abc אבג xyz"),
-    paragraph: () => {
-        const buffer = TextBuffer.from("x".repeat(100_000) + " א"), cursor = new BidiCursor(buffer); let step = cursor.next(256), advances = 1;
-        while (step.status === "running") { step = cursor.next(256); advances++; }
-        const index = step.result!, level = index.levelAt(100_001); cursor.dispose();
-        const controller = createBidiIndexController(workspace, tabId), document = workspace.document(documentId), ownership = workspace.ownership(workspace.resourceForDocument(documentId).id).leases;
-        const generation = controller.request({ expectedRevision: document.revision, from: 0, to: document.buffer.length })!;
-        let state = controller.advance(256); while (state.status === "running") state = controller.advance(256);
-        const current = controller.isCurrent(generation), mainLevel = state.index!.levelAt(4), rejected = controller.request({ expectedRevision: document.revision - 1, from: 0, to: 1 }) === null;
-        controller.dispose();
-        return { advances, level, retainedLevel: index.levelAt(100_001), exports: buffer.readMetrics().textExports, current, mainLevel, rejected,
-            releasedLease: workspace.ownership(workspace.resourceForDocument(documentId).id).leases === ownership - 1, sourceRevision: workspace.document(documentId).revision === document.revision };
-    },
-    bidiSample: () => {
-        const document = workspace.document(documentId);
-        workspace.edit({ documentId, expectedRevision: document.revision, origin: "host", edits: [{ from: 0, to: document.buffer.length, insert: "abc אבג xyz" }] });
-        candidate.view.setSelection(workspace.document(documentId).revision, { anchor: 4, head: 4, anchorAffinity: "after", headAffinity: "after" });
-        candidate.viewport.revealOffset(4); candidate.focus();
-    },
     navigation: () => {
         const buffer = TextBuffer.from("x".repeat(100_000) + "  tail"), cursor = new WordCursor(buffer, 0, 1);
         let step = cursor.next(256), advances = 1; while (step.status === "running") { step = cursor.next(256); advances++; }

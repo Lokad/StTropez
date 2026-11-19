@@ -1,6 +1,6 @@
 # Unicode
 
-StTropez stores UTF-16 text, applies Unicode 18 grapheme and bidirectional rules, and exposes
+StTropez stores UTF-16 text, applies Unicode 18 grapheme rules, and exposes
 advisory character warnings. The browser measures and shapes text through native font and
 range APIs. These facilities preserve source text; they do not normalize it.
 
@@ -31,18 +31,6 @@ export async function indexGraphemes(
         cursor.dispose();
     }
 }
-```
-
-For a small, already bounded string, synchronous bidi resolution exposes levels and visual
-code-point order. Use the cooperative cursor or workspace controller for large ranges.
-
-```ts
-import { resolveBidi } from "sttropez";
-
-const text = "abc \u05d0\u05d1\u05d2 123";
-const resolved = resolveBidi(text, "auto");
-export const visualOffsets = resolved.order;
-// Offsets identify source code points; this is not a sequence of rendered glyphs.
 ```
 
 Character inspection can consume one bounded batch at a time. Keep the same immutable buffer
@@ -95,7 +83,7 @@ export function hostFont(owner: Document, applyFamily: (family: string) => void)
 
 ### Cooperative cursor lifetime
 
-Grapheme, word and bidi cursors expose `next(workBudget)`, `snapshot()` and `dispose()`.
+Grapheme and word cursors expose `next(workBudget)`, `snapshot()` and `dispose()`.
 Snapshots are immutable and do not advance work. Status is `running`, `ready`, `failed` or
 `disposed`; only `ready` exposes a completed result, including a word offset of zero or an
 empty index. Execution failure throws its original cause, records a failure message and
@@ -151,50 +139,12 @@ counts. Work counts scanned UTF-16 units. Reads retain a 256-unit slice plus at 
 to complete a surrogate pair. The caller supplies grapheme snapping and
 logical-line bounds where needed.
 
-### Bidirectional resolution
-
-`resolveBidi(text, direction)` returns frozen levels, visual order and paragraph base levels
-using Unicode 18 bidirectional resolution through L2. Direction is `ltr` by default, `rtl`
-or `auto`. Levels address UTF-16 units; both halves of a surrogate pair share a level.
-Removed formatting controls have `null` levels. Order entries are code-point start offsets;
-CRLF forms one paragraph separator. Resolution leaves the text unchanged.
-
-`BidiCursor(source, { from?, to?, direction? })` captures a buffer or string without an
-initial read. `next(workBudget)` exposes scan, resolve and publish progress, read/work counts,
-failure and a completed `BidiIndex`. Work includes scanning, resolution and publication;
-terminal progress uses its status as its phase. Index coordinates are absolute: `levelAt`,
-`offsetAt`, `indexOf` and `paragraphAt` query the captured range. Surrogate interiors, removed controls and the end
-offset have no visual index. `visualLength` counts ordered code points, including controls
-with zero advance; it is not a glyph count. `materialize()` creates proportional arrays
-whose offsets are relative to the captured range.
-
-`createBidiIndexController(workspace, tabId, { direction? })` retains a text resource and
-publishes immutable snapshots. `request({ expectedRevision, from, to })` returns a generation;
-a stale revision returns `null` without disturbing existing work. The host schedules
-`advance(workBudget)`. Edits invalidate the captured result; tab closure/replacement or an
-unavailable resource expires it. Check `isCurrent(generation)` before consuming a completed
-index. `cancel()` clears work and results; `dispose()` releases listeners and its lease.
-It changes no text or selection.
-
-Each paragraph is resolved as one unwrapped line. Shaping, mirroring and placement belong
-to the renderer; reordering wrapped lines requires their actual break positions.
-
 ### Browser caret geometry
 
-Complete rendered rows combine native grapheme ranges with resolved bidi levels. At an
-ambiguous logical boundary, `before` affinity identifies the end of the preceding logical
-grapheme and `after` the start of the following one. Shared visual edges are reconciled to
-avoid rounding-induced extra stops; zero-advance controls use neighboring visible edges.
-Geometry queries preserve host DOM, styles and the browser selection.
-
-Left/Right follows physical glyph order on complete rows. Shift keeps the logical anchor
-and its affinity; collapsing a selection uses its visual edge. Line-edge movement follows
-paragraph flow, including CRLF and empty/control-only rows. Captured view state retains
-affinities separately from the native textarea. Set `--st-text-direction` on the host to
-`ltr` or `rtl`; the scroll container keeps LTR coordinates. Decorations preserve paragraph
-direction. Partial long rows use fragment shaping and estimated global origins, and their
-visual commands fall back to logical grapheme movement. See [viewport geometry](viewport.md)
-for presentation state and the `partialRows` distinction.
+Rows use left-to-right layout. The browser supplies shaped glyph rectangles. Caret stops
+follow logical grapheme boundaries, including combining sequences and emoji. Left and Right
+cross a line break to the adjacent visible line, skipping folded rows. Selection endpoints
+retain their affinities. Hit testing and pointer selection use the same row geometry.
 
 ### Character warnings
 
@@ -251,11 +201,10 @@ font bytes and chooses the views that use the returned CSS family.
 
 | Operation | Bound or validation |
 | --- | --- |
-| Grapheme/bidi cursor advance | Default 4,096 work units; integer budget at least 256; cooperative checkpoints can overshoot a requested budget |
+| Grapheme cursor advance | Default 4,096 work units; integer budget at least 256; cooperative checkpoints can overshoot a requested budget |
 | Grapheme limits | Positive safe integers; default operations `max(1_000_000, rangeLength * 16)`, clusters `max(1_000_000, rangeLength)` |
 | Grapheme publication | Frozen blocks of up to 256 boundaries; no partial index publication |
-| Source reads | Grapheme/bidi cursors read 256-unit windows with surrogate seam lookahead |
-| Bidi depth | Explicit embedding/isolate levels through 125; resolved levels through 126 |
+| Source reads | Grapheme cursors read 256-unit windows with surrogate seam lookahead |
 | Synchronous utilities/materialization | Work and arrays proportional to the supplied range; callers bound inputs |
 | Character scan | Default 4,096 units and 256 warnings; integer `maxUnits >= 2`, `maxWarnings >= 1`; at most `maxUnits + 5` units read |
 | Character marker cache | At most 128 presented fragments |
@@ -266,17 +215,17 @@ freezing, native calls and garbage collection are indivisible from the caller's 
 ## Host responsibilities
 
 Capture identities and revisions before scheduling work, yield between advances, and dispose
-abandoned cursors/controllers. Revalidate captures before applying results to a live view.
-Choose segmentation/paragraph ranges with enough context. Use query methods when a bounded
+abandoned cursors. Revalidate captures before applying results to a live view.
+Choose segmentation ranges with enough context. Use query methods when a bounded
 consumer does not need a fully materialized array.
 
-Choose text direction, warning policy, font sources and CSS. Reset host font selection before
+Choose warning policy, font sources and CSS. Reset host font selection before
 disposing a face that its views use. Treat character warnings as contextual advice.
 Geometry caches follow DOM, style/font metrics and row movement; use the editor's supported
 presentation APIs when changing those inputs.
 
 Unicode data and development fixtures carry the [Unicode License V3](../licenses/Unicode-3.0.txt).
-The generators accept reviewed local data; ordinary builds and consumer restores do not
+The generator accepts reviewed local data; ordinary builds and consumer restores do not
 download or regenerate it. The [regeneration workflow](testing.md#unicode-regeneration)
 pins input hashes and checks existing outputs offline. The TypeScript kernels use generated
 facts and native browser rendering, preserving the library's zero runtime dependencies.

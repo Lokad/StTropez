@@ -223,16 +223,6 @@ try {
     await harness.page.waitForFunction(() => { const s = window.editingFixture.snapshot(); return !s.primary.pendingWord && !s.primary.viewport.pending; });
     await harness.page.screenshot({ path: "artifacts/inspect/editing-navigation.png", fullPage: true });
     await writeFile("artifacts/inspect/editing-navigation.json", JSON.stringify(await harness.page.evaluate(() => window.editingFixture.snapshot()), null, 2));
-    await harness.page.evaluate(() => { window.editingFixture.setText("abc אבג xyz (العربية 123)\r\nleft \u2067אבג 123\u2069 right\r\na é 👩‍💻 z"); window.editingFixture.select("primary", { anchor: 4, head: 4, anchorAffinity: "after", headAffinity: "after" }); window.editingFixture.focus("primary"); });
-    await harness.page.waitForFunction(() => !window.editingFixture.snapshot().primary.viewport.pending);
-    await harness.page.keyboard.press("Shift+ArrowLeft");
-    await harness.page.waitForFunction(() => !window.editingFixture.snapshot().primary.viewport.pending);
-    await harness.page.screenshot({ path: "artifacts/inspect/editing-bidi.png", fullPage: true });
-    await writeFile("artifacts/inspect/editing-bidi.json", JSON.stringify(await harness.page.evaluate(() => ({ state: window.editingFixture.snapshot(), before: window.editingFixture.coords(4, "before"), after: window.editingFixture.coords(4, "after") })), null, 2));
-    await harness.page.getByRole("button", { name: "Analyze current line", exact: true }).click();
-    await harness.page.waitForFunction(() => window.editingFixture.snapshot().paragraph.status === "ready");
-    await harness.page.screenshot({ path: "artifacts/inspect/editing-paragraph.png", fullPage: true });
-    await writeFile("artifacts/inspect/editing-paragraph.json", JSON.stringify(await harness.page.evaluate(() => window.editingFixture.snapshot()), null, 2));
     await harness.page.evaluate(() => { const text = "x" + "\u0301".repeat(90_000) + "\n🇦🇧 👩‍💻"; window.editingFixture.setText(text); window.editingFixture.select("primary", { anchor: 90_001, head: 90_001 }); window.editingFixture.focus("primary"); });
     await harness.page.keyboard.press("Backspace");
     await harness.page.waitForFunction(() => { const s = window.editingFixture.snapshot(); return !s.primary.pendingGrapheme && !s.primary.viewport.pending && s.document?.length === 11; });

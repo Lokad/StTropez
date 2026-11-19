@@ -14,7 +14,7 @@ export function unicodeArguments(args) {
 
 /**
  * Verify every raw input before generating or writing anything. No network access.
- * @param {"grapheme" | "bidi"} kind
+ * @param {"grapheme"} kind
  * @param {string} directory
  */
 export async function readUnicodeInputs(kind, directory) {

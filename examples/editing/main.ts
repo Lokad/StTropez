@@ -6,7 +6,6 @@ import { corpus, corpusIds } from "../../fixtures/workloads.ts";
 import { EditingPresentation } from "../shared/language/presentation.ts";
 import { editorSettled } from "../shared/readiness.ts";
 import { mountFindUI } from "./find-ui.ts";
-import { mountParagraphUI } from "./paragraph-ui.ts";
 import type { CorpusId } from "../../fixtures/workloads.ts";
 import "./style.css";
 
@@ -21,7 +20,6 @@ const editors = { primary: mountTextEditor(pane("primary"), workspace, primaryTa
 } }),
     secondary: mountTextEditor(pane("secondary"), workspace, secondaryTab, { ariaLabel: "Secondary source", decorate: presentation.secondary.decorate }) };
 const findUI = mountFindUI(workspace, primaryTab, editors.primary, presentation.primary);
-const paragraph = mountParagraphUI(workspace, primaryTab, editors.primary);
 const listeners = new AbortController(); let disposed = false;
 let foldingController: FoldingController | undefined;
 const conflicts: InputConflictDetail[] = [];
@@ -53,7 +51,6 @@ const fixture = { ready: true, setText, edit, select, history,
     selections: (ranges: readonly Selection[], primary = 0) => editors.primary.view.setSelections(workspace.document(source.documentId).revision, ranges, primary),
     folds: (ranges: readonly FoldRange[], which: "primary" | "secondary" = "primary") => { const f = editors[which].view.folding; return f.setRanges(f.getSnapshot(), ranges); },
     folding: (which: "primary" | "secondary" = "primary") => editors[which].view.folding.getSnapshot(),
-    analyzeParagraph: paragraph.start, analyzeCurrentLine: paragraph.currentLine, cancelParagraph: paragraph.cancel, paragraphLevel: paragraph.levelAt, paragraphOffset: paragraph.offsetAt,
     find: (query: string) => findUI.find.setQuery(query), findNext: () => findUI.find.next(), replaceCurrent: (text: string) => findUI.find.replaceCurrent(text), replaceAll: (text: string) => findUI.find.replaceAll(text), cancelFind: findUI.find.cancel,
     conflictText: (index = conflicts.length - 1) => conflicts[index]?.attemptedText,
     focus: (which: "primary" | "secondary") => editors[which].focus(),
@@ -71,12 +68,12 @@ const fixture = { ready: true, setText, edit, select, history,
             secondary: { ...editors.secondary.snapshot(), viewport: editors.secondary.viewport.snapshot(), selection: editors.secondary.view.getSnapshot().selection },
             history: current ? workspace.observeHistory(source.documentId).getSnapshot() : null,
             find: (() => { const state = findUI.find.getSnapshot(); return { wholeWord: state.wholeWord, matchCase: state.matchCase, regularExpression: state.regularExpression, revision: state.revision, status: state.status, count: state.count, scanned: state.scanned, current: state.current, matchesVersion: state.matchesVersion, reason: state.reason, message: state.message, ...findUI.find.getDiagnostics() }; })(),
-            presentation: { primary: presentation.primary.snapshot(), secondary: presentation.secondary.snapshot() }, paragraph: paragraph.snapshot(),
+            presentation: { primary: presentation.primary.snapshot(), secondary: presentation.secondary.snapshot() },
             conflicts: conflicts.map(item => ({ reason: item.reason, expectedRevision: item.expectedRevision, attemptedUnits: item.attemptedText.length,
                 ...(item.cause instanceof Error ? { error: item.cause.message } : {}) })), diagnostics: workspace.diagnostics(), disposed };
     },
     dispose: () => {
-        if (disposed) return; disposed = true; foldingController?.dispose(); listeners.abort(); unsubscribe(); findUI.dispose(); paragraph.dispose();
+        if (disposed) return; disposed = true; foldingController?.dispose(); listeners.abort(); unsubscribe(); findUI.dispose();
         Object.values(editors).forEach(editor => editor.dispose()); Object.values(presentation).forEach(value => value.clear());
         for (const tab of workspace.tabState.getSnapshot()) workspace.close(tab.id); workspace.releaseResource(source.id, true);
     } };

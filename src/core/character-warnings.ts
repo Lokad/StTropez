@@ -1,4 +1,3 @@
-import { bidiClass } from "./bidi-data.ts";
 import { defaultIgnorable } from "./grapheme-data.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { highSurrogate, lowSurrogate } from "./utf16.ts";
@@ -11,7 +10,6 @@ export type CharacterWarning = Readonly<{ from: number; to: number; codePoint: n
 export type CharacterWarningLimits = Readonly<{ maxUnits?: number; maxWarnings?: number }>;
 export type CharacterWarningBatch = Readonly<{ from: number; to: number; nextFrom: number; complete: boolean;
     limit: "units" | "warnings" | null; warnings: readonly CharacterWarning[]; scannedUnits: number; readUnits: number }>;
-const directional = new Set(["LRE", "RLE", "LRO", "RLO", "PDF", "LRI", "RLI", "FSI", "PDI"]);
 const labels: Readonly<Record<CharacterWarningKind, string>> = Object.freeze({ "bidi-control": "Directional control", invisible: "Invisible character",
     bom: "Mid-file byte order mark", "non-breaking-space": "Non-breaking space", "unusual-space": "Unusual whitespace" });
 export function characterWarningLabel(warning: Pick<CharacterWarning, "kind" | "codePoint">): string {
@@ -52,10 +50,12 @@ export class CharacterWarnings {
         let kind: CharacterWarningKind | undefined;
         if (codePoint === 0xfeff) { if (offset === 0) return null; kind = "bom"; }
         else {
-            const bidi = bidiClass(codePoint);
-            if (codePoint === 0x061c || codePoint === 0x200e || codePoint === 0x200f || directional.has(bidi)) kind = "bidi-control";
+            if (codePoint === 0x061c || codePoint >= 0x200e && codePoint <= 0x200f
+                || codePoint >= 0x202a && codePoint <= 0x202e || codePoint >= 0x2066 && codePoint <= 0x2069) kind = "bidi-control";
             else if (codePoint === 0x00a0 || codePoint === 0x2007 || codePoint === 0x202f) kind = "non-breaking-space";
-            else if (bidi === "WS" || codePoint === 11 || codePoint === 0x0085 || codePoint === 0x2029) kind = "unusual-space";
+            else if (codePoint === 11 || codePoint === 12 || codePoint === 0x85 || codePoint === 0x1680
+                || codePoint >= 0x2000 && codePoint <= 0x200a || codePoint >= 0x2028 && codePoint <= 0x2029
+                || codePoint === 0x205f || codePoint === 0x3000) kind = "unusual-space";
             else if (defaultIgnorable(codePoint)) kind = "invisible";
         }
         return kind && this.configuration.categories[kind] ? kind : null;

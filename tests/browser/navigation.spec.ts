@@ -154,10 +154,7 @@ test("navigation reuses immediate style captures and rejects synchronous layout 
                 const style = getStyle.call(window, element, pseudo);
                 if (element !== root) return style;
                 return new Proxy(style, { get(target, name) {
-                    if (name === "getPropertyValue") return (property: string) => {
-                        if (property === "--st-text-direction") reads++;
-                        return target.getPropertyValue(property);
-                    };
+                    if (name === "fontVariantLigatures") reads++;
                     const value: unknown = Reflect.get(target, name, target);
                     return typeof value === "function" ? value.bind(target) : value;
                 } });

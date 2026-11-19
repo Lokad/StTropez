@@ -57,7 +57,7 @@ public export resolution, public import remapping, compiler-root isolation and t
 React host/table-paste callers and the inspection caller against the host fixture's declared snapshot. The host caller's
 browser event observations are local types; its point results use the shared readiness probe.
 The Node model/storage/bulk callers, workers, workloads and storage summary are also checked,
-along with the bidi, grapheme and paragraph-analysis callers against their model and fixture types.
+along with the grapheme callers against their model and fixture types.
 Worker report types come from their actual result objects; these type imports do not run workers.
 Browser editing, host input/reference/focus/pointer/word-selection/drag-scroll/folding/table-paste,
 navigation, service, comparison, viewport and host save/recovery callers use the existing source
@@ -124,7 +124,7 @@ and integration, rather than repeating every source-model permutation.
 | Positional LSP captures and invalid responses | LSP clients, workspace, workspace edits and protocol feature models | Focused hover/navigation/rename/action and input/synchronization journeys |
 | Wire negotiation, selectors, provider sharing and command ownership | JSON-RPC, protocol session/selector/fixture models | WebSocket/interoperability journeys and the minimal restored LSP consumer |
 | Native projection and composition recovery | Input-context and input-target models | Input-target, ordered-input and composition journeys |
-| Caret, bidi/grapheme boundaries, scroll, focus and drag | Geometry-independent and Unicode models | Viewport/geometry/paint, zoom, bidi/grapheme, pointer/drag and shadow-focus suites |
+| Caret, grapheme boundaries, scroll, focus and drag | Geometry-independent and Unicode models | Viewport/geometry/paint, zoom, grapheme, pointer/drag and shadow-focus suites |
 | Host conversion, source annotations and forms | Table-paste, text-transfer and domain policy models | Table-paste, domain and transfer/form journeys |
 | Framework mount/disposal and surrounding UI | Host controller/policy models | Plain/React attachment, Strict Mode, queued-work disposal and error recovery |
 | Font registration lifetime | Native browser decoder | Font registration/measurement/release owner and a restored-consumer check |
@@ -194,7 +194,7 @@ Use the owning [API contracts](README.md#subjects) to define expected behavior:
 | Publication and views | Scoped subscribers preserve unchanged identity; listener failures and rejected reentrant writes preserve committed state; two views and typed forms keep independent selections through remount and error recovery |
 | Transactions and authority | Invalid/stale multi-resource batches publish nothing; each edit origin obeys capabilities/locks; shared undo/redo restores complete selections and the saved baseline without losing later corrections |
 | Editing and navigation | Actual keyboard typing, deletion, arrows/word/line/page/grapheme movement, indentation/comments, pairs, newline, multiple selections, regex/case/whole-word find/replace, clipboard/drag paths and focus escape yield exact text and selection |
-| Unicode and geometry | Surrogates, combining sequences, emoji/joiners, CRLF, bidi affinities, zoom and fonts preserve source and expected caret/hit targets within the supported geometry contract |
+| Unicode and geometry | Surrogates, combining sequences, emoji/joiners, CRLF, selection affinities, zoom and fonts preserve source and expected caret/hit targets within the supported geometry contract |
 | Save and Run | Queued/captured saves preserve submitted content, server preconditions, retry/canonical/conflict behavior and dirty state while typing continues; Save and Run retain separate source/settings captures |
 | Agent review | Request, proposal, correction, interruption, save and acknowledgement-only retry retain their captured versions; an older saved proposal cannot retire a newer one |
 | Comparison | Reference, saved and proposal versions stay distinct; refresh/accept/revert/discard and hunk navigation handle stale decisions, whitespace, edits, delayed loads and takeover without losing history/corrections; both panes show their own source/color/fold state |
@@ -287,25 +287,22 @@ bounded work and operations that can retain proportional/global costs.
 
 ### Unicode regeneration
 
-The grapheme and bidi generators use reviewed local Unicode data. The input names, source
+The grapheme generator uses reviewed local Unicode data. The input names, source
 URLs and SHA-256 hashes are recorded in [unicode-inputs.json](../scripts/unicode-inputs.json).
-Retain those exact raw files, named `<name>.txt`, in a directory for each generator; include
-the shared `license.txt` in both directories. Generation does not download data or update
+Retain those exact raw files, named `<name>.txt`, alongside `license.txt` in the input directory. Generation does not download data or update
 the recorded hashes. A data change requires explicit review of the inputs and license.
 
 Run from the repository root to verify the generated tables and compressed fixtures:
 
 ```sh
 node scripts/generate-grapheme-data.mjs /path/to/reviewed/grapheme --check
-node scripts/generate-bidi-data.mjs /path/to/reviewed/bidi --check
 ```
 
-Both commands validate every raw input before generating outputs. They also verify the
-repository's Unicode notice; they do not replace it. `--check` writes no files and fails on
+The command validates every raw input before generating outputs. It also verifies the repository's Unicode notice. `--check` writes no files and fails on
 a missing or different output. Text comparisons normalize CRLF to LF for checkout portability;
 compressed fixtures compare exact bytes. Omitting `--check` writes the generated tables and
 fixtures after input validation. Ordinary library builds and consumer restores do not run
-these generators.
+the generator.
 
 ### Measurement policy
 

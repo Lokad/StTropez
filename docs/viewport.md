@@ -165,7 +165,7 @@ Measured horizontal extent uses the rendered row contents rather than the full-r
 box. Full-width line backgrounds do not add horizontal scroll range when the text fits.
 
 A long fragment's local measurement is not a measured global glyph origin. Tabs, combining
-sequences and bidirectional/contextual shaping can differ from the horizontal estimate.
+sequences and contextual shaping can differ from the horizontal estimate.
 Explicit reveal can retain a local caret placement without reading the entire line; manual
 scrolling clears that placement. The API does not provide complete contextual long-line
 geometry. Read-only projection does not supply an editable input surface.

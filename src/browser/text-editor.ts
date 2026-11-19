@@ -497,7 +497,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     function navigationStyle(): string {
         const style = win.getComputedStyle(root);
         return [root.isConnected, style.width, style.height, style.fontFamily, style.fontSize, style.fontWeight, style.fontStyle, style.lineHeight,
-            style.letterSpacing, style.wordSpacing, style.tabSize, style.direction, style.getPropertyValue("--st-text-direction"),
+            style.letterSpacing, style.wordSpacing, style.tabSize,
             style.fontVariantLigatures, style.fontKerning, style.fontFeatureSettings, style.fontVariationSettings, style.transform, cssZoom(root), owner.fonts.status].join("|");
     }
     function navigationLayout(style = navigationStyle()): string {
@@ -585,7 +585,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             const direction = key === "ArrowLeft" ? -1 : 1;
             const point = !extend && range.anchor !== range.head
                 ? navigation.collapseVisual(Math.min(range.anchor, range.head), Math.max(range.anchor, range.head), direction)
-                : navigation.moveVisual(range.head, range.headAffinity ?? "after", direction);
+                : navigation.moveVisual(range.head, direction);
             if (point) { visualMoves++; done(moved(range, point.offset, extend, point.affinity)); return; }
             if (!extend && range.anchor !== range.head) { done(moved(range, direction < 0 ? Math.min(range.anchor, range.head) : Math.max(range.anchor, range.head), false)); return; }
             withGraphemes(capture, range.head, direction, "grapheme", at => done(moved(range, direction < 0 ? at.preceding ?? range.head : at.following ?? range.head, extend)), navigationTurn);
