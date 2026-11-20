@@ -1,14 +1,13 @@
 # Testing
 
-StTropez qualifies model behavior, browser interaction, host integration and distributed assets
-at their respective owners. Focused regressions cover changed guarantees; coherent milestones
-combine the affected browser, package and measurement checks. Evidence records its source and
-scope, and device qualification is separate from automation.
+Use model tests for editing rules, browser tests for interactions and a restored package for
+distribution. Run the affected tests as you work. Group broader browser, package and performance
+checks once the related changes are ready.
 
 ## Use
 
-Install the locked development dependencies and the browser binaries required by the selected
-checks. Use explicit files for a focused model or browser regression:
+Install the locked dependencies and the browsers you need. To run a single regression, name its test
+file.
 
 ```sh
 npm ci
@@ -17,7 +16,7 @@ node --test tests/input-context.test.ts tests/input-target.test.ts
 npm run test:browsers -- --project=chromium --project=firefox --project=webkit tests/browser/input-target.spec.ts
 ```
 
-Select the commands relevant to the changed owner:
+Choose the command that exercises your change.
 
 | Command | Scope |
 | --- | --- |
@@ -37,82 +36,48 @@ Select the commands relevant to the changed owner:
 | `npm run bench:pilot` | Integrated input, comparison and save/conflict workloads |
 | `npm run bench:all` | Explicit larger measurement inventory |
 
-Browser configurations own their servers and expose `STTROPEZ_PORT` or `STTROPEZ_DEMO_PORT`
-for source/static routes. The static-demo configuration can target a supplied
-`STTROPEZ_DEMO_URL`. Keep a test server separate from an interactive demo session.
+Source tests use `STTROPEZ_PORT`. Static tests use `STTROPEZ_DEMO_PORT` locally or
+`STTROPEZ_DEMO_URL` for a deployed site. Give tests their own port on a shared desktop.
 
-Typechecking uses TypeScript project references. Core and protocol have only the ES library;
-browser code adds DOM libraries, and development code adds Node types. Each source file has
-one checking project. Compiler declarations and incremental state stay under `artifacts/types`;
-run `npm run typecheck` after a fresh checkout and pass `-- --force` to force a full recheck.
-The package build emits its own declarations to `dist`, and documentation examples compile
-independently against the public source entries using `tsconfig.base.json`.
-The development project also checks the JavaScript entries listed in `tsconfig.json` and
-their imports: measurement, package scenarios, the browser harness, its server and the demo
-library catalogue, plus asset entry metadata, building, declaration finalization and shared
-Unicode generation I/O, package consumer/HTTP lifecycle ownership and benchmark selection,
-orchestration and report retention, plus shared host scenes, browser reference observations,
-static-demo building/serving and package host-fixture staging, qualification coordination,
-public export resolution, public import remapping, compiler-root isolation and the restored
-React host/table-paste callers and the inspection caller against the host fixture's declared snapshot. The host caller's
-browser event observations are local types; its point results use the shared readiness probe.
-The Node model/storage/bulk callers, workers, workloads and storage summary are also checked,
-along with the grapheme callers against their model and fixture types.
-Worker report types come from their actual result objects; these type imports do not run workers.
-Browser editing, host input/reference/focus/pointer/word-selection/drag-scroll/folding/table-paste,
-navigation, service, comparison, viewport and host save/recovery callers use the existing source
-fixture snapshots and local observation types for their separate clocks.
-The documentation parser/auditor and isolated example compiler use the Markdown/compiler
-library types; their integration tests import the actual script exports.
-The offline Unicode data generators and fixture-only textarea baseline/trace callers also belong
-to this checking project. Baseline counters and selected trace timing fields must be present;
-trace reports exclude event arguments and other content-bearing fields.
-Package entry callers use their copied consumer fixtures in separate tooling programs. The
-full package route checks `test-package.mjs` through its `@ts-check` directive and the copied
-consumer bridge, with strict types and indexed-access checks. Its imported JavaScript callers
-retain their own fixture-specific checking contexts. This Node tooling program uses the
-development policy for dependency declarations; the independent browser-consumer declaration
-check keeps `skipLibCheck: false`. Compiler-input evidence identifies both scopes.
+Run `npm run typecheck` after checkout, or add `-- --force` for a clean recheck. Each source file
+belongs to one TypeScript project. Core and protocol use ES types, browser code adds DOM types, and
+development tools can use Node types. See [tsconfig.json](../tsconfig.json) for the checked tools
+and fixtures. Incremental output goes to `artifacts/types`. Package declarations go to `dist`.
 
-The CI workflow runs types, the documentation gate, models, library build, the selected
-Chromium gate and the static-demo Chromium journey. A passing CI run has that scope;
-full multi-engine and package qualification use their separate commands.
+Browser probes use the fixture’s own snapshot and report types. Trace reports omit event arguments
+and other content-bearing fields. Restored-package tooling checks its copied fixture separately from
+the browser consumer, whose declaration check uses `skipLibCheck: false`. Both record compiler
+inputs.
+
+CI runs types, docs, models, the library build, selected Chromium tests and the static demo in
+Chromium. Use the three-engine and restored-package commands above for wider coverage.
 
 ## Contract
 
 ### Documentation gate
 
-`scripts/check-docs.mjs` checks the subject-page inventory and the root, package and contributor
-entry documents. Relative Markdown links, image links and reference definitions must resolve
-to non-ignored repository files or directories. Heading anchors use rendered text and duplicate
-heading suffixes; explicit HTML anchors and source-line links are supported. Other raw HTML is
-refused so embedded URLs cannot bypass the link checks. External URLs are not fetched. Paths
-inside inline code, including installed asset examples, are not repository links.
+`scripts/check-docs.mjs` checks subject pages, both READMEs and contributor instructions. Relative
+links, images and reference definitions must resolve to non-ignored paths. The checker recognizes
+rendered heading slugs, duplicate-heading suffixes, explicit HTML anchors and source-line links. It
+rejects other raw HTML. It skips external URLs and paths written as inline code.
 
-The gate enumerates runtime exports from the public core, browser and protocol entries without
-executing them. TypeScript resolves each public name to its declaring module; the ownership map
-in `scripts/documentation-audit.mjs` selects its subject page. That page must name the value in
-its `Contract` prose, including inline code. A fenced example, private declaration name or comment
-does not satisfy ownership. Type-only exports have no runtime-value obligation.
+The checker resolves each public runtime export to its declaring module without executing it. Its
+owning page, listed in `scripts/documentation-audit.mjs`, must name the export in `Contract` prose.
+Examples and comments do not count. Type-only exports are exempt.
 
-API pages require the `Use`, `Contract`, `Host responsibilities` and `Not covered` sections,
-a TypeScript example and a support-matrix link. Every `ts`, `typescript` or `tsx` fence in the
-checked documents compiles independently against the public entries; imports of private source
-files or other packages are refused. Diagnostics identify the authored Markdown file and line.
-Development-only Markdown and heading parsers handle nested examples and formatted headings.
+API pages need a TypeScript example and a support-matrix link. Their four sections are `Use`,
+`Contract`, `Host responsibilities` and `Not covered`, in that order. Each TypeScript or TSX fence compiles
+separately against public entries. Private imports and other packages fail with a Markdown file and
+line number.
 
-The prose check rejects historical vocabulary, milestone labels, dated delivery notes, commit
-references and pass-count narratives. Code keeps real API names and commands. Contributor
-instructions are exempt from the prose rule because they describe repository policy; their
-links and examples are checked. Review must also verify contract accuracy and useful explanations:
-mention coverage and compilation cannot establish either, and the vocabulary rule cannot identify
-every historical narrative or measured-run claim.
+Keep dates, commit IDs, milestone labels and test-run counts in research notes. The vocabulary check
+covers prose. Contributor instructions are exempt, but their links and examples are checked.
+Reviewers check the accuracy of the contracts.
 
 ### Test ownership
 
-Use deterministic models for data/guard combinations and browser tests for native event,
-geometry, presentation and lifecycle behavior. An installed-consumer test owns distribution
-and integration, rather than repeating every source-model permutation.
+Test guard combinations in the model. Use a browser for native events, geometry, rendering and
+remounts. Use a restored consumer for packaging and host integration.
 
 | Guarantee | Deterministic owner | Browser or distribution owner |
 | --- | --- | --- |
@@ -130,63 +95,38 @@ and integration, rather than repeating every source-model permutation.
 | Font registration lifetime | Native browser decoder | Font registration/measurement/release owner and a restored-consumer check |
 | Compiled assets and installation | Manifest/hash/dependency/export checks | Full restored consumer, version transitions and selected LSP/React/demo routes |
 
-The named source owners live under `tests/`, `tests/integration/` and `tests/browser/`; package journeys live in
-`scripts/package-*.mjs` and their consuming fixtures. Select the owning test file when adding
-or changing a case. Keep small browser integration checks where model behavior crosses into
-input or UI. Add cross-engine dimensions where engine behavior matters. Do not multiply the
-same invariant across every host, corpus and distribution route without a distinct purpose.
+Model tests live in `tests/`, browser tests in `tests/browser/`, and package journeys in
+`scripts/package-*.mjs`. Add a host or engine when it exercises a different behavior.
 
-Live server and process owners run from `tests/integration/`. They use ephemeral loopback
-ports and own their acquired listeners, processes and temporary files through teardown.
-In-memory protocol peers stay with the model tests. `npm test` includes both groups in one
-Node test-runner invocation, so the default local and CI checks retain complete coverage.
-Use an explicit file, such as `node --test tests/integration/demo-provider.test.ts`, for a
-focused provider regression.
+`tests/integration/` owns live servers and processes, uses ephemeral loopback ports and cleans up
+listeners, processes and files. In-memory peers belong in model tests. For one provider regression,
+run `node --test tests/integration/demo-provider.test.ts`.
 
-The action host suite runs every feature case on the plain host. Explicit registration metadata
-also selects React integration cases for choice/input identity and focus, multi-resource review
-with captured Save/Run, pending and committed-command remounts, provider recovery, lost command
-acknowledgements and large comparison commands. The general host suite owns stable refs,
-Strict Mode readiness, render isolation and root-error recovery. The shared
-[host coverage helper](../tests/browser/host-cases.ts) selects dimensions from metadata;
-each case registers at its declaration site so reports retain its file and line. Test titles
-do not select hosts. The save-failure suite declares its native projection-cache eviction
-prerequisite in case annotations; setup reads that metadata before navigating to the host.
+The plain host runs every action, server-edit, color-preview and link-discovery case, including
+large paging and wide-deletion previews. Both hosts cover navigation, rename, focus, remount,
+provider recovery, unmounted targets and captured Save/Run. Use the
+[host coverage helper](../tests/browser/host-cases.ts) to select permutations by metadata. Register
+cases where they are declared so failures point to the test. Save-failure setup reads the native
+projection-cache annotation before opening the host.
 
-Navigation and rename retain their normal integration journeys on both hosts, including
-focus, remount, provider recovery, unmounted targets and captured Save/Run. Their complete
-large-document paging and preview workloads run on the plain host in every browser engine.
+React cases cover stable refs, Strict Mode, render isolation, error recovery and focus across
+multi-resource reviews. They also cover remounts during commands, lost acknowledgements, held server
+edits, changed color values and link attachments. Both hosts exercise completed color previews,
+read-only recovery and keyboard traversal (F6 for colors, F4 for links). Large navigation and rename
+workloads run on plain in each engine.
 
-`expectUnmountedSourceHost` checks detached DOM views and the retained source-provider scope,
-including the recovery/provider workspace subscriptions and retained project-review observer.
-Consumers declare any additional
-service subscriptions and keep their service/focus assertions. Full disposal separately
-requires zero views, leases and subscriptions.
+`expectUnmountedSourceHost` checks that views detached while the source-provider scope, recovery
+subscriptions and project-review observer survived. Declare extra service subscriptions in the
+caller. After full disposal, expect zero views, leases and subscriptions.
 
-Server-edit journeys retain every scenario on plain. React also covers changed-resource node
-identity, unmounted-companion focus, decision invalidation through remount, provider recovery,
-held-request focus and primary Save/Run during comparison review. Plain owns the large-input
-paging and wide-deletion preview case in each engine.
-
-Color-preview interruption cases retain every mode on the plain host. React also owns proposed
-value changes and remounts; completed-preview/read-only recovery runs on both hosts. The separate
-F6 color journey retains control identity, keyboard traversal, focus and comparison history on
-both hosts.
-
-Link-discovery interruption cases retain every mode on the plain host, with attachment remounts
-also on React. Completed-token rejection and read-only target navigation run on both hosts.
-The separate F4 journey retains row identity, comparison/secondary selections and later-form
-focus on both hosts.
-
-Protocol interruption journeys use `tests/helpers/lsp-replies.ts` to hold completed replies
-by connection and request identity. They interrupt the captured operation before releasing
-the reply, then fence delivery with another reply on the same stream. Closed-transport tests
-own a separate boundary; reconnecting does not fence delivery on the old connection.
+Use `tests/helpers/lsp-replies.ts` to hold a completed reply by connection and request ID. Interrupt
+the operation, release the reply, then wait for another reply on that stream to confirm delivery. A
+new connection cannot confirm delivery on the old one.
 
 ### Behavioral coverage
 
-An integration qualification asserts the resulting state, not only that an action completed.
-Use the owning [API contracts](README.md#subjects) to define expected behavior:
+Assert the observable result of each action. Expected behavior comes from the
+[API contracts](README.md#subjects).
 
 | Area | Required observations |
 | --- | --- |
@@ -207,15 +147,13 @@ Use the owning [API contracts](README.md#subjects) to define expected behavior:
 | Distribution | Isolated restore resolves modules and declarations, loads styles/workers and performs actual editing; upgrade/downgrade/stage reuse preserves coherent assets and excludes checkout/private implementation fallback |
 | Optional acceleration | Any introduced accelerator proves its actual execution path, equivalent results, cancellation and startup/failure behavior including transfer/allocation costs |
 
-The generic protocol fixture qualifies the [declared LSP subset](language-server.md) without
-requiring a production language provider. Compatibility with a consuming host's provider is
-a separate integration exercise. Native cases use the checklist below and the support matrix.
+The generic fixture covers the [declared LSP subset](language-server.md). A consuming application
+must check its own provider.
 
 ### Fixtures and test hooks
 
-Development hooks expose controlled state and actions for assertions. They are not global
-APIs of the distributed library. Keep text-bearing reads explicit and routine snapshots
-limited to identities, revisions, activity and bounded counters.
+Fixture hooks expose test controls. Read text explicitly. Routine snapshots carry IDs, revisions,
+activity and bounded counters.
 
 | Hook | Fixture purpose |
 | --- | --- |
@@ -224,16 +162,13 @@ limited to identities, revisions, activity and bounded counters.
 | `window.comparisonFixture` | Reference/working captures, hunk ranges, tickets and view lifetime |
 | `window.hostFixture` | Plain/React resources, deferred service decisions, recovery metadata, view attachment and disposal |
 
-Inspection uses an isolated loopback server and headless Chromium and checks semantic results
-before recording screenshots/state. Screenshots help review rendering; exact text, selection,
-revision and ownership assertions establish behavior. Include both mounted views and any
-comparison or host surfaces affected by the action.
+`npm run inspect` starts an isolated loopback server and headless Chromium. Assert text, selections,
+revisions and ownership across affected panes before capturing screenshots.
 
-Use `tests/helpers/browser-errors.ts` for context-wide error collection, including secondary
-pages. Unexpected console errors and uncaught page errors fail its assertion. Fault injection
-can allow one exact console message at its source URL; it cannot suppress other errors.
-Browser configurations use no retries, reject focused-only tests and retain failure traces.
-Missing browser binaries, missing readiness and empty test selection are failures, not passes.
+`tests/helpers/browser-errors.ts` collects uncaught errors and unexpected console errors across
+pages. A fault-injection test can allow one exact message and source URL. Browser suites disable
+retries, reject focused-only tests and retain failure traces. Missing binaries, unmet readiness
+conditions and empty selections fail the run.
 
 ### Readiness and visible continuity
 
@@ -246,18 +181,14 @@ Missing browser binaries, missing readiness and empty test selection are failure
 - `comparisonSettled` requires a ready controller, settled alignment/scroll and both editors;
   aligned rows must share the same alignment identity. Alignment failure throws.
 
-Those checks describe editor work. Add exact expected text/revision/selection checks and the
-provider, decoration, saved/reference-version or host-service conditions required by the
-particular interaction. Handle terminal failures explicitly. A fixed delay or one idle/frame
-flag cannot replace those conditions. Preserve the full selection set where multiple ranges
-or backward/affinity state is part of the guarantee.
+After editor work settles, check the expected text, revision and full selection set, including
+direction and affinity. Wait separately for the provider result, decoration, reference version or
+service operation the user needs. Fail on terminal errors.
 
-For visible continuity, sample the required text and decorations throughout scrolling/editing,
-not only after final settlement. Drag the scrollbar as well as using wheel/key routes; exercise
-middle-of-document edits and both comparison panes. A painted gutter does not prove source
-text is visible, and eventual syntax recovery does not prove the absence of a color flash.
-Require the selected provider/worker path when that path is under test; a fallback cannot make
-its test pass. Keep editor-frame, service-ready and whole-action observations distinct.
+Sample visible rows during thumb drags, wheel scrolling and mid-document edits. Check gutter
+alignment, source text and syntax colors in both comparison panes. A final screenshot can miss a
+blank row or a color flash. Assert which provider answered. Record editor-frame, service and
+whole-action times separately.
 
 Poll cheap activity/snapshot handles. Buffer read counters support bounded-work checks;
 full tree diagnostics or retained-structure traversal belong outside readiness polling and
@@ -265,11 +196,9 @@ input subscribers. See [text-model diagnostics](text-model.md#conservative-chang
 
 ### Workloads
 
-`fixtures/workloads.ts` owns locally generated deterministic corpora and seeded edit logs.
-Its `nextSeed` function owns the 32-bit state update. Each model retains its initial seed,
-draw order and modulo, high-bit or scaled range mapping alongside its independent oracle.
-Model replay deliberately uses raw UTF-16 offsets, including surrogate interiors; browser
-navigation applies the editor's grapheme/geometry rules instead.
+`fixtures/workloads.ts` generates the corpora. For deterministic replay, preserve the initial seed,
+`nextSeed` draw order and each model’s range mapping and oracle. Model edits can split a surrogate
+pair. Browser navigation follows grapheme and geometry rules.
 
 | Corpus | Shape |
 | --- | --- |
@@ -279,18 +208,16 @@ navigation applies the editor's grapheme/geometry rules instead.
 | `unicode` | Tabs, combining marks, emoji/joiners, RTL, CRLF and LF |
 | Workspace combinations | 1/10/100 resources, 1/2 active views, annotations and background updates |
 
-Vary line count independently from text length and token density. Include cold open, sustained
-input, large paste/delete, search, fold, comparison, rapid tab switch and repeated disposal.
-A completed corpus or correctness journey does not establish a production size or latency budget.
-The [architecture constraints](architecture.md#performance-invariants-and-cost-boundaries) identify
-bounded work and operations that can retain proportional/global costs.
+Vary line count, text length and token density independently. Exercise cold open, sustained input,
+bulk edits, search, folding, comparison, tab switches and disposal. See
+[operation costs](architecture.md#performance-invariants-and-cost-boundaries) when interpreting a
+result.
 
 ### Unicode regeneration
 
-The grapheme generator uses reviewed local Unicode data. The input names, source
-URLs and SHA-256 hashes are recorded in [unicode-inputs.json](../scripts/unicode-inputs.json).
-Retain those exact raw files, named `<name>.txt`, alongside `license.txt` in the input directory. Generation does not download data or update
-the recorded hashes. A data change requires explicit review of the inputs and license.
+Use the exact Unicode inputs and SHA-256 hashes in
+[unicode-inputs.json](../scripts/unicode-inputs.json). Put `<name>.txt` and `license.txt` in the
+input directory. Review data and license changes explicitly.
 
 Run from the repository root to verify the generated tables and compressed fixtures:
 
@@ -298,19 +225,15 @@ Run from the repository root to verify the generated tables and compressed fixtu
 node scripts/generate-grapheme-data.mjs /path/to/reviewed/grapheme --check
 ```
 
-The command validates every raw input before generating outputs. It also verifies the repository's Unicode notice. `--check` writes no files and fails on
-a missing or different output. Text comparisons normalize CRLF to LF for checkout portability;
-compressed fixtures compare exact bytes. Omitting `--check` writes the generated tables and
-fixtures after input validation. Ordinary library builds and consumer restores do not run
-the generator.
+The generator checks every input and the repository notice. `--check` reports missing or different
+output without writing files. It normalizes CRLF in text and compares compressed fixtures byte for
+byte. Omit the flag to regenerate. Builds and restores use the checked-in outputs.
 
 ### Measurement policy
 
-Benchmark npm commands share a [suite manifest](../scripts/benchmark-suites.mjs) and a
-sequential runner. `bench`, `bench:pilot` and `bench:all` select their declared groups.
-The larger selection is not every available command: listing it also shows the
-commands outside that group. Its native-workspace suite includes the model workload internally.
-Named commands such as `bench:services` and `bench:host-drag-scroll` remain available.
+The [suite manifest](../scripts/benchmark-suites.mjs) defines `bench`, `bench:pilot`, `bench:all`
+and named suites. Use `--list` to see what a group includes and omits. The native-workspace workload
+also exercises the model.
 
 ```sh
 npm run bench:all -- --list
@@ -318,88 +241,53 @@ npm run bench:services -- --regex --whole-word
 node scripts/run-benchmarks.mjs --suite=host-drag-scroll --list
 ```
 
-`--list` describes selection, prerequisites and owner report locations without starting work.
-Named npm commands forward workload arguments unchanged. Direct runner calls put workload
-arguments after `--`. Group calls reject workload arguments because applying a flag to only
-part of a group would be ambiguous; select a named suite instead. Package suites retain their
-explicit pack prerequisite and run through npm. A campaign runs its commands sequentially.
+`--list` shows prerequisites and report locations. Pass workload arguments to a named npm command,
+or after `--` on a direct runner call. Groups reject workload arguments. Package suites run through
+npm and require a pack step.
 
-The runner keeps a record and per-step stdout/stderr logs under `artifacts/bench/campaigns`.
-It stops after the first failed command, preserves its exit code when available, and marks
-later selected suites `not-run`. Unselected suites are listed separately. A source-identity
-check brackets execution. Arguments and declared workload environment settings distinguish
-report variants, so a smoke configuration does not replace a full configuration's latest run.
-Failed or interrupted runs do not promote a completed latest report.
+The runner executes suites in order. `artifacts/bench/campaigns` contains the manifest and per-step
+output. The first failure stops the run and preserves the exit code when available. Later selected
+suites are `not-run`. Only a successful run updates its variant’s latest report. Arguments and
+declared environment settings distinguish variants such as smoke and full.
 
-Source capture hashes current file bytes for tracked and nonignored untracked paths, excluding
-unstaged deletions reported by Git. Staging an unchanged working tree does not change that
-content identity. Other read failures reject the capture. A retained campaign manifest requires
-every listed file and the aggregate hash to match, including files deleted after capture.
-Capture does not lock the working tree; keep source inputs stable throughout qualification.
+Keep source inputs stable. Before and after the run, the runner hashes tracked and non-ignored
+untracked files, skipping unstaged deletions. Other read failures reject the capture. Staging alone
+preserves the hash. To reuse a retained manifest, every listed file must exist and match. Each
+suite’s report supplies its own clocks, samples and readiness checks. The runner adds no retries or
+timeouts.
 
-These records describe command outcomes. Measurement values, sample counts, clock definitions
-and readiness checks remain in each suite's reports; the listed owner report locations do not
-assert that new measurements exist after a failed command. The runner adds no retries or
-timeouts and does not infer device or latency qualification from a successful exit alone.
+Source browser benchmarks start on `about:blank` with a fixed development bundle
+(`development-bundle-no-watch`). Each workload opens its fixture and controls warm-up. Record the
+build mode when comparing against the interactive watcher, static site or restored package.
 
-Source browser benchmarks use a fixed development bundle with the compiler watcher disposed
-before browser launch (`buildMode: development-bundle-no-watch`). The shared harness starts
-on `about:blank`; each caller navigates directly to its fixture and owns readiness and deliberate
-warm-up. This mode is distinct from the watched interactive server and restored-package or
-static-demo builds. Historical reports retain their original build conditions.
+`scripts/host-edit-measurement.mjs` drives Enter and native text input through
+`scripts/host-reference-probe.mjs`. For event clocks, `inputEvents` records every dispatch, its
+data and handler sample, even if it commits nothing. For inserted units, use the committed text in
+transaction `records`. Render observations belong to the committed revision. Measure settlement
+from the end of the last input event, including fragments after the commit. Inapplicable clocks are
+null. The native probe requires `insertText` intent and accepts WebKit’s `insertParagraph` fragments
+within a multiline insertion. It rejects separate paragraph and composition intentions and saves
+partial results on failure.
 
-Host input/reference benchmarks share `scripts/host-reference-probe.mjs` and the Node-side
-driver in `scripts/host-edit-measurement.mjs`. They observe actual Enter commands and native
-text input with the distinct [clock definitions](README.md#glossary).
-Inapplicable command/input clocks are null. Full review readiness includes pending input and
-commands, working/reference views, caret/scans and comparison settlement over two frames.
-Exact text, transaction counts and undo/redo are checked independently of inserted UTF-16 units.
-Native `inputEvents` retain every observed input-handler sample, type and raw data, including
-dispatches that make no additional commit. Transaction `records` retain the committed text,
-revision and committing handler sample; fragmented or null event data does not count inserted
-units. Host summaries and event counts use the raw event samples, while render/generation
-observations stay attached to committed revisions. Settlement after the last input event uses
-that event's observation end, including any dispatches after the committing event. Final text,
-selection, ownership and event/commit counters are rechecked before accepting full readiness.
-The native route requires an `insertText` beforeinput intention. A captured multiline intention
-also allows WebKit's `insertParagraph` input fragments; a separate paragraph intention and
-the Firefox driver's `insertCompositionText` route remain rejected by this typing probe.
-The probe retains partial observations on failure. Its `isReady` predicate composes the same
-live-owner `settled` checks used by browser specs, plus the expected working views, source
-revision and displayed reference version. Folding, navigation, table-paste and language
-measurements also use this predicate; provider and host-service gates remain operation-specific.
-Complete selection sets, fold generations, reference input, alignment and scroll must settle;
-phase render observations remain narrower. Terminal alignment failure rejects the wait.
-Generic host and save/conflict workflows use `isSourceReady`/`waitSourceReady` before review
-is mounted and with native textarea source views. They require two settled source views and,
-when present, the complete settled comparison and displayed reference version. Native source
-metrics are null; they do not satisfy the full `isReady` predicate. Conflict input points
-require a review, capture `beforeinput` on the intended input, and check exact revision, text and
-selection over two frames. Missing origins and terminal failures reject with listener/frame cleanup.
-Reference, pointer, drag-scroll, word-selection, generic host and save/conflict measurements
-share `scripts/host-scene.mjs` for mounting, readiness, disposal counters and complete
-source/reference text checks. Its `hostTextEquals` function supplies the same checks to callers
-that own their page lifecycle, including browser specs with bounded raw-source assertions.
-Specs with distinct failure diagnostics or read contracts keep those explicit. Its `sourceReady`
-permits native source views and optional
-review; `ready` requires editor metrics and a complete review. A disposal observer can close the
-caller-owned automation clock after fixture disposal and before teardown diagnostics. Text
-checks compare lengths and raw UTF-16 chunks outside point and gesture clocks. Combined
-workflow proxies can include intermediate checks. Each caller retains its review preparation,
-captured identities, gesture release and operation-specific assertions.
-The standalone installed consumer stages the same fixture helper with public package imports;
-its strict consumer compile and isolation checks exclude library source.
+`isReady` requires the expected revision, both working views, reference version, complete
+selections, caret, scans, folds, alignment and scroll over two frames. Verify exact text, counters
+and undo/redo. `isSourceReady`/`waitSourceReady` also accept native source views (null metrics) or
+an unmounted review. Conflict input measurements require a mounted review and `beforeinput` on its
+captured input. Missing events and terminal failures release listeners and cancel frame waits.
+
+`scripts/host-scene.mjs` shares mount, readiness and disposal checks across host benchmarks.
+`hostTextEquals` compares length and raw UTF-16 chunks outside point and gesture clocks. A workflow
+clock can include intermediate checks. Disposal timing ends before teardown diagnostics. The
+installed consumer stages the helper against public imports. Individual workloads add their provider
+or service conditions.
 
 Input/reference, folding and table-paste reports use `scripts/benchmark-report.mjs`: each variant retains a unique run under
 `artifacts/bench/<benchmark>/<variant>/runs/`; only a successful run updates that variant's
 `latest.json`. Smoke, full and retention-check results stay separate, as do raw warmups and
 measured observations. Failed runs retain completed samples and the active partial observation.
 
-The [glossary](README.md#glossary) owns clock definitions. Record exact start/end events and
-included work for each metric; preserve those definitions when comparing results. In particular,
-an adapter handler, capture-to-bubble observation, cooperative advance, editor-frame readiness,
-provider completion and complete automated action are different spans. None is process CPU time.
-Nested trace intervals and inclusive profile weights cannot be added as independent phases.
+Use the [clock glossary](README.md#glossary). Record the start event, end condition and included
+work. Nested intervals and inclusive profile weights overlap.
 
 Validate operation success and expected provider paths before accepting timing samples. Assert
 exact text, revisions, selections/history and applicable no-export, bounded-DOM/cache and
@@ -407,23 +295,18 @@ unchanged-resource delivery constraints. Bulk planning may yield while final ass
 atomic transaction is synchronous; report the longest uninterrupted work separately from total
 settlement. Controlled service delays belong in workflow results.
 
-Record source/dirty-state identity, lockfile, corpus/seed, build mode, browser/OS/hardware,
-viewport/font, power/load conditions and raw samples. Separate cold/warm and baseline/editor
-paths. Alternate conditions on the same machine and repeat independent runs before making a
-regression claim. Detailed traces are separate diagnostics because they change the workload.
-Unsupported metrics are absent, not zero. A correctness timeout is not a latency threshold.
+Record source and lockfile identity, corpus and seed, build mode, browser, OS, hardware, viewport,
+font, power/load conditions and raw samples. Separate cold and warm runs. Alternate baseline and
+editor on the same machine. Capture traces separately. Leave unsupported metrics absent. Correctness
+timeouts serve a different purpose from latency budgets.
 
-Use the shared distribution helper in `scripts/measurement.mjs`. It reports count and observed
-maximum with nearest-rank percentiles; batches below 20 label their summary as a maximum.
-Small samples do not establish production tails. Set absolute and relative budgets only for
-a declared workload/reference environment with measured variance. Do not compare changing CI
-machines as if they were the same device. Browser paint/readiness estimates do not establish
-physical input-to-display latency.
+`scripts/measurement.mjs` reports count, observed maximum and nearest-rank percentiles. Below 20
+observations it labels the summary as a maximum. Set budgets for a specific workload and reference
+machine after measuring variance. Use a device test for physical display latency.
 
-Retain failed runs and their attribution limits. Revisit an unreproduced outlier only with a
-new hypothesis and a bounded experiment; unresolved attribution does not block unrelated
-implementation. Reuse passing evidence whose runtime, fixture and packaging inputs are unchanged.
-Keep reports and detailed investigation history outside the active API documentation.
+Keep failed runs and record what is known about the cause. Retry an outlier when a new hypothesis
+suggests a bounded experiment. Reuse evidence for unchanged runtime, fixtures and packaging. Store
+traces and investigation history outside the API docs.
 
 ### Retention and lifecycle
 
@@ -454,88 +337,48 @@ The lower-level `--reuse-consumer=<metadata>` option checks the package hash and
 Lower-level `--*-only` workload flags are mutually exclusive; use the coordinator's
 `--scenarios` option to qualify multiple workloads against one restored artifact.
 
-Activation and workspace routes also type-check their callers and shared page-transition
-harness against the copied consumer's actual fixture snapshot and restored public declarations.
-The LSP route checks its browser caller against the copied LSP fixture and restored browser/protocol declarations.
-The plain editing/review routes check their callers and shared interaction helpers against the
-standalone consumer fixture. Their local Window declarations derive from that copied fixture;
-they do not use the development host's snapshot contract or join the React consumer's compile.
-The full route also checks its installation-transition caller against the copied transition
-fixture, with explicit input allowances for the existing build metadata and development packages.
-This separate tooling program permits the Node/Playwright declarations it needs and records its compiler
-inputs. The independent consumer compile keeps its own options and inputs; tooling dependencies
-are not consumer requirements. Unexpected checkout inputs fail the harness check.
+Each route compiles its callers against its own copied fixture and restored public declarations. The
+full route also compiles its installation-transition caller. Node and Playwright types belong to the
+test harness. The checks record compiler inputs and reject unexpected imports from the checkout.
 
-The coordinator creates and owns one temporary consumer per run. After every selected route
-and final identity check passes, it removes that directory. Pass `--keep-consumer` to retain
-a successful run for inspection. Failures preserve the consumer; standalone preparation,
-benchmark and borrowed-stage commands retain their existing directories. Cleanup verifies the
-original directory identity and does not follow directory links into borrowed locations.
+Each run creates a temporary consumer. Success removes it after the final identity check.
+`--keep-consumer` retains it. Failures, standalone preparation, benchmarks and borrowed stages keep
+their directories. Cleanup verifies directory identity and skips links to borrowed locations.
 
-Each run records scenario metadata and a retention receipt under
-`artifacts/package/qualification/<consumer-name>/`; `artifacts/package/qualification/receipt.json`
-identifies the latest run. Receipts distinguish running, kept, failed and removed consumers and
-record file-byte counts before removal. Metadata marked removed or being removed cannot be
-reused. Evidence is written outside the consumer before cleanup; historical directories are
-not swept. Counts describe file sizes, not allocated disk space.
+Receipts in `artifacts/package/qualification/<consumer-name>/` record the scenarios, retention state
+and file bytes before removal. `artifacts/package/qualification/receipt.json` identifies the latest
+run. Cleanup writes evidence first and only removes its own directory. A consumer marked removed or
+being removed cannot be reused.
 
-Protocol policy tests use `tests/helpers/protocol-fixture.ts` to own a real ephemeral server.
-Register each acquired owner's cleanup immediately with `defer`; cleanup runs in reverse
-registration order before the fixture detaches and its listener closes. Setup and cleanup
-failures retain their causes through the shared server lifecycle helpers.
+Protocol tests start an ephemeral server through `tests/helpers/protocol-fixture.ts`. Register
+cleanup with `defer` as soon as you acquire a resource. Cleanup runs in reverse order before the
+listener closes.
 
-Package routes acquire their HTTP listener inside the cleanup scope. Teardown attempts each
-page/browser/provider/server close in its declared order even if a prior close rejects. A sole
-failure is preserved; multiple workload/cleanup failures are reported together with the original
-workload error first. This does not impose a timeout on a close operation that never settles.
-Request exceptions retain their original causes for that teardown. An unsent response becomes
-an empty 500 response; a partially sent response is aborted. Completed responses are left alone.
-After the HTTP listener closes, teardown awaits handlers that outlive their responses and
-includes their failures in the result. Each server retains its own route, method, provider and
-header policies.
+Package, development and preview servers release partially acquired resources and wait for
+outstanding request handlers on close. Repeated closes share completion. Request failures return an
+empty 500 before headers or abort a partial response. Teardown collects errors even for completed
+responses and attempts every close, without imposing a timeout. Multiple errors list the workload
+error first. The static server accepts GET and HEAD only for manifest-listed assets under its
+prefix.
 
-Development and static-demo servers share the listener and ordered-cleanup helpers. A failed
-startup releases acquired resources, and repeated close calls share the same completion.
-The static server serves only manifest-listed assets under its configured prefix, with GET
-and HEAD support. Asset-read failures return 500 and remain visible when the server closes;
-its request handlers settle before teardown completes. It has no provider or fallback route.
+See [packaging](packaging.md) for public exports, CSS and installation. Compiler and bundle checks
+reject private or checkout imports in restored consumers.
 
-Each consuming route has its own integration purpose: public exports/declarations and CSS,
-wire protocol, framework lifetime, review, deferred activation or the actual demo host. Its
-compiler/bundle graphs reject checkout/private library fallback. The host owns its compiler,
-framework and language provider. See [packaging](packaging.md) for the artifact/build contract.
-
-The restored demo runs the real-provider editing/review/save/recovery walkthrough, the two-page
-conflict journey and the host-integration journey with its server-free language sample. Source
-and static browser suites own detailed feature cases for completion, snippets, project results,
-editing rules, folding, highlights, documentation, unopened navigation and actions. The source
-route exercises the WebSocket provider; the static route exercises the browser worker and
-repository-prefix asset loading. Restored qualification retains isolated declarations, compiled
-asset input checks, browser-error collection and provider cleanup around its integration journeys.
-The copied measurement host also passes the isolated consumer compile, including its hook,
-before bundling. Ordinary demo bundles omit that hook. A separate strict JavaScript check covers
-the restored-demo and measurement callers; their observation bridge derives from the actual
-copied host. This tooling program includes Node/provider helpers and uses the development
-setting `skipLibCheck: true` for third-party declarations. The independent consumer compile
-retains `skipLibCheck: false`, no ambient development types and restored declarations only.
+The restored demo exercises editing, review, saving, two-page conflicts, recovery and host
+integrations. Source tests use the WebSocket provider. Static tests load the browser worker and
+assets under the repository prefix. These suites own individual language and editor feature cases.
 
 ### Native-device checklist
 
-The [support matrix](README.md#support-matrix) records support and unverified boundaries.
-Choose and record the actual application platform before native qualification. Automated
-Chromium/Firefox/WebKit identify their engine revisions; headless WebKit is not Safari evidence.
+Use the [support matrix](README.md#support-matrix) to choose outstanding device checks. Record the
+application and engine version. Safari requires its own run.
 
-The persisted-transition tests exercise retention policy by dispatching page events. They do
-not establish a cache restoration: [Playwright disables BFCache and does not support restoration
-tests](https://playwright.dev/docs/navigations#backforward-cache-bfcache). A real history check
-uses an isolated browser profile and actual history navigation. Require a trusted persisted
-`pageshow`, retained document/editor identity and the browser's restoration signal. Check
-complete rendered text, full stored project values, selection/history and service readiness;
-the editor's bounded textarea context alone cannot prove complete document preservation.
-Use a visible page within the headless browser: an inactive tab can suspend animation frames
-and leave presentation readiness pending. This does not require activating a desktop window.
-Record the browser version and configuration, and keep this scope separate from native input
-and the broader device checks below.
+Synthetic page events exercise retention policy. For a real back/forward-cache check, navigate
+through history in an isolated profile and require a trusted persisted `pageshow`, the browser
+restoration signal and the original document/editor. Check full rendered text, stored values,
+selection, undo and service readiness. Keep the page active inside the headless browser so frames
+can run in the background.
+[Playwright’s BFCache limits](https://playwright.dev/docs/navigations#backforward-cache-bfcache).
 
 | Environment or path | Exercise |
 | --- | --- |
@@ -546,21 +389,14 @@ and the broader device checks below.
 | Target fonts, displays and constrained hardware | Caret/ink alignment, fallback fonts, physical display behavior and workload-specific responsiveness |
 | Other targeted native platforms | Separate macOS/Safari, Linux and touch/mobile input runs using their actual devices/input methods |
 
-Record OS/browser/input-method versions, keyboard, steps, expected/actual text and complete
-selection, and the result for each condition. Synthetic/CDP composition, synthetic persisted
-page events, screenshots and model counts cannot fill a missing native result. Continue
-independent implementation when device evidence is unavailable.
+Record OS, browser, input method, keyboard, steps, expected and observed text, selections and
+outcome. Leave untested device cases open and continue independent work.
 
 ## Contributor responsibilities
 
-Name the changed guarantee and its owner before adding a regression. Reuse existing helpers
-and keep expectations semantic. Batch broad browser/package/inspection checks at coherent
-milestones, and run measurements relevant to a changed hot path. Do not hide faults with
-blanket timeout increases, retries or overlapping suites.
-
-Use the shared-machine and publishing rules in [AGENTS.md](../AGENTS.md) when operating tools. Keep test
-fixtures generic, source-labelled and separate from library runtime dependencies. Report
-qualified scope and limitations together; a passing narrow check is not a broader support claim.
+Choose the test that owns the behavior. Keep fixtures generic, reuse helpers and assert what the
+user can observe. Batch browser and package runs, and measure changed hot paths. Follow the
+[shared-desktop and publishing rules](../AGENTS.md).
 
 ## Not covered
 

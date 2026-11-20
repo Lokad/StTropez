@@ -1,9 +1,8 @@
 # Examples
 
-The examples show how a host combines StTropez's editor, workspace and language clients.
-The root TypeScript demo is an editable application; the development pages expose smaller
-fixtures and deferred services. Their compilers, React components, storage policies and
-fixture protocols belong to the examples, outside the dependency-free library and NuGet assets.
+The TypeScript demo lets you edit, compare and save a project. Smaller development fixtures expose
+individual editor features and service calls you can finish by hand. The examples supply their own
+compiler, React components and storage policies.
 
 ## Use
 
@@ -34,25 +33,20 @@ The [development server](../scripts/serve.mjs) serves these pages:
 | `/hosts/plain/` | Two source views, forms, review and deferred services | [Plain host](../examples/hosts/plain-main.ts) |
 | `/hosts/react/` | The same controller and workflows with React rendering | [React host](../examples/hosts/react-main.tsx) |
 
-For either host, append `?editor=candidate` to use the bounded editor. The bare route and
-`?editor=native` use the whole-value textarea source baseline; their comparison working pane
-uses the bounded editor. Both hosts use the shared LSP fixture provider.
-The [textarea baseline](../fixtures/textarea-editor.ts) and its CSS are fixture assets, outside
-the library and NuGet package. Development entrypoints inject that mount into the shared hosts;
-installed consumers start the host with the public `mountTextEditor` implementation.
-The development WebSocket endpoint `/lsp-fixture` is a fixture service, not an HTML page.
+For either host, use `?editor=candidate` for the bounded editor. The bare URL and `?editor=native`
+use the [textarea baseline](../fixtures/textarea-editor.ts) for source and the bounded editor for
+comparison. The textarea and its CSS are development fixtures. Installed examples use
+`mountTextEditor`. Both hosts connect to the LSP fixture at `/lsp-fixture`.
 
 ## TypeScript demo
 
-Choose **Shipping quotes** and enable **View → Minimap**. The interfaces, rate table and
-calculation have distinct shapes in the thumbnail. Hover to read a line before jumping to
-it, or drag the marker while keeping your selection. The same control applies to generated
-JavaScript and both Changes panes.
+Open **Shopping cart** or **Fix a type error**. Edit the source, inspect JavaScript or Problems,
+then open Changes to compare against the saved file. Save writes to this browser. The demo compiles
+TypeScript without executing it. The Code menu contains language, indentation and folding commands.
 
-Start with **Shopping cart** or **Fix a type error**. Edit the source, undo/redo, inspect
-JavaScript or Problems, and open Changes to compare against the saved text. Save stores the
-sample locally. The demo compiles edited TypeScript but does not execute the generated program.
-The Code menu groups editing, indentation, language, folding and source-character commands.
+In **Shipping quotes**, enable **View → Minimap**. Locate the rate table or calculation, hover to
+preview a line, then click to jump. Dragging the marker preserves the selection. The minimap also
+works in generated JavaScript and both Changes panes.
 
 In Shopping cart, open **Find** and enter `quantity:\s*(\d+)`. Choose **Use regular expression**
 (`.*`) to highlight both quantities in `main.ts`. Enter and Shift+Enter navigate the matches.
@@ -74,51 +68,40 @@ edits. One undo restores both quantities. The query and mode follow the active f
 
 The [sample catalogue](../examples/demo/samples.ts) loads the larger cases on demand:
 
-- **Large file · 100,000 lines** exercises scrolling, middle-of-file editing, find and undo.
-  Source and generated output both use virtualized rendering. Current text, retained colors
-  and analysis status are separate presentation concerns.
-- **Completion catalogue · 1,200 fields** offers real TypeScript members. Type `catalogue.`
-  at the end, use Up to reach the final member, or type `item119` to narrow the list. All
-  returned items are reachable; the popup renders at most 16 rows and shows position/count
-  and the provider's partial-list flag.
-- **Project-wide results · 1,200 uses** supplies 300 type errors and 1,201 symbol locations
-  through TypeScript analysis. Problems, reference results and edit previews render 64 entries
-  per page without discarding the rest. Rename applies the complete validated batch.
-- **Unopened files & navigation** starts with `main.ts` registered. Definition navigation
-  loads `labels.ts` or read-only `contracts.d.ts` through the host's target resolver. The custom
-  `sttropez/readDocument` message reads known sample contents; it is not an LSP file-loading
-  method. Renaming exported `LabelOptions` also exercises an unopened target. Save/recovery
-  retain unopened editable contents and exclude read-only declarations.
-- **Documentation & help links** demonstrates JSDoc, lists, code and an explicitly permitted
-  handbook link. **Diagnostic details** combines a real TypeScript error with a labeled host
-  warning carrying tags, help and opaque data. Related entries page in groups of 16; opaque
-  provider data is neither rendered nor executed.
-- **Snippets & lazy completion** adds labeled host templates to TypeScript completion. In
-  `templates.ts`, Ctrl+End then Ctrl+Space offers linked fields, a choice and a final caret.
-  Tab/Shift+Tab traverse fields, Alt+Up/Down select a choice, and Escape keeps inserted text
-  while ending the session. Lazy resolution supplies the declaration body and import. An
-  unsupported-variable item is omitted with a reason. See the [snippet subset](language-features.md#completion).
-- **Project actions** adds a labeled two-file replacement fixture, a host review-note command
-  and a refactor followed by a project check. Select a command, then **Run action**. A failed
-  check retains the earlier edit and its undo command; another request needs a fresh capture.
-  Only registered handlers with the captured sample URI/mode can run. These controls do not
-  execute edited programs.
-- **Host outline · indentation folding** provides nested plain-text blocks and region markers.
-  **Host integrations · paste & notes** provides rule/CSV coloring, colon indentation, `#`
-  comments, structured insertion and mapped source notes. Both operate without a language
-  provider; their language rules and UI are host-owned.
+- **Large file · 100,000 lines** — Scroll to the middle, edit a row, search and undo. Both source
+  and output render visible rows.
+- **Completion catalogue · 1,200 fields** — Type `catalogue.` and press Up for the final member,
+  or type `item119` to filter. The popup shows up to 16 rows, your position, the total and whether
+  the provider returned a partial list.
+- **Project-wide results · 1,200 uses** — Browse 300 type errors and 1,201 symbol locations in
+  pages of 64. Rename applies the entire validated edit.
+- **Unopened files & navigation** — From `main.ts`, follow a definition into `labels.ts` or
+  read-only `contracts.d.ts`. Rename `LabelOptions` to edit an unopened target. The custom
+  `sttropez/readDocument` reads known sample files. Save and recovery include editable unopened
+  files and exclude declarations marked read-only.
+- **Documentation & help links** and **Diagnostic details** — Inspect JSDoc or a handbook link,
+  then compare a compiler error and a host warning. Related locations page in groups of 16. Opaque
+  provider data stays hidden and is never executed.
+- **Snippets & lazy completion** — In `templates.ts`, press Ctrl+End, then Ctrl+Space. Tab through
+  linked fields, use Alt+Up/Down for choices and Escape to keep the text. Resolution supplies the
+  declaration and import. The demo explains omitted unsupported variables. See
+  [completion](language-features.md#completion).
+- **Project actions** — Review a two-file edit, a note or a refactor with a project check.
+  **Run action** calls only handlers registered for the captured URI and mode. If the check fails,
+  the edit is undoable and a retry needs a fresh capture.
+- **Host outline · indentation folding** and **Host integrations · paste & notes** — Fold nested
+  regions, edit colored rules or CSV, paste a table and follow a source note. Both samples work
+  without a language provider.
 
-The TypeScript demo offers an import-group fold for three or more consecutive import declarations.
-Comments and blank lines between declarations do not count toward the threshold. Individual
-multiline imports can have a syntax fold. Changes colors both snapshots and discovers
-reference folds through its snapshot-bound compiler worker. The panes keep independent fold
-choices. Both demo providers and the saved snapshot project compiler spans onto complete source
-rows. A closing delimiter on its own row stays visible, as does a row shared with the next
-branch, statement or comment. A fold needs at least one body row to hide.
-The working side retains source-view preferences. The Code menu names the last focused or clicked
-source pane and enables fold actions for its caret and selected group. Hidden-line labels and the review hint
-distinguish collapsed rows from alignment gaps. Find and explicit navigation reveal their targets.
-The [folding](folding.md) and [comparison](comparison.md) pages own these library contracts.
+Three consecutive import declarations form a fold. Blank lines and comments between them do not
+count toward three. A multiline import can also fold on its own. Folds hide complete body rows only.
+Closing delimiters on their own line, and lines shared with the next branch, statement or comment,
+stay visible.
+
+In **Changes**, each pane has its own syntax coloring and folds. The saved file has its own
+compiler worker. The Code menu targets the last source pane you clicked or focused. Hidden-line
+counts distinguish folds from alignment gaps. Find and navigation reveal hidden targets. See
+[folding](folding.md) and [comparison](comparison.md).
 
 ### Provider ownership and adaptations
 
@@ -129,20 +112,17 @@ The [provider selector](../examples/demo/provider.ts) captures a choice when the
 | `?provider=browser` | Example-owned worker, public JSON-RPC clients and TypeScript 5.9.3 language service | Default for the published/static HTML; also available locally |
 | `?provider=server` | Development WebSocket bridge to typescript-language-server 5.1.3 over stdio, using TypeScript 5.9.3 | Default for development HTML; requires the development server |
 
-The choice survives sample changes and retries; changing it requires a reload. There is no
-silent provider fallback. Compiler, protocol-reference and URI packages are pinned development
-dependencies. The Node bridge uses canonical file URIs from its URI library; browser-provider
-files and standard libraries come from the known virtual inventory and pinned compiler catalogue.
-Neither provider installs project packages or accesses arbitrary project files.
+Reload to change providers. Sample switches and retries keep the selected provider. The Node bridge
+uses canonical file URIs. The browser worker reads the sample inventory and pinned standard
+libraries. Neither loads arbitrary projects or installs packages.
 
-Both use the [public LSP clients](language-server.md) for negotiation, UTF-16 synchronization and
-captured language requests. The [browser session](../examples/demo/language-session.ts) queues
-at most 256 compiler actions and executes one per task. Cancellation removes an unstarted
-request; it cannot preempt a synchronous compiler call. Queue overflow or a failed document
-notification closes the session so a retry can synchronize complete current snapshots.
-RPC message and request limits are independent of that queue bound.
+Both providers use the [public LSP clients](language-server.md). The
+[browser session](../examples/demo/language-session.ts) queues up to 256 compiler actions and runs
+one per task. Cancellation can remove a queued action. A running compiler call completes
+synchronously. Queue overflow or a failed document notification closes the session so Retry can
+synchronize the current files.
 
-The demo has these explicit provider adaptations:
+The demo adapts the providers in five places.
 
 - Unversioned pushed diagnostics do not become current source annotations. The custom
   `sttropez/diagnostics` request obtains syntactic and semantic results for a captured project.
@@ -167,38 +147,31 @@ The demo has these explicit provider adaptations:
 
 ### Analysis, saving and recovery
 
-The [syntax worker](../examples/demo/syntax-worker.ts) retains compiler state and versioned
-snapshots. A first upload seeds the document; subsequent bounded replacement transfers commit
-only when complete. Classification covers the whole source in the worker. JavaScript emission
-runs only while its panel is visible; reopening requests current output without resending unchanged
-source. A synchronous compiler action can finish after cancellation, but an obsolete reply cannot
-replace the current presentation.
+The [syntax worker](../examples/demo/syntax-worker.ts) receives the full source once, then applies
+each change after all its chunks arrive. It classifies the whole file and emits JavaScript only
+while the output pane is open. Reopening the pane reuses unchanged source. The view discards replies
+to cancelled jobs.
 
-Edits retain mapped colors, the last completed output and provisionally mapped diagnostic ranges
-while analysis runs. Problems labels old results **Awaiting recheck** and disables their navigation.
-Deleted ranges or unavailable revision history discard placement. Syntax checks reuse unchanged
-files; semantic checks cover every loaded file because a changed export can affect an importer.
-The footer exposes pending/unavailable analysis. [Visible-continuity checks](testing.md#readiness-and-visible-continuity)
-require the expected text and colors in addition to editor readiness.
+While analysis runs, the editor maps existing colors and diagnostics through edits and keeps the
+last compiled output. Problems shows **Awaiting recheck** and disables navigation. It drops
+placements for deleted ranges or gaps in revision history. Syntax checks reuse unchanged files.
+Semantic checks cover every loaded file because an export can change an importer. The footer shows
+analysis status. See [visible continuity](testing.md#readiness-and-visible-continuity).
 
-**Language service unavailable** offers a fresh provider retry using current documents.
-**Language controls unavailable** offers a separate controls retry on the connected provider.
-Editing, comparison, history and local saving are usable during these failures. Switching samples
-suspends the inactive provider. Closing a project cancels its work and releases its provider;
-the local server also stops its owned process and removes its allocated temporary workspace.
+Retry **Language service unavailable** to reconnect with the current files. Retry **Language
+controls unavailable** to reattach controls to the connected provider. You can edit, compare, undo
+and save during either failure. Switching samples suspends the inactive provider. Closing the
+project releases it and, for a local server, stops its process and deletes its temporary workspace.
 Idle local allocations expire after two minutes.
 
-Saved files and recovery drafts use browser-local IndexedDB. **Reset sample** becomes available when the selected sample is open. It restores only
-that sample's original text as an undoable edit; it does not clear another sample's saved files
-or drafts. A recovery notice identifies the offered files. Restore applies the draft, Download
-exports it, and **Keep current files** discards that exact offered draft. A draft identical to
-the saved files is cleared on reopen. Storage tokens protect against a newer peer write; peer
-notifications identify the changed sample. Caret/scroll state belongs to the document view.
+The demo saves files and drafts in IndexedDB. **Reset sample** restores the open sample’s original
+text in one undoable edit. Recovery names the draft’s files. Restore applies it, Download exports it
+and **Keep current files** discards that draft. Reopening clears drafts identical to saved data.
+Storage tokens guard against overwriting a peer’s changes. Notifications name the affected sample.
 
-Unreadable saved data opens an editable sample without overwriting the stored copy; Save checks
-its captured storage token. Construction and switch failures release partial owners and leave
-the current project usable when one exists. Recovery disposal settles storage work before closing
-the connection. The demo's storage policy is separate from the development hosts' explicit
+An unreadable saved copy stays in storage while the sample opens for editing. Save checks the
+captured token. A failed switch releases partial resources and keeps the open project usable.
+Disposal waits for storage work to finish. Development hosts have a separate
 [checkpoint workflow](#draft-checkpoints).
 
 ## Static build and deployment
@@ -208,28 +181,22 @@ npm run build:demo
 npm run preview:demo
 ```
 
-Open `http://127.0.0.1:4174/StTropez/`; `STTROPEZ_DEMO_PORT` changes the port. The
-[preview server](../scripts/serve-demo.mjs) serves only manifest-listed static files, with no
-source/backend fallback. Relative module, worker and library-data URLs support repository
-subpaths. Only the root demo is published; development routes and fixture services are separate.
+Open `http://127.0.0.1:4174/StTropez/` or set `STTROPEZ_DEMO_PORT`. The
+[preview server](../scripts/serve-demo.mjs) serves manifest-listed files. Relative URLs let modules,
+workers and library data load below the repository path. Only the root demo is published.
 
-`build:demo` compiles the library, then the [site builder](../scripts/build-demo.mjs) resolves
-example imports through compiled core, browser, protocol and CSS entries. It rejects private
-library imports and checkout library-source compilation. Compiler bundles, standard-library
-data and license notices belong to the site, outside the [NuGet payload](packaging.md).
-The static provider needs no language backend, credentials or code-upload service; source
-analysis takes place in this browser and its workers.
+`build:demo` compiles the library. The [site builder](../scripts/build-demo.mjs) resolves compiled
+public entries and rejects private source imports. The site ships its compiler, standard libraries
+and licenses separately from [NuGet](packaging.md). Source analysis runs locally in the browser.
 
-`npm run test:demo` runs the static-site journeys in Chromium, Firefox and WebKit. Set
-`STTROPEZ_DEMO_URL` to run them against a deployed site instead of starting the preview server.
-They check repository-path confinement, absence of backend/WebSocket traffic, provider retry,
-editing, recovery and visible continuity. [Testing](testing.md) owns test selection and evidence policy.
+`npm run test:demo` exercises the static build in Chromium, Firefox and WebKit. Set
+`STTROPEZ_DEMO_URL` to check a deployed site. The tests cover asset paths, browser-only operation,
+provider retry, edits, recovery and visible updates. See [testing](testing.md).
 
-The [Pages workflow](../.github/workflows/pages.yml) runs on pull requests, pushes to `master`
-or `main`, and manual dispatch. It checks types, documentation and models, builds the library,
-runs the Chromium owner gate, builds the static site and runs its Chromium journeys. Qualified
-branch pushes/manual runs upload and deploy the site; pull requests do not deploy. Only the
-deployment job receives Pages-write and identity-token permissions.
+The [Pages workflow](../.github/workflows/pages.yml) checks types, docs and models, builds the
+library and demo, and runs Chromium tests. Pull requests run the checks. Successful pushes to
+`master` or `main` and eligible manual runs deploy. Only the deployment job receives Pages-write and
+identity-token permissions.
 
 ## Host workflows
 
@@ -241,43 +208,37 @@ explicitly. Reload resets simulated service state; recovery checkpoints have a s
 
 ### Editing, review and captured services
 
-1. Edit **Primary source**, replace a selection and undo/redo through **Secondary source**.
-   The text/history is shared while selections and scroll positions are independent. Escape
-   followed by Tab/Shift+Tab leaves the editor for host controls.
-2. Choose **Open source review**, edit **Comparison working source**, navigate a change and
-   choose **Use baseline**. Undo restores the correction. The reference permits selection,
-   copying and Find without mutation. **Link review scrolling** links vertical positions;
-   **Align review rows** also inserts visual padding for unequal blocks. Neither changes text.
-3. Choose **Keep draft version**, select a saved/server/draft/historical **Review version**,
-   then **Finish version load**. Typing can continue during the load. **Discard reviewed changes**
-   needs **Confirm reviewed discard**; later text, reference or ownership changes expire it.
-4. Press Ctrl/Cmd+S in a source or its owned Find/language controls. In these hosts, the reference
-   pane and its Find controls save the working source. Type while Save is pending, then choose
-   **Finish save**. It acknowledges the captured revision and trims trailing whitespace in the
-   canonical reply; later typing is preserved and unsaved. **Fail save** exposes retry recovery.
-5. Choose **Simulate external source change**, Save and **Finish save** to produce a conflict.
-   **Review remote source** / **Finish remote review** captures the remote baseline. Correct the
-   working source and choose **Save reviewed source**. Its precondition is the reviewed version;
-   another remote write conflicts again. A failed reviewed save retains local work for retry.
-6. Choose **Preview proposal** to compare a proposed replacement with the current source.
-   **Apply proposal** applies one whole-document edit at the revision captured for review.
-   An intervening source edit requires a fresh preview. Correct the applied text in either
-   working view and use **Save source** and **Finish save** to persist that correction.
-   **Run captured inputs** separately captures source/form
-   values; **Finish run** / **Fail run** settle that request without following later typing.
-7. Edit **Configuration path**, Save it, then use **Finish configuration save** or **Fail
-   configuration save**. New form edits survive an older receipt. A blank path blocks configuration
-   Save and Run while source Save stays independent. External-change/review controls exercise
-   the form's own version precondition. Transfer settings have an independent save owner too.
-8. **Move primary view** and **Toggle views** exercise movement/remount with shared text/history
-   and independent view state. A dirty temporary loaded source stays reachable through **Reopen
-   loaded source**; explicit discard is tied to its captured revision. Clean unused loaded
-   sources are released after their tabs, views and operations detach.
+1. Edit **Primary source** and undo from **Secondary source**. Both views share text and history
+   but keep their own selections and scroll positions. Press Escape, then Tab or Shift+Tab, to
+   reach host controls.
+2. **Open source review**, edit **Comparison working source** and choose **Use baseline**. Undo
+   restores the edit. You can select, copy and search the reference. **Link review scrolling**
+   links vertical positions. **Align review rows** pads unequal blocks.
+3. **Keep draft version**, choose a saved, server, draft or historical **Review version**, then
+   **Finish version load**. You can type during the load. **Discard reviewed changes** needs
+   confirmation. Changing the text, reference or owner expires it.
+4. Press Ctrl/Cmd+S in the source, reference or its Find/language controls. Type, then
+   **Finish save**. The reply trims trailing whitespace on the captured revision. Later typing
+   stays unsaved. **Fail save** lets you try recovery.
+5. **Simulate external source change**, save, then **Finish save**. Choose
+   **Review remote source** and **Finish remote review**. Edit the working source and
+   **Save reviewed source**. A further remote write conflicts again. A failed save preserves local
+   edits.
+6. **Preview proposal**, then **Apply proposal** for one whole-document edit. Typing after preview
+   requires a fresh preview. Correct the result in either working view, save it and
+   **Finish save**. **Run captured inputs** captures source and form values separately.
+   **Finish run** or **Fail run** settles that request.
+7. Edit **Configuration path** and save. Use **Finish configuration save** or
+   **Fail configuration save**. New form input survives an older reply. A blank path blocks
+   configuration Save and Run. Source and transfer settings each have a separate save operation.
+   External-change and review controls use the configuration version.
+8. Try **Move primary view** and **Toggle views**. **Reopen loaded source** recovers a dirty
+   temporary document. Discard checks its revision. A clean temporary source is released when its
+   last tab, view and operation detach.
 
-Ctrl/Cmd+F/H and F3/Shift+F3 work in an editor's owned tool region. Enter/Shift+Enter in Find
-navigates; during scanning it retains the latest valid navigation intent. Reference Find offers
-no replacement. Escape returns to the captured source. The [search contract](search.md) defines
-capture invalidation and replacement behavior; the host chooses keyboard routing and focus.
+Ctrl/Cmd+F/H opens Find/Replace in the editor’s tool region. F3/Shift+F3 or Enter/Shift+Enter in
+Find navigate. While scanning, Find keeps the latest valid navigation request. Escape returns to the
+editor that opened Find. Reference Find is read-only. See [search](search.md).
 
 Transfer batch size is a text field so invalid input survives editing/recovery; valid values are
 decimal integers from 1 to 100,000. Each Run creates a read-only resource containing captured
@@ -288,11 +249,9 @@ Run/log history lasts for the fixture session, and the fixture does not execute 
 
 ### Draft checkpoints
 
-**Keep recovery draft** stores an explicit IndexedDB checkpoint in one application-scoped slot.
-Replacing it needs confirmation. Source, configuration, transfer, temporary loaded source and
-rejected input have independent restore/inspection choices; nothing is replayed automatically.
-Typing during a write requires another checkpoint for the later changes. Failed storage leaves
-live inputs intact and does not count as durable coverage.
+**Keep recovery draft** saves a checkpoint in one application-wide IndexedDB slot. Confirm before
+replacing it. Choose which inputs or rejected edits to inspect or restore. Take another checkpoint
+to cover edits made during a write. A storage failure leaves live inputs intact.
 
 After reload, **Restore source draft**, **Restore configuration draft**, **Restore transfer
 draft** and **Restore loaded-source draft** operate on the named resource or slot. Loaded-source
@@ -317,10 +276,9 @@ source replacement. See [host recovery ownership](host-integration.md#input-conf
 
 ### LSP fixture and host lifecycle
 
-Use `?editor=candidate` for either host. The
-[generic fixture server](../fixtures/protocol/fixture-server.ts) uses LSP 3.17 over JSON-RPC 2.0
-and WebSocket, UTF-16 positions, and the 3.17.5 development/test reference package. It exercises
-the [supported protocol subset](language-server.md); it is separate from the real TypeScript demo.
+Both hosts use the [generic fixture server](../fixtures/protocol/fixture-server.ts) for the
+[LSP subset](language-server.md). It speaks LSP 3.17 over WebSocket with JSON-RPC 2.0 and UTF-16
+positions. The development and test reference package is version 3.17.5.
 
 Completion, hover, F12/Shift+F12, F2, Ctrl/Cmd+., signature, link and color controls use the shared
 provider. Select an action, inspect its changes and choose **Apply captured action** or
@@ -331,13 +289,11 @@ retains that edit; reconnect does not replay it. Register/unregister review comm
 workspace status through the same panel. The [language-feature contracts](language-features.md)
 own request validation, edit decisions and command authority.
 
-Both hosts construct their controller outside rendering and expose stable observable handles.
-React uses pure components, subscription hooks and stable refs for editor subtrees. View bindings
-retain resource-specific selection/scroll state across remounts; effects do not synchronize
-application state. A failed attachment releases acquired owners in reverse order. **Recover views**
-can remount after a render failure without recreating the document. Final host teardown releases
-views before captured resources, then settles tracked services and storage. See
-[embedding](getting-started.md) and [lifecycle ownership](architecture.md).
+Both hosts retain selection and scroll by resource across remounts. React reads stable controller
+observables and mounts editors through stable refs. Failed mounts unwind in reverse order. **Recover
+views** reopens a view on the retained document after a render failure. Teardown releases views,
+captured resources, services and storage in that order. See [embedding](getting-started.md) and
+[ownership](architecture.md).
 
 ## Serverless host examples
 
@@ -407,22 +363,17 @@ Text edits map folds and clear stale notes. Imports use one captured shared undo
 
 ## Server-free editing fixtures
 
-The `/editing/` fixture uses a local keyword/number/comment tokenizer,
-without a worker or language server. Editing views cache up to 128 visible fragments;
-this is not a full grammar or multiline lexer. Its tests cover typing, selection,
-history, find and lifecycle independently of a provider.
+`/editing/` colors keywords, numbers and comments with a local tokenizer. It caches up to 128
+visible fragments. Its typing, selection, history and Find tests run without a language server.
 
-The plain/React development hosts use the synthetic LSP peer described above. Its
-scanners exercise protocol and captured-result behavior, not TypeScript semantics.
-The public demo uses the real TypeScript providers described under language tools.
+For the synthetic provider, use the plain or React hosts. For TypeScript semantics, use the
+[root demo](#typescript-demo).
 
 ## Contributor responsibilities
 
-Keep example services, compiler choices, storage schemas and fixture syntax out of runtime
-modules. Use the public entry points when building the static demo or a restored-assets host.
-Update this guide when routes, controls, limits or provider policy change. Select the focused
-owner tests through [testing](testing.md), and check the full user-visible result as well as
-model/editor readiness.
+Keep compilers, storage and fixture syntax in the examples. Build the static and restored-asset
+hosts against the public entries. When a route, control or limit changes, update this guide and run
+its [owner tests](testing.md).
 
 ## Not covered
 

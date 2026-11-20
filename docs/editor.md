@@ -1,15 +1,12 @@
 # Editor
 
-The editor combines a bounded native input surface, virtualized text, independent view selections
-and shared workspace history. The host supplies a text tab, layout and language rules; the editor
-owns its DOM subtree, input scheduling and view-specific commands.
+The editor renders visible text and handles native input. Views of one document share text and undo
+history. Each has its own selection. The host supplies the tab, layout and language rules.
 
 ## Use
 
-Load the packaged stylesheet and give the host a bounded height as described in
-[getting started](getting-started.md). This attachment function accepts a retained document view
-and an optional scroll capture. It restores the view's current complete selections, including
-edits made while detached, instead of overwriting them with cached selections:
+Load the [stylesheet](getting-started.md) and give the container a height. This example restores
+scroll on remount and keeps the view’s current selections, including changes made while detached.
 
 ```ts
 import type { DocumentView, TabId, Workspace } from "sttropez";
@@ -42,19 +39,17 @@ export function attachSource(
 }
 ```
 
-Before detaching, retain `editor.captureView()`, then call `editor.dispose()`. Keep the supplied
-view until its model lifetime ends; dispose it explicitly then. Store captures by document and
-view identity. Mounting another resource requires that resource's own view and capture.
+Before detaching, save `editor.captureView()` by document and view ID and call `editor.dispose()`.
+Dispose a host-supplied view when the host finishes with it.
 
 ## Contract
 
 ### Mounting and presentation
 
-`mountTextEditor(host, workspace, tabId, options)` accepts `TextEditorOptions` and returns a
-`TextEditor`. The tab
-must identify a text surface; a supplied view must belong to that document and workspace. The
-mount captures tab generation and document identity. Replacing a tab invalidates the old target
-instead of redirecting input to the replacement. Omitting `view` creates a mount-owned view.
+`mountTextEditor(host, workspace, tabId, options)` takes `TextEditorOptions` and returns a
+`TextEditor`. Pass a live text tab and, optionally, a view of that document in the same workspace.
+The mount creates its own view if needed. Replacing the tab invalidates input captured against its
+old generation.
 
 | Option | Behavior |
 | --- | --- |
@@ -67,22 +62,19 @@ instead of redirecting input to the replacement. Omitting `view` creates a mount
 | `bracketMatching` | Off by default; `true` or explicit matching limits enable it |
 | `characterWarnings` | Off by default; `true` or a [character-warning policy](unicode.md#character-warnings) enables it |
 
-`element` is the editor root and `input` its native textarea. `view` exposes retained model
-selections/folds; `viewport` exposes rendering, geometry and presentation controls. The textarea
-value is an internal context, not a full-document edit API. Use revision-checked workspace
-transactions to replace text. `focus()` focuses the input without browser scrolling.
+`element` is the editor root. `input` is a textarea containing a bounded slice of source. To replace
+document text, use a revision-checked workspace transaction. `view` exposes selections and folds.
+`viewport` controls rendering and geometry. `focus()` focuses the input without scrolling.
 
-`readOnly: true` permits navigation, selection, copying and Find while refusing edits, cut/paste,
-drop, undo/redo and Find replacement through this mount. Dragging from it offers copying.
-Resource permissions and edit locks also gate input; other views and host transactions retain
-their own authority. Remount with the retained view to change the mount's read-only policy.
+A `readOnly` mount supports navigation, selection, copy, Find and dragging a copy. It refuses edits,
+cut, paste, drop, undo, redo and replacement. Other views keep their own edit permissions, subject
+to resource capabilities and locks. Remount with the same view to change this option.
 
 ### Native input and ordered commands
 
-The input context contains a bounded selection and surrounding raw source, projected to native
-LF coordinates. Large selections use one selected placeholder with reversible model mappings.
-Typing replaces the captured source range even when its text is not present in the textarea.
-Unrelated edits preserve raw CRLF; ordinary editor Enter uses the contextual line ending.
+The textarea holds the selection and nearby text in native LF coordinates. Large selections use one
+selected placeholder mapped to the full source range. Typing replaces that range. Unrelated edits
+preserve raw CRLF. Enter uses the contextual line ending.
 
 `beforeinput` captures the native replacement range, document revision and complete model
 selection set. `input` uses that range when the native value/caret agree with it; other supported
@@ -90,25 +82,21 @@ rewrites use a bounded difference. Replacing a selection with equal text can col
 selection without creating a document revision. Projection-driven selection events preserve
 existing affinities when endpoints agree.
 
-Composition stages in the primary native input and commits once through shared history.
-Starting composition cancels pending commands; cancellation does not revive them. A changed
-revision, selection, capability or target rejects stale input for host recovery.
+Composition uses the primary input and creates one shared undo command on commit. Starting
+composition cancels queued commands. If the revision, selection, permission or target changes, the
+editor sends stale input to host recovery.
 
-Navigation, deletion, word selection and language planning can yield. Subsequent supported
-editing/navigation keys and literal text are retained in order and use the completed destination
-selection. Immediate and queued keys share command interpretation; queued replay retains that
-interpretation along with the key and modifiers, and rechecks the captured editing authority.
-Adjacent text retains event-time history grouping; paste and structural commands
-keep their own boundaries. Short navigation cases can complete synchronously. A command's
-acceptance does not imply that its deferred work or rendering has finished.
+Navigation, deletion, word selection and language planning can span several turns. Keys and text
+typed meanwhile run in order at the resulting selection. Replay preserves key interpretation,
+modifiers and event-time history grouping, and rechecks edit permission. Paste and structural
+commands keep their own undo boundaries. Short moves can finish synchronously. An accepted command
+can return before the view renders.
 
-Pending input belongs to the captured document/revision, whole selection set, view and tab
-generation. Escape, changed authority/selection/revision, composition, copy/cut, host-owned paste
-and detach cancel that continuation. Unapplied text is offered to recovery without automatic
-retargeting. A failed command releases scans, rows and timers and reports `command-failed` with
-the original cause. Text committed before a later callback/presentation failure is not offered
-for insertion again. See [input-conflict recovery](host-integration.md#input-conflict-recovery)
-for event payloads, pending-text interpretation and destruction ordering.
+Pending input captures the document revision, all selections, the view and the tab generation.
+Escape, composition, copy/cut, host-owned paste, detach or a change to the capture or permissions
+cancels replay. Recovery receives only unapplied text. A failed command releases its scans, rows and
+timers and reports `command-failed` with the original cause. See
+[input-conflict recovery](host-integration.md#input-conflict-recovery).
 
 ### Selections and history
 
@@ -158,9 +146,9 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Alt+click / Alt+drag / Alt+double-click | Add a caret / range / code-word selection |
 | Double-click | Select the code-word, symbol or whitespace run within the clicked logical line |
 
-Host tools can own keys before the editor handles them. The editor respects cancelled events
-and composition-marked keys, including keyCode 229. Language, search and folding controllers
-have their own commands; the [examples](examples.md) describe host bindings for those tools.
+Host tools can handle keys first. The editor ignores cancelled and composition-marked events,
+including keyCode 229. See the [example bindings](examples.md) for language, search and folding
+commands.
 
 Word selection excludes the line terminator and snaps to grapheme boundaries. Keyboard word
 movement uses the [code-word policy](unicode.md#graphemes-and-word-movement), not dictionary
@@ -358,18 +346,16 @@ the retained view's mapped whole set when combining it with saved scroll state. 
 restoration. Editing reveals the primary caret at the nearest edge on both axes and preserves
 scroll when the caret fits; explicit host navigation can request a centered reveal.
 
-`activity()` returns a reused immutable `TextEditorActivity` without measuring layout, collecting
-metrics or flushing work. It distinguishes composition/disposal from `pendingInput`,
-`pendingCommand`, `pendingCaret`, `pendingWord`, `pendingGrapheme` and `pendingDragScroll`.
-A focus/blur caret frame is distinct from unfinished selection/navigation. Compare the viewport's
-painted revision, complete set and fold/alignment identities separately. Provider requests,
-bracket matching and visible syntax completion have their own readiness conditions.
+`activity()` returns a cached immutable `TextEditorActivity` without layout reads or a flush. It
+reports composition, disposal, `pendingInput`, `pendingCommand`, `pendingCaret`, `pendingWord`,
+`pendingGrapheme` and `pendingDragScroll`. Focus or blur can schedule a caret frame after a move has
+finished. Check the painted revision, full selection set, folds and alignment on the viewport.
+Provider replies, bracket highlights and syntax colors can arrive later.
 
-`snapshot()` adds input sizes, event/commit/conflict counts, queue size and command/scan metrics.
-Use the [clock glossary](README.md#glossary) to interpret handler, preparation, continuation and
-scan fields. A cancelled `beforeinput` can have no subsequent native `input`; a retained
-`lastInputMs` then is not a new sample. The [testing guide](testing.md#readiness-and-visible-continuity)
-defines interaction-specific readiness and continuous text/color checks.
+`snapshot()` adds input sizes, event and transaction counts, conflicts, queue size and command
+timings. Check event counts before using `lastInputMs`: cancelling `beforeinput` can suppress the
+next `input`. See [clock definitions](README.md#glossary) and
+[visible readiness checks](testing.md#readiness-and-visible-continuity).
 
 | Area | Limit or scheduling policy |
 | --- | --- |
@@ -388,16 +374,13 @@ govern long contextual lines and geometry; [Unicode](unicode.md) owns grapheme b
 
 ## Host responsibilities
 
-Own resources, tabs, layout, fonts, language/lexical policy and surrounding controls. Retain views
-and scroll captures by identity; never use later focus or tab position to address delayed work.
-Keep decoration and language callbacks bounded. Run mutations outside notification delivery.
-Coordinate transform/controller ownership and check full interaction readiness before dependent
-Save/Run/service captures. Treat rejected input as content-bearing recovery data.
+Provide tabs, layout, fonts, controls and language rules. Bound work in decoration and language
+callbacks. Issue mutations after notification delivery. Capture a view by ID, and wait for any
+pending input before a dependent Save or Run.
 
-Call `dispose()` to cancel work, release subscriptions/listeners and owned views, and remove DOM.
-It is idempotent. Keep recovery listeners installed through destruction, then release host-owned
-views/resources when their own lifetimes end. Use stable refs or explicit host lifecycle methods;
-do not synchronize editor state in React rendering or effects.
+Keep the recovery listener attached through `dispose()` so it receives uncommitted text. Disposal is
+idempotent and releases the mount’s work, listeners, views and DOM. Release host-owned resources
+separately. In React, [mount through stable refs](getting-started.md#host-responsibilities).
 
 ## Not covered
 

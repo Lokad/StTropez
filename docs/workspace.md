@@ -1,14 +1,12 @@
 # Workspace
 
-`Workspace` owns resources, text revisions, tabs, shared history and captured operations.
-`WorkspaceCommands` coordinates host-provided save and Run callbacks.
-Views share document data while retaining independent presentation state; storage, services
-and application controls belong to the host.
+`Workspace` holds resources, tabs, document revisions and undo history. Views share text and keep
+independent selections. `WorkspaceCommands` calls host services to save or run captured inputs.
 
 ## Use
 
-Create stable resource handles and open their surfaces in host-defined panes. A typed panel
-resource stores structured data without allocating a text document:
+Open a text resource and a typed panel in separate panes. A panel can store structured data without
+allocating a text document.
 
 ```ts
 import { Workspace, WorkspaceCommands } from "sttropez";
@@ -34,16 +32,14 @@ export function createWorkset() {
 }
 ```
 
-Pass the source tab to the [editor mount](getting-started.md). The host renders the typed
-panel using its resource handle and calls `updateResource` with an expected revision, edit
-origin and new value. Keep these handles in the host controller through view attachment
-changes; end their ownership explicitly as described below.
+Pass the text tab to the [editor mount](getting-started.md). Render the panel from its handle. To
+change it, call `updateResource` with the revision, edit origin and new value. Keep both handles in
+the host controller across view remounts.
 
 ## Contract
 
-Use `workspace.allocateIdentity()` for numeric attachment or request tokens that must stay distinct
-across remounts in one workspace. A token belongs to that workspace. Delayed work also needs
-its captured view, tab generation and document revision checked before applying a result.
+`workspace.allocateIdentity()` returns a workspace-local token for a request or attachment. Before
+applying a delayed result, also check its view, tab generation and document revision.
 
 ### Identities and snapshots
 
@@ -57,22 +53,19 @@ its captured view, tab generation and document revision checked before applying 
 | `DocumentView`, `ViewId` | A retained selection/folding state over a document; scroll belongs to the browser/host |
 | `ResourceTarget` | A captured resource identity in a particular workspace |
 
-Moving a tab preserves its captured target; replacing or closing it invalidates that
-presentation. Resource work can continue after its tab closes. Use `captureTab`/`resolveTab`
-and `captureResource`/`resolveResource` for delayed commands, never an array index or later
-focus. `createResourceKey` supplies a unique variant when the host needs separate resources.
-Recreating a released resource with the same key produces a new resource ID.
+For delayed work, use `captureTab`/`resolveTab` or `captureResource`/`resolveResource`. Moving a tab
+preserves its captured target. Closing or replacing the tab expires that presentation, but resource
+work can continue. Use `createResourceKey` for a unique variant. Recreating a released resource
+under the same key gives it a new ID.
 
-Resource handles expose `getSnapshot`, `subscribe` and a separate `metadata` observable.
-`observeDocument` returns a ready text snapshot or `undefined` when unavailable; `document`
-requires a ready document. `DocumentSnapshot.buffer` supports bounded reads. Call `text()`
-on a document snapshot or `value()` on a ready resource snapshot to read its captured content.
-For text, these operations share a lazy, cached whole-string export for that revision; bounded
-reads through the [text model](text-model.md) avoid that export. Typed resources return their
-captured immutable value with stable identity. Readers can be retained or called without a
-receiver and keep their captured value after later edits, metadata changes or resource release.
-Spreading, assigning or JSON-serializing a snapshot does not read its content. JSON omits the
-reader functions; persistence and transport code must explicitly capture the values it needs.
+Resource handles expose `getSnapshot`, `subscribe` and `metadata`. `observeDocument` yields a ready
+text snapshot or `undefined`. `document` requires a ready document. Read ranges from
+`DocumentSnapshot.buffer`. Calling `text()` on the snapshot or `value()` on the ready resource
+shares one lazy whole-string export per revision. Typed resources return their immutable value.
+
+You can keep a reader and call it without a receiver, even after edits, metadata changes or release.
+Copying or serializing a snapshot does not read its content. JSON omits reader functions. Call the
+reader explicitly to save or send the value.
 
 ```ts
 import type { DocumentSnapshot, ResourceSnapshot } from "sttropez";
@@ -114,18 +107,14 @@ export function createReference(workspace: Workspace, buffer: TextBuffer) {
 }
 ```
 
-`WorkspaceSnapshot.resources`, `documents` and `tabs`, and `tabState.getSnapshot()` contain
-only workspace-visible entries. Direct resource/document lookup, captured tabs and leases
-also work for internal entries. `diagnostics()` counts all live resources, tabs and ownership.
-Visibility controls inventory membership independently of edit/Save/Run permissions and does
-not release a resource automatically. The creating owner closes its tabs and releases its
-resource when the attachment ends, subject to outstanding views and leases.
+`WorkspaceSnapshot.resources`, `documents`, `tabs` and `tabState.getSnapshot()` list visible
+entries. Direct lookup, captures and leases also reach internal entries. `diagnostics()` counts
+both. Visibility grants no edit, Save or Run permissions. The creator closes internal tabs and
+releases resources once views and leases allow it.
 
-`tabState` notifications cover every tab lifetime, including internal tab moves, replacement
-and close. Its visible array retains identity when its entries do not change. A captured owner
-must recheck `resolveTab(target)` after notification; an inventory reader may see the same array.
-The coarse workspace observable also publishes internal resource changes, while omitting their
-entries from its immutable inventory snapshot.
+`tabState` notifies on internal tab moves, replacements and closes, even when its visible array
+keeps the same identity. Recheck `resolveTab(target)` in the callback. Internal resource changes
+also notify workspace observers without adding entries to the inventory.
 
 ### Document views
 
@@ -147,24 +136,20 @@ deleted positions is lossy; another view does not acquire the initiator's select
 Retain the handle when selections/folds must track edits through detach or remount. The
 [editor contract](editor.md#view-state-activity-and-limits) owns browser scroll capture and restore.
 
-View registration/disposal and subscriptions are permitted during notification delivery because
-they do not mutate document snapshots. Actual selection, text and history writes are rejected
-during delivery; queue those commands. Do not synchronize view state during component rendering.
+You can subscribe and register or dispose views during notification. Queue selection, text and
+history writes until delivery ends. Keep mutations out of component rendering.
 
 ### Transactions and history
 
-`edit` applies one text transaction; `editDocuments` validates every participant before
-committing a shared transaction. Ranges use original-coordinate UTF-16 offsets and must be
-sorted and non-overlapping. Each document appears once in a batch, with a common origin
-and history policy. Identity, readiness, expected revision, edit capabilities, edit lease,
-view ownership and ranges are checked before publication. Check the returned `applied`
-flag and rejection reason; malformed arguments can throw.
+`edit` changes one document. `editDocuments` validates every participant before changing any of
+them. Name each document once, use a common origin and history policy, and give sorted,
+non-overlapping UTF-16 ranges in original coordinates. The workspace checks identity, readiness,
+revision, permissions, edit lease, view ownership and ranges. Inspect `applied` and the rejection
+reason. Malformed arguments can throw.
 
-Text changes prepare mapped selections and fold projections for all retained views before
-changing history or document state. Undo/redo, proposals and canonical save responses use
-the same preparation boundary. Selection-only participants in a batch prepare their fold
-reveals before the batch commits. Observers receive the completed document, view and history
-snapshots together.
+Before commit, the workspace maps selections and folds in every retained view, including fold
+reveals for selection-only changes. Undo, redo and canonical saves follow the same rule. Listeners
+see the completed document, views and history together.
 
 ```ts
 import type { DocumentId, Workspace } from "sttropez";
@@ -194,12 +179,10 @@ revision and history; an explicit selection-only request can update its view.
 `updateResource` similarly preserves a typed resource's revision on a no-op, but typed panels
 do not acquire text undo history.
 
-Text history belongs to documents, independently of tabs and mounts. `undo` and `redo`
-validate every participant's current boundary and permissions. A linked unit returns
-`history-blocked` if another participant has later work; it does not silently undo that
-work. `observeHistory` reports per-document depths, which can include blocked entries.
-The initiating view's captured selections are restored, while other retained views are
-mapped. See [document views](#document-views).
+History belongs to the document across tab and view changes. `undo` and `redo` check each
+participant’s history boundary and permissions. Later work on another participant yields
+`history-blocked`. `observeHistory` depths include blocked entries. Undo restores the initiating
+view’s selections and maps other views through the change. See [document views](#document-views).
 
 An omitted history policy creates a standalone `replace` unit. Origins are `human`, `agent`
 and `host`; `EditKind` distinguishes typing, deletion, paste, composition, form, refactor,
@@ -295,10 +278,9 @@ export async function computeForTab<T>(
 }
 ```
 
-Cancellation does not release an operation's ownership. Always call `finish` after settlement,
-including stale or failed responses. Load `accept`/`fail` settle their tickets; a `finally`
-calling `finish` also handles abandoned paths. Mutating operation methods follow the same
-notification rules as edits.
+Call `finish` in `finally`, including after cancellation, failure or a stale reply. Load `accept`
+and `fail` also settle their tickets. Operation mutations follow the same notification rules as
+edits.
 
 For an asynchronous dirty-close prompt, use `beginClose(tabId)` and then
 `complete("close" | "keep-open")`. Completion validates tab generation and revision and ends
@@ -308,11 +290,10 @@ host decision; `captureClose` supplies a bare intent without retaining an operat
 
 ### Save, conflicts and Run
 
-Keep one `WorkspaceCommands` coordinator for related commands. `captureSave(resource, review?)`
-captures exact content and revision immediately. Pass that ticket to `commands.save(ticket, port)`,
-even when it will queue behind another save. The serialized submission
-uses the latest known saved server version as its conditional-write precondition. Workspace
-also prevents simultaneous active write tickets from different coordinators.
+Use one `WorkspaceCommands` coordinator for related saves. `captureSave(resource, review?)` fixes
+the content and revision immediately. Pass the ticket to `commands.save(ticket, port)`. A queued
+save submits that captured content with the latest known saved server version as its write
+precondition. The workspace prevents simultaneous active write tickets across coordinators.
 
 ```ts
 import { WorkspaceCommands } from "sttropez";
@@ -336,24 +317,22 @@ Preflight can throw synchronously; service/queued failures invoke the error call
 return `failed`. The callback cannot prevent lease cleanup. A failed or conflicting save
 preserves local content and the previous saved baseline.
 
-A successful `SaveReceipt` retains the immutable submission, canonical saved value, resulting
-server version and whether canonical content was applied. Canonical content replaces the working
-value only when the submitted revision, host edit permission and edit lock permit it.
-`ticket.accept(response, { applyCanonical: false })` also suppresses replacement while adopting
-the returned saved baseline. Otherwise the baseline advances while later local content stays intact.
-Dirty means content differs from that baseline; undoing back to it clears dirty even though
-the revision increases. Canonical text changes form separate undo units.
+A `SaveReceipt` records the submission, canonical saved value, new server version and whether the
+working copy adopted that value. The saved baseline advances on success. Replacing working text
+requires a matching revision, host edit permission and a compatible lock. Pass
+`{ applyCanonical: false }` to `ticket.accept` to skip replacement. Canonical text edits get a
+separate undo unit. Undoing to the baseline clears dirty state even at a later revision.
 
-After explicit conflict review, pass a `SaveReview` containing the captured resource target,
-reviewed local revision and remote server version. Capture rejects stale targets/revisions
-or another reserved save; submission also rejects an intervening saved-version change. The
-reviewed version is the write precondition, not an adopted baseline. Another remote change
-can cause another conflict. The host owns fetching, comparison, merge choices and retry policy.
-Low-level `captureSave` exposes `start`, `accept`, `conflict`, `fail` and `finish` for hosts
-that implement their own coordinator; always finish its ticket after settlement. The command
-coordinator finishes tickets it accepts. A ticket rejected synchronously by a different workspace's
-coordinator stays its caller's responsibility. Typed ticket extensions preserve their submission
-and receipt types through the same queue.
+After conflict review, pass a `SaveReview` with the captured target, reviewed local revision and
+remote version. Capture rejects a stale target or revision and a competing save reservation.
+Submission rejects a change to the known saved version. The reviewed remote version sets the write
+precondition. The saved baseline changes only when the save succeeds. A competing write can cause
+another conflict.
+
+For a custom coordinator, `captureSave` exposes `start`, `accept`, `conflict`, `fail` and `finish`.
+Finish every ticket you take. `WorkspaceCommands` finishes accepted tickets. If another workspace’s
+coordinator rejects a ticket synchronously, the caller must finish it. Typed tickets preserve their
+submission and receipt types through the queue.
 
 `WorkspaceCommands.run(source, configuration, settings, port)` captures immutable resource
 targets, keys, revisions, values and server versions plus copied settings. It checks Run
@@ -362,10 +341,10 @@ the returned promise. These callbacks perform no built-in networking, storage or
 
 ### Observables
 
-All changed snapshots publish before listeners run. Unchanged snapshots preserve identity;
-metadata excludes content revision so typing need not invalidate unchanged metadata.
-Use resource, metadata, document, history, agent and `tabState` observables for their own
-concerns. The coarse workspace observable is available for inventory and diagnostics.
+All changed snapshots are readable before listeners run. Unchanged snapshots keep their identity.
+Metadata excludes content revision, so typing alone need not notify a metadata subscriber. Subscribe
+to the resource, metadata, document, history or `tabState` you display. Use the workspace observable
+for the whole inventory.
 
 Subscriptions have independent lifetimes even for the same callback. Delivery captures its
 listener list; changes to subscriptions affect later publications. Listener exceptions go
@@ -396,9 +375,8 @@ export function restrictPair(workspace: Workspace, first: ResourceId, second: Re
 }
 ```
 
-Reentrant state mutations during notification are rejected. Queue follow-up commands after
-delivery through the host scheduler, retaining their captured identities and revalidating
-before execution. Observable subscriptions provide reads, not writable reactive state.
+Workspace writes during notification are rejected. Schedule follow-up commands after delivery and
+recheck their captured targets.
 
 ## Host responsibilities
 

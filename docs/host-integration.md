@@ -1,14 +1,13 @@
 # Host integration
 
-Hosts extend StTropez through captured operations, source decorations, mapped annotations
-and application controls. The editor owns its DOM subtree and input/history pipeline; the
-host owns parsing policy, resource routing, storage and services. These extension points
-do not require a language server.
+Extend the editor with decorations, annotations and host controls. StTropez owns its DOM, input and
+history. The host chooses how to parse, route and store resources. These extensions work without a
+language server.
 
 ## Use
 
-A decorator receives a bounded presented fragment. This example marks literal `TODO` text
-within that fragment; a language tokenizer supplies its own revision-aware lexical context.
+This decorator marks `TODO` in the visible fragment. A tokenizer that needs lexical context must
+track it across revisions.
 
 ```ts
 import type { InlineDecoration, LineDecorator } from "sttropez/browser";
@@ -22,9 +21,9 @@ export const markTodo: LineDecorator = line => {
 };
 ```
 
-Attach conversion only while the user selects that paste mode. Copy clipboard formats during
-the event, then convert against a retained insertion target. The size limits below are example
-host policy; the converter also needs its own structural limits and cooperative scheduler.
+Install this listener while converted paste is selected. Copy the clipboard formats during the
+event, then convert them against the captured insertion target. Choose size and nesting limits for
+the converter and yield during parsing.
 
 ```ts
 import type { CapturedInsertion, TextEditor } from "sttropez/browser";
@@ -82,9 +81,8 @@ export function attachConvertedPaste(
 }
 ```
 
-Track host metadata through consecutive transaction maps. This example drops a note when its
-range is deleted or an intervening map is unavailable. It does not write during notification
-delivery; the host reads the returned snapshot when rendering its own controls.
+Map a note after each transaction. This example drops the note if its range was deleted or a map is
+missing. The host reads the snapshot when rendering its controls.
 
 ```ts
 import { anchoredRange } from "sttropez";
@@ -108,8 +106,8 @@ export function trackNote(workspace: Workspace, documentId: DocumentId, from: nu
 }
 ```
 
-Input recovery receives unknown event data and passes it to host validation. Keep the listener
-through editor destruction, because destruction can emit uncommitted composition recovery.
+Validate conflict event data at the host boundary. Keep the listener until disposal finishes so it
+can recover uncommitted composition text.
 
 ```ts
 import { inputConflictEvent } from "sttropez/browser";
@@ -132,8 +130,7 @@ export function ownInputRecovery(
 }
 ```
 
-Command discovery is a host-owned catalogue of labels, shortcuts and actions. Retain the
-intended editor in each action; detach the catalogue's controls with that editor's host view.
+Bind each command to the intended editor. Remove its controls when the view detaches.
 
 ```ts
 import type { EditingCommand } from "sttropez";
@@ -152,30 +149,28 @@ export function editingActions(editor: TextEditor) {
 
 ### Captured view requests
 
-`captureViewRequest(workspace, target, view, options?)` retains one tab/view/resource context.
-Obtain the target with `workspace.captureTab(tabId)`. The frozen handle exposes the captured
-document, complete selection set and folding snapshot, plus `isCurrent()`, `signal`,
-`cancel()` and `commit(operation)`. Foreign views, mismatched tabs and unavailable documents
-cannot be captured. Capturing does not read the complete document text.
+Use `workspace.captureTab(tabId)` to get the target for
+`captureViewRequest(workspace, target, view, options?)`. The frozen handle retains the document,
+selection set and folding snapshot. It exposes `isCurrent()`, `signal`, `cancel()` and
+`commit(operation)`. Capture rejects foreign views, mismatched tabs and unavailable documents. It
+needs no full-text read.
 
 Omit `editOrigin` for read requests, including read-only sources. An origin requires its edit
 capability and no edit lock; it grants no authority to a later transaction. The optional
 `available` callback is a synchronous read-only host readiness guard. Cancel explicitly when
 unobserved host state changes; a temporary interruption between checks cannot be inferred.
 
-Revision, selection, visible fold projection and resource edit-authority changes latch
-invalidation. Returning to an earlier state does not revive a capture. Expanded fold metadata,
-save permissions and focus elsewhere alone do not invalidate it. Observer invalidation makes
-the handle stale immediately, then releases its lease and aborts its signal in a microtask.
-Call explicit cancellation outside workspace observer delivery.
+A change to revision, selection, visible folds or edit authority permanently invalidates the
+capture. Expanded fold metadata, save permissions and focus elsewhere leave it valid. Invalidation
+takes effect immediately. A microtask then releases the lease and aborts the signal. Call `cancel()`
+outside workspace observer delivery.
 
-`commit(operation)` checks currentness, consumes the capture and removes its observers before
-calling one synchronous boolean-returning operation with the resource retained. Stale or
-consumed captures return `false` without invoking it. Retention is released and the signal
-aborted even if the callback throws. The callback must use normal workspace revision,
-permission and history checks. It is not a transaction wrapper: arbitrary callback effects
-are not rolled back, and returning a promise is rejected after invocation. Keep a capture
-while displayed results depend on it; cancel on dismissal or disposal.
+`commit(operation)` returns `false` for a stale or consumed capture. Otherwise it consumes the
+capture, detaches observers and calls the operation with the resource retained. It releases the
+resource and aborts the signal even if the operation throws. The callback must return a boolean
+synchronously and use the usual revision, permission and history checks. Returning a promise raises
+an error after invocation. Callback effects survive failure. Keep the capture while its results are
+on screen and cancel it on dismissal or disposal.
 
 ### Captured insertion and structured paste
 
@@ -197,18 +192,16 @@ workspace validation and shared history. Empty text consumes the capture without
 selected text. `cancel()` is idempotent. Pending conversion participates in the editor's input
 activity; later editing cancels conversion and proceeds. Capturing needs no full-text export.
 
-Parsing and import policy belong to the host. Copy all clipboard formats synchronously;
-never retain the event for asynchronous reads. Validate the complete converted result before
-insertion, including aggregate size across selections. Cooperative parsing does not preempt
-native clipboard retrieval, native HTML parsing, final string assembly or atomic model commits.
-See the [table conversion example](examples.md#table-conversion) for one bounded host format policy.
+Copy clipboard data during the event. Before inserting, validate the converted text and its total
+size across selections. A cooperative parser can yield between steps. Clipboard retrieval, native
+HTML parsing, final string assembly and the model commit each run to completion. See the
+[table conversion example](examples.md#table-conversion).
 
 ### Tokenization, annotations and forms
 
-Treat semantic-provider attachment as an optional host service boundary. A rejected attachment
-must retain local editing, review and Find, expose its reason, and offer an explicit retry for
-the captured view. Release partial provider scopes and document leases before reporting failure;
-the retry owns its subscriptions until that view detaches. Keep provider resource limits intact.
+If a semantic provider fails to attach, release its subscriptions and document leases, show the
+reason and offer a retry for that view. Local editing, review and Find stay available. Keep the
+provider’s resource limits on retry and release its subscriptions when the view detaches.
 
 Use the [viewport decoration contract](viewport.md#mounting-and-presentation) for source-offset classes on
 presented fragments. Cache lexical results by document identity and revision, bound requested
@@ -218,37 +211,32 @@ working-document offsets cannot color a different reference. Configure editor la
 through the [editing API](editor.md), folding through its [controller](folding.md),
 and character warnings through [Unicode policy](unicode.md#character-warnings).
 
-Use [anchored ranges and transaction maps](text-model.md#position-maps-and-anchors) for
-source-linked host metadata. Check `previousRevision` before mapping; clear or recompute on
-a gap. Surviving ranges follow undo/redo maps. A host that discards deleted metadata must
-implement its own restoration policy if undo should resurrect it.
+Map source-linked metadata through
+[anchored ranges and transaction maps](text-model.md#position-maps-and-anchors). Check
+`previousRevision` and clear or recompute on a gap. Undo and redo map surviving ranges. To restore
+deleted metadata on undo, retain it in the host.
 
-Render annotations or source-backed forms in a host-owned sibling overlay or reserved lane.
-Use [viewport geometry](viewport.md#geometry-and-readiness) to position visible controls; recompute after
-render, folding, scrolling and resize. Folded positions can project to a header, while
-`rowBounds` can report no rendered row. Label or hide those states deliberately. Do not cache
-coordinates across movement or insert controls into editor-owned rows.
+Put annotations and forms beside the editor in an overlay or reserved lane. Read
+[viewport geometry](viewport.md#geometry-and-readiness) after render, folding, scrolling or resize.
+A folded position may project to its header, and `rowBounds` may find no rendered row. Hide or label
+controls in those cases.
 
-A source-backed form parses a captured range and patches validated source spans through the
-same workspace transactions/history. Separate typed settings retain their own identity and
-revision. Copying values into them requires a captured destination and explicit operation;
-it does not make the form a second source authority or imply Save/Run. See the
+A source-backed form parses a captured range and applies validated edits through workspace history.
+To copy a value into separately versioned settings, capture the destination and perform an explicit
+transfer. Save and Run are separate actions. See the
 [source-backed form example](examples.md#source-backed-transfer-form).
 
 ### Navigation, commands and lifecycle
 
-Host buttons capture resource/tab identities, document revision and the intended view before
-asynchronous routing. Revalidate them before opening or applying a location; focus or tab
-array position cannot identify delayed work. A Back stack can retain complete view state,
-including selections, affinities, scroll and folds. After edits, use mapped live selections
-instead of replaying offsets from an old revision. Resource loading and retention follow
-the [workspace lifecycle](workspace.md#loading-and-resource-lifetime).
+Capture the resource, tab, revision and view before asynchronous navigation. Check them again before
+opening a location. A Back stack can retain selections, affinities, scroll and folds. After edits,
+restore the mapped live selections. See
+[resource loading and lifetime](workspace.md#loading-and-resource-lifetime).
 
-Use a host catalogue for command discovery and presentation. Buttons and keyboard listeners
-call the retained editor's commands or insertion captures. Let their return values determine
-whether an action applied. Avoid claiming shortcuts during composition, editable host fields
-or AltGraph text entry; only prevent the browser default when the host owns that action.
-Surrounding controls and their subscriptions belong to the host, including disposal.
+Bind host buttons and shortcuts to the captured editor’s commands or insertion handles. Check the
+return value to see whether the action applied. Leave composition, AltGraph text entry and editable
+host fields to their input handlers. Prevent the browser default only for shortcuts the host
+handles.
 
 For a shadow-root host, mount inside the root and provide editor CSS in that root. Input,
 caret and focus-dependent controllers use the input's own focus tree, including nested or
@@ -283,7 +271,7 @@ Hosts choose service endpoints, review policy, error presentation and conditiona
 preconditions. Input recovery and persistence conflicts are different records. A draft
 checkpoint neither saves to the service nor executes Run.
 
-Draft persistence is a host pattern, not an editor storage API. A host implementing it:
+A host that persists drafts takes these steps.
 
 - Gives each resource a stable recovery key independent of transient document, tab and view IDs.
 - Compares immutable buffer/value identities during ordinary edits; serialization and storage
@@ -318,15 +306,13 @@ independent source/settings restores and a temporary loaded-resource slot.
 
 ## Host responsibilities
 
-Own surrounding controls, styles, command catalogues, routing and service policy. Retain exact
-identities before awaiting work and cancel abandoned captures. Keep workspace observers
-read-only; schedule commands after notification delivery. Dispose view listeners/overlays on
-detach and resource services at the end of their longer lifetime.
+Keep workspace observers read-only and schedule commands after notification. Cancel abandoned
+captures. Release controls, overlays and view listeners on detach and resource services when the
+resource closes.
 
-Supply bounded parsing and revision-aware lexical context. Keep application libraries,
-reactivity and storage in the host. Reuse editor transactions and public controllers so
-custom interactions share selection, authority and undo/redo behavior. Measure complete
-presentation readiness separately from the [input and provider clocks](README.md#glossary).
+Keep parsers, lexical context, routing, storage and application state in the host. Apply edits
+through public controllers so custom commands share the editor’s selection, permission and history
+rules. Measure presentation readiness separately from [input and provider time](README.md#glossary).
 
 ## Not covered
 

@@ -1,9 +1,8 @@
 # Text comparison
 
-`mountTextComparison` displays an immutable reference beside an editable working document.
-`createComparisonController` supplies the headless comparison and captured commands. Reference
-versions, working revisions and saved/server versions are independent; the host owns retrieval,
-review decisions and persistence.
+`mountTextComparison` shows an immutable reference beside an editable working document. Use
+`createComparisonController` for a headless comparison. The host fetches versions, reviews edits and
+saves the result.
 
 ## Use
 
@@ -53,12 +52,10 @@ export function bindRestoreButton(button: HTMLButtonElement, review: TextCompari
 
 ### Identity and comparison state
 
-`createComparisonController` captures a baseline containing an immutable `TextBuffer` and a
-string `version`; versions are opaque host labels. The working tab must identify a live text
-document. A supplied view must belong to that
-document and workspace. `mountTextComparison` attaches the controller and both browser panes.
-The controller retains the resource and captures the tab generation; moving a tab preserves it,
-while closing or replacing the target expires it.
+`createComparisonController` takes a baseline `TextBuffer`, an opaque string `version` and a live
+working text tab. A supplied view must belong to that workspace and document. The controller retains
+the resource and tab generation. Moving the tab preserves the comparison. Closing or replacing it
+expires the comparison. `mountTextComparison` attaches the controller and panes.
 
 `ComparisonController` is an observable with immutable `ComparisonSnapshot` values:
 
@@ -71,10 +68,9 @@ while closing or replacing the target expires it.
 | `hunks` | Exact when ready; mapped presentation from the preceding comparison while running |
 | `progress`, `failure` | Current diff work counters or a failure message |
 
-Working edits start a fresh exact comparison. Prior hunks follow a continuous transaction map
-for display while that work runs. An unknown revision gap or reference replacement clears the
-provisional hunks. Only a ready result authorizes hunk navigation and reversion. Completion
-replaces the provisional presentation atomically; progress alone does not repaint decorations.
+Edits start a fresh diff. While it runs, existing hunks follow edits for display. A gap in revision
+history or a new reference clears them. Only a ready result allows navigation or reversion. Its
+hunks replace the provisional ones together. Progress alone does not repaint.
 
 `TextComparison` is a stable observable of immutable `TextComparisonSnapshot` values.
 Its `comparison` field is the controller's current snapshot; `selectedHunk` is an index into that
@@ -85,11 +81,10 @@ composition and edit authority. `scrollLinked`, `alignment` (`ComparisonAlignmen
 Comparison and permission changes publish synchronously; pane attachment and alignment complete
 cooperatively. Alignment work counters are sampled at publications, not published per cursor step.
 
-Notifications permit reading state and updating host UI; queue workspace or comparison commands
-until after delivery. Unsubscribe host listeners when the attachment ends. Destruction publishes
-a terminal snapshot with no selection and disabled commands. Availability is advisory: commands
-revalidate captures and input state when called, including direct changes to the input's
-`readOnly` or `disabled` properties, which do not themselves publish comparison state.
+Read snapshots in notifications and queue commands until after delivery. Disposal publishes a final
+snapshot with no selected hunk or available command. Commands check the capture and input state
+again when invoked. Setting the DOM input’s `readOnly` or `disabled` property alone does not publish
+a snapshot.
 
 ### Exact text and scheduling
 
@@ -119,12 +114,11 @@ export function* compareText(reference: TextBuffer, working: TextBuffer): Genera
 }
 ```
 
-`DiffProgress` carries immutable hunks, status (`running`, `ready`, `failed`, `disposed`), work,
-read units, line edit count and a failure message. Each cursor compares its two captured buffers.
-`snapshot()` reads progress without advancing. `next()` advances by a charged-work budget
-(default 32,768). The caller controls when the next step runs. Only `ready` publishes the
-completed hunks, including an empty array for equal text. An execution failure throws the
-original cause and records `failed` with an empty hunk array.
+`DiffProgress` reports status (`running`, `ready`, `failed`, `disposed`), immutable hunks, work and
+read units, line edit count and any failure message. `snapshot()` reads progress. `next()` advances
+the two captured buffers by a work budget (default 32,768). Schedule further calls until `ready`,
+which returns all hunks or an empty array for equal text. A failed advance throws the original error
+and records `failed` with empty hunks.
 
 `dispose()` clears the cursor's hunks and failure and is idempotent. Snapshots already held by callers
 stay valid. Reentrant advancement or disposal throws. Terminal `next()` calls
@@ -132,13 +126,12 @@ validate the budget and return the current progress.
 
 ### Hunk commands and host tickets
 
-`selectHunk(generation, index)` on the browser mount selects and reveals both captured ranges,
-including folded bodies. It returns `false` for stale, unavailable or composing targets.
-`revertHunk(generation, index)` also rejects composing, disabled or read-only browser input,
-then delegates to `controller.revert(generation, index)`. Use this browser command for host UI.
-The headless controller replaces that working range with its baseline text in one human
-history transaction. It checks readiness, generation, revision and edit authority;
-shared undo restores text and selection. A working edit clears the selected hunk.
+`selectHunk(generation, index)` reveals and selects both ranges, unfolding them if needed. It
+returns `false` for a stale, unavailable or composing target. In browser UI, use
+`revertHunk(generation, index)`. It also checks disabled and read-only inputs before calling
+`controller.revert(generation, index)`. The controller checks readiness, generation, revision and
+edit permission, then restores the baseline range in one human history transaction. Undo restores
+the text and selection. A working edit clears the hunk selection.
 
 Hosts use explicit tickets for delayed operations:
 
@@ -179,11 +172,10 @@ transitions, edit-lock changes, tab replacement, view disposal or superseding
 confirmation. Restoring permission does not revive it. An empty comparison succeeds without
 adding history. Other views map through the single transaction normally.
 
-Tickets retain resource leases until completion, cancellation or `finish()`. Completion settles
-even rejected or stale results. Finish/cancel are idempotent. An unavailable command throws at
-capture; a stale completion returns `false`. `isCurrent()` checks captured lifetime but does not
-replace completion's validation and authority checks. Host transport cancellation and error UI
-belong to the host; ending a ticket does not abort a host request automatically.
+Tickets hold a resource lease until `complete`, `cancel` or `finish()`. Capture throws when a
+command is unavailable. Completing a stale ticket returns `false` and releases it. Finish and cancel
+are idempotent. `isCurrent()` checks lifetime. Completion also checks edit authority. Cancel the
+host fetch separately if needed.
 
 ### Reference views and decoration
 
@@ -245,12 +237,11 @@ and alignment phase/work/failure; controller readiness alone does not establish 
 
 ## Host responsibilities
 
-Own reference retrieval, acceptance/discard confirmation, transport failures, Save/Run policy,
-provider/search attachments and view-state storage. Guard host composition and any newer version
-selection intent across delayed confirmations. Capture the working resource explicitly for host
-commands invoked from the reference or surrounding controls. Dispose subscriptions and tickets
-with their owners. Call `dispose()` for a browser comparison or `dispose()` for a headless
-controller; then release host-owned views/resources at their own lifetime boundary.
+Fetch and retain the reference, attach search or language clients and store view state. Capture the
+working resource explicitly for Save or Run from the reference pane. On confirmation, check
+composition and whether the user chose another version. Handle transport failures in the host.
+Finish or cancel tickets and call `dispose()` on the mount or headless controller before releasing
+host-owned views.
 
 ## Not covered
 

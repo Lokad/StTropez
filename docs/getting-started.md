@@ -1,24 +1,22 @@
 # Getting started
 
-Embed StTropez by creating a workspace and text resource, opening a tab, and mounting an
-editor inside an empty host element. The host retains the model and owns its storage policy.
+Mount an editor in an empty element. A workspace holds its document and undo history across mounts.
 
 ## Use
 
-Reference the assets-only NuGet package from the project that owns your frontend. Invoke the
-package's asset staging target and serve or bundle its compiled modules. Configure your
-application's resolver to map `sttropez` to the staged `index.js` and `sttropez/browser` to
-`browser/index.js`, with the adjacent declarations for TypeScript. The
-[packaging contract](packaging.md) describes the MSBuild properties, manifest and paths.
+Reference the assets-only NuGet package in your frontend project and run its staging target. Serve
+or bundle the compiled modules. Map `sttropez` to `index.js` and `sttropez/browser` to
+`browser/index.js` with the adjacent TypeScript declarations. See
+[staging paths and MSBuild properties](packaging.md).
 
-Load the staged stylesheet and give the editor a bounded container:
+Load the stylesheet and give the container a height.
 
 ```html
 <link rel="stylesheet" href="./sttropez/editor.css">
 <div id="editor" style="height: 400px; min-width: 0"></div>
 ```
 
-In your application's TypeScript entry point:
+Mount the document from your TypeScript entry point.
 
 ```ts
 import { Workspace } from "sttropez";
@@ -48,16 +46,14 @@ export function openDocument(host: HTMLElement) {
 }
 ```
 
-Call `openDocument` when the container is attached, retain its result in the host controller,
-and call `dispose` when that controller closes the document. The library modules are already
-compiled; your application can use its usual TypeScript build.
+Call `openDocument` after attaching the container. Keep the result in your host controller and call
+`dispose()` when you close the document.
 
 ## Contract
 
-The workspace owns text and history. A tab identifies a presentation target; a mounted view
-owns its independent selections and scroll state. The editor owns the supplied element's
-descendants. Destroying a mount releases its subscriptions, input handlers and internally
-created view. Resource retention and external service operations belong to their owners.
+The workspace owns text and history. Each view has its own selections and scroll position. Disposing
+the mount removes the editor DOM and releases its handlers, subscriptions and internally created
+view. The host manages resource and service lifetimes.
 
 | Asset or identifier | Purpose |
 | --- | --- |
@@ -71,22 +67,14 @@ created view. Resource retention and external service operations belong to their
 
 ## Host responsibilities
 
-Keep the controller outside component rendering. In plain JavaScript, invoke explicit mount
-and teardown functions. In React, pass stable ref callbacks supplied by that controller:
-attachment mounts a view and detachment destroys it. Retain the workspace/document separately
-when a view is temporarily unmounted. Components read immutable observable handles through
-`useSyncExternalStore`; events invoke controller commands. Effects register and clean up
-listeners rather than synchronize editor or application state.
+In plain JavaScript, mount and dispose explicitly. In React, mount through a stable ref, read
+observable handles with `useSyncExternalStore` and call controller commands from event handlers. Use
+effects for listener setup and cleanup. Keep the workspace alive while a view is detached.
 
-Cancel host operations and release their leases before releasing their resources. Store view
-state by document/view identity if the host remounts it. Capture resource, revision and tab
-identity before awaiting storage or service work; do not use the currently focused editor as
-the completion target. Treat saving as a captured operation, not a read of whichever text is
-current when a server reply arrives.
-
-For the next integration step, use [resource and save contracts](workspace.md),
-[language-server integration](language-server.md), [host extension points](host-integration.md)
-or [editor commands and configuration](editor.md).
+Store view state by document and view ID. Capture the resource, revision and tab before starting a
+save or other service call. Cancel outstanding operations and release their leases before releasing
+the resource. See [saving](workspace.md), [language services](language-server.md),
+[host controls](host-integration.md) and [editor configuration](editor.md).
 
 ## Not covered
 

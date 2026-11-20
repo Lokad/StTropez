@@ -1,16 +1,12 @@
 # StTropez documentation
 
-StTropez supplies a text editor, a workspace model and language-server clients. The host
-application owns storage, services, language policy and surrounding controls.
+Start with [Getting started](getting-started.md) to mount an editor and open a document.
 
 ## Choose a task
 
-- [Embed an editor](getting-started.md): obtain the assets, create a document, mount and dispose.
-- [Configure editing](editor.md): keyboard commands, selections and language rules.
-- [Connect a language server](language-server.md): WebSocket transport, session and workspace.
-- [Save or review documents](workspace.md): resource ownership and captured save operations;
-  [comparison](comparison.md) describes reference and working views.
-- [Extend the host](host-integration.md): custom colors, captured insertion and source notes.
+For editing behavior, see [keyboard commands](editor.md#keyboard-and-pointer-commands). For
+persistence, see [save and conflicts](workspace.md#save-conflicts-and-run). To add a provider, see
+[language-server setup](language-server.md#use).
 
 ## Subjects
 
@@ -35,8 +31,8 @@ application owns storage, services, language policy and surrounding controls.
 
 ## Support matrix
 
-“Supported” describes the implemented library contract. “Unverified” identifies evidence
-that requires a real device or consuming application; it does not mean an automated test passed.
+Supported features have a library contract. Items in the last column need testing on the target
+device or in the consuming application.
 
 | Area | Supported | Not supported | Unverified |
 | --- | --- | --- | --- |
@@ -50,38 +46,37 @@ that requires a real device or consuming application; it does not mean an automa
 | Distribution | Compiled dependency-free modules, declarations, CSS and worker assets in NuGet | A .NET runtime dependency or consumer-time library compilation | Production deployment/toolchain adoption |
 | Accessibility | Keyboard navigation and explicit focus traversal | A screen-reader support contract | — |
 
-Actual history restoration of the static demo has focused coverage in isolated headless Chrome
-on Windows: retained editor identity, complete source text, selection, undo/redo, service
-resumption and local save. Cache admission is browser policy; this scope does not establish
-general cache eligibility, interactive device behavior or other browser/platform combinations.
+Headless Chrome on Windows has restored the static demo from browser history with its editor, full
+text, selections, undo/redo, services and local save intact. Cache admission depends on the browser.
+Other browsers and interactive devices need separate checks.
 
 ## Glossary
 
 | Term | Meaning |
 | --- | --- |
-| Resource identity | A host-defined scope/resource/variant key and its workspace resource handle; labels are not identity. |
+| Resource identity | A host-defined scope/resource/variant key and its workspace handle. Labels can change. |
 | Document identity | The text model shared by views and history. |
 | Revision | A version of document contents. A saved/server version is a separate value. |
-| Tab identity and generation | The presentation target and the generation captured before delayed work; replacement invalidates the old target. |
+| Tab identity and generation | A tab and its generation identify the target of a delayed operation. Replacing the tab invalidates that target. |
 | View identity | An independent selection, folding and scroll state over a document. |
 | Capture | Immutable operation inputs and guards retained before asynchronous work. Later focus cannot change the target. |
 | Lease | Explicit resource retention while a view or operation needs it. |
-| Elapsed duration | Wall-clock time between declared endpoints, including delays inside that span; not process CPU time. |
-| Input-handler duration | Time inside the named adapter listener, including model/context work, synchronous subscribers and browser work triggered there. It excludes preceding native work, other listeners and later queued/service/rendering work. |
-| Editor handler samples | `lastBeforeInputMs`, `lastInputMs` and `lastKeydownMs` are separate listener spans. Event counters distinguish a new sample from a retained last value. |
-| Command callback duration | `maxQueuedInputTurnMs`, `maxWordSelectionTurnMs` and `maxDragScrollStepMs` cover their complete synchronous callbacks, including guards, synchronous publication/refresh and scheduling. Per-mount maxima are not callback distributions or whole-interaction latency. |
-| Navigation work | `navigationWorkMs` and `maxNavigationTurnMs` include initialization and complete scheduled navigation callbacks; nested work counts once. Later caret/render frames are excluded except synchronous flushes inside the measured callback. |
-| Navigation preparation | `navigationPreparationMs` covers initial viewport/primary-geometry preparation only; it is a substage of navigation work. |
-| Pointer word selection | `lastWordSelectionMs` covers the synchronous double-click handler and its first scans/subscribers. Later cooperative turns and rendering need separate observations. |
-| Word/grapheme scan step | `maxWordScanStepMs` and `maxGraphemeScanStepMs` cover kernel advances, excluding final normalization, model commit and rendering. They are smaller spans than complete command callbacks. |
-| Event observation span | Time between capture and bubble observers, including intervening listeners; it does not isolate the adapter's own handler. |
-| Edit interaction start | Handled Enter starts at keydown capture; native `insertText` starts at beforeinput capture. Their handler samples and readiness clocks stay separate. A command or native payload can insert several UTF-16 units in one transaction; that transaction can produce several input events. Inserted units, native events and commits are counted separately. |
-| Work units | Algorithmic work counters used for cooperative scheduling; not time deadlines or CPU/memory measurements. |
-| Search scan step | `FindDiagnostics.maxScanStepMs`: maximum synchronous matching/index span. Regex mode measures main-thread dispatch/index work; worker matching, later transfer/decoding, publication and waiting are excluded. |
-| Replacement transaction | `FindDiagnostics.replaceTransactionMs`: final model transaction and synchronous publication/context refresh. Planning and later rendering are excluded. |
-| Comparison advance loop | `TextComparison.getDiagnostics()` reports `maxStepMs` and `totalStepMs` for synchronous controller advances grouped within scheduled tasks. Rendering after the loop and later view/scroll/alignment settlement are excluded. |
-| Frame readiness | Time from a declared event/command start until required text, selection, decorations and working/reference view state are observable under the declared frame checks. It does not establish physical display latency. |
-| Aggregate browser work | Layout/style counter deltas across a batch, including intervening activity; not per-interaction percentiles. |
+| Elapsed duration | Wall-clock time between two declared endpoints, including delays. |
+| Input-handler duration | Time inside one adapter listener. It includes model updates, synchronous subscribers and browser work triggered there. Native work before the listener, other listeners and later service or render work fall outside it. |
+| Editor handler samples | `lastBeforeInputMs`, `lastInputMs` and `lastKeydownMs` each time one listener. Check its event counter to tell whether a sample is new. |
+| Command callback duration | `maxQueuedInputTurnMs`, `maxWordSelectionTurnMs` and `maxDragScrollStepMs` are per-mount maxima for whole synchronous callbacks, including guards, publication, refresh and scheduling. Later work falls outside them. |
+| Navigation work | `navigationWorkMs` and `maxNavigationTurnMs` count initialization and scheduled navigation callbacks, including synchronous flushes. Nested work counts once. Later caret and render frames fall outside the measurement. |
+| Navigation preparation | `navigationPreparationMs` times the initial viewport and primary-caret geometry setup within navigation work. |
+| Pointer word selection | `lastWordSelectionMs` times the double-click handler, including its first scans and synchronous subscribers. Measure later scan turns and rendering separately. |
+| Word/grapheme scan step | `maxWordScanStepMs` and `maxGraphemeScanStepMs` time kernel advances. Final normalization, model commit and rendering fall outside this span. |
+| Event observation span | Time from the capture observer to the bubble observer, including every listener between them. |
+| Edit interaction start | For a handled Enter, start at keydown capture. For native `insertText`, start at beforeinput capture. Keep the two handler and readiness measurements separate. Count UTF-16 units, input events and transactions independently. |
+| Work units | Algorithm steps charged against a cooperative scheduling budget. Duration and memory use vary. |
+| Search scan step | `FindDiagnostics.maxScanStepMs` times the longest synchronous matching or indexing step. For regex, it covers main-thread dispatch and indexing. Worker matching, later transfer and decoding, publication and waiting fall outside it. |
+| Replacement transaction | `FindDiagnostics.replaceTransactionMs` times the final model transaction, synchronous publication and context refresh. Planning and later rendering fall outside it. |
+| Comparison advance loop | `TextComparison.getDiagnostics()` reports `maxStepMs` and `totalStepMs` for synchronous controller advances within scheduled tasks. Later rendering, scrolling and row alignment fall outside the loop. |
+| Frame readiness | Time from the declared event or command until frame checks can observe the required text, selections, decorations and pane state. Physical display latency needs a device measurement. |
+| Aggregate browser work | Change in layout and style counters across a batch. Intervening activity counts toward the total. |
 | Provider duration | Time attributed to language/service work, with transport and scheduling boundaries stated by the measurement. |
 | Automation action duration | Time around a complete scripted action and its readiness condition, including automation transport. |
-| Workflow duration | Time around a sequence of setup, interaction and verification steps; it is not a single interaction's latency. |
+| Workflow duration | Elapsed time for a sequence of setup, interaction and verification steps. |

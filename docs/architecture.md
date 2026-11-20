@@ -1,14 +1,11 @@
 # Architecture
 
-StTropez separates immutable text/workspace state, headless protocol coordination and browser
-presentation. The host supplies application policy, services and surrounding UI. Each mutable
-lifetime has one owner; delayed work carries captured identities and revisions instead of
-consulting whichever tab or editor is active when it completes.
+The browser editor and protocol clients share a headless text and workspace model. The host supplies
+storage, services and surrounding UI.
 
 ## Use
 
-Place a feature in the layer that owns its effects. Dependencies point toward the headless
-model; framework and application code consume public entry points.
+Put platform access in an outer layer. Hosts import the public entries.
 
 ```mermaid
 flowchart TD
@@ -20,10 +17,9 @@ flowchart TD
     Protocol --> Core
 ```
 
-A host analysis operation captures its view before awaiting work. It returns a cleanup handle
-immediately, validates before publishing a result, and retains the capture while a displayed
-result depends on it. The caller handles rejection, checks currentness before use and disposes
-on dismissal, supersession or host teardown.
+Capture the target before starting asynchronous analysis. Return a cleanup handle immediately. While
+the result is visible, retain the capture and check it before use. Dispose it on dismissal,
+replacement or teardown, and handle rejected requests.
 
 ```ts
 import type { DocumentView, TabId, TextBuffer, Workspace } from "sttropez";
@@ -70,16 +66,12 @@ lease semantics.
 | Host application | Storage, authentication, service endpoints, resource routing, framework state, forms and controls | Public package entries; application dependencies stay in the host |
 | Development tools/fixtures | Builds, servers, controlled providers, test hooks and measurement | Development dependencies; excluded from the library runtime graph |
 
-Strict TypeScript checks include separate core and protocol compilations with ES2022 libraries
-and no ambient package types. Those compilations reject use of DOM or Node globals. Runtime
-bundling rejects resolved inputs outside `src/`, so development packages and reference material
-cannot enter the emitted library graph. Dependency direction and ownership also require source
-review; these checks are not a general platform-effect proof.
+Core and protocol compile with ES2022 and no ambient package types. DOM or Node globals fail these
+checks. The runtime build rejects inputs outside `src/`. Review imports and platform effects when
+changing a layer.
 
-The public entries expose integration contracts, while internal modules own implementation
-mechanisms. Package subpaths and payload boundaries are defined in [packaging](packaging.md).
-Development hosts use a synthetic LSP peer; its lexical rules do not establish language semantics.
-The public [language-server contract](language-server.md) defines the supported protocol boundary.
+[Packaging](packaging.md) lists the public entries and assets. The development host’s synthetic peer
+exercises the [supported language-server protocol](language-server.md).
 
 ### Mutable state and lifetime
 
@@ -94,91 +86,62 @@ The public [language-server contract](language-server.md) defines the supported 
 | Feature request | Captured context, cancellation and result lifetime within its provider/view owner |
 | Host controller | Application navigation, menus/forms, commands, recovery and services across view remounts |
 
-During composition, the input owner retains the captured revision, complete selection set and
-native LF mapping. Commit or recovery resolves that capture before projection refresh. Delayed
-word/grapheme/navigation commands share that owner's identity, input-order and authority guards.
-Their computation can use headless cursors without creating an independent mutable input owner.
-Editing commands, fold discovery, comparison, find and bracket highlighting share a private runner for bounded iteration
-and timer continuations. Their owners retain capture validation, iterator disposal, failure
-handling and commit/publication authority. Range navigation keeps its callback continuation
-with the input owner.
-The private ordered-input queue owns retained actions, event-time replay, bounded draining,
-recovery accounting and its scheduled continuation. The editor owns command interpretation,
-capture validation, native-input reconciliation and document commits. Successful commits release
-their recovery text before presentation callbacks; cancellation recovers only unconsumed input.
-Caret presentation reads this state; the editor disposes it before destroying its viewport.
+During composition the input adapter captures the revision, all selections and the native LF
+mapping. It commits or recovers the text before refreshing the input. Word, grapheme and navigation
+commands use the same ordering and edit guards.
 
-Workspace publishes atomic content/history/view changes. Save and Run use
-captured resource APIs; extracting presentation or a computation helper does not split that
-transaction authority. Resource, tab, document and view lifetimes follow the
-[workspace ownership contract](workspace.md#identities-and-snapshots).
+The ordered-input queue drains actions in bounded turns. A commit releases its recovery text before
+notifying the view. Cancellation returns only unconsumed input. Editing, folding, comparison, find
+and bracket matching share scheduling helpers. Each controller checks its own captures, disposes
+iterators and publishes its result. Dispose the caret before the viewport.
 
-Language features share provider synchronization and request-lifetime machinery. Decoding and
-confirmed edit/command policy have separate responsibilities. A cleanup-triggered cancellation
-must not replace a concrete response/validation failure with an expiry message. Preparation
-that intentionally edits must complete before synchronization captures the resulting revision.
-See [language features](language-features.md) for feature-specific validation and action policy.
+The workspace commits text, history and view changes atomically. Save and Run capture the resource
+at invocation. See [workspace ownership](workspace.md#identities-and-snapshots).
+
+Language clients share synchronization and cancellation. If preparation edits the document,
+synchronize the resulting revision. Preserve provider and validation errors when cleanup also
+cancels a request. See [language features](language-features.md).
 
 ### Identity and asynchronous work
 
-Resource keys identify host content; titles and paths displayed in UI are labels. Document
-revision, saved server version, tab generation and view identity have different meanings.
-The [identity glossary](README.md#glossary) and [workspace](workspace.md) define their contracts.
+Use the resource key to identify content and the revision to identify the text you read. The saved
+server version, tab generation and view each serve a separate purpose. See the
+[glossary](README.md#glossary).
 
-Capture the target before awaiting. Validate resource/document identity and the revision needed
-by the operation, plus tab generation and view state when presentation depends on them. A newer
-request against the same unchanged document also needs a request-generation or capture check.
-Cancellation reduces unnecessary work; captured validation prevents stale work from applying.
-
-A tab move does not change content identity. Replacement, closure or disposal invalidates work
-according to its owner. Focus and array positions never select a delayed target. Services can
-outlive a view; their resource leases and settlement follow the workspace operation contract.
-A cleanup handle must be reachable as soon as setup acquires ownership.
+Before awaiting a service, capture the target and take any resource lease it needs. Before applying
+the reply, check the target, revision and any view state the result depends on. Check request
+generation too: two requests can target the same revision. A tab move preserves identity.
+Replacement or closure can invalidate the target. Expose cleanup immediately so the host can cancel
+an abandoned operation.
 
 ### Snapshots and notification delivery
 
-Public snapshots are immutable. Stable observable handles expose reads/subscription separately
-from versioned commands; unchanged snapshots retain identity. Hosts subscribe at the narrowest
-resource/document/field scope they need. A coarse workspace snapshot materializes its inventory
-on demand, so callers requesting that aggregate pay its traversal cost.
+Public observables return immutable snapshots with stable identity until a change. Subscribe to a
+document, resource or field when possible. Reading the coarse workspace snapshot builds its
+inventory on demand.
 
-Comparison line metadata uses a private mutable memo over immutable tree nodes. Sliced and
-concatenated indexes share those nodes while retaining independent memos. A block lookup returns
-its captured coordinates and entries; matching does not depend on a preceding row lookup.
-
-Observers read published state. Commands run outside notification delivery, including nested
-controller notifications. Listener failures are reported without preventing other delivery.
-Single-store status publication uses the internal `NotificationScope.publish` path; features
-construct their snapshots and own command write guards. Workspace transactions and queued LSP
-workspace updates accumulate their changed stores before delivery so observers see complete state.
-The detailed batching, callback and write-guard rules belong to
-[workspace observables](workspace.md#observables). A host reactive library can consume the read
-contract without sharing the workspace's synchronous write/completion semantics.
+Workspace transactions and queued LSP updates publish all changed stores before listeners run. A
+failed listener does not prevent other listeners from receiving the update. Read state during
+notification and issue commands after delivery, including for nested controller notifications. See
+[workspace observables](workspace.md#observables).
 
 ### DOM and framework ownership
 
-The host owns an empty editor container and surrounding controls; StTropez owns descendants
-that it mounts. Annotations, forms and other host surfaces use sibling containers and explicit
-lifecycle/geometry APIs. Two renderers must not reconcile the same descendants.
+Give the editor an empty container. It owns the descendants it mounts. Put host forms and
+annotations in sibling containers and position them with the geometry API.
 
-Persistent host controllers own shared application state. Pure function components read stable
-observable handles and invoke commands from events. Effects register and remove listeners;
-loading, navigation, editor state and command orchestration belong to the controller, not an
-effect, layout effect, memo callback or render-time side effect. Stable refs or explicit host
-mount methods attach and detach views with symmetric cleanup. A view detach does not dispose
-its retained document or application controller. See [embedding](getting-started.md) and
-[host integration](host-integration.md) for recipes.
+In React, keep shared state in a controller. Pure components read stable observables and invoke
+commands from event handlers. Stable refs mount and detach editor views. Effects register and remove
+listeners. Keep the document and controller alive across a view remount. See
+[embedding](getting-started.md) and [host integration](host-integration.md).
 
-Host form snapshots can describe typed resources without pretending they are source strings.
-A source-backed form uses one lossless conversion and explicit invalid-text states for that
-same resource. Distinct settings, source and result resources retain separate identities and
-save authority. Design-system controls, credentials, routing and service execution belong to
-the host.
+A source-backed form needs a lossless conversion and a way to display invalid source. Separate
+settings, source and result resources keep their own identities and save permissions. The host owns
+credentials, routing and service execution.
 
 ### Performance invariants and cost boundaries
 
-These constraints guide implementation and regression ownership. They are not a universal
-constant-time or latency guarantee.
+The table distinguishes work bounded per turn from work that grows with the input.
 
 | Work | Invariant | Cost boundary |
 | --- | --- | --- |
@@ -190,35 +153,26 @@ constant-time or latency guarantee.
 | Allocation and retention | Bound caches/history, share immutable content and release owned listeners/timers/leases | Garbage collection and retained native/browser memory require separate observation |
 | Startup | Keep compiled assets coherent and distinguish optional feature activation | Download, parse, worker startup and first usable view are distinct from warm editing |
 
-An input-handler duration alone cannot establish interaction readiness. Visible text,
-selection, syntax decoration and comparison state form part of the user's result; gutter
-movement or a single frame callback is insufficient when those outputs are pending. The
-[glossary](README.md#glossary) owns clock definitions, and
-[qualification](testing.md) describes test ownership.
+For an edit or scroll, check when the correct text, selection, colors and comparison appear. A
+gutter update can precede the text. See the [clock definitions](README.md#glossary) and
+[test procedures](testing.md).
 
 ### Dependency and acceleration policy
 
-Runtime code has zero third-party dependencies. Reuse existing buffers, maps, controllers,
-platform APIs and host extension points before adding a competing implementation. Generated
-character facts carry their license notices; application parsers/frameworks stay outside the
-runtime. Rendering and Unicode ownership are described in [Unicode](unicode.md).
+Runtime code has zero third-party dependencies. Reuse the existing buffers, controllers and platform
+APIs. Keep frameworks and application parsers in the host. Generated character data retains its
+[Unicode](unicode.md) notices.
 
-Ordinary editing and lifecycle are implemented in TypeScript. A proposed compute accelerator requires
-an isolated measured kernel, bounded inputs/outputs, equivalent TypeScript behavior and captured
-cancellation/version checks. Measurements include encoding, copying, allocation, startup and
-return conversion. Worker scheduling and accelerated computation solve different costs.
-A compiler, managed runtime or WASM runtime is not added without that evidence.
+To propose a compute accelerator, measure one kernel against the TypeScript implementation,
+including startup, encoding, copies, allocation and conversion back. Preserve results, bounds,
+cancellation and revision checks. Require this evidence before adding a compiler or a WASM or
+managed runtime.
 
 ## Host responsibilities
 
-Own application services, policy and framework state. Retain exact targets before asynchronous
-work; validate before use and clean up each acquired owner on failure or teardown. Preserve
-immutable snapshots and resource identities across remounts. Keep input, presentation and
-background jobs responsive through bounded work and scoped subscriptions.
-
-Contributors place new behavior with its state owner, preserve strict layer boundaries and
-update the owning API page when a public contract changes. Qualification should exercise the
-changed guarantee at its owner and reserve broad browser/package checks for coherent milestones.
+The host owns services, routing and framework state. Capture targets before starting work, release
+them on failure or teardown, and retain document identity across remounts. Use scoped subscriptions
+for view updates. See [testing](testing.md#test-ownership) when changing a contract.
 
 ## Not covered
 

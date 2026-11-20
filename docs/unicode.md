@@ -1,13 +1,12 @@
 # Unicode
 
-StTropez stores UTF-16 text, applies Unicode 18 grapheme rules, and exposes
-advisory character warnings. The browser measures and shapes text through native font and
-range APIs. These facilities preserve source text; they do not normalize it.
+StTropez preserves UTF-16 source text, uses Unicode 18 rules for grapheme boundaries and can flag
+unusual characters. The browser shapes and measures the text.
 
 ## Use
 
-Index an immutable buffer cooperatively. The host supplies a scheduler that yields to its
-event loop and cancels the operation when its captured document or selection expires.
+Index a captured buffer in steps. Yield between steps and cancel if the document or selection
+changes.
 
 ```ts
 import { createGraphemeCursor } from "sttropez";
@@ -33,8 +32,7 @@ export async function indexGraphemes(
 }
 ```
 
-Character inspection can consume one bounded batch at a time. Keep the same immutable buffer
-and original end offset when resuming at `nextFrom`.
+Resume a warning scan at `nextFrom` with the same buffer and original end offset.
 
 ```ts
 import { CharacterWarnings, characterWarningLabel } from "sttropez";
@@ -54,8 +52,7 @@ export function inspectCharacters(buffer: TextBuffer, from: number, to: number) 
 }
 ```
 
-Load a host-supplied font through an explicitly owned controller. The caller retains and
-disposes the controller with its host view; it also owns the CSS that selects the family.
+The host loads the font, selects its family in CSS and disposes the controller with the view.
 
 ```ts
 import { createFontAssetController } from "sttropez/browser";
@@ -83,18 +80,16 @@ export function hostFont(owner: Document, applyFamily: (family: string) => void)
 
 ### Cooperative cursor lifetime
 
-Grapheme and word cursors expose `next(workBudget)`, `snapshot()` and `dispose()`.
-Snapshots are immutable and do not advance work. Status is `running`, `ready`, `failed` or
-`disposed`; only `ready` exposes a completed result, including a word offset of zero or an
-empty index. Execution failure throws its original cause, records a failure message and
-releases unfinished work. `dispose()` clears the result and failure and is idempotent.
-A completed index retained by the caller stays usable. Reentrant advancement or disposal
-throws; the active operation can catch that error or fail normally.
+Grapheme and word cursors expose `next(workBudget)`, `snapshot()` and `dispose()`. Reading a
+snapshot leaves the cursor in place. Status is `running`, `ready`, `failed` or `disposed`. Only
+`ready` has a result, which can be an empty index or word offset zero. Failure releases unfinished
+work, records a message and throws the original cause. `dispose()` clears the result and failure and
+is safe to repeat. Callers can keep using a completed index. Advancing or disposing during an active
+call throws. The active call may catch that error.
 
-Budgets are safe integers of at least 256, defaulting to 4,096. They count charged algorithm
-work between cooperative checkpoints, which can overshoot the requested budget. They are
-neither generator-step counts nor elapsed-time limits; the host schedules further calls.
-Invalid budgets throw before changing cursor state, including after completion or disposal.
+Pass a safe integer of at least 256 units per call (default 4,096). The cursor charges algorithm
+work between checkpoints and can exceed the budget before yielding. Generator steps and elapsed time
+vary. An invalid budget throws before changing state, even after completion or disposal.
 
 ### Graphemes and word movement
 
@@ -118,13 +113,12 @@ offset inside the range. An empty range has one boundary and no clusters. `bound
 explicitly materializes the requested boundary interval. `graphemeBoundaries(text)` runs
 the same kernel synchronously for bounded strings.
 
-Editor movement first attempts an exact local ASCII query. Uncertain context triggers
-cooperative indexing of the captured logical line, including its LF. Backward movement at a
-line start includes the preceding line. The cache holds one immutable buffer/range pair;
-it does not truncate long clusters or reset regional-indicator parity at a fixed window.
-Word destinations use these boundaries. Collapsed deletion from inside a cluster expands
-to both boundaries; nonempty selections keep their exact requested extent. Delayed commands
-validate revision, selection, tab generation, composition and edit permission before use.
+For movement, the editor first checks local ASCII text. When it needs more context, it indexes the
+captured logical line and its LF, including the preceding line for backward movement at a line
+start. It caches one buffer/range pair and preserves long clusters and regional-indicator parity.
+Word movement uses the same boundaries. At a caret inside a cluster, deletion removes the whole
+cluster. A nonempty selection keeps its exact extent. Delayed commands recheck revision, selection,
+tab generation, composition and edit permission.
 
 `WordCursor(buffer, offset, direction, options)` supplies code-word endpoints in either direction.
 `WordOptions` can bound the source range and disable whitespace skipping. Unicode letters,
@@ -141,10 +135,10 @@ logical-line bounds where needed.
 
 ### Browser caret geometry
 
-Rows use left-to-right layout. The browser supplies shaped glyph rectangles. Caret stops
-follow logical grapheme boundaries, including combining sequences and emoji. Left and Right
-cross a line break to the adjacent visible line, skipping folded rows. Selection endpoints
-retain their affinities. Hit testing and pointer selection use the same row geometry.
+Rows use left-to-right layout and browser-shaped glyph rectangles. Caret stops follow logical
+grapheme boundaries, including combining sequences and emoji. Left and Right cross line breaks and
+skip folded rows. Selection endpoints keep their affinities. Hit testing and pointer selection share
+row geometry.
 
 ### Character warnings
 
@@ -161,13 +155,12 @@ Each allow-list entry must contain exactly one code point. `kind(codePoint, offs
 | `non-breaking-space` | U+00A0, U+2007 or U+202F |
 | `unusual-space` | Other classified whitespace, excluding ordinary space, tab, CR and LF |
 
-Letters from other writing systems and ordinary combining marks are not warnings. Joiners
-and variation selectors can be meaningful; warning policy belongs to the host.
-`scan(buffer, from, to, limits)` returns immutable exact code-point ranges, including a
-surrogate pair clipped by the requested boundary. A limited batch supplies `nextFrom` for
-continuation against the same buffer and original end. `scanText(text, absoluteOffset)`
-expects an already bounded, complete-code-point fragment. `characterWarningLabel` supplies
-a plain-text label. A classification is advisory, not a language-validity or security verdict.
+Ordinary combining marks and letters from other scripts pass without warnings. Joiners and variation
+selectors can be meaningful. The host chooses what to flag. `scan(buffer, from, to, limits)` returns
+exact code-point ranges, including a surrogate pair clipped by the requested boundary. Resume a
+limited scan at `nextFrom` with the same buffer and end. `scanText(text, absoluteOffset)` accepts a
+bounded fragment of complete code points. `characterWarningLabel` gives a plain-text description. A
+warning alone establishes neither validity nor security.
 
 Enable markers with the editor's `characterWarnings: true` or policy options, or call
 `editor.characterWarnings.configure(options)`. Markers are off by default; `false` clears
@@ -176,10 +169,9 @@ a bounded batch with document/revision and an `isCurrent()` guard, or `null` if 
 Edits, policy changes, view closure and disposal expire that capture. Invalid configuration
 preserves the existing policy; configure outside workspace notifications.
 
-Markers classify presented fragments without a document scan or background job. Their spans
-cover the containing grapheme; query ranges identify the exact code point. Markers preserve
-source text, syntax foreground and selection backgrounds. Customize
-`--st-character-warning-background` and `--st-character-warning-border`.
+Markers inspect only the presented fragments. Each marker covers a grapheme. A query returns the
+exact code point. Markers preserve source text, syntax color and selection backgrounds. Style them
+with `--st-character-warning-background` and `--st-character-warning-border`.
 
 ### Native font registration
 
@@ -208,26 +200,22 @@ font bytes and chooses the views that use the returned CSS family.
 | Character scan | Default 4,096 units and 256 warnings; integer `maxUnits >= 2`, `maxWarnings >= 1`; at most `maxUnits + 5` units read |
 | Character marker cache | At most 128 presented fragments |
 
-Work counts are cooperative scheduling units, not time or memory guarantees. Allocation,
-freezing, native calls and garbage collection are indivisible from the caller's perspective.
+Allocation, freezing, native calls and garbage collection can each run past a scheduling checkpoint.
+Measure elapsed time and memory separately.
 
 ## Host responsibilities
 
-Capture identities and revisions before scheduling work, yield between advances, and dispose
-abandoned cursors. Revalidate captures before applying results to a live view.
-Choose segmentation ranges with enough context. Use query methods when a bounded
-consumer does not need a fully materialized array.
+Capture identity and revision before scheduling, yield between advances and dispose abandoned
+cursors. Recheck the capture before updating a live view. Give each segmentation range enough
+context. Use bounded queries when you need only part of the index.
 
-Choose warning policy, font sources and CSS. Reset host font selection before
-disposing a face that its views use. Treat character warnings as contextual advice.
-Geometry caches follow DOM, style/font metrics and row movement; use the editor's supported
-presentation APIs when changing those inputs.
+Choose warning policies, font sources and CSS. Reset the selected font before disposing its face.
+Use the editor’s presentation APIs when changing styles or fonts so cached geometry follows the
+change.
 
 Unicode data and development fixtures carry the [Unicode License V3](../licenses/Unicode-3.0.txt).
-The generator accepts reviewed local data; ordinary builds and consumer restores do not
-download or regenerate it. The [regeneration workflow](testing.md#unicode-regeneration)
-pins input hashes and checks existing outputs offline. The TypeScript kernels use generated
-facts and native browser rendering, preserving the library's zero runtime dependencies.
+The [regeneration workflow](testing.md#unicode-regeneration) uses reviewed local inputs, pins their
+hashes and checks outputs offline. Builds and restores use the generated data directly.
 
 ## Not covered
 

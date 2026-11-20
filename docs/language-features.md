@@ -1,15 +1,14 @@
 # Language features
 
-Use StTropez's language clients to obtain validated results for captured documents. Completion
-and occurrence controllers attach to editor views; the other clients return models for host
-controls. The host owns presentation, navigation, target loading and edit decisions. Configure
-the shared provider through the [language-server guide](language-server.md).
+Language clients return results for a specific document revision. Completion and occurrence
+controllers attach to a view. The host renders other results, opens targets and approves edits. See
+[provider setup](language-server.md).
 
 ## Use
 
-Enable each method in the provider's `features` list before connecting. Diagnostics use the
-separate `diagnostics` option; workspace-edit capability uses `workspaceEdits`. Incoming edits
-and command execution have their own [connection policy](language-server.md#commands-and-edit-decisions).
+Before connecting, list the methods you use in `features`. Set `diagnostics` and `workspaceEdits`
+separately. Incoming edits and command execution have their own
+[connection policy](language-server.md#commands-and-edit-decisions).
 
 | Feature | Client or controller | Enabled method |
 | --- | --- | --- |
@@ -24,27 +23,26 @@ and command execution have their own [connection policy](language-server.md#comm
 | Occurrences | `createLspHighlightClient`; browser `createLspHighlightController` | `textDocument/documentHighlight` |
 | Folding | [Folding client and discovery controller](folding.md#language-server-discovery) | `textDocument/foldingRange` |
 
-Clients in the table come from `sttropez/protocol` unless marked as browser APIs. Retain one
-client per independent feature intent. `run` captures document snapshots; `cancel` expires its
-work and published results; `dispose` ends participation. Connection and synchronization
-ownership follow the [shared scope contract](language-server.md#workspace-ownership-and-synchronization).
-Headless clients do not capture browser selections, focus or host edit permission.
+Unless marked browser-only, the clients above come from `sttropez/protocol`. Use separate clients
+for independent requests. `run` captures document snapshots, `cancel` expires the work and its
+published results, and `dispose` ends participation. The
+[provider scope](language-server.md#workspace-ownership-and-synchronization) manages
+synchronization. Capture view, focus and edit permission in the host.
 
-Each headless feature client exposes `getSnapshot`, `subscribe`, `snapshot`, `isBusy`, `options`,
-`cancel` and `dispose`. `isBusy()` covers pending requests and follow-up work; the action client
-also includes confirmed command execution. `options(document)` is a
-[read-only capability query](language-server.md#feature-capability-queries) for the client's
-primary method. Navigation accepts an optional second argument of `textDocument/definition`
-(the default) or `textDocument/references`; colors accept `textDocument/documentColor`
-(the default) or `textDocument/colorPresentation`. Other methods are rejected. Options queries
-and new subscriptions on a disposed client throw; `dispose()` is idempotent.
-`getSnapshot()` reads the scoped provider connection state. Subscribers are notified when pending request or follow-up work starts and finishes, including
-requests for unchanged text. Start delivery is queued after the call exists and may coalesce
-with connection updates or cancellation in the same turn. Read `isBusy()` in the callback;
-it describes current work, not a history of every intermediate transition.
+Every headless client exposes `getSnapshot`, `subscribe`, `snapshot`, `isBusy`, `options`, `cancel`
+and `dispose`. `getSnapshot()` reads scoped connection state. Read `isBusy()` in a subscription to
+check pending requests and follow-ups, including confirmed action execution. Starting work on
+unchanged text also notifies. Start delivery is queued and can coalesce with connection changes or
+cancellation in the same turn.
 
-For a mounted completion controller, retain the published list ID in each host action. This
-prevents a delayed click from selecting an item in a replacement list:
+`options(document)` reads [capabilities](language-server.md#feature-capability-queries) for the
+primary method. Navigation also accepts `textDocument/definition` (default) or
+`textDocument/references`. Colors accept `textDocument/documentColor` (default) or
+`textDocument/colorPresentation`. Other methods throw, as do option queries and new subscriptions
+after disposal. `dispose()` is idempotent.
+
+Capture the completion list ID when rendering an item. A delayed click will then expire if another
+list replaces it.
 
 ```ts
 import type { LspEditorController } from "sttropez/browser";
@@ -60,18 +58,17 @@ export function completionActions(language: LspEditorController) {
 }
 ```
 
-Render labels as text. Subscribe to the controller, rebuild controls from its immutable
-snapshot and remove the subscription when the host view ends. The
-[editor attachment recipe](language-server.md#use) covers creation and teardown.
+Render labels as text and update controls from the immutable snapshot. Unsubscribe on detach. See
+[attachment and teardown](language-server.md#use).
 
 ## Contract
 
 ### Captures and ranges
 
-A `LspDocumentCapture` identifies the exact URI, resource, document, revision, sent buffer/index,
-wire version, connection epoch and registration generation. `isCurrent` must pass again before
-publishing or using a delayed result. A sent version establishes synchronization order, not
-completed server analysis. Capture host view/selection/authority separately before awaiting work.
+An `LspDocumentCapture` records the URI, resource, document, revision, sent buffer/index, wire
+version, connection epoch and registration generation. Check `isCurrent` before displaying or using
+a result. The sent version gives wire order. Capture the host view, selections and edit permissions
+separately.
 
 `lspRangeOffsets` converts raw UTF-16 positions. Character positions past a valid line's end
 clamp to that end; nonexistent lines, negative/noninteger positions and reversed wire ranges
@@ -79,10 +76,9 @@ are refused. Clamping does not split CRLF. A position inside a surrogate pair re
 meaning. Feature decoders validate a complete result before publication; diagnostics and folding
 have the explicit placement/skip behavior described in their contracts.
 
-Optional `prepare` callbacks run inside the client's captured lifetime and receive the scoped
-custom-message API. They do not authorize retargeting a request to newer text. Superseded work
-cannot publish even if a host callback finishes late. Handle rejected promises and expire visible
-results when host guards change; a stale model does not remove its host-rendered controls itself.
+A `prepare` callback receives the scoped custom-message API. A late callback cannot publish for a
+superseded request or retarget it to newer text. Handle rejection and dismiss host controls when
+their captures expire.
 
 ### Diagnostics
 
@@ -139,10 +135,10 @@ host edits, skipped revisions and expired binding authority refuse adoption. Res
 adopted choice captures and synchronizes its new revision before sending the original opaque
 wire item. The host chooses which typed characters qualify as a prefix and guards its view.
 
-Passing `retain: batch` to `run` preserves that current batch while a replacement list is
-pending. Cancelling that pending call preserves the retained choices; a new reply replaces
-them. Client `cancel()` expires all choices. Binding, URI, registration, connection and disposal
-changes cannot revive a retained batch. Diagnostics participation has an independent scope.
+Pass `retain: batch` to `run` to keep its choices while a new list is pending. Cancelling that call
+keeps the choices. A new reply replaces them. Client `cancel()` expires all choices. Changing the
+binding, URI, registration or connection, or disposing the client, cannot revive them. Diagnostics
+use a separate scope.
 
 Read completion labels without mounting a view:
 
@@ -166,15 +162,15 @@ export async function completionLabels(
 }
 ```
 
-`createLspEditor(workspace, tab, editor, options)` coordinates completion and diagnostics for
-one mounted view. It uses the headless completion client and owns view guards, input listeners
-and acceptance; the host renders its observable choices and status. `dispose()` releases that controller without disposing
-the editor or provider. `request()` invokes completion explicitly; `automatic: false` disables
-automatic invocation. `canCapture` supplies an additional host readiness guard.
-Each mounted controller keeps a diagnostic scope and a completion scope; they share the
-document binding and workspace lease.
-`prepareCompletion` receives the completion request's scope after synchronization. Cancellation
-before that stage skips the callback; cancelled preparation cannot publish or retarget its result.
+`createLspEditor(workspace, tab, editor, options)` attaches completion and diagnostics to one view.
+The controller handles input, selection checks and acceptance. The host renders choices and status.
+`request()` invokes completion. Set `automatic: false` to require explicit requests. Supply
+`canCapture` for additional readiness checks.
+
+Completion and diagnostics have separate scopes sharing a document binding and workspace lease.
+After synchronization, `prepareCompletion` receives the completion scope. Cancellation skips pending
+preparation and discards a late result. `dispose()` releases this controller. The editor and
+provider keep their own lifetimes.
 
 Automatic completion follows ordinary prefix typing and advertised trigger characters after
 input settles, with one collapsed caret and no active composition. Ctrl/Cmd+Space invokes it
@@ -252,11 +248,11 @@ commit-character acceptance inserts expanded text plus the character without sta
 
 ### Hover and documentation
 
-`createLspHoverClient(provider).run(document, offset, prepare?)` returns `{ result, cancel }`.
-The result is null or a captured model with `text`, format-preserving `content`, optional `range`
-and `isCurrent`. `decodeLspHover` accepts Hover/null, legacy strings and MarkedString arrays/code
-fragments. Legacy strings retain Markdown format; `{ language, value }` fragments retain code
-format. A hover does not need a range to be useful. The host owns placement, focus and dismissal.
+`createLspHoverClient(provider).run(document, offset, prepare?)` returns `{ result, cancel }`. The
+result is null or contains `text`, formatted `content`, an optional `range` and `isCurrent`.
+`decodeLspHover` accepts Hover/null, legacy strings and MarkedString arrays or code fragments.
+Legacy strings use Markdown. `{ language, value }` stays code. The host positions and dismisses the
+hover, including replies without a range.
 
 `mountDocumentation` from `sttropez/browser` renders `DocumentationContent` into its own appended
 subtree. `setContent` reuses an unchanged immutable array; `dispose` removes the view and listeners.
@@ -321,10 +317,9 @@ cancellation/disposal or provider changes clear it. Explicit host context takes 
 Inherited context is omitted if it would exceed the advisory bound. It retains no old buffer and
 grants no edit authority; cancelled late replies cannot replace it.
 
-The host owns trigger/retrigger dispatch, input/composition readiness, overload controls, popup
-placement and key priority when completion is also visible. Changing the displayed overload does
-not edit text. Use [documentation presentation](#hover-and-documentation) for signature and
-parameter content, and keep request lifetime independent of formatting.
+Choose when to request signature help, which popup gets a key and how to display overloads. Wait for
+input and composition as needed. Switching overloads leaves source text intact. Render signature and
+parameter content with the [documentation view](#hover-and-documentation).
 
 ### Navigation and target loading
 
@@ -349,18 +344,15 @@ idempotent `release`, or undefined for an unavailable URI. The target's line ind
 captured buffer, with an independent currentness guard. A closed target has `version: null`;
 its local revision must not substitute for an unknown wire version.
 
-The host owns URI policy, contents and access rights. Loading needs neither an editor view nor
-`didOpen` and grants no permission to edit or open an external URL. Connect cancellation to host
-loading and check context currentness before publishing loaded resources. Cancellation, disposal,
-supersession and provider changes settle pending loading and release retention, including results
-arriving late. Successful targets stay retained through the client's result lifetime; server-edit
-targets stay through the decision. The complete batch is rechecked after loading.
+Authorize each URI and supply its contents in the host. Loading requires no view or `didOpen` and
+grants no right to edit or open a link. Connect loader cancellation to the request. On supersession,
+cancellation, disposal or provider change, release even late targets. Keep successful targets until
+the client result or server-edit decision ends. Recheck the whole batch after loading.
 
-Capture the source's complete selection set and view state for a host Return command. Pending
-view intent can expire when selection/focus changes; published read-only result lists can instead
-use resource/provider guards to allow navigation between results. An explicit reveal must use the
-captured target, without retargeting to whichever tab is focused later. Read queries do not change
-history or comparison baselines. An immutable comparison reference needs no provider binding.
+For Return, save the original view state and all selections. A focus or selection change can expire
+a pending navigation. Once a read-only list is visible, resource and provider checks can keep it
+available as users move between results. Reveal the captured target. Reads preserve history and
+comparison baselines. An immutable comparison reference needs no provider binding.
 
 ### Rename and workspace edits
 
@@ -582,17 +574,15 @@ quota is not an allocation bound. Complete list validation precedes host paging.
 
 ## Host responsibilities
 
-Render literal text or the documented presentation subset, with bounded visible lists and access
-to all retained choices. Define shortcuts, popup placement, navigation/Return behavior, link
-opening, name/color input policy and review controls. Keep rendering separate from application
-state changes and dispose clients, subscriptions and content at their ownership boundaries.
+Choose shortcuts, popup placement, Return behavior, allowed links and edit controls. Render literal
+text or supported Markdown. Page long lists so users can reach every choice. Dispose UI, clients and
+subscriptions together when their lifetimes match.
 
-Capture resource, revision, complete selections, tab/view, fold/input state and authority before
-delayed work. Revalidate after awaits and before mutation or navigation. Keep provider results and
-loaded targets retained until the decision ends. The browser completion/occurrence controllers
-own their documented view coordination; headless clients provide protocol captures and leave
-host intent guards to the caller. Use atomic workspace edits, preserve independently captured
-Save/Run identities, and report applied phases accurately when later command work fails.
+Before applying a delayed result, recheck the resource, revision, view, all selections, folds, input
+state and permission. Keep result and target leases until the decision finishes. Browser controllers
+check their attached view. Headless clients rely on the host for that check. Apply workspace edits
+atomically. Keep Save/Run captures independent and report any edits already applied if a later
+command fails.
 
 ## Not covered
 

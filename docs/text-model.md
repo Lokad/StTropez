@@ -1,9 +1,8 @@
 # Text model
 
-StTropez represents text as immutable UTF-16 buffers. Range edits produce a new buffer and a
-position map; selections, anchors and snippet plans use those coordinates. These headless
-primitives do not own document revisions, persistence or view lifetime. Use the
-[workspace](workspace.md) to apply them to a live document.
+Text buffers are immutable and use UTF-16 offsets. Each edit returns a buffer and a position map for
+selections, anchors and snippet plans. The [workspace](workspace.md) tracks revisions and applies
+edits to live documents.
 
 ## Use
 
@@ -20,8 +19,8 @@ export const secondLine = change.buffer.slice(change.buffer.offsetAt(1), change.
 // secondLine is "two"; original contains "one\r\ntwo".
 ```
 
-Keep the returned buffer and mapping together with the transaction's captured document identity
-and revision. Equal lengths or equal text do not establish that a delayed operation is current.
+Keep the buffer and map with the captured document identity and revision. A replacement document can
+have the same length or text.
 
 ## Contract
 
@@ -51,11 +50,10 @@ Line lookup traverses cached tree and backing metadata. Reading or comparing uns
 require work proportional to the requested content. Chunks are not guaranteed to end at a
 line, code point or grapheme boundary.
 
-The buffer uses a persistent AVL piece tree to share unchanged text across versions. Cached
-lengths and LF indexes support local range and line lookup. Single edits split/join the tree;
-sorted batches traverse source ranges together and retain untouched subtrees. Small pieces
-can be packed into shared backings to limit fragmentation. This balances local edits, range
-reads and retained versions without making document-wide reads or comparisons constant work.
+A persistent AVL piece tree shares unchanged text across versions. Cached lengths and LF indexes
+support range and line lookups. A single edit splits and joins the tree. A sorted batch traverses
+source ranges together and keeps untouched subtrees. Small pieces can share backing storage to
+reduce fragmentation. Full reads and comparisons can cost work across the document.
 
 ### Edits
 
@@ -116,9 +114,9 @@ defaults to `"after"` at both endpoints. `mapSelectionSet(mapping, set)` maps ev
 then normalizes any new overlaps. The primary index refers to the normalized array and is not
 a durable view or resource identity.
 
-`planSelectionEdits(length, normalizedSet, textOrTexts)` returns a `SelectionEditPlan`: one
-original-coordinate replacement per range and the resulting collapsed caret set. Per-range
-strings follow normalized range order. Planning changes no buffer or workspace state:
+`planSelectionEdits(length, normalizedSet, textOrTexts)` returns a `SelectionEditPlan` with one
+replacement per range in original coordinates and a collapsed caret for each replacement. Per-range
+strings follow normalized range order. The caller applies the plan.
 
 ```ts
 import { planSelectionEdits } from "sttropez";
@@ -133,8 +131,8 @@ export function replaceSelections(
 }
 ```
 
-For a live document, submit the edits and resulting selections through one captured workspace
-transaction. [Document views](workspace.md#document-views) define undo and other-view mapping.
+Submit the edits and selections in one workspace transaction. See
+[document views](workspace.md#document-views) for undo and mapping to other views.
 
 ### Explicit newline conversion
 
@@ -192,11 +190,11 @@ export const chosen = plan ? buffer.apply(plan.edits).buffer : buffer;
 
 ### Conservative change spans and diagnostics
 
-`BufferChangeCursor(before, after)` finds one `BufferChangeSpan` with `{ from, to, insertFrom,
-insertTo }`: replace the old interval with the new buffer's insertion interval. It proves shared
-edges by storage identity without reading text. Unproved text stays inside the span, so equal
-independent buffers or distant edits can require a wide replacement. This is not a minimal diff.
-Stream the insertion through `after.chunks(insertFrom, insertTo)` with host-defined chunk limits.
+`BufferChangeCursor(before, after)` returns a `BufferChangeSpan` with
+`{ from, to, insertFrom, insertTo }`. Replace the old interval with
+`after.chunks(insertFrom, insertTo)`, using the host’s chunk limits. The cursor skips edges that
+share storage without reading text. Equal buffers with separate storage or distant edits can produce
+a wide span.
 
 ```ts
 import { BufferChangeCursor } from "sttropez";
@@ -232,11 +230,10 @@ storage need not prove any span. Close an interrupted iterator and
 dispose an abandoned change cursor to release captured buffers. These proofs do not authorize
 updates to a live resource.
 
-`readMetrics()` returns immutable `BufferReadMetrics` counters for explicit text exports and
-requested slice units. It does not count callers reading every chunk or measure all text work.
-`diagnostics()` and `TextBuffer.retained(versions)` traverse retained structure; `BufferRetention`
-counts shared nodes, backings and indexed units across versions. Logical units are not heap bytes.
-Keep those traversals outside input handlers and routine readiness polls.
+`readMetrics()` returns `BufferReadMetrics` for explicit text exports and requested slice units.
+Chunk reads bypass those counters. `diagnostics()` and `TextBuffer.retained(versions)` traverse
+retained storage. `BufferRetention` counts shared nodes, backings and indexed units. Keep these
+traversals out of input handlers and readiness polls. Heap usage requires a separate measurement.
 
 | Limit | Contract |
 | --- | --- |
@@ -248,11 +245,10 @@ Keep those traversals outside input handlers and routine readiness polls.
 
 ## Host responsibilities
 
-Choose document, batch and snippet limits; schedule cooperative cursors; retain only needed
-versions. Bind asynchronous work to captured resource identity, revision, authority and lifetime.
-Choose newline policy at import/export boundaries. Use bounded reads for rendering and service
-requests, and explicit whole-text exports for services that require them. Apply selection and
-snippet plans with their text changes in the same workspace transaction.
+Set document, batch and snippet limits. Schedule cursor work and retain only the versions you need.
+Check resource identity, revision, authority and lifetime before applying delayed results. Choose a
+newline policy on import and export. Prefer bounded reads and apply selection or snippet plans in
+the same transaction as their edits.
 
 ## Not covered
 

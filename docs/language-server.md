@@ -1,18 +1,15 @@
 # Language server
 
-Connect a host-owned language service through `LspWorkspace`. StTropez implements a subset of
+`LspWorkspace` connects a host-owned language service over WebSocket. It supports a subset of
 [LSP 3.17](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/)
-over [JSON-RPC 2.0](https://www.jsonrpc.org/specification), with WebSocket text messages and UTF-16
-positions. The headless protocol entry owns validation, synchronization and request lifetime;
-the host owns connection settings, resource access, presentation and edit authorization.
-The TypeScript wire engine uses platform JSON and transport APIs and has no runtime package
-dependencies.
+with [JSON-RPC 2.0](https://www.jsonrpc.org/specification), text messages and UTF-16 positions. The
+protocol client validates and synchronizes documents. The host chooses the endpoint, authorizes
+access and presents results.
 
 ## Use
 
-Create one provider per workspace and provider configuration. Supply a stable mapping from
-document snapshots to exact URIs and language IDs. Obtain fresh connection settings for each
-attempt, including any credentials required by the server:
+Create one provider per workspace and provider configuration. Map each document to a stable URI and
+language ID. Obtain fresh settings and credentials for each connection attempt.
 
 ```ts
 import type { Workspace } from "sttropez";
@@ -61,12 +58,10 @@ export function createLanguageProvider(
 }
 ```
 
-Construction opens no connection. The scheduler runs callbacks on a future turn, including
-zero-delay work. The settings callback can use its cancellation context to abandon credential
-retrieval; returning settings after cancellation cannot open a socket through this recipe.
-Enable only features whose results the host validates and presents. `features` defaults to an
-empty list; diagnostics, workspace edits, incoming edits and Markdown documentation are separate
-opt-ins. The example enables completion, hover and diagnostics.
+Construction is offline. Supply a scheduler that defers even zero-delay callbacks. Use the
+cancellation context when fetching credentials. This example enables completion, hover and
+diagnostics. `features` defaults to empty. Diagnostics, workspace edits, incoming edits and Markdown
+each need a separate opt-in.
 
 Attach completion and diagnostics to an existing mounted editor:
 
@@ -90,17 +85,14 @@ export function attachLanguage(
 }
 ```
 
-Read `language.getSnapshot()` and subscribe through `language.subscribe()` and call `language.dispose()`
-when the view detaches. It releases its requests and subscriptions without destroying the editor
-or provider. Dispose other feature clients at their own boundaries, then `provider.dispose()` at
-the workspace/configuration boundary. Destroy the mounted editor separately. Connect the host's
-retry control to `provider.connect()` or `provider.reconnect()` and handle its rejected promise.
-The [language-feature contract](language-features.md) defines controller commands and capture
-guards; [embedding](getting-started.md) defines mounting and view teardown.
+Read `language.getSnapshot()` and subscribe with `language.subscribe()`. On detach, call
+`language.dispose()` to release requests and listeners. Dispose the editor separately. Release other
+clients before disposing their provider. Wire Retry to `provider.connect()` or
+`provider.reconnect()` and handle rejection. See [feature commands](language-features.md) and
+[embedding](getting-started.md).
 
-Custom handlers use a feature scope and validate their own schemas. In this example, the host
-reader authorizes the resource and captures its identity before asynchronous work; its result
-guard checks that capture when the reply is ready:
+Custom handlers validate their own messages. This reader authorizes and captures the resource before
+loading it, then checks the capture before replying.
 
 ```ts
 import {
@@ -131,30 +123,25 @@ export function registerResourceContext(
 }
 ```
 
-Retain the returned removal function, or dispose the scope to remove its handlers. Custom
-handlers persist across reconnect; pending calls do not. Use `request`/`notify` for outgoing
-custom messages and `onRequest`/`onNotification` for incoming ones. Lifecycle, synchronization
-and reserved protocol methods cannot be replaced through the custom-message API.
+Use `request`/`notify` to send custom messages and `onRequest`/`onNotification` to receive them.
+Registrations survive reconnects. Pending calls expire. Use the removal function or dispose the
+scope to unregister. Lifecycle, synchronization and reserved methods cannot be overridden.
 
 ## Contract
 
 ### Transport and session
 
-`openWebSocketTransport` creates a browser `RpcTransport` only when invoked. Each ordered text
-message contains one JSON value, without stream `Content-Length` headers. Binary messages are
-refused. Opening supports cancellation and a deadline. Disposal releases transport listeners,
-rejects pending opening and requests native socket closure. The browser controls completion of
-network shutdown; it can wait for an outstanding opening handshake. A disposed session cannot
-initialize or regain ownership when that handshake completes later.
-Transport policy failures close the native socket with code `4003` for binary input or `4009`
-for a message/buffer limit. Imports perform no network work.
+Calling `openWebSocketTransport` opens a browser `RpcTransport`. Each ordered text message carries
+one JSON value without `Content-Length` headers. Opening accepts cancellation and a deadline.
+Disposal removes listeners, rejects a pending open and requests socket closure. The browser may
+finish a handshake before closing, but a disposed session cannot initialize. Binary messages close
+the socket with `4003`, message or buffer overflow with `4009`. Importing the module opens no
+connection.
 
-`preProtocolMessage` is raw host text sent once after opening and before the transport promise
-resolves. Omission sends nothing; an empty string sends an empty message. The adapter captures
-the option at invocation, validates it before creating the socket and applies the protocol
-traffic limits to its send. Success means the text was queued. It does not establish successful
-authentication or consume a handshake reply. A separate handshake exchange belongs in the host
-connection factory.
+`preProtocolMessage` sends raw text once after open and before the transport promise resolves. Omit
+it to send nothing. An empty string sends an empty message. The adapter captures and validates it
+before opening the socket and applies the usual send limits. Success means the send was queued. Put
+any authentication reply or further handshake in the host connection factory.
 
 `JsonRpcConnection` supplies bidirectional requests, notifications, correlated responses,
 structured errors, bounded batches, cancellation and deadlines. Calls expose an ID, a result
@@ -196,18 +183,14 @@ Edits made while stopping remain local and are synchronized by that later connec
 
 ### Feature capability queries
 
-`queryFeatureOptions(method, document)` reads matching static and dynamic options without
-opening, closing or synchronizing documents, acquiring resource leases, or changing a request's
-participation. The returned array and option objects are immutable. Queries use the same
-selectors, host URI-to-path policy, connection readiness and synchronization requirements as
-requests; an existing failed binding supplies no options.
+`queryFeatureOptions(method, document)` returns immutable matching static and dynamic options. It
+uses the same selectors, URI mapping, connection and synchronization checks as a request.
+Disconnected, disposed, unmapped or failed bindings yield no options. Mapping errors propagate.
 
-On `LspWorkspace`, supply a current `DocumentSnapshot`. The query validates its resource,
-revision and buffer, then uses `documentInfo`; an unmapped document supplies no options.
-On `LspSession`, supply `{ uri, languageId }`. Queries do not connect automatically and return
-an empty array while disconnected or disposed. Host mapping failures propagate to the caller.
-Reading another document's options preserves pending work and completed captures. The answer
-is capability metadata: a later request requires an admitted binding and current capture.
+Pass a current `DocumentSnapshot` to `LspWorkspace` (resource, revision and buffer must match), or
+`{ uri, languageId }` to `LspSession`. The query reads metadata without changing connections,
+bindings, leases or outstanding requests. To issue a request, obtain a current capture on an
+admitted binding.
 
 ### Workspace ownership and synchronization
 
@@ -276,12 +259,11 @@ reused and changed regions are scanned. Dense bare-CR indexes can require linear
 Synchronization planning yields after its time/checkpoint budget; encoding, allocation and server
 analysis have separate costs. The [measurement glossary](README.md#glossary) defines latency terms.
 
-`flush()` waits for pending synchronization to reach the wire. It does not acknowledge completed
-server analysis. On a session or scope, pass document handles to wait only for those exact captures;
-a revision, binding or capability change rejects that selective wait. Feature clients use selective
-waits so an unrelated large document does not delay their synchronized source. `synchronized(handle)`
-returns the exact sent snapshot, index and version, or `undefined` while it is unavailable.
-`captureProject()` supplies the scope's synchronized URI captures.
+`flush()` waits until synchronization reaches the wire. Server analysis may finish later. Pass
+document handles to a session or scope to wait for just those captures. A change to their revision,
+binding or capabilities rejects the wait. Feature clients use this form to avoid waiting for
+unrelated files. `synchronized(handle)` returns the sent snapshot, index and version, or
+`undefined`. `captureProject()` returns the scope’s synchronized URI captures.
 
 `requestDocument` waits for synchronization, supplies the bound URI and captures the binding,
 revision, connection epoch and registration generation. Stale replies are refused. Its immutable
@@ -319,10 +301,9 @@ targets and expires published results while retaining synchronization bindings. 
 ends when the next project omits a document, the client is disposed, the host closes it or a
 request fails. Completed wire calls can be released without cancelling later calls.
 
-Target lookup first uses captured project resources. An optional `resolveTarget` loads missing
-targets through host policy and returns an exact retained target with a release callback. No
-server URI is fetched or opened automatically. Guards check the captured project and loaded
-targets without caching authority across asynchronous work. See [target loading](language-features.md#navigation-and-target-loading).
+Target lookup starts in the captured project. To load a missing URI, supply `resolveTarget` and a
+release callback. The host authorizes each load. Recheck the project and loaded targets after
+awaiting the result. See [target loading](language-features.md#navigation-and-target-loading).
 
 ### Commands and edit decisions
 
@@ -388,17 +369,14 @@ Deferred release and cancellation failures reach `onError` without interrupting 
 
 ## Host responsibilities
 
-Own endpoint selection, browser TLS/proxy policy, authentication, connection lifetime and custom
-message schemas. Keep URI/resource mapping stable and authorize target loading, navigation and
-commands explicitly. Supply a future-turn scheduler and suitable resource limits. Render only
-validated results, respecting uncertain diagnostic freshness and capture guards.
+Choose the endpoint, TLS/proxy and authentication policy, scheduler and limits. Keep URI mappings
+stable, validate custom messages and authorize loads, navigation and commands. Show uncertain
+diagnostic freshness and command outcomes. Let the user retry explicitly.
 
-Capture resource, document, revision, selections, view/lifecycle and edit authority before delayed
-work. Revalidate after every await and immediately before a commit. Cancelling a request cannot
-reverse a committed transaction. Keep retries explicit and expose uncertain command outcomes.
-Observe immutable state without mutating the workspace during notification delivery; use host
-events or scheduled work for subsequent changes. Retain and release clients, scopes, loaded
-targets and handlers at their ownership boundaries.
+Capture the document, revision, view, selections and permissions before a request. Recheck them
+after awaits and before committing. Cancellation leaves earlier edits in history. Schedule mutations
+after workspace notifications. Release clients, scopes, target leases and handlers when their owner
+closes.
 
 ## Not covered
 

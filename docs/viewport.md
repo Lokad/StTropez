@@ -1,13 +1,12 @@
 # Text viewport
 
-`mountTextViewport` renders a read-only projection of a workspace text document. It owns
-bounded DOM rows, scrolling, decorations and local text geometry. For text input, use the
-[editor](editor.md); both mounts use the same viewport contract.
+`mountTextViewport` renders the visible part of a workspace document. It provides scrolling,
+decorations and local text geometry. Use it for a read-only view.
 
 ## Use
 
-Load the packaged CSS and give the host element a bounded height and width, as described in
-[Getting started](getting-started.md). Pass an open text tab from the same workspace:
+Give the container a width and height, load the [packaged CSS](getting-started.md), then pass an
+open text tab from the same workspace.
 
 ```ts
 import type { TabId, Workspace } from "sttropez";
@@ -27,9 +26,8 @@ export function showPreview(host: HTMLElement, workspace: Workspace, tab: TabId)
 }
 ```
 
-The returned `TextViewport` exposes its `element` and `view`. Supply `view` in the mount
-options to reuse a host-owned `DocumentView` across DOM attachments. Destroying that mount
-does not dispose the supplied view; a view created by the mount is disposed with it.
+`TextViewport` exposes its `element` and `view`. Pass a `DocumentView` to keep it across mounts. The
+viewport disposes views it creates.
 
 ## Contract
 
@@ -74,20 +72,16 @@ highlight; secondary carets do not add highlights. Each view has independent set
 Use `--st-column-ruler`, `--st-current-line` and `--st-current-line-border` for their colors.
 Host `font-feature-settings` can override individual ligature features.
 
-The minimap draws a compact thumbnail at the right of the text area. Short files occupy only
-the height of their miniature text. Longer files fit the track by sampling bounded line
-prefixes across the entire folded or aligned document. When enabled, the minimap also calls
-`decorate` and `lineClass` for those samples. It reads foreground colors from the returned
-inline CSS classes and backgrounds from row classes. A read-only view uses the same rules.
-Collapsed lines disappear and alignment gaps stay blank. Call `invalidate()` after changing
-theme or decorations. The thumbnail refreshes in batches and keeps its previous complete
-image until the new one is ready.
+The minimap draws short files at their miniature height. For long files, it samples line prefixes
+across the folded or aligned document to fit the track. `decorate` supplies foreground classes and
+`lineClass` supplies row backgrounds, including in read-only views. Folded lines disappear and
+alignment gaps stay blank. Call `invalidate()` when colors or decorations change. The previous image
+stays visible until its replacement is complete.
 
-Hover over a scrollable thumbnail to see the source line number and nearby text. Click
-outside the marker to center that location or drag the marker to scroll. Both gestures
-preserve focus, horizontal position and the complete selection. The marker covers the
-thumbnail when the document fits. Long documents keep a minimum grab height. Use
-`--st-minimap-border` and `--st-minimap-marker` for the marker edge and fill.
+Hover for a line number and text. Click outside the marker to center that location, or drag the
+marker to scroll. Both preserve focus, horizontal position and all selections. The marker covers a
+document that fits and keeps a minimum grab height on long files. Style its edge and fill with
+`--st-minimap-border` and `--st-minimap-marker`.
 
 ### Scrolling and saved views
 
@@ -116,22 +110,17 @@ for text. Scrolling uses local CSS units. The [editor](editor.md) owns keyboard 
 columns and temporary measurement batches. For explicit host navigation, update the captured
 view's selection and use `revealOffset` to reveal it.
 
-`activity()` returns a reused immutable `ViewportActivity` containing painted revision,
-selection set, fold/alignment identities, row generation, pending-frame state and disposal.
-It performs no layout measurement or flush. Compare painted identities with the current model
-and view before treating a projection as settled; `pending: false` alone is insufficient.
-`flush()` explicitly paints pending work for synchronous operations. `snapshot()` adds
-`ViewportSnapshot` dimensions, work counts and component timings; use the [clock glossary](README.md#glossary)
-when interpreting them.
+`activity()` returns a cached immutable `ViewportActivity` without measuring or flushing layout. It
+reports the painted revision, selections, fold/alignment IDs, row generation, pending frame and
+disposal. To check readiness, compare painted state with the model and view, even when `pending` is
+false. `flush()` paints pending work synchronously. `snapshot()` adds `ViewportSnapshot` dimensions,
+work counts and [timings](README.md#glossary).
 
-`onRender(listener)` observes a completed paint or consumed scheduled render, including one
-that leaves the painted rows unchanged. An idle synchronous `flush()` emits no notification.
-Subscribe before the first frame to observe the initial paint. The returned function removes
-that registration; destroying the viewport removes all registrations. Removing a listener
-during delivery prevents its later call in that delivery; newly added listeners wait for a
-later notification. Callbacks can schedule work or change model/view state, so later callbacks
-must recheck captured identities. Exceptions are reported by the browser and do not prevent
-other callbacks. A notification is not proof of complete interaction readiness or display.
+`onRender(listener)` runs after a paint or scheduled render, even when rows stay the same. An idle
+`flush()` is silent. Subscribe before the first frame to observe initial paint. The returned
+function unsubscribes. Removal takes effect during delivery, additions on the next notification. The
+browser reports exceptions and continues delivery. A listener can change view state, so later
+listeners must recheck their captures. Disposal removes all listeners.
 
 ### Input adapter ownership
 
@@ -172,11 +161,10 @@ geometry. Read-only projection does not supply an editable input surface.
 
 ## Host responsibilities
 
-Own the surrounding layout, CSS, fonts, resource lifetime and decoration policy. Keep DOM
-owned by the viewport separate from host controls. Reuse a supplied view when its selections
-and folds should outlive a DOM mount; retain scroll captures separately. Call `dispose()` to
-cancel frames, disconnect observers, release subscriptions/listeners and remove viewport DOM,
-then release any host-owned view and resource when their lifetimes end.
+Supply layout, CSS, fonts and decorations. Put host controls outside the viewport DOM. Keep the view
+to preserve selections and folds across mounts, and save scroll state separately. Call `dispose()`
+to cancel frames, disconnect observers and remove the viewport. Release host-owned views and
+resources when you finish with them.
 
 ## Not covered
 

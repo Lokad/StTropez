@@ -1,9 +1,8 @@
 # Packaging
 
-StTropez distributes compiled browser modules, declarations, CSS and a regex worker in an
-assets-only NuGet package. The package exposes files and an explicit staging target; the
-host's frontend pipeline resolves, bundles and deploys them. Browser implementation and
-execution are independent of .NET.
+`StTropez.Assets` is an assets-only NuGet package. It supplies compiled modules, TypeScript
+declarations, CSS and a regex worker. The host bundles and serves them. The browser needs no .NET
+runtime.
 
 ## Use
 
@@ -35,10 +34,9 @@ dotnet restore Consumer.csproj
 dotnet msbuild Consumer.csproj -target:PrepareFrontend
 ```
 
-Read the generated `assets-root.txt` in the host build. Either expose that complete folder
-as a host-owned local package using its `package.json`, or configure TypeScript declaration
-paths and bundler aliases from the entry table below. NuGet restore does not configure
-frontend resolution or install an npm package. Application code uses the public entry points:
+Read `assets-root.txt` in the frontend build. Use that directory as a local package via its
+`package.json`, or configure TypeScript paths and bundler aliases from the entry table below. The
+host resolves the public imports after restore.
 
 ```ts
 export * as model from "sttropez";
@@ -53,9 +51,9 @@ serves the asset folder at `./sttropez/`, it can load the stylesheet with:
 <link rel="stylesheet" href="./sttropez/editor.css">
 ```
 
-Deploy `browser/regex-worker.js` at a host-selected URL when enabling regex search and supply
-the [search worker factory](search.md#regular-expressions-and-worker-limits). Keep both license notices with bundled
-or deployed assets. Continue with [editor embedding](getting-started.md).
+For regex search, deploy `browser/regex-worker.js` and pass its URL to the host’s
+[worker factory](search.md#regular-expressions-and-worker-limits). Ship both license notices with
+the assets. See [editor embedding](getting-started.md) for the next step.
 
 ## Contract
 
@@ -86,9 +84,8 @@ modules unless the host bundler rewrites the complete module graph.
 | `build/` | `StTropez.Assets.props` and `StTropez.Assets.targets` |
 | Package root/metadata | Package README, NuGet manifest and packaging metadata |
 
-Source implementation, source maps, tests, research and development dependencies are outside
-the payload. The regex worker is a standalone compiled module without shared-chunk imports.
-Its loading, cancellation and failure behavior belong to the [search contract](search.md).
+The archive excludes source, source maps, tests, research and development dependencies. The
+[regex worker](search.md) is a standalone module with no shared-chunk imports.
 
 ### Manifest and versions
 
@@ -105,32 +102,25 @@ The array includes metadata and both license notices, and excludes the manifest 
 | `css` | `editor.css` |
 | `regexWorker` | `browser/regex-worker.js` |
 
-The NuGet package version identifies the archive selected by the host. The producer defaults
-to `StTropez.Assets` version `0.0.0-local`; generated module metadata and the manifest also use
-that build label. The embedded label is not a released-version compatibility negotiation.
-There is no separately installed npm dependency to keep synchronized.
+Select the archive by its NuGet version. Local builds default to `StTropez.Assets` version
+`0.0.0-local`. The manifest and module metadata record the build label. There is no runtime
+version negotiation.
 
 ### MSBuild preparation
 
-Restore exposes `StTropezAssetRoot` through the package's build properties. The root points
-to the immutable restored asset directory. The host can resolve it directly or invoke
-`StTropezPrepareAssets` with `StTropezStageDirectory` set. Preparation is not attached to
-ordinary restore/build targets.
+After restore, `StTropezAssetRoot` points to the immutable assets directory. Use it directly or set
+`StTropezStageDirectory` and invoke `StTropezPrepareAssets`. Staging requires an explicit call.
 
-Preparation hashes the manifest bytes with SHA-256, sets `StTropezPreparedRoot` to a
-subdirectory named by that hash, and copies the allowlisted file kinds while preserving
-their relative paths. Identical manifests select the same root even when package versions
-differ. Different manifests select different roots, so a host does not combine generations
-by copying every package into one shared folder.
+`StTropezPreparedRoot` is a subdirectory named for the SHA-256 hash of the manifest bytes. The
+target copies allowed file types there, preserving relative paths. Packages with identical manifests
+share a stage. Different manifests get separate directories.
 
-The target skips unchanged copies and never deletes old stages. It does not install packages,
-compile TypeScript, access the network or rewrite application source/lockfiles. The host owns
-the staging location and any cleanup. The target checks that a stage directory was supplied;
-it does not choose or validate a safe application-specific destination for the host.
+The target requires a staging path. The host chooses a safe location and cleans up old stages.
+Preparation skips unchanged files and runs offline, without installing packages, compiling
+TypeScript or rewriting source and lockfiles.
 
-The directory hash identifies manifest content. Preparation does not compare each copied
-payload against the hashes listed in that manifest, and a hash is not an authenticity check.
-The producer's package qualification verifies file lists and payload hashes separately.
+The staging hash identifies the manifest. The producer’s package checks verify the file list and
+individual payload hashes. Staging itself provides no payload verification or authenticity check.
 
 These files use NuGet's standard `build/` imports; the package supplies no `buildTransitive/`
 integration. See [MSBuild properties and targets in NuGet packages](https://learn.microsoft.com/en-us/nuget/concepts/msbuild-props-and-targets)
@@ -139,25 +129,21 @@ for archive metadata.
 
 ### Producer contract
 
-The producer uses the repository's pinned development packages, Node.js 24 or later and
-a .NET SDK able to build its `net10.0` packaging project. These are producer/tooling
-requirements; the browser assets have no managed runtime dependency.
+Building the package requires the pinned development packages, Node.js 24 or later and a .NET SDK
+that supports `net10.0`.
 
-`npm run build` clears the library output directory, bundles the public module entries and
-standalone regex worker, emits strict declarations, rewrites declaration source specifiers
-and generates module metadata plus the asset manifest. Runtime bundling rejects inputs
-outside `src/`. StTropez's MIT notice and the Unicode data notice are copied unchanged.
+`npm run build` clears library output, bundles the public entries and worker, emits strict
+declarations, rewrites declaration specifiers and generates metadata and the manifest. The bundler
+accepts runtime inputs only from `src/`. The build copies both license notices unchanged.
 
-`npm run pack:nuget` builds those assets, restores the packaging project and packs the
-allowlisted output. The pack target requires a compiled manifest and excludes managed build
-output/dependencies. Local packing creates an archive; registry publication is a separate action.
+`npm run pack:nuget` builds the assets, restores the packaging project and packs the allowed files
+into a local archive. Packing requires the compiled manifest and excludes managed build output and
+dependencies. Publishing is separate.
 
-`npm run test:package` qualifies an actual archive through an isolated restored consumer,
-including archive membership/hashes, exports and strict declarations, host bundling, CSS,
-worker deployment and browser interactions. It also exercises controlled version/staging
-transitions. Within one qualification run, scope-specific checks reuse an immutable archive
-and restored root with package-hash checks and an unchanged-source guard.
-See [qualification](testing.md) for test ownership.
+`npm run test:package` restores the archive into an isolated consumer and checks membership, hashes,
+exports, declarations, bundling, CSS, worker deployment and browser behavior. It also exercises
+version and staging changes. Checks within a run reuse the archive and restored root after verifying
+the package hash and unchanged source. See [qualification](testing.md).
 
 ### Bounds and validation
 
@@ -173,14 +159,12 @@ See [qualification](testing.md) for test ownership.
 
 ## Host responsibilities
 
-Pin a package version and configure its feed. Reference it on the project that owns the
-frontend build, choose an isolated generated staging directory and retain one coherent asset
-set. Configure both declaration and runtime resolution, include CSS, and deploy the worker
-when used. The host owns its compiler, bundler, HTTP serving and cache policy.
+Pin the package and feed in the frontend build project. Stage one asset set, configure declaration
+and runtime resolution, include the CSS and deploy the worker if used. The host supplies the
+compiler, bundler, HTTP server and cache policy.
 
-Retain `LICENSE.txt` and `UNICODE-LICENSE.txt` with redistributed assets. Validate a consuming
-build through its actual output and browser behavior. Package restore alone does not establish
-that imports, styles or workers reach the deployed application.
+Redistribute `LICENSE.txt` and `UNICODE-LICENSE.txt`. Test imports, styles and workers from the
+consuming application’s built output.
 
 ## Not covered
 

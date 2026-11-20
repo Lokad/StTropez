@@ -1,8 +1,7 @@
 # Folding
 
-Folding hides body rows within one document view while preserving raw document coordinates.
-The host supplies ranges or a discovery policy; StTropez owns validated fold state, its
-visible-row projection and disclosure controls. Views of the same document fold independently.
+Folding hides rows in one view. The document text, raw offsets and folds in other views stay intact.
+Supply ranges directly or choose a discovery policy.
 
 ## Use
 
@@ -26,9 +25,9 @@ export function attachFolding(
 }
 ```
 
-Render controls from the returned `FoldingController` using `getSnapshot()` and `subscribe()`. Invoke
-`runCommand("collapse-all", "regions")` to collapse a group, `refresh()` when host discovery
-policy changes, and `dispose()` before disposing the editor.
+Use the returned `FoldingController`’s `getSnapshot()` and `subscribe()` to render controls.
+`runCommand("collapse-all", "regions")` collapses one group. Call `refresh()` when discovery rules
+change and `dispose()` before disposing the editor.
 
 A host with its own captured outline can publish directly through `DocumentView.folding`:
 
@@ -44,9 +43,8 @@ export function publishSection(
 }
 ```
 
-Capture `expected` from `view.folding.getSnapshot()` before asynchronous work, together with
-the document snapshot used to produce the offsets. `setRanges` replaces the complete range
-set, so combine all outline sources before publication.
+Before awaiting discovery, capture the document and `expected` from `view.folding.getSnapshot()`.
+Combine all outline sources before `setRanges`, which replaces the whole set.
 
 ## Contract
 
@@ -70,10 +68,9 @@ unavailable targets. Invalid public ranges throw before publication. `createFold
 validates a complete set against a buffer and optional prior regions without publishing it.
 A range ending at the next row's start leaves that row visible.
 
-Folding changes neither text nor dirty state nor document history. Fold anchors follow edits
-and undo/redo. Deleted boundaries expand their region; degenerate, merged or crossing definitions
-are invalidated. Undo restores the text but does not recreate invalidated fold definitions.
-Supply fresh definitions through discovery or a captured host publication.
+Fold anchors follow edits, undo and redo. Deleting a boundary expands its region. Degenerate, merged
+or crossing ranges lose their definitions. Undo restores the text. To restore an invalidated fold,
+publish fresh ranges. Folding leaves history and dirty state untouched.
 
 `FoldIndex` maps source lines to visible rows and back through `rowAt` and `lineAt`.
 `hiddenBy` identifies the covering collapsed region; `headerAt` identifies a fold header.
@@ -150,12 +147,11 @@ and collapse policy.
 
 ### Commands and interaction
 
-`FoldCommand` supports `collapse`, `expand`, `collapse-all` and `expand-all`, with an optional
-group filter. Use `canRunCommand(command, group)` to enable menu actions for the current
-caret, group and collapse state. `runCommand` checks availability again before applying the change.
-The controller handles Ctrl/Cmd+Shift+[ and Ctrl/Cmd+Shift+] at the caret.
-Commands reject busy or unavailable views. Collapsing preserves the logical selection and
-reveals its visible header edge; it does not replace hidden selection endpoints.
+`FoldCommand` accepts `collapse`, `expand`, `collapse-all` or `expand-all`, optionally filtered by
+group. Enable controls with `canRunCommand(command, group)`. `runCommand` rechecks the caret, group,
+collapse state and availability. Ctrl/Cmd+Shift+[ and Ctrl/Cmd+Shift+] act at the caret. Collapsing
+shows the header and preserves hidden selection endpoints. Busy or unavailable views reject the
+command.
 
 A collapsed logical caret paints at its header. Arrow/Page traversal skips hidden rows.
 Explicit selection, typing, Find and reveal expand hidden targets. Disclosure buttons toggle
@@ -169,11 +165,10 @@ describes initialization of fold metadata in a new view without overwriting newe
 
 ## Host responsibilities
 
-Choose discovery, groups and initial collapse state. Combine multiple sources into one result,
-retain captured identities across asynchronous work, and stop obsolete providers on abort.
-Call mutation commands outside workspace notification callbacks. Dispose the controller and
-its state subscriptions with the attachment; dispose a host-owned view only at the end of that
-view's lifetime. Discovery ownership does not transfer storage or resource ownership.
+Choose the groups, discovery rules and initially collapsed regions. Combine providers before
+publishing. Abort obsolete discovery, and issue mutations after workspace notification delivery.
+Dispose subscriptions and the controller on detach. Keep a host-owned view alive if you need its
+folds on remount.
 
 ## Not covered
 
