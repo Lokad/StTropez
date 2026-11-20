@@ -80,7 +80,10 @@ function renderOutput(): void {
     if (presentation.status === "ready") {
         const text = presentation.javascript || "// This file emits no JavaScript.\n";
         if (output) output.update(text);
-        else { host.replaceChildren(); output = mountDemoOutput(host, text, field("view-minimap").checked); }
+        else {
+            host.replaceChildren();
+            output = mountDemoOutput(host, text, { minimap: field("view-minimap").checked, fontLigatures: field("view-ligatures").checked });
+        }
     } else if (!output) {
         // Keep the last completed output for this view while the footer reports pending/failed analysis.
         const note = document.createElement("p"); note.className = "panel-note";
@@ -494,6 +497,7 @@ field("character-warnings").addEventListener("change", () => {
 for (const id of ["view-rulers", "view-current-line", "view-ligatures", "view-trailing-space", "view-minimap"]) field(id).addEventListener("change", () => {
     configurePresentation(editor); configurePresentation(comparison?.reference.getSnapshot()?.editor);
     output?.configureMinimap(field("view-minimap").checked);
+    output?.configureFontLigatures(field("view-ligatures").checked);
 }, { signal: listeners.signal });
 on("quickfix", () => languageView?.quickfix());
 for (const command of ["line-comment", "block-comment", "indent", "outdent"] as const) on(command, () => {

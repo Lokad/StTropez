@@ -2,6 +2,7 @@ import { latch } from "../helpers/latch.ts";
 import { expect, test } from "./fixtures.ts";
 import { runDemoHostIntegrations } from "./demo-host-integrations.ts";
 import { dragBundleScrollbars, hoverString, selectInsideString } from "./demo-minified.ts";
+import { checkDemoLigatures } from "./demo-ligatures.ts";
 import { runDemoDiagnosticRetention } from "./demo-diagnostics.ts";
 import { demoSample } from "../../examples/demo/samples.ts";
 
@@ -114,6 +115,10 @@ test("minimap shows compact colored code and previews the destination before a j
         const source = el.getBoundingClientRect(), row = target.getBoundingClientRect();
         return Math.abs(row.top + row.height / 2 - source.top - el.clientHeight / 2) / row.height;
     }, row)).toBeLessThan(1.5);
+});
+
+test("the demo renders editable Fira Code ligatures on first open", async ({ page, baseURL }) => {
+    await checkDemoLigatures(page, baseURL!);
 });
 
 test("view controls survive file switches and saved-reference replacement in both review panes", async ({ page, baseURL }, info) => {

@@ -13,6 +13,7 @@ import { moduleSpecifiers } from "./module-specifiers.mjs";
 import { createPackageRequestHandler, listenPackageServer, closePackageServer, closePackageResources } from "./package-host.mjs";
 import { libraryModules, libraryCss } from "./library-entries.mjs";
 import { attachDemoProvider } from "../examples/demo/provider-server.ts";
+import { demoFontFiles, stageDemoFonts } from "./demo-fonts.mjs";
 import { runDemoWalkthrough, runDemoConflict } from "../tests/browser/demo-walkthrough.ts";
 import { runDemoHostIntegrations } from "../tests/browser/demo-host-integrations.ts";
 import { captureBrowserErrors } from "../tests/helpers/browser-errors.ts";
@@ -133,7 +134,7 @@ const harnessOutput = execFileSync(process.execPath, [join(project, "node_module
     { cwd: hostRoot, encoding: "utf8", stdio: "pipe", windowsHide: true });
 await writeFile(join(hostRoot, "harness-compiler-inputs.txt"), harnessOutput);
 const toolFiles = await Promise.all([...scripts, "package.json", "scripts/measurement.mjs", "scripts/module-specifiers.mjs",
-    "scripts/package-host.mjs", "scripts/library-entries.mjs", "scripts/package-react-host.mjs",
+    "scripts/package-host.mjs", "scripts/library-entries.mjs", "scripts/package-react-host.mjs", "scripts/demo-fonts.mjs",
     "examples/demo/provider-server.ts", "examples/demo/samples.ts", "examples/demo/completion-templates.ts",
     "examples/demo/diagnostics.ts", "examples/demo/action-fixture.ts", "examples/demo/typescript-folds.ts", "src/index.ts",
     "tests/browser/demo-walkthrough.ts", "tests/browser/demo-host-integrations.ts", "tests/helpers/browser-errors.ts",
@@ -175,6 +176,7 @@ assert.ok(inputs.some(path => within(assetRoot, resolve(project, path)) && path.
 await writeFile(join(site, "index.html"), (await readFile(join(project, "examples/demo/index.html"), "utf8"))
     .replace('data-demo-provider="browser"', 'data-demo-provider="server"'));
 await copyFile(join(assetRoot, assets.entries.regexWorker), join(site, "regex-worker.js"));
+await stageDemoFonts(site);
 await copyFile(join(assetRoot, "UNICODE-LICENSE.txt"), join(site, "UNICODE-LICENSE.txt"));
 await copyFile(join(assetRoot, "LICENSE.txt"), join(site, "LICENSE.txt"));
 /** @type {{measurement?: Awaited<ReturnType<typeof measureDemo>>, journeys?: Record<string, unknown>, providerAfterClose?: ReturnType<ReturnType<typeof attachDemoProvider>["snapshot"]>}} */
@@ -190,7 +192,7 @@ const evidence = Object.assign(runtimeEvidence, { schemaVersion: 1, sourceSha256
     native: "IME, OS clipboard and physical display remain UNVERIFIED" });
 await mkdir("artifacts/package", { recursive: true });
 if (!prepareOnly) {
-    const routes = new Map(["index.html", "app.js", "app.css", "demo-syntax-worker.js", "regex-worker.js", "LICENSE.txt", "UNICODE-LICENSE.txt"].map(name => ["/" + name, name]));
+    const routes = new Map([...demoFontFiles, "index.html", "app.js", "app.css", "demo-syntax-worker.js", "regex-worker.js", "LICENSE.txt", "UNICODE-LICENSE.txt"].map(name => ["/" + name, name]));
     routes.set("/", "index.html");
     /** @type {unknown[]} */ const failures = [];
     const requests = createPackageRequestHandler(async (request, response) => {
@@ -198,7 +200,7 @@ if (!prepareOnly) {
         assert.ok(request.url);
         const file = routes.get(new URL(request.url, "http://localhost").pathname);
         if (!file || request.method !== "GET") { response.writeHead(404).end(); return; }
-        response.setHeader("Content-Type", file.endsWith(".js") ? "text/javascript" : file.endsWith(".css") ? "text/css" : file.endsWith(".txt") ? "text/plain" : "text/html");
+        response.setHeader("Content-Type", file.endsWith(".woff2") ? "font/woff2" : file.endsWith(".js") ? "text/javascript" : file.endsWith(".css") ? "text/css" : file.endsWith(".txt") ? "text/plain" : "text/html");
         response.end(await readFile(join(site, file)));
     }, failures);
     const server = createServer(requests.listener);

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { demoLibraries } from "./demo-libraries.mjs";
+import { demoFontFiles, stageDemoFonts } from "./demo-fonts.mjs";
 import { join, relative, resolve } from "node:path";
 import { build } from "esbuild";
 import { within } from "./package-react-host.mjs";
@@ -38,6 +39,7 @@ for (const [input, metadata] of Object.entries(result.metafile.inputs)) {
 }
 assert.ok(Object.keys(result.metafile.inputs).some(input => within(dist, resolve(input))));
 await copyFile("examples/demo/index.html", join(site, "index.html"));
+await stageDemoFonts(site);
 await copyFile(join(dist, manifest.entries.regexWorker), join(site, "regex-worker.js"));
 await copyFile(join(dist, "UNICODE-LICENSE.txt"), join(site, "UNICODE-LICENSE.txt"));
 await copyFile(join(dist, "LICENSE.txt"), join(site, "LICENSE.txt"));
@@ -49,7 +51,7 @@ for (const [name, file] of /** @type {const} */ ([["typescript-demo", "LICENSE.t
 await writeFile(join(site, ".nojekyll"), "");
 // Every deployed file is explicit; stale files from an older build cannot enter the upload.
 const outputs = Object.keys(result.metafile.outputs).map(path => relative(site, resolve(path)).replaceAll("\\", "/"));
-const files = [...outputs, "index.html", "regex-worker.js", "LICENSE.txt", "UNICODE-LICENSE.txt", "typescript-libs.json", ".nojekyll",
+const files = [...outputs, ...demoFontFiles, "index.html", "regex-worker.js", "LICENSE.txt", "UNICODE-LICENSE.txt", "typescript-libs.json", ".nojekyll",
     "typescript-demo-LICENSE.txt", "typescript-demo-ThirdPartyNoticeText.txt", "vscode-languageserver-protocol-License.txt", "vscode-jsonrpc-License.txt", "vscode-languageserver-types-License.txt"];
 await writeFile("artifacts/pages-build.json", JSON.stringify({ schemaVersion: 1, libraryManifestSha256: hash(await readFile("dist/manifest.json")),
     librarySourceCompilation: false, compilerVersion: compilerMetadata.version, inputs: Object.keys(result.metafile.inputs),

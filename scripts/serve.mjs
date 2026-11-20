@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { attachProtocolFixture } from "../fixtures/protocol/fixture-server.ts";
 import { attachDemoProvider } from "../examples/demo/provider-server.ts";
 import { demoLibraries } from "./demo-libraries.mjs";
+import { demoFontFiles, stageDemoFonts } from "./demo-fonts.mjs";
 import { closePackageResources, closePackageServer, listenPackageServer } from "./package-host.mjs";
 
 /**
@@ -36,6 +37,8 @@ export async function startServer(port, { watch = true } = {}) {
         ["/", "/workspace/", "/viewport/", "/editing/", "/comparison/", "/protocol/", "/fonts/", "/hosts/plain/", "/hosts/react/"].flatMap(path => [path, path + "index.html"])
             .map(async path => /** @type {[string, Buffer]} */ ([path, await readFile(resolve(site, "." + (path.endsWith("/") ? path + "index.html" : path)))]))));
     pages.set("/typescript-libs.json", Buffer.from(await demoLibraries()));
+    await stageDemoFonts(site);
+    for (const name of demoFontFiles) pages.set("/" + name, await readFile(resolve(site, name)));
     /** @type {Map<string, Uint8Array>} */
     let modules = new Map();
     let failed = false;
@@ -72,7 +75,7 @@ export async function startServer(port, { watch = true } = {}) {
         if (failed) { response.writeHead(503).end("Development build failed."); return; }
         const bytes = pages.get(path) ?? modules.get(path);
         if (!bytes) { response.writeHead(404).end(); return; }
-        response.writeHead(200, { "Content-Type": /\.js$/.test(path) ? "text/javascript" : /\.css$/.test(path) ? "text/css" : /\.(map|json)$/.test(path) ? "application/json" : "text/html",
+        response.writeHead(200, { "Content-Type": path.endsWith(".woff2") ? "font/woff2" : path.endsWith(".txt") ? "text/plain" : /\.js$/.test(path) ? "text/javascript" : /\.css$/.test(path) ? "text/css" : /\.(map|json)$/.test(path) ? "application/json" : "text/html",
             "Content-Length": bytes.length, "Cache-Control": "no-store" });
         response.end(request.method === "HEAD" ? undefined : bytes);
     }

@@ -50,6 +50,11 @@ Open **Shopping cart** or **Fix a type error**. Edit the source, inspect JavaScr
 then open Changes to compare against the saved file. Save writes to this browser. The demo compiles
 TypeScript without executing it. The Code menu contains language, indentation and folding commands.
 
+The demo serves Fira Code 6.2 under the SIL Open Font License. In Shopping cart, toggle
+**View → Font ligatures** to compare the arrow and comparisons in `readyToShip`. The glyphs
+change while the underlying characters stay editable. The font ships with the demo.
+[Font and attribution](../examples/demo/fonts/FiraCode-LICENSE.txt)
+
 In **Shipping quotes**, enable **View → Minimap**. Locate the rate table or calculation, hover to
 preview a line, then click to jump. Dragging the marker preserves the selection. The minimap also
 works in generated JavaScript and both Changes panes.

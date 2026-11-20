@@ -1,17 +1,17 @@
 import { Workspace } from "../../src/index.ts";
 import { mountTextViewport } from "../../src/browser/index.ts";
-import type { TextViewport } from "../../src/browser/index.ts";
 
 /** Generated output uses the same bounded public view as source; it owns no editing history. */
-export function mountDemoOutput(host: HTMLElement, text: string, minimap = false): Readonly<{ update: (text: string) => void; snapshot: TextViewport["snapshot"]; configureMinimap: TextViewport["configureMinimap"]; dispose: () => void }> {
+export function mountDemoOutput(host: HTMLElement, text: string, settings: Readonly<{ minimap: boolean; fontLigatures: boolean }>) {
     const workspace = new Workspace();
     const resource = workspace.createTextResource({ scope: "demo-output", resource: "javascript", variant: "generated" }, "JavaScript output",
         { value: text }, { edit: [], save: false, run: false });
     const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "output");
-    const viewport = mountTextViewport(host, workspace, tab, { ariaLabel: "JavaScript output", minimap });
+    const viewport = mountTextViewport(host, workspace, tab, { ariaLabel: "JavaScript output", ...settings });
     viewport.element.classList.add("demo-output");
     let disposed = false;
-    return Object.freeze({ snapshot: viewport.snapshot, configureMinimap: viewport.configureMinimap, update: next => {
+    return Object.freeze({ snapshot: viewport.snapshot, configureMinimap: viewport.configureMinimap,
+        configureFontLigatures: viewport.configureFontLigatures, update: (next: string) => {
         if (disposed || next === text) return;
         const state = viewport.captureView(), anchor = state.verticalAnchor;
         const line = anchor ? workspace.document(resource.documentId).buffer.lineAt(anchor.offset) : 0;

@@ -14,7 +14,7 @@ export async function serveDemo(port = 0, prefix = "/StTropez/") {
         const url = new URL(request.url ?? "/", "http://localhost"), name = url.pathname.startsWith(prefix) ? url.pathname.slice(prefix.length) || "index.html" : "";
         if (!files.has(name) || request.method !== "GET" && request.method !== "HEAD") { response.writeHead(404).end(); return; }
         const bytes = await readFile(join("artifacts/pages", name));
-        response.writeHead(200, { "Content-Type": name.endsWith(".js") ? "text/javascript" : name.endsWith(".css") ? "text/css" : name.endsWith(".json") ? "application/json" : name.endsWith(".html") ? "text/html" : "text/plain", "Content-Length": bytes.length });
+        response.writeHead(200, { "Content-Type": name.endsWith(".woff2") ? "font/woff2" : name.endsWith(".js") ? "text/javascript" : name.endsWith(".css") ? "text/css" : name.endsWith(".json") ? "application/json" : name.endsWith(".html") ? "text/html" : "text/plain", "Content-Length": bytes.length });
         response.end(request.method === "HEAD" ? undefined : bytes);
     }, failures);
     const server = createServer(requests.listener);

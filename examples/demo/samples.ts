@@ -24,11 +24,11 @@ const cart: CartItem[] = [
     { name: "Pencil", price: 1.5, quantity: 4 },
 ];
 
-// Try changing the discount, or explore pricing.ts.
+const readyToShip = cart.every(item => item.name !== ""
+    && item.quantity >= 1 && item.quantity <= 99);
+if (!readyToShip) console.warn("Check name and count.");
 const total = calculateTotal(cart, 0.1);
-const message = \`Your total is €\${total.toFixed(2)}.\`;
-
-console.log(message);
+console.log(\`Your total is €\${total.toFixed(2)}.\`);
 `;
 
 export const sampleChoices: readonly Readonly<{ id: SampleId; title: string }>[] = Object.freeze([
@@ -184,6 +184,6 @@ console.log(invitation, accents, emoji);
 ` } };
     return { id, title: id === "errors" ? "Fix a type error" : "Shopping cart",
         description: id === "errors" ? "The discount should be a number. Open Problems, then replace the string with 0.1 to fix the error."
-            : "A small project to explore. Edit the cart, open pricing.ts, then compare your changes.",
+            : "Edit the cart or compare the operators in readyToShip with View → Font ligatures.",
         files: { "main.ts": id === "errors" ? main.replace("calculateTotal(cart, 0.1)", 'calculateTotal(cart, "10%")') : main, "pricing.ts": pricing } };
 }
