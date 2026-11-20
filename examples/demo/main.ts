@@ -1,5 +1,5 @@
-import { mountTextEditor, mountTextComparison, createFindController, createFoldingController } from "../../src/browser/index.ts";
-import type { TextEditor, FindController, TextComparison, FoldingController } from "../../src/browser/index.ts";
+import { mountTextEditor, mountTextComparison, createFindController, createRegexFindBackend, createFoldingController } from "../../src/browser/index.ts";
+import type { TextEditor, FindController, TextComparison, FoldingController, PresentedLine } from "../../src/browser/index.ts";
 import { discoverIndentationFolds } from "../../src/index.ts";
 import { DemoProject } from "./project.ts";
 import { selectDemoProvider } from "./provider.ts";
@@ -58,6 +58,10 @@ function refreshBrackets(captured: TextEditor | undefined) {
     if (captured) queueMicrotask(() => { if (!captured.activity().disposed) captured.bracketMatching.refresh(); });
 }
 const presentation = new DemoPresentation(() => { editor?.viewport.invalidate(); if (presentation.status === "ready") refreshBrackets(editor); renderOutput(); renderMetadata(); });
+function decorateWorking(line: PresentedLine) {
+    const decorations = presentation.decorate(line);
+    return [...(project?.sample.id === "host" ? hostDecorations(line) : []), ...decorations, ...(languageView?.decorate(line) ?? [])];
+}
 const indentation = element("indentation") as HTMLSelectElement;
 function editingConfiguration(rules = presentation.editing) {
     const config = rules.configuration(indentation.value === "2" ? 2 : 4, indentation.value !== "tabs");
@@ -285,7 +289,7 @@ function mountFile(file: DemoFile, focus = false): void {
     const surface = demoSurface(element(panel === "changes" ? "panel-content" : "editor"), project.sample.id === "host");
     if (panel === "changes") {
         comparison = mountTextComparison(surface, project.workspace, file.tab, project.baseline(file),
-            { view: file.view, workingDecorate: line => [...(project?.sample.id === "host" ? hostDecorations(line) : presentation.decorate(line)), ...(languageView?.decorate(line) ?? [])],
+            { view: file.view, workingDecorate: decorateWorking,
                 baselineDecorate: line => project?.sample.id === "host" ? hostDecorations(line) : referencePresentation?.decorate(line) ?? [], scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
         const labels = document.createElement("div"); labels.className = "demo-review-labels";
         const savedLabel = document.createElement("span"), workingLabel = document.createElement("span");
@@ -322,7 +326,7 @@ function mountFile(file: DemoFile, focus = false): void {
         stopReference = () => { referenceSyncActive = false; unsubscribeReference(); }; configureReference();
     } else {
         editor = mountTextEditor(surface, project.workspace, file.tab,
-            { view: file.view, ariaLabel: file.name, decorate: line => [...(project?.sample.id === "host" ? hostDecorations(line) : presentation.decorate(line)), ...(languageView?.decorate(line) ?? [])] });
+            { view: file.view, ariaLabel: file.name, decorate: decorateWorking });
         renderProblems();
     }
     editor.configureLanguage(editingConfiguration());
@@ -345,16 +349,22 @@ function mountFile(file: DemoFile, focus = false): void {
             if (key === "f" || key === "h") { event.preventDefault(); openFind(key === "h"); }
         } else if (event.key === "F3") { event.preventDefault(); find?.next(event.shiftKey ? -1 : 1); }
     }, { signal: viewListeners.signal });
-    find = createFindController(project.workspace, file.tab, editor);
-    find.setFlags({ matchCase: false });
+    find = createFindController(project.workspace, file.tab, editor, { regularExpressionBackend: createRegexFindBackend({
+        clock: window, createWorker: () => new Worker(new URL("regex-worker.js", document.baseURI), { type: "module" }),
+    }) });
+    find.setFlags({ matchCase: false, regularExpression: button("find-regex").getAttribute("aria-pressed") === "true" });
     const capturedFind = find;
     const renderFind = () => {
         const snapshot = capturedFind.getSnapshot(), previous = presentation.search;
         presentation.search = { revision: snapshot.revision, version: snapshot.matchesVersion, matchesIn: (from, to) => capturedFind.matchesIn(from, to, snapshot) };
         element("find-status").textContent = snapshot.message || `${snapshot.status === "searching" ? "Searching… " : ""}${snapshot.count} matches`;
+        const hasMatches = !file.readOnly && snapshot.count > 0;
+        button("replace-all").disabled = !(hasMatches && snapshot.status === "ready");
+        button("replace-current").disabled = !(hasMatches && (snapshot.status === "ready" || snapshot.status === "searching" && snapshot.retained));
         if (previous?.revision !== snapshot.revision || previous.version !== snapshot.matchesVersion) editor?.viewport.invalidate();
     };
-    stopFind = find.subscribe(renderFind); if (!element("find-bar").hidden) find.setQuery(field("find-query").value);
+    stopFind = find.subscribe(renderFind); renderFind();
+    if (!element("find-bar").hidden) find.setQuery(field("find-query").value);
     stopView = file.view.subscribe(renderMetadata);
     languageView = attachLanguage(project, file, editor);
     if (project.sample.id === "host") {
@@ -451,6 +461,11 @@ function openFind(replace = false): void {
 function closeFind(): void { element("find-bar").hidden = true; find?.cancel(); editor?.focus(); }
 const on = (id: string, action: () => void) => element(id).addEventListener("click", action, { signal: listeners.signal });
 on("find-toggle", () => openFind()); on("find-close", closeFind);
+on("find-regex", () => {
+    const toggle = button("find-regex"), enabled = toggle.getAttribute("aria-pressed") !== "true";
+    toggle.setAttribute("aria-pressed", String(enabled)); find?.setFlags({ regularExpression: enabled });
+    field("find-query").focus();
+});
 on("replace-toggle", () => { element("replace-controls").hidden = !element("replace-controls").hidden; });
 on("find-next", () => { find?.next(); }); on("find-previous", () => { find?.next(-1); });
 on("replace-current", () => { find?.replaceCurrent(field("replacement").value); });
@@ -538,7 +553,8 @@ for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) 
 field("find-query").addEventListener("input", () => find?.setQuery(field("find-query").value), { signal: listeners.signal });
 element("find-bar").addEventListener("keydown", event => {
     if (event.key === "Escape") { event.preventDefault(); closeFind(); }
-    else if (event.key === "Enter") { event.preventDefault(); if (event.target === field("replacement")) find?.replaceCurrent(field("replacement").value); else find?.next(event.shiftKey ? -1 : 1); }
+    else if (event.key === "Enter" && event.target === field("find-query")) { event.preventDefault(); find?.next(event.shiftKey ? -1 : 1); }
+    else if (event.key === "Enter" && event.target === field("replacement")) { event.preventDefault(); button("replace-current").click(); }
 }, { signal: listeners.signal });
 sample.addEventListener("change", () => { void openSample(sample.value as SampleId); }, { signal: listeners.signal });
 element("files").addEventListener("click", event => {

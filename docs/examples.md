@@ -54,6 +54,11 @@ JavaScript or Problems, and open Changes to compare against the saved text. Save
 sample locally. The demo compiles edited TypeScript but does not execute the generated program.
 The Code menu groups editing, indentation, language, folding and source-character commands.
 
+In Shopping cart, open **Find** and enter `quantity:\s*(\d+)`. Choose **Use regular expression**
+(`.*`) to highlight both quantities in `main.ts`. Enter and Shift+Enter navigate the matches.
+Under **Replace…**, use `quantity: $1 + 1` and choose **Replace all**. Open Changes to see both
+edits. One undo restores both quantities. The query and mode follow the active file while Find is open.
+
 ### Language tools and samples
 
 | Action | Workflow |

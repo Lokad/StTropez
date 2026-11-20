@@ -4,6 +4,76 @@ import { runDemoHostIntegrations } from "./demo-host-integrations.ts";
 import { runDemoDiagnosticRetention } from "./demo-diagnostics.ts";
 import { demoSample } from "../../examples/demo/samples.ts";
 
+test("Find toggles regex on the existing query and replaces captured groups in one undo", async ({ page, baseURL }) => {
+    await page.goto(baseURL!);
+    const query = page.getByRole("textbox", { name: "Find text" }), mode = page.getByRole("button", { name: "Use regular expression" });
+    const status = page.locator("#find-status"), replaceAll = page.getByRole("button", { name: "Replace all" });
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true }), pattern = String.raw`quantity:\s*(\d+)`;
+    await source.press("Control+f"); await query.fill(pattern);
+    await expect(mode).toHaveAttribute("aria-pressed", "false"); await expect(status).toHaveText("0 matches");
+    await mode.press("Enter"); await expect(mode).toHaveAttribute("aria-pressed", "true"); await expect(query).toBeFocused();
+    await expect(status).toHaveText("2 matches");
+    await expect(page.locator("#editor .st-viewport-row").filter({ has: page.locator(".demo-search") })).toHaveCount(2);
+    const selected = () => source.evaluate(node => { const input = node as HTMLTextAreaElement; return input.value.slice(input.selectionStart, input.selectionEnd); });
+    await query.press("Enter"); await expect.poll(selected).toBe("quantity: 2");
+    await query.press("Shift+Enter"); await expect.poll(selected).toBe("quantity: 4");
+    await page.locator("#replace-toggle").click(); await query.fill("(");
+    await expect(status).toHaveText("Invalid regular expression.");
+    await expect(page.locator("#replace-current")).toBeDisabled(); await expect(replaceAll).toBeDisabled();
+    await query.fill(pattern); await expect(replaceAll).toBeEnabled();
+    await page.getByRole("textbox", { name: "Replacement text" }).fill("quantity: $1 + 1"); await replaceAll.click();
+    await expect(page.locator("#editor")).toContainText("quantity: 4 + 1");
+    await page.locator('[data-panel="changes"]').click();
+    const panes = page.locator(".st-comparison-panes > section"), saved = panes.first(), working = panes.last();
+    await expect(working).toContainText("quantity: 2 + 1"); await expect(working).toContainText("quantity: 4 + 1");
+    await expect(saved).not.toContainText(" + 1"); await expect(mode).toHaveAttribute("aria-pressed", "true");
+    await working.getByRole("textbox").press("Control+z");
+    await expect(working).not.toContainText(" + 1"); await expect(working).toContainText("quantity: 2"); await expect(working).toContainText("quantity: 4");
+    await mode.click(); await expect(status).toHaveText("0 matches");
+});
+
+test("a pending regex search allows large-file scrolling and typing and expires on file change", async ({ page, baseURL }) => {
+    // Hold the first actual match page for each large-file revision, then deliver both after switching documents.
+    type Probe = { pending: (() => void)[]; holding: boolean };
+    type ProbeWindow = typeof window & { regexProbe: Probe };
+    await page.addInitScript(() => {
+        const probe: Probe = { pending: [], holding: true };
+        Object.assign(window, { regexProbe: probe });
+        window.Worker = class extends Worker {
+            constructor(url: string | URL, options?: WorkerOptions) {
+                super(url, options);
+                if (new URL(url, document.baseURI).pathname.endsWith("/regex-worker.js")) this.addEventListener("message", event => {
+                    if (!probe.holding || JSON.parse(event.data).operation !== "regex-matches") return;
+                    event.stopImmediatePropagation();
+                    probe.pending.push(() => this.dispatchEvent(new MessageEvent("message", { data: event.data })));
+                }, { capture: true });
+            }
+        };
+    });
+    await page.goto(baseURL!); await page.locator("#sample").selectOption("large");
+    const source = page.getByRole("textbox", { name: "large.ts", exact: true }), viewport = page.locator("#editor .st-viewport");
+    const held = () => page.evaluate(() => (window as ProbeWindow).regexProbe.pending.length);
+    await source.press("Control+f"); await page.locator("#find-regex").click(); await page.locator("#find-query").fill(String.raw`\brow(?= \d| ")`);
+    await expect.poll(held, { timeout: 15000 }).toBe(1);
+    await viewport.evaluate(root => { root.scrollTop = root.scrollHeight / 2; });
+    const middle = viewport.locator('.st-viewport-row[data-line="50000"]');
+    await expect(middle).toHaveText("// Row 50001: try editing or searching here.");
+    await middle.click(); await source.press("End"); await source.press("!");
+    await expect(middle).toHaveText("// Row 50001: try editing or searching here.!");
+    await expect.poll(held, { timeout: 15000 }).toBe(2);
+    await page.evaluate(() => { (window as ProbeWindow).regexProbe.holding = false; });
+    await page.locator("#sample").selectOption("host");
+    await expect(page.getByRole("textbox", { name: "workflow.rules", exact: true })).toBeVisible();
+    await expect(page.locator("#find-status")).toHaveText("2 matches");
+    await page.evaluate(async () => {
+        const probe = (window as ProbeWindow).regexProbe;
+        for (const deliver of probe.pending.splice(0)) deliver();
+        await new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+    });
+    await expect(page.locator("#find-status")).toHaveText("2 matches");
+    await expect(page.locator("#editor .demo-search")).toHaveText(["row", "row"]);
+});
+
 test("minimap shows compact colored code and previews the destination before a jump", async ({ page, baseURL }, info) => {
     await page.goto(baseURL!);
     const root = page.locator("#editor .st-viewport"), track = root.locator(".st-minimap");
