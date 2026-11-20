@@ -64,7 +64,7 @@ edits. One undo restores both quantities. The query and mode follow the active f
 | Action | Workflow |
 | --- | --- |
 | Completion | Type an identifier/member prefix, press Ctrl+Space or choose **Complete**. Arrows select; Enter, Tab or a click accepts an applicable item; Escape dismisses. |
-| Type inspection | Hover over a symbol, or use **Inspect type** / Ctrl+K, Ctrl+I at the caret. Documentation preserves plaintext, code and the supported Markdown structure. |
+| Type inspection | Hover over a symbol, or use **Inspect type** / Ctrl+K, Ctrl+I at the caret. The pointer tooltip stays open while you move within the reported symbol range. |
 | Signature help | Type a provider trigger or use **Signature help** / Ctrl+Shift+Space. Argument movement updates the active parameter; overload controls choose another signature. |
 | Definition and references | F12 / Shift+F12 request locations. Choose a result explicitly when there are several. **Back to previous location** / Alt+Left restores the captured source selection and view. |
 | Rename | F2 / **Rename symbol** captures the source and previews the proposed name. Changing the name requires another preview; Apply creates one shared undo command for the validated files. |

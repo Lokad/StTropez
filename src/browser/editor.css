@@ -58,7 +58,7 @@
 .st-viewport-command-measure { position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; contain: strict; visibility: hidden; pointer-events: none; }
 .st-matching-bracket { background: var(--st-bracket-background, #397e8440); outline: 1px solid var(--st-bracket-border, #5cb9b3); outline-offset: -1px; }
 .st-character-warning { background: var(--st-character-warning-background, #d89b2430); outline: 1px dotted var(--st-character-warning-border, #e9ad43); }
-.st-viewport-selected { background: var(--st-selection, #24496b); }
+.st-viewport .st-viewport-selected { background-color: var(--st-selection, #24496b); }
 .st-editor { cursor: text; user-select: none; }
 .st-input-context { position: absolute; width: 1px; min-height: 1px; box-sizing: border-box; padding: 0; margin: 0; border: 0; resize: none; overflow: hidden;
     font: inherit; line-height: inherit; tab-size: inherit; direction: ltr; opacity: 0; }

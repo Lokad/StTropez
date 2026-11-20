@@ -156,6 +156,8 @@ segmentation. Pages use `max(1, floor(viewportHeight / lineHeight) - 1)` visible
 and [comparison alignment](comparison.md) determine the navigation grid.
 
 Pointer selection uses source hit testing, including where the transparent input overlaps text.
+Dragging either scrollbar preserves the selection. Selected text uses `--st-selection` over
+ordinary token and occurrence backgrounds.
 The captured pointer owns the gesture. Release, lost capture, cancellation or a changed source/view
 ends it. Holding a drag beyond an edge extends selection through logical scrolling; speed is capped
 at three viewport lengths per second per axis, with at most 32 ms of movement per callback.

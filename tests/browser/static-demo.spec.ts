@@ -1,6 +1,7 @@
 import { latch } from "../helpers/latch.ts";
 import { expect, test } from "./fixtures.ts";
 import { runDemoHostIntegrations } from "./demo-host-integrations.ts";
+import { dragBundleScrollbars, hoverString, selectInsideString } from "./demo-minified.ts";
 import { runDemoDiagnosticRetention } from "./demo-diagnostics.ts";
 import { demoSample } from "../../examples/demo/samples.ts";
 
@@ -226,6 +227,16 @@ test("syntax worker retains large documents and emits only for the visible JavaS
 
 // Native scrollbar drags are part of the demo's user journey, including headless Chromium.
 test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
+
+test("minified paste keeps its selection during native scrollbar drags on both axes", async ({ page, baseURL }) => {
+    await dragBundleScrollbars(page, baseURL!);
+});
+test("minified paste shows keyboard and pointer selections over a highlighted string", async ({ page, baseURL }) => {
+    await selectInsideString(page, baseURL!);
+});
+test("minified paste keeps a string hover open until its target changes", async ({ page, baseURL }) => {
+    await hoverString(page, baseURL!);
+});
 
 test("configured editing commands, quotes and comments share review and undo", async ({ page, baseURL }) => { await runDemoEditingRules(page, baseURL!); });
 

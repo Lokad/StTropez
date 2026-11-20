@@ -858,12 +858,21 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         const started = win.performance.now(); keydownEvents++;
         try { keydown(event); } finally { lastKeydownMs = win.performance.now() - started; }
     }, { signal: listeners.signal });
+    function pointerHit(event: MouseEvent) {
+        // A native scrollbar press targets the scroll container. Only its client area is text.
+        if (event.target === root) {
+            const bounds = clientBox(root, viewport.minimap());
+            if (event.clientX < bounds.left || event.clientX >= bounds.right
+                || event.clientY < bounds.top || event.clientY >= bounds.bottom) return undefined;
+        }
+        return viewport.hitTest(event.clientX, event.clientY);
+    }
     root.addEventListener("dblclick", event => {
         const began = win.performance.now();
         try {
         wordSelectionEvents++;
         if (event.button !== 0 || disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
-        const point = viewport.hitTest(event.clientX, event.clientY); if (!point) return;
+        const point = pointerHit(event); if (!point) return;
         event.preventDefault(); selectWord(point.offset, event.altKey);
         } finally { lastWordSelectionMs = win.performance.now() - began; maxWordSelectionTurnMs = Math.max(maxWordSelectionTurnMs, lastWordSelectionMs); }
     }, { signal: listeners.signal });
@@ -876,7 +885,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         if (event.button !== 0 || disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
         if (textDrag.arm(event)) return;
         // The transparent native context can overlap source text; its default hit test uses context coordinates.
-        const point = viewport.hitTest(event.clientX, event.clientY); if (!point) return;
+        const point = pointerHit(event); if (!point) return;
         event.preventDefault(); stopDrag(); cancelWord(); preferred = undefined; focus(); group = undefined;
         const state = view.getSnapshot(), extending = event.shiftKey && !event.altKey;
         const anchor = extending ? state.selection.anchor : point.offset, anchorAffinity = extending ? state.selection.anchorAffinity ?? "after" : point.affinity;
