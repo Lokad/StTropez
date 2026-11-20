@@ -6,6 +6,9 @@ Runtime code has **zero third-party dependencies**.
 The host owns storage, services, framework state and surrounding controls.
 The preferred distribution is an assets-only NuGet package; browser execution is independent of .NET.
 
+The browser editor handles typing, rendering and literal search on the main thread.
+Hosts can enable a dedicated Web Worker for [regular-expression matching and replacement planning](docs/search.md#regular-expressions-and-worker-limits).
+
 Start with the [documentation index](docs/README.md), [embedding guide](docs/getting-started.md)
 or [packaging contract](docs/packaging.md). The [support matrix](docs/README.md#support-matrix)
 defines the implemented subset and unverified native-input, clipboard and device boundaries.
