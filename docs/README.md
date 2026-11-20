@@ -1,20 +1,21 @@
 # StTropez documentation
 
-Start with [Getting started](getting-started.md) to mount an editor and open a document.
-Follow the [browser IDE walkthrough](getting-started.md#add-features-to-a-browser-ide) to add
-tokens, paste conversion, a language server, save, Run and revision review.
+Build a two-file editor in [Getting started](getting-started.md). You can run the first snippet
+as soon as you serve the page, then add the features you need.
 
 ## Choose a task
 
-For editing behavior, see [keyboard commands](editor.md#keyboard-and-pointer-commands). For
-persistence, see [save and conflicts](workspace.md#save-conflicts-and-run). To add a provider, see
-[language-server setup](language-server.md#use).
+- [Move a tab or close it without losing the draft](getting-started.md#switch-and-move-tabs)
+- [Color source text with your own tokenizer](getting-started.md#plug-in-a-standalone-tokenizer)
+- [Look up a keyboard or pointer command](editor.md#keyboard-and-pointer-commands)
+- [Save a file while the user keeps typing](workspace.md#save-conflicts-and-run)
+- [Connect a language server](language-server.md#use)
 
 ## Subjects
 
 | Subject | Contents |
 | --- | --- |
-| [Getting started](getting-started.md) | Assets, minimal embedding and host lifecycle |
+| [Getting started](getting-started.md) | A runnable editor with tabs, syntax coloring, Save and Run |
 | [Editor](editor.md) | Input, commands, selections, configuration and view state |
 | [Viewport](viewport.md) | Read-only rendering, scrolling and coordinates |
 | [Folding](folding.md) | Fold ranges, discovery, groups and commands |
@@ -23,18 +24,18 @@ persistence, see [save and conflicts](workspace.md#save-conflicts-and-run). To a
 | [Workspace](workspace.md) | Resources, tabs, leases, loading and saving |
 | [Text model](text-model.md) | Buffers, UTF-16 positions, edits, selections and snippets |
 | [Language server](language-server.md) | Protocol subset, synchronization, capabilities and transport |
-| [Language features](language-features.md) | Diagnostics, completion, documentation, navigation and edit/command decisions |
+| [Language features](language-features.md) | Diagnostics, completion, hover, navigation and how to handle proposed edits or commands |
 | [Host integration](host-integration.md) | Tokenization, insertion, notes and commands |
 | [Unicode](unicode.md) | Grapheme boundaries and Unicode text handling |
-| [Packaging](packaging.md) | Assets, entry points, manifest and consumer integration |
-| [Architecture](architecture.md) | Layering, ownership, identity and dependencies |
-| [Testing](testing.md) | Test owners, readiness, measurement and device checks |
+| [Packaging](packaging.md) | Restore the NuGet assets and serve them in a frontend |
+| [Architecture](architecture.md) | What the workspace, browser, protocol clients and host each own |
+| [Testing](testing.md) | Which tests to run, what to measure and which checks need a device |
 | [Examples](examples.md) | Demo, development hosts, providers and static deployment |
 
 ## Support matrix
 
-Supported features have a library contract. Items in the last column need testing on the target
-device or in the consuming application.
+The **Supported** column lists what StTropez guarantees. Check the **Unverified** column
+when choosing devices and integration tests for your application.
 
 | Area | Supported | Not supported | Unverified |
 | --- | --- | --- | --- |
@@ -48,22 +49,29 @@ device or in the consuming application.
 | Distribution | Compiled dependency-free modules, declarations, CSS and worker assets in NuGet | A .NET runtime dependency or consumer-time library compilation | Production deployment/toolchain adoption |
 | Accessibility | Keyboard navigation and explicit focus traversal | A screen-reader support contract | — |
 
-Headless Chrome on Windows has restored the static demo from browser history with its editor, full
-text, selections, undo/redo, services and local save intact. Cache admission depends on the browser.
-Other browsers and interactive devices need separate checks.
+In the Windows headless Chrome test, going back to the static demo restores the editor, full
+text, selections, undo/redo, services and local save. Each browser decides whether to cache the
+page. Repeat the check on the browsers and devices you support.
 
 ## Glossary
 
+### Editing
+
 | Term | Meaning |
 | --- | --- |
-| Resource identity | A host-defined scope/resource/variant key and its workspace handle. Labels can change. |
-| Document identity | The text model shared by views and history. |
+| Resource identity | The scope, resource and variant the host uses to identify a file or value, and the handle the workspace assigns it. Renaming its label preserves the handle. |
+| Document identity | Views with the same document ID share their text and undo history. |
 | Revision | A version of document contents. A saved/server version is a separate value. |
-| Tab identity and generation | A tab and its generation identify the target of a delayed operation. Replacing the tab invalidates that target. |
-| View identity | An independent selection, folding and scroll state over a document. |
-| Capture | Immutable operation inputs and guards retained before asynchronous work. Later focus cannot change the target. |
-| Lease | Explicit resource retention while a view or operation needs it. |
-| Elapsed duration | Wall-clock time between two declared endpoints, including delays. |
+| Tab identity and generation | A tab keeps its ID when moved. Replacing its contents increments the generation, so a delayed command can detect the replacement. |
+| View identity | Two panes can show the same document with different selections, folds and scroll positions. |
+| Capture | The target, inputs and checks an operation keeps when it starts. If focus moves to another tab, the original target stays the same. |
+| Lease | Keeps a resource in the workspace until its owner releases it. |
+
+### Measuring an interaction
+
+| Term | What it measures |
+| --- | --- |
+| Elapsed duration | Time between the stated start and end, including waiting. |
 | Input-handler duration | Time inside one adapter listener. It includes model updates, synchronous subscribers and browser work triggered there. Native work before the listener, other listeners and later service or render work fall outside it. |
 | Editor handler samples | `lastBeforeInputMs`, `lastInputMs` and `lastKeydownMs` each time one listener. Check its event counter to tell whether a sample is new. |
 | Command callback duration | `maxQueuedInputTurnMs`, `maxWordSelectionTurnMs` and `maxDragScrollStepMs` are per-mount maxima for whole synchronous callbacks, including guards, publication, refresh and scheduling. Later work falls outside them. |

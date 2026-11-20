@@ -1,13 +1,14 @@
 # Text comparison
 
-`mountTextComparison` shows an immutable reference beside an editable working document. Use
-`createComparisonController` for a headless comparison. The host fetches versions, reviews edits and
-saves the result.
+To review unsaved edits, pass the last saved text to `mountTextComparison`. It displays that
+reference beside the editable document and keeps it fixed as the user types. Use
+`createComparisonController` if you only need the diff. Your application fetches versions,
+chooses which changes to accept and saves the result.
 
 ## Use
 
-Pass an open working text tab and a captured `ComparisonBaseline`. Load the packaged CSS and
-provide a bounded container as described in [Getting started](getting-started.md):
+Pass the open tab and its `ComparisonBaseline`. Give the container a height and load the
+editor stylesheet. [Page setup](getting-started.md#open-the-first-editor)
 
 ```ts
 import type { ComparisonBaseline, TabId, Workspace } from "sttropez";
@@ -25,13 +26,13 @@ export function showChanges(
 }
 ```
 
-The mount accepts `TextComparisonOptions`. The returned `TextComparison` exposes the working
-editor, `controller`, reference-view access and presentation commands. Its built-in controls navigate changes, revert a selected change,
-link scrolling and align rows. Supply `view` to retain a host-owned working `DocumentView`
-across mounts. Destroying the comparison disposes only views it creates.
-`ariaLabel` defaults to `"Text comparison"`. Set `controls: false` to mount only the two panes,
-without the default toolbar, headings or whitespace preview. Host controls belong outside the
-comparison's DOM subtree and use the same observable state and commands as the default controls.
+The toolbar lets you navigate changes, revert one, link scrolling and align rows. The
+`ariaLabel` option defaults to `"Text comparison"`. Pass your working `DocumentView` through `view` to keep
+its selection and folds when you close the comparison. The mount disposes only views it creates.
+
+For your own toolbar, set `controls: false`. This gives you just the two panes. Put your controls
+outside their DOM subtree. The returned `TextComparison` exposes the working editor, reference
+view, `controller` and the same commands the built-in toolbar uses.
 
 ```ts
 import type { TextComparison } from "sttropez/browser";
@@ -68,18 +69,21 @@ expires the comparison. `mountTextComparison` attaches the controller and panes.
 | `hunks` | Exact when ready; mapped presentation from the preceding comparison while running |
 | `progress`, `failure` | Current diff work counters or a failure message |
 
-Edits start a fresh diff. While it runs, existing hunks follow edits for display. A gap in revision
-history or a new reference clears them. Only a ready result allows navigation or reversion. Its
-hunks replace the provisional ones together. Progress alone does not repaint.
+Each edit starts a new diff. You may see old change markers move with the text while StTropez
+recomputes the hunks. A gap in revision history or a new reference clears those markers.
+When the diff is ready, StTropez replaces them all at once and enables navigation and reversion.
+A change to the progress count alone doesn't repaint the panes.
 
-`TextComparison` is a stable observable of immutable `TextComparisonSnapshot` values.
-Its `comparison` field is the controller's current snapshot; `selectedHunk` is an index into that
-snapshot's hunks or `null`. Selection clears as soon as the comparison generation changes.
-`canNavigate` and `canRevert` describe current command availability, including pane readiness,
-composition and edit authority. `scrollLinked`, `alignment` (`ComparisonAlignmentSnapshot`) and
-`disposed` expose presentation state. Repeated reads return the same object until a field changes.
-Comparison and permission changes publish synchronously; pane attachment and alignment complete
-cooperatively. Alignment work counters are sampled at publications, not published per cursor step.
+Subscribe to `TextComparison` for a `TextComparisonSnapshot`. Repeated reads return the same
+immutable object until a field changes. Its `comparison` field holds the controller snapshot.
+`selectedHunk` indexes that snapshot's hunks, or is `null`. A new generation clears the selection.
+Use `canNavigate` and `canRevert` to enable buttons. They account for pane readiness, active
+composition and edit permission.
+
+Read `scrollLinked`, `alignment` (`ComparisonAlignmentSnapshot`) and `disposed` to find out what
+the panes are doing. Comparison and permission changes publish synchronously. Attaching panes
+and aligning rows can take several turns. Subscribers get the latest alignment counts with each
+published snapshot.
 
 Read snapshots in notifications and queue commands until after delivery. Disposal publishes a final
 snapshot with no selected hunk or available command. Commands check the capture and input state
@@ -94,7 +98,7 @@ and working `DiffRange` values with exclusive text and line ends. `whitespaceOnl
 change without suppressing it. Alignment minimizes line insertions/deletions; it does not
 provide a globally minimal character diff or moved-block detection.
 
-For direct headless use, the caller supplies scheduling between cursor steps:
+If you use `TextDiff` directly, your caller decides when to take the next step.
 
 ```ts
 import { TextDiff } from "sttropez";
@@ -124,7 +128,9 @@ and records `failed` with empty hunks.
 stay valid. Reentrant advancement or disposal throws. Terminal `next()` calls
 validate the budget and return the current progress.
 
-### Hunk commands and host tickets
+<a id="hunk-commands-and-host-tickets"></a>
+
+### Reverting a change or accepting a version
 
 `selectHunk(generation, index)` reveals and selects both ranges, unfolding them if needed. It
 returns `false` for a stale, unavailable or composing target. In browser UI, use
@@ -133,7 +139,7 @@ returns `false` for a stale, unavailable or composing target. In browser UI, use
 edit permission, then restores the baseline range in one human history transaction. Undo restores
 the text and selection. A working edit clears the hunk selection.
 
-Hosts use explicit tickets for delayed operations:
+Take a ticket before fetching a reference or asking the user to confirm a change.
 
 | Command | Capture and completion |
 | --- | --- |
@@ -141,14 +147,16 @@ Hosts use explicit tickets for delayed operations:
 | `beginAcceptance()` | Capture the working snapshot; complete with that exact buffer object and a host reference version |
 | `beginReversion()` | Capture a ready result, tab, complete selection set and authority for confirmation; `complete()` reverts all reviewed hunks in one transaction |
 
-`ComparisonTicket` exposes `capture`, `isCurrent`, `complete`, `cancel` and `finish`.
-`ComparisonCapture` keeps reference identity separate from the working snapshot and captured server
-version. Each newer refresh supersedes earlier refreshes; each newer acceptance supersedes
-earlier acceptances. Any successful reference advancement expires tickets for the preceding
-epoch. Typing during retrieval or acceptance is retained: refresh changes only the reference,
-and acceptance advances it to the captured working revision. Acceptance requires human edit
-permission and no edit lock at capture and completion. It does not save or alter dirty state,
-history or server version.
+`ComparisonTicket` exposes `capture`, `isCurrent`, `complete`, `cancel` and `finish`. Its
+`ComparisonCapture` records the reference identity, the working snapshot and the server version
+separately. Starting a refresh supersedes an earlier refresh. The same rule applies to two
+acceptances. When the reference advances, all tickets for its previous epoch expire.
+
+If a user types another line while acceptance is pending, that line stays in the working pane
+as an edit. The new reference is the revision the ticket captured. Refresh also changes only
+the reference. Acceptance requires user edit permission and an unlocked document both when you
+take the ticket and when you complete it. The dirty flag, undo history and server version
+keep their values. To persist the text, save it separately.
 
 ```ts
 import type { ComparisonBaseline, ComparisonCapture, ComparisonController } from "sttropez";
@@ -166,11 +174,12 @@ export async function refreshReference(
 }
 ```
 
-`ComparisonReversion` additionally captures generation and complete initiating selections. It
-expires after text/selection changes, a new reference intent, server-version or permission
-transitions, edit-lock changes, tab replacement, view disposal or superseding
-confirmation. Restoring permission does not revive it. An empty comparison succeeds without
-adding history. Other views map through the single transaction normally.
+`ComparisonReversion` also captures the comparison generation and every selection in the
+initiating view. Ask for confirmation again if the text, selections, server version,
+permissions or edit lock changed, even if the user regained permission. A new reference
+request, replacement tab, disposed view or newer confirmation also expires the ticket.
+An empty comparison succeeds without adding an undo step. Otherwise the other views map
+their selections through the same transaction.
 
 Tickets hold a resource lease until `complete`, `cancel` or `finish()`. Capture throws when a
 command is unavailable. Completing a stale ticket returns `false` and releases it. Finish and cancel
@@ -179,12 +188,11 @@ host fetch separately if needed.
 
 ### Reference views and decoration
 
-The reference display has its own internal read-only resource, tab and view. Its resource denies all edit
-origins, Save and Run. The resource, document and tab are omitted from workspace inventories;
-captured reference handles and diagnostic ownership counts remain available under the
-[inventory visibility contract](workspace.md#inventory-visibility).
-It shares the captured immutable buffer without exporting it. Selection,
-navigation and explicit copy operate on source coordinates through the [editor](editor.md).
+The reference pane reads directly from the captured immutable buffer. Select, navigate and copy
+using the same source coordinates as the [editor](editor.md). Its internal resource rejects
+every edit origin, Save and Run. Workspace inventories omit that resource, its document and tab.
+You can inspect a captured reference handle and the diagnostic ownership counts.
+[Inventory visibility](workspace.md#inventory-visibility)
 
 `referenceEditor()` and `referenceViewport()` resolve the current attachment. The stable
 `reference` observable publishes `ComparisonReferenceView` with `{ editor, target, epoch, version }`.
@@ -209,10 +217,10 @@ with change colors. The host owns syntax/search state and calls the appropriate 
 Pass `minimap: true` to show the [viewport minimap](viewport.md#mounting-and-presentation)
 in both panes, including each replacement baseline. Each pane follows its own row projection.
 
-`scrollLinked` and `rowsAligned` are boolean mount options. Both default to `false`; when
-`rowsAligned` is true and `scrollLinked` is omitted, scrolling is linked. Use
-`setScrollLinked(boolean)` and `setRowsAligned(boolean)` to change them. Enabling alignment
-also enables linking; linking can then be disabled independently.
+With the default options, the panes scroll independently. Pass `rowsAligned: true` to line up
+changes and link scrolling, or add `scrollLinked: false` to keep scrolling independent. After
+mounting, turning alignment on with `setRowsAligned(true)` also links scrolling. Call `setScrollLinked(false)`
+to turn linking off while keeping the rows aligned.
 The comparison mount owns row publication for its captured working and reference panes.
 
 Linked scrolling projects vertical positions through the completed diff and each pane's folds.
@@ -220,11 +228,11 @@ Unchanged rows keep their fractional position; changed rows interpolate between 
 and insertions/deletions map to opposite anchors. Each pane clamps to its own extent. Horizontal
 scroll, focus, selection, history and reference identity are independent.
 
-Aligned rows add empty padding to the shorter side of changed blocks, using a common measured
-line height. The grid reuses the completed diff and does not perform another text search. Folds
-stay independent: a row hidden on one side becomes padding there; a row hidden on both is omitted.
-Padding contains no source text, clipboard content or focusable controls. Clicking it selects
-an adjacent source boundary; arrows skip it and Page commands follow the visual grid.
+Aligned panes use the same measured line height. If you insert three lines on the right, the
+grid adds three lines of padding on the left using the completed diff. Each pane keeps its own
+folds. A row folded on one side leaves padding there. A row folded on both sides disappears
+from the grid. Padding contributes nothing to copied text and contains no focusable control.
+Click it to select an adjacent source boundary. Arrows skip it and Page commands follow the grid.
 
 Alignment charges one work unit per collapsed-fold boundary, comparison hunk or processed
 span. Unchanged and padded spans stay compact regardless of their row count; expanded folds
@@ -250,4 +258,5 @@ host-owned views.
 
 ## Not covered
 
-See the [support matrix](README.md#support-matrix) for unsupported features and device checks.
+The comparison works with a reference and a working document. If users need a three-way merge
+or a conflict-resolution UI, the host supplies it. [Search and review support](README.md#support-matrix)

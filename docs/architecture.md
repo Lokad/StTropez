@@ -1,11 +1,13 @@
 # Architecture
 
-The browser editor and protocol clients share a headless text and workspace model. The host supplies
-storage, services and surrounding UI.
+The workspace owns the text and undo history. Browser panes and language clients read from it.
+You can close a pane and reopen the same unsaved document with its undo history intact.
+Your application decides when to release the file, where to save it and which services to call.
 
 ## Use
 
-Put platform access in an outer layer. Hosts import the public entries.
+The arrows show which modules may import which others. An application imports the public
+`sttropez`, `sttropez/browser` and `sttropez/protocol` entries.
 
 ```mermaid
 flowchart TD
@@ -17,9 +19,9 @@ flowchart TD
     Protocol --> Core
 ```
 
-Capture the target before starting asynchronous analysis. Return a cleanup handle immediately. While
-the result is visible, retain the capture and check it before use. Dispose it on dismissal,
-replacement or teardown, and handle rejected requests.
+Suppose a user requests analysis, then edits the file before the reply arrives. Capture the view
+and its revision when the request starts. The caller can dismiss the request immediately or use
+`isCurrent()` to check a result it has kept on screen.
 
 ```ts
 import type { DocumentView, TabId, TextBuffer, Workspace } from "sttropez";
@@ -49,35 +51,35 @@ export function startAnalysis(
 }
 ```
 
-The host bounds and schedules its analysis. A captured read does not authorize a later edit;
-commands use the [workspace transaction contract](workspace.md#transactions-and-history).
-See [captured-view requests](host-integration.md#captured-view-requests) for invalidation and
-lease semantics.
+The caller schedules the analysis, handles a rejected `settled` promise, and calls `dispose()`
+when it dismisses or replaces the result or closes the view. To change the text, submit a
+workspace transaction with the revision the analysis read. [Transactions](workspace.md#transactions-and-history) · [When a view capture expires](host-integration.md#captured-view-requests)
 
 ## Contract
 
-### Layers and enforcement
+<a id="layers-and-enforcement"></a>
 
-| Layer | Owns | Dependencies and effects |
+### What each layer can import
+
+| Layer | What goes here | What it can use |
 | --- | --- | --- |
-| `src/core` | Buffers, changes, selections, history, resources, transactions and headless computation | Core modules only; no DOM, React, Node, networking or storage APIs |
-| `src/protocol` | JSON-RPC/LSP coordination and the private regex worker contract/session, including message validation | Protocol and core; transport/scheduling through supplied interfaces, without platform networking/storage APIs |
-| `src/browser` | Editor DOM, native input, geometry, presentation scheduling and browser adapters | Browser, protocol and core; browser effects stay in this layer |
-| Host application | Storage, authentication, service endpoints, resource routing, framework state, forms and controls | Public package entries; application dependencies stay in the host |
-| Development tools/fixtures | Builds, servers, controlled providers, test hooks and measurement | Development dependencies; excluded from the library runtime graph |
+| `src/core` | Buffers, edits, selections, history, resources and transactions. Runs without a browser. | Other core modules. No DOM, React, Node, network or storage APIs. |
+| `src/protocol` | JSON-RPC/LSP sessions and the regex worker's private protocol. Validates messages. | Core and protocol modules. The caller supplies transport and scheduling through interfaces. |
+| `src/browser` | Editor DOM, native input, caret geometry, drawing and browser adapters | Browser APIs and all three library layers |
+| Host application | Storage, authentication, service endpoints, file routing, framework state, forms and controls | Public package entries and the application's dependencies |
+| Development tools and fixtures | Builds, servers, test providers, hooks and measurement | Development dependencies. These tools aren't part of the shipped runtime. |
 
-Core and protocol compile with ES2022 and no ambient package types. DOM or Node globals fail these
-checks. The runtime build rejects inputs outside `src/`. Review imports and platform effects when
-changing a layer.
+Core and protocol compile with ES2022 and no ambient package types. Using `document` or a Node
+global in either layer fails the type check. The runtime build rejects inputs outside `src/`.
 
-[Packaging](packaging.md) lists the public entries and assets. The development host’s synthetic peer
-exercises the [supported language-server protocol](language-server.md).
+For the published entry points, see [Packaging](packaging.md). The development host includes a
+test peer for the [supported language-server messages](language-server.md).
 
 ### Mutable state and lifetime
 
 | Owner | State and lifetime |
 | --- | --- |
-| Workspace/resource | Authoritative content, revisions, capabilities, saved baseline, history and resource retention |
+| Workspace/resource | Current contents and revision, permitted operations, last saved contents, undo history and the tabs or leases keeping the resource open |
 | Document view | Independent selections and folding over a shared document, including while detached |
 | Editor input adapter | Native input context, composition capture, ordered input and delayed editing/navigation |
 | Caret presentation | Caret DOM, placement cache and scheduled placement; no text edits, selection writes or command scheduling |
@@ -104,21 +106,21 @@ cancels a request. See [language features](language-features.md).
 
 ### Identity and asynchronous work
 
-Use the resource key to identify content and the revision to identify the text you read. The saved
-server version, tab generation and view each serve a separate purpose. See the
-[glossary](README.md#glossary).
+Choose the identity that can change while a request is in flight. A save that overwrites a server
+copy needs the resource and the server version it expects. A suggested edit needs the document revision
+whose offsets it uses. A command for a particular tab needs its ID and generation. Moving the tab
+preserves both. Replacing its contents changes the generation, and closing it removes the target.
 
-Before awaiting a service, capture the target and take any resource lease it needs. Before applying
-the reply, check the target, revision and any view state the result depends on. Check request
-generation too: two requests can target the same revision. A tab move preserves identity.
-Replacement or closure can invalidate the target. Expose cleanup immediately so the host can cancel
-an abandoned operation.
+Capture the target and acquire any lease before the first `await`. When the reply arrives,
+check the capture, any selection or view state the result used, and whether a newer request
+superseded it. Two requests can read the same revision. Give the caller a way to cancel while
+it waits. [Identity and capture terms](README.md#glossary)
 
 ### Snapshots and notification delivery
 
-Public observables return immutable snapshots with stable identity until a change. Subscribe to a
-document, resource or field when possible. Reading the coarse workspace snapshot builds its
-inventory on demand.
+Reading an observable twice returns the same immutable object until something changes. Subscribe
+to the document, resource or field you display. Read the workspace snapshot when you need the
+whole inventory. The workspace builds it on demand.
 
 Workspace transactions and queued LSP updates publish all changed stores before listeners run. A
 failed listener does not prevent other listeners from receiving the update. Read state during
@@ -139,34 +141,36 @@ A source-backed form needs a lossless conversion and a way to display invalid so
 settings, source and result resources keep their own identities and save permissions. The host owns
 credentials, routing and service execution.
 
-### Performance invariants and cost boundaries
+<a id="performance-invariants-and-cost-boundaries"></a>
 
-The table distinguishes work bounded per turn from work that grows with the input.
+### What costs time and memory?
 
-| Work | Invariant | Cost boundary |
+| Operation | How StTropez limits the work | Where the cost grows |
 | --- | --- | --- |
-| Native input and rendering | Bound the editing context and presented rows/fragments; separate measurements from DOM writes | Native processing, layout and indivisible platform calls have separate costs |
-| Text edits and position mapping | Use range transactions, indexed buffers and shared history; do not export full source in routine input subscribers | Bulk changes, large selection sets and explicit string export have proportional work |
-| Workspace/host updates | Publish scoped snapshots and retain unchanged identity | Requested aggregate inventories and tab-list changes can traverse their collections |
-| Highlighting and diagnostics | Address captured revisions; prioritize visible fragments and bound scheduled work | Lexical invalidation and synchronization can cover a large source range; stale results cannot become edit authority |
-| Search, comparison and proposals | Keep computation cancelable and apply only validated results | Global search, full comparison and source transfer can retain document-sized work; scheduling bounds do not remove that cost |
-| Allocation and retention | Bound caches/history, share immutable content and release owned listeners/timers/leases | Garbage collection and retained native/browser memory require separate observation |
-| Startup | Keep compiled assets coherent and distinguish optional feature activation | Download, parse, worker startup and first usable view are distinct from warm editing |
+| Typing and scrolling | Cap the native editing context and the rows or fragments rendered. Measure layout separately from DOM writes. | Native input, layout and browser calls that cannot yield |
+| Editing and mapping positions | Apply edits by range and share indexed buffers and history. Read only the changed range in a routine input subscriber. | Bulk edits, many selections and exporting a whole file as a string |
+| Updating the workspace | Publish a new snapshot for each field that changed. | Reading the full inventory or changing the list of tabs can visit the whole collection. |
+| Highlighting and diagnostics | Work on a captured revision and prioritize visible fragments. Bound the work per turn. | A change near the start of a file can invalidate coloring or require synchronization across a large range. Check the revision before using a result to edit. |
+| Searching and comparing | Let the caller cancel a search, diff or proposed change. Check its result before applying it. | A full search, comparison or transfer can require work proportional to the document, spread across several turns. |
+| Memory | Limit caches and history, share immutable text and release listeners, timers and leases. | Measure garbage collection and memory the browser retains separately. |
+| Startup | Load a matching set of assets and measure optional features when they start. | Downloading and parsing modules, starting a worker and showing the first view have different costs from editing an open file. |
 
 For an edit or scroll, check when the correct text, selection, colors and comparison appear. A
-gutter update can precede the text. See the [clock definitions](README.md#glossary) and
+gutter update can precede the text. See the [clock definitions](README.md#measuring-an-interaction) and
 [test procedures](testing.md).
 
-### Dependency and acceleration policy
+<a id="dependency-and-acceleration-policy"></a>
+
+### Dependencies and alternatives to TypeScript
 
 Runtime code has zero third-party dependencies. Reuse the existing buffers, controllers and platform
 APIs. Keep frameworks and application parsers in the host. Generated character data retains its
 [Unicode](unicode.md) notices.
 
-To propose a compute accelerator, measure one kernel against the TypeScript implementation,
-including startup, encoding, copies, allocation and conversion back. Preserve results, bounds,
-cancellation and revision checks. Require this evidence before adding a compiler or a WASM or
-managed runtime.
+Before adding a compiler, WASM or a managed runtime, time one operation against its TypeScript
+implementation. Include startup, encoding, copying, allocation and conversion back to TypeScript.
+Check that both versions produce the same results and respect the same limits, cancellation and
+revision checks.
 
 ## Host responsibilities
 
@@ -176,4 +180,5 @@ for view updates. See [testing](testing.md#test-ownership) when changing a contr
 
 ## Not covered
 
-See the [support matrix](README.md#support-matrix) for feature and native-device boundaries.
+For questions about a specific browser or input device, such as IME popup placement or touch
+selection, check the [support matrix](README.md#support-matrix).

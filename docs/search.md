@@ -1,7 +1,8 @@
 # Find and replace
 
-Find searches one editor view. Literal search reads the text buffer. An optional Web Worker handles
-regex matching and replacement planning. Both modes apply edits through workspace history.
+Attach Find to an editor to search that view and undo replacements through its shared history. Literal
+search reads the text buffer. To offer regex, supply a Web Worker for matching and replacement
+planning.
 
 ## Use
 
@@ -38,10 +39,9 @@ before its editor.
 
 ### Options, matches and commands
 
-`createFindController` takes a workspace, tab and editor for the same live text view. It retains a
-resource lease and the tab generation, so changing focus cannot redirect a command. `TextEditor`
-implements `FindHost`, which supplies the view, document events and clock, composition and read-only
-state, disposal, reveal and focus.
+Pass the workspace, tab and editor for one live view to `createFindController`. Its lease and captured
+tab generation keep commands on that target after focus moves. `TextEditor` implements `FindHost`,
+including document events, clock, composition, read-only and disposal state, reveal and focus.
 
 Pass the backend and delay in `FindControllerOptions`. Change `FindFlags` with `setFlags(flags)`.
 `getSnapshot()` and `subscribe()` expose an immutable `FindSnapshot` with the query, flags,
@@ -65,30 +65,30 @@ notice.
 Point matches count at `from` and are excluded at `to`. An empty interval returns a point match at
 that offset, including EOF. Use ordered, nonnegative safe integers within the document.
 
-The paged index stores all matches and visits only those intersecting the requested range. Pass the
-painting callback’s `FindSnapshot` to `matchesIn` to get an empty array if the view expires, the
-revision or `matchesVersion` changes, or Find has yet to observe the document revision. Repaint on
-revision or match-version changes. New matches, resets, query changes and repairs update the match
-version. Navigation and scan-only progress preserve it.
+Pass the `FindSnapshot` you’re painting to `matchesIn`. It queries the paged index for that interval
+and returns an empty array if the view expired, the revision or `matchesVersion` changed, or Find
+hasn’t observed the new revision yet. Redraw on revision or match-version changes. The version changes
+for new matches, resets, new queries and repairs. Moving to another match or scanning without finding
+one keeps it stable.
 
-Navigation wraps after a complete scan. During literal repair (`searching` with `retained: true`),
-counts describe the confirmed prefix. Navigation stays in that prefix without wrapping, and
-replacement can use only confirmed matches. Initial and regex searches wait for completion.
+After a complete scan, Next wraps from the last match to the first. While literal search repairs its
+index (`searching` with `retained: true`), the count covers the confirmed prefix. You can navigate or
+replace matches there. Next stops at the last confirmed match. Initial searches and regex searches
+wait for a complete scan.
 
-States are `idle`, `searching`, `ready`, `replacing`, `failed`, `cancelled`, `expired` and
-`disposed`. A missing backend or worker failure produces a message. Commands on an expired or
-disposed controller cannot affect a new tab.
+`status` is `idle`, `searching`, `ready`, `replacing`, `failed`, `cancelled`, `expired` or `disposed`.
+A missing backend or failed worker sets a message. Expired or disposed controllers cannot target
+replacement tabs.
 
-`getDiagnostics()` reports `FindDiagnostics.maxScanStepMs` for the current search and
-`FindDiagnostics.replaceTransactionMs` for the last replacement. Both are readable after disposal.
-Timing updates alone preserve snapshot identity and do not notify listeners. See
-[clock definitions](README.md#glossary).
+Use `getDiagnostics()` for the current search’s `FindDiagnostics.maxScanStepMs` and the last
+replacement’s `FindDiagnostics.replaceTransactionMs`, including after disposal. Timing alone leaves
+snapshot identity and listeners untouched. [Clock definitions](README.md#glossary)
 
 ### Notice reasons
 
-Use `FindSnapshot.reason` (`FindReason` or `null`) for program logic or localization. `message`
-gives the same notice as display text. Ignored commands can leave a notice in place. For progress,
-read `status`. For edit permission, check resource capabilities.
+Branch on `FindSnapshot.reason` (`FindReason` or `null`) and show or localize `message`. An ignored
+command can leave an earlier notice in place. Read `status` for progress and resource capabilities for
+edit permission.
 
 | Reason | Meaning |
 | --- | --- |
@@ -103,10 +103,11 @@ read `status`. For edit permission, check resource capabilities.
 | `replaced` | A replacement transaction was accepted, including a no-op |
 | An `EditResult` refusal reason | The workspace rejected the final transaction; its reason is forwarded unchanged |
 
-Starting/restarting a query, changing flags, successful navigation, starting a queued
-replacement and disposal clear the notice. Unchanged flags, scan progress and completion preserve the notice.
-Edits while cancelled preserve the cancellation notice. Obsolete asynchronous replies cannot overwrite it. Backend error text is
-display data: identical text can have different reasons depending on which operation failed.
+Use `reason` for decisions. A backend can send the same error text for a failed search and a failed
+replacement. A new or restarted query, changed flags, successful navigation, a queued replacement or
+disposal clears the notice. Scan progress, completion and unchanged flags leave it in place. If you
+cancel and then edit, the cancellation notice stays. Late replies to obsolete requests cannot change
+it.
 
 ```ts
 import type { FindSnapshot } from "sttropez/browser";
@@ -120,11 +121,10 @@ export function findNotice(state: FindSnapshot): string {
 
 ### Literal matching and scheduling
 
-`LiteralSearch(buffer, query, options?)` is the headless cursor underlying literal find. It accepts
-an immutable buffer, a query and an optional `LiteralSearchOptions` object with `from`, `to`,
-`wholeWord` and `matchCase`. Bounds default to `0` and `buffer.length`; options must be an object.
-Bounds and returned `SearchMatch` ranges use original UTF-16 offsets; `to` is exclusive.
-Matching is non-overlapping and preserves raw line endings. An empty query has no matches.
+Use `LiteralSearch(buffer, query, options?)` for headless literal search. `LiteralSearchOptions`
+accepts `from` (default 0), `to` (default `buffer.length`), `wholeWord` and `matchCase`. Pass an
+options object if supplied. Bounds and `SearchMatch` ranges use original UTF-16 offsets, with an
+exclusive end. Matches cannot overlap. They preserve raw line endings. An empty query has no matches.
 
 ```ts
 import { LiteralSearch } from "sttropez";
@@ -144,18 +144,17 @@ export function* findWords(buffer: TextBuffer, query: string): Generator<readonl
 }
 ```
 
-`next(maxUnits?, maxMatches?)` returns a frozen `SearchStep` with matches, completion and an
-absolute UTF-16 frontier (`scanned`). Budgets must be positive safe integers and default to 32,768
-units and 8,192 matches. Each step’s `readUnits` includes rereads at boundaries, so their sum can
-exceed the source length. Dispose the cursor or close the generator to abandon it. Preparing a query
-is synchronous and costs work proportional to its length.
+Call `next(maxUnits?, maxMatches?)` for a frozen `SearchStep` with matches, completion and `scanned`,
+the absolute UTF-16 offset reached. The budgets default to 32,768 units and 8,192 matches and must be
+positive safe integers. `readUnits` counts boundary rereads, so a search can read more units than the
+file contains. Preparing the query takes synchronous work proportional to its length. Dispose the
+cursor or close the generator to stop early.
 
-In the browser, a literal advance reads up to 4,096 units or returns up to 1,024 matches. A task
-runs at most 32 advances, checks the 4 ms scheduling target after each advance and index update,
-then publishes once. The first repair advance caps matches at 64 to look for a reusable suffix.
-Repeated patterns can require a full suffix scan. Missing revision history requires a fresh search.
-`maxScanStepMs` covers one matching and indexing step. Setup, publication and rendering take
-additional time. Regex search processes one worker reply before requesting another.
+In the browser, a literal advance stops at 4,096 units or 1,024 matches. A task publishes once after
+at most 32 advances, checking its 4 ms target after each advance and index update. The first repair
+advance stops at 64 matches to look for a reusable suffix. Repeated patterns can force a full suffix
+scan. Missing revision history forces a fresh search. `maxScanStepMs` times one match/index step.
+Setup, publication and paint take additional time. Regex search processes one worker reply at a time.
 
 Case-insensitive literal matching uses Unicode simple folding over code points. It does not
 expand `ß` to `ss`, normalize combining sequences or apply locale-specific casing. Whole-word
@@ -163,7 +162,9 @@ constituents are Unicode letters, numbers, connector punctuation, combining mark
 controls U+200C/U+200D. Both neighbors must be non-constituents or document edges; a match cannot
 split a surrogate pair. Boundary checks can inspect context outside the requested bounds.
 
-### Replacement and authority
+<a id="replacement-and-authority"></a>
+
+### When a match can be replaced
 
 Literal replacement inserts its argument literally, including `$&`, `$1` and raw newline
 sequences. Current replacement requires a matching selection; whole-word replacement also
@@ -171,28 +172,27 @@ requires membership in the index. Otherwise the command selects the next match. 
 and replacement reject active composition. Read-only state, edit capabilities and edit leases
 guard replacement independently of search availability.
 
-Literal current-match replacement completes synchronously, including while confirmed matches
-remain available during repair. A no-op replacement leaves that repair running. Literal planning
-reuses the captured match index; it neither rescans the source nor builds another index.
-Headless plan assembly copies each accepted edit, validates its exact captured match range
-and exposes a complete immutable edit list only after the backend supplies every match.
+Replacing one confirmed literal match runs synchronously, even during index repair. If the replacement
+leaves the text unchanged, repair continues. For a replacement plan, the planner reuses the captured
+index, copies each edit and checks its range against the indexed match. You get the immutable edit
+list only when the backend has supplied every match.
 
-Replace-all planning yields every 1,024 edits and captures document revision, the complete
-selection set and tab generation. Each plan step rechecks the editor's read-only state and
-composition state. One atomic transaction rechecks authority and creates one
-shared undo unit. Editing restarts search; selection/query changes, composition, tab replacement
-and disposal invalidate queued replacement. Losing edit permission or acquiring an edit lease
-cancels a queued command even if permission returns before its next step. Retry explicitly with
-a fresh capture. Focus returns to the captured editor only if no new element gains focus during
-planning. The final transaction is synchronous and proportional to the changed ranges.
+Replace All captures the document revision, all selections and the tab generation. Planning yields
+every 1,024 edits and checks read-only and composition state at each step. Changing the selection or
+query, starting composition, replacing the tab or disposing the editor cancels the plan. Editing
+restarts the search. Losing edit permission or acquiring an edit lease cancels the command even if
+permission returns before the next step. Retry from the current state.
+
+The final transaction rechecks authority, applies all replacements synchronously and creates one
+shared undo step. Its cost grows with the changed ranges. If the user moved focus to another control
+while waiting, it keeps focus.
 
 ### Regular expressions and worker limits
 
-`createRegexFindBackend(RegexFindBackendOptions)` implements `FindBackend`. One controller owns
-one backend through expiry or destruction; its `dispose` must be idempotent. Custom backends
-supply `FindSearchCursor` and `FindPlanCursor` results for the exact `FindQueryCapture`; they
-produce plans, while the controller owns the transaction. Each plan includes one edit per
-indexed match, including no-ops.
+`createRegexFindBackend(RegexFindBackendOptions)` supplies a `FindBackend`. Give each controller its
+own backend with an idempotent `dispose`. Custom backends return `FindSearchCursor` and
+`FindPlanCursor` for the exact `FindQueryCapture`. Return one edit per indexed match, including
+no-ops. The controller commits the plan.
 
 Patterns use native Unicode, global, multiline matching (`gmu`, adding `i` when match-case is
 cleared). Supply the pattern without slash delimiters. Captures, lookarounds, Unicode properties
@@ -202,10 +202,10 @@ LF or a complete CRLF, or at EOF. Bare CR, U+2028 and U+2029 do not create row b
 Explicit patterns address raw text. Whole-word wrapping uses the same code-word constituents
 as literal search and validates the bare pattern first.
 
-Use `(?:)` for zero-width matches; an empty query is idle. Navigation advances between distinct
-matches and wraps. Current replacement accepts an indexed match or a manually selected nonempty
-overlap validated in full source context. The next current command skips a just-replaced
-zero-width occurrence. Undo restores complete selections.
+To search for empty positions, enter `(?:)`. An empty query clears Find. Next visits distinct matches
+and wraps. Replace Current accepts an indexed match or a manually selected nonempty overlap that
+matches in full source context. After replacing a zero-width match, the next Replace Current skips
+that occurrence. Undo restores all selections.
 
 | Limit or setting | Contract |
 | --- | --- |
@@ -230,11 +230,11 @@ fragment assembly and the transaction run synchronously.
 
 ## Host responsibilities
 
-Supply the controls, shortcuts, worker URL and error messages. Mark partial counts and enable
-Replace All only when ready. Keep focus on a form the user moved to during a search. Dispose the
-controller and subscriptions with the attachment. Custom backends must honor cancellation, source
-identity, match order and replacement limits.
+Build the controls and supply the worker URL. Label partial counts and enable Replace All at `ready`.
+Preserve focus if the user switches to another form. Dispose subscriptions and the controller on
+detach. Custom backends must respect cancellation, source identity, match order and size limits.
 
 ## Not covered
 
-See the [support matrix](README.md#support-matrix) for unsupported features and device checks.
+Find searches one attached document at a time. A host that offers project-wide search must choose the
+files and collect their results. [Search and review support](README.md#support-matrix)

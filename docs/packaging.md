@@ -1,14 +1,13 @@
 # Packaging
 
-`StTropez.Assets` is an assets-only NuGet package. It supplies compiled modules, TypeScript
-declarations, CSS and a regex worker. The host bundles and serves them. The browser needs no .NET
-runtime.
+Restore `StTropez.Assets` with NuGet to get the JavaScript modules, TypeScript declarations,
+stylesheet and regex worker for your frontend. The browser runs the compiled JavaScript.
 
 ## Use
 
-Reference `StTropez.Assets` directly from the project that owns the frontend. This example
-uses the producer's local package version; configure a feed containing that exact artifact.
-Choose a dedicated generated directory for staging.
+Add a direct package reference to the project that builds your frontend. The example expects
+`0.0.0-local` in your NuGet feed and stages the assets under `obj/sttropez`. Use the exact
+version you intend to deploy and a directory reserved for generated files.
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -27,16 +26,16 @@ Choose a dedicated generated directory for staging.
 </Project>
 ```
 
-Restore the project, then invoke its explicit preparation target:
+Restore the project, then run `PrepareFrontend` to write the staged directory to `assets-root.txt`.
 
 ```sh
 dotnet restore Consumer.csproj
 dotnet msbuild Consumer.csproj -target:PrepareFrontend
 ```
 
-Read `assets-root.txt` in the frontend build. Use that directory as a local package via its
-`package.json`, or configure TypeScript paths and bundler aliases from the entry table below. The
-host resolves the public imports after restore.
+Point the frontend build at the directory in `assets-root.txt`. Its `package.json` resolves
+the following imports. If you configure TypeScript paths and bundler aliases by hand, use the
+same [entry points](#package-contents-and-entry-points) for both.
 
 ```ts
 export * as model from "sttropez";
@@ -44,26 +43,26 @@ export * as browser from "sttropez/browser";
 export * as protocol from "sttropez/protocol";
 ```
 
-Include `editor.css` explicitly in the host stylesheet or static-file pipeline. If the host
-serves the asset folder at `./sttropez/`, it can load the stylesheet with:
+Include `editor.css` in your stylesheet bundle or serve it directly. For an asset folder
+at `./sttropez/`, add this to the page.
 
 ```html
 <link rel="stylesheet" href="./sttropez/editor.css">
 ```
 
-For regex search, deploy `browser/regex-worker.js` and pass its URL to the host’s
-[worker factory](search.md#regular-expressions-and-worker-limits). Ship both license notices with
-the assets. See [editor embedding](getting-started.md) for the next step.
+If you enable regex search, deploy `browser/regex-worker.js` and pass its URL to your
+[worker factory](search.md#regular-expressions-and-worker-limits). Once the page can import
+the modules and load the CSS, [mount your first editor](getting-started.md#open-the-first-editor).
 
 ## Contract
 
 ### Package contents and entry points
 
-The package contains no managed assembly or runtime package dependencies. Compiled modules
-target ES2022 and use ESM with shared chunks. Declarations use relative `.js` module
-specifiers; consumers need no library source files or consumer-time library compilation.
+The package contains ES2022 modules with shared chunks. Its declarations import relative
+`.js` paths. Your frontend can use them without compiling StTropez or installing any library
+dependencies. The package has no managed assembly and the browser needs no .NET runtime.
 
-Paths in this table are relative to the restored `assets/` folder or prepared root:
+Paths are relative to the restored `assets/` folder or the staged directory.
 
 | Public import | JavaScript/asset | Declaration |
 | --- | --- | --- |
@@ -73,10 +72,10 @@ Paths in this table are relative to the restored `assets/` folder or prepared ro
 | `sttropez/editor.css` | `editor.css` | — |
 | `sttropez/regex-worker.js` | `browser/regex-worker.js` | — |
 
-The shipped `package.json` declares these exports, ESM and MIT licensing, with no dependency
-installation. Private declaration files support public types; their presence does not expose
-private runtime subpaths through the exports map. Keep shared chunks with their importing
-modules unless the host bundler rewrites the complete module graph.
+The package declares these exports, the ESM module format and the MIT license in `package.json`.
+Private `.d.ts` files describe types used by the public API. Only the paths in the exports map
+are public imports. If you serve the modules directly, keep the shared chunks beside them. A
+bundler can relocate chunks if it also rewrites the imports.
 
 | Archive location | Contents |
 | --- | --- |
@@ -108,26 +107,27 @@ version negotiation.
 
 ### MSBuild preparation
 
-After restore, `StTropezAssetRoot` points to the immutable assets directory. Use it directly or set
-`StTropezStageDirectory` and invoke `StTropezPrepareAssets`. Staging requires an explicit call.
+After restore, `StTropezAssetRoot` points to the immutable assets directory in the NuGet cache.
+Use that directory directly, or set `StTropezStageDirectory` and call `StTropezPrepareAssets`
+to copy the files into your build.
 
 `StTropezPreparedRoot` is a subdirectory named for the SHA-256 hash of the manifest bytes. The
 target copies allowed file types there, preserving relative paths. Packages with identical manifests
 share a stage. Different manifests get separate directories.
 
-The target requires a staging path. The host chooses a safe location and cleans up old stages.
-Preparation skips unchanged files and runs offline, without installing packages, compiling
-TypeScript or rewriting source and lockfiles.
-
-The staging hash identifies the manifest. The producer’s package checks verify the file list and
-individual payload hashes. Staging itself provides no payload verification or authenticity check.
+Staging runs offline and skips unchanged files. It only copies assets. Your build owns the
+staging path and cleanup of old directories. The directory hash identifies the manifest. To
+verify a staged file, compute its SHA-256 and compare it with the hash recorded for that file.
+Staging doesn't authenticate the package.
 
 These files use NuGet's standard `build/` imports; the package supplies no `buildTransitive/`
 integration. See [MSBuild properties and targets in NuGet packages](https://learn.microsoft.com/en-us/nuget/concepts/msbuild-props-and-targets)
 for restore/import behavior and [NuGet package metadata](https://learn.microsoft.com/en-us/nuget/reference/nuspec)
 for archive metadata.
 
-### Producer contract
+<a id="producer-contract"></a>
+
+### Building the NuGet package
 
 Building the package requires the pinned development packages, Node.js 24 or later and a .NET SDK
 that supports `net10.0`.
@@ -140,32 +140,33 @@ accepts runtime inputs only from `src/`. The build copies both license notices u
 into a local archive. Packing requires the compiled manifest and excludes managed build output and
 dependencies. Publishing is separate.
 
-`npm run test:package` restores the archive into an isolated consumer and checks membership, hashes,
-exports, declarations, bundling, CSS, worker deployment and browser behavior. It also exercises
-version and staging changes. Checks within a run reuse the archive and restored root after verifying
-the package hash and unchanged source. See [qualification](testing.md).
+`npm run test:package` restores the archive into a project outside the checkout. It checks the
+file list and hashes, compiles against the declarations, bundles the public imports and loads
+the CSS and worker in a browser. It also changes package versions and staging directories.
+Checks in the same run reuse the restored files after verifying the archive hash and source.
+[Testing a restored package](testing.md#package-qualification)
 
-### Bounds and validation
+<a id="bounds-and-validation"></a>
 
-| Boundary | Enforcement |
+### Troubleshooting a restored build
+
+If a restored build fails, the failing step narrows down what to inspect.
+
+| Failure | Check |
 | --- | --- |
-| Runtime inputs | Library bundling permits only project `src/` inputs; development packages stay outside the graph |
-| Public module resolution | The shipped exports map names three module entries and two asset entries |
-| Package payload | Explicit file allowlist; no managed output or runtime dependencies |
-| Declaration portability | Relative source extensions rewritten as JavaScript module specifiers |
-| Preparation destination | Nonempty host-supplied path; host owns containment and cleanup |
-| Stage identity | SHA-256 of manifest bytes; payload hash verification is a separate qualification check |
-| Worker deployment | One standalone module asset; host supplies URL and worker factory |
+| The compiler finds the types but the browser cannot import a module. | Check that your bundler resolves the same public entry as TypeScript and that the deployed module can load its shared chunks. |
+| `StTropezPrepareAssets` has no destination. | Set `StTropezStageDirectory` to a nonempty path inside the directory your build owns. |
+| You see files from another version. | Read `StTropezPreparedRoot` after running the target. Different manifests have different subdirectories. |
+| Regex search fails after deployment. | Check that the worker URL serves `browser/regex-worker.js` from the same package as the client. |
 
 ## Host responsibilities
 
-Pin the package and feed in the frontend build project. Stage one asset set, configure declaration
-and runtime resolution, include the CSS and deploy the worker if used. The host supplies the
-compiler, bundler, HTTP server and cache policy.
-
-Redistribute `LICENSE.txt` and `UNICODE-LICENSE.txt`. Test imports, styles and workers from the
-consuming application’s built output.
+Pin the feed and version in the project that builds the frontend. Your application supplies the
+compiler or bundler it uses, the HTTP server and the cache policy. Ship `LICENSE.txt` and
+`UNICODE-LICENSE.txt` with the assets. Test imports, styles and any worker from the deployed
+layout, where URLs can differ from the development server.
 
 ## Not covered
 
-See the [support matrix](README.md#support-matrix) for distribution and consuming-host boundaries.
+Check the asset URLs in your production deployment. The [distribution row in the support
+matrix](README.md#support-matrix) distinguishes the package contents from what each host must verify.

@@ -1,8 +1,8 @@
 # Language features
 
-Language clients return results for a specific document revision. Completion and occurrence
-controllers attach to a view. The host renders other results, opens targets and approves edits. See
-[provider setup](language-server.md).
+A completion list, hover or rename result belongs to the revision that produced it. Attach the browser
+controllers for completion and occurrence highlights. For other results, your host draws the UI, opens
+files and decides which edits to apply. [Connect a provider](language-server.md)
 
 ## Use
 
@@ -23,23 +23,21 @@ separately. Incoming edits and command execution have their own
 | Occurrences | `createLspHighlightClient`; browser `createLspHighlightController` | `textDocument/documentHighlight` |
 | Folding | [Folding client and discovery controller](folding.md#language-server-discovery) | `textDocument/foldingRange` |
 
-Unless marked browser-only, the clients above come from `sttropez/protocol`. Use separate clients
-for independent requests. `run` captures document snapshots, `cancel` expires the work and its
-published results, and `dispose` ends participation. The
-[provider scope](language-server.md#workspace-ownership-and-synchronization) manages
-synchronization. Capture view, focus and edit permission in the host.
+Import headless clients from `sttropez/protocol`. Use a separate client for each independent request.
+`run` captures the documents, `cancel` expires the work and results, and `dispose` ends participation.
+The [provider scope](language-server.md#workspace-ownership-and-synchronization) synchronizes files.
+Your host tracks view, focus and edit permission.
 
-Every headless client exposes `getSnapshot`, `subscribe`, `snapshot`, `isBusy`, `options`, `cancel`
-and `dispose`. `getSnapshot()` reads scoped connection state. Read `isBusy()` in a subscription to
-check pending requests and follow-ups, including confirmed action execution. Starting work on
-unchanged text also notifies. Start delivery is queued and can coalesce with connection changes or
-cancellation in the same turn.
+Headless clients expose `getSnapshot`, `subscribe`, `snapshot`, `isBusy`, `options`, `cancel` and
+`dispose`. Read `getSnapshot()` for the scope’s connection state. To update a busy indicator,
+subscribe and read `isBusy()`. It covers pending requests and follow-ups, including confirmed actions.
+A request on unchanged text sends a notification. The start notification is queued, so
+connection changes or cancellation in the same turn can share it.
 
 `options(document)` reads [capabilities](language-server.md#feature-capability-queries) for the
-primary method. Navigation also accepts `textDocument/definition` (default) or
-`textDocument/references`. Colors accept `textDocument/documentColor` (default) or
-`textDocument/colorPresentation`. Other methods throw, as do option queries and new subscriptions
-after disposal. `dispose()` is idempotent.
+primary method. Navigation accepts `textDocument/definition` (default) or `textDocument/references`.
+Colors accept `textDocument/documentColor` (default) or `textDocument/colorPresentation`. Other
+methods throw. After disposal, queries and new subscriptions throw. Repeated `dispose()` is safe.
 
 Capture the completion list ID when rendering an item. A delayed click will then expire if another
 list replaces it.
@@ -58,16 +56,16 @@ export function completionActions(language: LspEditorController) {
 }
 ```
 
-Render labels as text and update controls from the immutable snapshot. Unsubscribe on detach. See
-[attachment and teardown](language-server.md#use).
+Render labels as text. Read the snapshot on change and unsubscribe on detach.
+[Attachment and teardown](language-server.md#use)
 
 ## Contract
 
 ### Captures and ranges
 
-An `LspDocumentCapture` records the URI, resource, document, revision, sent buffer/index, wire
-version, connection epoch and registration generation. Check `isCurrent` before displaying or using
-a result. The sent version gives wire order. Capture the host view, selections and edit permissions
+Check `isCurrent` before showing or using a result. Its `LspDocumentCapture` identifies the URI,
+resource, document, revision, sent buffer and index, wire version, connection epoch and registration
+generation. Wire versions give send order. Capture the host view, selections and permissions
 separately.
 
 `lspRangeOffsets` converts raw UTF-16 positions. Character positions past a valid line's end
@@ -82,35 +80,34 @@ their captures expire.
 
 ### Diagnostics
 
-`scope.observeDiagnostics(binding)` supplies shared immutable `LspDiagnosticState` with `empty`,
-`current`, `pending` and `expired` status. `decodeLspDiagnostics` validates a push against its exact
-URI and capture. A supplied version must match the wire version. An omitted version yields
-uncertain freshness, with null provider version/revision independently of `snapshotRevision`,
-which identifies the buffer used for placement.
+Read `scope.observeDiagnostics(binding)` for the shared immutable `LspDiagnosticState` (`empty`,
+`current`, `pending` or `expired`). `decodeLspDiagnostics` checks the URI and document capture on each
+push. A versioned push must match the wire version. If the server omits the version, the client can
+place the diagnostic but cannot tell when the server analyzed the text. `snapshotRevision` names the
+buffer used for placement. The provider version and revision are null.
 
 Ranges on nonexistent lines retain their message and wire range with null offsets and
 `placement: "out-of-bounds"`; they have no marker. Malformed structures or metadata reject the
 whole batch, including an invalid final item. Fresh batches replace the result; an empty batch
 clears it. Invalid or known-stale pushes preserve the preceding valid batch.
 
-Local transaction maps move placed offsets and mark the result pending. Wholly deleted ranges
-disappear; provider version/revision and original wire ranges stay intact. Pending `isCurrent()`
-is false. `isPlacementCurrent()` separately guards local display/navigation offsets. Undo cannot
-resurrect deleted diagnostics. Missing maps, close/URI reuse and reconnect expire associations.
-Unrelated capability registration does not invent an analysis revision or erase valid placement.
-Mapping visits retained diagnostics without exporting the full document or requesting analysis.
+After a local edit, transaction maps move the markers and mark the diagnostics pending. Fully deleted
+ranges disappear. Undo cannot bring them back. The provider version, revision and original wire ranges
+stay available. Use `isPlacementCurrent()` to check whether a marker points to the right place
+locally. A pending result’s `isCurrent()` is false until fresh analysis arrives. A missing map, close,
+URI reuse or reconnect expires the association. Unrelated capability registrations leave placements
+alone. Mapping these offsets needs neither a full-text export nor another server request.
 
-Metadata includes integer/string `code`, `codeDescription`, `tags`, `relatedInformation` and
-opaque JSON `data`. Unknown integer tags survive forwarding; the advertised presentation tags
-are unnecessary and deprecated. Related resources are not loaded automatically. Code actions
-receive overlapping placed diagnostics only from a matching current provider version. Pending
-and unversioned diagnostics provide no version-verified action context.
+Diagnostics can carry an integer or string `code`, `codeDescription`, `tags`, `relatedInformation` and
+opaque JSON `data`. The client advertises the `unnecessary` and `deprecated` tags and forwards unknown
+integer tags. Open related files only when the host requests them. For a code action, the client
+forwards overlapping, placed diagnostics only when their provider version is current. A pending or
+unversioned diagnostic cannot supply that context.
 
-The browser completion controller exposes `diagnostics`, `diagnosticsPending`,
-`diagnosticRevision`, `unversionedDiagnostics` and `selectDiagnostic(index)`. Render pending
-analysis and uncertain provider freshness distinctly from current results. Diagnostic messages
-are literal text. The host owns list paging, help-link policy and related-location navigation;
-none of this metadata grants edit authority.
+Read `diagnostics`, `diagnosticsPending`, `diagnosticRevision` and `unversionedDiagnostics` on the
+browser controller. Use `selectDiagnostic(index)` to jump. Distinguish a pending recheck from a push
+of unknown age. Render messages as text. Your host pages the list, checks help links and opens related
+locations.
 
 ### Completion
 
@@ -122,18 +119,17 @@ Items use stable `sortText` order. Options capture indentation, a lazy fallback 
 trigger context. `snapshot().received` counts completion-list replies admitted for decoding,
 including malformed lists; resolve replies use their separate operation.
 
-`resolve(batch, item, prepare?)` returns a cancellable operation whose result supplies a new
-`batch`, the resolved `item`, and `reason: null`. Unsupported lazy snippet syntax removes that
-choice, adds its omission to the new batch and returns `item: null` with a reason. Other decode
-failures reject the operation. Only items issued in this client's current batch are accepted.
-Publishing a replacement batch expires the old batch; neither operation applies text.
+Call `resolve(batch, item, prepare?)` with an item from this client’s current batch. The cancellable
+operation returns a new `batch`, the resolved `item` and `reason: null`. If a lazy snippet uses
+unsupported syntax, the new batch lists the omission and returns `item: null` with a reason. Other
+decoding failures reject. When the new batch arrives, retire controls for the old one. Resolving the
+item leaves the document untouched.
 
-`rebase(batch, document)` reads the actual current Core change and returns a replacement batch
-only for a proved single human typing insertion inside every retained choice's primary range.
-It works during document notifications without rebinding or synchronizing. Unknown changes,
-host edits, skipped revisions and expired binding authority refuse adoption. Resolution of an
-adopted choice captures and synchronizes its new revision before sending the original opaque
-wire item. The host chooses which typed characters qualify as a prefix and guards its view.
+`rebase(batch, document)` keeps choices only if the current Core change proves one human typing
+insertion inside every choice’s primary range. Call it during document notifications without rebinding
+or synchronizing. Unknown changes, host edits, skipped revisions and an expired binding return no
+batch. Resolving a rebased choice synchronizes the new revision before sending the original wire item.
+Your host decides which characters count as a prefix and checks the originating view.
 
 Pass `retain: batch` to `run` to keep its choices while a new list is pending. Cancelling that call
 keeps the choices. A new reply replaces them. Client `cancel()` expires all choices. Changing the
@@ -167,28 +163,26 @@ The controller handles input, selection checks and acceptance. The host renders 
 `request()` invokes completion. Set `automatic: false` to require explicit requests. Supply
 `canCapture` for additional readiness checks.
 
-Completion and diagnostics have separate scopes sharing a document binding and workspace lease.
-After synchronization, `prepareCompletion` receives the completion scope. Cancellation skips pending
-preparation and discards a late result. `dispose()` releases this controller. The editor and
-provider keep their own lifetimes.
+Completion and diagnostics share one binding and lease but have separate scopes. `prepareCompletion`
+receives the completion scope after synchronization. Cancellation skips pending preparation or
+discards a late result. Dispose the attachment, editor and provider separately.
 
-Automatic completion follows ordinary prefix typing and advertised trigger characters after
-input settles, with one collapsed caret and no active composition. Ctrl/Cmd+Space invokes it
-explicitly. Arrows select, Enter replaces, Tab inserts and Escape dismisses visible choices or
-an active snippet before editor commands. With no choices or snippet, Escape cancels pending
-completion work and reaches the editor, allowing Escape then Tab/Shift+Tab to leave the view.
-`chooseCompletion`,
-`accept` and `apply` accept an optional `completionId` for retained controls. Each list ID also
-changes after prefix filtering. The immutable `choices` array retains identity while its labels
-are unchanged, including diagnostic, selection and detail publications.
+Automatic completion waits for input to settle after prefix typing or an advertised trigger character.
+It needs one collapsed caret and no composition. Press Ctrl/Cmd+Space to request suggestions yourself.
+Arrows select, Enter replaces, Tab inserts and Escape dismisses the choices or active snippet. When
+neither is visible, Escape cancels pending requests and reaches the editor. Escape then Tab or
+Shift+Tab leaves the view.
 
-`decodeLspCompletions` accepts arrays, CompletionList and null, including item defaults for edit
-ranges, insertion format/mode, commit characters and opaque data. It validates primary and
-additional same-document edits before exposing a choice. An explicit server range takes
-precedence over the browser's bounded Unicode word fallback. Choices sort by `sortText`, with
-stable provider order for equal keys, filter by a case-insensitive `filterText` prefix and honor
-`preselect` when the prior choice is unavailable. Explicit invocation initially shows all choices;
-`filterManualCompletions: true` applies the captured edit-prefix filter to manual requests too.
+Save the `completionId` with a rendered control and pass it to `chooseCompletion`, `accept` or
+`apply`. Filtering a prefix gives the list a new ID. Unchanged labels keep the same immutable
+`choices` array across diagnostics, selection and detail updates.
+
+`decodeLspCompletions` accepts arrays, CompletionList or null, including defaults for edit ranges,
+insertion format/mode, commit characters and opaque data. It checks the primary and additional
+same-document edits. A server-supplied range overrides the browser’s bounded Unicode word range.
+Choices sort stably by `sortText` and filter by case-insensitive `filterText` prefix. If the prior
+choice disappears, `preselect` applies. Manual requests initially show all choices. Set
+`filterManualCompletions: true` to filter them by the captured prefix too.
 
 `rebaseLspCompletion` accepts only a single human typing insertion proved by Core batch metadata
 inside the primary insert range. The browser additionally requires matching selections, fold
@@ -205,26 +199,24 @@ Primary content may change only within the captured insertion/replacement ranges
 ranges belong to the resolve request's snapshot. Failed or malformed resolution dismisses the
 offer. Completion documentation is literal text.
 
-`accept(mode, completionId)` can queue acceptance while the selected item resolves; its boolean
-reports whether the intent was accepted. `apply` attempts immediate application and returns false
-while resolution is pending. Typing, selection changes, blur, cancellation or stale authority
-clear queued acceptance. An unresolved commit character follows ordinary input and dismisses
-the offer. A ready advertised commit character joins the completion in one transaction and
-suppresses duplicate native insertion. Only single-UTF-16-unit commit characters participate.
+Use `accept(mode, completionId)` when the user chooses an item that may be resolving. A `true`
+return means the controller accepted the request. `apply` requires an item it can insert immediately
+and returns false during resolution. Typing, selection changes, blur, cancellation or lost permission
+clears queued acceptance. Typing an advertised commit character while the item is unresolved inserts
+the character normally and closes the list. Once ready, the item and its commit character form one
+transaction, with no duplicate native insertion. Commit characters must be one UTF-16 unit.
 
-`lspCompletionPlan(item, mode, commitCharacter?, capturedSelections?)` returns the complete edit
-batch and resulting `selectionSet`. With multiple carets, the primary must match the item's
-captured offset; all selections must be collapsed and ordered. Translated replacement ranges
-must stay on each caret's line and contain the same text as the primary range. Each insertion
-uses its own line context; shared additional edits apply once. Overlap or an incompatible caret
-rejects the whole plan. Explicit browser requests support multiple collapsed carets; automatic
-requests and list rebasing use one. Failed acceptance consumes its completion key instead of
-falling through to indentation or Enter.
+`lspCompletionPlan(item, mode, commitCharacter?, capturedSelections?)` returns edits and the resulting
+`selectionSet`. For multiple carets, each selection must be collapsed and ordered. The primary must
+match the captured offset. Each mapped replacement must fit its caret’s line and cover the same text
+as the primary. Insertions use local line context, and additional edits apply once. Overlap or one
+incompatible caret rejects the batch. Request completion explicitly for multiple carets. Automatic
+completion and rebasing need one. A rejected acceptance consumes the key, so Enter or Tab cannot
+insert a newline or indent.
 
-Primary and additional edits form one workspace transaction and shared undo command. Additional
-edits before the primary insertion contribute to its final caret. A zero-width additional edit
-may sit at a replacement boundary and precedes the replacement there. Two insertions at the same
-position or intersecting replacements reject a completion. Other views receive mapped selections.
+Primary and additional edits share one undo step. Edits before the primary insertion shift its final
+caret. A zero-width edit on a replacement boundary goes first. Two insertions at the same offset or
+intersecting replacements invalidate the completion. Other views’ selections follow the edit.
 
 Completion uses the [snippet grammar and planners](text-model.md#snippet-planning). Unsupported
 snippet choices and choices requiring a follow-up command are omitted individually, with reasons
@@ -248,26 +240,27 @@ commit-character acceptance inserts expanded text plus the character without sta
 
 ### Hover and documentation
 
-`createLspHoverClient(provider).run(document, offset, prepare?)` returns `{ result, cancel }`. The
-result is null or contains `text`, formatted `content`, an optional `range` and `isCurrent`.
-`decodeLspHover` accepts Hover/null, legacy strings and MarkedString arrays or code fragments.
-Legacy strings use Markdown. `{ language, value }` stays code. The host positions and dismisses the
-hover, including replies without a range.
+`createLspHoverClient(provider).run(document, offset, prepare?)` returns `{ result, cancel }`. A
+non-null reply has `text`, formatted `content`, optional `range` and `isCurrent`. `decodeLspHover`
+accepts Hover/null and legacy strings, MarkedString arrays and code fragments. Legacy strings use
+Markdown. `{ language, value }` preserves code. Your host places and dismisses the popup, even when
+the range is absent.
 
-`mountDocumentation` from `sttropez/browser` renders `DocumentationContent` into its own appended
-subtree. `setContent` reuses an unchanged immutable array; `dispose` removes the view and listeners.
-`DocumentationContent` and `DocumentationPart` are headless types exported from `sttropez`,
-`sttropez/browser` and `sttropez/protocol`.
-The renderer supports plaintext, paragraphs, emphasis/strong emphasis, flat ordered/unordered
-lists, inline code, fenced code and inline links. Code language labels are metadata. It creates
-text nodes and elements without inserting provider HTML or loading images/embedded content.
-Inline parsing stops at nesting depth 16, leaving the remaining text literal. Link destinations
-are interpreted only when their raw span is at most 8,192 UTF-16 units, before trimming or unescaping.
+Use `mountDocumentation` from `sttropez/browser` to append a documentation view. `setContent` reuses
+an unchanged immutable array. `dispose` removes the view and listeners. All three entries (`sttropez`,
+`sttropez/browser`, `sttropez/protocol`) export the headless `DocumentationContent` and
+`DocumentationPart` types.
 
-Links are buttons with opaque destinations. Without `openLink` they are inert. `canOpenLink` is
-checked at rendering and activation, but the host callback must enforce its destination policy
-too. Replacing content or disposing the view retires old buttons. This recipe uses explicit host
-actions as its destination allowlist:
+The view renders plaintext, paragraphs, emphasis, strong emphasis, flat ordered and unordered lists,
+inline or fenced code and inline links. Code language labels are metadata. The view builds its own
+elements and text nodes. It never inserts provider HTML or loads an image or embed. At nesting
+depth 16, inline content stays literal. Link destinations longer than 8,192 UTF-16 units before
+trimming or unescaping also stay literal.
+
+Links render as buttons. Without `openLink`, clicking does nothing. The view checks `canOpenLink` when
+it renders and again on click. Check the destination in your own action too. Replacing the content or
+disposing the view disables old buttons. The example accepts only destinations with a registered host
+action.
 
 ```ts
 import type { DocumentationContent } from "sttropez";
@@ -289,20 +282,17 @@ export function createHelpView(
 }
 ```
 
-Clear content when its request capture expires; the documentation view does not observe that
-capture. The raw Markdown destination span, including whitespace/title, is bounded before parsing;
-overlong spans render literally. The renderer never fetches, normalizes or opens a URI itself.
-Set `markdownDocumentation: true` on the provider when the host presents this subset. Hover and
-signature negotiation then prefers Markdown and declares no allowed HTML tags; default negotiation
-is plaintext. Completion documentation uses plaintext independently.
+Clear the popup when its capture expires. For an overlong Markdown destination, including whitespace
+and title, the view shows literal text. Your callback handles any fetching, normalization or opening.
+Set `markdownDocumentation: true` to request Markdown for hover and signature help, with no allowed
+HTML tags. Otherwise the client requests plaintext. Completion documentation always uses plaintext.
 
 ### Signature help
 
-`createLspSignatureClient(provider).run(document, offset, context?, prepare?)` returns a
-cancellable call. `options(document)` supplies matching provider options for host trigger policy
-through a [read-only capability query](language-server.md#feature-capability-queries).
-`LspSignatureContext` carries trigger kind, optional trigger character, retrigger status and
-optional `activeSignatureHelp`. Without a context, invocation is explicit and not a retrigger.
+`createLspSignatureClient(provider).run(document, offset, context?, prepare?)` returns a cancellable
+call. Read `options(document)` for [provider triggers](language-server.md#feature-capability-queries).
+`LspSignatureContext` carries the trigger kind, optional character, retrigger flag and optional
+`activeSignatureHelp`. Omit it for explicit invocation.
 
 `decodeLspSignatureHelp` returns literal labels/documentation plus structured content, UTF-16
 parameter offsets, active indices and immutable wire context. String parameter labels must occur
@@ -310,12 +300,12 @@ inside the signature label; tuple offsets must fit it. A signature's active para
 the batch value. Missing or out-of-range nonnegative indices select the first available entry;
 zero parameters means no highlighted parameter. Null and empty help yield no useful presentation.
 
-A retrigger without explicit active help can inherit the last accepted wire context after
-matching document/resource/URI/language, connection epoch and registration generation. Starting
-or superseding a request does not discard it. Empty help, a new non-retrigger invocation, client
-cancellation/disposal or provider changes clear it. Explicit host context takes precedence.
-Inherited context is omitted if it would exceed the advisory bound. It retains no old buffer and
-grants no edit authority; cancelled late replies cannot replace it.
+On a retrigger, you can omit `activeSignatureHelp` to reuse the last accepted wire context. The
+document, resource, URI, language, connection epoch and registration generation must match.
+Starting a replacement request retains that context. An empty result, a new explicit non-retrigger
+invocation, `cancel`, disposal or a provider change clears it. Context you supply takes precedence. If
+the inherited context exceeds the advisory size limit, the client omits it. It keeps no old text
+buffer and grants no editing rights. A late cancelled reply cannot replace it.
 
 Choose when to request signature help, which popup gets a key and how to display overloads. Wait for
 input and composition as needed. Switching overloads leaves source text intact. Render signature and
@@ -344,10 +334,11 @@ idempotent `release`, or undefined for an unavailable URI. The target's line ind
 captured buffer, with an independent currentness guard. A closed target has `version: null`;
 its local revision must not substitute for an unknown wire version.
 
-Authorize each URI and supply its contents in the host. Loading requires no view or `didOpen` and
-grants no right to edit or open a link. Connect loader cancellation to the request. On supersession,
-cancellation, disposal or provider change, release even late targets. Keep successful targets until
-the client result or server-edit decision ends. Recheck the whole batch after loading.
+Authorize each URI before loading its contents. You can load a definition target without mounting a
+view or sending `didOpen`. Reading the file grants no permission to edit it or follow a link. Cancel
+the loader with the request and release a late target even if loading finished after cancellation,
+replacement, disposal or a provider change. Keep accepted targets until the result or server-edit
+decision ends. Recheck the whole batch once loading finishes.
 
 For Return, save the original view state and all selections. A focus or selection change can expire
 a pending navigation. Once a read-only list is visible, resource and provider checks can keep it
@@ -356,9 +347,9 @@ comparison baselines. An immutable comparison reference needs no provider bindin
 
 ### Rename and workspace edits
 
-`createLspRenameClient(provider).run(project, originId, offset, newName, prepare?)` returns a
-captured workspace text-edit plan. Null rename responses become empty plans. Language name rules
-belong to the server; host input limits and name-field behavior are host policy.
+Call `createLspRenameClient(provider).run(project, originId, offset, newName, prepare?)` for a
+workspace edit plan. A null reply gives an empty plan. The server checks language naming rules. Your
+host sets the name field’s input limits.
 
 `decodeLspWorkspaceEdit` accepts `changes` maps and versioned `documentChanges` text edits.
 When both are supplied, `documentChanges` takes precedence. Numeric versions must match captured
@@ -368,10 +359,10 @@ Edits sort stably in original coordinates, preserving provider order for equal-p
 No newline normalization is performed. There are no extra decoder quotas on document/edit counts
 or inserted text; session/transport bounds and direct-call input policy apply.
 
-`previewLspWorkspaceEdit(edit, titleForDocumentId, page)` builds immutable review pages from the
-captured buffers. It reports complete edit counts and insertion sizes while materializing only
-the visible page's bounded notes. Previewing grants no edit authority. A host must make later
-pages available and confirm the complete operation, including off-page edits.
+Use `previewLspWorkspaceEdit(edit, titleForDocumentId, page)` to show a page of proposed changes. It
+reads bounded notes for that page from the captured buffers and reports counts and insertion sizes for
+the entire edit. Let the user reach every page. Apply only after they approve the full edit, including
+files on other pages.
 
 `applyLspWorkspaceEdit(workspace, edit, options)` rechecks captures and applies one atomic shared
 history transaction. `origin` is required; `requiredOrigins` adds host permission requirements;
@@ -427,12 +418,10 @@ export async function reviewRename(
 }
 ```
 
-The supplied intent guard must cover the captured tab/view, complete selections, input readiness,
-name and host authority. Abort when that host intent ends; the review callback must close its UI
-and settle on abort. The caller handles rejected promises. Each changed batch is a separate undo
-unit across all edited resources,
-including retained unmounted targets. Unrelated read-only project resources do not prevent edits
-to permitted targets. Locked or unauthorized edited targets reject the atomic operation.
+Guard the tab, view, all selections, input readiness, name and permissions. If the user dismisses the
+review, abort it, close the UI and settle the callback. Handle promise rejection. Each approved batch
+adds one undo step across its changed files, including unmounted ones. Only a locked or unauthorized
+edit target blocks the batch. An unrelated read-only file can stay in the project.
 
 ### Code actions and commands
 
@@ -448,10 +437,9 @@ reasons are literal text. Disabled choices also undergo full metadata/target val
 final items and partial-list envelopes reject the batch. An unresolved choice without an edit or
 command can resolve when matching provider options advertise `resolveProvider`.
 
-`decodeLspResolvedCodeAction` permits only the advertised `edit` property to be added. It preserves
-all other attributes and data regardless of JSON object key order. Changed titles, inserted
-commands, missing edits or stale captures refuse resolution. Discovery, selection and resolution
-do not apply edits or execute commands.
+`decodeLspResolvedCodeAction` accepts only the advertised addition of `edit`. All other attributes and
+data must match, irrespective of JSON key order. A changed title, new command, missing edit or stale
+capture rejects the reply. Browsing and resolving actions leave the files untouched.
 
 By default command support requires static/dynamic advertisement. `LspActionOptions.commandPolicy`
 can authorize an exact immutable invocation, including arguments, and return a server route, local
@@ -472,10 +460,10 @@ export function commandPolicy(
 }
 ```
 
-Policy runs once per captured enabled command. `supports` takes that command object, not just its
-name. A route's `isCurrent` can revoke it; call the client's `cancel()` when host policy changes
-during pending work because the guard is not an observable subscription. A denied command makes
-the whole edit-plus-command choice unavailable. Decoding a command grants no execution authority.
+The policy sees each captured, enabled command once. Pass that exact command object to `supports` so
+the policy can check arguments as well as the name. A route’s `isCurrent` can revoke it. If your
+policy changes while work is pending, call `cancel()` on the client. The guard itself sends no
+notification. Denying a command disables the entire choice, including any accompanying edit.
 
 After explicit host authorization, `execute(action, scope)` uses `LspCommandScope` and the shared
 command runner. It does not automatically apply `action.edit`: the host's synchronous `prepare`
@@ -485,18 +473,16 @@ so a competing operation cannot leave an initial edit behind. Host routes receiv
 snapshots, cancellation and a captured `applyEdit` decision path; unsolicited server edits cannot
 inherit a host-only route's authority. There is no script evaluator or automatic command lookup.
 
-Each initial edit and confirmed later batch is a separate atomic undo phase. Refresh host captures
-after an applied phase without releasing required retention prematurely. A later failure, refusal
-or lost acknowledgement leaves earlier commits applied and undoable. Within the active operation,
-receipts retain the first `applied: false` decision, including validation refusals, even if a later
-batch succeeds. Command availability, quarantine, exact invocation grants and reconnect behavior
-follow the [command lifecycle](language-server.md#commands-and-edit-decisions).
+Each initial edit and each later batch the user approves gets its own undo step. After applying one,
+update the host captures and keep the resources leased until the operation ends. If a later step fails
+or its acknowledgement is lost, earlier edits remain in history. The receipt retains the first
+`applied: false` decision, including a validation refusal, even if a later batch succeeds.
+[Command permissions and reconnect](language-server.md#commands-and-edit-decisions)
 
-`decodeLspApplyEdit` validates an optional literal label and the entire workspace text-edit batch.
-Incoming decisions return `LspApplyEditResult`; decline uses `applied: false` with an optional
-failure reason. Protocol cancellation follows the request cancellation path. A successful local
-commit cannot guarantee delivery of its acknowledgement on a closed transport. The host owns
-review deadlines and reports uncertain outcomes without replaying the transaction.
+`decodeLspApplyEdit` checks the optional literal label and every text edit. Return an
+`LspApplyEditResult` for each decision. To decline, return `applied: false` and an optional failure
+reason. Cancellation uses the usual request path. Set a review deadline. If the connection closes
+after commit, report the uncertain delivery and leave the edit in history.
 
 ### Document links
 
@@ -505,11 +491,10 @@ review deadlines and reports uncertain outcomes without replaying the transactio
 data. A missing target can be retained for explicit resolution when matching provider options
 advertise it. `resolve(item, prepare?)` requires an item from that captured list.
 
-`decodeLspResolvedDocumentLink` permits changes only to target and tooltip. Range and opaque
-identity stay fixed; the same capture and input limits apply. Resolution does not open anything.
-The host chooses whether a destination identifies an authorized resource or external action,
-rechecks its policy on activation and preserves the captured source for Return. Unknown targets
-can be shown without being opened. A late reply must not take focus from a newer host interaction.
+Resolving a link can change its target and tooltip. `decodeLspResolvedDocumentLink` keeps the range,
+opaque identity, capture and size limits fixed. When the user clicks, check the destination against
+your current policy and keep the source location for Return. You can display an unknown target as
+text. Receiving a late reply should never open a link or move focus.
 
 ### Document colors
 
@@ -523,11 +508,10 @@ edit uses the literal presentation label at the captured color range. An invalid
 overlap or out-of-document edit rejects the batch. Empty choices are unavailable for application.
 Labels need not be color literals; the proposed-color input grammar belongs to the host.
 
-The host renders markers, inspects choices and explicitly applies the selected edit batch with
-its captured revision, selection mapping, authority and one history command. Retain the client
-through preview/application. A changed proposed value or source expires the corresponding intent;
-the host cancels it and requests fresh results. An unchanged presentation must preserve text,
-revision, history and complete selections according to the workspace no-op contract.
+Keep the color client alive while the user previews swatches. When they choose a presentation, check
+the captured revision and permission, map the selections and apply its edits in one undo step. If the
+proposed color or source changes, cancel and ask for new choices. Applying the current color without
+changing the text preserves revision, history and selections.
 
 ### Occurrences
 
@@ -537,25 +521,23 @@ whose result includes `items`, `isCurrent` and indexed `intersect(from, to)`. Th
 means text. It retains all results within input limits, including overlapping ranges. Visible-row
 queries skip unrelated intervals and omit zero-width markers without changing the stored items.
 
-The browser `createLspHighlightController(workspace, tab, editor, { provider, delayMs? })` requests
-after a quiet caret interval and waits for queued input/composition. It observes document,
-selection, focus, tab and provider identity, clearing obsolete results. Subscribe to the highlight controller to
-invalidate the host's viewport decorations and call `intersect` while decorating visible lines.
-Host styles distinguish occurrence kinds. `dispose` releases the client and listeners. The
-controller changes neither text nor selection and leaves initial connection/retry policy to the host.
+Attach `createLspHighlightController(workspace, tab, editor, { provider, delayMs? })` to request
+occurrences when the caret settles and queued input or composition finishes. It clears stale results
+on document, selection, focus, tab or provider changes. Subscribe to invalidate your decorations, then
+call `intersect` for each visible line and style by occurrence kind. Highlighting preserves text and
+selection. Connect or retry the provider yourself. `dispose` releases the client and listeners.
 
 ### Folding
 
-Provider folds feed the per-view discovery controller with their captured `isCurrent` guard.
-The [folding contract](folding.md#language-server-discovery) owns the client API, whole-line
-conversion, invalid-range handling and groups. The host chooses discovery and collapse policy;
-fold state belongs to a view independently of a language result or another comparison pane.
+For provider folds, pass the result and its `isCurrent` guard to the view’s discovery controller.
+Choose what to discover and collapse in each pane. Expanding a saved reference leaves the working
+pane’s folds alone. [Whole-line ranges and provider groups](folding.md#language-server-discovery)
 
 ### Limits
 
-String sizes below use UTF-16 units. [Session, transport and JSON limits](language-server.md#limits-and-failures)
-also apply. Pure decoders called directly need host input-size policy; lack of a separate feature
-quota is not an allocation bound. Complete list validation precedes host paging.
+Sizes below count UTF-16 units. The client validates the whole list before you page it for display.
+Set input limits yourself if you call a decoder directly. Most features rely on the
+[session, transport and JSON limits](language-server.md#limits-and-failures) to bound incoming data.
 
 | Feature boundary | Limit or policy |
 | --- | --- |
@@ -574,17 +556,15 @@ quota is not an allocation bound. Complete list validation precedes host paging.
 
 ## Host responsibilities
 
-Choose shortcuts, popup placement, Return behavior, allowed links and edit controls. Render literal
-text or supported Markdown. Page long lists so users can reach every choice. Dispose UI, clients and
-subscriptions together when their lifetimes match.
+Choose shortcuts, popup placement, Return behavior and allowed links. Page long lists so the user can
+reach every result. Release controls, clients and subscriptions on detach.
 
-Before applying a delayed result, recheck the resource, revision, view, all selections, folds, input
-state and permission. Keep result and target leases until the decision finishes. Browser controllers
-check their attached view. Headless clients rely on the host for that check. Apply workspace edits
-atomically. Keep Save/Run captures independent and report any edits already applied if a later
-command fails.
+Before applying a delayed edit, check the resource, revision, view, all selections, folds, input state
+and permission. Browser controllers check their view. For a headless client, supply that check. Retain
+results and target leases through approval. Apply the batch atomically, keep Save and Run independent
+and report any earlier edits if a command fails.
 
 ## Not covered
 
-See the [support matrix](README.md#support-matrix) for unsupported features and consuming-host or
-device qualification. Connection and reconnection policy belong to the language-server guide.
+Formatting, semantic tokens and completion follow-up commands are outside the
+[supported language features](README.md#support-matrix).

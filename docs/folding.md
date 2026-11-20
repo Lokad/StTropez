@@ -1,7 +1,8 @@
 # Folding
 
-Folding hides rows in one view. The document text, raw offsets and folds in other views stay intact.
-Supply ranges directly or choose a discovery policy.
+Collapse a region to leave its header visible in one view. You can supply the ranges yourself or let a
+discovery policy find them. Other views keep their folds, and source offsets address the whole
+document.
 
 ## Use
 
@@ -25,11 +26,11 @@ export function attachFolding(
 }
 ```
 
-Use the returned `FoldingController`’s `getSnapshot()` and `subscribe()` to render controls.
-`runCommand("collapse-all", "regions")` collapses one group. Call `refresh()` when discovery rules
-change and `dispose()` before disposing the editor.
+Build controls from `FoldingController.getSnapshot()` and `subscribe()`. To collapse a group, call
+`runCommand("collapse-all", "regions")`. Call `refresh()` after a rule change and `dispose()` before
+disposing the editor.
 
-A host with its own captured outline can publish directly through `DocumentView.folding`:
+If you already have an outline, pass its ranges to `DocumentView.folding`.
 
 ```ts
 import type { DocumentView, FoldVersion } from "sttropez";
@@ -48,10 +49,12 @@ Combine all outline sources before `setRanges`, which replaces the whole set.
 
 ## Contract
 
-### Ranges, versions and projection
+<a id="ranges-versions-and-projection"></a>
 
-`DocumentFolding` is a stable observable. Its immutable `FoldingSnapshot` contains document
-`revision`, fold `generation`, validated `FoldRegion` values and a `FoldIndex`.
+### How fold ranges map to visible rows
+
+Subscribe to `DocumentFolding` for an immutable `FoldingSnapshot` with document `revision`, fold
+`generation`, validated `FoldRegion` values and a `FoldIndex`.
 
 | Input | Validation and behavior |
 | --- | --- |
@@ -72,12 +75,11 @@ Fold anchors follow edits, undo and redo. Deleting a boundary expands its region
 or crossing ranges lose their definitions. Undo restores the text. To restore an invalidated fold,
 publish fresh ranges. Folding leaves history and dirty state untouched.
 
-`FoldIndex` maps source lines to visible rows and back through `rowAt` and `lineAt`.
-`hiddenBy` identifies the covering collapsed region; `headerAt` identifies a fold header.
-It stores collapsed intervals rather than one entry per source line. `sameProjection(other)`
-compares hidden rows independently of expanded metadata. Use that distinction when display
-intent depends on visible rows, while retaining separate document/selection/provider guards.
-Updates can visit the supplied region array; arbitrary fold changes are not constant-time.
+Use `FoldIndex.rowAt` and `lineAt` to move between source lines and visible rows. `hiddenBy` finds the
+collapsed region hiding a line. `headerAt` finds the fold at a header. The index stores collapsed
+intervals. `sameProjection(other)` compares just the hidden rows. For example, adding an expanded
+region leaves the projection equal. Check the document, selection and provider separately before using
+a delayed result. Updating folds can visit every supplied region.
 
 ### Discovery
 
@@ -88,46 +90,45 @@ line prefixes after indentation and a whitespace/end boundary. Marker prefixes a
 must be nonempty; prefixes cannot contain line endings. Nested blocks include interior blank
 lines and exclude trailing blank lines. Unclosed markers produce no collapsed region.
 
-The cursor exposes `next(workBudget?)`, `snapshot()` and `dispose()`. Frozen
-`IndentationFoldingProgress` snapshots report status (`running`, `ready`, `failed`, `disposed`),
-phase (`validate`, `scan`, `finish`, `publish`), counters, nullable `result` and nullable `failure`.
-Only `ready` exposes a complete frozen array of frozen `DiscoveredFold` records. Errors are
-rethrown and retained as failure messages. Disposal drops unfinished work and the cursor's
-result reference; returned ranges remain usable. Advancing or disposing during `next()` throws.
-Keep options immutable while discovery is pending. Validation and all discovery work run in
-`next()`, including marker preparation and EOF stack cleanup.
+Call `next(workBudget?)` to validate options, prepare markers, scan and finish open stacks at EOF.
+Between calls, `snapshot()` returns frozen `IndentationFoldingProgress` with a status (`running`,
+`ready`, `failed`, `disposed`), phase (`validate`, `scan`, `finish`, `publish`), counters, `result`
+and `failure`. Keep options immutable until discovery finishes. Read the frozen array of frozen
+`DiscoveredFold` records when status is `ready`. An error records its message and rethrows.
+`dispose()` releases unfinished work and the cursor’s reference to the result. You can keep ranges it
+already returned. Calling `next()` or `dispose()` from inside `next()` throws.
 
-Budgets are safe integers of at least 256, defaulting to 4096. `workUnits` combines UTF-16 reads,
-marker/row/stack visits, output records and `bulkWorkUnits`. `readUnits` counts buffer units
-read, including repeated reads. Bulk charges estimate input cardinality for native marker
-validation/comparison, large prefix reads and output-array freezing; they are included once
-in work, and prefix reads also contribute to reads. They do not count helper internals or time.
-Checkpoints follow roughly 256 charged units at operation boundaries; whitespace chunks read
-up to 4096 units. A large delimiter, native helper or host callback can exceed the requested
-budget. This is not a time limit or a complete interaction-latency bound.
+Pass a safe integer of at least 256 work units (default 4,096). `workUnits` counts UTF-16 reads,
+visits to markers, rows and stacks, and output records. It includes `bulkWorkUnits` once, estimated
+from the input sizes for marker validation and comparison, large prefix reads and freezing the output
+array. `readUnits` includes prefix reads and counts repeat reads each time.
 
-`reconcileFoldRanges(buffer, discovered, previous)` chooses one outer range per header,
-discards crossings and preserves identity for a matching mapped header/group. It returns a
-complete range set. Reconciliation does not merge independent publications for the host.
-Reconciliation and installing the resulting fold projection are synchronous costs outside
-the discovery cursor; include them when measuring visible acceptance.
+The cursor checks its budget at operation boundaries roughly every 256 units. Whitespace reads can
+span 4,096 units. A large delimiter, native operation or host callback can run past the budget.
+Measure time to visible folds separately.
 
-`createFoldingController` captures a tab and retained editor view. Its `FoldDiscovery` callback
-receives an immutable document and `AbortSignal`. A `FoldDiscoveryResult` may be ranges, a
-`FoldDiscoveryCursor`, or a `FoldDiscoveryBatch` with `ranges` and an optional `isCurrent` guard;
-the callback may return a promise. `delayMs` defaults to 100 and must be finite and nonnegative.
-The controller takes ownership of a returned cursor, including a late promise result. A custom
-cursor provides `next(workBudget?)`, `snapshot()` and `dispose()`, and reports the same status,
-nullable result and failure fields; indentation-specific counters are not required. The controller
-advances 4096 work units at a time, with at most 64 advances per task and a four-millisecond
-elapsed check between advances. It releases completed, cancelled and failed cursors. A terminal
-cursor without a result fails discovery. Custom callbacks/cursors must cooperate: scheduling
-cannot preempt their synchronous work. Disposal must release work and tolerate repeated calls.
+`reconcileFoldRanges(buffer, discovered, previous)` keeps one outer range per header, drops crossings
+and reuses IDs for matching mapped headers and groups. Combine your sources before calling it. Include
+reconciliation and installation in measurements of time to visible folds. Both run synchronously after
+discovery.
 
-The controller rejects stale edits, tab replacements, expired authority and disposal. Publication
-waits for composition and queued editing, then reconciles the latest view collapse choices.
-Failures retain mapped folds and publish a `FoldingStatus` message. States are `pending`,
-`ready`, `failed` and `disposed`; snapshots include revision, counts and available groups.
+`createFoldingController` captures the tab and retained editor view. Set `delayMs` to a finite,
+nonnegative delay (default 100). Its `FoldDiscovery` callback takes an immutable document and
+`AbortSignal`. Return a `FoldDiscoveryResult` directly or in a promise: ranges, a
+`FoldDiscoveryCursor`, or a `FoldDiscoveryBatch` with `ranges` and an optional `isCurrent` guard.
+
+For a custom cursor, implement `next(workBudget?)`, `snapshot()` and idempotent `dispose()`. Report
+status, nullable result and failure. Indentation counters are optional. The controller owns any
+returned cursor, even one that arrives late. It releases completed, failed and cancelled cursors.
+Finishing without a result fails discovery. Each advance gets 4,096 work units. A task makes at most
+64 advances and checks elapsed time between them against a 4 ms target. Yield inside your cursor to
+bound synchronous work.
+
+If the text changes, the tab is replaced, the result loses authority or the controller is disposed,
+the controller drops the stale result. During composition or queued editing, it waits to publish, then
+honors the user’s latest fold choices. On failure, existing mapped folds stay visible. Read the
+`FoldingStatus` message for the cause. Status can be `pending`, `ready`, `failed` or `disposed`.
+Snapshots also give the revision, counts and available groups.
 
 ### Language-server discovery
 
@@ -160,16 +161,16 @@ generation. For the `imports` group the button reads **Collapse imports** or **E
 Inline hidden-line counts add no source text, clipboard data or caret offsets.
 Comparison panes retain independent fold choices; hunk reveal expands the entire target range.
 
-Retained view handles preserve folds through remount. The [viewport view-state contract](viewport.md#scrolling-and-saved-views)
-describes initialization of fold metadata in a new view without overwriting newer state.
+Keep the `DocumentView` if you want the same folds after remounting. To initialize a fresh view from a
+saved capture, see [restoring scroll and folds](viewport.md#scrolling-and-saved-views).
 
 ## Host responsibilities
 
-Choose the groups, discovery rules and initially collapsed regions. Combine providers before
-publishing. Abort obsolete discovery, and issue mutations after workspace notification delivery.
-Dispose subscriptions and the controller on detach. Keep a host-owned view alive if you need its
-folds on remount.
+Choose discovery rules, groups and initial collapse state. Combine all sources before publishing.
+Abort obsolete work. Make changes after workspace notifications and dispose the controller and
+subscriptions on detach. Retain a view to keep its folds.
 
 ## Not covered
 
-See the [support matrix](README.md#support-matrix) for unsupported features and device checks.
+A fold hides source rows. Sticky scroll headers are outside this view’s
+[presentation support](README.md#support-matrix).

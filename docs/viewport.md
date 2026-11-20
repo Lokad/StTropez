@@ -33,10 +33,9 @@ viewport disposes views it creates.
 
 ### Mounting and presentation
 
-`mountTextViewport` accepts `TextViewportOptions` and requires a tab identifying a text surface.
-A supplied view must belong to that document and
-workspace. The mount captures the tab generation; replacing the tab clears its projection
-instead of redirecting it to the replacement document.
+Pass a text tab to `mountTextViewport` and set its `TextViewportOptions`. If you supply a view, use
+one from the same workspace and document. Replacing the tab clears the old viewport. Mount a new
+viewport for the replacement.
 
 | Option | Default and validation |
 | --- | --- |
@@ -49,11 +48,11 @@ instead of redirecting it to the replacement document.
 | `minimap` | `false`; boolean |
 | `scrollBeyondLastLine` | `false`; boolean |
 
-`LineDecorator` receives a `PresentedLine`: captured document/revision, source line number,
-line start, rendered range and its text. Return `InlineDecoration` ranges in absolute
-UTF-16 offsets with CSS class names. `LineClass` supplies a row class. The callbacks receive
-only the rendered fragment; keep their work bounded and call `invalidate()` when host
-presentation changes without a document edit. Decorations do not alter source text or offsets.
+Use `LineDecorator` to style part of a line. Its `PresentedLine` gives you the document, revision,
+source line number, line start, and the range and text of the visible fragment. Return
+`InlineDecoration` ranges with CSS classes and absolute UTF-16 offsets. Use `LineClass` to style the
+whole row. Keep both callbacks bounded. If your colors change between edits, call `invalidate()` to
+repaint.
 
 Each presentation option has a getter and a live setter:
 
@@ -65,12 +64,13 @@ Each presentation option has a getter and a live setter:
 | `minimap()` | `configureMinimap(enabled)` | A document overview with a draggable visible-region marker |
 | `scrollBeyondLastLine()` | `configureScrollBeyondLastLine(enabled)` | Space to scroll the last visible row to the top text padding |
 
-Setters validate before mutation, run outside workspace notification callbacks and return
-`false` after disposal. Unchanged values schedule no work. Rulers and the current-line
-background add no text or scroll extent. A noncollapsed primary selection hides the line
-highlight; secondary carets do not add highlights. Each view has independent settings.
-Use `--st-column-ruler`, `--st-current-line` and `--st-current-line-border` for their colors.
-Host `font-feature-settings` can override individual ligature features.
+Call setters after workspace notifications finish. Each setter validates its argument before making
+changes. Setting the same value schedules no work. After disposal, setters return `false`.
+
+Rulers and line highlights add no text or scroll range. Only a collapsed primary caret gets a line
+highlight. Each view has its own settings. Set `--st-column-ruler`, `--st-current-line` and
+`--st-current-line-border` in CSS to choose colors. Host `font-feature-settings` can override
+individual ligatures.
 
 The minimap draws short files at their miniature height. For long files, it samples line prefixes
 across the folded or aligned document to fit the track. `decorate` supplies foreground classes and
@@ -85,59 +85,56 @@ document that fits and keeps a minimum grab height on long files. Style its edge
 
 ### Scrolling and saved views
 
-`scrollTo({ top, left })` uses logical CSS-unit scroll coordinates. Omitted axes keep their
-position; nonfinite values throw and negative values clamp to zero. Large document extents
-map onto bounded physical scrollbars. `revealOffset(offset, RevealOptions)` expands a hidden
-fold target and schedules a reveal. Each axis accepts `"center"` (the default) or `"nearest"`;
-`affinity` is `"before"` or `"after"` (the default). Nearest reveal preserves a visible caret.
-Ctrl/Meta wheel events pass through to browser zoom handling.
+`scrollTo({ top, left })` takes logical CSS units. Omit an axis to keep its position. Negative values
+clamp to zero and nonfinite values throw. Large logical extents fit bounded physical scrollbars. Use
+`revealOffset(offset, RevealOptions)` to expand a hidden target and schedule scrolling. Each axis
+accepts `"center"` (default) or `"nearest"`. Nearest keeps a visible caret in place. `affinity` takes
+`"before"` or `"after"` (default). Ctrl/Meta-wheel passes through to browser zoom.
 
-`captureView()` returns immutable selection, scrolling and folding state. `restoreView()`
-validates scroll/anchor fields before changing the view. Same-revision vertical and horizontal
-anchors preserve the local source placement. Fold metadata can initialize a new empty view
-of the same document/revision; it does not overwrite a view's newer fold state. Store captures
-by document/view identity. [Folding](folding.md) describes projection and selection behavior;
-[comparison](comparison.md) owns aligned panes and linked scrolling.
+Save `captureView()` by document and view ID to restore selections, scroll and folds. `restoreView()`
+checks scroll and anchor values before changing anything. On the same revision, its anchors keep the
+same text in place on both axes. A new, empty view of that document and revision can take the captured
+folds. A view with newer folds keeps them. [Folding](folding.md) ·
+[Aligned panes and linked scrolling](comparison.md)
 
 ### Geometry and readiness
 
-`coordsAt(offset, affinity?)` and `hitTest(clientX, clientY)` return captured caret geometry;
-`rowBounds(line)` returns `RenderedRowBounds`. These APIs use client coordinates, including
-inherited CSS zoom. Returned positions carry their document revision. Unmounted ranges and
-stale projections can return `undefined`; `coordsAt` snaps a grapheme interior by affinity.
-The minimap is outside the text hit area. The viewport snapshot reports the width available
-for text. Scrolling uses local CSS units. The [editor](editor.md) owns keyboard navigation, preferred
-columns and temporary measurement batches. For explicit host navigation, update the captured
-view's selection and use `revealOffset` to reveal it.
+Use `coordsAt(offset, affinity?)` to place a popup at a caret, `hitTest(clientX, clientY)` to find
+text under the pointer and `rowBounds(line)` to get `RenderedRowBounds`. These calls use client
+coordinates, including inherited CSS zoom. Check the returned revision. A stale or unmounted fragment
+can return `undefined`. Inside a grapheme, `coordsAt` uses affinity to choose an edge. The minimap is
+outside the text hit area.
 
-`activity()` returns a cached immutable `ViewportActivity` without measuring or flushing layout. It
-reports the painted revision, selections, fold/alignment IDs, row generation, pending frame and
-disposal. To check readiness, compare painted state with the model and view, even when `pending` is
-false. `flush()` paints pending work synchronously. `snapshot()` adds `ViewportSnapshot` dimensions,
-work counts and [timings](README.md#glossary).
+Read the viewport snapshot for the available text width. Scroll in local CSS units. To navigate from a
+host control, set the captured view’s selection and call `revealOffset`. The [editor](editor.md)
+handles keyboard movement, preferred columns and temporary measurement batches.
 
-`onRender(listener)` runs after a paint or scheduled render, even when rows stay the same. An idle
-`flush()` is silent. Subscribe before the first frame to observe initial paint. The returned
-function unsubscribes. Removal takes effect during delivery, additions on the next notification. The
-browser reports exceptions and continues delivery. A listener can change view state, so later
-listeners must recheck their captures. Disposal removes all listeners.
+Check `activity()` for the painted revision, selections, fold/alignment IDs, row generation, pending
+frame and disposal. The immutable `ViewportActivity` is cached and reads no layout. Even with
+`pending: false`, compare the painted state with the model and view. Call `flush()` to paint pending
+work synchronously. `snapshot()` adds `ViewportSnapshot` dimensions, counts and
+[timings](README.md#glossary).
+
+Call `onRender(listener)` before the first frame to observe initial paint, and keep its unsubscribe
+function. A paint or scheduled render can notify even when rows stay the same. An idle `flush()` is
+silent. Removing a listener takes effect during delivery. New listeners start next time. The browser
+reports exceptions and continues. Recheck captures if an earlier listener could have changed the view.
+Disposal removes all listeners.
 
 ### Input adapter ownership
 
-The [editor](editor.md) owns input by default. A low-level adapter can call `bindInput(focus)`
-once per viewport to obtain a `ViewportInputBinding`. The callback restores source focus when
-a focused fold control disappears or receives Escape. The binding moves the viewport root
-out of the tab order and hides its duplicate text projection from semantic navigation.
-`setComposing(boolean)` controls composition presentation and guards fold clicks;
-`setTabEscape(boolean)` controls existing and subsequently rendered fold tab stops.
-These states belong to the binding; CSS classes and DOM attributes do not grant input authority.
+If you write your own input adapter, call `bindInput(focus)` once per viewport for a
+`ViewportInputBinding`. The [editor](editor.md) already does this. The callback restores source focus
+on Escape or when a focused fold control disappears. Binding removes the viewport root from the tab
+order and hides its duplicate text from semantic navigation. `setComposing(boolean)` updates
+composition styling and guards fold clicks. `setTabEscape(boolean)` controls tab stops on current and
+future fold buttons. Changing DOM classes or attributes cannot claim the binding.
 
-Both setters return whether live state changed. `dispose()` releases the
-binding, restores viewport/fold tab stops and clears composition presentation. A stale binding
-cannot alter a replacement binding. Binding an already bound, destroyed or replaced viewport
-throws; setters on expired bindings return `false`. Focus callbacks and render subscriptions
-end with the viewport and never redirect to a replacement tab. A focus callback can detach the
-viewport; rendering stops when that callback invalidates the mount.
+The setters return whether they changed the live binding. Call `dispose()` to restore tab stops and
+clear composition styling. An expired binding’s setters return `false`, even after a new adapter
+binds. Binding twice, or binding a destroyed or replaced viewport, throws. The viewport drops its
+focus callback and render listeners on disposal. If the focus callback detaches the mount, rendering
+stops there.
 
 ### Rendering limits
 
@@ -150,14 +147,13 @@ viewport; rendering stops when that callback invalidates the mount.
 | Geometry | Native text ranges measure mounted fragments; geometry outside those fragments is unavailable |
 | Updates | Relevant changes coalesce into animation frames; unchanged row text/classes retain their nodes |
 
-Measured horizontal extent uses the rendered row contents rather than the full-row decoration
-box. Full-width line backgrounds do not add horizontal scroll range when the text fits.
+The rendered text sets the horizontal scroll range. A full-width background can color an entire row
+without adding a scrollbar when the text fits.
 
-A long fragment's local measurement is not a measured global glyph origin. Tabs, combining
-sequences and contextual shaping can differ from the horizontal estimate.
-Explicit reveal can retain a local caret placement without reading the entire line; manual
-scrolling clears that placement. The API does not provide complete contextual long-line
-geometry. Read-only projection does not supply an editable input surface.
+On a long line, the viewport measures the visible fragment and estimates where it starts. Tabs,
+combining marks and contextual shaping can shift that estimate. An explicit reveal can keep the caret
+in place without reading the entire line. Manual scrolling clears that placement. For editable input,
+mount the [editor](editor.md).
 
 ## Host responsibilities
 
@@ -168,4 +164,5 @@ resources when you finish with them.
 
 ## Not covered
 
-See the [support matrix](README.md#support-matrix) for unsupported features and device checks.
+Rows use left-to-right geometry without word wrapping. See the
+[support matrix](README.md#support-matrix) for layout and device limits.

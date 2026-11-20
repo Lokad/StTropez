@@ -1,8 +1,8 @@
 # Examples
 
-The TypeScript demo lets you edit, compare and save a project. Smaller development fixtures expose
-individual editor features and service calls you can finish by hand. The examples supply their own
-compiler, React components and storage policies.
+Use the TypeScript demo to edit a project, inspect the emitted JavaScript and review what changed. To
+try a save conflict or finish a delayed request by hand, open one of the development hosts. The
+examples provide their own compiler, React components and storage.
 
 ## Use
 
@@ -24,7 +24,8 @@ with the public APIs it uses.
 
 ### Development routes
 
-The [development server](../scripts/serve.mjs) serves these pages:
+For a single feature or host workflow, open its route on the
+[development server](../scripts/serve.mjs).
 
 | Route | Purpose | Entry source |
 | --- | --- | --- |
@@ -39,10 +40,10 @@ The [development server](../scripts/serve.mjs) serves these pages:
 | `/hosts/plain/` | Two source views, forms, review and deferred services | [Plain host](../examples/hosts/plain-main.ts) |
 | `/hosts/react/` | The same controller and workflows with React rendering | [React host](../examples/hosts/react-main.tsx) |
 
-For either host, use `?editor=candidate` for the bounded editor. The bare URL and `?editor=native`
-use the [textarea baseline](../fixtures/textarea-editor.ts) for source and the bounded editor for
-comparison. The textarea and its CSS are development fixtures. Installed examples use
-`mountTextEditor`. Both hosts connect to the LSP fixture at `/lsp-fixture`.
+Append `?editor=candidate` to either host URL to try `mountTextEditor`. The bare URL and
+`?editor=native` use the [textarea fixture](../fixtures/textarea-editor.ts) for the source. Comparison
+always uses the bounded editor. Installed examples use `mountTextEditor`. Both development hosts use
+`/lsp-fixture` for language services.
 
 ## TypeScript demo
 
@@ -114,9 +115,12 @@ compiler worker. The Code menu targets the last source pane you clicked or focus
 counts distinguish folds from alignment gaps. Find and navigation reveal hidden targets. See
 [folding](folding.md) and [comparison](comparison.md).
 
-### Provider ownership and adaptations
+<a id="provider-ownership-and-adaptations"></a>
 
-The [provider selector](../examples/demo/provider.ts) captures a choice when the page opens:
+### How the browser and local providers differ
+
+Choose a provider in the URL before opening the page.
+[Provider selector](../examples/demo/provider.ts)
 
 | Selection | Execution and transport | Availability |
 | --- | --- | --- |
@@ -128,46 +132,44 @@ uses canonical file URIs. The browser worker reads the sample inventory and pinn
 libraries. Neither loads arbitrary projects or installs packages.
 
 Both providers use the [public LSP clients](language-server.md). The
-[browser session](../examples/demo/language-session.ts) queues up to 256 compiler actions and runs
-one per task. Cancellation can remove a queued action. A running compiler call completes
-synchronously. Queue overflow or a failed document notification closes the session so Retry can
-synchronize the current files.
+[browser session](../examples/demo/language-session.ts) queues up to 256 compiler actions and runs one
+per task. Cancellation removes queued work. A running compiler call finishes synchronously. If the
+queue fills or a document notification fails, Retry starts a new session with the current files.
 
-The demo adapts the providers in five places.
+When comparing results from the two providers, keep these differences in mind.
 
-- Unversioned pushed diagnostics do not become current source annotations. The custom
-  `sttropez/diagnostics` request obtains syntactic and semantic results for a captured project.
-  The host validates every binding and the project generation before publication. Both providers
-  return standard diagnostic shapes inside that custom response. This is not standard diagnostic
-  pull support. Quick fixes obtain fresh diagnostic context for the same captured range/project.
-- The local bridge removes the pinned server's empty-title `_typescript.applyCodeActionCommand`
-  only when its nested command list is absent or empty. It preserves completion resolution data
-  across the server's cache-key replacement and excludes edit ranges that do not contain the
-  requested caret. Other values pass through the public decoders.
-- A development-only refactoring profile enables `_typescript.applyRefactoring` for a known
-  project file and uses captured host review for incoming edits. Its `_typescript.rename`
-  acknowledgement is not a rename-dialog workflow. The ordinary demo does not grant arbitrary
-  server commands. The [provider server](../examples/demo/provider-server.ts) owns this policy.
-- TypeScript Enter, comments, indentation and quote/bracket pairing are host rules. Pairing
-  uses classified line starts and bounded local context; uncertain multiline/regex/template
-  context falls back to literal input. Provisional display colors do not authorize lexical edits.
-- Browser completion resolution retains keys for the current and preceding response only.
-  Navigation is confined to known sample files; compiler library definitions do not open as
-  editable resources. File operations, package acquisition and external projects are outside
-  this demo's inventory policy.
+- Both providers return standard diagnostics in a custom `sttropez/diagnostics` response. The demo
+  requests syntactic and semantic diagnostics for a captured project, then checks each binding and the
+  project generation before drawing markers. It does not use LSP diagnostic pull or draw current
+  markers from an unversioned push. Quick fixes request fresh diagnostics for the same range and
+  project.
+- The local bridge drops the pinned server’s empty-title `_typescript.applyCodeActionCommand` only
+  when its nested commands are missing or empty. It keeps completion data when the server replaces its
+  cache key and drops edit ranges that miss the requested caret. Other values go through the public
+  decoders.
+- The development refactoring profile allows `_typescript.applyRefactoring` for a known project file.
+  The host reviews incoming edits. Acknowledging `_typescript.rename` opens no rename dialog. The
+  ordinary demo accepts no arbitrary server commands.
+  [Provider policy](../examples/demo/provider-server.ts)
+- Enter, comments, indentation and pairing use the demo’s TypeScript rules. For quotes and brackets,
+  the host checks the classified line start and nearby text. In an uncertain multiline string, regex
+  or template, it inserts the typed character literally. Display colors alone never trigger a paired
+  edit.
+- The browser provider keeps completion keys for the latest two lists. Navigation opens known sample
+  files. Compiler library definitions stay outside the editable project. The demo does not load
+  external projects, install packages or perform file operations.
 
 ### Analysis, saving and recovery
 
-The [syntax worker](../examples/demo/syntax-worker.ts) receives the full source once, then applies
-each change after all its chunks arrive. It classifies the whole file and emits JavaScript only
-while the output pane is open. Reopening the pane reuses unchanged source. The view discards replies
-to cancelled jobs.
+The [syntax worker](../examples/demo/syntax-worker.ts) reads the full source once and applies later
+edits when their chunks arrive. It classifies the whole file. Open the JavaScript pane to request
+output. Reopening it reuses unchanged source, and late replies from cancelled jobs are ignored.
 
-While analysis runs, the editor maps existing colors and diagnostics through edits and keeps the
-last compiled output. Problems shows **Awaiting recheck** and disables navigation. It drops
-placements for deleted ranges or gaps in revision history. Syntax checks reuse unchanged files.
-Semantic checks cover every loaded file because an export can change an importer. The footer shows
-analysis status. See [visible continuity](testing.md#readiness-and-visible-continuity).
+After an edit, colors and diagnostic markers follow surviving text, and the last compiled output stays
+visible. Problems shows **Awaiting recheck** and disables navigation. Deleted ranges or missing
+revision history drop the old markers. Syntax checks reuse unchanged files. Semantic checks include
+every loaded file because changing an export can break an importer. The footer shows when checks
+finish. [Visible continuity](testing.md#readiness-and-visible-continuity)
 
 Retry **Language service unavailable** to reconnect with the current files. Retry **Language
 controls unavailable** to reattach controls to the connected provider. You can edit, compare, undo
@@ -180,10 +182,9 @@ text in one undoable edit. Recovery names the draft’s files. Restore applies i
 and **Keep current files** discards that draft. Reopening clears drafts identical to saved data.
 Storage tokens guard against overwriting a peer’s changes. Notifications name the affected sample.
 
-An unreadable saved copy stays in storage while the sample opens for editing. Save checks the
-captured token. A failed switch releases partial resources and keeps the open project usable.
-Disposal waits for storage work to finish. Development hosts have a separate
-[checkpoint workflow](#draft-checkpoints).
+If a saved copy is unreadable, the demo leaves it in storage and opens the sample. Save checks the
+captured token. A failed sample switch releases partial resources and keeps the open project usable.
+Disposal waits for storage writes. [Development-host checkpoints](#draft-checkpoints)
 
 ## Static build and deployment
 
@@ -211,11 +212,11 @@ identity-token permissions.
 
 ## Host workflows
 
-Open either development host with `?editor=candidate`. The shared
-[controller](../examples/hosts/controller.ts) owns two independently selected views of one source,
-configuration and transfer resources, review state and deferred local services. **Finish save**,
-**Finish run** and **Finish remote review** complete captured responses
-explicitly. Reload resets simulated service state; recovery checkpoints have a separate lifetime.
+Open either host with `?editor=candidate`. Try editing the same file in two panes, changing
+configuration or reviewing a saved version. The hosts share a
+[controller](../examples/hosts/controller.ts). **Finish save**, **Finish run** and
+**Finish remote review** let you choose when the simulated service replies. Reload resets the service.
+Recovery checkpoints survive it.
 
 ### Editing, review and captured services
 
@@ -251,12 +252,12 @@ Ctrl/Cmd+F/H opens Find/Replace in the editor’s tool region. F3/Shift+F3 or En
 Find navigate. While scanning, Find keeps the latest valid navigation request. Escape returns to the
 editor that opened Find. Reference Find is read-only. See [search](search.md).
 
-Transfer batch size is a text field so invalid input survives editing/recovery; valid values are
-decimal integers from 1 to 100,000. Each Run creates a read-only resource containing captured
-source, connection and transfer identities/versions/values. Progress creates linked immutable
-log resources. **Inspect Run** and current-input inspection use separate panel tabs with source
-previews capped at 512 UTF-16 units; only explicit inspection/refresh updates a preview.
-Run/log history lasts for the fixture session, and the fixture does not execute a transfer.
+Try entering a blank batch size. The transfer field keeps the raw input so it survives editing and
+recovery. A valid size is a decimal integer from 1 to 100,000. Run creates a read-only record of the
+source, connection and transfer inputs, including identities, versions and values. Progress adds
+linked immutable log records. **Inspect Run** and current-input inspection open separate tabs. Each
+source preview shows up to 512 UTF-16 units and changes only on inspection or refresh. Run and log
+history last for the fixture session. The fixture records a transfer without executing it.
 
 ### Draft checkpoints
 
@@ -270,14 +271,15 @@ restore preserves an existing slot's baseline/history or uses the fixture baseli
 slot. Transfer restore preserves invalid raw batch input and unknown fields. A changed resource,
 new save receipt or expired slot generation can invalidate a prepared restore.
 
-**Inspect stored draft** shows bounded previews; **Discard stored draft** changes storage only.
-Stored-copy tokens guard replacement/discard against peer writes. Uncommitted composition
-blocks capture and restore. The [checkpoint decoder](../examples/hosts/draft-recovery.ts) writes
-and reads format 3. Transfer data is required; a null loaded-source entry disables loaded-source
-restore. Unsupported records offer no restore choices and leave live inputs and the stored copy
-unchanged until an explicit replacement or discard.
-Records contain inputs and recovery context, not old-session undo, Run/log history, synthetic
-server state or pending requests.
+Use **Inspect stored draft** for a bounded preview or **Discard stored draft** to remove the stored
+copy. Discard leaves open files alone. A storage token prevents an old discard or replacement from
+overwriting another page’s newer draft. Finish composition before capturing or restoring.
+
+The [checkpoint decoder](../examples/hosts/draft-recovery.ts) reads and writes format 3. It requires
+transfer data. A null loaded-source entry leaves that restore option unavailable. An unsupported
+record stays in storage until you replace or discard it, with no restore choices. A draft includes
+inputs and recovery context. Undo, Run and log history, simulated server state and pending requests
+end with the session.
 
 Navigation protection covers unsaved inputs without a current checkpoint, pending input and
 unsettled services. Settled covered inputs need no prompt. View remounts retain the recovery
@@ -291,20 +293,20 @@ Both hosts use the [generic fixture server](../fixtures/protocol/fixture-server.
 [LSP subset](language-server.md). It speaks LSP 3.17 over WebSocket with JSON-RPC 2.0 and UTF-16
 positions. The development and test reference package is version 3.17.5.
 
-Completion, hover, F12/Shift+F12, F2, Ctrl/Cmd+., signature, link and color controls use the shared
-provider. Select an action, inspect its changes and choose **Apply captured action** or
-**Execute captured action**. An unadvertised command disables its whole choice. A command's
-initial edit is one undoable phase; incoming edits require **Apply captured provider edits** or
-**Decline captured provider edits** in **Workspace provider**. Failure after a committed phase
-retains that edit; reconnect does not replay it. Register/unregister review commands and request
-workspace status through the same panel. The [language-feature contracts](language-features.md)
-own request validation, edit decisions and command authority.
+Completion, hover, F12/Shift+F12, F2, Ctrl/Cmd+., signature help, links and colors use the shared
+provider. Select an action and review it before choosing **Apply captured action** or
+**Execute captured action**. If its command was never advertised, the whole choice is disabled.
 
-Both hosts retain selection and scroll by resource across remounts. React reads stable controller
-observables and mounts editors through stable refs. Failed mounts unwind in reverse order. **Recover
-views** reopens a view on the retained document after a render failure. Teardown releases views,
-captured resources, services and storage in that order. See [embedding](getting-started.md) and
-[ownership](architecture.md).
+An action’s initial edit gets its own undo step. For later edits, open **Workspace provider** and
+choose **Apply captured provider edits** or **Decline captured provider edits**. If the command then
+fails, the initial edit stays in history. Reconnect leaves it there. The same panel lets you register
+and unregister review commands and request workspace status.
+[Code actions and commands](language-features.md#code-actions-and-commands)
+
+Remounting keeps selection and scroll by resource. React uses stable controller observables and refs.
+A failed mount unwinds in reverse order. After a render failure, choose **Recover views** to reopen
+the retained document. Closing the host releases views, captures, services and storage in that order.
+[Embedding](getting-started.md) · [Ownership](architecture.md)
 
 ## Serverless host examples
 
@@ -313,18 +315,17 @@ converters and forms are application policies, independent of the language provi
 
 ### Table conversion
 
-Enable **Paste tables as CSV** in a development host. The root demo's **Host integrations ·
-paste & notes** sample exposes **Code → Paste format** and **Insert example table**, which does
-not read the OS clipboard. Conversion is off by default. It prefers one HTML table and uses
-TSV when HTML has no table, inserting the same quoted CSV at every captured selection as one
-undoable command. **Cancel table paste**, Escape or another paste cancels pending conversion.
+Enable **Paste tables as CSV** in a development host. In the demo, open
+**Host integrations · paste & notes**, then **Code → Paste format**. Choose **Insert example table**
+to try it without reading the clipboard. Conversion starts off. When enabled, it uses an HTML table if
+present, otherwise TSV. The same quoted CSV replaces every captured selection in one undo step.
+Escape, **Cancel table paste** or another paste cancels unfinished conversion.
 
-The converter quotes all cells, doubles internal quotes and emits CRLF record separators.
-TSV accepts quoted multiline cells. Detached inert HTML parsing retains text, character
-references and basic line/paragraph breaks while omitting scripts, styles, templates and embedded
-documents. Merged cells put text in the upper-left anchor; row spans stay within their group.
-Nested/multiple tables, overlapping spans and ragged rows fail without partial insertion.
-Parsed nodes are never mounted.
+Every CSV cell is quoted, with doubled internal quotes and CRLF between records. TSV can contain
+quoted multiline cells. HTML parsing keeps text, character references and basic line and paragraph
+breaks. It skips scripts, styles, templates and embedded documents and never mounts parsed nodes. A
+merged cell’s text goes in its upper-left corner. Row spans stay in their group. Nested or multiple
+tables, overlapping spans and ragged rows reject the whole paste.
 
 | Table fixture limit | Maximum |
 | --- | --- |
@@ -345,16 +346,16 @@ The form accepts one JSON object on a physical line of at most 4,096 UTF-16 unit
 and batch size are strings. Invalid JSON, duplicate known fields or oversized lines suspend
 form editing; missing/invalid field values stay editable.
 
-Field edits patch known value spans without reserializing unknown members, number spelling,
-whitespace, ordering or unchanged escapes. The source's shared history owns these edits;
-Ctrl/Cmd+S saves source and Escape returns to its editor. The sibling form lane follows rendered
-row geometry, hides for folded/unrendered rows and suspends in narrow layouts. Values and field
-selections survive remounts. Stale field input goes to recovery.
+Change a field, then undo from the source editor. Each field edit replaces just the known value.
+Unknown members, number spelling, whitespace, order and unchanged escapes survive. Ctrl/Cmd+S saves
+the source, and Escape returns focus to it. The form follows its rendered row, hides when that row is
+folded or offscreen and suspends in a narrow layout. Field values and selections survive a remount.
+Stale input goes to recovery.
 
-**Capture instruction copy** then **Finish instruction copy** copies captured known values into
-the separate transfer resource under its revision/save/authority guards. Later source typing
-does not retarget it; later transfer edits expire it. Unknown transfer fields survive. Copying
-does not invoke Save or Run. See the [form extension pattern](host-integration.md#tokenization-annotations-and-forms).
+Choose **Capture instruction copy**, edit the source, then **Finish instruction copy**. The copy uses
+the captured values and checks the transfer resource’s revision, save state and permissions. Editing
+the destination in the meantime expires the copy. Unknown transfer fields survive. Save and Run are
+separate controls. [Source-backed forms](host-integration.md#tokenization-annotations-and-forms)
 
 ### Domain regions and imports
 
@@ -365,28 +366,27 @@ nested pairs must match, and labels are literal text. Discovery publishes view f
 without source/history edits. Imports add `import "catalogue";` after a leading BOM, preserving
 the first LF/CRLF ending (LF when absent); an exact existing import is a no-op.
 
-Each scan turn reads at most 16,384 UTF-16 units, retains a 512-unit line prefix and permits
-4,096 regions, 128 nesting levels, 256-unit labels and 65,536 units of reply text. The host's
-interval index limits visible annotations and the panel to 64 entries while reporting the total.
-Provider folds preserve collapse choices and independent manual regions; conflicting topology
-rejects a refresh atomically. Manually changing a provider fold's bounds relinquishes ownership.
-Text edits map folds and clear stale notes. Imports use one captured shared undo command.
+Each scan turn reads up to 16,384 UTF-16 units and keeps a 512-unit line prefix. Limits are 4,096
+regions, 128 nesting levels, 256-unit labels and 65,536 units of reply text. The panel and visible
+annotations show up to 64 indexed entries plus the total. Refresh keeps collapse choices and
+independent manual folds. Conflicting ranges reject the entire refresh. Change a provider fold’s
+bounds to make it manual. Text edits map folds and clear stale notes. An import adds one shared undo
+step.
 
 ## Server-free editing fixtures
 
 `/editing/` colors keywords, numbers and comments with a local tokenizer. It caches up to 128
 visible fragments. Its typing, selection, history and Find tests run without a language server.
 
-For the synthetic provider, use the plain or React hosts. For TypeScript semantics, use the
-[root demo](#typescript-demo).
+Use the development hosts for the synthetic provider or the [root demo](#typescript-demo) for
+TypeScript.
 
 ## Contributor responsibilities
 
-Keep compilers, storage and fixture syntax in the examples. Build the static and restored-asset
-hosts against the public entries. When a route, control or limit changes, update this guide and run
-its [owner tests](testing.md).
+Keep compilers, storage and fixture syntax in the examples. Build static and restored hosts against
+public entries. Update affected routes, controls and limits here and run their [tests](testing.md).
 
 ## Not covered
 
-See the [support matrix](README.md#support-matrix) for library limits, native-device qualification
-and consuming-host requirements, and the [glossary](README.md#glossary) for measurement clocks.
+See the [support matrix](README.md#support-matrix) for library and device coverage and the
+[glossary](README.md#glossary) for timing definitions.

@@ -53,10 +53,11 @@ applying a delayed result, also check its view, tab generation and document revi
 | `DocumentView`, `ViewId` | A retained selection/folding state over a document; scroll belongs to the browser/host |
 | `ResourceTarget` | A captured resource identity in a particular workspace |
 
-For delayed work, use `captureTab`/`resolveTab` or `captureResource`/`resolveResource`. Moving a tab
-preserves its captured target. Closing or replacing the tab expires that presentation, but resource
-work can continue. Use `createResourceKey` for a unique variant. Recreating a released resource
-under the same key gives it a new ID.
+Use `captureTab` and `resolveTab` for work that belongs to a tab, such as a close prompt. Moving the
+tab keeps the prompt valid. Closing or replacing it expires the target. If the work belongs to a
+resource, use `captureResource` and `resolveResource` instead. A save can outlive its tab. Use
+`createResourceKey` for a unique variant. Recreating a released resource under the same key gives it a
+new ID.
 
 Resource handles expose `getSnapshot`, `subscribe` and `metadata`. `observeDocument` yields a ready
 text snapshot or `undefined`. `document` requires a ready document. Read ranges from
@@ -118,23 +119,23 @@ also notify workspace observers without adding entries to the inventory.
 
 ### Document views
 
-`createDocumentView(documentId, initialSelection?)` creates a stable observable view with an
-independent identity and an ownership lease until `dispose()`. The initial value can be one
-selection or a complete set. Every document edit maps all retained views, including views
-without a DOM mount. A view snapshot's `selection` is its complete set's primary range.
+Call `createDocumentView(documentId, initialSelection?)` for each pane that needs its own selections
+and folds. Pass one selection or a complete set. The view retains the resource until `dispose()`.
+Edits map selections in every retained view, including panes that aren’t mounted. Read `selection`
+from the view snapshot for the primary range.
 
-`setSelection(expectedRevision, selection)` deliberately replaces the set with one range;
-`setSelections(expectedRevision, ranges, primary?)` replaces the whole set. Stale, unready or
-disposed targets return `false`. Valid writes normalize ranges and reveal selected fold targets.
-An unchanged set and fold projection publish nothing. A real selection/projection change seals
-that document's history group, including when a batch also changes another document.
-The [selection primitives](text-model.md#selection-sets) own direction, affinity and normalization.
+`setSelection(expectedRevision, selection)` replaces all selections with one range. For several
+ranges, use `setSelections(expectedRevision, ranges, primary?)`. Both return `false` on a stale
+revision or an unready or disposed target. They normalize ranges and reveal hidden targets. If
+selections and visible folds stay the same, subscribers receive nothing. Changing either seals the
+document’s history group, even in a batch that also edits another file.
+[Selection direction and affinity](text-model.md#selection-sets)
 
-An edit can supply `selection` or `selectionSet` together with its live initiating view. Undo/redo
-restore that view's captured complete set and map other retained views independently. Mapping
-deleted positions is lossy; another view does not acquire the initiator's selection history.
-Retain the handle when selections/folds must track edits through detach or remount. The
-[editor contract](editor.md#view-state-activity-and-limits) owns browser scroll capture and restore.
+Pass the initiating view with an edit’s `selection` or `selectionSet`. Undo and redo restore that
+view’s complete set and map selections in the others. A deleted range in another pane can collapse to
+a single point. Undo cannot recover its original endpoints from that point alone. Keep the
+`DocumentView` across remounts for selections and folds. The
+[editor](editor.md#view-state-activity-and-limits) captures and restores browser scroll.
 
 You can subscribe and register or dispose views during notification. Queue selection, text and
 history writes until delivery ends. Keep mutations out of component rendering.
@@ -172,17 +173,16 @@ export function undoFrom(workspace: Workspace, documentId: DocumentId) {
 }
 ```
 
-Every changed document advances its revision, including undo/redo. `DocumentChange` records
-the preceding revision, transaction ID, origin, kind and position mapping. Participants in
-one transaction share its transaction ID. An equal-content result preserves the buffer and
-revision. It preserves history by default. A selection-only request can update its view.
-`updateResource` similarly preserves a typed resource's revision on a no-op, but typed panels
-do not acquire text undo history.
+Every text change, including undo and redo, advances the revision. Read `DocumentChange` for the
+preceding revision, transaction ID, origin, kind and position map. Documents edited together share the
+transaction ID. An edit that produces the same text keeps the buffer, revision and (by default)
+history, though it can change the initiating view’s selection. A no-op `updateResource` also
+keeps the revision of a typed resource. Typed panels have no text undo stack.
 
-History belongs to the document across tab and view changes. `undo` and `redo` check each
-participant’s history boundary and permissions. Later work on another participant yields
-`history-blocked`. `observeHistory` depths include blocked entries. Undo restores the initiating
-view’s selections and maps other views through the change. See [document views](#document-views).
+History follows the document across tabs and views. `undo` and `redo` check every participant’s
+history boundary and permissions. If later work in another file blocks a shared undo, the result is
+`history-blocked`. `observeHistory` depths include blocked entries.
+[Which selections undo restores](#document-views)
 
 An omitted history policy creates a standalone `replace` unit. Origins are `human`, `agent`
 and `host`; `EditKind` distinguishes typing, deletion, paste, composition, form, refactor,
@@ -234,13 +234,12 @@ once across the workspace.
 | `maxChangedUnits` | 8,388,608 | Inserted plus removed UTF-16 units after no-op filtering |
 | `maxSelectionRanges` | 1,000,000 | Captured before/after selection ranges |
 
-Zero disables the corresponding retention capacity. Least recently extended units are
-evicted whole. A group rolls over before exceeding its transaction or changed-unit bound.
-Oversized edits apply but clear history for affected/linked documents
-when the change cannot be retained. `diagnostics().history` reports retention counts.
-These are operation/content bounds, not byte-accurate heap limits: live buffers, saved
-baselines, pending operations and snapshots retained by the host have separate lifetimes.
-History is in memory; persistence and recovery belong to the host.
+A zero limit disables that kind of retention. When history fills, the workspace evicts whole units,
+starting with the least recently extended. A group starts a new unit before exceeding its transaction
+or changed-unit limit. An oversized edit applies. If it cannot fit in history, the affected and
+linked documents lose their history. Use `diagnostics().history` for counts. For heap usage, also
+account for live buffers, saved baselines, pending operations and any snapshots you hold. The host
+persists drafts separately from in-memory undo.
 
 ### Loading and resource lifetime
 
@@ -251,30 +250,31 @@ leases acquired with `preventReload: true`.
 An accepted text load advances the revision, clears linked history, resets live selections
 to the start and clears folds. The host rediscovers folds for the loaded text.
 
-Tabs, document views, operations and explicit `acquire(id)` leases retain resources. Dispose
-views and release explicit leases when their owners finish. Closing all tabs does not discard
-workspace data. `releaseResource` refuses retained resources and requires an explicit discard
-decision for dirty data; released handles become content-free tombstones.
-`releaseResourceWhenUnowned` requests release after the final owner leaves. It rechecks
-ownership after notification delivery; unsaved changes cancel a request that disallows discard.
+Closing the last tab keeps the resource in the workspace. Tabs, document views, operations and
+`acquire(id)` leases can all retain it. Dispose views and release explicit leases when you finish.
+`releaseResource` refuses a resource that has owners. For a dirty resource it also requires an
+explicit discard decision. A released handle carries no content. To arrange release when the last
+owner leaves, use `releaseResourceWhenUnowned`. It checks again after notifications. Unsaved edits
+cancel a request that forbids discard.
 
-An ordinary lease permits reload. Use `acquire(id, { preventReload: true })` when replacing
-content would invalidate retained work, and release that lease when the work settles.
-`ownership(id)` reports lease, tab and reserved-save counts. A failed visible save status can
-coexist with another reserved save; use the ownership count when deciding whether saves settled.
+Ordinary leases permit reload. Pass `{ preventReload: true }` to `acquire(id, options)` if replacing
+the contents would invalidate your work. Release the lease on completion. `ownership(id)` counts
+leases, tabs and reserved saves. Check the save count before treating a resource as settled. Another
+save can be reserved even when the visible status says failed.
 
 `acquireEditLease(id, owner, origin)` additionally grants exclusive edit ownership. Edits must
 provide the matching lease object and satisfy current capabilities; knowing the origin or
 owner string is insufficient. Releasing the lease preserves intervening capability changes.
 Capabilities enforce local policy, not service authorization.
 
-### Delayed work and presentation
+<a id="delayed-work-and-presentation"></a>
 
-`beginOperation(id, lane, presentation?)` captures resource identity, revision and generation
-and retains a lease. A new operation in the same lane cancels its predecessor; other lanes
-are independent. `isCurrent` checks ownership and cancellation, **not the content revision**.
-`presentationCurrent` also checks the captured tab generation. Validate the content revision
-required by the operation after awaiting, even if the service accepts cancellation.
+### Keep a delayed reply on the right tab
+
+Use `beginOperation(id, lane, presentation?)` before starting delayed work. It captures the resource
+identity, revision and generation and holds a lease. A new operation in that lane cancels the old one.
+Other lanes continue. After `await`, check `isCurrent` for ownership and cancellation, and compare the
+content revision yourself. To update a tab, also check `presentationCurrent` for its generation.
 
 ```ts
 import type { TabId, TabTarget, TextBuffer, Workspace } from "sttropez";
@@ -306,11 +306,11 @@ Call `finish` in `finally`, including after cancellation, failure or a stale rep
 and `fail` also settle their tickets. Operation mutations follow the same notification rules as
 edits.
 
-For an asynchronous dirty-close prompt, use `beginClose(tabId)` and then
-`complete("close" | "keep-open")`. Completion validates tab generation and revision and ends
-the prompt lease. Finish the operation if the prompt fails. Moving the tab is allowed;
-replacement, closure or intervening edits invalidate the decision. `close` records an immediate
-host decision; `captureClose` supplies a bare intent without retaining an operation lease.
+For a dirty-close prompt, call `beginClose(tabId)`, then `complete("close" | "keep-open")` when the
+user decides. Completion checks the tab generation and revision and releases the prompt lease. If the
+prompt fails, finish the operation. A move preserves the decision. Closing, replacing or editing the
+target expires it. Use `close` for an immediate decision or `captureClose` for an intent without a
+lease.
 
 ### Save, conflicts and Run
 
@@ -335,11 +335,11 @@ export function bindSave(
 }
 ```
 
-The port returns `saved` with a server version and optional canonical value, or `conflict`
-with the competing version. `SaveOutcome` distinguishes saved, conflict and failed results.
-Preflight can throw synchronously; service/queued failures invoke the error callback and
-return `failed`. The callback cannot prevent lease cleanup. A failed or conflicting save
-preserves local content and the previous saved baseline.
+Return `saved` with the server version and optional canonical value, or `conflict` with the competing
+version. A `SaveOutcome` reports saved, conflict or failed. Initial validation can throw before `save`
+returns. A service or queue failure invokes the error callback and returns `failed`. Even if the
+callback throws, the workspace releases the lease. Failure or conflict preserves the local text and
+previous baseline.
 
 A `SaveReceipt` records the submission, canonical saved value, new server version and whether the
 working copy adopted that value. The saved baseline advances on success. Replacing working text
@@ -365,11 +365,11 @@ capture and start both require save permission and no edit lock. A dirty or lock
 no read-only refresh that adopts a new baseline. Defer until the host can perform the authorized
 operation.
 
-After conflict review, pass a `SaveReview` with the captured target, reviewed local revision and
-remote version. Capture rejects a stale target or revision and a competing save reservation.
-Submission rejects a change to the known saved version. The reviewed remote version sets the write
-precondition. The saved baseline changes only when the save succeeds. A competing write can cause
-another conflict.
+After reviewing a conflict, pass `SaveReview` with the target, the local revision the user reviewed
+and the remote version they saw. Capture rejects a stale target or revision, or a competing save
+reservation. Submission also checks that the known saved version hasn’t changed. The next write uses
+the reviewed remote version as its precondition. If someone saves again first, expect another
+conflict. The baseline advances only on success.
 
 For a custom coordinator, `captureSave` exposes `start`, `accept`, `conflict`, `fail` and `finish`.
 Finish every ticket you take. `WorkspaceCommands` finishes accepted tickets. If another workspace’s
@@ -388,16 +388,17 @@ Metadata excludes content revision, so typing alone need not notify a metadata s
 to the resource, metadata, document, history or `tabState` you display. Use the workspace observable
 for the whole inventory.
 
-Subscriptions have independent lifetimes even for the same callback. Delivery captures its
-listener list; changes to subscriptions affect later publications. Listener exceptions go
-to `WorkspaceOptions.onListenerError` when supplied and cannot stop other listeners or roll
-back a committed transaction. Error-reporter exceptions are contained.
+Each `subscribe` call has its own lifetime, even with the same callback. Delivery uses the listener
+list captured at publication. Listener changes apply to later publications. Exceptions go to
+`WorkspaceOptions.onListenerError`, if supplied. Neither listeners nor the error reporter can
+interrupt delivery or undo a committed edit.
 
-`createNotificationScope(onListenerError?)` returns a controller notification scope sharing the
-workspace's write guard and, by default, its listener-error policy. Its `batch(action)` defers notifications from the workspace and related
-scopes until the outermost synchronous action returns or throws. State commits immediately;
-the batch does not roll back writes, combine history transactions or await asynchronous work.
-Use `editDocuments` when several document edits must validate and commit as one transaction.
+Use `createNotificationScope(onListenerError?)` to notify your controller’s listeners under the
+workspace’s write guard. By default it shares the workspace’s error policy. Within `batch(action)`,
+writes take effect immediately. The workspace and related scopes defer notifications until the outer
+synchronous action returns or throws. A thrown error leaves committed writes in place, each with its
+own history. A promise returned by the action doesn’t extend the batch. Use `editDocuments` if several
+documents must change atomically.
 
 Each delivery request captures its current listeners. A batch invokes each captured callback
 once, in first-capture order, using the error policy of the scope that first captured it.
@@ -422,16 +423,17 @@ recheck their captured targets.
 
 ## Host responsibilities
 
-- Own schemas, validation, authorization, services, storage and conflict/review decisions.
-- Enforce server-version preconditions and any idempotency policy at the service boundary;
-  local serialization and atomic edits do not guarantee remote atomic writes or exactly-once delivery.
-- Capture immutable command inputs before awaiting. Keep resource, revision, tab generation
-  and view identity separate; handle a stale result without redirecting it to later focus.
-- Dispose subscriptions/views, close presentation tabs and release operation/retention leases
-  when their owners finish. Choose explicitly whether unsaved resources may be discarded.
-- Render immutable snapshots through host controllers and register listener cleanup through
-  the [hosting lifecycle](getting-started.md#host-responsibilities).
+- Choose schemas, permissions, storage and conflict review. Check version preconditions and
+  idempotency at the service. A local atomic edit cannot guarantee atomic or exactly-once remote
+  writes.
+- Capture the resource, revision, tab generation and view before awaiting. If the target expires, drop
+  the result.
+- On close, unsubscribe, dispose views, close tabs and release leases. Get a discard decision before
+  releasing dirty data.
+- Render snapshots from host controllers and
+  [clean up listeners on detach](getting-started.md#host-responsibilities).
 
 ## Not covered
 
-See the [support matrix](README.md#support-matrix).
+Undo history lasts for the workspace session. See the [support matrix](README.md#support-matrix) for
+cross-session recovery and durability limits.

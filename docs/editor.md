@@ -1,7 +1,8 @@
 # Editor
 
-The editor renders visible text and handles native input. Views of one document share text and undo
-history. Each has its own selection. The host supplies the tab, layout and language rules.
+Mount an editor for a text tab to type, select and undo. Two editors on the same document share text
+and history. Each view keeps its own selection. Your application supplies the tabs, layout and
+language rules.
 
 ## Use
 
@@ -39,8 +40,8 @@ export function attachSource(
 }
 ```
 
-Before detaching, save `editor.captureView()` by document and view ID and call `editor.dispose()`.
-Dispose a host-supplied view when the host finishes with it.
+On detach, store `editor.captureView()` by document and view ID, then call `editor.dispose()`. Dispose
+a supplied view when its owner closes.
 
 ## Contract
 
@@ -70,42 +71,41 @@ A `readOnly` mount supports navigation, selection, copy, Find and dragging a cop
 cut, paste, drop, undo, redo and replacement. Other views keep their own edit permissions, subject
 to resource capabilities and locks. Remount with the same view to change this option.
 
-### Native input and ordered commands
+<a id="native-input-and-ordered-commands"></a>
 
-The textarea holds the selection and nearby text in native LF coordinates. Large selections use one
-selected placeholder mapped to the full source range. Typing replaces that range. Unrelated edits
-preserve raw CRLF. Enter uses the contextual line ending.
+### What happens when you type during a command
 
-`beforeinput` captures the native replacement range, document revision and complete model
-selection set. `input` uses that range when the native value/caret agree with it; other supported
-rewrites use a bounded difference. Replacing a selection with equal text can collapse the
-selection without creating a document revision. Projection-driven selection events preserve
-existing affinities when endpoints agree.
+The textarea holds the selection and nearby text, using LF for native input. A large selection appears
+in the textarea as one selected placeholder. Type over it and the editor replaces the full source
+range. Enter uses the surrounding line ending. Editing elsewhere preserves the original CRLF.
+
+`beforeinput` captures the intended replacement range, document revision and all selections. On
+`input`, the editor uses that range if the native value and caret agree. For other supported rewrites,
+it compares the bounded text around the edit. Typing the same text over a selection can collapse it
+without changing the revision. When the editor mirrors a selection into the textarea, matching
+endpoints keep their affinities.
 
 Composition uses the primary input and creates one shared undo command on commit. Starting
 composition cancels queued commands. If the revision, selection, permission or target changes, the
 editor sends stale input to host recovery.
 
-Navigation, deletion, word selection and language planning can span several turns. Keys and text
-typed meanwhile run in order at the resulting selection. Replay preserves key interpretation,
-modifiers and event-time history grouping, and rechecks edit permission. Paste and structural
-commands keep their own undo boundaries. Short moves can finish synchronously. An accepted command
-can return before the view renders.
+Navigation, deletion, word selection and language planning can take several turns. Type during a move
+and the text goes at its destination. The editor replays queued input in order, preserving modifiers,
+key meaning and event-time undo groups. It checks permission again. Paste and structural commands keep
+separate undo steps. Short moves can finish synchronously. A command can return before paint.
 
-Pending input captures the document revision, all selections, the view and the tab generation.
-Escape, composition, copy/cut, host-owned paste, detach or a change to the capture or permissions
-cancels replay. Recovery receives only unapplied text. A failed command releases its scans, rows and
-timers and reports `command-failed` with the original cause. See
-[input-conflict recovery](host-integration.md#input-conflict-recovery).
+Pending input belongs to the captured revision, selections, view and tab generation. Escape,
+composition, copy/cut, host-handled paste, detach or a change in that capture or permission cancels
+replay. Only unapplied text goes to [input recovery](host-integration.md#input-conflict-recovery). On
+failure the editor releases scans, rows and timers and reports `command-failed` with its cause.
 
 ### Selections and history
 
-Every view has one normalized complete selection set and a primary range. Typing, paste, deletion,
-indentation and movement operate on the whole set; the native textarea projects the primary range.
-Visible secondary selections/carets use bounded rendered geometry. Offscreen ranges do not create
-text nodes. The [workspace view contract](workspace.md#document-views) owns selection setters,
-revision validation and retention; [selection primitives](text-model.md#selection-sets) own
-normalization and affinity mapping.
+Type, paste, delete or move with several carets and the command acts on the whole selection set. The
+textarea tracks the primary range. The editor draws secondary carets and selections only where it has
+visible geometry, so offscreen ranges need no DOM nodes. Use the
+[view’s selection setters](workspace.md#document-views) to keep a set across remounts. See
+[selection sets](text-model.md#selection-sets) for normalization and endpoint affinities.
 
 Plain typing replaces every range with the same text. Deletion plans all targets before mutation
 and merges overlapping deletions, including carets inside one grapheme. Movement preserves
@@ -113,11 +113,10 @@ extension anchors and endpoint affinities, then normalizes and publishes the res
 primary destination is revealed. Vertical commands retain each range's measured horizontal
 column across short lines until another selection, edit or layout breaks the sequence.
 
-Ordinary adjacent typing or same-direction deletion groups within one second when revision,
-complete selection and initiating mount/view agree. Newlines, composition, paste, replacement,
-focus loss, selection movement and other-origin edits separate actions. Undo/redo can run through
-either editable view. The [workspace history contract](workspace.md#transactions-and-history)
-defines linked transactions, save boundaries, permission checks and initiating-view restoration.
+Adjacent typing or same-direction deletion can share one undo step if it happens within one second in
+the same mount and view, with the expected revision and selections. A newline, composition, paste,
+replacement, focus loss, selection movement or an edit from another origin starts a new step. Undo
+from either editable view. [Shared history and save boundaries](workspace.md#transactions-and-history)
 
 ### Keyboard and pointer commands
 
@@ -146,33 +145,30 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Alt+click / Alt+drag / Alt+double-click | Add a caret / range / code-word selection |
 | Double-click | Select the code-word, symbol or whitespace run within the clicked logical line |
 
-Host tools can handle keys first. The editor ignores cancelled and composition-marked events,
-including keyCode 229. See the [example bindings](examples.md) for language, search and folding
-commands.
+Host tools get first chance at shortcuts. Cancelled events and composition events (including keyCode
+229) bypass editor commands. [Example bindings](examples.md)
 
-Word selection excludes the line terminator and snaps to grapheme boundaries. Keyboard word
-movement uses the [code-word policy](unicode.md#graphemes-and-word-movement), not dictionary
-segmentation. Pages use `max(1, floor(viewportHeight / lineHeight) - 1)` visible rows; folding
-and [comparison alignment](comparison.md) determine the navigation grid.
+Double-click selects a run up to a grapheme boundary and excludes the line ending. Keyboard word
+movement follows the [code-word rules](unicode.md#graphemes-and-word-movement). PageUp and PageDown
+move `max(1, floor(viewportHeight / lineHeight) - 1)` visible rows, accounting for folds and
+[aligned comparison rows](comparison.md).
 
-Pointer selection uses source hit testing, including where the transparent input overlaps text.
-Dragging either scrollbar preserves the selection. Selected text uses `--st-selection` over
-ordinary token and occurrence backgrounds.
-The captured pointer owns the gesture. Release, lost capture, cancellation or a changed source/view
-ends it. Holding a drag beyond an edge extends selection through logical scrolling; speed is capped
-at three viewport lengths per second per axis, with at most 32 ms of movement per callback.
-A delayed frame therefore does not imply an unbounded scroll jump. Composition keeps native
-input handling instead of source-pointer interception.
+Clicking selects source text even where the transparent input overlaps it. Dragging either scrollbar
+keeps the selection. `--st-selection` paints above token and occurrence backgrounds. The gesture ends
+on pointer release, lost capture, cancellation or a source/view change. Hold a drag outside an edge to
+scroll, up to three viewport lengths per second per axis. Each callback advances at most 32 ms of
+movement. During composition the native input handles the pointer.
 
 ### Clipboard and text drag
 
-Copy joins nonempty selected fragments in source order with LF. Cut removes them in one
-transaction. Copy/cut with only collapsed ranges leave the event and history untouched. Literal
-paste reads plain text during dispatch and inserts the same raw payload at every destination;
-it preserves CRLF and does not distribute lines among carets. Empty/nontext payloads change
-nothing, including an existing selection or pending command. Clipboard objects are not retained
-after dispatch. Hosts can intercept in the input's capture phase and call `preventDefault()`
-to own conversion and insertion through [captured host insertion](host-integration.md#captured-insertion-and-structured-paste).
+Copy joins nonempty selections in source order with LF. Cut removes them in one transaction. With only
+carets selected, both leave the event and history alone. Paste inserts the same plain text at each
+destination, preserving CRLF. An empty or nontext payload leaves selections and pending commands
+alone.
+
+Read clipboard formats during dispatch. The editor releases the clipboard objects when the event ends.
+To convert a paste yourself, intercept the event during capture on the input, call `preventDefault()`
+and [insert at the captured selections](host-integration.md#captured-insertion-and-structured-paste).
 
 Dragging painted selected text captures source fragments, the whole selection set, revision
 and tab/view identity. Editable sources in the same workspace move by default; Control
@@ -186,10 +182,9 @@ inserts literally at the accepted offset; HTML is not interpreted and unsupporte
 do not navigate. Preview text is capped at 160 UTF-16 units. Cancellation/disposal removes the
 drop caret, preview and edge-scrolling work.
 
-Selection and text-drag autoscroll share frame ownership and bounded movement. Selection starts
-scrolling outside the viewport; a drop target uses an interior edge zone. Viewport callbacks
-recheck the captured gesture before updating it, and expired frames leave replacement targets
-and their scheduled scrolling intact.
+A selection starts scrolling when the pointer leaves the viewport. For a text drop, the pointer enters
+a zone inside the edge. Both use the same bounded frame step. Each callback checks that the gesture is
+current, so an old frame cannot move or cancel a new target.
 
 ### Language configuration
 
@@ -214,41 +209,38 @@ and frozen; callbacks receive the exact immutable buffer and source endpoints.
 cannot edit, is composing/disposed, or lacks the requested comment rule. Long plans yield, then
 commit once after validating the captured target; intermediate planning publishes no text.
 
-Indent inserts one configured unit at every collapsed caret. With any nonempty range, indent/
-outdent visits the union of touched lines once; an endpoint at the next line's start excludes
-that next line. Outdent removes one tab-size unit in visual columns, including mixed tabs/spaces.
-Line comments toggle selected nonblank lines; block comments surround/unwrap selections.
-Pair rules can insert, skip a matching closer or surround selected text.
+With carets only, indent inserts one configured unit at each caret. Once a range has selected text,
+indent and outdent visit each touched line once. Ending a selection at the start of the next line
+leaves that line alone. Outdent removes one tab stop’s worth of visual columns, even with mixed tabs
+and spaces. Line comments toggle nonblank lines. Block comments wrap or unwrap selections. Pair rules
+can insert a pair, skip its closer or surround a selection.
 
 Enter chooses the current row's LF/CRLF terminator, falling back to the preceding terminator
 at EOF and LF when absent. Callback indentation removes/keeps/adds one unit and can split the
 closing text onto another line. Pairing, comments and cancellable non-composing line-break input
 use the same transaction/transform path. Composition and noncancellable input use literal capture.
 
-`resolveLanguageConfiguration` and `planLanguageEdit` provide the same headless planning. The
-lazy cursor exposes `next(workBudget?)`, `snapshot()` and `dispose()`. Each frozen progress
-snapshot reports `status` (`running`, `ready`, `failed` or `disposed`), `phase` (`validate`,
-`plan`, `map` or `publish`), counters, a nullable `result` and nullable `failure`. Only `ready`
-exposes a complete `SelectionEditPlan`; it is a proposal. Errors are rethrown and retained as
-a failure message. Disposal releases unfinished work and the cursor's result reference;
-already returned immutable results remain usable. Reentrant advancement or disposal throws.
+For headless planning, use `resolveLanguageConfiguration` and `planLanguageEdit`. Advance the lazy
+cursor with `next(workBudget?)` or inspect it with `snapshot()`. Frozen progress gives `status`
+(`running`, `ready`, `failed`, `disposed`), `phase` (`validate`, `plan`, `map`, `publish`), counters,
+`result` and `failure`. Only `ready` gives a complete `SelectionEditPlan` to apply. An error records
+its message and rethrows. `dispose()` frees unfinished work and the cursor’s result reference. A plan
+you already hold stays valid for its capture. Calling `next()` or `dispose()` during an advance
+throws.
 
-`workUnits` combines UTF-16 text reads, visited ranges/rows/comment records/output edits,
-pair-rule attempts and `bulkWorkUnits`. `readUnits` counts the planner's UTF-16 buffer reads,
-including repeated reads; it excludes host callback reads. Bulk charges count input cardinality
-submitted to synchronous normalization, position mapping, pair lookup and output-array freezing,
-plus large reads and newline string assembly;
-they are included once in work, and large reads also appear in the read counter. These charges
-are estimates of work, not counts of internal helper operations. Normalization can reuse owned
-selections; raw input must already have normalized range order and is validated during advancement.
+Use `readUnits` for UTF-16 units the planner reads, including rereads. A host callback’s own reads
+fall outside this count. `workUnits` also counts visits to ranges, rows, comment records and output
+edits, attempts at pair rules, and `bulkWorkUnits`. Bulk charges estimate the input size for
+normalization, position mapping, pair lookup, freezing output arrays, large reads and building newline
+strings. They count once toward work. Large reads also count toward reads. The normalizer can reuse an
+editor-owned selection set. If you pass raw ranges, supply them in normalized order. The cursor checks
+the order as it advances.
 
-Budgets are safe integers of at least 256, defaulting to 4096. Cooperative checkpoints at scan,
-range and row boundaries follow roughly 256 charged units; whitespace scans read up to 4096
-units at once. A range's delimiter reads, synchronous bulk work and host callbacks can exceed
-the budget; callbacks have arbitrary cost. This is not a time or complete
-interaction-latency bound. All planning, including validation and final mapping, runs inside
-`next()`. The host schedules subsequent calls and keeps supplied selections/configuration
-immutable while work is pending. This example also releases cancelled planning:
+Call `next()` with a safe integer of at least 256 work units (default 4,096). It handles validation
+through final mapping. The planner checks the budget at scan, range and row boundaries roughly every
+256 units. A whitespace read can span 4,096 units. A delimiter read, bulk operation or host callback
+can run past the budget. Schedule the next call yourself and keep selections and configuration
+immutable between calls. The example releases the planner if you cancel.
 
 ```ts
 import { planLanguageEdit, resolveLanguageConfiguration } from "sttropez";
@@ -284,12 +276,12 @@ function. A disposed editor or occupied slot throws. `TextEditorEdit` contains `
 proposed original-coordinate edits, resulting `selectionSet`, history `kind` and optional
 `adjustNewlines` when the newline command supplied contextual indentation.
 
-Returning `undefined` preserves the plan; returning edits/selections replaces it subject to normal
-workspace validation and authority. `complete(applied)` runs after the commit attempt/notifications
-and before input refresh. Keep the transform synchronous and tied to its captured view; callback
-failure does not roll back an already committed transaction. Undo/redo, external transactions and
-drag/drop do not pass through this input-transform slot. The [completion controller](language-features.md#completion)
-uses it for snippet mirroring, so a host must coordinate ownership of that slot.
+Return `undefined` to keep the proposed edit. To change it, return replacement edits and selections.
+The workspace checks ranges and permissions. `complete(applied)` runs after the commit attempt
+and its notifications, before the editor refreshes input. A callback error leaves a committed edit in
+place. Keep the transform synchronous and bound to its view. Undo, redo, external transactions and
+drag and drop bypass it. The [completion controller](language-features.md#completion) uses the same
+slot for snippet mirroring.
 
 ### Bracket matching
 
@@ -322,11 +314,11 @@ export async function matchBracket(
 }
 ```
 
-`BracketMatchOptions` configures total work and depth. `BracketMatchCursor` exposes
-`BracketMatchProgress`, including status, reads, work, callback count and failure.
-`BracketMatchResult` distinguishes `matched`, `unmatched`, `none`, `vetoed`, `ambiguous` and
-`limited`. Only `matched` proves a pair; budget exhaustion must not be displayed as a mismatch.
-The host must discard a completed result when its source/selection capture expires.
+Set total work and nesting limits with `BracketMatchOptions`. A `BracketMatchCursor` reports status,
+reads, work, callback count and failure in `BracketMatchProgress`. Highlight only `matched` pairs.
+A `limited` result means the scan ran out of budget before it could decide. Other
+`BracketMatchResult` values are `unmatched`, `none`, `vetoed` and `ambiguous`. Discard the result if
+the source or selection has changed.
 
 The browser's `BracketHighlights` handle is `editor.bracketMatching`. Its `getSnapshot()` and `subscribe()` methods expose `BracketHighlightSnapshot` for the primary collapsed caret. `configure(true)`
 or explicit limits enable matching; `configure(false)` removes its document/view listeners.
@@ -341,12 +333,11 @@ change. Working and reference views require their own snapshot's lexical context
 
 ### View state, activity and limits
 
-`captureView()` synchronizes native selection and returns immutable `ViewState`. `restoreView()`
-restores the supplied complete set when present, otherwise its anchor/head selection. Preserve
-the retained view's mapped whole set when combining it with saved scroll state. The
-[viewport contract](viewport.md#scrolling-and-saved-views) owns scroll anchors, validation and fold
-restoration. Editing reveals the primary caret at the nearest edge on both axes and preserves
-scroll when the caret fits; explicit host navigation can request a centered reveal.
+`captureView()` first synchronizes the native selection, then returns an immutable `ViewState`.
+`restoreView()` uses the complete selection set when present and falls back to anchor and head. If you
+retained the view while it was detached, combine its current mapped selections with the saved scroll
+position. After an edit, the viewport scrolls just enough to show the primary caret on both axes. Host
+navigation can ask to center it. [Restoring scroll and folds](viewport.md#scrolling-and-saved-views)
 
 `activity()` returns a cached immutable `TextEditorActivity` without layout reads or a flush. It
 reports composition, disposal, `pendingInput`, `pendingCommand`, `pendingCaret`, `pendingWord`,
@@ -371,14 +362,13 @@ next `input`. See [clock definitions](README.md#glossary) and
 | Browser bracket task | Checks between 256-unit advances; stops after 16 advances, 4 ms or 4,096 work units; one advance/callback can exceed the scheduling target |
 | Ordinary reads | Typing, navigation, scrolling and metadata updates do not export the whole document; copying/large edits can require proportional work |
 
-Scheduling bounds are not interaction-latency guarantees. [Viewport limits](viewport.md#rendering-limits)
-govern long contextual lines and geometry; [Unicode](unicode.md) owns grapheme behavior.
+Measure time to visible text and caret separately from these scheduling limits. See
+[long-line rendering](viewport.md#rendering-limits) and [grapheme navigation](unicode.md).
 
 ## Host responsibilities
 
-Provide tabs, layout, fonts, controls and language rules. Bound work in decoration and language
-callbacks. Issue mutations after notification delivery. Capture a view by ID, and wait for any
-pending input before a dependent Save or Run.
+Keep decoration and language callbacks bounded. Issue writes after notifications. Capture the view ID
+and wait for pending input before saving or running that text.
 
 Keep the recovery listener attached through `dispose()` so it receives uncommitted text. Disposal is
 idempotent and releases the mount’s work, listeners, views and DOM. Release host-owned resources
@@ -386,5 +376,5 @@ separately. In React, [mount through stable refs](getting-started.md#host-respon
 
 ## Not covered
 
-See the [support matrix](README.md#support-matrix) for unsupported features, native-device
-qualification and consuming-host requirements.
+Verify native IME, dead keys, AltGr and touch selection on your target devices.
+[Editing and clipboard support](README.md#support-matrix)

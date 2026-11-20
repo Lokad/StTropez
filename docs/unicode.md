@@ -80,30 +80,28 @@ export function hostFont(owner: Document, applyFamily: (family: string) => void)
 
 ### Cooperative cursor lifetime
 
-Grapheme and word cursors expose `next(workBudget)`, `snapshot()` and `dispose()`. Reading a
-snapshot leaves the cursor in place. Status is `running`, `ready`, `failed` or `disposed`. Only
-`ready` has a result, which can be an empty index or word offset zero. Failure releases unfinished
-work, records a message and throws the original cause. `dispose()` clears the result and failure and
-is safe to repeat. Callers can keep using a completed index. Advancing or disposing during an active
-call throws. The active call may catch that error.
+Use `snapshot()` to read progress between calls to `next(workBudget)`. Grapheme and word cursors start
+in `running`. In `ready`, read the result even if it is an empty index or offset zero. In `failed`,
+the cursor has released unfinished work, recorded a message and thrown the original cause. Call
+`dispose()` to release the result and failure and move to `disposed`. Disposal is safe to repeat, and
+an index you already hold stays usable. Calling `next()` or `dispose()` from inside an active call
+throws. That call can catch the error.
 
-Pass a safe integer of at least 256 units per call (default 4,096). The cursor charges algorithm
-work between checkpoints and can exceed the budget before yielding. Generator steps and elapsed time
-vary. An invalid budget throws before changing state, even after completion or disposal.
+Pass the work budget in the [limits table](#limits). The cursor checks it between operations and can
+overshoot. An invalid budget throws before changing state, even after completion or disposal.
 
 ### Graphemes and word movement
 
-`createGraphemeCursor(bufferOrString, options)` captures its source without reading it.
-`next(workBudget)` advances scanning and publication; `snapshot()` exposes progress and a
-`null` result until completion. Limit exhaustion throws `GraphemeLimitError` and records a
-failed snapshot without publishing a partial index. `dispose()` releases unfinished work;
-a completed `GraphemeIndex` retained by the caller stays valid.
+`createGraphemeCursor(bufferOrString, options)` defers its first read until `next(workBudget)`. Read
+`snapshot().result` once scanning finishes. It stays `null` during the scan. If a limit is reached,
+`next` throws `GraphemeLimitError` and records a failed snapshot. Only a complete `GraphemeIndex` is
+available.
 
-Positions are absolute UTF-16 offsets, including unpaired surrogates. Optional `from`/`to`
-bounds establish an independent segmentation context. The caller must choose a safe restart
-boundary when it needs the same result as whole-document segmentation. Rules cover CRLF,
-Hangul, combining marks, prepend characters, emoji joiners, regional indicators and Indic
-conjuncts. `unicodeGraphemeVersion` identifies the Unicode data used for segmentation.
+`from` and `to` are absolute UTF-16 offsets. Unpaired surrogates keep their original positions. The
+cursor segments the supplied range on its own. For whole-document boundaries, start where you know the
+segmentation state. For example, starting between two regional indicators can change how flags are
+paired. Rules also cover CRLF, Hangul, combining marks, prepend characters, emoji joiners and Indic
+conjuncts. Read `unicodeGraphemeVersion` for the data version.
 
 The immutable index records its source, range, Unicode version, cluster count and boundary
 count. `boundaryAt` and `clusterAt` query it without materializing all boundaries. `floor`
@@ -155,12 +153,13 @@ Each allow-list entry must contain exactly one code point. `kind(codePoint, offs
 | `non-breaking-space` | U+00A0, U+2007 or U+202F |
 | `unusual-space` | Other classified whitespace, excluding ordinary space, tab, CR and LF |
 
-Ordinary combining marks and letters from other scripts pass without warnings. Joiners and variation
-selectors can be meaningful. The host chooses what to flag. `scan(buffer, from, to, limits)` returns
-exact code-point ranges, including a surrogate pair clipped by the requested boundary. Resume a
-limited scan at `nextFrom` with the same buffer and end. `scanText(text, absoluteOffset)` accepts a
-bounded fragment of complete code points. `characterWarningLabel` gives a plain-text description. A
-warning alone establishes neither validity nor security.
+Ordinary combining marks and letters from other scripts pass without warnings. Decide which joiners
+and variation selectors to flag for your source. `scan(buffer, from, to, limits)` returns exact
+code-point ranges, even for a surrogate pair that straddles a requested boundary. To continue a
+limited scan, pass `nextFrom` with the same buffer and end. If you already have a bounded fragment of
+complete code points, use `scanText(text, absoluteOffset)`. Show the plain-text description from
+`characterWarningLabel`. A warning identifies the character and leaves its interpretation to the
+reader.
 
 Enable markers with the editor's `characterWarnings: true` or policy options, or call
 `editor.characterWarnings.configure(options)`. Markers are off by default; `false` clears
@@ -182,11 +181,11 @@ The new face is registered before the controller removes its preceding face. The
 snapshot's `current` records `{ fontId, generation, family }`. Failed decoding or registration
 preserves the preceding current face and publishes a failure message.
 
-Supersession, cancellation and disposal prevent late registration. `cancel()` preserves a
-registered face; `dispose()` removes only this controller's face and clears `current`.
-`isCurrent(generation)` tests the registered face, including after a later load fails.
-Disposal is idempotent. Browser APIs own decoding, shaping and measurement; the host supplies
-font bytes and chooses the views that use the returned CSS family.
+If a second request supersedes the first, the old font cannot register later. Cancellation and
+disposal also stop late registration. `cancel()` keeps the current face. `dispose()` removes the
+controller’s face, clears `current` and is safe to repeat. Use `isCurrent(generation)` to check which
+face is registered, including after a later load fails. You supply the bytes and choose which views
+use the returned CSS family. The browser decodes, shapes and measures the font.
 
 ### Limits
 
@@ -200,8 +199,8 @@ font bytes and chooses the views that use the returned CSS family.
 | Character scan | Default 4,096 units and 256 warnings; integer `maxUnits >= 2`, `maxWarnings >= 1`; at most `maxUnits + 5` units read |
 | Character marker cache | At most 128 presented fragments |
 
-Allocation, freezing, native calls and garbage collection can each run past a scheduling checkpoint.
-Measure elapsed time and memory separately.
+A checkpoint cannot interrupt allocation, freezing, native calls or garbage collection. Measure time
+and memory separately.
 
 ## Host responsibilities
 
@@ -219,4 +218,5 @@ hashes and checks outputs offline. Builds and restores use the generated data di
 
 ## Not covered
 
-See the [support matrix](README.md#support-matrix) for layout, native rendering and device boundaries.
+Caret geometry uses left-to-right rows. Font rendering on particular devices needs a device check.
+[Presentation support](README.md#support-matrix)

@@ -1,8 +1,8 @@
 # Host integration
 
-Extend the editor with decorations, annotations and host controls. StTropez owns its DOM, input and
-history. The host chooses how to parse, route and store resources. These extensions work without a
-language server.
+Add syntax colors, paste conversion or a form beside the editor without running a language server.
+Your host parses and stores the data. Use editor commands for changes that should share typing
+history.
 
 ## Use
 
@@ -81,8 +81,8 @@ export function attachConvertedPaste(
 }
 ```
 
-Map a note after each transaction. This example drops the note if its range was deleted or a map is
-missing. The host reads the snapshot when rendering its controls.
+Store a note as an anchored range. After each transaction, map it to the new revision. This example
+drops a deleted note or one with a missing map. Read the snapshot to draw it.
 
 ```ts
 import { anchoredRange } from "sttropez";
@@ -155,22 +155,22 @@ selection set and folding snapshot. It exposes `isCurrent()`, `signal`, `cancel(
 `commit(operation)`. Capture rejects foreign views, mismatched tabs and unavailable documents. It
 needs no full-text read.
 
-Omit `editOrigin` for read requests, including read-only sources. An origin requires its edit
-capability and no edit lock; it grants no authority to a later transaction. The optional
-`available` callback is a synchronous read-only host readiness guard. Cancel explicitly when
-unobserved host state changes; a temporary interruption between checks cannot be inferred.
+For reads, omit `editOrigin`. This works in read-only views. For edits, supplying an origin requires
+the matching capability and an unlocked resource. The later transaction checks permission again. Use
+`available` for a synchronous, read-only check of host state. If host state changes between checks,
+cancel the capture yourself.
 
 A change to revision, selection, visible folds or edit authority permanently invalidates the
 capture. Expanded fold metadata, save permissions and focus elsewhere leave it valid. Invalidation
 takes effect immediately. A microtask then releases the lease and aborts the signal. Call `cancel()`
 outside workspace observer delivery.
 
-`commit(operation)` returns `false` for a stale or consumed capture. Otherwise it consumes the
-capture, detaches observers and calls the operation with the resource retained. It releases the
-resource and aborts the signal even if the operation throws. The callback must return a boolean
-synchronously and use the usual revision, permission and history checks. Returning a promise raises
-an error after invocation. Callback effects survive failure. Keep the capture while its results are
-on screen and cancel it on dismissal or disposal.
+Use `commit(operation)` when the user accepts a result. It returns `false` if the capture expired or
+was already used. Otherwise it consumes the capture, detaches its observers and keeps the resource
+alive while your callback runs. Return a boolean synchronously and check revision, permission and
+history as usual. Even if the callback throws, `commit` releases the resource and aborts the signal.
+Returning a promise throws after the callback has run. Any edits it already made survive. While a
+result stays on screen, retain its capture. Cancel on dismissal or disposal.
 
 ### Captured insertion and structured paste
 
@@ -179,12 +179,12 @@ is unavailable, read-only, composing or finishing ordered input/navigation. The 
 is `paste` by default or `replace`. One capture can be pending per editor. It exposes the
 document identity, revision, length, complete selection set, signal and currentness guard.
 
-The capture retains the view, tab generation, resource authority, revision, directed selection
-set and visible fold projection. Edits, selections, projection/authority changes, composition,
-later editing/navigation keys, language reconfiguration, another capture and view disposal
-invalidate it. Moving focus to surrounding host controls alone does not retarget it.
-Observer-triggered abort/lease release is deferred as for captured view requests. The signal
-also aborts on normal completion; it is a lifetime signal, not a failure indicator.
+The insertion belongs to the captured view, tab generation, resource permissions, revision, directed
+selections and visible folds. Editing, changing selections, folds or permissions, starting
+composition, typing a navigation or editing key, reconfiguring the language, taking another capture or
+disposing the view expires it. Clicking a toolbar control alone keeps the original target. If an
+observer invalidates the capture, a microtask releases its lease and aborts the signal. Successful
+insertion also aborts the signal when it finishes.
 
 `insert(text)` consumes the capture once and replaces every captured selection with that text.
 It returns whether the edit applied and uses the existing edit transform, snippet mirroring,
@@ -204,17 +204,15 @@ HTML parsing, final string assembly and the model commit each run to completion.
 
 ### Tokenization, annotations and forms
 
-If a semantic provider fails to attach, release its subscriptions and document leases, show the
-reason and offer a retry for that view. Local editing, review and Find stay available. Keep the
-provider’s resource limits on retry and release its subscriptions when the view detaches.
+If a provider fails to attach, release its subscriptions and leases, show the reason and offer Retry.
+Keep the same resource limits when retrying. Editing, review and Find stay available. Release the
+attachment on detach.
 
-Use the [viewport decoration contract](viewport.md#mounting-and-presentation) for source-offset classes on
-presented fragments. Cache lexical results by document identity and revision, bound requested
-source reads, and invalidate presentation when host results change. A fragment boundary is not
-a language boundary. A reference pane needs the syntax context of its own immutable snapshot;
-working-document offsets cannot color a different reference. Configure editor language rules
-through the [editing API](editor.md), folding through its [controller](folding.md),
-and character warnings through [Unicode policy](unicode.md#character-warnings).
+A visible fragment might start inside a string or block comment. Cache lexical state by document and
+revision, limit source reads, and call `invalidate()` when new tokens are ready. Use absolute source
+offsets for [viewport decorations](viewport.md#mounting-and-presentation). Tokenize the saved side of
+a comparison against its own immutable text. Configure [editing rules](editor.md),
+[fold discovery](folding.md) and [character warnings](unicode.md#character-warnings) separately.
 
 Map source-linked metadata through
 [anchored ranges and transaction maps](text-model.md#position-maps-and-anchors). Check
@@ -226,35 +224,33 @@ Put annotations and forms beside the editor in an overlay or reserved lane. Read
 A folded position may project to its header, and `rowBounds` may find no rendered row. Hide or label
 controls in those cases.
 
-A source-backed form parses a captured range and applies validated edits through workspace history.
-To copy a value into separately versioned settings, capture the destination and perform an explicit
-transfer. Save and Run are separate actions. See the
-[source-backed form example](examples.md#source-backed-transfer-form).
+For a form that edits a source line, parse its captured range and submit the field change through
+workspace history. To copy a field into separately versioned settings, capture the destination too.
+The user can then save or run those settings separately.
+[Source-backed form example](examples.md#source-backed-transfer-form)
 
 ### Navigation, commands and lifecycle
 
-Capture the resource, tab, revision and view before asynchronous navigation. Check them again before
-opening a location. A Back stack can retain selections, affinities, scroll and folds. After edits,
-restore the mapped live selections. See
-[resource loading and lifetime](workspace.md#loading-and-resource-lifetime).
+Before following an asynchronous navigation result, recheck its resource, tab, revision and view. Save
+selections, affinities, scroll and folds for Back. After edits, restore the mapped live selections.
+[Retaining a loaded resource](workspace.md#loading-and-resource-lifetime)
 
 Bind host buttons and shortcuts to the captured editor’s commands or insertion handles. Check the
 return value to see whether the action applied. Leave composition, AltGraph text entry and editable
 host fields to their input handlers. Prevent the browser default only for shortcuts the host
 handles.
 
-For a shadow-root host, mount inside the root and provide editor CSS in that root. Input,
-caret and focus-dependent controllers use the input's own focus tree, including nested or
-closed roots. Destroy dependent controllers and the editor before removing their host nodes.
-Keep document/recovery services alive across view remounts when the host retains the project.
-See [embedding and React lifecycle](getting-started.md) for mount ownership.
+In a shadow root, mount both the editor and its CSS inside that root. Input and caret handling use the
+local focus tree, even in nested or closed roots. Dispose dependent controllers, then the editor,
+before removing their nodes. Keep project-level document and recovery services across view remounts.
+[Mounting in React](getting-started.md#host-responsibilities)
 
 ### Input conflict recovery
 
-`inputConflictEvent` names `sttropez-conflict`. Both editor mounts dispatch it on their native
-input when an input/history/command attempt cannot apply. It bubbles within its root, is not
-cancelable and does not cross a shadow boundary. Subscribe through `editor.input`, or the
-native baseline's `editor.element`, including inside closed roots.
+Listen for `inputConflictEvent` (`sttropez-conflict`) on `editor.input` when the editor cannot apply
+input, history or a command. The development textarea fixture dispatches the same event on
+`editor.element`. The event bubbles within its root, cannot be cancelled and stops at a shadow
+boundary. Attaching to the input works even in a closed shadow root.
 
 `InputConflictDetail` contains `documentId`, `expectedRevision`, `reason` and `attemptedText`,
 with optional `contextFrom`, `attemptedEdit` and `cause`. Offsets refer to UTF-16 model units
@@ -263,40 +259,40 @@ or pending insertion text. Insertion recovery can use `contextFrom: 0`; this doe
 a replacement at zero. Inspect an available attempted edit rather than inferring an edit
 from text alone. The detail and edit are frozen; `cause` may be mutable or nonserializable.
 
-The type describes editor emissions and does not validate arbitrary DOM events. Validate
-unknown fields and captured document identity, then copy accepted recovery data into host
-storage. Retaining it must not alter text/history. Old revisions supply recovery context,
-not authority to edit a newer document. A later recovery action needs fresh validation and
-an explicit user choice. Keep the subscription through destruction, then remove host nodes.
+A script can dispatch a DOM event with the same name. Check its fields and document identity before
+copying recovery data to storage. Keep the original text and history until the user chooses to
+recover. At that point, validate against the current revision. Keep listening through disposal to
+catch any final uncommitted input.
 
 ### Save, Run and draft recovery
 
-Use the [workspace save/conflict and Run contracts](workspace.md#save-conflicts-and-run).
-Hosts choose service endpoints, review policy, error presentation and conditional-write
-preconditions. Input recovery and persistence conflicts are different records. A draft
-checkpoint neither saves to the service nor executes Run.
+Use [workspace save, conflict and Run](workspace.md#save-conflicts-and-run) to call host services.
+Choose your endpoints and conditional-write checks, and decide how users review a conflict. Keep
+rejected editor input separate from a storage conflict. Writing a recovery draft leaves the service
+and Run untouched.
 
-A host that persists drafts takes these steps.
+For drafts that survive a reload, use a persistent key and a version check.
 
-- Gives each resource a stable recovery key independent of transient document, tab and view IDs.
-- Compares immutable buffer/value identities during ordinary edits; serialization and storage
-  happen in an explicit or scheduled checkpoint operation, with a captured version per resource.
-- Reports coverage only after the storage transaction commits. Later edits are not covered by
-  an older capture. Failed/stale writes, peer changes and storage rechecks invalidate cached coverage.
-- Validates format, resource identity, sizes and stored values before offering recovery. It
-  offers a stored draft separately from the freshly loaded resources, without applying it.
-- Captures destination revision, server version, authority and resource generation for each
-  confirmed restore. Revalidates after storage reads and restores as a new undoable transaction,
-  preserving the loaded saved baseline and server precondition. Stored versions are context.
-- Uses a storage token checked within the write/discard transaction so delayed work cannot
-  replace a newer copy. Notifications invalidate other pages' cached coverage.
-- Keeps rejected input/preedit separate from committed document captures. Uncommitted
-  composition blocks capture/restore; previous-session history and service requests are not replayed.
+- Give each resource a recovery key that survives new document, tab and view IDs.
+- On edits, compare immutable buffers or values. During a scheduled or explicit checkpoint, capture
+  each resource’s version, then serialize and store it.
+- Mark a version covered only after the storage write commits. Later edits need another checkpoint.
+  Failed or stale writes, peer changes and storage rechecks invalidate cached coverage.
+- Check format, identity, sizes and values on read. Offer the stored draft alongside the freshly
+  loaded file and let the user choose.
+- On restore, capture the destination revision, server version, permissions and resource generation.
+  Recheck them after reading storage, then restore in a new undo step. Keep the loaded saved baseline
+  and server precondition. Stored versions describe the draft.
+- Check the storage token inside each write or discard. If another page has replaced the draft, leave
+  the newer copy alone. Notify other pages when their cached coverage expires.
+- Keep rejected input and preedit text separate from committed drafts. Wait for composition to finish
+  before capturing or restoring. Leave previous-session undo and service requests in their original
+  session.
 
-Navigation protection considers uncovered input, composition, pending editing and unsettled
-host services. Full host disposal releases storage, observers and navigation listeners;
-view disposal releases only view-owned work. The [draft example](examples.md#draft-checkpoints) demonstrates
-independent source/settings restores and a temporary loaded-resource slot.
+Before navigating away, check for input missing from a checkpoint, active composition, pending edits
+and unfinished services. Closing one view releases its work. Closing the host also releases storage,
+observers and navigation listeners. The [draft example](examples.md#draft-checkpoints) restores
+source, settings and a temporarily loaded file independently.
 
 ### Bounds and validation
 
@@ -321,4 +317,5 @@ rules. Measure presentation readiness separately from [input and provider time](
 
 ## Not covered
 
-See the [support matrix](README.md#support-matrix) for import, persistence and native-device boundaries.
+Check clipboard formats and permissions on the target OS and application.
+[Clipboard, drag and recovery support](README.md#support-matrix)

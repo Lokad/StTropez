@@ -6,7 +6,7 @@ edits to live documents.
 
 ## Use
 
-Read bounded ranges from a captured buffer and apply edits in its original coordinates:
+Read a slice from a captured buffer, then use offsets from that same buffer for the edits.
 
 ```ts
 import { TextBuffer, anchoredRange } from "sttropez";
@@ -43,17 +43,17 @@ navigation applies the [Unicode boundary rules](unicode.md).
 | `equals(other)` | Exact content equality, skipping shared backing ranges where possible |
 | `sharedEdge(other, side, range?)` | Iterates cumulative proved prefix/suffix lengths at structural work checkpoints |
 
-An empty document has one line; a trailing LF adds an empty last line. A lone CR is ordinary
-text for line indexing. Range endpoints must be safe integers between zero and `length`, in
-ascending order. Line indexes must be safe integers below `lineCount`; invalid reads throw.
-Line lookup traverses cached tree and backing metadata. Reading or comparing unshared text can
-require work proportional to the requested content. Chunks are not guaranteed to end at a
-line, code point or grapheme boundary.
+Line numbers start at zero. Even an empty buffer has one line, and a trailing LF creates an empty last
+line. A lone CR counts as text. For range reads, pass ordered safe integers from zero through
+`length`. For a line index, pass a nonnegative safe integer below `lineCount`. Invalid reads throw.
+Line lookups use cached tree and backing indexes. Reading or comparing unshared text can visit the
+whole requested range. When processing chunks, carry unfinished lines, code points or graphemes across
+chunk boundaries.
 
 A persistent AVL piece tree shares unchanged text across versions. Cached lengths and LF indexes
-support range and line lookups. A single edit splits and joins the tree. A sorted batch traverses
-source ranges together and keeps untouched subtrees. Small pieces can share backing storage to
-reduce fragmentation. Full reads and comparisons can cost work across the document.
+support range and line lookup. One edit splits and joins the tree. A sorted batch visits source ranges
+together, preserving untouched subtrees. Small pieces can share backing storage to limit
+fragmentation.
 
 ### Edits
 
@@ -62,11 +62,11 @@ sorted, non-overlapping and in bounds; `insert` must be a string. Same-position 
 array order. `validateTextEdits(length, edits)` validates the complete batch before application.
 `applyTextEdits(text, edits)` supplies the corresponding whole-string operation.
 
-`buffer.apply(edits)` returns immutable `BufferChange` with `{ buffer, mapping, changedUnits }`.
-Equal-content replacements are filtered before mapping. A net no-op returns the original buffer,
-an identity map and zero changed units. Otherwise, `changedUnits` sums deleted and inserted units
-of effective edits; it is neither allocation size nor elapsed time. Invalid batches throw without
-changing any retained buffer. Construction and final application are synchronous.
+`buffer.apply(edits)` returns an immutable `BufferChange` with `buffer`, `mapping` and `changedUnits`.
+It drops replacements that would insert the same text before building the map. If the batch leaves the
+text unchanged, you get the original buffer, an identity map and zero changed units. Otherwise
+`changedUnits` counts the UTF-16 units removed and inserted by effective edits. An invalid batch
+throws and leaves every retained buffer intact. Construction and application both run synchronously.
 
 `textDifference(before, after)` returns one replacement after trimming exact common UTF-16
 prefix/suffix text, or `null` when equal. It accepts whole strings and does not compute separate
@@ -79,11 +79,12 @@ changes for distant edits. Use [comparison](comparison.md) for line-oriented rev
 and a `deleted` flag. Prefer the map returned by buffer application when equal-content edits
 can be filtered out.
 
-`Affinity` is `"before"` or `"after"`. At an insertion or inside a replacement it selects the
-corresponding edge of inserted text; `map` defaults to `"after"`. Positions strictly inside
-consumed text are marked deleted; boundary positions stay defined. At a replacement's original
-end, its inserted text has been crossed, and affinity applies to any following change at that
-boundary. Co-located insertions are crossed together.
+`Affinity` decides where a position lands at an insertion or inside a replacement. For example, when
+you insert `abc` at a caret, `"before"` keeps the caret before the `a` and `"after"` puts it after the
+`c`. `map` defaults to `"after"`. It marks positions strictly inside removed text as deleted.
+Boundaries survive. At the old end of a replacement, the position already includes the inserted text.
+Affinity applies to any following edit at that boundary. Multiple insertions at the same offset move
+together.
 
 `anchoredRange(length, from, to, options?)` creates an immutable `AnchoredRange`. Its default
 start affinity is `"after"`, end affinity `"before"`, and deletion policy `"collapse"`, excluding
@@ -91,15 +92,15 @@ new text inserted at the outside edges. `mapRange` shrinks partially deleted ran
 `onDelete: "invalidate"`, fully consumed original content returns `undefined`; a zero-width
 anchor is invalidated when its position is deleted. Otherwise the mapped range stays ordered.
 
-`composePositionMaps(...maps)` preserves sequential mapping and invalidation semantics, requiring
-at least one map and matching adjacent dimensions. Inversion describes reverse geometry; it
-cannot recover distinct interior positions erased by an edit. Built-in maps index batch changes
-and summarize composition; independent changes can increase that metadata. Custom mappings
-retain their ordered composition when their semantics cannot be inferred.
+Use `composePositionMaps(...maps)` to carry anchors through successive edits. Supply at least one map.
+Each map’s output length must match the next map’s input length. Mapping and invalidation work as if
+you had applied the maps in order. Inverting a map gives the reverse positions that exist. It
+cannot distinguish positions an edit deleted. Built-in maps index and summarize the changes, with more
+metadata for independent edits. Custom maps stay in order when their behavior cannot be inferred.
 
-The optional `createMapper()` returns an independent lookup cursor. Ascending endpoints reuse
-progress; backward queries are valid and restart the search. The immutable map stores no cursor
-state. Custom mappings need not provide this optimization.
+For repeated lookups, `createMapper()` returns an independent cursor. Ascending offsets reuse its
+position. A backward query restarts the search. The map stays immutable. A custom mapping can omit
+this method.
 
 ### Selection sets
 
@@ -114,9 +115,10 @@ defaults to `"after"` at both endpoints. `mapSelectionSet(mapping, set)` maps ev
 then normalizes any new overlaps. The primary index refers to the normalized array and is not
 a durable view or resource identity.
 
-`planSelectionEdits(length, normalizedSet, textOrTexts)` returns a `SelectionEditPlan` with one
-replacement per range in original coordinates and a collapsed caret for each replacement. Per-range
-strings follow normalized range order. The caller applies the plan.
+To replace several selections in one edit, call
+`planSelectionEdits(length, normalizedSet, textOrTexts)`. The returned `SelectionEditPlan` contains
+one original-coordinate replacement and one resulting caret per range. Pass a string for all ranges or
+a string per range in normalized order.
 
 ```ts
 import { planSelectionEdits } from "sttropez";
@@ -153,24 +155,23 @@ export const originalToExported = composePositionMaps(imported.mapping, exported
 
 ### Snippet planning
 
-`parseSnippet(source, maxExpandedUnits?)` returns `SnippetParseResult`: either a `snippet` or
-a rejection `reason`. It supports numbered stops (`$1`, `${1}`), literal defaults
-(`${1:value}`), choices (`${2|draft,ready|}`), escapes, repeated occurrences and final `$0`.
-A missing `$0` is placed at the expansion end. Forward references share their definition;
-conflicting explicit definitions are rejected. Variables, nested placeholders and transforms
-return a reason. Invalid numeric limits throw.
+`parseSnippet(source, maxExpandedUnits?)` returns a `SnippetParseResult` with a `snippet` or a
+rejection `reason`. Use numbered stops (`$1`, `${1}`), literal defaults (`${1:value}`), choices
+(`${2|draft,ready|}`), escapes and repeated fields. `$0` marks the final caret and defaults to the
+end. Forward references share their definition. Conflicting definitions, variables, nested
+placeholders and transforms return a reason. Invalid numeric limits throw.
 
 `Snippet` has expanded `text` and ordered `stops`. Each `SnippetStop` has its source stop number,
 choices and `SnippetOccurrence` ranges; positive stop numbers ascend and zero comes last.
 `offsetSnippetStops(stops, offset)` translates those ranges to insertion coordinates. Callers
 provide a valid offset and retain the matching buffer and revision.
 
-`planSnippetEdit` mirrors compatible edits through occurrences of the active stop and returns
-`SnippetEditPlan` with edits, selections and updated stops. `active` indexes the stop array.
-An incompatible selection/edit batch returns `undefined`, allowing the editor to end snippet
-mode and apply ordinary input. Per-occurrence insertion contexts preserve different indentation
-and newline lengths; paste/composition text stays literal. `adjustNewlines` opts into contextual
-editor-generated newline transfer.
+Call `planSnippetEdit` to mirror an edit across occurrences of the active field. `active` indexes the
+stop array. A `SnippetEditPlan` gives you the edits, selections and updated stops. If the edit or
+selection falls outside the supported pattern, the function returns `undefined`. End snippet mode and
+let ordinary input proceed. Each occurrence keeps its indentation and newline length. Paste and
+composition insert text literally. Use `adjustNewlines` to carry a newline generated by the editor to
+the other occurrences.
 
 `planSnippetChoice` formats the chosen value at every occurrence, preserves the requested primary
 occurrence and checks the aggregate document limit. `snippetChoiceText` computes one occurrence's
@@ -190,11 +191,11 @@ export const chosen = plan ? buffer.apply(plan.edits).buffer : buffer;
 
 ### Conservative change spans and diagnostics
 
-`BufferChangeCursor(before, after)` returns a `BufferChangeSpan` with
-`{ from, to, insertFrom, insertTo }`. Replace the old interval with
-`after.chunks(insertFrom, insertTo)`, using the host’s chunk limits. The cursor skips edges that
-share storage without reading text. Equal buffers with separate storage or distant edits can produce
-a wide span.
+Create `new BufferChangeCursor(before, after)` and call `next()` until it reports `ready`. Its result
+is a `BufferChangeSpan` with `{ from, to, insertFrom, insertTo }`. Replace the old interval with
+`after.chunks(insertFrom, insertTo)`, respecting the host’s chunk limits. The cursor skips edges that
+share storage without reading their text. Equal buffers with separate storage, or edits far apart, can
+yield a wide span.
 
 ```ts
 import { BufferChangeCursor } from "sttropez";
@@ -214,14 +215,14 @@ export function* planTransfer(before: TextBuffer, after: TextBuffer): Generator<
 }
 ```
 
-`BufferChangeProgress` has `status` (`running`, `ready`, `failed`, `disposed`), cumulative
-`workUnits`, `result` and `failure`. `snapshot()` reads immutable progress without advancing.
-One unit is one node-pair decision: proving shared storage, descending a branch or stopping at
-an unproved leaf. `next()` defaults to 256 units and accepts safe integers of at least 256;
-checkpoints every 256 units can overshoot a requested budget by up to 255. Budgets measure
-structural work, not elapsed time or UTF-16 length. Only `ready` publishes a span. Failures
-throw their original cause and retain a failed snapshot; `dispose()` clears result/failure
-and closes captured iterators. Terminal advances validate their budget and do no work.
+Read `BufferChangeProgress` with `snapshot()` to get the `status` (`running`, `ready`, `failed`,
+`disposed`), cumulative `workUnits`, `result` and `failure`. The span is available at `ready`. A
+failure records its message and throws the original cause. Call `dispose()` to clear the result and
+failure and close the iterators.
+
+One work unit compares a pair of tree nodes. The cursor can prove they share storage, descend a branch
+or stop at a leaf it cannot prove equal. It checks the budget every 256 units and can overshoot by up
+to 255. After completion or disposal, `next()` checks its argument and does no work.
 
 `sharedEdge` accepts `"start"` or `"end"` and optional `{ from, to, otherFrom, otherTo }` ranges.
 It yields a cumulative proof length after each node-pair decision. Lengths never decrease,
@@ -238,7 +239,7 @@ traversals out of input handlers and readiness polls. Heap usage requires a sepa
 | Limit | Contract |
 | --- | --- |
 | Buffer size and edits | Host supplies document/transaction limits; strings and allocations obey engine limits |
-| Change-cursor `next(budget)` | Safe integer from 1 to 1,024; default 64 generator advances; `next` after disposal throws |
+| Change-cursor `next(budget)` | Defaults to 256 node-pair decisions. Pass a safe integer of at least 256. |
 | Snippet expansion/choice limits | Nonnegative safe integers; defaults to `Number.MAX_SAFE_INTEGER`; hosts should pass explicit bounds |
 | Shared-edge iteration | Advances traverse tree paths; no fixed text chunk size or elapsed-time guarantee |
 | Retained versions | Old buffers retain shared backing text until every owning reference is released |
@@ -252,4 +253,5 @@ the same transaction as their edits.
 
 ## Not covered
 
-See the [support matrix](README.md#support-matrix) for editor, language-service and device scope.
+Buffers store plain UTF-16 text. For rich-text editing and layout limits, see the
+[support matrix](README.md#support-matrix).

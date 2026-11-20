@@ -1,8 +1,8 @@
 # Testing
 
-Use model tests for editing rules, browser tests for interactions and a restored package for
-distribution. Run the affected tests as you work. Group broader browser, package and performance
-checks once the related changes are ready.
+A stale save can be reproduced in a model test. A misplaced caret needs a browser. A missing
+worker in a deployment needs a frontend built from the restored NuGet package. Run the focused
+test while editing, then run the broader suites for the changes you're shipping.
 
 ## Use
 
@@ -16,25 +16,23 @@ node --test tests/input-context.test.ts tests/input-target.test.ts
 npm run test:browsers -- --project=chromium --project=firefox --project=webkit tests/browser/input-target.spec.ts
 ```
 
-Choose the command that exercises your change.
-
 | Command | Scope |
 | --- | --- |
-| `npm run typecheck` | Referenced strict core, protocol, browser and development type projects |
-| `npm run check:docs` | Subject-page structure, repository links/anchors, public value ownership, prose and independently compiled TypeScript examples |
+| `npm run typecheck` | Strict TypeScript checks for core, protocol, browser and development tools |
+| `npm run check:docs` | Page structure, links and anchors, public exports and prose. Compiles each TypeScript example separately. |
 | `npm test` | All model, host-policy, tooling and server/process integration tests |
 | `npm run test:models` | Headless model, host-policy and tooling checks without live servers or provider/compiler processes |
 | `npm run test:integration` | Real HTTP/WebSocket, provider, compiler and child-process lifecycle checks |
 | `npm run test:browser` | Source browser suite in Chromium |
 | `npm run test:browsers` | Source browser suite in Chromium, Firefox and WebKit; explicit paths/projects narrow it |
-| `npm run test:ci` | Selected Chromium owner journeys defined in `playwright.ci.config.ts` |
-| `npm run check` | Types, documentation gate, models, library build and source Chromium suite |
-| `npm run inspect` | Headless behavioral/screenshots inspection with state metadata |
+| `npm run test:ci` | Chromium tests selected in `playwright.ci.config.ts` |
+| `npm run check` | Type checks, documentation checks, model and integration tests, library build and Chromium tests against the source |
+| `npm run inspect` | Check editor behavior in headless Chromium and capture screenshots with the corresponding state |
 | `npm run build:demo` then `npm run test:demo` | Built static demo in the configured engines |
 | `npm run test:package` | One packed/restored asset set across selected consuming hosts |
 | `npm run bench` | Seeded model work and actual bounded-editor keyboard insertion |
 | `npm run bench:pilot` | Integrated input, comparison and save/conflict workloads |
-| `npm run bench:all` | Explicit larger measurement inventory |
+| `npm run bench:all` | Run the larger set of benchmarks, or list them with `-- --list` |
 
 Source tests use `STTROPEZ_PORT`. Static tests use `STTROPEZ_DEMO_PORT` locally or
 `STTROPEZ_DEMO_URL` for a deployed site. Give tests their own port on a shared desktop.
@@ -54,7 +52,9 @@ Chromium. Use the three-engine and restored-package commands above for wider cov
 
 ## Contract
 
-### Documentation gate
+<a id="documentation-gate"></a>
+
+### What the documentation check catches
 
 `scripts/check-docs.mjs` checks subject pages, both READMEs and contributor instructions. Relative
 links, images and reference definitions must resolve to non-ignored paths. The checker recognizes
@@ -74,33 +74,33 @@ Keep dates, commit IDs, milestone labels and test-run counts in research notes. 
 covers prose. Contributor instructions are exempt, but their links and examples are checked.
 Reviewers check the accuracy of the contracts.
 
-### Test ownership
+<a id="test-ownership"></a>
 
-Test guard combinations in the model. Use a browser for native events, geometry, rendering and
-remounts. Use a restored consumer for packaging and host integration.
+### Where to put a regression test
 
-| Guarantee | Deterministic owner | Browser or distribution owner |
+Model tests live in `tests/`. Browser tests in `tests/browser/` add native events, layout and
+view remounts. The `scripts/package-*.mjs` tests build a separate application from the NuGet
+archive. Add another host or engine when it exercises a different behavior.
+
+| Behavior | Where to test the rule | Where to check the integration |
 | --- | --- | --- |
-| Text, UTF-16 maps, newline conversion and complete selections | Buffer, positions, UTF-16 ranges and selections models | Editing, raw-CRLF caret and multiple-input journeys |
-| Atomic revisions, shared history and detached views | Workspace, history/history-bounds and resources models | Workspace, editing and host lifecycle journeys |
-| Save/conflict and canonical replies | Save-review, host-save-conflict/failure models | Save/conflict, composition and complete host journeys |
-| Immutable reference, exact hunks and review lifetime | Comparison, comparison rows/scroll/scheduling models | Comparison ownership, lifecycle, reference input/find and aligned-pane journeys |
-| Demo recovery and syntax classification | Demo-recovery, demo-syntax and demo-syntax-colors models | Real storage/reload/failure, file/sample switching, save and visible-color journeys |
-| Positional LSP captures and invalid responses | LSP clients, workspace, workspace edits and protocol feature models | Focused hover/navigation/rename/action and input/synchronization journeys |
-| Wire negotiation, selectors, provider sharing and command ownership | JSON-RPC, protocol session/selector/fixture models | WebSocket/interoperability journeys and the minimal restored LSP consumer |
-| Native projection and composition recovery | Input-context and input-target models | Input-target, ordered-input and composition journeys |
+| Text, UTF-16 offsets, newlines and selections | Buffer, [positions](../tests/positions.test.ts), ranges and selections | Type and edit, place the caret in CRLF text, and enter text at multiple selections. |
+| Atomic revisions, shared history and detached views | [Workspace](../tests/workspace.test.ts), history, history bounds and resources | Edit in two panes, detach a view and check the document and its history. |
+| Save conflicts and server corrections | Save review, [host conflicts](../tests/host-save-conflict.test.ts) and save failures | [Save conflicts](../tests/browser/save-conflicts.spec.ts), composition and the full host save flow |
+| Fixed references, hunks and closing a review | [Comparison](../tests/comparison.test.ts), row alignment, scrolling and scheduling | Close and reopen the review, find text in the reference, and align the two panes. |
+| Demo recovery and syntax colors | Demo recovery, [syntax](../tests/demo-syntax.test.ts) and token colors | Save, switch files or samples, reload, and check stored text and visible colors. Exercise storage failures too. |
+| Position-based LSP requests and invalid replies | LSP clients, workspace edits and protocol features | Hover, navigate, rename or invoke an action while the document is changing. |
+| Protocol negotiation, selectors, shared providers and command handling | JSON-RPC, sessions, selectors and the protocol fixture | WebSocket tests and the minimal LSP application built from a restored package |
+| Native input and composition recovery | [Input context](../tests/input-context.test.ts) and input targets | Input targeting, queued keystrokes and IME composition |
 | Caret, grapheme boundaries, scroll, focus and drag | Geometry-independent and Unicode models | Viewport/geometry/paint, zoom, grapheme, pointer/drag and shadow-focus suites |
-| Host conversion, source annotations and forms | Table-paste, text-transfer and domain policy models | Table-paste, domain and transfer/form journeys |
+| Host conversion, source annotations and forms | Table paste, text transfer and host rules | [Table paste](../tests/browser/host-table-paste.spec.ts), domain examples and transfers through the form |
 | Framework mount/disposal and surrounding UI | Host controller/policy models | Plain/React attachment, Strict Mode, queued-work disposal and error recovery |
-| Font registration lifetime | Native browser decoder | Font registration/measurement/release owner and a restored-consumer check |
+| Font registration lifetime | The browser's font decoder | [Register, measure and release a font](../tests/browser/fonts.spec.ts), then repeat with a restored package. |
 | Compiled assets and installation | Manifest/hash/dependency/export checks | Full restored consumer, version transitions and selected LSP/React/demo routes |
 
-Model tests live in `tests/`, browser tests in `tests/browser/`, and package journeys in
-`scripts/package-*.mjs`. Add a host or engine when it exercises a different behavior.
-
-`tests/integration/` owns live servers and processes, uses ephemeral loopback ports and cleans up
-listeners, processes and files. In-memory peers belong in model tests. For one provider regression,
-run `node --test tests/integration/demo-provider.test.ts`.
+Tests in `tests/integration/` start real servers and processes on temporary loopback ports. Each
+test closes its listeners, stops its processes and removes its files. Keep in-memory peers in
+the model suite. To run just the demo provider, use `node --test tests/integration/demo-provider.test.ts`.
 
 The plain host runs every action, server-edit, color-preview and link-discovery case, including
 large paging and wide-deletion previews. Both hosts cover navigation, rename, focus, remount,
@@ -125,27 +125,27 @@ new connection cannot confirm delivery on the old one.
 
 ### Behavioral coverage
 
-Assert the observable result of each action. Expected behavior comes from the
-[API contracts](README.md#subjects).
+If a user switches tabs during a save, check which file the host wrote and whether subsequent
+edits are dirty. Choose assertions from the relevant [API contract](README.md#subjects).
 
 | Area | Required observations |
 | --- | --- |
-| Resource identity and loading | Equal labels in different scopes/variants stay distinct; deferred load/confirmation/save resolves its captured target through move, replacement and closure; pending work retains resources and failed loading recovers |
-| Publication and views | Scoped subscribers preserve unchanged identity; listener failures and rejected reentrant writes preserve committed state; two views and typed forms keep independent selections through remount and error recovery |
-| Transactions and authority | Invalid/stale multi-resource batches publish nothing; each edit origin obeys capabilities/locks; shared undo/redo restores complete selections and the saved baseline without losing later corrections |
-| Editing and navigation | Actual keyboard typing, deletion, arrows/word/line/page/grapheme movement, indentation/comments, pairs, newline, multiple selections, regex/case/whole-word find/replace, clipboard/drag paths and focus escape yield exact text and selection |
-| Unicode and geometry | Surrogates, combining sequences, emoji/joiners, CRLF, selection affinities, zoom and fonts preserve source and expected caret/hit targets within the supported geometry contract |
-| Save and Run | Queued/captured saves preserve submitted content, server preconditions, retry/canonical/conflict behavior and dirty state while typing continues; Save and Run retain separate source/settings captures |
+| Resource identity and loading | Give two resources the same label in different scopes or variants. While a load, confirmation or save is pending, move, replace or close the tab and check its captured target. Check that pending work keeps the resource alive and a failed load can recover. |
+| Publication and views | Check that an unchanged field keeps its snapshot. Throw in a listener or attempt a reentrant write and check the committed state. Remount two views and typed forms after an error and check their independent selections. |
+| Transactions and authority | Check that a stale or invalid batch affecting several resources publishes nothing. Test each edit origin against its permissions and locks. Undo and redo must restore the full selections and saved baseline without losing later corrections. |
+| Editing and navigation | Assert the exact text and selection after typing, deleting, moving by arrow/word/line/page/grapheme, indenting, commenting, inserting pairs or newlines, and editing multiple selections. Exercise find/replace (regex, case and whole word), clipboard, drag and moving focus out of the editor. |
+| Unicode and geometry | Check text, caret placement and pointer hits for surrogates, combining sequences, emoji with joiners and CRLF. Vary selection affinity, zoom and font within the supported geometry. |
+| Save and Run | Queue a save, type more text, then deliver a server correction or conflict. Check the submitted text, server precondition, retry and dirty flag. Check the source and settings each Save or Run captured. |
 | Reviewed proposal | The host previews a replacement, checks its captured revision, then corrects and saves the applied edit |
-| Comparison | Reference, saved and proposal versions stay distinct; refresh/accept/revert/discard and hunk navigation handle stale decisions, whitespace, edits, delayed loads and takeover without losing history/corrections; both panes show their own source/color/fold state |
-| Language features | Visible token classes, completion edits, diagnostics, hover/signatures, navigation, rename/actions, links/colors and explicit command decisions use validated captures; editing works during provider outage |
-| Protocol | Initialization/capabilities, dynamic registration, incremental sync, cancellation, diagnostics, server edits, custom messages and reconnect exercise the declared actual transport; internal worker replies do not establish LSP compatibility |
-| Host extensions and structured surfaces | Domain folds/notes, structured table paste and imports use captured selections and intended undo units; independent source/settings/run-log resources preserve authority; source-backed forms preserve invalid text, unknown fields and anchors through edit/fold/undo/resize/virtualization; progress invokes neither Save nor Run |
-| Recovery and lifecycle | Explicit draft restoration preserves loaded save authority; remount/input-route switches retain view/document state; close/replace/dispose during work releases owned views/listeners/jobs/leases without discarding retained unsaved input; previous-session undo is not implied |
-| Large documents and background work | Beginning/middle/end edits and navigation, vertical/horizontal scroll, bulk changes, many inactive documents and concurrent progress preserve exact results with bounded native input/DOM/routine reads |
-| Responsiveness and retention | Source/hardware-labelled samples include semantic guards, complete required presentation and raw clocks; repeated mount/dispose checks define the released owner and actual memory scope |
-| Distribution | Isolated restore resolves modules and declarations, loads styles/workers and performs actual editing; upgrade/downgrade/stage reuse preserves coherent assets and excludes checkout/private implementation fallback |
-| Optional acceleration | Any introduced accelerator proves its actual execution path, equivalent results, cancellation and startup/failure behavior including transfer/allocation costs |
+| Comparison | Give the reference, saved copy and proposal different versions. Refresh, accept, revert, discard and navigate hunks with whitespace changes, later edits, delayed loads or a takeover pending. Check each pane's text, colors and folds, and that stale decisions preserve history and corrections. |
+| Language features | Change the target while a completion, diagnostic, hover, signature, navigation, rename, action, link or color request is pending. Check the visible result, token classes, edits and command decisions. Disconnect the provider and keep typing. |
+| Protocol | Run initialization, capability negotiation and dynamic registration, incremental sync, cancellation, diagnostics, server edits, custom messages and reconnect over the transport you ship. Internal worker replies alone can't test LSP compatibility. |
+| Host extensions and forms | Check the target selection and undo step for domain folds, notes, table paste and imports. Source, settings and run logs keep separate permissions. Edit, fold, undo, resize or scroll a form out of view and back. Check invalid text, unknown fields and anchors. A progress update alone must leave Save and Run idle. |
+| Recovery and lifecycle | Restore a draft and check its save permissions against the loaded resource. Switch input routes or remount a view and check its state. Close, replace or dispose during pending work and check for leftover views, listeners, jobs or leases and for lost drafts. Previous-session undo is outside the recovery contract. |
+| Large documents and background work | Edit and navigate at the start, middle and end of the file. Scroll both axes and make bulk edits while inactive documents and background jobs exist. Check the result, native input size, DOM size and routine reads. |
+| Responsiveness and retention | Record the build, hardware and raw timings. Check that the correct text and selection reached the screen. For repeated mounts, record which object you disposed and which memory you measured. |
+| Distribution | Restore outside the checkout. Compile against the public declarations, load the CSS and worker, and edit text. Upgrade, downgrade and reuse a staging directory. Check that all assets come from the intended package. |
+| Optional acceleration | Verify that the accelerator ran and produced the same result. Exercise startup, failure and cancellation, and include transfer and allocation in its timings. |
 
 The generic fixture covers the [declared LSP subset](language-server.md). A consuming application
 must check its own provider.
@@ -170,9 +170,11 @@ pages. A fault-injection test can allow one exact message and source URL. Browse
 retries, reject focused-only tests and retain failure traces. Missing binaries, unmet readiness
 conditions and empty selections fail the run.
 
-### Readiness and visible continuity
+<a id="readiness-and-visible-continuity"></a>
 
-`examples/shared/readiness.ts` owns fixture-only settlement helpers:
+### When is the editor ready for an assertion?
+
+Use the fixture helpers in `examples/shared/readiness.ts` to wait for the work your assertion depends on.
 
 - `viewportSettled` checks a live, nonpending presentation against the view's revision,
   complete selection-set identity and fold generation.
@@ -190,9 +192,9 @@ alignment, source text and syntax colors in both comparison panes. A final scree
 blank row or a color flash. Assert which provider answered. Record editor-frame, service and
 whole-action times separately.
 
-Poll cheap activity/snapshot handles. Buffer read counters support bounded-work checks;
-full tree diagnostics or retained-structure traversal belong outside readiness polling and
-input subscribers. See [text-model diagnostics](text-model.md#conservative-change-spans-and-diagnostics).
+Poll activity snapshots and buffer read counters. Walking the entire buffer tree inside a
+poll or input subscriber adds work to the interaction you're measuring. Take full diagnostics
+afterward. [Text-model diagnostics](text-model.md#conservative-change-spans-and-diagnostics)
 
 ### Workloads
 
@@ -281,19 +283,21 @@ clock can include intermediate checks. Disposal timing ends before teardown diag
 installed consumer stages the helper against public imports. Individual workloads add their provider
 or service conditions.
 
-Input/reference, folding and table-paste reports use `scripts/benchmark-report.mjs`: each variant retains a unique run under
-`artifacts/bench/<benchmark>/<variant>/runs/`; only a successful run updates that variant's
-`latest.json`. Smoke, full and retention-check results stay separate, as do raw warmups and
-measured observations. Failed runs retain completed samples and the active partial observation.
+Input/reference, folding and table-paste benchmarks write each run to
+`artifacts/bench/<benchmark>/<variant>/runs/`. A successful run also updates that variant's
+`latest.json`. Smoke, full and retention-check runs have separate results. The report keeps
+warmups separate from measured samples. On failure it keeps completed samples and the partial
+sample in progress. [Report writer](../scripts/benchmark-report.mjs)
 
-Use the [clock glossary](README.md#glossary). Record the start event, end condition and included
+Use the [clock glossary](README.md#measuring-an-interaction). Record the start event, end condition and included
 work. Nested intervals and inclusive profile weights overlap.
 
-Validate operation success and expected provider paths before accepting timing samples. Assert
-exact text, revisions, selections/history and applicable no-export, bounded-DOM/cache and
-unchanged-resource delivery constraints. Bulk planning may yield while final assembly or an
-atomic transaction is synchronous; report the longest uninterrupted work separately from total
-settlement. Controlled service delays belong in workflow results.
+Before recording a time, check which provider answered and verify the exact text, revision,
+selections and history. Where a workload requires it, check that it avoided full-text export,
+kept the DOM and caches within bounds, and skipped notifications for unchanged resources.
+Report the longest uninterrupted step alongside the time until the result is ready. A bulk
+edit can yield during planning and then apply one synchronous transaction. Include deliberate
+service delays in the time for the whole workflow.
 
 Record source and lockfile identity, corpus and seed, build mode, browser, OS, hardware, viewport,
 font, power/load conditions and raw samples. Separate cold and warm runs. Alternate baseline and
@@ -308,18 +312,19 @@ Keep failed runs and record what is known about the cause. Retry an outlier when
 suggests a bounded experiment. Reuse evidence for unchanged runtime, fixtures and packaging. Store
 traces and investigation history outside the API docs.
 
-### Retention and lifecycle
+<a id="retention-and-lifecycle"></a>
 
-A retention check names its warm baseline, live owner, teardown boundary, settlement steps and
-collection method. Assert final model ownership, subscriptions, jobs and leases independently
-of memory readings. Retaining the document/controller while detaching a view is a different
-boundary from releasing the embedding owner. Immediate and frame-settled collection results
-must keep distinct labels.
+### Measuring what stays in memory after disposal
 
-Runtime counters are not heap-byte estimates. V8 used heap, DOM nodes/listeners, native/backing
-memory, process/peak memory and GC pauses have different scopes. A bounded observation in one
-scope/engine cannot qualify the others. Exercise pending decisions, remount, inactive documents
-and background work as well as an idle empty editor.
+Record a warm baseline, the owner you dispose, anything you keep alive, and when and how you
+collect memory readings. Detaching a view leaves its document and controller alive. Closing the
+whole host releases more. For each case, count the remaining owners, subscriptions, jobs and
+leases. Label readings taken immediately after disposal separately from those taken after a frame.
+
+A lease count tells you how many leases exist. It can't tell you how many heap bytes they use.
+Measure V8 heap, DOM nodes and listeners, native buffers, peak process memory and GC pauses
+separately in each engine you test. Include pending decisions, remounts, inactive documents
+and background jobs alongside an idle editor.
 
 ### Package qualification
 
@@ -345,10 +350,11 @@ Each run creates a temporary consumer. Success removes it after the final identi
 `--keep-consumer` retains it. Failures, standalone preparation, benchmarks and borrowed stages keep
 their directories. Cleanup verifies directory identity and skips links to borrowed locations.
 
-Receipts in `artifacts/package/qualification/<consumer-name>/` record the scenarios, retention state
-and file bytes before removal. `artifacts/package/qualification/receipt.json` identifies the latest
-run. Cleanup writes evidence first and only removes its own directory. A consumer marked removed or
-being removed cannot be reused.
+Look in `artifacts/package/qualification/receipt.json` for the latest run. The receipt under
+`artifacts/package/qualification/<consumer-name>/` records the scenarios, whether the temporary
+consumer was kept and the total size of its files before cleanup. Cleanup writes the receipt
+before removing the directory it created. A consumer marked for removal or already removed can't
+be reused.
 
 Protocol tests start an ephemeral server through `tests/helpers/protocol-fixture.ts`. Register
 cleanup with `defer` as soon as you acquire a resource. Cleanup runs in reverse order before the
@@ -389,15 +395,16 @@ can run in the background.
 | Target fonts, displays and constrained hardware | Caret/ink alignment, fallback fonts, physical display behavior and workload-specific responsiveness |
 | Other targeted native platforms | Separate macOS/Safari, Linux and touch/mobile input runs using their actual devices/input methods |
 
-Record OS, browser, input method, keyboard, steps, expected and observed text, selections and
-outcome. Leave untested device cases open and continue independent work.
+Record the OS, browser, input method, keyboard and reproduction steps. Include the expected and
+observed text and selections. Mark any devices you couldn't test.
 
 ## Contributor responsibilities
 
-Choose the test that owns the behavior. Keep fixtures generic, reuse helpers and assert what the
-user can observe. Batch browser and package runs, and measure changed hot paths. Follow the
-[shared-desktop and publishing rules](../AGENTS.md).
+Use an existing fixture that reproduces the problem and assert what the user can observe.
+Group browser and package runs for related changes. If you changed code that runs on each
+keystroke or frame, measure that interaction. [Shared-desktop and publishing rules](../AGENTS.md)
 
 ## Not covered
 
-See the [support matrix](README.md#support-matrix) for feature and native-device boundaries.
+The [support matrix](README.md#support-matrix) lists the IME, hardware keyboard, clipboard and
+touch interactions that need a run on the target device.

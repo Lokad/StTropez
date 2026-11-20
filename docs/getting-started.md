@@ -15,8 +15,8 @@ and each mounted pane scrolls independently. The host owns storage, execution an
 | `sttropez/browser` | Mount the DOM editor with `mountTextEditor`, review changes with `mountTextComparison`, or open a WebSocket transport. |
 | `sttropez/protocol` | Share an `LspWorkspace` across views. The host supplies its transport and scheduler. |
 
-Capture the document and revision before requesting an edit. Its offsets belong to that text,
-even if the user types more or switches tabs before the reply arrives.
+Capture the document and revision when you request an edit. If the user types or switches tabs before
+the reply arrives, its offsets refer to the original text.
 
 **Where the work runs.** Typing, rendering and literal search run on the browser’s main thread.
 Longer tasks such as diffing yield between chunks. The host can supply a dedicated Web Worker
@@ -89,8 +89,8 @@ and open `http://localhost:8000/`. The examples use native ES modules and need n
 
 ### Add features to a browser IDE
 
-Append the snippets to `app.js` except for the tokenizer module labeled `checklist.js`.
-This helper puts each command in the toolbar.
+Add this toolbar helper to `app.js`. Append the remaining snippets there too, except for the tokenizer
+in `checklist.js`.
 
 ```js
 const controls = new AbortController();
@@ -109,11 +109,10 @@ const button = (label, command) => {
 
 #### Switch and move tabs
 
-Add a notes file to the checklist workspace. **Notes** opens a tab on first use. Keep its
-mount while switching so its caret, folds and scroll survive. The host chooses which tab to
-show. `workspace.move` changes the logical pane, keeping the tab ID and capture valid. The
-host updates the layout and focus. `workspace.replace` reuses the ID for another surface
-and invalidates captures of the old tab.
+Choose **Notes** to open a second file. Switch back to the checklist, then return to Notes. Keeping
+both editors mounted preserves each caret, fold and scroll position. Your toolbar decides which tab to
+show and where to put focus. `workspace.move` keeps the tab ID and pending captures valid across
+panes. `workspace.replace` reuses the ID and expires captures for the old tab.
 
 ```js
 const notes = workspace.createTextResource(
@@ -152,10 +151,10 @@ button("Dock notes", () => {
 
 #### Close a tab and keep its draft
 
-**Review close** captures the notes tab and document revision. Move the tab and **Close notes**
-can finish. Edit the notes first and the decision expires. A replacement tab also invalidates
-the capture. Reopening **Notes** creates a fresh tab on the same document, with its unsaved text
-and undo history.
+Choose **Review close**, move the notes tab, then choose **Close notes**. The close works. Try
+editing the notes after **Review close** instead. The edit expires the decision, as would replacing
+the tab. Reopening **Notes** gives the same document a new tab, with its draft and undo history
+intact.
 
 ```js
 /** @type {import("sttropez").CloseIntent | undefined} */
@@ -207,9 +206,9 @@ button("Undo", () => workspace.undo({ documentId: file.documentId,
 
 #### Plug in a standalone tokenizer
 
-Put this standalone tokenizer in **`site/checklist.js`**. It recognizes the two task markers
-from the first five characters of a line. Each token has a kind and a half-open UTF-16 range
-relative to that line.
+Save this tokenizer as `site/checklist.js`. It recognizes open and completed task markers at the
+start of a line. Each token has a kind and a half-open UTF-16 range relative to that line.
+For example, `[0, 5)` colors the first five units.
 
 ```js file=checklist.js
 /** @param {string} prefix */
@@ -243,11 +242,10 @@ const split = mountTextEditor(second, workspace, tab, {
 });
 ```
 
-The checklist has no multiline tokens. For a stateful lexer, a typical call is
-`const { tokens, endState } = lexLine(text, startState)`. A line inside a block comment, for
-example, inherits the previous line’s ending state. Cache by document and revision, replay from
-the first changed line until the unchanged suffix has the same incoming state, and draw the
-UTF-16 spans that intersect the visible fragment.
+For a multiline token, pass the previous line’s ending state into the next call, as in
+`const { tokens, endState } = lexLine(text, startState)`. A line can start inside a block comment.
+Cache results by document and revision. After an edit, tokenize from the first changed line until the
+unchanged suffix has its original incoming state. Paint spans that intersect the visible fragment.
 
 `decorate` runs synchronously during paint. For an expensive grammar, run its tokenizer in a
 host worker. Check the document ID and revision when the result arrives, cache the spans, then
@@ -257,9 +255,9 @@ and indentation rules use `language`. Completion and diagnostics use a separate 
 
 #### Paste a list
 
-In either pane, turn plain text with tab separators into checklist rows.
-Other pastes use the editor’s normal handler. `insert` replaces the captured selections in
-one undo step. If conversion takes an asynchronous step, keep this same capture until it finishes.
+Paste tab-separated text in either pane to turn it into checklist rows. Other text uses the usual
+paste handler. `insert` replaces the captured selections in one undo step. If your converter runs
+asynchronously, keep the capture until it finishes.
 
 ```js
 for (const pane of [editor, split]) {
@@ -283,10 +281,10 @@ const stopDirty = file.metadata.subscribe(showDirty);
 showDirty();
 ```
 
-The host writes this tab’s copy to session storage. The save ticket
-freezes the submitted text. Typing while a write is pending leaves the newer draft dirty. Keep
-the acknowledged value as the reference for review. A shared store must check
-`expectedServerVersion` and return `{ kind: "conflict", serverVersion }` on a mismatch.
+The example writes to session storage and keeps each successful save as a review baseline.
+`captureSave` fixes the text before the write starts. If the user keeps typing, the later edits stay
+unsaved. For shared storage, check `expectedServerVersion` and return
+`{ kind: "conflict", serverVersion }` if someone else saved first.
 
 ```js
 import { TextBuffer, WorkspaceCommands } from "sttropez";
@@ -389,8 +387,9 @@ apply the plan with `applyLspWorkspaceEdit`. One undo restores every affected fi
 
 ## Contract
 
-A document revision identifies local text. The saved version identifies the host’s acknowledged
-write. Undoing back to the saved text clears the dirty flag. [Save and conflicts](workspace.md#save-conflicts-and-run)
+A revision changes when you edit or undo. The saved version changes when your storage service
+acknowledges a write. Undo back to the saved text and the file is clean again.
+[Save and conflicts](workspace.md#save-conflicts-and-run)
 
 ## Host responsibilities
 
