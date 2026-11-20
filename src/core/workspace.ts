@@ -85,7 +85,7 @@ export type SaveTicket<T, S extends SaveSubmission<T> = SaveSubmission<T>, R ext
     conflict: () => void; fail: () => void; finish: () => void }>;
 export type EditRequest = Readonly<{
     documentId: DocumentId; expectedRevision: number; edits: readonly TextEdit[]; origin: EditOrigin; lease?: EditLease;
-    history?: Readonly<{ kind: EditKind; group?: string }>; view?: DocumentView; selection?: Selection; selectionSet?: SelectionSet;
+    history?: Readonly<{ kind: EditKind; group?: string; reset?: boolean }>; view?: DocumentView; selection?: Selection; selectionSet?: SelectionSet;
 }>;
 export type ChangeResult = Readonly<{ applied: true; revision: number } | { applied: false;
     reason: "missing-resource" | "missing-document" | "stale-revision" | "not-ready" | "read-only" | "edit-locked" | "history-empty" | "history-blocked" }>;
@@ -327,12 +327,17 @@ export class Workspace {
     editDocuments(requests: readonly EditRequest[]): BatchEditResult {
         this.scope.assertWritable();
         if (!requests.length) throw new RangeError("A text transaction needs at least one document.");
-        const ids = new Set<DocumentId>(), first = requests[0]!, kind = first.history?.kind ?? "replace", group = first.history?.group;
+        const ids = new Set<DocumentId>(), first = requests[0]!;
+        const { kind = "replace", group, reset = false } = first.history ?? {};
         validateHistoryGroup(group);
+        if (typeof reset !== "boolean") throw new TypeError("History reset must be a boolean.");
+        if (reset && group !== undefined) throw new Error("A history reset cannot join an undo group.");
         const prepared = [];
         for (const request of requests) {
             if (ids.has(request.documentId)) throw new Error("A document may appear only once in a transaction."); ids.add(request.documentId);
-            if (request.origin !== first.origin || (request.history?.kind ?? "replace") !== kind || request.history?.group !== group) throw new Error("A text transaction has one origin and history policy.");
+            const policy = request.history;
+            if (request.origin !== first.origin || (policy?.kind ?? "replace") !== kind || policy?.group !== group
+                || (policy?.reset ?? false) !== reset) throw new Error("A text transaction has one origin and history policy.");
             const record = this.documents.get(request.documentId);
             if (!record || record.state.get().state === "released") return { applied: false, reason: "missing-document" };
             const refusal = this.validateEdit(record, request.expectedRevision, request.origin, request.lease); if (refusal) return refusal;
@@ -349,11 +354,16 @@ export class Workspace {
             prepared.push({ request, record, before, after: result.buffer, mapping: result.mapping, units: result.changedUnits, view, afterSelections, text, selection });
         }
         const actual = prepared.filter(change => change.before !== change.after);
-        const changes: HistoryChange[] = actual.map(change => Object.freeze({ documentId: change.request.documentId, before: change.before, after: change.after,
-            mapping: change.mapping, units: change.units,
-            selection: change.view ? Object.freeze({ viewId: change.view.handle.id, before: change.view.state.get().selectionSet,
-                after: change.afterSelections! }) : null }));
-        if (changes.length) this.history.record(changes, first.origin, kind, requests.length === 1 ? group : undefined);
+        if (reset) {
+            // Equal text also invalidates commands from before the host's restore.
+            for (const id of ids) this.history.forget(id);
+        } else if (actual.length) {
+            const changes: HistoryChange[] = actual.map(change => Object.freeze({ documentId: change.request.documentId, before: change.before, after: change.after,
+                mapping: change.mapping, units: change.units,
+                selection: change.view ? Object.freeze({ viewId: change.view.handle.id, before: change.view.state.get().selectionSet,
+                    after: change.afterSelections! }) : null }));
+            this.history.record(changes, first.origin, kind, requests.length === 1 ? group : undefined);
+        }
         const changed = new Set<Store<unknown>>(), transactionId = actual.length ? ++this.nextTransaction : 0;
         for (const change of prepared) {
             if (change.text) this.commitText(change.text, first.origin, kind, transactionId, changed);

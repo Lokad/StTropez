@@ -83,7 +83,7 @@ export class TextHistory {
         }
         entry.changes.forEach(change => this.seal(change.documentId));
     }
-    /** A load/release is an explicit history boundary, including linked multi-document units. */
+    /** Clear both stacks for the entire component connected by retained multi-document units. */
     forget(id: string): void {
         const pending = [id], visited = new Set<string>();
         while (pending.length) {

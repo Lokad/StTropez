@@ -16,6 +16,80 @@ function fixture(text = "abc", history?: HistoryOptions) {
     return { workspace, source, document, state, replace, undo, redo, errors };
 }
 
+test("a guarded draft restore maps live views and clears linked undo and redo atomically", () => {
+    const { workspace, source, document, replace, undo, redo } = fixture("saved");
+    replace("draft");
+    const draft = document();
+    const view = workspace.createDocumentView(draft.id, { anchor: 1, head: 4 });
+    const peer = workspace.createDocument({ scope: "history", resource: "peer", variant: "working" }, "Peer", "peer");
+    const unrelated = workspace.createDocument({ scope: "history", resource: "other", variant: "working" }, "Other", "");
+    const prefix = (documentId: DocumentId, text: string) => ({
+        documentId, expectedRevision: workspace.document(documentId).revision,
+        origin: "host" as const, edits: [{ from: 0, to: 0, insert: text }]
+    });
+    workspace.edit(prefix(unrelated, "keep"));
+    workspace.editDocuments([prefix(draft.id, "old "), prefix(peer, "+")]);
+    workspace.editDocuments([prefix(draft.id, "?"), prefix(peer, "?")]);
+    assert.ok(undo().applied);
+    const rejected = document(), peerBefore = workspace.document(peer);
+    assert.equal(rejected.text(), "old draft");
+    const peerHistory = workspace.observeHistory(peer);
+    assert.deepEqual(peerHistory.getSnapshot(), { undoDepth: 1, redoDepth: 1 });
+    const observed: string[] = [];
+    const stop = peerHistory.subscribe(() => observed.push(document().text()));
+    const result = workspace.edit({ documentId: draft.id, expectedRevision: rejected.revision, origin: "host",
+        edits: [{ from: 0, to: 4, insert: "" }], history: { kind: "replace", reset: true } });
+    stop();
+    assert.deepEqual(result, { applied: true, revision: rejected.revision + 1 });
+    assert.deepEqual(observed, [draft.text()]);
+    assert.deepEqual([view.getSnapshot().selection.anchor, view.getSnapshot().selection.head], [1, 4]);
+    assert.equal(view.getSnapshot().revision, document().revision);
+    assert.equal(workspace.document(peer), peerBefore);
+    assert.deepEqual(peerHistory.getSnapshot(), { undoDepth: 0, redoDepth: 0 });
+    assert.deepEqual(undo(), { applied: false, reason: "history-empty" });
+    assert.deepEqual(redo(), { applied: false, reason: "history-empty" });
+    assert.equal(workspace.observeHistory(unrelated).getSnapshot().undoDepth, 1);
+    assert.equal(source.metadata.getSnapshot().dirty, true);
+    assert.equal(source.metadata.getSnapshot().serverVersion, "v0");
+    replace("saved");
+    assert.equal(source.metadata.getSnapshot().dirty, false);
+    assert.ok(undo().applied);
+    assert.equal(document().text(), draft.text());
+    view.dispose();
+});
+
+test("a history-only reset checks every target before clearing stacks and preserves the revision", () => {
+    const { workspace, source, document, state, replace, undo } = fixture();
+    replace("draft"); replace("later"); assert.ok(undo().applied);
+    const request = { documentId: source.documentId, expectedRevision: document().revision, origin: "host" as const,
+        edits: [], history: { kind: "replace" as const, reset: true } };
+    const history = state.getSnapshot();
+    assert.deepEqual(history, { undoDepth: 1, redoDepth: 1 });
+    const permissions = source.metadata.getSnapshot().capabilities;
+    workspace.setCapabilities(source.id, { ...permissions, edit: ["human"] });
+    assert.deepEqual(workspace.edit(request), { applied: false, reason: "read-only" });
+    workspace.setCapabilities(source.id, permissions);
+    const lock = workspace.acquireEditLease(source.id, "restore", "host");
+    assert.deepEqual(workspace.edit(request), { applied: false, reason: "edit-locked" });
+    lock.release();
+    assert.deepEqual(workspace.edit({ ...request, expectedRevision: request.expectedRevision - 1 }), { applied: false, reason: "stale-revision" });
+    const peer = workspace.createDocument({ scope: "history", resource: "peer", variant: "working" }, "Peer", "");
+    assert.deepEqual(workspace.editDocuments([request, { ...request, documentId: peer, expectedRevision: 1 }]), { applied: false, reason: "stale-revision" });
+    assert.throws(() => workspace.editDocuments([request, { ...request, documentId: peer, history: { kind: "replace" } }]), /one origin and history policy/);
+    assert.throws(() => workspace.edit({ ...request, history: { ...request.history, group: "typing" } }), /undo group/);
+    assert.equal(state.getSnapshot(), history);
+    const before = document();
+    let notifications = 0;
+    const stop = state.subscribe(() => notifications++);
+    assert.deepEqual(workspace.edit({ ...request, edits: [{ from: 0, to: 5, insert: "draft" }] }), { applied: true, revision: before.revision });
+    assert.equal(document(), before);
+    assert.deepEqual(state.getSnapshot(), { undoDepth: 0, redoDepth: 0 });
+    assert.ok(workspace.edit(request).applied);
+    assert.equal(notifications, 1);
+    assert.equal(source.metadata.getSnapshot().dirty, true);
+    stop();
+});
+
 test("packed bulk changes preserve initiating selection, independent views and exact saved roots through undo/redo", () => {
     const { workspace, source, document, undo, redo, state } = fixture("const sample = 1234567;\n".repeat(1000));
     const before = document().buffer, first = workspace.createDocumentView(source.documentId, { anchor: 1, head: 1 });

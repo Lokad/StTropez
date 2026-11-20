@@ -174,8 +174,8 @@ export function undoFrom(workspace: Workspace, documentId: DocumentId) {
 
 Every changed document advances its revision, including undo/redo. `DocumentChange` records
 the preceding revision, transaction ID, origin, kind and position mapping. Participants in
-one transaction share its transaction ID. An equal-content result preserves buffer,
-revision and history; an explicit selection-only request can update its view.
+one transaction share its transaction ID. An equal-content result preserves the buffer and
+revision. It preserves history by default. A selection-only request can update its view.
 `updateResource` similarly preserves a typed resource's revision on a no-op, but typed panels
 do not acquire text undo history.
 
@@ -193,6 +193,30 @@ capture/settlement seal its group; unrelated background documents do not split i
 `sealHistory(documentId)` explicitly ends grouping without creating an undo entry or changing
 the document revision.
 Multi-document transactions form standalone shared units.
+
+Use `history: { kind: "replace", reset: true }` to roll back rejected edits to a captured draft.
+The transaction maps live views as usual and keeps the resource, tabs, saved baseline and server
+version. Dirty status follows the restored text. A successful reset clears **both** stacks for
+every target and every document connected to it by retained shared history, including their
+single-document entries. Other documents keep their history. Only the requested text changes.
+The reset itself adds no undo entry. Even `edits: []` clears history after validation, without a
+revision change. Every request in a batch must use the same policy. Omit `group` for a reset.
+
+```ts
+import { textDifference, type DocumentId, type Workspace } from "sttropez";
+
+export function reviewRollback(workspace: Workspace, id: DocumentId, draft: string) {
+    const reviewed = workspace.document(id);
+    const change = textDifference(reviewed.text(), draft);
+    return () => workspace.edit({
+        documentId: id, expectedRevision: reviewed.revision, origin: "host",
+        edits: change ? [change] : [], history: { kind: "replace", reset: true }
+    });
+}
+```
+
+Call the returned function on approval. A stale revision, missing permission, competing edit lock
+or failure to validate another target leaves both text and history intact.
 
 Editing after undo invalidates dependent redo units. Reload or release clears the affected
 history and linked boundaries; closing a tab, disposing a view or changing capabilities does not. Canonical save

@@ -133,6 +133,8 @@ export function requestProposal(workspace: Workspace, documentId: DocumentId) {
 
 Drop a dismissed proposal and its capture. For a proposal tied to a particular tab or selection,
 also guard its presentation with a [captured view request](host-integration.md#captured-view-requests).
+If an external writer conflicts with a local draft and undo must never replay the rejected edits,
+use a [guarded history reset](workspace.md#transactions-and-history) when restoring the draft.
 
 ## Contract
 
