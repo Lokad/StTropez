@@ -1,5 +1,9 @@
 # Getting started
 
+StTropez is a TypeScript library for embedding a text editor and a workspace in a browser app.
+Use it when several views need to edit, compare or undo changes to the same files, while your
+application decides where to save them and what happens when the user clicks Run.
+
 A **resource** identifies a file or a typed value such as project settings. A text resource’s
 **document** holds shared text, revision and undo history. A **tab** records where a resource
 is open. Each editor **view** has its own selection and folds,
@@ -7,12 +11,23 @@ and each mounted pane scrolls independently. The host owns storage, execution an
 
 | Public import | Use it to |
 | --- | --- |
-| `sttropez` | Open a file with `Workspace`, edit its document and run or save through `WorkspaceCommands`. |
-| `sttropez/browser` | Mount an editor with `mountTextEditor` or review changes with `mountTextComparison`. |
-| `sttropez/protocol` | Connect a language server with `LspWorkspace` and share it across views. |
+| `sttropez` | Open files and edit shared text with the headless `Workspace`. Pass host save and Run functions to `WorkspaceCommands`. |
+| `sttropez/browser` | Mount the DOM editor with `mountTextEditor`, review changes with `mountTextComparison`, or open a WebSocket transport. |
+| `sttropez/protocol` | Share an `LspWorkspace` across views. The host supplies its transport and scheduler. |
 
-Capture the document and revision before requesting an edit. A reply can arrive after more typing
-or a tab change. Its offsets belong to the text it was calculated from.
+Capture the document and revision before requesting an edit. Its offsets belong to that text,
+even if the user types more or switches tabs before the reply arrives.
+
+**Where the work runs.** Typing, rendering and literal search run on the browser’s main thread.
+Longer tasks such as diffing yield between chunks. The host can supply a dedicated Web Worker
+for regex matching and replacement planning. Local syntax coloring needs no server. When LSP is
+enabled the connected provider computes its diagnostics and completions. The host decides where
+Save and Run execute. [Regex worker](search.md#regular-expressions-and-worker-limits)
+
+**Compared with Monaco.** Both separate the text model from the editor view and let the host
+draw the tab strip. A Monaco host can switch an editor between URI-identified models with
+`setModel`. StTropez also tracks each workspace tab, so a pending close can follow a moved tab
+and reject one whose contents or target changed. [Monaco editor API](https://microsoft.github.io/monaco-editor/docs.html)
 
 ## Use
 
@@ -50,8 +65,10 @@ so the modules can find their shared chunks. [NuGet restore and staging](packagi
 <title>Checklist editor</title>
 <link rel="stylesheet" href="./sttropez/editor.css">
 <style>
-  main, #split, #review:not(:empty) { height: 16rem; min-width: 0; }
+  #panes { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+  main, #notes, #split, #review:not(:empty) { height: 16rem; min-width: 0; }
   .open-task { color: #e9a85c; }
+  .done-task { color: #68bc98; }
 </style>
 <script type="importmap">
 { "imports": {
@@ -61,7 +78,7 @@ so the modules can find their shared chunks. [NuGet restore and staging](packagi
 } }
 </script>
 <nav></nav>
-<main></main>
+<div id="panes"><main></main><aside id="notes" hidden></aside></div>
 <div id="review"></div>
 <output></output>
 <script type="module" src="./app.js"></script>
@@ -72,7 +89,8 @@ and open `http://localhost:8000/`. The examples use native ES modules and need n
 
 ### Add features to a browser IDE
 
-Append the following snippets to the same `app.js`. This helper puts each command in the toolbar.
+Append the snippets to `app.js` except for the tokenizer module labeled `checklist.js`.
+This helper puts each command in the toolbar.
 
 ```js
 const controls = new AbortController();
@@ -89,9 +107,80 @@ const button = (label, command) => {
 };
 ```
 
+#### Switch and move tabs
+
+Add a notes file to the checklist workspace. **Notes** opens a tab on first use. Keep its
+mount while switching so its caret, folds and scroll survive. The host chooses which tab to
+show. `workspace.move` changes the logical pane, keeping the tab ID and capture valid. The
+host updates the layout and focus. `workspace.replace` reuses the ID for another surface
+and invalidates captures of the old tab.
+
+```js
+const notes = workspace.createTextResource(
+    { scope: "checklist", resource: "notes.md", variant: "working" }, "notes.md", { value: "" });
+const notesHost = document.querySelector("aside");
+if (!notesHost) throw new Error("Missing notes pane.");
+const openNotes = () => {
+    const id = workspace.open({ kind: "text", documentId: notes.documentId }, "main");
+    return { target: workspace.captureTab(id),
+        editor: mountTextEditor(notesHost, workspace, id, { ariaLabel: "notes.md" }) };
+};
+/** @type {ReturnType<typeof openNotes> | undefined} */
+let notesTab;
+const notesPane = () => notesTab && workspace.resolveTab(notesTab.target)?.paneId;
+```
+
+```js
+const showChecklist = () => {
+    primary.hidden = false;
+    notesHost.hidden = notesPane() !== "side";
+    editor.focus();
+};
+button("Checklist", showChecklist);
+button("Notes", () => {
+    notesTab ??= openNotes();
+    primary.hidden = notesPane() === "main";
+    notesHost.hidden = false;
+    notesTab.editor.focus();
+});
+button("Dock notes", () => {
+    if (!notesTab) return;
+    workspace.move(notesTab.target.id, "side");
+    showChecklist();
+});
+```
+
+#### Close a tab and keep its draft
+
+**Review close** captures the notes tab and document revision. Move the tab and **Close notes**
+can finish. Edit the notes first and the decision expires. A replacement tab also invalidates
+the capture. Reopening **Notes** creates a fresh tab on the same document, with its unsaved text
+and undo history.
+
+```js
+/** @type {import("sttropez").CloseIntent | undefined} */
+let closing;
+button("Review close", () => {
+    if (!notesTab) return;
+    closing = workspace.captureClose(notesTab.target.id);
+    output.textContent = closing.dirty ? "Close notes and keep the draft?" : "Close notes?";
+});
+button("Close notes", () => {
+    if (!closing) return;
+    const closed = workspace.completeClose(closing, "close");
+    closing = undefined;
+    if (!closed) { output.textContent = "Notes changed. Review close again."; return; }
+    notesTab?.editor.dispose();
+    notesTab = undefined;
+    showChecklist();
+    output.textContent = "Notes closed.";
+});
+```
+
 #### Propose an edit, apply it later, and undo
 
-Click **Propose task**, type a character, then click **Apply task**. The workspace rejects the
+The remaining commands act on the checklist. Click **Propose task**, type in the checklist,
+then click **Apply task**. The workspace rejects the
 old offsets. Propose again and apply without typing to add the task in one undo step.
 
 ```js
@@ -114,21 +203,57 @@ button("Undo", () => workspace.undo({ documentId: file.documentId,
     expectedRevision: workspace.document(file.documentId).revision }));
 ```
 
-#### Split the view and color tokens
+<a id="split-the-view-and-color-tokens"></a>
 
-Mount a second editor on the same tab. Enable its minimap with one option. The decorator
-colors the five characters of an unchecked task marker using document-relative offsets.
+#### Plug in a standalone tokenizer
+
+Put this standalone tokenizer in **`site/checklist.js`**. It recognizes the two task markers
+from the first five characters of a line. Each token has a kind and a half-open UTF-16 range
+relative to that line.
+
+```js file=checklist.js
+/** @param {string} prefix */
+export function tokens(prefix) {
+    if (prefix === "- [ ]") return [{ from: 0, to: 5, kind: "open" }];
+    if (prefix.toLowerCase() === "- [x]") return [{ from: 0, to: 5, kind: "done" }];
+    return [];
+}
+```
+
+Back in `app.js`, pass a `decorate` callback to the second mount. The host loads the
+tokenizer or grammar parser and maps its output to document offsets and CSS classes. The stylesheet gives
+`open-task` and `done-task` different colors. Change a space to `x` to see the marker change.
 
 ```js
+import { tokens } from "./checklist.js";
+
 const second = document.createElement("section");
 second.id = "split";
-primary.after(second);
+document.getElementById("panes")?.after(second);
 const split = mountTextEditor(second, workspace, tab, {
     ariaLabel: "Checklist split", minimap: true,
-    decorate: line => line.from === line.lineStart && line.text.startsWith("- [ ]")
-        ? [{ from: line.from, to: line.from + 5, className: "open-task" }] : []
+    language: { tabSize: 2, insertSpaces: true, blockComment: { open: "<!--", close: "-->" } },
+    decorate(line) {
+        if (line.from >= line.lineStart + 5) return [];
+        const buffer = workspace.document(line.documentId).buffer;
+        const prefix = buffer.slice(line.lineStart, Math.min(line.lineStart + 5, buffer.length));
+        return tokens(prefix).map(t => ({ from: line.lineStart + t.from, to: line.lineStart + t.to,
+            className: t.kind + "-task" }));
+    }
 });
 ```
+
+The checklist has no multiline tokens. For a stateful lexer, a typical call is
+`const { tokens, endState } = lexLine(text, startState)`. A line inside a block comment, for
+example, inherits the previous line’s ending state. Cache by document and revision, replay from
+the first changed line until the unchanged suffix has the same incoming state, and draw the
+UTF-16 spans that intersect the visible fragment.
+
+`decorate` runs synchronously during paint. For an expensive grammar, run its tokenizer in a
+host worker. Check the document ID and revision when the result arrives, cache the spans, then
+call `split.viewport.invalidate()` so the decorator reads the cache on the next paint. Comment
+and indentation rules use `language`. Completion and diagnostics use a separate provider.
+[Host tokenization](host-integration.md#tokenization-annotations-and-forms)
 
 #### Paste a list
 
@@ -276,8 +401,8 @@ To keep selections and folds across a remount, retain a
 
 ```js
 button("Close", () => {
-    const dirty = file.metadata.getSnapshot().dirty;
-    if (dirty && !window.confirm("Discard unsaved checklist changes?")) return;
+    const dirty = file.metadata.getSnapshot().dirty || notes.metadata.getSnapshot().dirty;
+    if (dirty && !window.confirm("Discard unsaved changes and close the workspace?")) return;
     controls.abort();
     stopDirty();
     stopLanguage();
@@ -285,9 +410,11 @@ button("Close", () => {
     provider.dispose();
     review?.dispose();
     split.dispose();
+    if (notesTab) { notesTab.editor.dispose(); workspace.close(notesTab.target.id); }
     editor.dispose();
     workspace.close(tab);
     workspace.releaseResourceWhenUnowned(file.id, dirty);
+    workspace.releaseResourceWhenUnowned(notes.id, dirty);
     workspace.releaseResourceWhenUnowned(rules.id);
     toolbar.replaceChildren();
 });
