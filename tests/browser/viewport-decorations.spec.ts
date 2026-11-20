@@ -28,13 +28,16 @@ test("decorated viewport bounds endpoint reads and preserves overlap order, sele
             overlap = true; viewport.view.setSelection(0, { anchor: 3, head: 7 }); viewport.invalidate(); viewport.flush();
             const parts = [...row.childNodes].map(node => ({ text: node.textContent, className: node instanceof HTMLElement ? node.className : "" }));
             const first = row.querySelector<HTMLElement>(".paint-first.paint-second")!, paint = getComputedStyle(first);
-            const color = paint.color, background = paint.backgroundColor, children = [...row.childNodes], texts = children.map(node => node.firstChild);
+            const unselected = row.querySelector<HTMLElement>(".paint-second:not(.st-viewport-selected)")!;
+            const color = paint.color, selectedBackground = paint.backgroundColor, decorationBackground = getComputedStyle(unselected).backgroundColor;
+            const children = [...row.childNodes], texts = children.map(node => node.firstChild);
             viewport.invalidate(); viewport.flush();
             const reused = children.every((node, i) => row.childNodes[i] === node && node.firstChild === texts[i]);
-            return { endpointReads, exact, colored, parts, color, background, reused, exports: workspace.document(source.documentId).buffer.readMetrics().textExports };
+            return { endpointReads, exact, colored, parts, color, selectedBackground, decorationBackground, reused, exports: workspace.document(source.documentId).buffer.readMetrics().textExports };
         } finally { viewport.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); style.remove(); }
     });
-    expect(result).toMatchObject({ endpointReads: 512, exact: true, colored: 256, color: "rgb(200, 20, 30)", background: "rgb(10, 30, 60)", reused: true, exports: 0 });
+    expect(result).toMatchObject({ endpointReads: 512, exact: true, colored: 256, color: "rgb(200, 20, 30)",
+        selectedBackground: "rgb(36, 73, 107)", decorationBackground: "rgb(10, 30, 60)", reused: true, exports: 0 });
     expect(result.parts).toEqual([
         { text: "xxx", className: "paint-second" }, { text: "x", className: "paint-second st-viewport-selected" },
         { text: "x", className: "paint-first paint-second paint-first st-viewport-selected" },
