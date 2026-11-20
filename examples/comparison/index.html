@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Versioned text comparison</title><link rel="stylesheet" href="/comparison.css"></head>
-<body><h1>Versioned text comparison</h1><p>A captured baseline beside an editable working resource. Review acceptance advances the reference; Save and Run remain host commands. Experimental browser input retains its native-device qualification gates.</p>
+<body><h1>Versioned text comparison</h1><p id="comparison-description">Compare a captured baseline with an editable working copy. Accepting a revision updates the reference.</p>
 <nav aria-label="Host commands"><button id="refresh">Request baseline refresh</button><button id="finish-refresh">Finish oldest refresh</button><button id="finish-newest-refresh">Finish newest refresh</button><button id="accept">Capture working acceptance</button><button id="finish-accept">Finish acceptance</button><button id="undo">Undo working edit</button><button id="redo">Redo working edit</button><button id="dispose">Dispose comparison</button></nav>
-<p><a href="?controls=host">Use custom host controls</a> · <a href="?">Use default controls</a></p>
+<p><a href="?mode=revisions">Compare two saved revisions</a> · <a href="?controls=host">Use custom host controls</a> · <a href="?">Use default controls</a></p>
 <output id="host-status"></output><div id="review-controls"></div><main id="comparison"></main><button id="after">After comparison</button><script type="module" src="/comparison.js"></script></body></html>

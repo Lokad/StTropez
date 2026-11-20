@@ -17,6 +17,11 @@ Open `http://127.0.0.1:4173/`. `npm run dev` starts the same loopback server and
 neither command opens a browser. `STTROPEZ_PORT` selects another port. The
 [published demo](https://lokad.github.io/StTropez/) needs no local server.
 
+Use `?sample=host` to open the paste example directly, or choose another ID from the
+[sample catalogue](../examples/demo/samples.ts). An unknown ID opens Shopping cart. The
+[browser IDE walkthrough](getting-started.md#add-features-to-a-browser-ide) pairs each example
+with the public APIs it uses.
+
 ### Development routes
 
 The [development server](../scripts/serve.mjs) serves these pages:
@@ -28,6 +33,7 @@ The [development server](../scripts/serve.mjs) serves these pages:
 | `/editing/` | Bounded input, selections, commands and local highlighting | [Editing fixture](../examples/editing/main.ts) |
 | `/viewport/` | Read-only virtualized text and geometry | [Viewport fixture](../examples/viewport/main.ts) |
 | `/comparison/` | Working/reference comparison and hunk commands | [Comparison fixture](../examples/comparison/main.ts) |
+| `/comparison/?mode=revisions` | Read-only comparison of two saved revisions | [Comparison fixture](../examples/comparison/main.ts) |
 | `/protocol/` | JSON-RPC/WebSocket transport interoperability | [Protocol fixture](../examples/protocol/main.ts) |
 | `/fonts/` | Registered-font rendering and geometry | [Font fixture](../tests/fixtures/fonts/main.ts) |
 | `/hosts/plain/` | Two source views, forms, review and deferred services | [Plain host](../examples/hosts/plain-main.ts) |

@@ -2,6 +2,23 @@ import { ready, test, expect } from "./fixtures.ts";
 
 test.beforeEach(async ({ page }) => {  await page.goto("/comparison/"); await ready(page); });
 
+test("the two saved revisions stay read-only while navigating their changes", async ({ page }) => {
+    await page.getByRole("link", { name: "Compare two saved revisions" }).click();
+    await ready(page);
+    const panes = page.getByRole("textbox");
+    await expect(panes).toHaveCount(2);
+    for (const pane of await panes.all()) await expect(pane).toHaveAttribute("readonly", "");
+    await page.getByRole("button", { name: "Next change" }).click();
+    await expect(page.locator(".st-comparison-controls output")).toContainText("Change 1 of");
+    await expect(page.getByRole("button", { name: "Use baseline", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Capture working acceptance" })).toHaveCount(0);
+    const state = await page.evaluate(() => window.comparisonFixture.snapshot());
+    expect(state.baseline?.version).toBe("saved-1");
+    expect(state.working.metadata.serverVersion).toBe("saved-2");
+    await page.getByRole("button", { name: "Dispose comparison" }).click();
+    await expect(panes).toHaveCount(0);
+});
+
 test("paired navigation exposes exact whitespace and reverts one hunk through shared undo", async ({ page }) => {
     const initial = await page.evaluate(() => window.comparisonFixture.snapshot()); expect(initial.hunks.length).toBeGreaterThan(1);
     await expect(page.getByRole("button", { name: "Use baseline", exact: true })).toBeDisabled();

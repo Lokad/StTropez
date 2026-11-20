@@ -161,7 +161,9 @@ test("view controls survive file switches and saved-reference replacement in bot
 });
 
 test("character warnings explain source characters and stay consistent across review panes", async ({ page, baseURL }, info) => {
-    await page.goto(baseURL!); await page.locator("#sample").selectOption("unicode");
+    const url = new URL(baseURL!);
+    url.searchParams.set("sample", "unicode");
+    await page.goto(url.href);
     const source = page.getByRole("textbox", { name: "greetings.ts", exact: true });
     const warnings = page.locator("#editor .st-viewport-layer .st-character-warning");
     await expect(warnings.first()).toHaveText("\u200b"); await expect(page.locator("#analysis-status")).toContainText("syntax & emit");

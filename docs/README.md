@@ -1,6 +1,8 @@
 # StTropez documentation
 
 Start with [Getting started](getting-started.md) to mount an editor and open a document.
+Follow the [browser IDE walkthrough](getting-started.md#add-features-to-a-browser-ide) to add
+tokens, paste conversion, a language server, save, Run and revision review.
 
 ## Choose a task
 

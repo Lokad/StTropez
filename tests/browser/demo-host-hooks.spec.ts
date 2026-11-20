@@ -5,6 +5,22 @@ test("host language, structured/literal insertion and mapped notes share editing
     await runDemoHostIntegrations(page);
 });
 
+test("a direct sample link can retry a failed first mount", async ({ page, browserErrors, baseURL }) => {
+    const styles = new URL("app.css", baseURL).href;
+    browserErrors.allowConsoleError("Failed to load resource: the server responded with a status of 503 (Service Unavailable)", styles);
+    await page.route(styles, async route => {
+        if (route.request().resourceType() === "fetch") await route.fulfill({ status: 503, body: "Styles unavailable" });
+        else await route.continue();
+    });
+    await page.goto("/?sample=host");
+    await expect(page.locator("#status")).toContainText("Host styles could not load");
+    await expect(page.locator("#reset")).toBeDisabled();
+    await page.unroute(styles);
+    await page.locator("#sample").selectOption("host");
+    await expect(page.getByRole("textbox", { name: "workflow.rules", exact: true })).toBeVisible();
+    await expect(page.locator("#language-status")).toHaveText("Host language · no language server");
+});
+
 test("failed and late shadow styles leave the current editor usable and allow retry", async ({ page, browserErrors }) => {
     let requests = 0, release: (() => Promise<void>) | undefined;
     await page.route("**/app.css", async route => {
@@ -14,7 +30,7 @@ test("failed and late shadow styles leave the current editor usable and allow re
         if (requests === 2) await new Promise<void>(resolve => { release = async () => { await route.continue(); resolve(); }; });
         else await route.continue();
     });
-    await page.goto("/"); const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    await page.goto("/?sample=unknown"); const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     const original = await source.inputValue();
     browserErrors.allowConsoleError("Failed to load resource: the server responded with a status of 503 (Service Unavailable)", new URL("app.css", page.url()).href);
     await page.locator("#sample").selectOption("host");

@@ -25,7 +25,8 @@ const codeMenu = element("code-menu") as HTMLDetailsElement;
 const foldMenu = mountDemoFoldMenu(codeMenu);
 const projects = new Map<SampleId, DemoProject>(), activeFiles = new Map<SampleId, string>();
 const listeners = new AbortController(), sample = element("sample") as HTMLSelectElement;
-const openProvider = selectDemoProvider(new URL(location.href).searchParams.get("provider") ?? document.documentElement.dataset.demoProvider ?? "browser");
+const pageOptions = new URL(location.href).searchParams;
+const openProvider = selectDemoProvider(pageOptions.get("provider") ?? document.documentElement.dataset.demoProvider ?? "browser");
 for (const choice of sampleChoices) { const option = document.createElement("option"); option.value = choice.id; option.textContent = choice.title; sample.append(option); }
 let project: DemoProject | undefined, active: DemoFile | undefined, editor: TextEditor | undefined;
 let comparison: TextComparison | undefined, find: FindController | undefined;
@@ -393,6 +394,18 @@ function selectSample(id: SampleId): void {
     sample.value = id;
     button("reset").disabled = project?.sample.id !== id;
 }
+function showSampleError(message: string): void {
+    sample.disabled = false;
+    if (project) {
+        selectSample(project.sample.id);
+        project.message = message;
+        renderMetadata();
+    } else {
+        sample.selectedIndex = -1;
+        element("status").textContent = message;
+        element("description").textContent = "Choose an example to try again.";
+    }
+}
 async function openSample(id: SampleId): Promise<void> {
     if (editor?.activity().composing) { selectSample(project!.sample.id); return; }
     const generation = ++opening; selectSample(id); sample.disabled = true;
@@ -403,8 +416,7 @@ async function openSample(id: SampleId): Promise<void> {
         catch (error) {
             if (!(error instanceof DemoStylesUnavailable)) throw error;
             if (disposed || generation !== opening) return;
-            selectSample(project?.sample.id ?? "pricing");
-            if (project) { project.message = error.message; renderMetadata(); }
+            showSampleError(error.message);
             return;
         }
         if (disposed || generation !== opening) return;
@@ -420,9 +432,7 @@ async function openSample(id: SampleId): Promise<void> {
         } catch (error) {
             console.error(error);
             if (disposed || generation !== opening) return;
-            sample.disabled = false; selectSample(project?.sample.id ?? id);
-            const message = "Could not open this sample. Choose a sample to try again.";
-            if (project) { project.message = message; renderMetadata(); } else element("status").textContent = message;
+            showSampleError("Could not open this sample. Choose a sample to try again.");
             return;
         }
         if (disposed) { next.dispose(); return; } projects.set(id, next);
@@ -574,4 +584,5 @@ window.addEventListener("pagehide", event => {
     disposed = true; opening++; listeners.abort(); stopWorkspace?.(); stopRecovery?.(); stopLanguage?.(); detachView(); foldMenu.dispose(); presentation.dispose();
     for (const project of projects.values()) project.dispose(); projects.clear(); savedViews.clear();
 }, { signal: listeners.signal });
-await openSample("pricing");
+const requestedSample = pageOptions.get("sample");
+await openSample(sampleChoices.find(choice => choice.id === requestedSample)?.id ?? "pricing");
