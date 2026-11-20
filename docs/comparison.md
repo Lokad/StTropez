@@ -193,6 +193,11 @@ Queue host attachment/cleanup after notification delivery, resolve the latest ha
 queued callbacks on unmount. Refresh disposes the old editor and pending input/navigation work.
 A retired reference resource stays readable while an independent view or host lease owns it.
 
+Apply [viewport settings](viewport.md#mounting-and-presentation) such as rulers, ligatures and
+current-line highlighting to `comparison.working.viewport` and the current reference editor’s
+viewport. Reapply them when `comparison.reference` publishes a replacement. The comparison mount
+accepts `TextComparisonOptions`. It does not forward arbitrary source-editor construction options.
+
 Keep saved reference view state with its immutable buffer/version; working view state belongs
 to the working document/view. [Viewport](viewport.md#scrolling-and-saved-views) describes captures.
 `workingDecorate` and `baselineDecorate` receive bounded `PresentedLine` fragments and compose

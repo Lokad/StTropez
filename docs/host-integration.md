@@ -192,6 +192,11 @@ workspace validation and shared history. Empty text consumes the capture without
 selected text. `cancel()` is idempotent. Pending conversion participates in the editor's input
 activity; later editing cancels conversion and proceeds. Capturing needs no full-text export.
 
+For different indentation at each caret, a host that owns the [edit transform](editor.md#edit-transforms)
+can use `planSelectionEdits` with one string per normalized selection and return its edits and
+selection set. The editor has one transform slot, also used for LSP snippet mirroring.
+`CapturedInsertion` has no per-selection overload.
+
 Copy clipboard data during the event. Before inserting, validate the converted text and its total
 size across selections. A cooperative parser can yield between steps. Clipboard retrieval, native
 HTML parsing, final string assembly and the model commit each run to completion. See the

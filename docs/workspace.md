@@ -343,9 +343,27 @@ preserves local content and the previous saved baseline.
 
 A `SaveReceipt` records the submission, canonical saved value, new server version and whether the
 working copy adopted that value. The saved baseline advances on success. Replacing working text
-requires a matching revision, host edit permission and a compatible lock. Pass
+requires a matching revision, host edit permission and no active edit lease. Pass
 `{ applyCanonical: false }` to `ticket.accept` to skip replacement. Canonical text edits get a
 separate undo unit. Undoing to the baseline clears dirty state even at a later revision.
+
+For a user-confirmed server merge or discard, capture the save ticket before the request, call
+`start()` before sending it, and pass the acknowledged `{ canonical, serverVersion }` to
+`accept()`. Finish the ticket in `finally`. On success the server reply becomes the saved
+baseline. If the user typed, an edit lease is active or the host lacks edit permission, their working
+text and undo history survive. An equal canonical value also leaves history intact.
+
+To erase undo only when the discard replaces working text, check `receipt.canonicalApplied`. If true,
+submit `edits: []` with `origin: "host"`, `history: { kind: "replace", reset: true }` and
+`expectedRevision: ticket.revision + 1`. Keep `accept` and the reset in one synchronous
+[notification batch](#observables) if observers must see the two effects together. Do not reset at
+a revision read after awaiting another operation.
+
+For a clean, unlocked resource, a [load](#loading-and-resource-lifetime) can install a remote
+version without a save. It keeps view handles but resets selections, folds and history. Save
+capture and start both require save permission and no edit lock. A dirty or locked resource has
+no read-only refresh that adopts a new baseline. Defer until the host can perform the authorized
+operation.
 
 After conflict review, pass a `SaveReview` with the captured target, reviewed local revision and
 remote version. Capture rejects a stale target or revision and a competing save reservation.
