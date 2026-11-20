@@ -320,6 +320,11 @@ active server command can receive its incoming edits; unsolicited and overlappin
 refused. Host routes use the same lane and validation through their captured `applyEdit` callback.
 Each review rechecks request currentness, all target identities/revisions and host authority.
 
+`scope.requestCommand` also reserves this session-wide lane. For a host-defined status command
+whose server contract guarantees it never sends `workspace/applyEdit`, a host can poll with
+`scope.request("workspace/executeCommand", { command, arguments: [] })`. The host validates the
+command and reply. If the poll times out, the edit lane keeps its current state.
+
 The feature guide defines [workspace-edit validation, previews and atomic application](language-features.md#rename-and-workspace-edits)
 and [action/command phase decisions](language-features.md#code-actions-and-commands).
 
