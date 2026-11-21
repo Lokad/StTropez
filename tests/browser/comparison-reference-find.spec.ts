@@ -331,7 +331,7 @@ for (const host of ["plain", "react"]) {
         await p.evaluate(() => { window.holdReferenceMatches = false; for (const { worker, data } of window.heldReferenceMatches!)
             worker.dispatchEvent(new MessageEvent("message", { data })); window.heldReferenceMatches = []; });
         await found(p, 4000);
-        await expect(input(p)).toBeFocused();
+        await expect(query(p)).toBeFocused();
         expect((await snapshot(p)).bindings.comparison!.referenceViewport!.selection!.anchor).toBe(raw.lastIndexOf("needle"));
         expect((await snapshot(p)).bindings.language.navigationPending).toBe(false);
         await exact(p, raw);

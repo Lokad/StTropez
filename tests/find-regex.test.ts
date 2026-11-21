@@ -101,10 +101,11 @@ test("async regex find advances empty matches, accepts manual overlaps and prese
         for (const expected of [0, 2, 3, 0]) { assert.equal(f.find.next(), true); assert.equal(f.view.getSnapshot().selection.head, expected); }
         f.view.setSelections(0, [{ anchor: 0, head: 0 }, { anchor: 3, head: 3 }]); const selected = f.view.getSnapshot().selectionSet;
         assert.equal(f.find.replaceCurrent("<>"), true); await f.drain(); assert.equal(f.text(), "<>😀x"); assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, 1);
-        assert.equal(f.find.replaceCurrent("<>"), true); await f.drain(); assert.equal(f.text(), "<>😀x"); assert.equal(f.view.getSnapshot().selection.head, 4);
+        assert.equal(f.view.getSnapshot().selection.head, 4);
         f.workspace.undo({ documentId: f.source.documentId, expectedRevision: f.workspace.document(f.source.documentId).revision }); await f.drain(); assert.equal(f.text(), "😀x"); assert.deepEqual(f.view.getSnapshot().selectionSet, selected);
         const before = f.workspace.observeHistory(f.source.documentId).getSnapshot(); f.find.replaceCurrent("$&"); await f.drain(); assert.deepEqual(f.workspace.observeHistory(f.source.documentId).getSnapshot(), before);
-        f.find.replaceCurrent("$&"); await f.drain(); assert.equal(f.view.getSnapshot().selection.head, 2); assert.equal(f.text(), "😀x");
+        assert.equal(f.view.getSnapshot().selection.head, 2);
+        f.find.replaceCurrent("$&"); await f.drain(); assert.equal(f.view.getSnapshot().selection.head, 3); assert.equal(f.text(), "😀x");
         assert.equal(f.workspace.document(f.source.documentId).buffer.readMetrics().textExports, 0);
     } finally { f.finish(); }
     const overlap = fixture("aaa");
@@ -117,7 +118,7 @@ test("async regex find advances empty matches, accepts manual overlaps and prese
     } finally { overlap.finish(); }
 });
 
-test("find options patch existing choices and unrelated selections navigate without starting replacement work", async () => {
+test("find options patch existing choices and Replace skips an unrelated selection before advancing", async () => {
     const f = fixture("alpha beta beta_ BETA");
     try {
         f.find.setFlags({ wholeWord: true }); f.find.setFlags({ matchCase: false }); f.find.setFlags({ regularExpression: true });
@@ -125,9 +126,9 @@ test("find options patch existing choices and unrelated selections navigate with
         const state = f.find.getSnapshot(); assert.equal(state.wholeWord, true); assert.equal(state.matchCase, false); assert.equal(state.regularExpression, true); assert.equal(state.count, 2);
         f.view.setSelection(0, { anchor: 0, head: 5 });
         assert.equal(f.find.replaceCurrent("x"), true); await f.drain();
-        assert.equal(f.plans.length, 0); assert.equal(f.text(), "alpha beta beta_ BETA");
-        const selected = f.view.getSnapshot().selection; assert.deepEqual([selected.anchor, selected.head], [6, 10]);
-        assert.equal(f.find.replaceCurrent("x"), true); await f.drain(); assert.equal(f.text(), "alpha x beta_ BETA");
+        assert.equal(f.plans.length, 1); assert.equal(f.text(), "alpha x beta_ BETA");
+        const selected = f.view.getSnapshot().selection; assert.deepEqual([selected.anchor, selected.head], [14, 18]);
+        assert.equal(f.find.replaceCurrent("x"), true); await f.drain(); assert.equal(f.text(), "alpha x beta_ x");
     } finally { f.finish(); }
 });
 

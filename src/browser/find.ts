@@ -38,7 +38,7 @@ export type FindController = Observable<FindSnapshot> & Readonly<{
     setQuery: (query: string) => void;
     setFlags: (flags: FindFlags) => void;
     next: (direction?: 1 | -1) => boolean;
-    replaceCurrent: (replacement: string) => boolean; replaceAll: (replacement: string) => void; cancel: () => void; dispose: () => void }>;
+    replaceCurrent: (replacement: string) => boolean; replaceAll: (replacement: string, options?: Readonly<{ focusEditor?: boolean }>) => void; cancel: () => void; dispose: () => void }>;
 // A notice is replaced atomically; progress-only patches retain both fields.
 type FindPatch = Partial<Omit<FindSnapshot, "reason" | "message">> &
     (Pick<FindSnapshot, "reason" | "message"> | { reason?: never; message?: never });
@@ -60,6 +60,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     let disposed = false, cursor: FindSearchCursor | undefined, planCursor: FindPlanCursor | undefined, generation = 0, focusGeneration = 0;
     let navigatedZero: Readonly<{ index: number; selectionSet: SelectionSet }> | undefined;
     let replacedZero: Readonly<{ revision: number; head: number; selectionSet: SelectionSet }> | undefined;
+    let advanceAfterReplace: SelectionSet | undefined;
     let stopPlanAuthority: (() => void) | undefined;
     let matches = new FindIndex(), count = 0, navigationTo = 0, observed = initial;
     let literal: { document: DocumentSnapshot; index: FindIndex; query: string; wholeWord: boolean; matchCase: boolean } | undefined;
@@ -76,7 +77,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     };
     const stop = () => { generation++; runner.cancel();
         const active = cursor, plan = planCursor, authority = stopPlanAuthority; cursor = undefined; planCursor = undefined; stopPlanAuthority = undefined;
-        navigatedZero = undefined; replacedZero = undefined;
+        navigatedZero = undefined; replacedZero = undefined; advanceAfterReplace = undefined;
         active?.dispose(); plan?.dispose(); authority?.(); };
     const reset = (patch: FindPatch) => {
         matches = new FindIndex(); count = 0; literal = undefined; edges = undefined; navigationTo = 0;
@@ -182,6 +183,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
                 const state = store.get();
                 if (result.done || count !== state.count || result.scanned !== state.scanned)
                     publish({ count, matchesVersion: state.matchesVersion + (count !== state.count ? 1 : 0), scanned: result.scanned, status: result.done ? "ready" : "searching", retained: !!repair && !result.done });
+                if (result.done && token === generation) finishAdvance();
                 if (!result.done && token === generation && regularExpression) later(step);
             };
             const receive = (result: SearchStep, asynchronous: boolean, dispatchMs: number) => {
@@ -227,25 +229,44 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         try { const match = selectedSearch.next(high - low + 1, 1).matches[0]; return match?.from === low && match.to === high ? match : undefined; }
         finally { selectedSearch.dispose(); }
     };
-    const next = (direction: 1 | -1 = 1): boolean => {
-        scope.assertWritable();
-        const state = store.get(); if (!valid() || state.status !== "ready" && !(state.status === "searching" && state.retained) || !count) return false;
-        if (editor.activity().composing) { publish({ reason: "composition-active", message: "Finish composition before navigating." }); return false; }
+    function nextIndex(direction: 1 | -1): number | undefined {
+        const state = store.get();
+        if (state.status !== "ready" && !(state.status === "searching" && state.retained) || !count) return;
         const selection = editor.view.getSnapshot(), selected = selection.selection, bound = direction === 1 ? Math.max(selected.anchor, selected.head) : Math.min(selected.anchor, selected.head);
         let low = indexAt(bound);
-        if (state.status !== "ready" && (direction === 1 ? low === count : low === 0 || bound > navigationTo)) return false;
+        if (state.status !== "ready" && (direction === 1 ? low === count : low === 0 || bound > navigationTo)) return;
         if (direction === 1 && low < count && offsetAt(low) === bound && endAt(low) === bound
             && (navigatedZero?.index === low && navigatedZero.selectionSet === selection.selectionSet || replacedHere())) low++;
-        const index = direction === 1 ? low % count : (low + count - 1) % count, from = offsetAt(index), to = endAt(index);
-        if (!editor.view.setSelection(state.revision, { anchor: from, head: to })) return false;
+        return direction === 1 ? low % count : (low + count - 1) % count;
+    }
+    function selectMatch(index: number, clearNotice: boolean): boolean {
+        const { from, to } = matches.at(index);
+        if (!editor.view.setSelection(store.get().revision, { anchor: from, head: to })) return false;
         navigatedZero = from === to ? { index, selectionSet: editor.view.getSnapshot().selectionSet } : undefined; replacedZero = undefined;
-        publish({ current: index, reason: null, message: "" }); editor.viewport.revealOffset(from); editor.focus(); return true;
+        publish(clearNotice ? { current: index, reason: null, message: "" } : { current: index });
+        editor.viewport.revealOffset(from); return true;
+    }
+    function finishAdvance(): void {
+        const selection = advanceAfterReplace;
+        advanceAfterReplace = undefined;
+        if (!selection || !valid() || selection !== editor.view.getSnapshot().selectionSet || editor.activity().composing) return;
+        const index = nextIndex(1);
+        if (index !== undefined) selectMatch(index, false);
+    }
+    const next = (direction: 1 | -1 = 1): boolean => {
+        scope.assertWritable();
+        if (!valid()) return false;
+        const index = nextIndex(direction); if (index === undefined) return false;
+        if (editor.activity().composing) { publish({ reason: "composition-active", message: "Finish composition before navigating." }); return false; }
+        advanceAfterReplace = undefined;
+        return selectMatch(index, true);
     };
-    function planReplacement(state: FindSnapshot, replacement: string, range?: SearchMatch): boolean {
+    function planReplacement(state: FindSnapshot, replacement: string, range?: SearchMatch, focusEditor = false): boolean {
         const selectedBackend = backendFor(state.regularExpression), immediate = !!range && !state.regularExpression;
         if (!selectedBackend || !valid() || state.revision !== workspace.document(documentId).revision) return false;
         if (!canEdit()) { publish({ reason: "editing-unavailable", message: "read-only" }); return false; }
         if (editor.activity().composing) { publish({ reason: "composition-active", message: "Finish composition before replacing." }); return false; }
+        advanceAfterReplace = undefined;
         const request = capture(state.query, state.wholeWord, state.matchCase), positions = matches, total = range ? 1 : count;
         const selectionSet = editor.view.getSnapshot().selectionSet, acceptPlan = createFindReplacementPlan(positions, total, range);
         // A synchronous literal replacement must leave an in-progress repair alive on a no-op.
@@ -281,7 +302,14 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
                 replacedZero = { revision: workspace.document(documentId).revision, head: head!, selectionSet: editor.view.getSnapshot().selectionSet };
             }
             publish({ reason: "replaced", message: `Replaced ${total} ${total === 1 ? "match" : "matches"}.` });
-            if (valid()) { if (head !== undefined) editor.viewport.revealOffset(head); if (focusGeneration === focusToken) editor.focus(); }
+            if (valid() && focusGeneration === focusToken) {
+                if (head !== undefined) {
+                    advanceAfterReplace = editor.view.getSnapshot().selectionSet;
+                    if (store.get().status === "ready") finishAdvance();
+                    else editor.viewport.revealOffset(head);
+                }
+                if (focusEditor) editor.focus();
+            }
         };
         const step = () => {
             if (!current()) return;
@@ -298,18 +326,21 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         if (!valid()) return false;
         if (!canEdit()) { publish({ reason: "editing-unavailable", message: "read-only" }); return false; }
         if (editor.activity().composing) { publish({ reason: "composition-active", message: "Finish composition before replacing." }); return false; }
-        const match = currentRange(); if (!match) return next();
-        return planReplacement(store.get(), replacement, match);
+        const match = currentRange();
+        if (match) return planReplacement(store.get(), replacement, match);
+        const index = nextIndex(1);
+        return index !== undefined && planReplacement(store.get(), replacement, matches.at(index));
     };
-    const replaceAll = (replacement: string): void => {
+    const replaceAll: FindController["replaceAll"] = (replacement, options) => {
         scope.assertWritable();
         const state = store.get(); if (!valid() || state.status !== "ready" || !count) return;
-        planReplacement(state, replacement);
+        planReplacement(state, replacement, undefined, options?.focusEditor);
     };
     // Disabling the command button can clear activeElement without a new focus choice.
-    const focusChanged = () => { focusGeneration++; };
+    const focusChanged = () => { focusGeneration++; advanceAfterReplace = undefined; };
     owner.addEventListener("focusin", focusChanged);
     const compositionStarted = () => {
+        advanceAfterReplace = undefined;
         if (store.get().status !== "replacing") return;
         stop(); publish({ status: "ready", reason: "composition-active", message: "Replacement cancelled for composition." });
     };

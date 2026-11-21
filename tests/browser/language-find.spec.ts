@@ -54,9 +54,25 @@ test("visible search highlights follow scrolling, equal-count queries and edits 
 test("keyboard find routing, read-only replacement and a pilot-sized replace-all retain exact history", async ({ page }) => {
     await page.evaluate(() => { window.editingFixture.load("lines-10000"); window.editingFixture.focus("primary"); });
     await page.keyboard.press("ControlOrMeta+f"); await expect(page.getByRole("textbox", { name: "Find", exact: true })).toBeFocused();
-    await page.keyboard.type("const"); await found(page, 10_000); await page.keyboard.press("Enter");
+    await page.keyboard.type("const"); await found(page, 10_000);
+    const query = page.getByRole("textbox", { name: "Find", exact: true });
+    const revision = (await snapshot(page)).document!.revision;
+    for (let match = 0; match < 5; match++) {
+        await page.keyboard.press("Enter"); await expect(query).toBeFocused();
+        expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: match * 24, head: match * 24 + 5 });
+    }
+    await page.keyboard.press("Shift+Enter");
+    await expect(query).toBeFocused();
+    expect((await snapshot(page)).document!.revision).toBe(revision);
+    const replacement = page.getByRole("textbox", { name: "Replace with", exact: true });
+    await replacement.fill("let"); await page.keyboard.press("Enter"); await found(page, 9_999);
+    await expect(replacement).toBeFocused();
+    await expect(page.locator("#primary .st-viewport-row").filter({ hasText: /^let sample/ })).toBeVisible();
+    expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 94, head: 99 });
+    await page.keyboard.press("Escape");
     await expect(page.getByRole("textbox", { name: "Primary source", exact: true })).toBeFocused();
-    await page.keyboard.press("ControlOrMeta+h"); await expect(page.getByRole("textbox", { name: "Replace with", exact: true })).toBeFocused(); await page.keyboard.type("let");
+    await page.keyboard.press("ControlOrMeta+z");
+    await page.keyboard.press("ControlOrMeta+h"); await found(page, 10_000); await expect(replacement).toBeFocused();
     await page.evaluate(() => window.editingFixture.readOnly(true)); await page.getByRole("button", { name: "Replace all", exact: true }).click();
     await expect(page.locator("#find-status")).toHaveText("read-only"); expect((await snapshot(page)).document!.length).toBe(240_000);
     expect((await snapshot(page)).find.reason).toBe("editing-unavailable");

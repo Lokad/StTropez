@@ -17,8 +17,8 @@ test("Find toggles regex on the existing query and replaces captured groups in o
     await expect(status).toHaveText("2 matches");
     await expect(page.locator("#editor .st-viewport-row").filter({ has: page.locator(".demo-search") })).toHaveCount(2);
     const selected = () => source.evaluate(node => { const input = node as HTMLTextAreaElement; return input.value.slice(input.selectionStart, input.selectionEnd); });
-    await query.press("Enter"); await expect.poll(selected).toBe("quantity: 2");
-    await query.press("Shift+Enter"); await expect.poll(selected).toBe("quantity: 4");
+    await page.keyboard.press("Enter"); await expect.poll(selected).toBe("quantity: 2"); await expect(query).toBeFocused();
+    await page.keyboard.press("Shift+Enter"); await expect.poll(selected).toBe("quantity: 4"); await expect(query).toBeFocused();
     await page.locator("#replace-toggle").click(); await query.fill("(");
     await expect(status).toHaveText("Invalid regular expression.");
     await expect(page.locator("#replace-current")).toBeDisabled(); await expect(replaceAll).toBeDisabled();

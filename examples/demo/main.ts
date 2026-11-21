@@ -482,7 +482,7 @@ on("find-regex", () => {
 on("replace-toggle", () => { element("replace-controls").hidden = !element("replace-controls").hidden; });
 on("find-next", () => { find?.next(); }); on("find-previous", () => { find?.next(-1); });
 on("replace-current", () => { find?.replaceCurrent(field("replacement").value); });
-on("replace-all", () => { find?.replaceAll(field("replacement").value); });
+on("replace-all", () => { find?.replaceAll(field("replacement").value, { focusEditor: true }); });
 on("compare", () => setPanel("changes")); on("analysis-retry", () => { presentation.retry(); referencePresentation?.retry(); referenceFolding?.refresh(); });
 on("complete", () => languageView?.complete());
 on("inspect-type", () => languageView?.inspect()); on("signature", () => languageView?.signature());

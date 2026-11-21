@@ -56,8 +56,8 @@ notice.
 | `setQuery(query)` | Cancels obsolete work and starts a search; an empty query is idle |
 | `setFlags(flags)` | Patches supplied flags and restarts only when a value changes |
 | `next(direction?)` | Selects a match in the captured view; direction is `1` by default or `-1` |
-| `replaceCurrent(text)` | Replaces an eligible current selection, or selects the next match |
-| `replaceAll(text)` | Plans a replacement from a completed index and commits one history command |
+| `replaceCurrent(text)` | Replaces the selected match, or the next match if none is selected, then selects the following match |
+| `replaceAll(text, options?)` | Plans a replacement from a completed index and commits one history command |
 | `cancel()` | Clears the index; later typing does not resume the cancelled search |
 | `dispose()` | Releases work, subscriptions, focus tracking, backend and resource lease |
 
@@ -166,11 +166,14 @@ split a surrogate pair. Boundary checks can inspect context outside the requeste
 
 ### When a match can be replaced
 
-Literal replacement inserts its argument literally, including `$&`, `$1` and raw newline
-sequences. Current replacement requires a matching selection; whole-word replacement also
-requires membership in the index. Otherwise the command selects the next match. Navigation
-and replacement reject active composition. Read-only state, edit capabilities and edit leases
-guard replacement independently of search availability.
+Literal replacement inserts its argument literally, including `$&`, `$1` and raw newlines.
+Replace Current uses a matching selection (an indexed match for whole-word search), or replaces
+the next match in one press. It selects the following match once the updated index is ready,
+provided the view, query, selections and focus are current. Navigation and replacement refuse active
+composition. You can search a read-only view. Replacement also needs edit permission and an unlocked resource.
+
+Find leaves keyboard focus in the control that invoked it. Enter and Shift+Enter can therefore
+navigate without leaving the query field. Call the editor’s `focus()` when closing your Find bar.
 
 Replacing one confirmed literal match runs synchronously, even during index repair. If the replacement
 leaves the text unchanged, repair continues. For a replacement plan, the planner reuses the captured
@@ -184,8 +187,9 @@ restarts the search. Losing edit permission or acquiring an edit lease cancels t
 permission returns before the next step. Retry from the current state.
 
 The final transaction rechecks authority, applies all replacements synchronously and creates one
-shared undo step. Its cost grows with the changed ranges. If the user moved focus to another control
-while waiting, it keeps focus.
+shared undo step. Its cost grows with the changed ranges. If your Replace All button disables
+itself, pass `{ focusEditor: true }` to focus the editor after commit. A control the user focused
+while waiting keeps focus.
 
 ### Regular expressions and worker limits
 

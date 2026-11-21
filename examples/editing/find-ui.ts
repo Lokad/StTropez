@@ -33,7 +33,7 @@ export function mountFindUI(workspace: Workspace, tab: TabId, editor: TextEditor
     }, { signal: listeners.signal });
     const on = (id: string, action: () => void) => owner.getElementById(id)!.addEventListener("click", action, { signal: listeners.signal });
     on("find-next", () => find.next()); on("find-previous", () => find.next(-1)); on("replace-current", () => find.replaceCurrent(replacement.value));
-    on("replace-all", () => find.replaceAll(replacement.value)); on("find-cancel", find.cancel);
+    on("replace-all", () => find.replaceAll(replacement.value, { focusEditor: true })); on("find-cancel", find.cancel);
     editor.element.addEventListener("keydown", event => {
         if ((event.ctrlKey || event.metaKey) && !event.altKey && ["f", "h"].includes(event.key.toLowerCase())) {
             event.preventDefault(); if (find.getSnapshot().status === "cancelled") find.setQuery(query.value);

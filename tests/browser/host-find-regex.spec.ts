@@ -77,8 +77,12 @@ for (const host of ["plain", "react"]) {
         await page.getByRole("checkbox", { name: "Regular expression", exact: true }).check(); await query.fill("(?:)"); await expect(status(page)).toContainText("9 matches · ready");
         for (const head of [0, 2, 3, 4, 5, 6, 7, 8, 9, 0]) { await button(page, "Find next").click(); await ready(page); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: head, head }); }
         await replacement.fill("@"); const before = await snapshot(page); await button(page, "Replace current").click(); await expect(status(page)).toContainText("Replaced 1 match."); await ready(page); await exact(page, "@" + original);
-        await expect(button(page, "Replace current")).toBeEnabled(); await button(page, "Replace current").click(); await ready(page); await exact(page, "@" + original);
-        expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection.head).toBe(3); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
+        await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection.head).toBe(3);
+        expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
+        await replacement.focus(); await page.keyboard.press("Enter"); await expect(replacement).toBeFocused();
+        await expect.poll(async () => (await snapshot(page)).source.revision).toBe(before.source.revision + 2);
+        await exact(page, "@😀@x\r\nlast");
+        await source(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, "@" + original);
         await source(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, original);
         await source(page).press("Control+f"); await expect(status(page)).toContainText("9 matches · ready"); await replacement.fill("|"); await button(page, "Replace all").click();
         await expect(status(page)).toContainText("Replaced 9 matches."); await ready(page); await exact(page, "|😀|x|\r|\n|l|a|s|t|");

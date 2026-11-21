@@ -256,7 +256,7 @@ export class HostLanguageTools {
     readonly next = (): void => { if (this.active) this.runFind(this.active, { kind: "navigate", direction: 1 }); };
     readonly previous = (): void => { if (this.active) this.runFind(this.active, { kind: "navigate", direction: -1 }); };
     readonly replaceCurrent = (): void => { if (this.active) this.runFind(this.active, { kind: "replace", text: this.cell.get().replacement }); };
-    readonly replaceAll = (): void => { if (this.active?.reference) return; this.ensureFind()?.replaceAll(this.cell.get().replacement); };
+    readonly replaceAll = (): void => { if (this.active?.reference) return; this.ensureFind()?.replaceAll(this.cell.get().replacement, { focusEditor: true }); };
     readonly cancelFind = (): void => { this.active?.find?.cancel(); this.active?.editor.focus(); };
     readonly focusEditor = (): void => { this.active?.editor.focus(); };
     private foldTarget(): Session | undefined {
