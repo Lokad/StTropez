@@ -3,6 +3,7 @@ import { autoClosedPairs } from "./auto-closed-pairs.ts";
 import { automaticIndentation } from "./automatic-indentation.ts";
 import { clientBox, cssZoom } from "./dom-coordinates.ts";
 import { textDifference } from "../core/changes.ts";
+import { copyCaretLines, planClipboardPaste } from "../core/clipboard-edits.ts";
 import { createWordCommandCursor, WordCursor } from "../core/words.ts";
 import { createGraphemeCursor } from "../core/graphemes.ts";
 import { createSelectionSet, planSelectionEdits } from "../core/selections.ts";
@@ -143,7 +144,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     type CommandCapture = Readonly<{ buffer: TextBuffer; revision: number; selection: Selection; selectionSet: SelectionSet; deleting: boolean }>;
     let graphemeJob: Readonly<{ cursor: GraphemeCursor; capture: CommandCapture; purpose: "word" | "word-selection" | "grapheme" }> | undefined, cancelGraphemeTask: (() => void) | undefined;
     let graphemeCache: Readonly<{ buffer: TextBuffer; from: number; to: number; index: GraphemeIndex }> | undefined;
-    type InputCapture = Readonly<{ revision: number; selectionSet: SelectionSet; context: InputContext; target?: NativeInsertionTarget }>;
+    const lineCopyFormat = "application/x-sttropez-lines";
+    const copiedLines = (data: DataTransfer | null) => data?.getData(lineCopyFormat) === "1";
+    type InputCapture = Readonly<{ revision: number; selectionSet: SelectionSet; context: InputContext; target?: NativeInsertionTarget; wholeLines?: boolean }>;
     let wordInput: Readonly<{ revision: number; selectionSet: SelectionSet; direction: -1 | 1; word: boolean }> | undefined;
     let insertion: InputCapture | undefined, composition: InputCapture | undefined;
     let projectedSet = view.getSnapshot().selectionSet;
@@ -284,9 +287,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         } finally { committing = false; try { transformed?.complete?.(applied); } finally { refresh(); } }
         return applied;
     }
-    function captureInput(type: string, data: string | null): InputCapture {
+    function captureInput(type: string, data: string | null, wholeLines = false): InputCapture {
         const target = captureNativeInsertion(input, type, data);
-        return { revision, selectionSet: view.getSnapshot().selectionSet, context, ...(target ? { target } : {}) };
+        return { revision, selectionSet: view.getSnapshot().selectionSet, context, ...(target ? { target } : {}), wholeLines };
     }
     function commit(type: string, captured = insertion ?? { revision, selectionSet: projectedSet, context }): void {
         insertion = undefined;
@@ -307,13 +310,13 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         const to = exactTarget ? Math.max(selected.anchor, selected.head) : edit.from === edit.to ? from : projection.toModel(edit.to);
         const typing = type === "insertText" && !edit.insert.includes("\n"), deleting = type === "deleteContentBackward" || type === "deleteContentForward";
         const kind = typing ? "typing" : deleting ? "delete" : type === "insertCompositionText" ? "composition" : type === "insertFromPaste" ? "paste" : "replace";
-        if (captured.selectionSet.ranges.length > 1) {
+        if (captured.selectionSet.ranges.length > 1 || kind === "paste" && captured.wholeLines && exactTarget) {
             // A native textarea describes one primary target. Replicate only an exact captured
             // selection replacement; neighbouring autocorrection/reconversion needs its own plan.
             if (from !== Math.min(selected.anchor, selected.head) || to !== Math.max(selected.anchor, selected.head)) {
                 conflict("unsupported-multiple-input-target", { from, to, insert: edit.insert }, captured.revision, projection.from); refresh(); return;
             }
-            const plan = planInput(workspace.document(documentId).buffer, captured.selectionSet, edit.insert, kind);
+            const plan = planInput(workspace.document(documentId).buffer, captured.selectionSet, edit.insert, kind, captured.wholeLines);
             apply(plan.edits, plan.selectionSet, kind, typing || deleting ? type : undefined, captured.revision); return;
         }
         const buffer = workspace.document(documentId).buffer;
@@ -338,20 +341,12 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     }
     const focus = () => { if (!disposed) { input.focus({ preventScroll: true }); scheduleCaret(); } };
     const inputBinding = viewport.bindInput(focus);
-    function planInput(buffer: TextBuffer, selections: SelectionSet, text: string, kind: EditKind) {
-        if (kind !== "paste" || options.pasteLineEndings === "preserve" || !/[\r\n]/.test(text))
-            return planSelectionEdits(buffer.length, selections, text);
-        const lf = text.replace(/\r\n?/g, "\n");
-        let crlf: string | undefined;
-        const inserts = selections.ranges.map(range => {
-            const line = buffer.lineAt(Math.min(range.anchor, range.head));
-            if (lineEnding(buffer, line) === "\n") return lf;
-            return crlf ??= lf.replace(/\n/g, "\r\n");
-        });
-        return planSelectionEdits(buffer.length, selections, inserts);
+    function planInput(buffer: TextBuffer, selections: SelectionSet, text: string, kind: EditKind, wholeLines = false) {
+        return kind === "paste" ? planClipboardPaste(buffer, selections, text, wholeLines, options.pasteLineEndings === "preserve")
+            : planSelectionEdits(buffer.length, selections, text);
     }
-    function replaceSelection(insert: string, kind: EditKind, type?: string, recoveryText?: string): boolean {
-        const document = workspace.document(documentId), plan = planInput(document.buffer, view.getSnapshot().selectionSet, insert, kind);
+    function replaceSelection(insert: string, kind: EditKind, type?: string, recoveryText?: string, wholeLines = false): boolean {
+        const document = workspace.document(documentId), plan = planInput(document.buffer, view.getSnapshot().selectionSet, insert, kind, wholeLines);
         return apply(plan.edits, plan.selectionSet, kind, type, document.revision, recoveryText);
     }
     // Delayed commands belong to this captured tab, revision and complete selection set.
@@ -757,7 +752,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             // The same captured command path serves keyboard and cancellable native input.
         } else if (action.kind === "text") {
             const typing = action.type === "insertText" && !action.text.includes("\n");
-            if (!replaceSelection(action.text, typing ? "typing" : action.type === "insertFromPaste" ? "paste" : "replace", typing ? "insertText" : undefined, action.text)) {
+            if (!replaceSelection(action.text, typing ? "typing" : action.type === "insertFromPaste" ? "paste" : "replace", typing ? "insertText" : undefined, action.text, action.wholeLines)) {
                 return "reported";
             }
         } else {
@@ -785,9 +780,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         const pending = inputQueue.ensure(); if (!pending) return false;
         const data = event.inputType === "insertLineBreak" ? "\n" : event.data ?? event.dataTransfer?.getData("text/plain") ?? null;
         if (event.inputType === "insertFromPaste" && event.cancelable && data === "") { event.preventDefault(); return true; }
-        if (event.cancelable && (action || data !== null)) { event.preventDefault(); appendInput(action ?? { kind: "text", text: data!, type: event.inputType }); return true; }
+        const wholeLines = event.inputType === "insertFromPaste" && copiedLines(event.dataTransfer);
+        if (event.cancelable && (action || data !== null)) { event.preventDefault(); appendInput(action ?? { kind: "text", text: data!, type: event.inputType, wholeLines }); return true; }
         inputQueue.waitNative(pending);
-        nativeOrder = { order: pending, capture: captureInput(event.inputType, event.data), type: event.inputType, data, ...(action ? { action } : {}), invalid: false, reported: false };
+        nativeOrder = { order: pending, capture: captureInput(event.inputType, event.data, wholeLines), type: event.inputType, data, ...(action ? { action } : {}), invalid: false, reported: false };
         return true;
     }
     function commitOrderedInput(event: InputEvent): boolean {
@@ -807,7 +803,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         const projection = native.capture.context, edit = native.capture.target && resolveNativeInsertion(native.capture.target, input, event.inputType);
         if (native.action) appendInput(native.action);
         else if (edit && edit.from === Math.min(projection.nativeAnchor, projection.nativeHead) && edit.to === Math.max(projection.nativeAnchor, projection.nativeHead))
-            appendInput({ kind: "text", text: edit.insert, type: event.inputType, literal: true });
+            appendInput({ kind: "text", text: edit.insert, type: event.inputType, literal: true, wholeLines: native.capture.wholeLines === true });
         else { cancelWord(); conflict("pending-native-input-target", undefined, native.capture.revision, 0, event.data ?? native.data ?? input.value); }
         refresh(); inputQueue.schedule(); return true;
     }
@@ -828,7 +824,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         if (!composing && !event.isComposing && !input.disabled && !input.readOnly && input.value === context.text) {
             if (event.inputType === "insertFromPaste" && event.cancelable) {
                 const pasted = event.data ?? event.dataTransfer?.getData("text/plain");
-                if (pasted != null) { event.preventDefault(); if (pasted.length) replaceSelection(pasted, "paste", undefined, pasted); return; }
+                if (pasted != null) { event.preventDefault(); if (pasted.length) replaceSelection(pasted, "paste", undefined, pasted, copiedLines(event.dataTransfer)); return; }
             }
             if (event.cancelable && configuredInput(event.inputType, event.data)) { event.preventDefault(); return; }
             // Keep the native projection bounded during insertion, not just after input. Browsers
@@ -841,7 +837,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
                 replaceSelection(text, typing ? "typing" : "replace", typing ? "insertText" : undefined);
                 return;
             }
-            insertion = captureInput(event.inputType, event.data);
+            insertion = captureInput(event.inputType, event.data, event.inputType === "insertFromPaste" && copiedLines(event.dataTransfer));
         }
     }
     input.addEventListener("beforeinput", event => { const began = win.performance.now();
@@ -1021,24 +1017,28 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     root.addEventListener("lostpointercapture", stopDrag, { signal: listeners.signal });
     for (const type of ["copy", "cut", "paste"] as const) input.addEventListener(type, event => {
         if (event.defaultPrevented) { cancelWord(); group = undefined; if (type !== "copy") stopDrag(); return; }
-        if (composing || !event.clipboardData) return;
+        if (input.disabled || composing || !event.clipboardData) return;
         if (type === "paste" && (inputQueue.pending || rangeCommand) && !input.disabled && !input.readOnly) {
             event.preventDefault(); stopDrag();
             const text = event.clipboardData.getData("text/plain");
-            if (text.length) appendInput({ kind: "text", text, type: "insertFromPaste" });
+            if (text.length) appendInput({ kind: "text", text, type: "insertFromPaste", wholeLines: copiedLines(event.clipboardData) });
             return;
-        }
-        if (type !== "paste") {
-            syncSelection();
-            if (!view.getSnapshot().selectionSet.ranges.some(range => range.anchor !== range.head)) return;
         }
         event.preventDefault(); cancelWord(); syncSelection(); group = undefined;
         if (type !== "copy") view.folding.revealSelection(view.folding.getSnapshot());
         const selections = view.getSnapshot().selectionSet;
-        if (type === "paste") { const text = event.clipboardData.getData("text/plain"); if (text.length) replaceSelection(text, "paste"); }
+        if (type === "paste") { const text = event.clipboardData.getData("text/plain"); if (text.length) replaceSelection(text, "paste", undefined, text, copiedLines(event.clipboardData)); }
         else {
             if (type === "cut" && input.readOnly) return;
             const buffer = workspace.document(documentId).buffer;
+            if (selections.ranges.every(range => range.anchor === range.head)) {
+                const lines = copyCaretLines(buffer, selections, type === "cut");
+                event.clipboardData.setData("text/plain", lines.text);
+                event.clipboardData.setData(lineCopyFormat, "1");
+                if (lines.edits.length) apply(lines.edits, lines.selectionSet, "delete");
+                return;
+            }
+            event.clipboardData.clearData(lineCopyFormat);
             event.clipboardData.setData("text/plain", selections.ranges.filter(range => range.anchor !== range.head)
                 .map(range => buffer.slice(Math.min(range.anchor, range.head), Math.max(range.anchor, range.head))).join("\n"));
             if (type === "cut") replaceSelection("", "delete");

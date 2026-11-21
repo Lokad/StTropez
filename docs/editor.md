@@ -172,9 +172,14 @@ movement. During composition the native input handles the pointer.
 
 ### Clipboard and text drag
 
-Copy joins nonempty selections in source order with LF. Cut removes them in one transaction. With only
-carets selected, both leave the event and history alone. Paste converts CR, LF and CRLF to the
-line ending at each destination, using the same rule as Enter. Indentation is preserved.
+Copy joins nonempty selections in source order with LF. With only carets, it copies each distinct
+line with its line ending, including a terminator for the last line. Cut removes the same text in
+one undo step. Pasting an editor-marked line at a caret inserts it above the current line and
+preserves the caret’s column. Plain text from other applications inserts at the selection.
+
+When the clipboard has one line per selection, each receives its corresponding line. Otherwise
+each receives the full text. Paste converts CR, LF and CRLF to the line ending at each destination
+and preserves indentation.
 Set `pasteLineEndings: "preserve"` when mounting the editor to insert clipboard text verbatim.
 An empty or nontext payload leaves selections and pending commands
 alone.

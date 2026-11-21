@@ -3,7 +3,7 @@ import type { createCooperativeRunner } from "./cooperative-runner.ts";
 import type { KeyBinding, KeyStroke } from "./editing-keys.ts";
 
 export type InputKey = KeyStroke & KeyBinding & { kind: "key" };
-export type InputIntent = (InputKey | { kind: "text"; text: string; type: string; literal?: true }) & { at?: number };
+export type InputIntent = (InputKey | { kind: "text"; text: string; type: string; literal?: true; wholeLines?: boolean }) & { at?: number };
 type Command<C> = Readonly<{ capture: C; purpose: "word" | "grapheme" }>;
 export type OrderedInput<C> = { capture: C; purpose: Command<C>["purpose"]; actions: InputIntent[]; units: number;
     edit: boolean; native: boolean; running?: InputIntent; cancelled?: boolean };

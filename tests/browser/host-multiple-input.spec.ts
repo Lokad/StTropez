@@ -83,7 +83,7 @@ for (const host of ["plain", "react"]) {
         await input(page).press("Control+z"); await ready(page); await exact(page, original);
         const pasted = "$&\r\n😀";
         await clipboard(page, "paste", pasted);
-        await ready(page); await exact(page, replace(original, ranges, "$&\n😀").text);
+        await ready(page); await exact(page, "$&aa|aa😀");
         await input(page).press("Control+z"); await ready(page); await exact(page, original);
         await page.evaluate(() => window.hostFixture.setSourceReadOnly(true)); const locked = await snapshot(page);
         await clipboard(page, "cut"); await clipboard(page, "paste", "blocked");
