@@ -4,8 +4,8 @@ import type { createHoverController } from "../shared/language/hover-controller.
 import type { HoverSnapshot } from "../shared/language/hover-controller.ts";
 import { HostCell } from "../shared/observable.ts";
 type Session = { id: string; editor: TextEditor; controller: ReturnType<typeof createHoverController>;
-    affinity: Affinity; offset: number; overTarget: boolean; scheduled: boolean; cancelTimers: () => void };
-export type HoverPresentation = Readonly<{ visible: boolean; view: string | null; left: number; top: number; status: HoverSnapshot["status"]; text: string; message: string; content?: DocumentationContent }>;
+    revision: number; affinity: Affinity; offset: number; overTarget: boolean; scheduled: boolean; cancelTimers: () => void };
+export type HoverPresentation = Readonly<{ visible: boolean; view: string | null; status: HoverSnapshot["status"]; text: string; message: string; content?: DocumentationContent }>;
 export type HoverControllerFactory = (workspace: Workspace, tab: TabId, editor: TextEditor, canCapture: () => boolean) => ReturnType<typeof createHoverController>;
 
 /** Host-owned presentation follows an explicit view; pointer inspection never changes focus. */
@@ -15,12 +15,11 @@ export class HostHoverTools {
     private readonly createController: HoverControllerFactory;
     private readonly canCapture: (document: TextEditor["view"]["documentId"]) => boolean;
     private readonly sessions = new Map<string, Session>();
-    private readonly cell = new HostCell<HoverPresentation>({ visible: false, view: null, left: 0, top: 0, status: "idle", text: "", message: "" });
+    private readonly cell = new HostCell<HoverPresentation>({ visible: false, view: null, status: "idle", text: "", message: "" });
     private current: Session | undefined;
     private kind: "pointer" | "keyboard" = "pointer";
     private overPopup = false;
     private cancelDismiss: (() => void) | undefined;
-    private layout: { observer: MutationObserver; win: Window; frame: number | undefined } | undefined;
     private retired = { posted: 0, received: 0, stale: 0, invalid: 0, failed: 0, cancelled: 0 };
     readonly state = this.cell.observable;
     constructor(workspace: Workspace, allowInspect: (kind: "pointer" | "keyboard") => boolean = () => true,
@@ -28,37 +27,18 @@ export class HostHoverTools {
         this.workspace = workspace; this.allowInspect = allowInspect; this.createController = options.createController; this.canCapture = options.canCapture ?? (() => true);
     }
     private clearDismiss(): void { this.cancelDismiss?.(); this.cancelDismiss = undefined; }
-    private stopLayout(): void {
-        const layout = this.layout; this.layout = undefined; layout?.observer.disconnect();
-        if (layout?.frame !== undefined) layout.win.cancelAnimationFrame(layout.frame);
-    }
-    private position(session: Session): Readonly<{ left: number; top: number }> {
-        const win = session.editor.element.ownerDocument.defaultView!, point = session.editor.viewport.coordsAt(session.offset, session.affinity), box = session.editor.element.getBoundingClientRect();
-        const at = point ?? { left: box.left + 12, top: box.top + 8, height: 20 };
-        return { left: Math.max(8, Math.min(win.innerWidth - 352, at.left + 10)), top: Math.max(8, Math.min(win.innerHeight - 160, at.top + at.height + 8)) };
-    }
-    private trackLayout(session: Session): void {
-        if (this.layout) return;
-        const win = session.editor.element.ownerDocument.defaultView!, root = session.editor.element.closest("#host") ?? session.editor.element.ownerDocument.body;
-        const layout = { observer: new MutationObserver(() => {
-            if (this.layout !== layout || layout.frame !== undefined) return;
-            layout.frame = win.requestAnimationFrame(() => {
-                layout.frame = undefined; if (this.layout !== layout || this.current !== session || !this.cell.get().visible) return;
-                if (!session.editor.element.isConnected) { this.dismiss(); return; }
-                const position = this.position(session), state = this.cell.get();
-                if (position.left !== state.left || position.top !== state.top) this.cell.set({ ...state, ...position });
-            });
-        }), win, frame: undefined as number | undefined };
-        this.layout = layout; layout.observer.observe(root, { childList: true, subtree: true, attributes: true, characterData: true });
+    popupAnchor() {
+        const session = this.current;
+        if (!session || !this.cell.get().visible) return;
+        return { editor: session.editor, revision: session.revision, offset: session.offset, affinity: session.affinity };
     }
     private publish(): void {
         const session = this.current;
-        if (!session) { this.stopLayout(); this.cell.set({ ...this.cell.get(), visible: false, view: null, status: "idle", text: "", message: "" }); return; }
+        if (!session) { this.cell.set({ ...this.cell.get(), visible: false, view: null, status: "idle", text: "", message: "" }); return; }
         const state = session.controller.state.getSnapshot();
-        if (["expired", "empty", "disconnected", "disposed"].includes(state.status)) { this.current = undefined; this.overPopup = false; this.clearDismiss(); this.stopLayout(); this.cell.set({ ...this.cell.get(), visible: false, view: null, status: state.status, text: "", message: state.message }); return; }
+        if (["expired", "empty", "disconnected", "disposed"].includes(state.status)) { this.current = undefined; this.overPopup = false; this.clearDismiss(); this.cell.set({ ...this.cell.get(), visible: false, view: null, status: state.status, text: "", message: state.message }); return; }
         const visible = state.status === "ready" || state.status === "failed" || (state.status === "pending" && this.kind === "keyboard");
-        this.cell.set({ visible, view: session.id, status: state.status, text: state.text, message: state.message, ...(state.content ? { content: state.content } : {}), ...this.position(session) });
-        if (visible) this.trackLayout(session); else this.stopLayout();
+        this.cell.set({ visible, view: session.id, status: state.status, text: state.text, message: state.message, ...(state.content ? { content: state.content } : {}) });
     }
     readonly dismiss = (): void => {
         this.clearDismiss(); for (const session of this.sessions.values()) session.cancelTimers();
@@ -74,7 +54,7 @@ export class HostHoverTools {
     readonly leavePopup = (): void => { this.overPopup = false; if (this.current) this.queueDismiss(this.current); };
     private inspect(session: Session, revision: number, offset: number, affinity: Affinity, kind: "pointer" | "keyboard"): boolean {
         if (this.sessions.get(session.id) !== session || !this.allowInspect(kind)) return false;
-        this.dismiss(); this.current = session; this.kind = kind; session.affinity = affinity; session.offset = offset;
+        this.dismiss(); this.current = session; this.kind = kind; session.revision = revision; session.affinity = affinity; session.offset = offset;
         const posted = session.controller.request(revision, offset); if (!posted) { this.current = undefined; this.publish(); } return posted;
     }
     inspectCaret(id: string): boolean {
@@ -88,7 +68,7 @@ export class HostHoverTools {
         const controller = this.createController(this.workspace, tab, editor, () => this.canCapture(editor.view.documentId)), listeners = new AbortController(), win = editor.element.ownerDocument.defaultView!;
         let pointerTimer: number | undefined, chordTimer: number | undefined, chord = false, key: string | undefined;
         let requested: Readonly<{ revision: number; offset: number }> | undefined;
-        const session: Session = { id, editor, controller, affinity: "after", offset: 0, overTarget: false, scheduled: false, cancelTimers: () => {} };
+        const session: Session = { id, editor, controller, revision: -1, affinity: "after", offset: 0, overTarget: false, scheduled: false, cancelTimers: () => {} };
         const cancelDwell = () => { if (pointerTimer !== undefined) win.clearTimeout(pointerTimer); pointerTimer = undefined; session.scheduled = false; key = undefined; };
         const cancelPointer = () => { cancelDwell(); requested = undefined; };
         const cancelChord = () => { if (chordTimer !== undefined) win.clearTimeout(chordTimer); chordTimer = undefined; chord = false; };
@@ -161,5 +141,5 @@ export class HostHoverTools {
     }
     setDelay(id: string, value: number): void { this.sessions.get(id)?.controller.setDelay(value); }
     faultNext(id: string, value: "malformed" | "failure" | "markup"): void { this.sessions.get(id)?.controller.faultNext(value); }
-    debug() { return { presentation: this.cell.get(), subscriptions: this.cell.count(), layoutObserver: this.layout !== undefined, layoutFramePending: this.layout?.frame !== undefined, sessions: [...this.sessions.values()].map(session => ({ id: session.id, viewId: session.editor.view.id, counters: session.controller.snapshot() })), retired: { ...this.retired } }; }
+    debug() { return { presentation: this.cell.get(), subscriptions: this.cell.count(), sessions: [...this.sessions.values()].map(session => ({ id: session.id, viewId: session.editor.view.id, counters: session.controller.snapshot() })), retired: { ...this.retired } }; }
 }

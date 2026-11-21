@@ -22,7 +22,7 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         popup.className = "demo-completion"; popup.hidden = true; popup.setAttribute("role", "listbox"); popup.setAttribute("aria-label", "Completions");
         count.className = "demo-completion-count";
         popup.append(count, choices, detail); document.body.append(popup);
-        const completionOverlay = mountAnchoredOverlay(editor, popup);
+        const completionOverlay = mountAnchoredOverlay(editor, popup, { priority: 1 });
         scope.defer(completionOverlay.dispose);
         const snippetPanel = document.createElement("div"); scope.defer(() => snippetPanel.remove());
         snippetPanel.className = "demo-snippet"; snippetPanel.hidden = true;

@@ -107,9 +107,15 @@ export async function runDemoDocumentation(page: Page, url = "/") {
     await select(page, source, "const discounted = applyDiscount"); await source.press("ArrowRight"); await source.press("ArrowLeft");
     await source.press("Control+k"); await source.press("Control+i");
     const hover = page.locator(".demo-language-popups .host-symbol-info:not(.host-signature)");
+    const caret = page.locator("#editor .st-input-caret");
+    const clearsLine = async (popup: Locator) => {
+        const line = await caret.boundingBox(), box = await popup.boundingBox();
+        return !!line && !!box && (box.y >= line.y + line.height || box.y + box.height <= line.y);
+    };
     await expect(hover.locator("strong").first()).toHaveText("percentage discount");
     await expect(hover.locator("em").first()).toHaveText("ten percent"); await expect(hover.locator("ul li")).toHaveCount(2);
     await expect(hover.locator("pre code").last()).toContainText("applyDiscount(50, 0.1)");
+    await expect.poll(() => clearsLine(hover)).toBe(true);
     expect(await hover.evaluate(node => { const box = node.getBoundingClientRect(); return box.top >= 0 && box.bottom <= innerHeight && box.left >= 0 && box.right <= innerWidth; })).toBe(true);
     const opened = page.context().waitForEvent("page"); await hover.getByRole("button", { name: "TypeScript function guide", exact: true }).click();
     const help = await opened; await expect(help).toHaveURL(guide); expect(await help.evaluate(() => window.opener)).toBeNull(); await help.close();
@@ -119,7 +125,20 @@ export async function runDemoDocumentation(page: Page, url = "/") {
     await expect(signature.getByLabel("Active signature parameter")).toContainText("rate");
     await expect(signature.locator("strong").first()).toHaveText("percentage discount"); await expect(signature.locator("ul li")).toHaveCount(2);
     await expect(signature.locator(".st-documentation").last().locator("code")).toHaveText(["0", "1"]);
+    await expect.poll(() => clearsLine(signature)).toBe(true);
     expect(await signature.evaluate(node => { const box = node.getBoundingClientRect(); return box.top >= 0 && box.bottom <= innerHeight; })).toBe(true);
+    await source.pressSequentially("M");
+    const completions = page.getByRole("listbox", { name: "Completions", exact: true });
+    await expect(completions.getByRole("option").first()).toBeVisible();
+    await expect(signature.getByLabel("Active signature parameter")).toContainText("rate");
+    await expect.poll(async () => {
+        const list = await completions.boundingBox(), help = await signature.boundingBox();
+        return !!list && !!help && list.height > 0 && help.height > 0
+            && (list.y + list.height <= help.y || help.y + help.height <= list.y);
+    }, { message: "Completion and signature help stay readable while typing an argument" }).toBe(true);
+    await expect(source).toBeFocused();
+    await source.press("Escape"); await expect(completions).toBeHidden();
+    await source.press("Control+z");
     await source.press("Escape"); await expect(signature).toBeHidden(); await expect(page.locator("#files")).not.toContainText("●");
     await page.locator("#sample").selectOption("pricing"); await expect(hover).toBeHidden();
     await page.context().unroute(guide);

@@ -1,7 +1,7 @@
 import type { HostSignatureTools, SignatureSnapshot } from "./signature.ts";
 import { mountDocumentation } from "../../src/browser/index.ts";
 import type { DocumentationOptions } from "../../src/browser/index.ts";
-import { positionPopup } from "./popup-position.ts";
+import { bindPopup } from "./popup-position.ts";
 type SignatureCommandsTools = Pick<HostSignatureTools, "inspect" | "previous" | "next" | "dismiss" | "disconnect" | "reconnect">;
 function signatureActions(tools: SignatureCommandsTools, s: SignatureSnapshot) {
     return [
@@ -36,13 +36,14 @@ export function mountSignaturePopup(host: HTMLElement, tools: HostSignatureTools
     const documentation = mountDocumentation(popup, options), detail = mountDocumentation(popup, options);
     const buttons = ["Previous signature", "Next signature"].map((text, index) => { const button = owner.createElement("button"); button.textContent = text; button.type = "button"; button.onclick = index ? tools.next : tools.previous; controls.append(button); return button; });
     if (withControls) popup.append(controls); host.append(popup);
-    const render = () => { const s = tools.state.getSnapshot(); popup.hidden = !s.visible;
+    const placement = bindPopup(popup, "above");
+    const render = () => { const s = tools.state.getSnapshot();
         before.textContent = s.before || (s.status === "pending" ? s.message : ""); parameter.textContent = s.parameter; parameter.hidden = !s.parameter; after.textContent = s.after;
         documentation.setContent(s.visible ? s.content.length ? s.content : [{ kind: "plaintext", value: s.documentation }] : []);
         detail.setContent(s.visible ? s.parameterContent.length ? s.parameterContent : [{ kind: "plaintext", value: s.parameterDocumentation }] : []);
         controls.hidden = s.signatureCount < 2; buttons.forEach(button => { button.disabled = s.status !== "ready"; });
-        if (s.visible) positionPopup(popup, s.left, s.top);
+        placement.update(tools.popupAnchor());
     };
     const stop = tools.state.subscribe(render); render();
-    return () => { stop(); documentation.dispose(); detail.dispose(); popup.onpointerdown = null; buttons.forEach(button => { button.onclick = null; }); popup.remove(); };
+    return () => { stop(); placement.dispose(); documentation.dispose(); detail.dispose(); popup.onpointerdown = null; buttons.forEach(button => { button.onclick = null; }); popup.remove(); };
 }

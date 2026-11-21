@@ -159,7 +159,10 @@ reappears when that position is visible again. A new document revision expires t
 
 The popup opens below the line by default. Pass `{ prefer: "above" }` to prefer the other side.
 If it cannot fit there, it uses the side with more room and limits its height. The host supplies
-content and styling. `hide()` releases the scroll and resize listeners. Call `dispose()` when
+content and styling. Set a numeric `priority` when several popups share an editor. Each leaves
+room for visible popups with a higher priority. The default is zero.
+
+`hide()` releases the scroll and resize listeners. Call `dispose()` when
 removing the popup. Disposing the editor also releases the attachment.
 
 ### Input adapter ownership

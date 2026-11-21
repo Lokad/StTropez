@@ -454,12 +454,17 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await field(page).press("Escape"); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet.ranges).toHaveLength(1);
         expect((await snapshot(page)).history).toEqual(before.history); expect((await snapshot(page)).source.exports).toBe(0); await exact(page, raw);
         await disposeColorsAndLinks(page); const final = await snapshot(page);
-        expect(final.bindings.signature).toMatchObject({ pending: false, scheduled: false, sessions: 0, subscriptions: 0, layoutObserver: false, layoutFramePending: false, capture: null });
+        expect(final.bindings.signature).toMatchObject({ pending: false, scheduled: false, sessions: 0, subscriptions: 0, capture: null });
         expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
     });
     if (host === "react") test("100k-line signature, link resolution and a selected color presentation use bounded source controls", async ({ page }) => {
         const prefix = "const unchanged = 123;\r\n".repeat(100_000), tail = 'lookup("a", )\r\nimport "sample-utils";\r\nconst color = "#abc";', raw = prefix + tail;
         await seed(page, raw, prefix.length + tail.indexOf(")")); await field(page).press("Control+Shift+Space");
+        await expect.poll(async () => (await snapshot(page)).bindings.signature.presentation.status).toBe("ready");
+        const viewport = page.locator('.st-viewport:has(> textarea[aria-label="Primary source"])');
+        await viewport.evaluate(node => { node.scrollTop = 0; });
+        await expect(page.getByRole("tooltip", { name: "Signature help", exact: true })).toBeHidden();
+        await viewport.evaluate(node => { node.scrollTop = node.scrollHeight; });
         await expect(page.getByRole("tooltip", { name: "Signature help", exact: true }).getByLabel("Active signature parameter", { exact: true })).toHaveText("fallback?: string");
         await field(page).press("Escape"); await button(page, "Add module companion").click(); await button(page, "Discover module links").click();
         const links = page.getByLabel("Module link results", { exact: true }); await expect(links.getByRole("button")).toHaveCount(1); await links.getByRole("button").click();

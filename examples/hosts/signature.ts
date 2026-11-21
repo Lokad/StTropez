@@ -16,7 +16,7 @@ type Session = { token: number; id: string; target: TabTarget; editor: TextEdito
 type Job = { session: Session; input: SignatureInput; capture: CapturedViewRequest;
     timer: number; invalid: boolean; ready: boolean; result?: SignaturePresentation };
 export type SignatureSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; visible: boolean; pending: boolean;
-    status: "idle" | "pending" | "ready" | "empty" | "expired" | "failed"; message: string; view: string | null; left: number; top: number;
+    status: "idle" | "pending" | "ready" | "empty" | "expired" | "failed"; message: string; view: string | null;
     before: string; parameter: string; after: string; documentation: string; parameterDocumentation: string; content: DocumentationContent; parameterContent: DocumentationContent; activeSignature: number; signatureCount: number; argument: number | null; work: number; total: number }>;
 const emptyContent: DocumentationContent = Object.freeze([]);
 /** One captured signature lane per host; automatic requests are debounced outside input handlers. */
@@ -37,10 +37,9 @@ export class HostSignatureTools {
     private delay = 0;
     private fault: SignatureInput["fault"];
     private auto: { session: Session; timer: number; deadline: number; context: LspSignatureContext } | undefined;
-    private layout: { win: Window; observer: MutationObserver; frame: number | undefined } | undefined;
     private readonly counts = { requested: 0, applied: 0, cancelled: 0, expired: 0, failed: 0, scheduled: 0 };
     private readonly cell = new HostCell<SignatureSnapshot>({ available: false, connected: false, disconnected: false, visible: false, pending: false,
-        status: "idle", message: "Use Ctrl/Cmd+Shift+Space for signature help.", view: null, left: 8, top: 8, before: "", parameter: "", after: "", documentation: "", parameterDocumentation: "", content: emptyContent, parameterContent: emptyContent, activeSignature: 0, signatureCount: 0, argument: null, work: 0, total: 0 });
+        status: "idle", message: "Use Ctrl/Cmd+Shift+Space for signature help.", view: null, before: "", parameter: "", after: "", documentation: "", parameterDocumentation: "", content: emptyContent, parameterContent: emptyContent, activeSignature: 0, signatureCount: 0, argument: null, work: 0, total: 0 });
     readonly state = this.cell.observable;
     private readonly reconnectProvider: (() => void) | undefined;
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, beforeRequest: () => void, factory: SignatureBackendFactory, completionOpen?: () => boolean, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.beforeRequest = beforeRequest; this.factory = factory; this.completionOpen = completionOpen; }
@@ -56,28 +55,17 @@ export class HostSignatureTools {
         this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && this.available(this.active), connected: this.client?.snapshot().connected ?? false,
             disconnected: this.disconnected, pending: !!this.job && !this.job.ready, view: this.job?.session.id ?? this.active?.id ?? null });
     }
-    private position(): Readonly<{ left: number; top: number }> {
-        const job = this.job; if (!job) return { left: 8, top: 8 };
-        const editor = job.session.editor, win = editor.element.ownerDocument.defaultView!, point = editor.viewport.coordsAt(job.input.offset), box = editor.element.getBoundingClientRect();
-        return { left: Math.max(8, Math.min(win.innerWidth - 352, (point?.left ?? box.left) + 8)), top: Math.max(8, Math.min(win.innerHeight - 180, (point ? point.top + point.height : box.top) + 8)) };
-    }
-    private stopLayout(): void { const old = this.layout; this.layout = undefined; old?.observer.disconnect(); if (old?.frame !== undefined) old.win.cancelAnimationFrame(old.frame); }
-    private queueLayout(): void {
-        const layout = this.layout; if (!layout || layout.frame !== undefined) return;
-        layout.frame = layout.win.requestAnimationFrame(() => { layout.frame = undefined; if (this.layout !== layout || !this.cell.get().visible) return;
-            const at = this.position(), before = this.cell.get(); if (at.left !== before.left || at.top !== before.top) this.publish(at); });
-    }
-    private trackLayout(): void {
-        if (this.layout || !this.job) return; const editor = this.job.session.editor, win = editor.element.ownerDocument.defaultView!;
-        const observer = new MutationObserver(() => this.queueLayout()); this.layout = { win, observer, frame: undefined };
-        observer.observe(editor.element.closest("#host") ?? editor.element.ownerDocument.body, { childList: true, subtree: true, attributes: true, characterData: true });
+    popupAnchor() {
+        const job = this.job;
+        if (!job || !this.cell.get().visible) return;
+        return { editor: job.session.editor, revision: job.input.revision, offset: job.input.offset };
     }
     private drop(): void { const old = this.client; this.client = undefined; old?.dispose(); }
     private clearDeadline(job: Job): void { job.session.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); }
     private stopAuto(): void { if (this.auto) this.auto.session.editor.element.ownerDocument.defaultView!.clearTimeout(this.auto.timer); this.auto = undefined; }
     private clear(status: SignatureSnapshot["status"], message: string): void {
         const job = this.job; this.job = undefined; if (job) { job.invalid = true; this.clearDeadline(job); job.capture.cancel(); if (!job.ready) this.drop(); }
-        this.stopLayout(); this.publish({ status, message, visible: false, before: "", parameter: "", after: "", documentation: "", parameterDocumentation: "", content: emptyContent, parameterContent: emptyContent, activeSignature: 0, signatureCount: 0, argument: null, work: 0, total: 0 });
+        this.publish({ status, message, visible: false, before: "", parameter: "", after: "", documentation: "", parameterDocumentation: "", content: emptyContent, parameterContent: emptyContent, activeSignature: 0, signatureCount: 0, argument: null, work: 0, total: 0 });
     }
     readonly dismiss = (): void => { this.armed = false; this.stopAuto(); if (this.job && !this.job.ready) this.counts.cancelled++; this.clear("idle", "Signature help dismissed."); };
     readonly disconnect = (): void => { this.dismiss(); this.drop(); this.disconnected = true; this.publish({ message: "Signature provider disconnected; local editing remains available." }); };
@@ -103,14 +91,13 @@ export class HostSignatureTools {
     private show(job: Job, index: number): void {
         const result = job.result!, signature = result.signatures[index], argument = signature?.activeParameter ?? result.call?.argument ?? null, parameter = argument === null ? undefined : signature?.parameters[argument];
         if (!signature) {
-            this.stopLayout();
             if (result.reason === "no-call" || result.reason === "depth-limit") this.armed = false;
             this.publish({ status: "empty", visible: false, message: result.reason === "depth-limit" ? "Signature nesting exceeds the local provider limit." : "No supported signature in this captured context.", before: "", parameter: "", after: "", documentation: "", parameterDocumentation: "", signatureCount: 0, argument: null }); return;
         }
         this.publish({ status: "ready", visible: true, message: `Signature ${index + 1} of ${result.signatures.length}; argument ${(argument ?? 0) + 1}.`, activeSignature: index, signatureCount: result.signatures.length, argument,
             before: parameter ? signature.label.slice(0, parameter.from) : signature.label, parameter: parameter ? signature.label.slice(parameter.from, parameter.to) : "", after: parameter ? signature.label.slice(parameter.to) : "",
             documentation: signature.documentation, parameterDocumentation: parameter?.documentation ?? "No declared parameter for this argument in this overload.",
-            content: signature.content ?? emptyContent, parameterContent: parameter?.content ?? emptyContent, ...this.position() }); this.trackLayout();
+            content: signature.content ?? emptyContent, parameterContent: parameter?.content ?? emptyContent });
     }
     readonly previous = (): void => this.cycle(-1);
     readonly next = (): void => this.cycle(1);
@@ -135,7 +122,7 @@ export class HostSignatureTools {
         catch (error) { capture.cancel(); this.armed = false; this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid signature context." }); return; } this.fault = undefined;
         const win = s.editor.element.ownerDocument.defaultView!, job: Job = { session: s, input, capture, timer: 0, invalid: false, ready: false }; this.job = job; this.counts.requested++;
         capture.signal.addEventListener("abort", () => { if (this.job === job) this.invalidate(s); }, { once: true });
-        this.publish({ status: "pending", visible: true, message: "Reading captured signature context.", total: input.offset, work: 0, ...this.position() }); this.trackLayout();
+        this.publish({ status: "pending", visible: true, message: "Reading captured signature context.", total: input.offset, work: 0 });
         try {
             this.ensureClient(win);
             job.timer = win.setTimeout(() => { if (this.job === job && !job.ready) { this.counts.failed++; this.armed = false; this.clear("failed", "Signature help timed out; local editing remains available."); } }, 30000);
@@ -146,7 +133,7 @@ export class HostSignatureTools {
         } catch (error) { this.counts.failed++; this.armed = false; this.clear("failed", error instanceof Error ? error.message : "Signature help is unavailable."); }
     }
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const s: Session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor, stop: () => {} }, events = new AbortController(), win = editor.element.ownerDocument.defaultView!;
+        const s: Session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor, stop: () => {} }, events = new AbortController();
         this.sessions.set(s.token, s);
         editor.input.addEventListener("focus", () => { if (this.active !== s) { this.dismiss(); this.active = s; this.publish(); } }, { signal: events.signal });
         editor.input.addEventListener("blur", () => { if (this.active === s) this.dismiss(); }, { signal: events.signal });
@@ -164,14 +151,13 @@ export class HostSignatureTools {
             if (!this.armed && !trigger) return; this.active = s; this.armed = true; this.clear("idle", "Signature context changed while typing."); this.schedule(s, trigger && event.data ? { triggerKind: 2, triggerCharacter: event.data, isRetrigger: retrigger } : undefined);
         }, { capture: true, signal: events.signal });
         for (const event of ["compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.active === s) this.dismiss(); }, { signal: events.signal });
-        win.addEventListener("scroll", () => { if (this.job?.session === s) this.queueLayout(); }, { capture: true, signal: events.signal }); win.addEventListener("resize", () => { if (this.job?.session === s) this.queueLayout(); }, { signal: events.signal });
         let detached = false; s.stop = () => { if (detached) return; detached = true; if (this.job?.session === s || this.auto?.session === s) this.dismiss(); events.abort(); this.sessions.delete(s.token);
             if (this.active === s) this.active = undefined; if (!this.sessions.size) this.drop(); this.publish(); }; return s.stop;
     }
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid signature delay."); this.delay = value; }
     faultNext(value: NonNullable<SignatureInput["fault"]>): void { this.fault = value; }
     faultIdle(): boolean { return this.client?.faultIdle?.() ?? false; }
-    debug() { return { ...this.counts, pending: !!this.job && !this.job.ready, scheduled: !!this.auto, sessions: this.sessions.size, subscriptions: this.cell.count(), layoutObserver: !!this.layout, layoutFramePending: this.layout?.frame !== undefined, presentation: this.cell.get(),
+    debug() { return { ...this.counts, pending: !!this.job && !this.job.ready, scheduled: !!this.auto, sessions: this.sessions.size, subscriptions: this.cell.count(), presentation: this.cell.get(),
         capture: this.job ? { document: this.job.input.document, revision: this.job.input.revision, offset: this.job.input.offset, open: this.job.result?.call?.open ?? null } : null, disposed: this.disposed }; }
     dispose(): void { if (this.disposed) return; this.dismiss(); for (const s of [...this.sessions.values()]) s.stop(); this.drop(); this.disposed = true; this.publish(); }
 }
