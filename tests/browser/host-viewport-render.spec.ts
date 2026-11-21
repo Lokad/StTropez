@@ -56,6 +56,10 @@ for (const host of ["plain", "react"]) test(`${host} bounded long-context reveal
     const input = page.getByRole("textbox", { name: "Primary source", exact: true });
     // Match the reproduced editing session: focus precedes programmatic range setup.
     await input.focus();
+    const measuredWidth = async () => {
+        const { width, gutterWidth } = (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport;
+        return width + gutterWidth;
+    };
     const visible = (target = input) => target.evaluate(node => {
         const root = node.closest<HTMLElement>(".st-editor")!, caret = root.querySelector<HTMLElement>(".st-input-caret")!;
         const r = root.getBoundingClientRect(), c = caret.getBoundingClientRect();
@@ -75,7 +79,7 @@ for (const host of ["plain", "react"]) test(`${host} bounded long-context reveal
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: 2048, head: 2048 });
         const beforeLayout = await snapshot(page), primary = beforeLayout.bindings.views.find(v => v.id === "primary")!;
         await input.evaluate(node => { const root = node.closest<HTMLElement>(".st-editor")!; root.style.width = "160px"; root.style.setProperty("--st-font-size", "20px"); });
-        await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.width).toBe(160);
+        await expect.poll(measuredWidth).toBe(160);
         await waitForReview(page); await expect.poll(visible).toBe(true);
         const resized = await snapshot(page); expect(resized.source).toEqual(beforeLayout.source); expect(resized.history).toEqual(beforeLayout.history);
         expect(resized.bindings.views.map(v => v.selectionSet)).toEqual(beforeLayout.bindings.views.map(v => v.selectionSet));
@@ -94,7 +98,7 @@ for (const host of ["plain", "react"]) test(`${host} bounded long-context reveal
             const stop = window.hostFixture.onSourceRender("primary", () => { stop(); root.style.width = "140px"; root.style.setProperty("--st-font-size", "24px"); });
             window.hostFixture.setSourceReadOnly(true);
         });
-        await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.width).toBe(140);
+        await expect.poll(measuredWidth).toBe(140);
         await waitForReview(page); await expect.poll(visible).toBe(true); await expect(input).toBeFocused();
         await input.pressSequentially("Q"); await waitForReview(page);
         const afterPendingLayout = await snapshot(page); expect(afterPendingLayout.source).toEqual(beforePendingLayout.source); expect(afterPendingLayout.history).toEqual(beforePendingLayout.history);
@@ -105,7 +109,7 @@ for (const host of ["plain", "react"]) test(`${host} bounded long-context reveal
         await page.getByRole("textbox", { name: "Configuration path", exact: true }).focus(); await waitForReview(page);
         const inactiveLeft = (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollLeft;
         await input.evaluate(node => { const root = node.closest<HTMLElement>(".st-editor")!; root.style.width = "180px"; root.style.setProperty("--st-font-size", "18px"); });
-        await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.width).toBe(180); await waitForReview(page);
+        await expect.poll(measuredWidth).toBe(180); await waitForReview(page);
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollLeft).toBe(inactiveLeft);
         await expect(page.getByRole("textbox", { name: "Configuration path", exact: true })).toBeFocused();
         await input.evaluate(node => (node as HTMLElement).focus({ preventScroll: true }));
@@ -114,7 +118,7 @@ for (const host of ["plain", "react"]) test(`${host} bounded long-context reveal
         await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollLeft).toBe(0); await waitForReview(page);
         expect(await visible()).toBe(false);
         await input.evaluate(node => { const root = node.closest<HTMLElement>(".st-editor")!; root.style.width = "220px"; root.style.setProperty("--st-font-size", "16px"); });
-        await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.width).toBe(220); await waitForReview(page);
+        await expect.poll(measuredWidth).toBe(220); await waitForReview(page);
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollLeft).toBe(0); expect(await visible()).toBe(false);
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet).toEqual(primary.selectionSet);
         await input.evaluate(node => { const root = node.closest<HTMLElement>(".st-editor")!; root.style.width = ""; root.style.removeProperty("--st-font-size"); });

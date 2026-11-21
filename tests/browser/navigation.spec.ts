@@ -204,7 +204,10 @@ test("page movement preserves raw CRLF offsets and measured columns in horizonta
     const line = "prefix\t東京 é 👩‍💻 0123456789 ".repeat(4), text = Array.from({ length: 55 }, () => line).join("\r\n"), column = line.indexOf("0123456789", 30) + 5;
     await setup(page, text, (line.length + 2) * 10 + column);
     await page.locator("#primary .st-viewport").evaluate(element => { (element as HTMLElement).style.width = "240px"; });
-    await expect.poll(() => page.evaluate(() => window.editingFixture.snapshot().primary.viewport.width)).toBe(240); await ready(page);
+    await expect.poll(() => page.evaluate(() => {
+        const { width, gutterWidth } = window.editingFixture.snapshot().primary.viewport;
+        return width + gutterWidth;
+    })).toBe(240); await ready(page);
     const before = await snapshot(page), count = Math.max(1, Math.floor(before.primary.viewport.height / before.primary.viewport.lineHeight) - 1);
     expect(before.primary.viewport.scrollLeft).toBeGreaterThan(0);
     await page.keyboard.press("PageDown"); await ready(page); expect((await snapshot(page)).primary.selection.head).toBe((line.length + 2) * (10 + count) + column);
