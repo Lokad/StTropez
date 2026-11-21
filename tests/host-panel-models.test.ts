@@ -168,24 +168,23 @@ test("rename presentation retains its preview name, confirmation token and chang
     assert.deepEqual(applied, [4, 3]); assert.deepEqual(opened, [secondId, firstId]); assert.equal(first.name.bind, tools.bindName);
 });
 
-test("action presentation reads current state only on choice activation and rejects an older choice generation", () => {
-    const selected: number[] = [], applied: (number | null)[] = [], opened: DocumentId[] = [], firstId = "first" as DocumentId, secondId = "second" as DocumentId;
+test("action controls invoke the choice and confirmation supplied by their snapshot", () => {
+    const selected: number[] = [], applied: number[] = [], opened: DocumentId[] = [], firstId = "first" as DocumentId, secondId = "second" as DocumentId;
     const state: ActionsSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, reconnectRequired: false, pending: false, canApply: true,
-        token: 9, module: "module", status: "ready", message: "Captured action", title: "Action", disabled: null, work: 1, total: 1, command: null, edits: Object.freeze([]),
+        token: 9, confirm: () => { applied.push(9); }, module: "module", status: "ready", message: "Captured action", title: "Action", disabled: null, work: 1, total: 1, command: null, edits: Object.freeze([]),
         changed: Object.freeze({ document: firstId, title: "First" }), changes: Object.freeze([Object.freeze({ document: firstId, title: "First" })]),
-        choices: Object.freeze([Object.freeze({ index: 0, title: "First action", kind: null, preferred: false, disabled: null, needsResolve: false })]),
+        choices: Object.freeze([Object.freeze({ index: 0, title: "First action", kind: null, preferred: false, disabled: null, needsResolve: false, select: () => { selected.push(9); } })]),
         choice: 0, choicePage: 0, resolving: false, page: 0, editCount: 0 });
-    let current = state, reads = 0;
-    const tools: Parameters<typeof actionsPanelModel>[0] = { state: { getSnapshot: () => { reads++; return current; }, subscribe: () => noop },
-        request: noop, apply: token => { applied.push(token); }, cancel: noop, moveChoicePage: noop, previousPage: noop, nextPage: noop, disconnect: noop,
-        reconnect: noop, bindModule: noop, setModule: noop, selectChoice: index => { selected.push(index); }, openChangedDocument: id => { opened.push(id); } };
+    const tools: Parameters<typeof actionsPanelModel>[0] = { request: noop, cancel: noop, moveChoicePage: noop, previousPage: noop, nextPage: noop, disconnect: noop,
+        reconnect: noop, bindModule: noop, setModule: noop, openChangedDocument: id => { opened.push(id); } };
     const first = actionsPanelModel(tools, state), oldChoice = first.choices.items()[0]!;
-    current = { ...state, token: 10, changed: { document: secondId, title: "Second" }, changes: [{ document: secondId, title: "Second" }] };
+    const current = { ...state, token: 10, confirm: () => { applied.push(10); }, choices: [{ ...state.choices[0]!, select: () => { selected.push(10); } }],
+        changed: { document: secondId, title: "Second" }, changes: [{ document: secondId, title: "Second" }] };
     const newer = actionsPanelModel(tools, current), newChoice = newer.choices.items()[0]!;
-    assert.equal(reads, 0, "model derivation and row formatting use only their supplied snapshot");
-    assert.equal(first.choices.identity, newer.choices.identity); assert.notEqual(first.choices.pageKey, newer.choices.pageKey);
-    oldChoice.invoke(); assert.deepEqual(selected, []); newChoice.invoke(); assert.deepEqual(selected, [0]); assert.equal(reads, 2);
-    first.actions.find(action => action.label === "Apply captured action")!.invoke(); assert.deepEqual(applied, [9]);
+    assert.notEqual(first.choices.pageKey, newer.choices.pageKey);
+    oldChoice.invoke(); newChoice.invoke(); assert.deepEqual(selected, [9, 10]);
+    newer.actions.find(action => action.label === "Apply captured action")!.invoke();
+    first.actions.find(action => action.label === "Apply captured action")!.invoke(); assert.deepEqual(applied, [10, 9]);
     newer.changes.items()[0]!.invoke(); first.changes.items()[0]!.invoke(); assert.deepEqual(opened, [secondId, firstId]);
     assert.equal(first.module.bind, tools.bindModule);
 });

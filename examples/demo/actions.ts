@@ -64,7 +64,7 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
         if (oldChoices !== state.choices || oldChoicePage !== state.choicePage) {
             oldChoices = state.choices; oldChoicePage = state.choicePage; choices.replaceChildren(...state.choices.slice(state.choicePage * 16, (state.choicePage + 1) * 16).map(choice => {
                 const button = document.createElement("button"); button.textContent = choice.title; button.disabled = choice.disabled !== null; button.title = choice.disabled ?? ""; button.dataset.choice = String(choice.index);
-                button.addEventListener("click", () => tools.activateChoice(choice.index, state.token, direct)); return button;
+                button.addEventListener("click", () => choice.select(direct)); return button;
             }));
         }
         choicePages.hidden = state.choices.length <= 16; previousChoices.disabled = state.pending || state.choicePage === 0; nextChoices.disabled = state.pending || (state.choicePage + 1) * 16 >= state.choices.length;
@@ -76,7 +76,7 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
             item.append(`${at.title} `, before, " → ", after); return item;
         }));
         const applyLabel = state.command ? "Run action" : "Apply fix"; if (apply.textContent !== applyLabel) apply.textContent = applyLabel;
-        apply.disabled = !state.canApply; apply.onclick = () => tools.apply(state.token);
+        apply.disabled = !state.canApply; apply.onclick = state.confirm;
         pages.hidden = state.editCount <= 64; previous.disabled = state.page === 0; next.disabled = (state.page + 1) * 64 >= state.editCount;
         if (state.status === "applied" && !commandAction) queueMicrotask(() => { if (!disposed && tools.state.getSnapshot() === state) { dismiss(); editor.focus(); } });
     }));
@@ -92,10 +92,11 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
         else if (!popup.hidden && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
             const state = tools.state.getSnapshot();
             if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); dismiss(); }
-            else if (event.key === "Enter" && state.canApply) { event.preventDefault(); event.stopImmediatePropagation(); tools.apply(state.token); }
+            else if (event.key === "Enter" && state.canApply) { event.preventDefault(); event.stopImmediatePropagation(); state.confirm?.(); }
             else if (event.key === "Enter" && !state.pending) dismiss();
             else if ((event.key === "ArrowDown" || event.key === "ArrowUp") && state.choices.length) {
-                event.preventDefault(); event.stopImmediatePropagation(); tools.selectChoice(((state.choice ?? 0) + (event.key === "ArrowDown" ? 1 : state.choices.length - 1)) % state.choices.length);
+                event.preventDefault(); event.stopImmediatePropagation();
+                state.choices[((state.choice ?? 0) + (event.key === "ArrowDown" ? 1 : state.choices.length - 1)) % state.choices.length]!.select();
             }
         }
     }, { capture: true, signal: events.signal });

@@ -34,6 +34,15 @@ export async function runDemoActions(page: Page, url = "/") {
     const choice = actions.getByRole("button", { name: "Demo refactor: rename exampleRate across files", exact: true });
     await choice.click(); await expect(actions.getByLabel("Quick-fix edits").locator("li")).toHaveCount(3);
     await expect(actions.getByLabel("Quick-fix edits")).toContainText("rate.ts");
+    const retiredApply = await actions.getByRole("button", { name: "Apply fix", exact: true }).evaluateHandle(node => {
+        const button = node as HTMLButtonElement, confirm = button.onclick!;
+        return () => { confirm.call(button, new PointerEvent("click")); };
+    });
+    await actions.getByRole("button", { name: "Demo host: add review note", exact: true }).click();
+    const run = actions.getByRole("button", { name: "Run action", exact: true });
+    await expect(run).toBeEnabled(); await retiredApply.evaluate(confirm => confirm()); await expect(run).toBeEnabled();
+    await choice.click(); await retiredApply.evaluate(confirm => confirm()); await retiredApply.dispose();
+    await expect(actions.getByRole("button", { name: "Apply fix", exact: true })).toBeEnabled();
     await expect(page.locator("#editor")).toContainText("import { exampleRate }");
     await source.press("Control+End"); await page.keyboard.insertText("// Keep this later edit");
     await expect(actions.getByRole("button", { name: "Apply fix", exact: true })).toBeDisabled();

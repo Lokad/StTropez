@@ -1,9 +1,9 @@
 import type { HostActionsTools, ActionNote, ActionChoice, ActionsSnapshot } from "./code-actions.ts";
-type ActionsPanelTools = Pick<HostActionsTools, "state" | "request" | "apply" | "cancel" | "moveChoicePage" | "previousPage" | "nextPage" | "disconnect" | "reconnect" | "bindModule" | "setModule" | "selectChoice" | "openChangedDocument">;
+type ActionsPanelTools = Pick<HostActionsTools, "request" | "cancel" | "moveChoicePage" | "previousPage" | "nextPage" | "disconnect" | "reconnect" | "bindModule" | "setModule" | "openChangedDocument">;
 function actionsControls(tools: ActionsPanelTools, s: ActionsSnapshot) {
     return [
         { label: "Preview module action", invoke: tools.request, disabled: !s.available || s.disconnected || s.pending },
-        { label: s.command ? "Execute captured action" : "Apply captured action", invoke: () => tools.apply(s.token), disabled: !s.canApply },
+        { label: s.command ? "Execute captured action" : "Apply captured action", invoke: () => s.confirm?.(), disabled: !s.canApply },
         { label: "Dismiss action preview", invoke: tools.cancel, disabled: s.token === null },
         ...([{ label: "Previous action choices", invoke: () => tools.moveChoicePage(-1), disabled: s.pending || s.choicePage === 0 },
             { label: "Next action choices", invoke: () => tools.moveChoicePage(1), disabled: s.pending || (s.choicePage + 1) * 16 >= s.choices.length },
@@ -17,7 +17,7 @@ export const actionsDescription = "Choose a provider action and review its captu
 export const actionChoiceLabel = (choice: ActionChoice): string => `${choice.title}${choice.kind ? ` · ${choice.kind}` : ""}${choice.preferred ? " · preferred" : ""}${choice.disabled ? ` · ${choice.disabled}` : choice.needsResolve ? " · Load preview" : ""}`;
 export const actionTarget = (at: ActionNote): string => `${at.title} · ${at.resource} · ${at.document} @ revision ${at.revision} · [${at.from},${at.to})\nInsert ${JSON.stringify(at.insert)}${at.insertUnits !== undefined && at.insertUnits > at.insert.length ? `… (${at.insertUnits} UTF-16 units)` : ""}\nContext: ${at.context}`;
 
-/** Rendering uses the supplied snapshot; only a choice click reads current state to reject stale tokens. */
+/** Choices and confirmations belong to the displayed preview. */
 export function actionsPanelModel(tools: ActionsPanelTools, s: ActionsSnapshot) {
     return {
         title: "Code actions", description: actionsDescription, status: { label: "Code action status", text: s.message },
@@ -26,7 +26,7 @@ export function actionsPanelModel(tools: ActionsPanelTools, s: ActionsSnapshot) 
         choices: { enabled: true, label: "Provider code actions", identity: s.choices, pageKey: `${s.token}:${s.choicePage}`, start: s.choicePage * 16 + 1,
             disabled: s.pending, isSelected: (index: number) => s.choice === index,
             items: () => s.choices.slice(s.choicePage * 16, (s.choicePage + 1) * 16).map(choice => ({ key: choice.index, label: actionChoiceLabel(choice),
-                invoke: () => { if (s.token !== null && tools.state.getSnapshot().token === s.token) tools.selectChoice(choice.index); } } as const)) },
+                invoke: () => choice.select() } as const)) },
         preview: { label: "Captured action title", text: s.title },
         edits: { label: "Proposed action edits", identity: s.edits, start: s.page * 64 + 1, items: () => s.edits.map(actionTarget) },
         changes: { label: "Action changed resources", identity: s.changes, disabled: s.token !== null,
