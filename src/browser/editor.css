@@ -59,6 +59,10 @@
 .st-viewport-row [data-ornament="before"] { display: inline-block; }
 .st-viewport-row [data-ornament="afterLine"]::after { content: attr(data-label); margin-left: .75em; }
 .st-viewport-row .st-search-match { background: var(--st-search-match, #5c4719); outline: 1px solid var(--st-search-border, #a88c40); outline-offset: -1px; }
+.st-viewport-row .st-search-match:not([data-ornament]) { position: relative; }
+/* Give a matched glyph with no advance a visible edge without inserting space in the text. */
+.st-viewport-row .st-search-match:not([data-ornament])::before { content: ""; position: absolute; inset-block: 0; inset-inline-start: 0;
+    width: max(0px, calc(2px - 100%)); background: var(--st-search-border, #a88c40); pointer-events: none; }
 .st-viewport-row .st-search-match[data-ornament="point"]::after { border-color: var(--st-search-border, #a88c40); }
 .st-viewport-row[data-folded-summary]::after { content: attr(data-folded-summary); position: absolute; left: 100%; top: 0; margin-left: .75em; padding: 0 .35em; border-radius: 3px; color: var(--st-fold-summary, #91a5bd); background: var(--st-fold-summary-background, #7e8da51a); font-size: .85em; pointer-events: none; user-select: none; direction: ltr; }
 .st-comparison-padding { position: absolute; top: 0; left: 0; pointer-events: none; background: repeating-linear-gradient(135deg, transparent 0 5px, var(--st-padding-mark, #7e8da51a) 5px 6px); }
@@ -73,12 +77,20 @@
 .st-viewport-command-measure { position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; contain: strict; visibility: hidden; pointer-events: none; }
 .st-matching-bracket { background: var(--st-bracket-background, #397e8440); outline: 1px solid var(--st-bracket-border, #5cb9b3); outline-offset: -1px; }
 .st-character-warning { background: var(--st-character-warning-background, #d89b2430); outline: 1px dotted var(--st-character-warning-border, #e9ad43); }
-.st-viewport .st-viewport-selected { background-color: var(--st-selection, #24496b); }
+.st-viewport .st-viewport-selected { background-color: var(--st-selection, #24496b); padding-block: var(--st-selection-pad-top, 0) var(--st-selection-pad-bottom, 0); }
+.st-viewport-row .st-selected-line-break { display: inline-block; width: 0; height: 1lh; vertical-align: top; }
+.st-viewport-row .st-selected-line-break[data-ornament="point"]::after { height: 100%; width: 1ch; border: 0; background: var(--st-selection, #24496b); }
 .st-editor { cursor: text; user-select: none; }
 .st-input-context { position: absolute; width: 1px; min-height: 1px; box-sizing: border-box; padding: 0; margin: 0; border: 0; resize: none; overflow: hidden;
     font: inherit; line-height: inherit; tab-size: inherit; direction: ltr; opacity: 0; }
 .st-composing .st-input-context { width: 240px; max-width: 40%; opacity: 1; color: inherit; background: var(--st-background, #131b27); }
-.st-input-caret, .st-input-secondary-caret { position: absolute; width: 1px; pointer-events: none; background: var(--st-foreground, #e1e7ef); }
+.st-input-caret, .st-input-secondary-caret { position: absolute; width: 2px; pointer-events: none; background: var(--st-foreground, #e1e7ef); }
+@media (forced-colors: active) {
+    .st-viewport .st-viewport-selected { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+    .st-viewport-row .st-selected-line-break[data-ornament="point"]::after { forced-color-adjust: none; background: Highlight; }
+    .st-input-caret, .st-input-secondary-caret { forced-color-adjust: none; background: CanvasText; }
+    .st-viewport-row .st-search-match:not([data-ornament])::before { forced-color-adjust: none; background: CanvasText; }
+}
 .st-text-drop-caret { position: absolute; width: 2px; pointer-events: none; background: var(--st-foreground, #e1e7ef); }
 .st-text-drag-preview { position: fixed; left: 8px; top: 8px; max-width: 320px; max-height: 80px; overflow: hidden; white-space: pre-wrap;
     padding: 4px 8px; pointer-events: none; color: var(--st-foreground, #e1e7ef); background: var(--st-background, #131b27); border: 1px solid currentColor; }

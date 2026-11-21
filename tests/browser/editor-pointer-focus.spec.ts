@@ -24,6 +24,42 @@ test("three clicks select the line ending and four select the document", async (
     await page.keyboard.type("X"); await expect(page.locator("#primary .st-viewport-row")).toHaveText(["X"]);
 });
 
+test("selecting an empty line paints its ending and active caret, including in forced colors", async ({ page, browserName }) => {
+    await page.goto("/editing/"); await page.evaluate(() => window.editingFixture.setText("abc\r\n\r\nlast")); await ready(page);
+    const input = page.getByRole("textbox", { name: "Primary source", exact: true }), root = page.locator("#primary");
+    await input.focus(); await page.evaluate(() => window.editingFixture.select("primary", { anchor: 5, head: 5 }));
+    await input.press("Shift+ArrowDown"); await ready(page);
+    const breaks = root.locator(".st-selected-line-break"), caret = root.locator(".st-input-caret");
+    await expect(breaks).toHaveCount(1); await expect(caret).toBeVisible();
+    expect(await page.evaluate(() => window.editingFixture.selectionSet().ranges[0])).toMatchObject({ anchor: 5, head: 7 });
+    const marker = await breaks.evaluate(node => {
+        const paint = getComputedStyle(node, "::after");
+        return { width: parseFloat(paint.width), height: parseFloat(paint.height), row: node.closest(".st-viewport-row")!.getBoundingClientRect().height };
+    });
+    expect(marker.width).toBeGreaterThan(2); expect(Math.abs(marker.height - marker.row)).toBeLessThan(1);
+    await input.press("Control+Home"); await input.press("Shift+End"); await ready(page); await expect(breaks).toHaveCount(0);
+    await input.press("Control+a"); await ready(page); await expect(breaks).toHaveCount(2); await expect(caret).toBeVisible();
+    const heights = await root.locator(".st-viewport-selected").first().evaluate(span => ({
+        selection: span.getBoundingClientRect().height, row: span.closest(".st-viewport-row")!.getBoundingClientRect().height
+    }));
+    expect(Math.abs(heights.selection - heights.row)).toBeLessThan(1);
+    if (browserName === "chromium") {
+        await page.emulateMedia({ forcedColors: "active" });
+        const colors = await root.evaluate(root => {
+            const row = root.querySelector(".st-viewport-row")!, selected = root.querySelector(".st-viewport-selected")!;
+            const sample = (color: string) => { const el = document.createElement("span"); el.style.color = color; el.style.forcedColorAdjust = "none";
+                root.append(el); const value = getComputedStyle(el).color; el.remove(); return value; };
+            return { text: getComputedStyle(selected).color, fill: getComputedStyle(selected).backgroundColor,
+                ending: getComputedStyle(row.querySelector(".st-selected-line-break")!, "::after").backgroundColor,
+                caret: getComputedStyle(root.querySelector(".st-input-caret")!).backgroundColor,
+                highlight: sample("Highlight"), foreground: sample("HighlightText"), ink: sample("CanvasText") };
+        });
+        expect(colors.fill).toBe(colors.highlight); expect(colors.ending).toBe(colors.highlight);
+        expect(colors.text).toBe(colors.foreground); expect(colors.caret).toBe(colors.ink);
+    }
+    await page.keyboard.type("X"); await expect(root.locator(".st-viewport-row")).toHaveText(["X"]);
+});
+
 test("double and triple click drags extend by whole words and lines in both directions", async ({ page }) => {
     await page.goto("/editing/");
     await page.evaluate(() => window.editingFixture.setText("one two three\r\nnext four\nlast"));

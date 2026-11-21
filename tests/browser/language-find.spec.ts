@@ -8,6 +8,25 @@ test.beforeEach(async ({ page }) => {
     await page.goto("/editing/"); await ready(page);
 });
 
+test("literal find paints a zero-width space without widening the matched text", async ({ page }) => {
+    await page.evaluate(() => window.editingFixture.setText("a\u200bb")); await ready(page);
+    await page.addStyleTag({ content: "#primary { --st-search-current-border: rgb(255, 0, 213); }" });
+    const field = page.getByRole("textbox", { name: "Find", exact: true });
+    await field.fill("\u200b"); await found(page, 1); await page.getByRole("button", { name: "Next match", exact: true }).click();
+    const match = page.locator("#primary .st-search-match"); await expect(match).toHaveText("\u200b"); await ready(page);
+    expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 1, head: 2 });
+    const box = await match.boundingBox(); expect(box!.width).toBeLessThan(1);
+    const image = await page.screenshot({ clip: { x: Math.floor(box!.x) - 1, y: Math.ceil(box!.y), width: 5, height: Math.floor(box!.height) } });
+    const painted = await page.evaluate(async png => {
+        const image = new Image(); image.src = "data:image/png;base64," + png; await image.decode();
+        const canvas = document.createElement("canvas"); canvas.width = image.width; canvas.height = image.height;
+        const ctx = canvas.getContext("2d")!; ctx.drawImage(image, 0, 0);
+        const rgba = ctx.getImageData(0, 0, image.width, image.height).data;
+        return rgba.filter((r, i) => i % 4 === 0 && r === 255 && rgba[i + 1] === 0 && rgba[i + 2] === 213).length;
+    }, image.toString("base64"));
+    expect(painted).toBeGreaterThan(4);
+});
+
 test("literal find wraps Unicode ranges and replacement is one shared undoable transaction", async ({ page }) => {
     const text = "😀 const saMORE = 123; // TODO\r\nconst saMORE = 2;";
     await page.evaluate(text => window.editingFixture.setText(text), text); await ready(page);

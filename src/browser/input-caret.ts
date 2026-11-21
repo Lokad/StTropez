@@ -45,6 +45,11 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
         // placement until measured metrics arrive, then attempt reveal once even if no point exists.
         if (!retainLayout || layoutChanged) caretLayout = { state, visible: !!visible, focused: focused && !composing };
         const buffer = currentDocument?.buffer, active = isFocused(input);
+        let lastLine = -1, lastRow: ReturnType<TextViewport["rowBounds"]>;
+        const bounds = (line: number) => {
+            if (line !== lastLine) { lastLine = line; lastRow = viewport.rowBounds(line); }
+            return lastRow;
+        };
         const points = [];
         if (!composing && active && buffer && state.selectionSet === selectionSet && state.lastLine > state.firstLine) {
             const from = buffer.offsetAt(state.firstLine), to = state.lastLine < buffer.lineCount ? buffer.offsetAt(state.lastLine) : buffer.length;
@@ -54,25 +59,30 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
             for (let index = low; index < selectionSet.ranges.length; index++) {
                 const range = selectionSet.ranges[index]!;
                 if (range.head > to) break;
-                if (index === selectionSet.primary || range.anchor !== range.head) continue;
-                if (view.folding.getSnapshot().index.hiddenBy(buffer.lineAt(range.head))) continue;
+                if (index === selectionSet.primary) continue;
+                const line = buffer.lineAt(range.head);
+                if (view.folding.getSnapshot().index.hiddenBy(line)) continue;
                 const at = viewport.coordsAt(range.head, range.headAffinity);
                 if (at && at.left >= rectangle.left + state.gutterWidth * rectangle.zoom && at.left < rectangle.right
-                    && at.top + at.height > rectangle.top && at.top < rectangle.bottom) points.push(at);
+                    && at.top + at.height > rectangle.top && at.top < rectangle.bottom) {
+                    const row = bounds(line); points.push({ left: at.left, top: row?.top ?? at.top, height: row?.height ?? at.height });
+                }
             }
         }
         const scrollLeft = root.scrollLeft, scrollTop = root.scrollTop, width = (rectangle.right - rectangle.left) / rectangle.zoom, height = root.clientHeight;
         const left = ((point?.left ?? rectangle.left) - rectangle.left) / rectangle.zoom;
         const top = ((point?.top ?? rectangle.top) - rectangle.top) / rectangle.zoom;
         const caretHeight = point ? point.height / rectangle.zoom : state.lineHeight;
+        const row = point && buffer && bounds(buffer.lineAt(selected.head));
         // All geometry, including secondary heads and any post-reveal layout, is captured above.
         // Bound the native input anchor while the display caret follows the text, including clipped rows.
-        caret.hidden = !visible || selected.anchor !== selected.head || composing || !active;
+        caret.hidden = !visible || composing || !active;
         input.style.left = `${scrollLeft + Math.max(0, Math.min(width - 2, left))}px`;
         input.style.top = `${scrollTop + Math.max(0, Math.min(height - 24, top))}px`;
         caret.style.left = `${scrollLeft + left}px`;
-        caret.style.top = `${scrollTop + top}px`;
-        input.style.height = caret.style.height = `${caretHeight}px`;
+        caret.style.top = `${scrollTop + (row ? (row.top - rectangle.top) / rectangle.zoom : top)}px`;
+        caret.style.height = `${row ? row.height / rectangle.zoom : caretHeight}px`;
+        input.style.height = `${caretHeight}px`;
         while (caretNodes.length > points.length) caretNodes.pop()!.remove();
         points.forEach((at, index) => {
             let node = caretNodes[index];

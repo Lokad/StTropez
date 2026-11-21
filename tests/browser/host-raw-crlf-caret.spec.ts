@@ -14,7 +14,9 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
         await page.getByRole("textbox", { name: "Find source", exact: true }).fill("(?<=a\\r)(?=\\n)");
         await expect(page.getByLabel("Find status", { exact: true })).toContainText("1 matches · ready"); await page.getByRole("button", { name: "Find next", exact: true }).click(); await ready(page);
         const selection = () => snapshot(page).then(s => view === "primary" ? s.bindings.views.find(v => v.id === view)!.selection : s.bindings.comparison!.selection!);
-        expect(await selection()).toMatchObject({ anchor: 2, head: 2 }); expect(await painted(input)).toBe(true);
+        expect(await selection()).toMatchObject({ anchor: 2, head: 2 });
+        await expect(input.locator("..").locator('.st-viewport-row[data-line="0"] .st-search-match[data-ornament="point"]')).toHaveCount(1);
+        await input.focus(); await ready(page); expect(await painted(input)).toBe(true);
         if (!large && view === "comparison" && testInfo.project.name === "chromium") await page.screenshot({ path: testInfo.outputPath("raw-crlf-caret.png"), fullPage: true });
         await input.press("ArrowDown"); await ready(page); expect(await selection()).toMatchObject({ anchor: 4, head: 4 }); expect(await painted(input)).toBe(true);
         await page.getByRole("button", { name: "Find next", exact: true }).click(); await ready(page); expect(await selection()).toMatchObject({ anchor: 2, head: 2 });

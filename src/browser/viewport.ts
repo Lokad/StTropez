@@ -66,7 +66,7 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     /** Immutable painted identities and scheduled-work state; reused while unchanged. Does not flush or measure layout. */
     activity: () => ViewportActivity;
     revealOffset: (offset: number, options?: RevealOptions) => void; snapshot: () => ViewportSnapshot; dispose: () => void }>;
-type Row = Readonly<{ line: number; start: number; end: number; from: number; to: number; text: string; left: number; complete: boolean; endsLine: boolean }>;
+type Row = Readonly<{ line: number; start: number; end: number; breakEnd: number; from: number; to: number; text: string; left: number; complete: boolean; endsLine: boolean }>;
 /** CRLF has two raw positions at one painted line edge. Keep the requested model offset. */
 function rowCaretOffset(buffer: TextBuffer, end: number, offset: number): number | undefined {
     if (offset <= end) return offset;
@@ -206,6 +206,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     let horizontalAnchor: ViewState["horizontalAnchor"];
     let fragmentPlacement: Readonly<{ revision: number; line: number; from: number; to: number; left: number; shift: number }> | undefined;
     let measuredWidth = 0, measuredFont = "", measuredRevision: number | null = null, spacerWidth = -1;
+    let selectionMetrics: { font: string; height: number; zoom: number } | undefined;
     let paintEpoch = 0;
     let painted: Readonly<{ key: readonly unknown[]; horizontalAnchor: typeof horizontalAnchor; placement: typeof fragmentPlacement }> | undefined;
     const rows = new Map<number, HTMLDivElement>();
@@ -250,7 +251,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             if (dirtyRows.size || overview && minimap) schedule();
         }, () => live());
     // Host invalidation and font loading can change inline layout without changing text/classes.
-    const invalidate = () => { paintEpoch++; geometries.clear(); commandGeometry = undefined; clearPreparedRows(); schedule(); };
+    const invalidate = () => { paintEpoch++; selectionMetrics = undefined; geometries.clear(); commandGeometry = undefined; clearPreparedRows(); schedule(); };
     const flush = () => { if (disposed) return; const scheduled = frame !== undefined; if (scheduled) win.cancelAnimationFrame(frame!); render(scheduled); };
     const position = (axis: ScrollAxis, value: number): number => Math.min(axis.maximum, Math.max(0, value));
     const gapAt = (index: RowIndex, row: number) => "gapAt" in index ? index.gapAt(row) : undefined;
@@ -382,7 +383,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         // Do not split a surrogate pair at the edges of the bounded text window.
         if (from > start && from < displayEnd) { const pair = readRow(buffer, from - 1, from + 1); if (/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(pair)) from--; }
         if (to > from && to < displayEnd) { const pair = readRow(buffer, to - 1, to + 1); if (/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(pair)) to++; }
-        return { line, start, end: displayEnd, from, to, text: readRow(buffer, from, to).replaceAll("\r", "␍"), left: padding + (from - start) * columnWidth - scrollLeft, complete: from === start && to === displayEnd, endsLine: to === displayEnd };
+        return { line, start, end: displayEnd, breakEnd: line + 1 < buffer.lineCount ? end + 1 : end,
+            from, to, text: readRow(buffer, from, to).replaceAll("\r", "␍"), left: padding + (from - start) * columnWidth - scrollLeft, complete: from === start && to === displayEnd, endsLine: to === displayEnd };
     };
     const paintRow = (element: HTMLDivElement, item: Row, document: DocumentSnapshot, selectionSet: SelectionSet, highlightedLine?: number): boolean => {
         element.dataset.line = String(item.line); element.dataset.from = String(item.from); element.dataset.to = String(item.to); element.dataset.complete = String(item.complete);
@@ -391,15 +393,22 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             return Math.max(range.anchor, range.head) <= item.from;
         });
         const selections: { from: number; to: number }[] = [];
+        let selectedBreak = false;
         for (let index = low; index < selectionSet.ranges.length; index++) {
-            const range = selectionSet.ranges[index]!, from = Math.max(item.from, Math.min(range.anchor, range.head)), to = Math.min(item.to, Math.max(range.anchor, range.head));
-            if (from >= item.to) break; if (from < to) selections.push({ from, to });
+            const range = selectionSet.ranges[index]!, start = Math.min(range.anchor, range.head), end = Math.max(range.anchor, range.head);
+            if (start >= (item.endsLine ? item.breakEnd : item.to)) break;
+            if (start === end) continue;
+            if (item.endsLine && end > item.to && item.breakEnd > item.to) selectedBreak = true;
+            const from = Math.max(item.from, start), to = Math.min(item.to, end);
+            if (from < to) selections.push({ from, to });
         }
         const presented = { documentId, revision: document.revision, line: item.line, lineStart: item.start, from: item.from, to: item.to, text: item.text };
         const lineClass = decorations.lineClasses(presented), className = "st-viewport-row" + (lineClass ? ` ${lineClass}` : "")
             + (highlightedLine === item.line ? " st-current-line" : "");
         const changed = element.className !== className; element.className = className;
-        return renderRowChildren(element, decorationParts(item.text, item.from, item.to, document.buffer.length, decorations.present(presented, false, item.endsLine), selections,
+        const inline = decorations.present(presented, false, item.endsLine);
+        const marks = selectedBreak ? [...inline, { from: item.to, to: item.to, className: "st-selected-line-break" }] : inline;
+        return renderRowChildren(element, decorationParts(item.text, item.from, item.to, document.buffer.length, marks, selections,
             item.endsLine ? item.start : undefined)) || changed;
     };
     type MeasuredRow = Readonly<{ complete: boolean; point: (offset: number, affinity?: Affinity) => CaretRectangle | undefined;
@@ -486,7 +495,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const clientWidth = root.clientWidth, mapWidth = minimap ? minimapWidth(clientWidth) : 0;
         height = root.clientHeight;
         const zoom = cssZoom(root);
-        columnWidth = probe.getBoundingClientRect().width / zoom / 64 || 8.4;
+        const probeBox = probe.getBoundingClientRect();
+        columnWidth = probeBox.width / zoom / 64 || 8.4;
         const style = win.getComputedStyle(root); naturalLineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.6; lineHeight = naturalLineHeight;
         const font = [style.fontFamily, style.fontSize, style.fontWeight, style.fontStyle, style.fontStretch, style.letterSpacing, style.wordSpacing,
             style.tabSize, style.fontVariant, style.fontVariantLigatures, style.fontKerning,
@@ -544,6 +554,15 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         // Presentation-only configuration can repaint guides without reading or rebuilding rows.
         rulers.paint(settings.columnRulers, columnWidth, left, width);
         const { selection: selected, selectionSet } = view.getSnapshot();
+        if ((selected.anchor !== selected.head || selectionSet.ranges.length > 1)
+            && (selectionMetrics?.font !== font || selectionMetrics.height !== lineHeight || selectionMetrics.zoom !== zoom)) {
+            // Inline padding extends the painted background without changing shaping, advances or row height.
+            const range = owner.createRange(); range.selectNodeContents(probe);
+            const glyph = range.getBoundingClientRect(), extra = (lineHeight - naturalLineHeight) / 2;
+            layer.style.setProperty("--st-selection-pad-top", `${Math.max(0, extra + (glyph.top - probeBox.top) / zoom)}px`);
+            layer.style.setProperty("--st-selection-pad-bottom", `${Math.max(0, extra + (probeBox.bottom - glyph.bottom) / zoom)}px`);
+            selectionMetrics = { font, height: lineHeight, zoom };
+        }
         const key = [document.revision, selectionSet, folds.generation, rowGeneration, comparisonRows?.id,
             top, left, width, height, gutterWidth, zoom, columnWidth, naturalLineHeight, lineHeight, font, x.maximum, y.extent, paintEpoch, settings.highlightCurrentLine,
             inputOwner?.composing ?? false];

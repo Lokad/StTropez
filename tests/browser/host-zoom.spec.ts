@@ -13,7 +13,8 @@ async function rectangle(input: Locator, offset: number) {
         for (let node = walker.nextNode(); node; node = walker.nextNode()) {
             if (remaining >= node.textContent!.length) { remaining -= node.textContent!.length; continue; }
             const range = document.createRange(); range.setStart(node, remaining); range.setEnd(node, remaining + 1);
-            const box = range.getBoundingClientRect(); return { left: box.left, top: box.top, height: box.height, x: box.left + box.width * .15, y: box.top + box.height / 2 };
+            const box = range.getBoundingClientRect(), line = row.getBoundingClientRect();
+            return { left: box.left, top: box.top, height: box.height, rowTop: line.top, rowHeight: line.height, x: box.left + box.width * .15, y: box.top + box.height / 2 };
         }
         throw new Error("Missing source text node.");
     }, offset);
@@ -25,7 +26,7 @@ async function caret(input: Locator, offset: number, secondary = false): Promise
         return { hidden: node.hidden, left: box.left, top: box.top, height: box.height, anchorHeight: anchor.height };
     }, secondary);
     expect(actual.hidden).toBe(false); expect(Math.abs(actual.left - expected.left)).toBeLessThan(1.1);
-    expect(Math.abs(actual.top - expected.top)).toBeLessThan(1.1); expect(Math.abs(actual.height - expected.height)).toBeLessThan(1.1);
+    expect(Math.abs(actual.top - expected.rowTop)).toBeLessThan(1.1); expect(Math.abs(actual.height - expected.rowHeight)).toBeLessThan(1.1);
     if (!secondary) expect(Math.abs(actual.anchorHeight - expected.height)).toBeLessThan(1.1);
 }
 

@@ -60,7 +60,9 @@ notice.
 
 Find paints matches on its editor and outlines the current match. Style them with
 `--st-search-match`, `--st-search-border` and `--st-search-current-border`. A zero-width match
-has a short mark at its offset. `matchesIn(from, to, capture?)` returns frozen, unclipped UTF-16 ranges intersecting `[from, to)`.
+has a short mark at its offset. A matched character with no visible width has a vertical edge.
+A match inside a line ending appears at the end of the row and keeps its original UTF-16 offsets.
+`matchesIn(from, to, capture?)` returns frozen, unclipped UTF-16 ranges intersecting `[from, to)`.
 Point matches count at `from` and are excluded at `to`. An empty interval returns a point match at
 that offset, including EOF. Use ordered, nonnegative safe integers within the document.
 

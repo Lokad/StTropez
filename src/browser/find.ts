@@ -115,11 +115,14 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     const layer = editor.decorations?.addProvider({ name: "find matches", order: 60, minimap: false, provide: line => {
         const state = store.get();
         if (!state.count || state.revision !== line.revision) return [];
-        const ranges = matchesIn(line.from, line.to);
-        // The half-open text query excludes a zero-width match at the last caret stop.
-        const end = line.from === line.to ? [] : matchesIn(line.to, line.to);
+        const buffer = workspace.document(documentId).buffer;
+        const next = line.line + 1 < buffer.lineCount ? buffer.offsetAt(line.line + 1) : line.to;
+        // CR and LF share a painted edge. Include their raw positions only at the real end of this line.
+        const ending = next > line.to && next - line.to <= 2 && /^\r?\n$/.test(buffer.slice(line.to, next));
+        const ranges = matchesIn(line.from, ending ? next : line.to);
+        const end = ending || line.from === line.to ? [] : matchesIn(line.to, line.to);
         const selected = state.current === null ? undefined : matches.at(state.current);
-        return [...ranges, ...end].map(range => ({ ...range, className: "st-search-match",
+        return [...ranges, ...end].map(range => ({ ...(ending && range.from >= line.to ? { from: line.to, to: line.to } : range), className: "st-search-match",
             ...(selected?.from === range.from && selected.to === range.to && { properties: { "--st-search-border": "var(--st-search-current-border, #ffe494)" } }) }));
     } });
     const canEdit = () => { const state = resource.getSnapshot(); return !editor.input.readOnly && state.state === "ready" && state.metadata.capabilities.edit.includes("human") && state.metadata.editLock === null; };

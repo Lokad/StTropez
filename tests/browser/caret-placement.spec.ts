@@ -44,7 +44,8 @@ for (const shadow of [false, true]) test(`${shadow ? "shadow" : "document"} care
             let remaining = offset - Number(row.dataset.from); const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
             for (let node = walker.nextNode(); node; node = walker.nextNode()) {
                 if (remaining >= node.textContent!.length) { remaining -= node.textContent!.length; continue; }
-                const range = document.createRange(); range.setStart(node, remaining); range.setEnd(node, remaining + 1); return range.getBoundingClientRect();
+                const range = document.createRange(); range.setStart(node, remaining); range.setEnd(node, remaining + 1);
+                return { left: range.getBoundingClientRect().left, top: row.getBoundingClientRect().top };
             }
             throw new Error("Missing native caret oracle");
         };

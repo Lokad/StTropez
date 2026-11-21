@@ -139,8 +139,9 @@ failure the editor releases scans, rows and timers and reports `command-failed` 
 ### Selections and history
 
 Type, paste, delete or move with several carets and the command acts on the whole selection set. The
-textarea tracks the primary range. The editor draws secondary carets and selections only where it has
-visible geometry, so offscreen ranges need no DOM nodes. Use the
+textarea tracks the primary range. A focused editor draws a caret at the active end of each visible
+range. A one-column highlight at the end of a row marks a selected line break, including CRLF and
+breaks on empty lines. Forced-colors mode uses the system selection and text colors. Use the
 [view’s selection setters](workspace.md#document-views) to keep a set across remounts. See
 [selection sets](text-model.md#selection-sets) for normalization and endpoint affinities.
 
