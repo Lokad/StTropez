@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 /**
  * @typedef {{start: number, type: string, beforeRevision: number, beforeDepth: number,
  * end?: number, revision?: number, depth?: number}} TypingEvent
- * @typedef {{events: TypingEvent[], blurred: boolean, beforeDepth: number}} TypingObservation
+ * @typedef {{events: TypingEvent[], blurred: boolean, beforeDepth: number, baseline: boolean}} TypingObservation
  * @typedef {typeof window & {readHostTypingHistory(): TypingObservation}} TypingWindow
  */
 
 /**
- * Validate real host keystrokes against the adapter's pause policy; observers never alter history.
+ * Check the undo boundary after every host keystroke, including spaces.
  * @param {import('@playwright/test').Locator} input
  * @param {string} text
  * @param {() => Promise<void>} [type]
@@ -24,25 +24,27 @@ export async function typeHostSuffix(input, text, type = () => input.pressSequen
         node.addEventListener("input", () => { const end = performance.now(), s = window.hostFixture.snapshot(); if (!active) throw new Error("Missing captured typing event."); Object.assign(active,
             { end, revision: s.source.revision, depth: s.history.undoDepth }); }, { signal: listeners.signal });
         node.addEventListener("blur", () => { blurred = true; }, { signal: listeners.signal });
-        /** @type {TypingWindow} */ (window).readHostTypingHistory = () => { listeners.abort(); return { events, blurred, beforeDepth: before.history.undoDepth }; };
+        /** @type {TypingWindow} */ (window).readHostTypingHistory = () => { listeners.abort(); return { events, blurred, beforeDepth: before.history.undoDepth, baseline: before.bindings.editor === "native" }; };
     });
     try { await type(); }
     catch (error) { await input.evaluate(() => /** @type {TypingWindow} */ (window).readHostTypingHistory()).catch(() => {}); throw error; }
     const observed = await input.evaluate(() => /** @type {TypingWindow} */ (window).readHostTypingHistory());
-    assert.equal(observed.blurred, false); assert.equal(observed.events.length, Array.from(text).length);
+    const characters = Array.from(text);
+    assert.equal(observed.blurred, false); assert.equal(observed.events.length, characters.length);
     for (let index = 0; index < observed.events.length; index++) {
         const event = observed.events[index], previous = observed.events[index - 1];
         assert.ok(event && event.end !== undefined && event.depth !== undefined);
         assert.equal(event.type, "insertText"); assert.equal(event.revision, event.beforeRevision + 1);
-        assert.ok(event.depth === event.beforeDepth || event.depth === event.beforeDepth + 1);
-        if (!previous) assert.equal(event.depth, observed.beforeDepth + 1);
-        // Adapter timestamps lie inside these input-handler bounds. Require coalescing when
-        // a pause is impossible and a new group when a pause is certain; retain ambiguous bounds.
-        else {
+        const space = characters[index] === " ", precedingSpace = characters[index - 1] === " ";
+        const startsStep = !previous || (space ? !precedingSpace : precedingSpace && characters[index - 2] === " ");
+        assert.equal(event.beforeDepth, previous?.depth ?? observed.beforeDepth);
+        if (observed.baseline && previous) {
+            // The textarea fixture still groups by time. Its timestamps fall within the handler bounds.
             assert.ok(previous.end !== undefined && previous.depth !== undefined);
+            assert.ok(event.depth === previous.depth || event.depth === previous.depth + 1);
             if (event.end - previous.start < 1000) assert.equal(event.depth, previous.depth);
-            else if (event.start - previous.end >= 1000) assert.equal(event.depth, previous.depth + 1);
-        }
+            if (event.start - previous.end >= 1000) assert.equal(event.depth, previous.depth + 1);
+        } else assert.equal(event.depth, event.beforeDepth + Number(startsStep));
     }
     const last = observed.events.at(-1); assert.ok(last?.depth !== undefined);
     const groups = last.depth - observed.beforeDepth;

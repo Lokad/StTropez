@@ -36,8 +36,13 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await expect(panel).toBeHidden();
             await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().source.serverVersion)).toBe("v2");
             await expect(primary).toHaveValue("merged during save"); await expect(secondary).toHaveValue("merged during save"); await expect(primary).toBeFocused();
+            if (editor === "candidate") {
+                await primary.press("Control+z"); await expect(primary).toHaveValue("merged during");
+                expect((await page.evaluate(() => window.hostFixture.snapshot())).source.dirty).toBe(true);
+            }
             await primary.press("Control+z"); await expect(primary).toHaveValue("merged");
             expect((await page.evaluate(() => window.hostFixture.snapshot())).source.dirty).toBe(false);
+            if (editor === "candidate") { await primary.press("Control+Shift+z"); await expect(primary).toHaveValue("merged during"); }
             await primary.press("Control+Shift+z"); await expect(primary).toHaveValue("merged during save");
             expect(await page.evaluate(() => window.hostFixture.referenceRange(0, 15))).toBe("remote source\r\n");
             await page.evaluate(() => window.hostFixture.dispose());
@@ -137,8 +142,10 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await expect(primary).toBeFocused(); await expect(page.getByRole("group", { name: "Source review", exact: true })).toHaveAttribute("data-status", "ready");
             await button("Save reviewed source").click(); await primary.press("Control+Home"); await primary.pressSequentially("fixed ");
             await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().source.serverVersion)).toBe("v2");
+            await primary.press("Control+z"); expect(await page.evaluate(() => window.hostFixture.range(0, 5))).toBe("fixed");
+            expect((await page.evaluate(() => window.hostFixture.snapshot())).source.dirty).toBe(true);
             await primary.press("Control+z"); expect((await page.evaluate(() => window.hostFixture.snapshot())).source.dirty).toBe(false);
-            await primary.press("Control+Shift+z");
+            await primary.press("Control+Shift+z"); await primary.press("Control+Shift+z");
             await expect(page.getByRole("group", { name: "Source review", exact: true })).toHaveAttribute("data-status", "ready");
             const state = await page.evaluate(() => window.hostFixture.snapshot());
             expect(state.source.exports).toBe(0); expect(state.bindings.views.every(view => view.metrics!.inputUnits < 2600 && view.metrics!.viewport.rows < 100)).toBe(true);
