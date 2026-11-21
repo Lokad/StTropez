@@ -4,7 +4,9 @@ import { clientBox, cssZoom } from "./dom-coordinates.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 export type OverlayAnchor = Readonly<{ revision: number; offset: number; affinity?: Affinity }>;
-export type AnchoredOverlayOptions = Readonly<{ prefer?: "above" | "below"; priority?: number }>;
+export type AnchoredOverlayOptions = Readonly<{ prefer?: "above" | "below"; priority?: number;
+    /** Called before an offscreen popup hides if one of its controls has focus. */
+    onFocusedAnchorHidden?: () => void }>;
 type Placement = { priority: number; rectangle: DOMRect | undefined; schedule: () => void };
 const activeOverlays = new WeakMap<TextEditor, Set<Placement>>();
 
@@ -29,7 +31,10 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
         placement.rectangle = rectangle;
         for (const peer of peers) if (peer.priority < priority) peer.schedule();
     }
-    function conceal(): void { element.hidden = true; report(); }
+    function conceal(): void {
+        if (!element.hidden && element.matches(":focus-within")) options.onFocusedAnchorHidden?.();
+        element.hidden = true; report();
+    }
     function position(): void {
         frame = undefined;
         if (!anchor) return;
@@ -75,7 +80,7 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
     }
     const resize = new win.ResizeObserver(schedule);
     function hide(): void {
-        conceal();
+        element.hidden = true; report();
         if (!anchor) return;
         anchor = undefined; peers.delete(placement);
         events?.abort(); events = undefined; resize.disconnect(); stopRender?.(); stopRender = undefined;

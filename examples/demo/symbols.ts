@@ -1,5 +1,6 @@
 import type { DocumentId, Workspace } from "../../src/index.ts";
-import type { TextEditor } from "../../src/browser/index.ts";
+import { captureViewRequest, mountAnchoredOverlay } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, TextEditor } from "../../src/browser/index.ts";
 import { createLspNavigationClient } from "../../src/protocol/index.ts";
 import type { LspLocation, LspWorkspace } from "../../src/protocol/index.ts";
 import { HostRenameTools } from "../hosts/rename.ts";
@@ -21,15 +22,27 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     renamePopup.className = "demo-rename"; renamePopup.hidden = true;
     renamePopup.setAttribute("role", "dialog"); renamePopup.setAttribute("aria-label", "Rename symbol");
     document.body.append(popup, renamePopup);
-    type Query = { choice: number; message: string; current: () => boolean; result?: Awaited<ReturnType<typeof navigation.run>> };
+    const locationsOverlay = mountAnchoredOverlay(editor, popup);
+    const renameOverlay = mountAnchoredOverlay(editor, renamePopup, { onFocusedAnchorHidden: editor.focus });
+    scope.defer(locationsOverlay.dispose); scope.defer(renameOverlay.dispose);
+    type Query = { choice: number; message: string; source: CapturedViewRequest; current: () => boolean; result?: Awaited<ReturnType<typeof navigation.run>> };
     let query: Query | undefined;
     const idle = () => { const s = editor.activity(); return !disposed && valid() && !s.composing && !s.pendingInput && !s.pendingCommand; };
-    const position = (element: HTMLElement) => {
-        const point = editor.viewport.coordsAt(editor.view.getSnapshot().selection.head), box = editor.element.getBoundingClientRect();
-        element.style.left = `${Math.max(8, Math.min(innerWidth - 360, point?.left ?? box.left + 8))}px`;
-        element.style.top = `${Math.max(8, Math.min(innerHeight - 280, point ? point.top + point.height + 6 : box.top + 8))}px`;
+    const target = workspace.tabs.capture(file.tab);
+    const captureSource = (available: () => boolean) => {
+        const caret = editor.view.getSnapshot().selection;
+        editor.viewport.revealOffset(caret.head, { horizontal: "nearest", vertical: "nearest", affinity: caret.headAffinity ?? "after" });
+        return captureViewRequest(workspace, target, editor.view, { available });
     };
-    const cancelNavigation = () => { query = undefined; popup.hidden = true; navigation.cancel(); };
+    const sourceAnchor = (capture: CapturedViewRequest) => {
+        const caret = capture.selectionSet.ranges[capture.selectionSet.primary]!;
+        return { revision: capture.document.revision, offset: caret.head, affinity: caret.headAffinity ?? "after" };
+    };
+    const cancelNavigation = () => {
+        const previous = query; query = undefined;
+        locationsOverlay.hide(); previous?.source.cancel(); navigation.cancel();
+    };
+    scope.defer(cancelNavigation);
     const markChoice = (captured: Query) => {
         for (const button of popup.querySelectorAll<HTMLButtonElement>("[data-location]")) button.dataset.chosen = String(Number(button.dataset.location) === captured.choice);
         popup.querySelector<HTMLElement>('[data-chosen="true"]')?.scrollIntoView({ block: "nearest" });
@@ -60,20 +73,21 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
             captured.choice = first + direction * 64; showNavigation(captured, message);
         };
         previous.onclick = () => move(-1); next.onclick = () => move(1); pages.append(previous, count, next);
-        const close = document.createElement("button"); close.textContent = "Close locations"; close.addEventListener("click", () => { cancelNavigation(); editor.focus(); });
-        popup.replaceChildren(note, pages, ...buttons, close); popup.hidden = false; position(popup); markChoice(captured);
+        const close = document.createElement("button"); close.textContent = "Close locations"; close.addEventListener("click", () => { if (query === captured) { cancelNavigation(); editor.focus(); } });
+        popup.replaceChildren(note, pages, ...buttons, close); locationsOverlay.show(sourceAnchor(captured.source)); markChoice(captured);
         if (focused) editor.focus();
     };
     const request = (kind: "definition" | "references") => {
         if (!idle()) return; dismissOther(); closeRename(false); cancelNavigation(); editor.focus();
-        const snapshots = files().map(file => workspace.document(file.resource.documentId)), selected = editor.view.getSnapshot().selectionSet;
-        const folds = editor.view.folding.getSnapshot().index, metadata = snapshots.map(doc => workspace.resourceForDocument(doc.id).metadata.getSnapshot());
-        const captured: Query = { choice: 0, message: "", current: () => idle() && editor.view.getSnapshot().selectionSet === selected
-            && folds.sameProjection(editor.view.folding.getSnapshot().index) && (document.activeElement === editor.input || popup.contains(document.activeElement))
-            && snapshots.every((doc, i) => { const current = workspace.document(doc.id), access = workspace.resourceForDocument(doc.id).metadata.getSnapshot();
+        const source = captureSource(() => idle() && (document.activeElement === editor.input || popup.contains(document.activeElement)));
+        if (!source) return;
+        const snapshots = files().map(file => workspace.document(file.resource.documentId));
+        const others = snapshots.filter(doc => doc.id !== source.document.id), metadata = others.map(doc => workspace.resourceForDocument(doc.id).metadata.getSnapshot());
+        const captured: Query = { choice: 0, message: "", source, current: () => source.isCurrent()
+            && others.every((doc, i) => { const current = workspace.document(doc.id), access = workspace.resourceForDocument(doc.id).metadata.getSnapshot();
                 return current.revision === doc.revision && current.buffer === doc.buffer && access.editLock === metadata[i]!.editLock && access.capabilities === metadata[i]!.capabilities; }) };
         query = captured; showNavigation(captured, kind === "definition" ? "Finding definition…" : "Finding references…");
-        void navigation.run(snapshots, file.resource.documentId, editor.view.getSnapshot().selection.head, kind).then(result => {
+        void navigation.run(snapshots, source.document.id, sourceAnchor(source).offset, kind).then(result => {
             if (query !== captured || !captured.current() || !result.isCurrent()) return;
             captured.result = result;
             if (kind === "definition" && result.locations.length === 1) choose(captured, result.locations[0]!);
@@ -89,8 +103,23 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     preview.textContent = "Preview rename"; apply.textContent = "Apply rename"; cancel.textContent = "Cancel rename"; targets.setAttribute("aria-label", "Rename edits");
     const previous = document.createElement("button"), next = document.createElement("button"); previous.textContent = "Previous edits"; next.textContent = "Next edits"; pages.append(previous, next);
     renamePopup.append(heading, label, status, preview, apply, cancel, targets, pages);
-    const closeRename = (focus: boolean) => { renamePopup.hidden = true; rename.cancel(); if (focus && valid()) editor.focus(); };
-    const beginRename = () => { if (!idle()) return; dismissOther(); cancelNavigation(); renamePopup.hidden = false; position(renamePopup); rename.begin("source"); };
+    let renameSource: CapturedViewRequest | undefined;
+    const closeRename = (focus: boolean) => {
+        const previous = renameSource; renameSource = undefined;
+        renameOverlay.hide(); previous?.cancel(); rename.cancel(); if (focus && valid()) editor.focus();
+    };
+    scope.defer(() => closeRename(false));
+    const beginRename = () => {
+        if (!idle()) return;
+        dismissOther(); cancelNavigation(); closeRename(false);
+        const source = captureSource(idle); if (!source) return;
+        renameSource = source;
+        source.signal.addEventListener("abort", () => {
+            if (renameSource === source) closeRename(rename.state.getSnapshot().status === "applied" || renamePopup.contains(document.activeElement));
+        }, { once: true });
+        // F2 gives the name field focus immediately, including before the first placement frame.
+        renamePopup.hidden = false; renameOverlay.show(sourceAnchor(source)); rename.begin("source");
+    };
     name.addEventListener("input", () => rename.setName(name.value), { signal: events.signal });
     preview.addEventListener("click", rename.prepare, { signal: events.signal }); cancel.addEventListener("click", () => closeRename(true), { signal: events.signal });
     previous.addEventListener("click", rename.previousPage, { signal: events.signal }); next.addEventListener("click", rename.nextPage, { signal: events.signal });
@@ -113,7 +142,8 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         if (event.key === "F12") { event.preventDefault(); event.stopImmediatePropagation(); request(event.shiftKey ? "references" : "definition"); }
         else if (event.key === "F2" && !event.shiftKey) { event.preventDefault(); event.stopImmediatePropagation(); beginRename(); }
         else if (event.key === "Escape" && query) { event.preventDefault(); event.stopImmediatePropagation(); cancelNavigation(); }
-        else if (query?.result?.locations.length && !event.shiftKey) {
+        else if (event.key === "Escape" && renameSource) { event.preventDefault(); event.stopImmediatePropagation(); closeRename(true); }
+        else if (query?.result?.locations.length && !popup.hidden && !event.shiftKey) {
             if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                 event.preventDefault(); event.stopImmediatePropagation();
                 const previousPage = Math.floor(query.choice / 64);
@@ -124,7 +154,7 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     }, { capture: true, signal: events.signal });
     scope.defer(rename.attach("source", file.tab, editor));
     const changed = () => { const captured = query; if (captured && (!captured.current() || captured.result && !captured.result.isCurrent())) {
-        query = undefined; popup.hidden = true; queueMicrotask(() => { if (!disposed && !query) navigation.cancel(); });
+        query = undefined; locationsOverlay.hide(); queueMicrotask(() => { captured.source.cancel(); if (!disposed && !query) navigation.cancel(); });
     } };
     // Expanded discovery metadata does not change the captured source projection.
     for (const state of [editor.view, editor.view.folding, workspace.tabs, provider]) scope.defer(state.subscribe(changed));
@@ -134,5 +164,5 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     }
     editor.input.addEventListener("blur", () => queueMicrotask(() => { if (!disposed) changed(); }), { signal: events.signal });
     return Object.freeze({ definition: () => request("definition"), references: () => request("references"), rename: beginRename,
-        dismiss: () => { cancelNavigation(); closeRename(false); }, isOpen: () => !!query || !renamePopup.hidden });
+        dismiss: () => { cancelNavigation(); closeRename(false); }, isOpen: () => !!query || !!renameSource });
 }

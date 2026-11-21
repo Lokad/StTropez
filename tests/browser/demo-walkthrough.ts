@@ -614,6 +614,23 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     await expect(locations).toContainText("1–64 of 1201"); await expect(locations.locator("[data-location]")).toHaveCount(64);
     // Up wraps to the last result and must reveal its page without creating 1,201 buttons.
     await source.press("ArrowUp"); await expect(locations).toContainText("1153–1201 of 1201");
+    const viewport = page.locator("#editor .st-viewport");
+    async function scrollAwayAndBack(popup: Locator, lineNumber: number) {
+        const initial = await viewport.evaluate(node => node.scrollTop);
+        await viewport.evaluate((node, line) => { node.scrollTop = line === 0 ? node.scrollHeight : 0; }, lineNumber);
+        await expect(popup).toBeHidden(); await expect(source).toBeFocused();
+        await viewport.evaluate((node, top) => { node.scrollTop = top; }, initial);
+        await expect(popup).toBeVisible();
+        await expect.poll(async () => {
+            const line = await page.locator(`#editor .st-viewport-row[data-line="${lineNumber}"]`).evaluate(row => {
+                const text = document.createRange(); text.selectNodeContents(row);
+                const rect = text.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom };
+            }), box = await popup.boundingBox();
+            return !!box && (Math.abs(box.y - line.bottom) <= 6 || Math.abs(box.y + box.height - line.top) <= 6);
+        }).toBe(true);
+    }
+    await scrollAwayAndBack(locations, 0);
+    await expect(locations.locator('[data-chosen="true"]')).toHaveAttribute("data-location", "1200");
     await expect(locations.locator("[data-location]")).toHaveCount(49); await source.press("Enter");
     await expect(locations).toBeHidden(); await expect(page.locator("#cursor")).toContainText("Ln 1201,");
     await expect(page.locator("#editor")).toContainText("const use1199 = sharedValue;");
@@ -622,6 +639,9 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     await rename.getByRole("textbox", { name: "New name", exact: true }).fill("renamedValue");
     await rename.getByRole("button", { name: "Preview rename", exact: true }).click();
     await expect(rename.getByLabel("Rename status", { exact: true })).toHaveText("Review 1201 changes before applying.");
+    await rename.getByRole("textbox", { name: "New name", exact: true }).focus();
+    await scrollAwayAndBack(rename, 1200);
+    await expect(rename.getByRole("textbox", { name: "New name", exact: true })).toHaveValue("renamedValue");
     const edits = rename.getByLabel("Rename edits", { exact: true }).locator("li"); await expect(edits).toHaveCount(64);
     for (let i = 0; i < 18; i++) await rename.getByRole("button", { name: "Next edits", exact: true }).click();
     await expect(edits).toHaveCount(49); await expect(edits.last()).toContainText("uses.ts · 1201:");

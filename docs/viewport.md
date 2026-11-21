@@ -156,6 +156,8 @@ Append your popup to the document body and pass it to `mountAnchoredOverlay(edit
 Call `show({ revision, offset, affinity? })` with a position from that editor. The popup follows
 the text through scrolling and resizing. It hides while its anchor is folded or offscreen and
 reappears when that position is visible again. A new document revision expires the anchor.
+If the popup contains a focused control, `onFocusedAnchorHidden` lets the host return focus
+before an offscreen or folded anchor hides that control.
 
 The popup opens below the line by default. Pass `{ prefer: "above" }` to prefer the other side.
 If it cannot fit there, it uses the side with more room and limits its height. The host supplies

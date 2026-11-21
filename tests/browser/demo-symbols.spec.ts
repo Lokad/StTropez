@@ -51,6 +51,10 @@ test("real rename previews a captured name, rejects an old name and shares one u
     const apply = dialog.getByRole("button", { name: "Apply rename", exact: true }); await expect(apply).toBeEnabled();
     await releaseFolds(); await expect(page.locator("#editor .st-fold-button").first()).toBeVisible(); await expect(apply).toBeEnabled();
     await expect(dialog.getByLabel("Rename edits")).toContainText("main.ts"); await expect(dialog.getByLabel("Rename edits")).toContainText("pricing.ts");
+    await dialog.getByRole("button", { name: "Cancel rename", exact: true }).click();
+    await expect(dialog).toBeHidden(); await expect(pricing).toBeFocused(); await expect(page.locator("#files")).not.toContainText("●");
+    await pricing.press("F2"); await expect(name).toHaveValue("calculateTotal"); await expect(apply).toBeDisabled();
+    await name.fill("cartTotal"); await name.press("Enter"); await expect(apply).toBeEnabled();
     await name.fill("basketTotal"); await expect(apply).toBeDisabled();
     await name.press("Enter"); await expect(apply).toBeEnabled(); await expect(dialog.getByLabel("Rename edits")).toContainText("basketTotal");
     await apply.click(); await expect(dialog).toBeHidden(); await expect(pricing).toBeFocused();
@@ -88,10 +92,9 @@ test("typing invalidates a held rename preview while retaining the actual edit",
     await dialog.getByRole("textbox", { name: "New name", exact: true }).fill("cartTotal");
     await dialog.getByRole("button", { name: "Preview rename", exact: true }).click(); await expect.poll(() => held).toBe(true);
     await source.press("Control+Home"); await source.pressSequentially("// Actual edit\n"); release!();
-    await expect(dialog.getByRole("button", { name: "Apply rename", exact: true })).toBeDisabled();
+    await expect(dialog).toBeHidden(); await expect(source).toBeFocused();
     await expect(page.locator("#editor")).toContainText("// Actual edit"); await expect(page.locator("#editor")).toContainText("calculateTotal(cart, 0.1)");
     await expect(page.locator("#editor")).not.toContainText("cartTotal");
-    await dialog.getByRole("button", { name: "Cancel rename", exact: true }).click(); await expect(source).toBeFocused();
 });
 
 test("real provider restart cancels a rename and resynchronizes edits without remounting the input", async ({ page }) => {
