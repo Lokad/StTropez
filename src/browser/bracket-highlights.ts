@@ -6,6 +6,7 @@ import { isFocused } from "./dom-focus.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DocumentId, DocumentView, TabId, Workspace } from "../core/workspace.ts";
+import type { TextBuffer } from "../core/text-buffer.ts";
 import type { InlineDecoration, PresentedLine, TextViewport } from "./viewport.ts";
 
 export type BracketHighlightSnapshot = Readonly<{ status: "disabled" | "idle" | "pending" | "ready" | "failed" | "disposed";
@@ -29,6 +30,11 @@ export function mountBracketHighlights(workspace: Workspace, tabId: TabId, view:
     let job: Job | undefined, current: (() => boolean) | undefined, decorations = empty, first = empty, second = empty;
     const focused = () => isFocused(input);
     const available = () => !disposed && !!limits && !input.disabled && workspace.ownsDocumentView(view) && !!workspace.resolveTab(target) && focused();
+    function cursor(buffer: TextBuffer, at: number): BracketMatchCursor {
+        const configured = configuration();
+        if (configured !== language) { language = configured; matcher = new BracketMatcher(configured); }
+        return matcher!.createCursor(buffer, at, limits);
+    }
     const publish = (status: BracketHighlightSnapshot["status"], revision = cell.get().revision, caret: number | null = null, progress?: BracketMatchProgress) => {
         const result = progress?.result ?? null;
         const next = result?.kind === "matched" ? [result.at!, result.match!].sort((a, b) => a - b)
@@ -70,8 +76,8 @@ export function mountBracketHighlights(workspace: Workspace, tabId: TabId, view:
         if (!available() || !idle()) { publish(limits ? "idle" : "disabled"); return; }
         const document = workspace.document(documentId), selections = view.getSnapshot().selectionSet, selected = selections.ranges[selections.primary]!;
         if (selected.anchor !== selected.head) { publish("idle", document.revision); return; }
-        const configured = configuration(); if (configured !== language) { language = configured; matcher = new BracketMatcher(configured); }
-        const captured: Job = { cursor: matcher!.createCursor(document.buffer, selected.head, limits), revision: document.revision, caret: selected.head, running: false,
+        const configured = configuration();
+        const captured: Job = { cursor: cursor(document.buffer, selected.head), revision: document.revision, caret: selected.head, running: false,
             current: () => available() && idle() && configuration() === configured && workspace.document(documentId).revision === document.revision
                 && workspace.document(documentId).buffer === document.buffer && view.getSnapshot().selectionSet === selections };
         current = captured.current; job = captured; publish("pending", document.revision, selected.head);
@@ -96,7 +102,7 @@ export function mountBracketHighlights(workspace: Workspace, tabId: TabId, view:
         configure: value => { notifications.assertWritable(); return configure(value); },
         refresh: () => { notifications.assertWritable(); refresh(true); } });
     configure(initial);
-    return Object.freeze({ handle, refresh: observed,
+    return Object.freeze({ handle, cursor, refresh: observed,
         decorate: (line: PresentedLine): readonly InlineDecoration[] => {
             if (line.documentId !== documentId || line.revision !== cell.get().revision || !decorations.length) return empty;
             const left = decorations[0]!.from >= line.from && decorations[0]!.to <= line.to, right = decorations[1]!.from >= line.from && decorations[1]!.to <= line.to;

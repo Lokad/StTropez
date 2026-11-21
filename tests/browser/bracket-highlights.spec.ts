@@ -73,6 +73,23 @@ for (const shadow of [false, true]) test(`${shadow ? "shadow" : "document"} brac
     await page.evaluate(() => window.bracketFixture.editor.bracketMatching.configure(false)); expect((await state(page)).status).toBe("disabled");
 });
 
+test("bracket jump works without highlights and a delayed jump cannot move a replacement selection", async ({ page }) => {
+    await fixture(page); await input(page).focus();
+    await input(page).press("Control+Shift+Backslash"); await page.keyboard.type("X");
+    await expect(page.locator(".st-viewport-row").first()).toHaveJSProperty("textContent", "(aX) [b]");
+    expect((await state(page)).status).toBe("disabled");
+    const pending = await page.evaluate(() => {
+        const f = window.bracketFixture;
+        f.set("[" + "x".repeat(50_000) + "]", 0);
+        f.editor.runCommand("jump-to-bracket");
+        const pending = f.editor.activity().pendingCommand;
+        f.set("new", 1);
+        return pending;
+    });
+    expect(pending).toBe(true); await page.keyboard.type("!");
+    await expect(page.locator(".st-viewport-row").first()).toHaveJSProperty("textContent", "n!ew");
+});
+
 test("bracket budgets, syntax refresh and reentrant cancellation never publish stale matches or leak owners", async ({ page }) => {
     await fixture(page); await input(page).focus();
     const disabledSubscriptions = await page.evaluate(() => window.bracketFixture.workspace.diagnostics().subscriptions);

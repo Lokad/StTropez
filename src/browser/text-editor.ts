@@ -747,6 +747,29 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     function runCommand(command: TextEditorCommand): boolean {
         if (disposed || composing || input.disabled || !workspace.resolveTab(target)) return false;
         switch (command) {
+            case "jump-to-bracket": {
+                cancelWord(); syncSelection(); group = undefined; preferred = undefined;
+                const capture = commandCapture(false);
+                eachRange(capture, "grapheme", (range, done) => {
+                    const cursor = brackets!.cursor(capture.buffer, range.head);
+                    const active = () => rangeCommand?.capture === capture && validCommand(capture);
+                    const advance = () => commandTurn(() => {
+                        const result = commandRunner.slice(() => cursor.next(commandBudget.languageUnits),
+                            step => step.status === "running" && active(), commandBudget.graphemeCalls);
+                        if (!active()) { cursor.dispose(); return; }
+                        if (result.status === "running") {
+                            const cancel = commandRunner.schedule(() => { cancelRangeTask = undefined; advance(); });
+                            cancelRangeTask = () => { cancel(); cursor.dispose(); };
+                            return;
+                        }
+                        cursor.dispose();
+                        const destination = result.result?.match;
+                        done(destination == null ? range : moved(range, destination, false));
+                    });
+                    advance();
+                }, ranges => finishRanges(capture, ranges), { navigation: true });
+                return true;
+            }
             case "select-line": {
                 cancelWord(); syncSelection(); group = undefined; preferred = undefined;
                 const capture = commandCapture(false), buffer = capture.buffer;
