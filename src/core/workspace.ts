@@ -1,8 +1,9 @@
 import type { TextEdit } from "./changes.ts";
-import { compactDocumentEdit, textDifference } from "./changes.ts";
+import { compactDocumentEdit, replacementSpan, textDifference } from "./changes.ts";
 import { documentChange } from "./document-change.ts";
 import { TextBuffer } from "./text-buffer.ts";
 import type { PositionMapping } from "./positions.ts";
+import { replacementMap } from "./positions.ts";
 import { TextHistory, validateHistoryGroup } from "./history.ts";
 import type { EditKind, HistoryChange, HistoryOptions, HistorySnapshot, Selection } from "./history.ts";
 import { createSelectionSet, mapSelectionSet, sameSelectionSet } from "./selections.ts";
@@ -442,9 +443,9 @@ export class Workspace {
     }
     /** Prepare every projection before history, resource or view mutation, including linked documents. */
     private prepareText(record: ResourceRecord, buffer: TextBuffer, mapping: PositionMapping,
-        selectionFor?: (view: ViewRecord) => SelectionSet | undefined): PreparedText {
+        selectionFor?: (view: ViewRecord) => SelectionSet | undefined, adopted?: ResourceMetadata): PreparedText {
         const current = record.state.get(), revision = current.revision + 1, before = record.buffer!;
-        const state = readySnapshot({ ...current.metadata, dirty: record.savedBuffer === null || !buffer.equals(record.savedBuffer) }, revision, buffer), views = [];
+        const state = readySnapshot(adopted ?? { ...current.metadata, dirty: record.savedBuffer === null || !buffer.equals(record.savedBuffer) }, revision, buffer), views = [];
         for (const view of record.views.values()) {
             const selections = selectionFor?.(view) ?? mapSelectionSet(mapping, view.state.get().selectionSet);
             const priorFolds = view.folds.get(), mapped = mapFoldRegions(buffer, mapping, priorFolds.regions, before);
@@ -601,6 +602,37 @@ export class Workspace {
                 return true;
             } finally { operation.finish(); }
         } });
+    }
+
+    /** Install an authoritative text version and its saved baseline in one publication. */
+    adoptSaved(id: ResourceId, version: Readonly<{ text: string | TextBuffer; serverVersion: string | null; history: "record" | "reset"; source?: string }>): EditResult {
+        this.scope.assertWritable();
+        const record = this.records.get(id);
+        if (!record?.documentId) return { applied: false, reason: "missing-document" };
+        const state = record.state.get();
+        if (!record.buffer || state.state !== "ready" || record.saveReservations || record.reloadReservations) return { applied: false, reason: "not-ready" };
+        if (record.editLease) return { applied: false, reason: "edit-locked" };
+        if (state.metadata.dirty && !state.metadata.capabilities.edit.includes("host")) return { applied: false, reason: "read-only" };
+        if (typeof version.text !== "string" && !(version.text instanceof TextBuffer)) throw new TypeError("Expected saved text or a text buffer.");
+        if (version.serverVersion !== null && typeof version.serverVersion !== "string"
+            || version.source !== undefined && typeof version.source !== "string"
+            || version.history !== "record" && version.history !== "reset") throw new TypeError("Invalid saved text version.");
+        const before = record.buffer, span = replacementSpan(before, version.text), mapping = replacementMap(before.length, span);
+        const units = span.to - span.from + span.insertedLength;
+        // Existing undo entries retain their exact after-buffer. An equal adoption can keep it.
+        const after = !units && (version.history === "record" || typeof version.text === "string") ? before
+            : typeof version.text === "string" ? TextBuffer.from(version.text) : version.text;
+        const text = this.prepareText(record, after, mapping, undefined, { ...state.metadata, serverVersion: version.serverVersion,
+            dirty: false, saveStatus: "idle", failure: null });
+        if (version.history === "reset") this.history.forget(record.documentId);
+        else if (units) this.history.record([{ documentId: record.documentId, before, after, mapping, units,
+            initiatingView: null, selections: historySelections(text) }], "host", "canonical");
+        else this.history.seal(record.documentId);
+        record.savedBuffer = after;
+        const changed = new Set<Store<unknown>>();
+        this.commitText(text, "host", "canonical", ++this.nextTransaction, changed, version.source);
+        this.syncHistory(changed); this.publish(changed);
+        return { applied: true, revision: text.state.revision };
     }
 
     /** Captures content now, retains ownership while queued, and enforces one writer per resource. */

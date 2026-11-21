@@ -207,6 +207,11 @@ export function positionChanges(mapping: PositionMapping): readonly Readonly<{ f
     return knownMapping(mapping) && mapping instanceof ChangePositionMap ? mapping[batchChanges]() : undefined;
 }
 
+/** A known replacement between two immutable buffers needs only its lengths. */
+export function replacementMap(oldLength: number, span: Pick<Change, "from" | "to" | "insertedLength">): PositionMapping {
+    return new ChangePositionMap(oldLength, span.from === span.to && !span.insertedLength ? [] : [span]);
+}
+
 /** An immutable indexed map for one batch. Offsets are UTF-16; a replacement consumes its interior. */
 export class PositionMap extends ChangePositionMap {
     constructor(oldLength: number, edits: readonly TextEdit[]) {

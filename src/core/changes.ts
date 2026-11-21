@@ -37,13 +37,15 @@ export function textDifference(before: string, after: string): TextEdit | null {
     return Object.freeze({ from, to: oldEnd, insert: after.slice(from, newEnd) });
 }
 
-/** Hosts can submit a whole file. Compare its edges without flattening a fragmented buffer. */
-export function compactDocumentEdit(before: TextBuffer, edits: readonly TextEdit[]): readonly TextEdit[] {
-    const edit = edits[0];
-    if (edits.length !== 1 || !edit || edit.from !== 0 || edit.to !== before.length || !before.length || !edit.insert.length) return edits;
-    const after = edit.insert, limit = Math.min(before.length, after.length);
-    function equalEdge(reverse: boolean, available: number): number {
+/** Compare the unproved edges in bounded slices, keeping a supplied buffer intact. */
+export function replacementSpan(before: TextBuffer, after: string | TextBuffer) {
+    const limit = Math.min(before.length, after.length);
+    function equalEdge(reverse: boolean, available: number, prefix: number): number {
         let matched = 0;
+        if (typeof after !== "string") {
+            for (const count of before.sharedEdge(after, reverse ? "end" : "start",
+                { from: prefix, to: before.length, otherFrom: prefix, otherTo: after.length })) matched = count;
+        }
         while (matched < available) {
             const size = Math.min(8192, available - matched);
             const a = reverse ? before.length - matched - size : matched, b = reverse ? after.length - matched - size : matched;
@@ -53,8 +55,16 @@ export function compactDocumentEdit(before: TextBuffer, edits: readonly TextEdit
         }
         return matched;
     }
-    const prefix = equalEdge(false, limit), suffix = equalEdge(true, limit - prefix);
-    if (!prefix && !suffix) return edits;
-    if (prefix === before.length && prefix === after.length) return [];
-    return [{ from: prefix, to: before.length - suffix, insert: after.slice(prefix, after.length - suffix) }];
+    const from = equalEdge(false, limit, 0), suffix = equalEdge(true, limit - from, from);
+    return { from, to: before.length - suffix, insertedLength: after.length - suffix - from };
+}
+
+/** Hosts can submit a whole file. Compare its edges without flattening a fragmented buffer. */
+export function compactDocumentEdit(before: TextBuffer, edits: readonly TextEdit[]): readonly TextEdit[] {
+    const edit = edits[0];
+    if (edits.length !== 1 || !edit || edit.from !== 0 || edit.to !== before.length || !before.length || !edit.insert.length) return edits;
+    const { from, to, insertedLength } = replacementSpan(before, edit.insert);
+    if (from === to && !insertedLength) return [];
+    if (!from && to === before.length && insertedLength === edit.insert.length) return edits;
+    return [{ from, to, insert: edit.insert.slice(from, from + insertedLength) }];
 }

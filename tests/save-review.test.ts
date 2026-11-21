@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Workspace, WorkspaceCommands } from "../src/index.ts";
+import { TextBuffer, Workspace, WorkspaceCommands } from "../src/index.ts";
 import type { SaveResponse, SaveSubmission } from "../src/index.ts";
 
 function fixture() {
@@ -9,6 +9,51 @@ function fixture() {
         origin: "human", edits: [{ from: 0, to: current.buffer.length, insert: text }] }); };
     return { workspace, source, edit, commands: new WorkspaceCommands(workspace) };
 }
+
+test("adopting a saved buffer publishes the revision, authority and mapped view together", () => {
+    const { workspace, source, edit } = fixture();
+    edit("head\n  child\nend");
+    const view = workspace.createDocumentView(source.documentId, { anchor: 13, head: 16 });
+    view.folding.setRanges(view.folding.getSnapshot(), [{ id: "h", from: 0, to: 12, collapsed: true }]);
+    const old = workspace.document(source.documentId);
+    const saved = old.buffer.replace(0, 0, "note\n");
+    const observed: unknown[] = [];
+    const stop = workspace.onDocumentChange(source.documentId, change => observed.push({
+        edits: change.edits, source: change.source, saved: source.metadata.getSnapshot().serverVersion,
+        dirty: source.metadata.getSnapshot().dirty, selection: view.getSnapshot().selection,
+        folded: view.folding.getSnapshot().index.collapsedCount
+    }));
+    const adopted = workspace.adoptSaved(source.id, { text: saved, serverVersion: "v2", history: "record", source: "review" });
+    stop();
+    assert.deepEqual(adopted, { applied: true, revision: 2 });
+    assert.deepEqual(observed, [{ edits: [{ from: 0, to: 0, insert: "note\n" }], source: "review", saved: "v2",
+        dirty: false, selection: { anchor: 18, head: 21, anchorAffinity: "after", headAffinity: "before" }, folded: 1 }]);
+    assert.equal(workspace.document(source.documentId).buffer, saved);
+    // An equal adoption advances the authority revision and preserves existing undo entries.
+    workspace.adoptSaved(source.id, { text: TextBuffer.from("note\nhead\n  child\nend"), serverVersion: "v3", history: "record" });
+    assert.equal(workspace.undo({ documentId: source.documentId, expectedRevision: 3 }).applied, true);
+    assert.equal(workspace.document(source.documentId).buffer, old.buffer);
+    assert.equal(source.metadata.getSnapshot().dirty, true);
+    assert.equal(workspace.redo({ documentId: source.documentId, expectedRevision: 4 }).applied, true);
+    assert.equal(source.metadata.getSnapshot().dirty, false);
+    workspace.adoptSaved(source.id, { text: saved, serverVersion: "v4", history: "reset" });
+    assert.equal(workspace.observeHistory(source.documentId).getSnapshot().undoDepth, 0);
+    assert.equal(saved.readMetrics().textExports, 0); view.dispose();
+});
+
+test("saved text respects outstanding saves, reload reservations and dirty read-only work", () => {
+    const { workspace, source, edit } = fixture();
+    const next = { text: "replacement", serverVersion: "v2", history: "reset" as const };
+    edit("local");
+    const state = source.getSnapshot(), ticket = workspace.captureSave(source);
+    assert.equal(workspace.adoptSaved(source.id, next).applied, false); ticket.finish();
+    const lease = workspace.acquire(source.id, { preventReload: true });
+    assert.equal(workspace.adoptSaved(source.id, next).applied, false); lease.release();
+    assert.equal(source.getSnapshot().revision, state.revision);
+    workspace.setCapabilities(source.id, { edit: [], save: false, run: false });
+    assert.deepEqual(workspace.adoptSaved(source.id, next), { applied: false, reason: "read-only" });
+    assert.equal(workspace.document(source.documentId).buffer.slice(0, 5), "local");
+});
 
 test("reviewed retry preserves the old baseline until a receipt, then keeps later typing and canonical dirty semantics", async () => {
     const { workspace, source, edit, commands } = fixture(); edit("merged  ");

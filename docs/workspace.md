@@ -334,6 +334,13 @@ lease.
 
 ### Save, conflicts and Run
 
+To install text that the host already has on disk or at the server, call `workspace.adoptSaved(resourceId,
+{ text, serverVersion, history })`. Supply a string or `TextBuffer`. Listeners see the new revision, clean
+state, server version and mapped selections and folds together. `history: "record"` makes a changed
+value undoable. `"reset"` clears history. An equal adoption advances the revision and preserves undo
+when recording. Pending saves, reload reservations, edit locks and unready documents refuse adoption.
+A clean read-only document can receive a saved version. Replacing a dirty document requires host edit permission.
+
 Use one `WorkspaceCommands` coordinator for related saves. `captureSave(resource, review?)` fixes
 the content and revision immediately. Pass the ticket to `commands.save(ticket, port)`. A queued
 save submits that captured content with the latest known saved server version as its write
