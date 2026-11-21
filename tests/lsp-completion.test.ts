@@ -82,6 +82,25 @@ test("prefix adoption cancels an old resolve while a replacement resolves the re
     assert.throws(() => client.resolve(result.batch, initial.items[0]!), /captured unresolved/);
 });
 
+test("shortening a typed prefix cancels resolution and stops at the provider's original query", async t => {
+    const f = clientFixture(t), client = createLspCompletionClient(f.provider); t.after(client.dispose);
+    const wire = choice(); f.peer.onRequest("textDocument/completion", () => [wire]);
+    const queried = await client.run(f.document(), 2).result;
+    type(f); const extended = client.rebase(queried, f.document())!;
+    const entered = latch<void>(), answer = latch<unknown>(); t.after(() => answer.resolve(wire));
+    f.peer.onRequest("completionItem/resolve", () => { entered.resolve(); return answer.promise; });
+    const old = client.resolve(extended, extended.items[0]!), rejected = assert.rejects(old.result, cancelled);
+    await entered.promise;
+    const erase = (from: number, to: number) => f.workspace.edit({ documentId: f.source.documentId, expectedRevision: f.document().revision,
+        edits: [{ from, to, insert: "" }], origin: "human", history: { kind: "delete" } });
+    assert.ok(erase(2, 3).applied);
+    const shortened = client.rebase(extended, f.document())!;
+    await rejected; answer.resolve({ ...wire, detail: "obsolete" }); await settled();
+    assert.ok(shortened.isCurrent()); assert.equal(shortened.offset, 2); assert.deepEqual(shortened.items[0]!.primary, queried.items[0]!.primary);
+    assert.ok(erase(1, 2).applied);
+    assert.equal(client.rebase(shortened, f.document()), undefined); assert.equal(shortened.isCurrent(), false);
+});
+
 test("host edits, copied batches and failed preparation never acquire fresh completion authority", async t => {
     const f = clientFixture(t), client = createLspCompletionClient(f.provider); t.after(client.dispose);
     f.peer.onRequest("textDocument/completion", () => [choice()]);

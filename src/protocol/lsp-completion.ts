@@ -16,7 +16,7 @@ export type LspCompletionRequestOptions = Readonly<{
     /** Keep this client's current batch usable while its replacement is pending. */
     retain?: LspCompletionBatch }>;
 export type LspCompletionResolution = Readonly<{ batch: LspCompletionBatch; item: LspCompletion | null; reason: string | null }>;
-type Batch = { binding: LspBindingCapture; value: LspCompletionBatch };
+type Batch = { binding: LspBindingCapture; value: LspCompletionBatch; requestedAt: number };
 type Response = Awaited<ReturnType<ReturnType<typeof createLspClient>["request"]>["result"]>;
 const same = (left: DocumentSnapshot | undefined, right: DocumentSnapshot) => !!left && left.id === right.id
     && left.resourceId === right.resourceId && left.revision === right.revision && left.buffer === right.buffer;
@@ -32,8 +32,8 @@ export function createLspCompletionClient(provider: LspWorkspace) {
     const requireBatch = (value: LspCompletionBatch) => {
         const batch = batches.get(value); if (!batch || !current(batch)) throw stale(); return batch;
     };
-    const publish = (binding: LspBindingCapture, document: DocumentSnapshot, offset: number, choices: LspCompletions): LspCompletionBatch => {
-        const batch: Batch = { binding, value: undefined! };
+    const publish = (binding: LspBindingCapture, document: DocumentSnapshot, offset: number, choices: LspCompletions, requestedAt = offset): LspCompletionBatch => {
+        const batch: Batch = { binding, value: undefined!, requestedAt };
         batch.value = Object.freeze({ ...choices, document, offset, isCurrent: () => current(batch),
             isBindingCurrent: () => !disposed && active === batch && !!binding.getSnapshot() });
         batches.set(batch.value, batch); active = batch; return batch.value;
@@ -79,11 +79,13 @@ export function createLspCompletionClient(provider: LspWorkspace) {
         rebase: (value: LspCompletionBatch, document: DocumentSnapshot): LspCompletionBatch | undefined => {
             const batch = batches.get(value), local = batch?.binding.getSnapshot();
             if (disposed || !batch || active !== batch || !local || !same(local, document) || !local.change || !value.items.length) return;
+            // The provider may have omitted choices that didn't match its original query.
+            if (value.offset + local.buffer.length - value.document.buffer.length < batch.requestedAt) return;
             const source = Object.freeze({ ...batch.binding.document, revision: local.revision, buffer: local.buffer });
             const items = value.items.map(item => rebaseLspCompletion(item, source, local.change!, value.offset));
             if (!items.every((item): item is LspCompletion => !!item)) return;
             cancelPending();
-            return publish(batch.binding, local, items[0]!.offset, Object.freeze({ ...value, items: Object.freeze(items) }));
+            return publish(batch.binding, local, items[0]!.offset, Object.freeze({ ...value, items: Object.freeze(items) }), batch.requestedAt);
         },
         resolve: (value: LspCompletionBatch, item: LspCompletion, prepare?: LspPrepare): LspCall<LspCompletionResolution> => {
             const batch = requireBatch(value);
@@ -99,7 +101,7 @@ export function createLspCompletionClient(provider: LspWorkspace) {
                 catch (error) { if (!(error instanceof UnsupportedLspSnippetError)) throw error; resolved = null; reason = error.message; }
                 const items = Object.freeze(value.items.flatMap(value => value === item ? resolved ? [resolved] : [] : [value]));
                 const omitted = reason ? Object.freeze([...value.omitted, Object.freeze({ label: item.label, reason })]) : value.omitted;
-                return Object.freeze({ batch: publish(batch.binding, value.document, value.offset, Object.freeze({ ...value, items, omitted })), item: resolved, reason });
+                return Object.freeze({ batch: publish(batch.binding, value.document, value.offset, Object.freeze({ ...value, items, omitted }), batch.requestedAt), item: resolved, reason });
             }));
         } });
 }

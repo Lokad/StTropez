@@ -407,17 +407,18 @@ export function decodeLspResolvedCompletion(value: unknown, original: LspComplet
         ...decodePlan(() => completionPlans(capture.document, nextPrimary, additional, snippet, original.insertion)) });
     current(capture); return result;
 }
-/** Only an exact single human typing insertion inside the captured primary range can follow a list.
- * The caller supplies the actual Core change; unknown/composed maps require a fresh provider result.
- */
+/** Map one item through a proved typing insertion or backward deletion within its primary range. */
 export function rebaseLspCompletion(original: LspCompletion, next: LspDocumentSnapshot, change: DocumentChange, caret: number): LspCompletion | undefined {
     const before = original.source, mapping = change.mapping, units = next.buffer.length - before.buffer.length, primary = original.primary;
-    if (change.previousRevision !== before.revision || next.revision !== before.revision + 1 || change.origin !== "human" || change.kind !== "typing"
+    if (change.previousRevision !== before.revision || next.revision !== before.revision + 1 || change.origin !== "human"
         || next.uri !== before.uri || next.resourceId !== before.resourceId || next.documentId !== before.documentId || next.languageId !== before.languageId
-        || mapping.oldLength !== before.buffer.length || mapping.newLength !== next.buffer.length || units < 1 || units > 2048
+        || mapping.oldLength !== before.buffer.length || mapping.newLength !== next.buffer.length || Math.abs(units) > 2048
         || caret !== original.offset || caret < primary.from || caret > primary.insertTo) return;
-    const changes = positionChanges(mapping), insertion = changes?.length === 1 ? changes[0] : undefined;
-    if (!insertion || insertion.from !== caret || insertion.to !== caret || insertion.insertedLength !== units) return;
+    const changes = positionChanges(mapping), edit = changes?.length === 1 ? changes[0] : undefined;
+    if (!edit || edit.to !== caret) return;
+    const inserted = change.kind === "typing" && units > 0 && edit.from === caret && edit.insertedLength === units;
+    const deleted = change.kind === "delete" && units < 0 && edit.from === caret + units && edit.from >= primary.from && edit.insertedLength === 0;
+    if (!inserted && !deleted) return;
     const from = mapping.map(primary.from, "before").offset, insertTo = mapping.map(primary.insertTo, "after").offset, replaceTo = mapping.map(primary.replaceTo, "after").offset;
     const additional = Object.freeze(original.additional.map(edit => Object.freeze({ from: mapping.map(edit.from, "after").offset, to: mapping.map(edit.to, edit.from === edit.to ? "after" : "before").offset, insert: edit.insert })));
     const nextPrimary = Object.freeze({ from, insertTo, replaceTo, text: primary.text });

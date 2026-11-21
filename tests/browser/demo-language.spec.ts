@@ -98,6 +98,12 @@ test("real member completion preserves provider punctuation, resolves, applies o
     await expect(page.getByRole("listbox", { name: "Completions", exact: true })).toBeVisible();
     await expect(page.getByRole("option", { name: "at", exact: true })).toBeVisible();
     const beforePrefix = requests;
+    await source.pressSequentially("ma"); await source.press("Backspace");
+    await expect(page.getByRole("option", { name: "map", exact: true })).toBeVisible();
+    await expect(page.getByRole("option", { name: "at", exact: true })).toHaveCount(0);
+    await source.press("Backspace");
+    await expect(page.getByRole("option", { name: "push", exact: true })).toBeVisible();
+    await expect(page.getByRole("option", { name: "map", exact: true })).toHaveAttribute("aria-selected", "true");
     await source.pressSequentially("ma");
     await page.getByRole("option", { name: "map", exact: true }).click();
     await expect(page.locator(".demo-completion")).toBeHidden();
@@ -108,10 +114,14 @@ test("real member completion preserves provider punctuation, resolves, applies o
     await source.press("Control+Space"); await expect(page.getByRole("option", { name: "map", exact: true })).toBeVisible();
     await expect(page.getByRole("option", { name: "at", exact: true })).toHaveCount(0);
     await expect(page.locator(".demo-completion pre")).toContainText("map");
+    const manualRequests = requests;
+    await source.press("Backspace");
+    await expect.poll(() => requests).toBe(manualRequests + 1);
+    await expect(page.getByRole("option", { name: "map", exact: true })).toBeVisible();
     await releaseFolds(); await expect(page.locator("#editor .st-fold-button").first()).toBeVisible();
     await expect(page.getByRole("option", { name: "map", exact: true })).toBeVisible();
     await source.press("Enter"); await expect(page.locator("#editor")).toContainText("basket.map");
-    await source.press("Control+z"); await expect(page.locator("#editor")).toContainText("basket.ma");
+    await source.press("Control+z"); await expect(page.locator("#editor .st-viewport-row").last()).toHaveText("basket.m");
     await source.press("Control+Space"); await expect(page.getByRole("option", { name: "map", exact: true })).toBeVisible();
     await source.press("Escape"); await expect(page.locator(".demo-completion")).toBeHidden();
     await expect(source).toBeFocused();

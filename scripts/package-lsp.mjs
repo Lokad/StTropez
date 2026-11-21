@@ -45,6 +45,10 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         await expect(button("sampleWithImport")).toBeVisible(); await expect.poll(async () => (await state()).editor.pending).toBe(false);
         const retained = await button("sampleWithImport").elementHandle(); assert.ok(retained, "Expected the captured completion control");
         await input.pressSequentially("p"); await expect.poll(async () => (await state()).editor.pending).toBe(false);
+        const requests = (await state()).editor.posted;
+        await input.press("Backspace"); await expect(button("sampleWithImport")).toBeVisible();
+        await expect.poll(async () => (await state()).editor.pending).toBe(false);
+        assert.equal((await state()).editor.posted, requests, "Backspace inside a complete prefix reuses the restored list");
         await retained.evaluate(node => { if (!(node instanceof HTMLButtonElement)) throw new Error("Expected a completion button"); node.click(); }); assert.equal((await state()).completion.choiceIndex, 0);
         await button("sampleWithImport").click(); await expect.poll(async () => (await state()).editor.pending).toBe(false);
         const beforeCommit = await text(), commitDepth = (await state()).history.undoDepth; await input.pressSequentially(";");

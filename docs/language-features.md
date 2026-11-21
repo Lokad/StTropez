@@ -188,8 +188,10 @@ Choices sort stably by `sortText` and filter by case-insensitive `filterText` pr
 choice disappears, `preselect` applies. Manual requests initially show all choices. Set
 `filterManualCompletions: true` to filter them by the captured prefix too.
 
-`rebaseLspCompletion` accepts only a single human typing insertion proved by Core batch metadata
-inside the primary insert range. The browser additionally requires matching selections, fold
+`rebaseLspCompletion` maps an item across a single typing insertion or backward deletion inside
+its primary insert range. Core supplies the exact edit. With automatic completion enabled, Backspace
+refilters an open list and keeps the selected item when it matches the shorter word. Deleting past the caret
+where the provider returned the list requests fresh choices. The browser requires matching selections, fold
 generation, authority, URI, binding and language configuration. Mapped primary/additional ranges
 are validated again.
 Undo, replacements, host edits, unknown/composed changes or incompatible navigation expire the

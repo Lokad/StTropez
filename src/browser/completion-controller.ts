@@ -18,7 +18,7 @@ type Job = { id: number; revision: number; buffer: TextBuffer; caret: number; se
     call?: LspCall<LspCompletionBatch>; batch?: LspCompletionBatch; choices?: LspCompletions; visible: readonly LspCompletion[]; choice: number; cancelled: boolean; pendingList: boolean; requestGeneration: number;
     acceptance?: Readonly<{ id: number; item: LspCompletion; mode: "insert" | "replace" }> | undefined;
     resolution?: { item: LspCompletion; revision: number; call?: LspCall<LspCompletionResolution> } | undefined };
-type Input = { revision: number; selections: SelectionSet; caret: number; data: string; word: boolean; reused: boolean; after?: SelectionSet; afterRevision?: number };
+type Input = { revision: number; selections: SelectionSet; caret: number; data: string; word: boolean; reused: boolean; backspaceTo?: number; after?: SelectionSet; afterRevision?: number };
 type Invocation = Readonly<{ kind: 1 | 2 | 3; character?: string; automatic?: boolean }>;
 export type CompletionChoice = Readonly<{ label: string; select: () => boolean; accept: (mode: "insert" | "replace") => boolean }>;
 export type CompletionSnippet = Readonly<{ stop: number; position: number; count: number; choices: readonly string[]; choiceIndex: number;
@@ -279,6 +279,18 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     };
     let stopTransform: () => void;
     try { stopTransform = editor.registerEditTransform(edit => {
+        if (edit.kind === "delete" && (job || inputIntent) && options.automatic !== false && !snippet && !editor.activity().composing) {
+            // Keyboard and beforeinput deletions both arrive here with the editor's exact grapheme range.
+            const selections = view.getSnapshot().selectionSet, caret = selections.ranges[selections.primary]!, removed = edit.edits[0];
+            const following = job?.revision === edit.expectedRevision && job.selections === selections
+                || inputIntent?.backspaceTo !== undefined && inputIntent.afterRevision === edit.expectedRevision && inputIntent.after === selections;
+            cancelAuto();
+            if (following && removed && edit.edits.length === 1 && selections.ranges.length === 1 && caret.anchor === caret.head
+                && removed.to === caret.head && removed.insert === "" && removed.from < removed.to && removed.to - removed.from <= 2048
+                && Array.from(workspace.document(documentId).buffer.slice(removed.from, removed.to)).every(point => word.test(point))) {
+                inputIntent = { revision: edit.expectedRevision, selections, caret: caret.head, data: "", word: true, reused: false, backspaceTo: removed.from };
+            }
+        }
         const captured = snippet; if (!captured) return;
         if (!snippetCurrent(captured) || edit.expectedRevision !== captured.revision) { snippet = undefined; return; }
         const plan = planSnippetEdit(workspace.document(documentId).buffer, captured.stops, captured.active, edit.edits, editor.view.getSnapshot().selectionSet, edit.selectionSet, edit.adjustNewlines);
@@ -311,6 +323,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
         });
     };
     const typed = (event: InputEvent) => {
+        if (!event.defaultPrevented && !event.isComposing && event.inputType === "deleteContentBackward") return;
         cancelAuto();
         if (snippet) return;
         const captured = job, selected = captured?.visible[captured.choice];
@@ -353,8 +366,10 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
         const intent = inputIntent, captured = job, selected = editor.view.getSnapshot().selectionSet, caret = selected.ranges[selected.primary]!;
         if (intent) { intent.after = selected; intent.afterRevision = document.revision; }
         if (captured?.choices?.items.length && intent?.word && intent.revision === captured.revision && intent.selections === captured.selections && intent.caret === captured.caret
-            && document.change && authorityCurrent(captured.authority) && bindingCurrent(captured) && selected.ranges.length === 1 && caret.anchor === caret.head && caret.head === intent.caret + intent.data.length
-            && document.buffer.slice(intent.caret, caret.head) === intent.data && editor.view.folding.getSnapshot().generation === captured.folds + 1) {
+            && document.change && authorityCurrent(captured.authority) && bindingCurrent(captured) && selected.ranges.length === 1 && caret.anchor === caret.head
+            && (intent.backspaceTo !== undefined ? caret.head === intent.backspaceTo
+                : caret.head === intent.caret + intent.data.length && document.buffer.slice(intent.caret, caret.head) === intent.data)
+            && editor.view.folding.getSnapshot().generation === captured.folds + 1) {
             const selectedIndex = captured.choices.items.indexOf(captured.visible[captured.choice]!);
             const rebased = captured.batch && completion.rebase(captured.batch, document);
             if (rebased) {
