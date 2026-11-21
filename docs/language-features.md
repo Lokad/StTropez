@@ -204,7 +204,8 @@ return means the controller accepted the request. `apply` requires an item it ca
 and returns false during resolution. Typing, selection changes, blur, cancellation or lost permission
 clears queued acceptance. Typing an advertised commit character while the item is unresolved inserts
 the character normally and closes the list. Once ready, the item and its commit character form one
-transaction, with no duplicate native insertion. Commit characters must be one UTF-16 unit.
+transaction. If the provider also advertises the character as a completion trigger, automatic
+completion requests the next list at the resulting caret. Commit characters must be one UTF-16 unit.
 
 `lspCompletionPlan(item, mode, commitCharacter?, capturedSelections?)` returns edits and the resulting
 `selectionSet`. For multiple carets, each selection must be collapsed and ordered. The primary must

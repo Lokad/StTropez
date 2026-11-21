@@ -17,7 +17,7 @@ type Job = { id: number; revision: number; buffer: TextBuffer; caret: number; se
     call?: LspCall<LspCompletionBatch>; batch?: LspCompletionBatch; choices?: LspCompletions; visible: readonly LspCompletion[]; choice: number; cancelled: boolean; pendingList: boolean; requestGeneration: number;
     acceptance?: Readonly<{ id: number; item: LspCompletion; mode: "insert" | "replace" }> | undefined;
     resolution?: { item: LspCompletion; revision: number; call?: LspCall<LspCompletionResolution> } | undefined };
-type Input = { revision: number; selections: SelectionSet; caret: number; data: string; word: boolean; trigger: string | undefined; reused: boolean; after?: SelectionSet };
+type Input = { revision: number; selections: SelectionSet; caret: number; data: string; word: boolean; reused: boolean; after?: SelectionSet; afterRevision?: number };
 type Invocation = Readonly<{ kind: 1 | 2 | 3; character?: string; automatic?: boolean }>;
 export type LspEditorDiagnostic = Readonly<{ from: number; to: number; message: string }>;
 export type LspEditorSnippet = Readonly<{ id: number; stop: number; position: number; count: number; choices: readonly string[]; choiceIndex: number }>;
@@ -300,7 +300,17 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Text
         if (snippet) return;
         const captured = job, selected = captured?.visible[captured.choice];
         if (!event.defaultPrevented && !event.isComposing && !editor.activity().composing && event.inputType === "insertText" && event.data?.length === 1 && captured && selected?.commitCharacters.includes(event.data)) {
-            if (apply("replace", captured.id, event.data)) { event.preventDefault(); return; }
+            if (apply("replace", captured.id, event.data)) {
+                event.preventDefault();
+                // The cancelled native input won't schedule a trigger. Use the committed caret.
+                if (!snippet && options.automatic !== false && triggers().has(event.data)) {
+                    const selections = editor.view.getSnapshot().selectionSet, revision = workspace.document(documentId).revision;
+                    inputIntent = { revision, selections, caret: selections.ranges[selections.primary]!.head, data: event.data,
+                        word: false, reused: false, after: selections, afterRevision: revision };
+                    scheduleAuto();
+                }
+                return;
+            }
             // An unresolved choice must not consume a user's character.
             expire("Completion dismissed while resolution was pending."); return;
         }
@@ -311,7 +321,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Text
         if (selections.ranges.length !== 1 || caret.anchor !== caret.head) { if (job) expire("Place one caret before completion."); return; }
         const isWord = Array.from(event.data).every(value => word.test(value)), trigger = triggers().has(event.data) ? event.data : undefined;
         if (!isWord && !trigger && !connecting) { if (job) expire("LSP completion expired after input."); return; }
-        inputIntent = { revision: workspace.document(documentId).revision, selections, caret: caret.head, data: event.data, word: isWord, trigger, reused: false };
+        inputIntent = { revision: workspace.document(documentId).revision, selections, caret: caret.head, data: event.data, word: isWord, reused: false };
     };
     const selectDiagnostic = (index: number): boolean => {
         const diagnostic = diagnostics[index]; if (!diagnostic || !available() || !idle() || workspace.document(documentId).revision !== diagnosticRevision) return false;
@@ -344,8 +354,10 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Text
     workspace.observeDocument(documentId).subscribe(() => {
         updateDiagnostics(false); if (applying || snippetChanging) return;
         snippet = undefined;
-        const intent = inputIntent, captured = job, document = workspace.document(documentId), selected = editor.view.getSnapshot().selectionSet, caret = selected.ranges[selected.primary]!;
-        if (intent) intent.after = selected;
+        const document = workspace.document(documentId);
+        if (inputIntent?.afterRevision !== undefined && inputIntent.afterRevision !== document.revision) cancelAuto();
+        const intent = inputIntent, captured = job, selected = editor.view.getSnapshot().selectionSet, caret = selected.ranges[selected.primary]!;
+        if (intent) { intent.after = selected; intent.afterRevision = document.revision; }
         if (captured?.choices?.items.length && intent?.word && intent.revision === captured.revision && intent.selections === captured.selections && intent.caret === captured.caret
             && document.change && authorityCurrent(captured.authority) && bindingCurrent(captured) && selected.ranges.length === 1 && caret.anchor === caret.head && caret.head === intent.caret + intent.data.length
             && document.buffer.slice(intent.caret, caret.head) === intent.data && editor.view.folding.getSnapshot().generation === captured.folds + 1) {
@@ -390,7 +402,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Text
         if (snippet) { if (!isFocused(editor.input)) { snippet = undefined; publish("Snippet ended after composition lost focus."); } return; }
         if (!event.data || options.automatic === false || !Array.from(event.data).every(value => word.test(value))) return;
         const selections = editor.view.getSnapshot().selectionSet, caret = selections.ranges[selections.primary]!;
-        inputIntent = { revision: workspace.document(documentId).revision, selections, caret: caret.head, data: event.data, word: true, trigger: undefined, reused: false }; scheduleAuto();
+        inputIntent = { revision: workspace.document(documentId).revision, selections, caret: caret.head, data: event.data, word: true, reused: false }; scheduleAuto();
     }, { signal: listeners.signal });
     const keydown = (event: KeyboardEvent) => {
         if (event.defaultPrevented || event.isComposing || editor.activity().composing) return;
