@@ -81,7 +81,8 @@ edits. One undo restores both quantities. The query and mode follow the active f
 | Problems | Choose a current diagnostic to open its named file and range. Related locations expand on demand; help links require an explicit click and the demo's HTTPS TypeScript-documentation policy. |
 | Occurrences | Place the caret on a symbol to shade its occurrences. Browser-provider writes also have an outline; the pinned local server reports reads for the sample's variable declarations and assignments. |
 
-The [sample catalogue](../examples/demo/samples.ts) loads the larger cases on demand:
+The Example picker loads samples on demand. You can keep using the arrow keys while a sample
+opens. The last choice appears, and returning to a sample keeps its edits. [Sample catalogue](../examples/demo/samples.ts)
 
 - **Large file · 100,000 lines** — Scroll to the middle, edit a row, search and undo. Both source
   and output render visible rows.

@@ -24,6 +24,7 @@ const field = (id: string) => element(id) as HTMLInputElement;
 const button = (id: string) => element(id) as HTMLButtonElement;
 const codeMenu = element("code-menu") as HTMLDetailsElement;
 const projects = new Map<SampleId, DemoProject>(), activeFiles = new Map<SampleId, string>();
+const pendingProjects = new Map<SampleId, Promise<DemoProject>>();
 const listeners = new AbortController(), sample = element("sample") as HTMLSelectElement;
 const pageOptions = new URL(location.href).searchParams;
 const openProvider = selectDemoProvider(pageOptions.get("provider") ?? document.documentElement.dataset.demoProvider ?? "browser");
@@ -399,9 +400,23 @@ function showSampleError(message: string): void {
         element("description").textContent = "Choose an example to try again.";
     }
 }
+function loadProject(id: SampleId): Promise<DemoProject> {
+    const pending = pendingProjects.get(id);
+    if (pending) return pending;
+    const load = DemoProject.open(id, () => {
+        const state = project?.sample.id === id ? editor?.activity() : undefined;
+        return !state || !state.composing && !state.pendingInput && !state.pendingCommand;
+    }, openProvider).then(next => {
+        if (disposed) next.dispose();
+        else projects.set(id, next);
+        return next;
+    }).finally(() => pendingProjects.delete(id));
+    pendingProjects.set(id, load);
+    return load;
+}
 async function openSample(id: SampleId): Promise<void> {
     if (editor?.activity().composing) { selectSample(project!.sample.id); return; }
-    const generation = ++opening; selectSample(id); sample.disabled = true;
+    const generation = ++opening; selectSample(id);
     if (id === "host") {
         // Keep the current editor and sample picker usable while the shared stylesheet loads.
         sample.disabled = false;
@@ -413,22 +428,14 @@ async function openSample(id: SampleId): Promise<void> {
             return;
         }
         if (disposed || generation !== opening) return;
-        sample.disabled = true;
     }
-    let next = projects.get(id);
-    if (!next) {
-        try {
-            next = await DemoProject.open(id, () => {
-                const state = project?.sample.id === id ? editor?.activity() : undefined;
-                return !state || !state.composing && !state.pendingInput && !state.pendingCommand;
-            }, openProvider);
-        } catch (error) {
-            console.error(error);
-            if (disposed || generation !== opening) return;
-            showSampleError("Could not open this sample. Choose a sample to try again.");
-            return;
-        }
-        if (disposed) { next.dispose(); return; } projects.set(id, next);
+    let next: DemoProject;
+    try { next = projects.get(id) ?? await loadProject(id); }
+    catch (error) {
+        if (disposed || generation !== opening) return;
+        console.error(error);
+        showSampleError("Could not open this sample. Choose a sample to try again.");
+        return;
     }
     if (disposed || generation !== opening) return;
     // A composition can start in the retained editor during asynchronous preparation.
