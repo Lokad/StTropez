@@ -2,6 +2,7 @@ import { createFindController, createRegexFindBackend } from "../../src/browser/
 import type { TextEditor, FindController, FindSnapshot } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, DocumentId, FoldRange, FoldRegion, FoldingSnapshot, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import type { ProviderController, ProviderFactory, ProviderSnapshot } from "../shared/language/provider-contract.ts";
+import { completionPageSize } from "../shared/language/completion-list.ts";
 import type { JsonValue } from "../../src/protocol/index.ts";
 import { EditingPresentation } from "../shared/language/presentation.ts";
 import { HostCell } from "../shared/observable.ts";
@@ -73,7 +74,8 @@ export class HostLanguageTools {
     private attachProvider(session: Session): void {
         const { editor } = session;
         let provider: ProviderController;
-        try { provider = this.providerFactory(editor, { autoConnect: false, canCapture: () => this.canCapture(editor.view.documentId) }); }
+        try { provider = this.providerFactory(editor, { autoConnect: false, canCapture: () => this.canCapture(editor.view.documentId),
+            getPageSize: () => completionPageSize(this.toolsElement?.querySelector<HTMLElement>('[role="listbox"]')) }); }
         catch (error) {
             // Provider construction owns its partial cleanup. Local editing and Find keep their view.
             session.providerError = error instanceof Error ? error.message : String(error);

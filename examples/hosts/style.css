@@ -31,6 +31,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .host-language { margin-top: 16px; }
 .host-language h2 { font-size: 17px; }
 .host-language button { margin: 3px; }
+.host-language [role="listbox"] { position: relative; max-height: 16rem; overflow: auto; }
 .st-token-keyword { color: #a9c5ff; }
 .st-token-number { color: #b9e29e; }
 .st-token-comment { color: #b5bbc7; }

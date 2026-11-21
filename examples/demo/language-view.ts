@@ -9,6 +9,7 @@ import { mountDemoSymbols } from "./symbols.ts";
 import type { DemoSymbolTarget } from "./symbols.ts";
 import { mountDemoActions } from "./actions.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
+import { completionPageSize, revealCompletionRow } from "../shared/language/completion-list.ts";
 
 /** Contextual completion UI around the public editor controller. It never changes text itself. */
 export function mountDemoLanguage(workspace: Workspace, files: () => readonly DemoFile[], file: DemoFile, editor: TextEditor, language: DemoLanguage,
@@ -22,9 +23,13 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         scope.defer(() => popup.remove());
         popup.className = "demo-completion"; popup.hidden = true; popup.setAttribute("role", "listbox"); popup.setAttribute("aria-label", "Completions");
         count.className = "demo-completion-count";
+        choices.className = "demo-completion-choices";
         popup.append(count, choices, detail); document.body.append(popup);
         const completionOverlay = mountAnchoredOverlay(editor, popup, { priority: 1 });
         scope.defer(completionOverlay.dispose);
+        const revealChoice = () => revealCompletionRow(choices.querySelector('[aria-selected="true"]'));
+        const resizeChoices = new ResizeObserver(revealChoice);
+        resizeChoices.observe(choices); scope.defer(() => resizeChoices.disconnect());
         const snippetPanel = document.createElement("div"); scope.defer(() => snippetPanel.remove());
         snippetPanel.className = "demo-snippet"; snippetPanel.hidden = true;
         snippetPanel.setAttribute("role", "region"); snippetPanel.setAttribute("aria-label", "Snippet controls"); document.body.append(snippetPanel);
@@ -58,6 +63,7 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
                     const choice = state.completionAt(first + offset);
                     option.onclick = () => choice?.accept("replace"); return option;
                 }));
+                revealChoice();
             }
             detail.textContent = state.resolving ? "Loading details…" : state.completionDetail;
             const selection = editor.view.getSnapshot().selection;
@@ -72,7 +78,8 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         const attach = (provider: LspWorkspace) => {
             if (!valid()) return;
             try {
-                controller = createCompletionController(editor, provider, { autoConnect: false, filterManualCompletions: true, canCapture: valid });
+                controller = createCompletionController(editor, provider, { autoConnect: false, filterManualCompletions: true, canCapture: valid,
+                    getPageSize: () => completionPageSize(choices) });
                 scope.defer(() => controller!.dispose());
                 highlights = createLspHighlightController(editor, { provider });
                 scope.defer(() => highlights!.dispose());

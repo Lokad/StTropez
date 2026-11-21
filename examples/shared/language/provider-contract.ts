@@ -6,7 +6,7 @@ export type Diagnostic = Readonly<{ from: number; to: number; message: string }>
 
 export type ProviderSnapshot = Readonly<{ message: string; connected: boolean; pending: boolean; offerText: string | null; diagnostics: readonly Diagnostic[]; diagnosticRevision: number; diagnosticsPending?: boolean;
     choices?: readonly string[]; choiceIndex?: number; completionAt: (index: number) => CompletionChoice | undefined; completionDetail?: string; resolving?: boolean; unversionedDiagnostics?: readonly string[]; snippet?: CompletionSnippet | null }>;
-export type ProviderOptions = Readonly<{ autoConnect?: boolean; canCapture?: () => boolean }>;
+export type ProviderOptions = Readonly<{ autoConnect?: boolean; canCapture?: () => boolean; getPageSize?: () => number }>;
 export type ProviderController = Observable<ProviderSnapshot> & Readonly<{ request: () => void;
     cancel: () => void; connect: () => void; disconnect: () => void; selectDiagnostic: (index: number) => boolean;
     setDelay: (value: number) => void; faultNext: (value: "malformed" | "failure") => void; dispose: () => void;

@@ -1,4 +1,5 @@
 import type { HostLanguageTools } from "./language.ts";
+import { revealCompletionRow } from "../shared/language/completion-list.ts";
 type LanguageSnapshot = ReturnType<HostLanguageTools["state"]["getSnapshot"]>;
 type LanguagePanelTools = Pick<HostLanguageTools, "state" | "toolsRef" | "queryRef" | "replacementRef" | "keyFromTools" | "request" | "cancel" | "disconnect" | "reconnect" | "next" | "previous" | "replaceCurrent" | "replaceAll" | "cancelFind" | "foldSelection" | "expandFolds" | "focusEditor" | "selectDiagnostic" | "setQuery" | "setReplacement" | "setWholeWord" | "setMatchCase" | "setRegularExpression">;
 const capturedCommand = (tools: Pick<LanguagePanelTools, "state">, state: LanguageSnapshot, invoke: () => void) => () => {
@@ -86,6 +87,7 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
     host.append(heading, help, status, choices, detail, diagnosticStatus, diagnostics, uncertain, ...fields.map(f => f.label), ...options.map(f => f.label), findStatus, foldStatus, nav);
     const setText = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text; };
     let renderedChoices: readonly string[] | undefined;
+    let selectedRow: HTMLElement | null = null;
     let choiceButtons: HTMLButtonElement[] = [], diagnosticButtons: HTMLButtonElement[] = [];
     const render = () => {
         const model = languagePanelModel(tools, tools.state.getSnapshot());
@@ -97,6 +99,8 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
                 item.setAttribute("role", "option"); button.textContent = row.label; choiceButtons.push(button); item.append(button); return item; }));
         }
         for (const [index, row] of offered.entries()) { choiceButtons[index]!.onclick = row.invoke; choices.children.item(index)!.setAttribute("aria-selected", String(index === model.choices.selected)); }
+        const selected = choiceButtons[model.choices.selected]?.parentElement ?? null;
+        if (selected !== selectedRow) { selectedRow = selected; revealCompletionRow(selected); }
         const messages = model.uncertain.items();
         if (uncertain.childElementCount !== messages.length || messages.some((message, index) => uncertain.children.item(index)?.textContent !== message)) {
             uncertain.replaceChildren(...messages.map(message => { const item = owner.createElement("li"); item.textContent = message; return item; }));

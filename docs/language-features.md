@@ -173,7 +173,10 @@ discards a late result. Dispose the attachment, editor and provider separately.
 
 Automatic completion waits for input to settle after prefix typing or an advertised trigger character.
 It needs one collapsed caret and no composition. Press Ctrl/Cmd+Space to request suggestions yourself.
-Arrows select, Enter replaces, Tab inserts and Escape dismisses the choices or active snippet. When
+Up and Down select one choice. PageUp and PageDown move a page and stop at the first or last choice.
+Supply `getPageSize` to report the number of visible rows, or zero while the list is hidden.
+The default is ten rows. Home and End dismiss the list and navigate the source.
+Enter replaces, Tab inserts and Escape dismisses the choices or active snippet. When
 neither is visible, Escape cancels pending requests and reaches the editor. Escape then Tab or
 Shift+Tab leaves the view.
 

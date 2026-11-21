@@ -29,6 +29,10 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         expect(await source(page)).toBe(typed.replace("saxMORE", "sampleMORE"));
         await field(page, "Secondary source").press("Control+z"); expect(await source(page)).toBe(typed);
         await seed(page, typed, typed.indexOf("saxMORE") + 3); await offer(page); const depth = (await snapshot(page)).history.undoDepth;
+        const options = page.getByRole("listbox", { name: "Completion choices" }).getByRole("option");
+        await field(page).press("PageDown"); await expect(options.last()).toHaveAttribute("aria-selected", "true");
+        await field(page).press("PageUp"); await expect(options.first()).toHaveAttribute("aria-selected", "true");
+        await expect(field(page)).toBeFocused();
         await page.getByRole("option", { name: "sampleWithImport", exact: true }).getByRole("button").click(); await button(page, "Replace completion").click(); await ready(page);
         const replaced = "// fixture import\r\n" + typed.replace("saxMORE", "sampleValue"); expect(await source(page)).toBe(replaced); expect((await snapshot(page)).history.undoDepth).toBe(depth + 1);
         await field(page, "Secondary source").press("Control+z"); expect(await source(page)).toBe(typed); await field(page, "Secondary source").press("Control+Shift+z"); expect(await source(page)).toBe(replaced);

@@ -29,6 +29,8 @@ export type CompletionSnapshot = Readonly<{ message: string; connected: boolean;
 export type CompletionControllerOptions = Readonly<{ autoConnect?: boolean; automatic?: boolean;
     /** Narrow explicit requests using each item's captured edit prefix, as automatic requests do. */
     filterManualCompletions?: boolean; canCapture?: () => boolean;
+    /** Visible choice rows for PageUp/Down. Defaults to ten. Return zero for a hidden list. */
+    getPageSize?: () => number;
     prepareCompletion?: (scope: LspScopeAccess) => Promise<unknown>; onError?: (error: unknown) => void }>;
 export type CompletionController = Observable<CompletionSnapshot> & Readonly<{ request: () => void; cancel: () => void; connect: () => void;
     customRequest: (method: string, params: JsonValue) => Promise<JsonValue>; dispose: () => void;
@@ -431,6 +433,16 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
             if (chooseSnippet(next)) event.preventDefault(); return;
         }
         if (!job?.visible.length) return;
+        if (event.key === "Home" || event.key === "End") {
+            cancelAuto(); counters.cancelled++; release(); publish("Completion dismissed."); return;
+        }
+        if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && (event.key === "PageDown" || event.key === "PageUp")) {
+            const rows = options.getPageSize?.() ?? 10;
+            if (!Number.isSafeInteger(rows) || rows <= 0) return;
+            const next = Math.max(0, Math.min(job.visible.length - 1, job.choice + (event.key === "PageDown" ? rows : -rows)));
+            if (next === job.choice || chooseCompletion(next, job.id)) event.preventDefault();
+            return;
+        }
         if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
             const next = (job.choice + (event.key === "ArrowDown" ? 1 : job.visible.length - 1)) % job.visible.length;
             if (chooseCompletion(next, job.id)) event.preventDefault();

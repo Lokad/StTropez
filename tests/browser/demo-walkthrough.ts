@@ -490,13 +490,36 @@ export async function runDemoCompletionCatalogue(page: Page, url = "/") {
     await expect(popup).toBeHidden();
     await viewport.evaluate((node, top) => { node.scrollTop = top; }, scroll);
     await expect(popup).toBeVisible();
+    await expect(popup.locator("pre")).toContainText("item0000:");
+    const cursor = page.locator("#cursor"), originalCursor = await cursor.innerText();
+    const rows = await popup.getByRole("option").evaluateAll(options => {
+        const box = options[0]!.parentElement!.getBoundingClientRect();
+        return options.filter(row => { const r = row.getBoundingClientRect(); return r.top >= box.top && r.bottom <= box.bottom; }).length;
+    });
+    expect(rows).toBeGreaterThan(1); expect(rows).toBeLessThan(16);
+    await source.press("PageDown");
+    const paged = popup.getByRole("option", { name: "item" + String(rows).padStart(4, "0"), exact: true });
+    await expect(paged).toHaveAttribute("aria-selected", "true");
+    await expect.poll(() => paged.evaluate(row => {
+        const r = row.getBoundingClientRect(), list = row.parentElement!.getBoundingClientRect();
+        return r.top >= list.top - 1 && r.bottom <= list.bottom + 1;
+    })).toBe(true);
+    await expect(cursor).toHaveText(originalCursor); await expect(source).toBeFocused();
+    await source.press("PageUp"); await source.press("PageUp");
+    await expect(popup.getByRole("option", { name: "item0000", exact: true })).toHaveAttribute("aria-selected", "true");
     await source.press("ArrowUp");
     await expect(page.getByRole("option", { name: "item1199", exact: true })).toHaveAttribute("aria-selected", "true");
+    await source.press("PageDown");
     expect(await popup.getByRole("option").count()).toBeLessThanOrEqual(16);
     await expect(popup.locator(".demo-completion-count")).toHaveText("1200 of 1200 · type to filter");
     await expect(page.locator(".demo-completion pre")).toContainText("item1199:");
     await source.press("Tab"); await expect(page.locator("#editor")).toContainText("catalogue.item1199");
     await source.press("Control+z"); await expect(page.locator("#editor")).not.toContainText("catalogue.item1199");
+    await source.press("Control+Space"); await expect(popup).toBeVisible();
+    await source.press("End"); await expect(popup).toBeHidden(); await expect(cursor).toHaveText(originalCursor);
+    await source.press("Control+Space"); await expect(popup).toBeVisible();
+    await source.press("Home"); await expect(popup).toBeHidden(); await expect(cursor).toContainText("Col 1", { useInnerText: true });
+    await source.press("End");
     await source.press("Control+Space"); await expect(page.getByRole("option", { name: "item0000", exact: true })).toBeVisible();
     await source.pressSequentially("item119");
     await expect(popup.getByRole("option")).toHaveCount(10);
