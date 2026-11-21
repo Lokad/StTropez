@@ -7,6 +7,7 @@ import { copyCaretLines, planClipboardPaste } from "../core/clipboard-edits.ts";
 import { createWordCommandCursor, WordCursor } from "../core/words.ts";
 import { createGraphemeCursor } from "../core/graphemes.ts";
 import { createSelectionSet, planSelectionEdits } from "../core/selections.ts";
+import { selectionOccurrences } from "../core/selection-occurrences.ts";
 import type { Affinity } from "../core/positions.ts";
 import type { DocumentView, TabId, Workspace } from "../core/workspace.ts";
 import type { EditKind, Selection } from "../core/history.ts";
@@ -493,15 +494,11 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         });
         }, ranges => finishRanges(capture, ranges));
     }
-    function selectWord(offset: number, add = false): void {
-        cancelWord(); if (disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
-        stopDrag(); group = undefined; preferred = undefined; focus(); syncSelection();
-        const document = workspace.document(documentId), buffer = document.buffer, selected = view.getSnapshot().selection;
-        const capture = { buffer, revision: document.revision, selection: selected, selectionSet: view.getSnapshot().selectionSet, deleting: false };
+    function wordRange(capture: CommandCapture, offset: number, accept: (range?: Selection) => void): void {
+        const buffer = capture.buffer;
         const line = buffer.lineAt(offset), from = buffer.offsetAt(line);
         const to = lineContentEnd(buffer, line);
-        if (to === from) return;
-        const command = { capture, purpose: "word" as const, release: () => {} }; rangeCommand = command;
+        if (to === from) { accept(); return; }
         wordScanSteps = 0; maxWordScanStepMs = 0; graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
         const scan = (start: number, direction: -1 | 1, done: (offset: number) => void) => {
             if (!validCommand(capture)) return;
@@ -525,16 +522,56 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             const width = buffer.slice(probe, Math.min(to, probe + 2)).codePointAt(0)! > 0xffff ? 2 : 1;
             scan(Math.min(to, probe + width), -1, left => scan(probe, 1, right => {
                 withGraphemes(capture, left, -1, "word-selection", low => withGraphemes(capture, right, 1, "word-selection", high => {
-                    if (rangeCommand !== command || !validCommand(capture)) return;
-                    const range = { anchor: Math.max(from, low.floor), head: Math.min(to, high.ceil) };
-                    rangeCommand = undefined; completeCaptured(capture, () => {
-                    if (add) view.setSelections(capture.revision, [...capture.selectionSet.ranges, range], capture.selectionSet.ranges.length);
-                    else view.setSelection(capture.revision, range);
-                    refresh(); return true;
-                    });
+                    if (rangeCommand?.capture === capture && validCommand(capture)) accept({ anchor: Math.max(from, low.floor), head: Math.min(to, high.ceil) });
                 }));
             }));
         });
+    }
+    function selectWord(offset: number, add = false): void {
+        cancelWord(); if (disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
+        stopDrag(); group = undefined; preferred = undefined; focus(); syncSelection();
+        const capture = commandCapture(false);
+        rangeCommand = { capture, purpose: "word", release: () => {} };
+        wordRange(capture, offset, range => {
+            rangeCommand = undefined; completeCaptured(capture, () => {
+                if (!range) return true;
+                if (add) view.setSelections(capture.revision, [...capture.selectionSet.ranges, range], capture.selectionSet.ranges.length);
+                else view.setSelection(capture.revision, range);
+                refresh(); return true;
+            });
+        });
+    }
+    let inferredOccurrence: SelectionSet | undefined;
+    function selectOccurrences(all: boolean): void {
+        cancelWord(); syncSelection(); group = undefined; preferred = undefined;
+        const capture = commandCapture(false), { selection, selectionSet } = capture;
+        const empty = selection.head === selection.anchor, wholeWord = empty || inferredOccurrence === selectionSet;
+        let search: ReturnType<typeof selectionOccurrences> | undefined;
+        rangeCommand = { capture, purpose: "word", release: () => { search?.return(selectionSet); } };
+        const finish = (result: SelectionSet) => {
+            rangeCommand = undefined;
+            completeCaptured(capture, () => {
+                if (!view.setSelections(capture.revision, result.ranges, result.primary)) return false;
+                inferredOccurrence = wholeWord ? view.getSnapshot().selectionSet : undefined;
+                revealCaret(); refresh(); return true;
+            });
+        };
+        const begin = (seed?: Selection) => {
+            if (!seed) { finish(selectionSet); return; }
+            if (!all && empty) {
+                const ranges = selectionSet.ranges.slice(); ranges[selectionSet.primary] = seed;
+                finish({ ranges, primary: selectionSet.primary }); return;
+            }
+            const cursor = search = selectionOccurrences(capture.buffer, selectionSet, seed, all, wholeWord);
+            const step = () => commandTurn(() => {
+                if (!validCommand(capture)) { cancelWord(); return; }
+                const result = commandRunner.slice(() => cursor.next(), result => !result.done, commandBudget.graphemeCalls);
+                if (result.done) finish(result.value);
+                else cancelRangeTask = commandRunner.schedule(() => { cancelRangeTask = undefined; step(); });
+            });
+            step();
+        };
+        if (empty) wordRange(capture, selection.head, begin); else begin(selection);
     }
     function navigationTurn(work: () => void): void {
         if (navigationDepth) { work(); return; }
@@ -750,6 +787,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     function runCommand(command: TextEditorCommand): boolean {
         if (disposed || composing || input.disabled || !workspace.resolveTab(target)) return false;
         switch (command) {
+            case "select-next-occurrence": case "select-all-occurrences":
+                selectOccurrences(command === "select-all-occurrences"); return true;
             case "add-caret-above": case "add-caret-below":
                 syncSelection(); group = undefined; vertical(command === "add-caret-above" ? -1 : 1, false, false, true); return true;
             case "undo-caret": {
@@ -1140,6 +1179,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     let lastCaret = view.getSnapshot(), restoringCaret = false;
     const observeCaret = () => {
         const next = view.getSnapshot();
+        inferredOccurrence = undefined;
         if (next.revision !== lastCaret.revision) caretHistory.length = 0;
         else if (!restoringCaret && (!drag || !dragCaretRecorded) && next.selectionSet !== lastCaret.selectionSet) {
             if (caretHistory.length === 50) caretHistory.shift();

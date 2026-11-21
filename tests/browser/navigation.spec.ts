@@ -7,6 +7,24 @@ async function setup(page: Page, text: string, head = 0) {
 }
 test.beforeEach(async ({ page }) => {  await page.goto("/editing/"); await ready(page); });
 
+test("occurrence shortcuts wrap, keep the current word primary and type over the visible matches", async ({ page }) => {
+    const source = "cat scatter cat CAT cat";
+    await setup(page, source, 13);
+    const heads = () => page.evaluate(() => window.editingFixture.selectionSet().ranges.map(range => range.head));
+    await page.keyboard.press("Control+d"); await page.keyboard.press("Control+d"); await page.keyboard.press("Control+d");
+    expect(await heads()).toEqual([3, 15, 23]); expect((await snapshot(page)).primary.selection.head).toBe(3);
+    await page.keyboard.type("X"); const row = page.locator("#primary .st-viewport-row").first();
+    await expect(row).toHaveJSProperty("textContent", "X scatter X CAT X");
+    await page.keyboard.press("Control+z");
+    await page.evaluate(() => window.editingFixture.selections([{ anchor: 15, head: 12 }]));
+    await page.keyboard.press("Control+Shift+l"); expect(await heads()).toEqual([0, 5, 12, 20]);
+    expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 15, head: 12 });
+    await page.keyboard.type("Y"); await expect(row).toHaveJSProperty("textContent", "Y sYter Y CAT Y");
+    await setup(page, "name\n" + "other\n".repeat(100_000) + "name", 2);
+    await page.keyboard.press("Control+Shift+l"); await page.keyboard.type("Z"); await ready(page);
+    expect(await page.evaluate(() => { const f = window.editingFixture, length = f.snapshot().document!.length; return [f.range(0, 2), f.range(length - 2, length)]; })).toEqual(["Z\n", "\nZ"]);
+});
+
 test("adding carets carries the visual column across short lines and cursor undo restores the primary range", async ({ page }) => {
     await setup(page, "abcd\nx\nlast", 3);
     const heads = () => page.evaluate(() => window.editingFixture.selectionSet().ranges.map(range => range.head));

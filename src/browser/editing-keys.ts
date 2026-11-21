@@ -2,7 +2,7 @@ import type { EditingCommand } from "../core/language-edits.ts";
 
 export type KeyStroke = Readonly<Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">>;
 export type ViewCommand = "select-line" | "jump-to-bracket" | "add-caret-above" | "add-caret-below" | "undo-caret"
-    | "scroll-line-up" | "scroll-line-down" | "scroll-page-up" | "scroll-page-down";
+    | "select-next-occurrence" | "select-all-occurrences" | "scroll-line-up" | "scroll-line-down" | "scroll-page-up" | "scroll-page-down";
 type KeyCommand = Readonly<{ kind: "history"; direction: "undo" | "redo" }>
     | Readonly<{ kind: "select-all" }>
     | Readonly<{ kind: "view"; command: ViewCommand }>
@@ -36,6 +36,8 @@ export function classifyEditingKey(event: KeyStroke, apple: boolean, escaped: bo
     if (command && (key === "z" || event.ctrlKey && key === "y")) return bind({ kind: "history", direction: extend || key === "y" ? "redo" : "undo" }, true);
     if (command && key === "a") return bind({ kind: "select-all" });
     if (command && !extend && key === "l") return bind({ kind: "view", command: "select-line" });
+    if (command && !extend && key === "d") return bind({ kind: "view", command: "select-next-occurrence" });
+    if (command && extend && key === "l") return bind({ kind: "view", command: "select-all-occurrences" });
     if (command && extend && (key === "\\" || key === "|")) return bind({ kind: "view", command: "jump-to-bracket" });
     if (command && (event.key === "Home" || event.key === "End")) return horizontal(event.key, true);
     if (apple && event.metaKey && !event.ctrlKey && !event.altKey) {

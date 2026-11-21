@@ -138,6 +138,8 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Word modifier + Backspace / Delete | Delete the selection, an adjacent run of two or more whitespace characters, or one word toward the key. |
 | Ctrl/Cmd + A | One whole-document selection |
 | Ctrl/Cmd + L | Select the touched lines with their line breaks. Press again to extend by one line. |
+| Ctrl/Cmd + D | Select the word at the caret, then add the next occurrence on each press, wrapping at EOF. |
+| Ctrl/Cmd + Shift + L | Select all occurrences. A caret searches for whole words. An explicit selection searches for its exact, case-sensitive text. |
 | Ctrl/Cmd + Alt/Option + Up / Down | Add a caret at the same visual column on the preceding or following visible row. |
 | Ctrl/Cmd + U | Restore the previous selection set in this view. Each text revision starts a fresh caret history. |
 | Ctrl/Cmd + Shift + backslash | Jump from each selection's active end to the matching bracket. Uses the configured pairs and scan limits even when highlighting is off. |
@@ -235,7 +237,7 @@ and frozen; callbacks receive the exact immutable buffer and source endpoints.
 
 `EditingPair` describes delimiters; `LanguageEditContext` describes the immutable buffer/range.
 `ResolvedLanguageConfiguration` supplies validated defaults. Pass a `TextEditorCommand` to `runCommand`.
-The view commands `select-line`, `add-caret-above`, `add-caret-below`, `undo-caret`,
+The view commands `select-line`, `select-next-occurrence`, `select-all-occurrences`, `add-caret-above`, `add-caret-below`, `undo-caret`,
 `jump-to-bracket`, `scroll-line-up`, `scroll-line-down`, `scroll-page-up` and
 `scroll-page-down` also work in read-only editors. The text-editing commands are
 `indent`, `indent-lines`, `outdent`, `line-comment`, `add-line-comment`, `remove-line-comment`,
