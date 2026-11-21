@@ -96,7 +96,8 @@ test("demo save receipts retain their captured files and leave later typing dirt
     await source.press("Control+Home"); await source.pressSequentially("// Captured\n");
     await page.getByRole("button", { name: "Save locally", exact: true }).click();
     await expect.poll(() => page.evaluate(() => (window as unknown as { heldDemoTransactions: IDBTransaction[] }).heldDemoTransactions.length)).toBe(1);
-    await source.pressSequentially("// Later main\n");
+    await expect(source).toBeFocused();
+    await page.keyboard.insertText("// Later main\n");
     await page.getByRole("button", { name: "pricing.ts", exact: true }).click();
     const helper = page.getByRole("textbox", { name: "pricing.ts", exact: true });
     await helper.press("Control+Home"); await helper.pressSequentially("// Later helper\n");
@@ -105,6 +106,7 @@ test("demo save receipts retain their captured files and leave later typing dirt
         tx.oncomplete?.call(tx, new Event("complete"));
     });
     await expect(page.locator("#status")).toContainText("Saved in this browser");
+    await expect(helper).toBeFocused();
     await expect(page.getByRole("button", { name: "main.ts ●", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "pricing.ts ●", exact: true })).toBeVisible();
     const saved = await page.evaluate(() => new Promise<Record<string, string>>((resolve, reject) => {
@@ -165,8 +167,11 @@ test("demo local save persists both files and prevents a stale page from replaci
     await working.press("Control+Home"); await working.pressSequentially("// Revised locally\n");
     await expect(saveReviewed).toBeDisabled();
     await peer.getByRole("button", { name: "Review saved copy", exact: true }).click();
+    const reference = peer.getByRole("textbox", { name: "Comparison baseline source", exact: true });
+    await reference.press("Control+Home");
     await saveReviewed.click();
     await expect(peer.locator("#status")).toContainText("Saved in this browser");
+    await expect(reference).toBeFocused();
     await expect(peer.locator("#save-conflict")).toBeHidden();
     await expect(peer.locator(".demo-review-labels > span:not(.demo-review-hint)")).toHaveText(["Saved copy", "Your changes"]);
     await page.reload();

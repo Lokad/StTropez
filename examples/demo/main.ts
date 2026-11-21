@@ -541,14 +541,19 @@ async function save(reviewed = false): Promise<void> {
         const ticket = comparison.controller.beginRefresh(); ticket.complete(captured.baseline(active));
     }
 }
-on("save", () => { void save(); });
+// These controls disable or disappear during storage. Return focus before starting the
+// action, while the same editor or review pane still owns the user's selection.
+function onFileAction(id: string, action: () => void): void {
+    on(id, () => { (comparison?.activePane() ?? editor)?.focus(); action(); });
+}
+onFileAction("save", () => { void save(); });
 on("conflict-review", () => { if (project?.reviewConflict()) { setPanel("changes"); renderMetadata(); } });
-on("conflict-save", () => { void save(true); });
-on("recovery-restore", () => { void project?.recovery.restore(); });
+onFileAction("conflict-save", () => { void save(true); });
+onFileAction("recovery-restore", () => { void project?.recovery.restore(); });
 element("recovery-version").addEventListener("change", event => {
     project?.recovery.selectVersion((event.currentTarget as HTMLSelectElement).selectedIndex);
 }, { signal: listeners.signal });
-on("recovery-keep", () => { void project?.recovery.keepCurrent(); });
+onFileAction("recovery-keep", () => { void project?.recovery.keepCurrent(); });
 on("recovery-retry", () => { void project?.recovery.refresh(); });
 function download(text: string, name: string): void {
     const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));

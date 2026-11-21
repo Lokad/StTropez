@@ -12,14 +12,16 @@ test("editing with an unanswered draft keeps both versions available after reloa
     await expect(page.locator("#recovery-message")).toContainText("Your current edits have a recovery copy.");
     await page.reload(); await expect(version).toBeVisible();
     await expect(version.locator("option")).toHaveCount(2);
-    await version.selectOption("1"); await restore.click();
+    await version.selectOption("1"); await restore.focus(); await page.keyboard.press("Enter");
     await expect(page.locator("#editor")).toContainText("Earlier work");
+    await expect(source).toBeFocused();
     await expect(page.locator("#editor")).not.toContainText("Later work");
     await expect(restore).toBeEnabled(); await restore.click();
     await expect(page.locator("#editor")).toContainText("Later work");
     await expect(page.locator("#editor")).not.toContainText("Earlier work");
     await page.getByRole("button", { name: "Keep current files", exact: true }).click();
-    await expect(status).toHaveText("Recovery draft captured in this browser."); await page.reload();
+    await expect(status).toHaveText("Recovery draft captured in this browser."); await expect(source).toBeFocused();
+    await page.reload();
     await expect(restore).toBeEnabled(); await expect(version).toBeHidden(); await restore.click();
     await expect(page.locator("#editor")).toContainText("Later work");
 });
