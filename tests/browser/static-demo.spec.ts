@@ -147,6 +147,34 @@ test("Find combines case and word boundaries and keeps the options across files"
     await caseButton.click(); await expect(status).toHaveText("No matches");
 });
 
+test("the Find toolbar follows generated output and both Changes panes", async ({ page, baseURL }) => {
+    await page.goto(baseURL!);
+    const open = page.locator("#find-toggle"), query = page.locator("#find-query"), status = page.locator("#find-status");
+    const label = page.locator("#find-target"), replace = page.locator("#replace-current"), replaceAll = page.locator("#replace-all");
+    const output = page.getByRole("region", { name: "JavaScript output", exact: true });
+    const reader = output.getByRole("textbox"), source = page.locator("#editor");
+    await reader.focus(); await open.click(); await query.fill("const cart =");
+    await expect(label).toHaveText("JavaScript output · read-only"); await expect(status).toHaveText("1 of 1");
+    await expect(output.locator(".st-search-match").first()).toBeVisible(); await expect(source.locator(".st-search-match")).toHaveCount(0);
+    await page.locator("#replace-toggle").click(); await expect(replace).toBeDisabled(); await expect(replaceAll).toBeDisabled();
+    await query.press("Escape"); await expect(reader).toBeFocused();
+    await open.click(); await page.locator("#panel-collapse").click();
+    await expect(label).toBeEmpty(); await expect(status).toHaveText("No matches");
+    await query.press("Escape"); await expect(source.getByRole("textbox")).toBeFocused();
+
+    await page.locator("#panel-collapse").click();
+    await page.locator('[data-panel="changes"]').click();
+    const panes = page.locator(".st-comparison-panes > section"), saved = panes.first(), working = panes.last();
+    const savedInput = saved.getByRole("textbox");
+    await savedInput.press("Control+Home"); await savedInput.press("Shift+End"); await open.click();
+    await expect(label).toHaveText("Saved copy · read-only"); await expect(query).toHaveValue('import { calculateTotal } from "./pricing";');
+    await expect(saved.locator(".st-search-match").first()).toBeVisible(); await expect(working.locator(".st-search-match")).toHaveCount(0);
+    await page.locator("#replace-toggle").click(); await expect(replaceAll).toBeDisabled();
+    await query.press("Enter"); await expect(query).toBeFocused(); await expect(status).toHaveText("1 of 1 · Wrapped to start");
+    await working.getByRole("textbox").focus(); await expect(label).toBeEmpty(); await expect(replaceAll).toBeEnabled();
+    await expect(saved.locator(".st-search-match")).toHaveCount(0); await expect(working.locator(".st-search-match").first()).toBeVisible();
+});
+
 test("a pending regex search allows large-file scrolling and typing and expires on file change", async ({ page, baseURL }) => {
     // Hold the first actual match page for each large-file revision, then deliver both after switching documents.
     type Probe = { pending: (() => void)[]; holding: boolean };

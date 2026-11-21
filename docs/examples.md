@@ -72,6 +72,9 @@ Opening Find picks up a short, single-line source selection and escapes it in re
 With an empty, multiline or oversized selection, the previous query stays in the field.
 Typing a query previews a match while focus stays in Find. Enter selects it. The counter shows
 the active match and total, and reports when navigation wraps.
+Choose **Find** after focusing generated JavaScript or the saved copy to search that pane.
+The bar names the read-only target. Escape returns focus to it. Focusing the working source
+while the bar is open searches the same query there and enables replacement for matches.
 
 ### Language tools and samples
 

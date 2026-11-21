@@ -9,7 +9,7 @@ export function mountDemoOutput(host: HTMLElement, text: string, settings: Reado
     const editor = mountTextEditor(host, workspace, resource.documentId, { ariaLabel: "JavaScript output", readOnly: true, settings });
     editor.element.classList.add("demo-output");
     let disposed = false;
-    return Object.freeze({ snapshot: editor.viewport.snapshot, configure: editor.configure, update: (next: string) => {
+    return Object.freeze({ editor, update: (next: string) => {
         if (disposed || next === text) return;
         if (workspace.adoptSaved(resource.id, { text: next, serverVersion: null, history: "reset" }).applied) text = next;
     }, dispose: () => {

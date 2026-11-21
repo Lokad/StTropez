@@ -30,7 +30,7 @@ const pageOptions = new URL(location.href).searchParams;
 const openProvider = selectDemoProvider(pageOptions.get("provider") ?? document.documentElement.dataset.demoProvider ?? "browser");
 for (const choice of sampleChoices) { const option = document.createElement("option"); option.value = choice.id; option.textContent = choice.title; sample.append(option); }
 let project: DemoProject | undefined, active: DemoFile | undefined, editor: TextEditor | undefined;
-let comparison: TextComparison | undefined, find: FindController | undefined;
+let comparison: TextComparison | undefined, find: FindController | undefined, findTarget: TextEditor | undefined;
 const foldMenu = mountDemoFoldMenu(codeMenu, () => comparison?.activePane() ?? editor);
 let output: ReturnType<typeof mountDemoOutput> | undefined;
 let panel: "javascript" | "problems" | "changes" = "javascript", disposed = false, opening = 0;
@@ -79,6 +79,7 @@ function renderOutput(): void {
         else {
             host.replaceChildren();
             output = mountDemoOutput(host, text, { minimap: field("view-minimap").checked, fontLigatures: field("view-ligatures").checked });
+            watchFindFocus(output.editor);
         }
     } else if (!output) {
         // Keep the last completed output for this view while the footer reports pending/failed analysis.
@@ -240,11 +241,12 @@ function detachView(): void {
     stopReferenceFolding?.(); stopReferenceFolding = undefined; referenceFolding?.dispose(); referenceFolding = undefined;
     stopReference?.(); stopReference = undefined;
     referencePresentation?.dispose(); referencePresentation = undefined;
+    releaseFind(); findTarget = undefined;
     output?.dispose(); output = undefined;
     detachLanguage();
-    stopView?.(); stopView = undefined; stopFind?.(); stopFind = undefined;
+    stopView?.(); stopView = undefined;
     viewListeners?.abort(); viewListeners = undefined;
-    find?.dispose(); find = undefined; syntaxLayer = undefined; diagnosticsLayer = undefined; paintedDiagnostics = undefined;
+    syntaxLayer = undefined; diagnosticsLayer = undefined; paintedDiagnostics = undefined;
     if (comparison) comparison.dispose(); else editor?.dispose();
     comparison = undefined; editor = undefined; reviewLabel = undefined;
     element("editor").replaceChildren(); element("panel-content").replaceChildren();
@@ -346,20 +348,9 @@ function mountFile(file: DemoFile, focus = false): void {
             if (key === "f" || key === "h") { event.preventDefault(); openFind(key === "h"); }
         } else if (event.key === "F3") { event.preventDefault(); find?.next(event.shiftKey ? -1 : 1); }
     }, { signal: viewListeners.signal });
-    find = createFindController(editor, { regularExpressionBackend: createRegexFindBackend({
-        clock: window, createWorker: () => new Worker(new URL("regex-worker.js", document.baseURI), { type: "module" }),
-    }) });
-    find.setFlags(findFlags());
-    const capturedFind = find;
-    const renderFind = () => {
-        const snapshot = capturedFind.getSnapshot();
-        element("find-status").textContent = findStatus(snapshot);
-        const hasMatches = !file.readOnly && snapshot.count > 0;
-        button("replace-all").disabled = !(hasMatches && snapshot.status === "ready");
-        button("replace-current").disabled = !(hasMatches && (snapshot.status === "ready" || snapshot.status === "searching" && snapshot.retained));
-    };
-    stopFind = find.subscribe(renderFind); renderFind();
-    if (!element("find-bar").hidden) find.setQuery(field("find-query").value);
+    watchFindFocus(editor);
+    if (comparison) watchFindFocus(comparison.panes.reference);
+    useFindTarget(editor);
     stopView = file.view.subscribe(renderMetadata);
     languageView = attachLanguage(project, file, editor);
     if (project.sample.id === "host") {
@@ -464,6 +455,33 @@ function setPanel(next: typeof panel): void {
     for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.setAttribute("aria-pressed", String(tab.dataset.panel === panel));
     mountFile(active, true);
 }
+function watchFindFocus(target: TextEditor): void {
+    target.element.addEventListener("focusin", () => useFindTarget(target), { signal: target.signal });
+}
+function releaseFind(): void {
+    stopFind?.(); stopFind = undefined; find?.dispose(); find = undefined;
+}
+function useFindTarget(target: TextEditor): void {
+    if (findTarget === target && find) return;
+    releaseFind(); findTarget = target;
+    if (element("find-bar").hidden) return;
+    const current = createFindController(target, { regularExpressionBackend: createRegexFindBackend({
+        clock: window, createWorker: () => new Worker(new URL("regex-worker.js", document.baseURI), { type: "module" }),
+    }) });
+    find = current; current.setFlags(findFlags());
+    const label = target === output?.editor ? "JavaScript output" : target === comparison?.panes.reference ? "Saved copy" : active?.name;
+    const readOnly = target !== editor || active?.readOnly;
+    element("find-target").textContent = readOnly ? `${label} · read-only` : "";
+    const render = () => {
+        const snapshot = current.getSnapshot();
+        element("find-status").textContent = findStatus(snapshot);
+        const hasMatches = !readOnly && snapshot.count > 0;
+        button("replace-all").disabled = !(hasMatches && snapshot.status === "ready");
+        button("replace-current").disabled = !(hasMatches && (snapshot.status === "ready" || snapshot.status === "searching" && snapshot.retained));
+    };
+    stopFind = current.subscribe(render); render();
+    current.setQuery(field("find-query").value);
+}
 function findFlags() {
     const pressed = (id: string) => button(id).getAttribute("aria-pressed") === "true";
     return { matchCase: pressed("find-case"), wholeWord: pressed("find-word"), regularExpression: pressed("find-regex") };
@@ -490,11 +508,15 @@ function selectedFindQuery(source: TextEditor, regex: boolean): string | undefin
 }
 function openFind(replace = false): void {
     const bar = element("find-bar"), query = field("find-query");
-    if (bar.hidden && editor && find) query.value = selectedFindQuery(editor, find.getSnapshot().regularExpression) ?? query.value;
+    if (!findTarget) return;
+    if (bar.hidden) query.value = selectedFindQuery(findTarget, findFlags().regularExpression) ?? query.value;
     bar.hidden = false; element("replace-controls").hidden = !replace;
-    find?.setQuery(query.value); const target = replace ? field("replacement") : query; target.focus(); target.select();
+    useFindTarget(findTarget); const target = replace ? field("replacement") : query; target.focus(); target.select();
 }
-function closeFind(): void { element("find-bar").hidden = true; find?.cancel(); editor?.focus(); }
+function closeFind(): void {
+    element("find-bar").hidden = true;
+    releaseFind(); findTarget?.focus();
+}
 const on = (id: string, action: () => void) => element(id).addEventListener("click", action, { signal: listeners.signal });
 element("panel-content").addEventListener(editRefusedEvent, () => {
     if (!project || panel !== "javascript") return;
@@ -528,7 +550,7 @@ field("character-warnings").addEventListener("change", () => {
 for (const id of ["view-rulers", "view-current-line", "view-ligatures", "view-trailing-space", "view-minimap"]) field(id).addEventListener("change", () => {
     const settings = presentationSettings();
     editor?.configure(settings); comparison?.panes.reference.configure(settings);
-    output?.configure({ minimap: settings.minimap, fontLigatures: settings.fontLigatures });
+    output?.editor.configure({ minimap: settings.minimap, fontLigatures: settings.fontLigatures });
 }, { signal: listeners.signal });
 on("quickfix", () => languageView?.quickfix());
 for (const command of ["line-comment", "block-comment", "indent", "outdent"] as const) on(command, () => {
@@ -562,6 +584,7 @@ on("language-retry", () => {
 on("panel-collapse", () => {
     if (panel === "changes") setPanel("javascript");
     const collapsed = element("workspace").classList.toggle("collapsed"); element("panel-collapse").textContent = collapsed ? "Show" : "Hide";
+    if (collapsed && editor && output && findTarget === output.editor) useFindTarget(editor);
     presentation.setEmit(!collapsed && panel === "javascript");
 });
 on("walkthrough-toggle", () => { element("walkthrough").hidden = !element("walkthrough").hidden; });
