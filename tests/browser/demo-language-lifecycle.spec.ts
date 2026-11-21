@@ -41,7 +41,8 @@ test("language mounting releases partial owners, preserves failures and rejects 
                 const append = Element.prototype.append, remove = Element.prototype.remove;
                 let view: ReturnType<typeof mountDemoLanguage> | undefined, injected = false, cleaned = false;
                 let release: ((provider: Awaited<ReturnType<typeof project.language.connect>>) => void) | undefined;
-                const delayed = Object.create(project.language) as typeof project.language;
+                // This view is still connecting; only the project used by the other cases is ready.
+                const delayed = Object.create(project.language, { connectedProvider: { value: undefined } }) as typeof project.language;
                 if (point === "late") delayed.connect = () => new Promise(resolve => { release = resolve; });
                 Element.prototype.append = function (...nodes) {
                     append.apply(this, nodes);
