@@ -49,8 +49,15 @@ test("right-click targets the word under the pointer and preserves a selection c
     await expect(input).toBeFocused();
     await page.keyboard.type("Y");
     await expect(rows.first()).toHaveText("Y line");
+    // Linux may paste the primary selection on middle-click. This check owns focus and
+    // caret placement. Leave clipboard integration to the separate device workflow.
+    await input.evaluate(node => {
+        const blockPaste = (event: Event) => { event.preventDefault(); event.stopImmediatePropagation(); };
+        node.ownerDocument.addEventListener("paste", blockPaste, { capture: true, once: true });
+    });
     await clickAt(1, "middle");
     await expect(input).toBeFocused();
+    expect(await page.evaluate(() => window.editingFixture.snapshot().primary.selection)).toMatchObject({ anchor: 1, head: 1 });
     await page.keyboard.type("X");
     await expect(rows.first()).toHaveText("YX line");
 });
