@@ -13,7 +13,7 @@ import type { LspCommandReceipt, LspCommandScope } from "../../src/protocol/inde
 import { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../../src/protocol/index.ts";
 import type { LspWorkspaceEditNote } from "../../src/protocol/index.ts";
 type Session = { token: number; id: string; target: TabTarget; editor: TextEditor };
-type Job = { origin: Session; input: ProjectCommand; documents: Map<string, DocumentSnapshot>; revisions: Map<string, number>; authority: Map<string, string>;
+type Job = { origin: Session; source: string; input: ProjectCommand; documents: Map<string, DocumentSnapshot>; revisions: Map<string, number>; authority: Map<string, string>;
     leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; applied: boolean; capture: CapturedViewRequest | undefined;
     review?: Review; providerCurrent?: () => boolean; externalCancel?: () => void; changes: ProjectSnapshot["changes"] };
 type Review = { token: number; request: LspApplyEdit; context: LspRequestContext; finish: (result: LspApplyEditResult) => void; stop: () => void; timer: number; page: number };
@@ -43,7 +43,6 @@ export class HostProjectTools {
     private registered = false;
     private disconnected = false;
     private disposed = false;
-    private publishing = false;
     private serial = 0;
     private delay = 0;
     private fault: ProjectCommand["fault"];
@@ -98,9 +97,9 @@ export class HostProjectTools {
         return captureViewRequest(this.workspace, origin.target, origin.editor.view,
             { available: () => this.available(origin) && this.canCapture(origin.editor.view.documentId) });
     }
-    private changed(job: Job): void {
-        if (!this.publishing && this.job === job && !this.current(job)) {
-            job.invalid = true; queueMicrotask(() => { if (this.job === job) this.cancel(); });
+    private changed(job: Job, followUp = queueMicrotask): void {
+        if (this.job === job && !this.current(job)) {
+            job.invalid = true; followUp(() => { if (this.job === job) this.cancel(); });
         }
     }
     private watchCapture(job: Job, capture: CapturedViewRequest): void {
@@ -111,14 +110,18 @@ export class HostProjectTools {
         const changed = () => this.changed(job);
         for (const doc of job.documents.values()) if (doc.id !== job.capture?.document.id) {
             job.leases.push(this.workspace.acquire(doc.resourceId));
-            job.stops.push(this.workspace.observeDocument(doc.id).subscribe(changed), this.workspace.resourceForDocument(doc.id).metadata.subscribe(changed));
+            job.stops.push(this.workspace.onDocumentChange(doc.id, (change, followUp) => {
+                if (change.source !== job.source) this.changed(job, followUp);
+            }), this.workspace.resourceForDocument(doc.id).metadata.subscribe(() => {
+                const current = this.workspace.observeDocument(doc.id).getSnapshot();
+                if (this.authority(doc.id) !== job.authority.get(doc.id) || !current?.change && current?.revision !== job.revisions.get(doc.id)) changed();
+            }));
         }
         // Worker workspace commands are resource-scoped and intentionally permit selection movement.
         if (!job.capture) job.stops.push(this.workspace.tabState.subscribe(changed));
     }
     private commit(job: Job, operation: () => void): void {
         if (!this.current(job) || !job.capture) throw new Error("Captured command context changed before application.");
-        this.publishing = true;
         try {
             if (!job.capture.commit(() => {
                 operation();
@@ -133,7 +136,7 @@ export class HostProjectTools {
                 // report that phase as refused to the provider.
                 return true;
             })) throw new Error("Captured command context changed before application.");
-        } finally { this.publishing = false; this.changed(job); }
+        } finally { this.changed(job); }
     }
     private release(job: Job): void {
         if (job.review) this.finishReview(job, job.review, { applied: false, failureReason: "Captured provider work ended or was cancelled." });
@@ -192,7 +195,7 @@ export class HostProjectTools {
         if (!this.current(job) || !edit.isCurrent() || edit.documents.some(change => change.edits.length && !this.editable(change.target.document.documentId as DocumentId))) throw new Error("Captured edit revision, authority or provider changed.");
         let count = 0;
         this.commit(job, () => {
-            const changed = applyLspWorkspaceEdit(this.workspace, edit, { origin: "host", requiredOrigins: ["human"], view: job.origin.editor.view });
+            const changed = applyLspWorkspaceEdit(this.workspace, edit, { origin: "host", source: job.source, requiredOrigins: ["human"], view: job.origin.editor.view });
             if (changed.length) {
                 job.applied = true; this.metrics.applied++;
                 const all = new Map(job.changes.map(change => [change.document, change]));
@@ -225,7 +228,7 @@ export class HostProjectTools {
         const docs = intent.sources.map(source => source.document), win = intent.editor.element.ownerDocument.defaultView!;
         const input = validateProjectCommand({ id: ++this.serial, kind: "review", documents: docs.map(doc => ({ document: doc.id, revision: doc.revision, length: doc.buffer.length })), delay: 0 });
         const capture = this.capture(origin); if (!capture) return undefined;
-        const job: Job = { origin, input, documents: new Map(docs.map(doc => [doc.id, doc])), revisions: new Map(docs.map(doc => [doc.id, doc.revision])), authority: new Map(intent.sources.map(source => [source.document.id, source.authority])),
+        const job: Job = { origin, input, source: `project:${this.workspace.allocateIdentity()}`, documents: new Map(docs.map(doc => [doc.id, doc])), revisions: new Map(docs.map(doc => [doc.id, doc.revision])), authority: new Map(intent.sources.map(source => [source.document.id, source.authority])),
             leases: [], stops: [], timer: 0, invalid: false, applied: false, capture,
             externalCancel: intent.cancel, providerCurrent: intent.isCurrent, changes: [] };
         this.job = job;
@@ -279,7 +282,7 @@ export class HostProjectTools {
         this.fault = undefined; const win = origin.editor.element.ownerDocument.defaultView!;
         const capture = this.capture(origin);
         if ((!capture)) { this.publish({ message: "The source changed before capture; request fresh provider work." }); return; }
-        const job: Job = { origin, input, documents: new Map(docs.map(d => [d.id, d])), revisions: new Map(docs.map(d => [d.id, d.revision])), authority: new Map(docs.map(d => [d.id, this.authority(d.id)])), leases: [], stops: [], timer: 0, invalid: false, applied: false,
+        const job: Job = { origin, input, source: `project:${this.workspace.allocateIdentity()}`, documents: new Map(docs.map(d => [d.id, d])), revisions: new Map(docs.map(d => [d.id, d.revision])), authority: new Map(docs.map(d => [d.id, this.authority(d.id)])), leases: [], stops: [], timer: 0, invalid: false, applied: false,
             capture, changes: [] };
         this.job = job; this.metrics.requested++;
         try {

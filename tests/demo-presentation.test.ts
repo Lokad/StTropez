@@ -64,6 +64,13 @@ test("presentation sends bounded deltas from queued finishes, rejects late resul
         const hidden = worker.messages.length;
         presentation.setEmit(true); h.drain(); worker.flush();
         assert.equal(units(worker.messages.slice(hidden)), 0); assert.match(presentation.javascript, /const count = 4;/);
+        const pending = worker.messages.length;
+        for (const [from, to, insert] of [[at, at + 1, "56"], [at + 1, at + 2, "7"]] as const) {
+            workspace.edit({ documentId: id, expectedRevision: capture().revision, origin: "human", edits: [{ from, to, insert }] });
+            presentation.update(capture());
+        }
+        h.drain(); worker.flush();
+        assert.equal(units(worker.messages.slice(pending)), 2); assert.match(presentation.javascript, /const count = 57;/);
         const other = new Workspace(), otherId = other.createDocument({ scope: "syntax", resource: "two", variant: "working" }, "two", "const separate = true;");
         const beforeSwitch = worker.messages.length;
         presentation.update(other.document(otherId)); h.drain(); worker.flush();

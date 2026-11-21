@@ -1,6 +1,6 @@
 import { wireLimits, ProtocolDecodeError, isRecord, isLspIdentityPart, isLspUri, rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError, jsonEqual, jsonSnapshot } from "./wire.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
-import type { PositionMapping } from "../core/positions.ts";
+import type { TextEdit } from "../core/changes.ts";
 import { NotificationScope, Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import { JsonRpcConnection } from "./json-rpc.ts";
@@ -23,7 +23,7 @@ export type LspCommandCall<T> = RpcCall<T> & Readonly<{ isCurrent: () => boolean
 export type LspCommandAuthorization = Readonly<{ command: string; arguments: readonly JsonValue[]; isCurrent: () => boolean }>;
 export type LspDocumentSnapshot = Readonly<{ uri: string; languageId: string; resourceId: string; documentId: string; revision: number; buffer: TextBuffer }>;
 export type LspDocument = Readonly<{ getSnapshot: () => LspDocumentSnapshot;
-    update: (expectedRevision: number, revision: number, buffer: TextBuffer, mapping?: PositionMapping) => void; dispose: () => void }>;
+    update: (expectedRevision: number, revision: number, buffer: TextBuffer, edits?: readonly TextEdit[]) => void; dispose: () => void }>;
 export type LspCall<T> = Readonly<{ result: Promise<T>; cancel: () => void }>;
 export type LspDocumentCapture = Readonly<{ document: LspDocumentSnapshot; index: LspLineIndex; version: number;
     epoch: number; registrationGeneration: number; isCurrent: () => boolean;
@@ -330,9 +330,10 @@ export class LspSession {
         if (this.documents.has(uri) || this.documents.size >= this.maxDocuments) throw new Error("LSP URI is already bound or document limit exceeded."); this.size(buffer.length, 0);
         const entry: Entry = { snapshot: Object.freeze({ uri, languageId, resourceId, documentId, revision, buffer }), handle: undefined! };
         const handle: LspDocument = Object.freeze({ getSnapshot: () => entry.snapshot,
-            update: (expectedRevision, nextRevision, nextBuffer, mapping) => {
+            update: (expectedRevision, nextRevision, nextBuffer, edits) => {
                 this.writable(); this.entry(handle); if (entry.snapshot.revision !== expectedRevision || !integer(nextRevision) || nextRevision <= expectedRevision) throw stale(); this.size(nextBuffer.length, entry.snapshot.buffer.length);
-                if (mapping) entry.change = Object.freeze({ before: entry.snapshot.buffer, mapping }); else delete entry.change;
+                if (edits) entry.change = { before: entry.snapshot.buffer, edits: edits.map(({ from, to, insert }) => ({ from, to, insert })) };
+                else delete entry.change;
                 this.totalUnits += nextBuffer.length - entry.snapshot.buffer.length; entry.snapshot = Object.freeze({ ...entry.snapshot, revision: nextRevision, buffer: nextBuffer }); delete entry.failure; this.kick(uri);
             }, dispose: () => {
                 if (this.store.get().phase === "disposed") return; this.writable(); if (this.documents.get(uri) !== entry) return;

@@ -22,7 +22,6 @@ export class HostDomainTools {
     private data = new WeakMap<DocumentView, ViewData>();
     private active: Session | undefined;
     private job: Job | undefined;
-    private publishing = false;
     private disposed = false;
     private serial = 0;
     private foldSerial = 0;
@@ -73,7 +72,7 @@ export class HostDomainTools {
         const token = `domain-session-${this.workspace.allocateIdentity()}`, revision = this.workspace.document(editor.view.documentId).revision;
         const data = this.data.get(editor.view) ?? { revision, owned: new Map<string, OwnedFold>(), annotations: noAnnotations, index: new DomainAnnotationIndex(noAnnotations) };
         this.data.set(editor.view, data); const session = { token, id, editor, presentation, data, target: this.workspace.captureTab(tab) }, listeners = new AbortController(); this.sessions.set(token, session);
-        const changed = () => { if (this.publishing) return; this.sync(session); if (this.job?.session === session && !this.current(this.job)) this.invalidate(this.job); };
+        const changed = () => { this.sync(session); if (this.job?.session === session && !this.current(this.job)) this.invalidate(this.job); };
         const stops = [this.workspace.observeDocument(editor.view.documentId).subscribe(changed), editor.view.folding.subscribe(changed), this.workspace.tabState.subscribe(changed), this.workspace.resourceForDocument(editor.view.documentId).metadata.subscribe(changed)];
         editor.input.addEventListener("focus", () => { this.active = session; this.sync(session); }, { signal: listeners.signal });
         for (const event of ["compositionstart", "beforeinput", "paste", "cut"] as const) editor.input.addEventListener(event, () => {
@@ -124,7 +123,7 @@ export class HostDomainTools {
         const job: Job = { session, input: { id: ++this.serial, revision: document.revision, buffer: document.buffer, kind, module: "catalogue" }, folds: session.editor.view.folding.getSnapshot(),
             capture, authority: this.authority(session), lease: capture ? undefined : this.workspace.acquire(resource.id), abort: new AbortController(), timeout: 0, invalid: false };
         this.job = job; this.metrics.requested++;
-        const changed = () => { if (!this.publishing && this.job === job && !this.current(job)) this.invalidate(job); };
+        const changed = () => { if (this.job === job && !this.current(job)) this.invalidate(job); };
         // Mounted presentation listeners already observe analysis resource/fold/tab changes.
         capture?.signal.addEventListener("abort", changed, { once: true });
         job.timeout = win.setTimeout(() => { if (this.job === job) { this.release(job); this.publish({ status: "failed", message: "Domain command timed out; source is unchanged." }); } }, 30000);
@@ -135,13 +134,11 @@ export class HostDomainTools {
             const result = validateDomainResult(value, job.input);
             createFoldRegions(document.buffer, result.folds);
             if (kind === "import") {
-                this.publishing = true;
-                try {
-                    if (!job.capture?.commit(() => {
-                        const applied = this.workspace.edit({ documentId: document.id, expectedRevision: job.input.revision, origin: "human", view: session.editor.view, edits: result.edits, history: { kind: "refactor" } });
-                        if (!applied.applied) throw new Error(`Import rejected: ${applied.reason}.`); return true;
-                    })) throw new Error("Captured import context changed before application.");
-                } finally { this.publishing = false; }
+                if (!job.capture?.commit(() => {
+                    const applied = this.workspace.edit({ documentId: document.id, expectedRevision: job.input.revision, origin: "human",
+                        source: "import", view: session.editor.view, edits: result.edits, history: { kind: "refactor" } });
+                    if (!applied.applied) throw new Error(`Import rejected: ${applied.reason}.`); return true;
+                })) throw new Error("Captured import context changed before application.");
                 this.metrics.applied++; this.release(job);
                 for (const attached of this.sessions.values()) if (attached.editor.view.documentId === document.id) this.sync(attached);
                 session.editor.viewport.revealOffset(session.editor.view.getSnapshot().selection.head);
@@ -154,9 +151,7 @@ export class HostDomainTools {
                     next.set(fold.id, { id, from: fold.from, to: fold.to }); ranges.push({ ...fold, id });
                 }
                 const normalized = createFoldRegions(document.buffer, ranges, job.folds.regions), index = new DomainAnnotationIndex(result.annotations);
-                this.publishing = true;
-                try { if (!session.editor.view.folding.setRanges(job.folds, normalized)) throw new Error("Domain fold capture expired."); }
-                finally { this.publishing = false; }
+                if (!session.editor.view.folding.setRanges(job.folds, normalized)) throw new Error("Domain fold capture expired.");
                 if (!this.available(session)) return;
                 session.data.owned = next; session.data.annotations = result.annotations; session.data.index = index; session.presentation.domain = { revision: document.revision, index };
                 session.editor.viewport.invalidate(); this.metrics.applied++; this.release(job); this.publish({ status: "ready", message: `Discovered ${result.folds.length} domain regions in ${session.id}.` });

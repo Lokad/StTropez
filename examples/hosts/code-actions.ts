@@ -41,7 +41,6 @@ export class HostActionsTools {
     private sequence = 0;
     private disposed = false;
     private disconnected = false;
-    private publishing = false;
     private delay = 0;
     private fault: ActionInput["fault"];
     private readonly metrics = { requested: 0, applied: 0, cancelled: 0, expired: 0, failed: 0 };
@@ -91,7 +90,7 @@ export class HostActionsTools {
                 && (!job.selected.command || !!this.reviewOwner?.canRunAction(job.origin.editor)) && (job.selected.edit?.documents ?? []).filter(change => change.edits.length).every(change => this.editable(change.target.document.documentId as DocumentId))) });
     }
     private changed(job: Job): void {
-        if (this.publishing || this.job !== job) return;
+        if (this.job !== job) return;
         // Resolution owns its terminal error; local capture changes still expire immediately.
         if (this.currentCapture(job) && (job.resolving || this.current(job))) return;
         this.expire(job);
@@ -113,7 +112,7 @@ export class HostActionsTools {
             if (!document || document.resourceId !== target.resourceId || document.revision !== target.revision || document.buffer !== target.buffer
                 || !change.target.isCurrent() || !this.canCapture(document.id)) throw new Error("A resolved action target changed.");
             job.sources.set(document.id, { document, authority: this.authority(document.id) });
-            const changed = () => { if (!this.publishing && this.job === job && !this.current(job)) this.expire(job); };
+            const changed = () => this.changed(job);
             job.stops.push(this.workspace.observeDocument(document.id).subscribe(changed), this.workspace.resourceForDocument(document.id).metadata.subscribe(changed));
         }
     }
@@ -245,18 +244,16 @@ export class HostActionsTools {
             } catch (error) { this.publish({ message: error instanceof Error ? error.message : "Captured command cannot start." }); }
             return;
         }
-        this.publishing = true;
         try {
             let documents: readonly DocumentSnapshot[] = [];
             if (!job.capture.commit(() => {
-                documents = applyLspWorkspaceEdit(this.workspace, job.selected!.edit!, { origin: "host", requiredOrigins: ["human"], historyKind: "refactor", view: job.origin.editor.view });
+                documents = applyLspWorkspaceEdit(this.workspace, job.selected!.edit!, { origin: "host", source: "code-action", requiredOrigins: ["human"], historyKind: "refactor", view: job.origin.editor.view });
                 return true;
             })) throw new Error("Captured action context changed before application.");
             const changes = Object.freeze(documents.map(doc => Object.freeze({ document: doc.id, title: doc.title.slice(0, 128) })));
             this.metrics.applied++; this.release(); this.publish({ status: "applied", message: "Applied exact captured provider edits as one shared undo command.", title: "", edits: [], choices: [], editCount: 0, page: 0, changes, changed: changes.find(change => change.document === job.document.id) ?? changes[0] ?? null });
             if (this.available(job.origin)) { job.origin.editor.viewport.revealOffset(job.origin.editor.view.getSnapshot().selection.head); job.origin.editor.focus(); }
         } catch (error) { this.release(); this.publish({ status: "failed", message: error instanceof Error ? error.message : "Action rejected; source is unchanged.", edits: [], title: "", choices: [], editCount: 0 }); }
-        finally { this.publishing = false; }
     }
     readonly openChanged = (): void => {
         const changed = this.cell.get().changed; if (changed) this.openChangedDocument(changed.document);

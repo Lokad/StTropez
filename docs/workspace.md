@@ -184,7 +184,7 @@ keeps the revision of a typed resource. Typed panels have no text undo stack.
 
 Pass a `source` string to identify writes from a host feature or peer. Edit permissions use
 `origin`. In a change listener, request a follow-up with its second argument. Follow-ups run
-synchronously in request order after listeners finish. Unsubscribing drops that listener’s queued
+in request order in a microtask after listeners and the initiating command finish. Unsubscribing drops that listener’s queued
 work. Use the change’s revision when a follow-up depends on the exact text.
 
 ```ts

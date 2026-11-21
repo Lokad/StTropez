@@ -34,7 +34,7 @@ test("edits, grouped history and batches publish immutable changes in previous c
     stop();
 });
 
-test("follow-up writes run after listeners in order and expire with their subscription", () => {
+test("follow-up writes run after listeners in order and expire with their subscription", async () => {
     const { workspace, documentId } = fixture(), order: string[] = [];
     const append = (source: string, revision: number) => workspace.edit({ documentId, expectedRevision: revision, origin: "host",
         source, edits: [{ from: 0, to: 0, insert: source }] });
@@ -48,6 +48,8 @@ test("follow-up writes run after listeners in order and expire with their subscr
         if (change.source === "start") after(() => { order.push("last follow-up"); });
     });
     assert.deepEqual(append("start", 0), { applied: true, revision: 1 });
+    assert.deepEqual(order, ["first start", "last start"]);
+    await Promise.resolve();
     assert.deepEqual(order, ["first start", "last start", "first next", "last next", "last follow-up"]);
     assert.equal(workspace.document(documentId).revision, 2);
     first(); last(); assert.equal(workspace.diagnostics().subscriptions, 0);

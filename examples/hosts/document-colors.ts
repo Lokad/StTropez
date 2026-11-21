@@ -39,7 +39,6 @@ export class HostDocumentColors {
     private sequence = 0;
     private disposed = false;
     private disconnected = false;
-    private publishing = false;
     private dropping = false;
     private delay = 0;
     private fault: ColorFault | undefined;
@@ -91,7 +90,7 @@ export class HostDocumentColors {
         else this.publish();
     }
     private changed(job: Job): void {
-        if (this.publishing || this.job !== job) return;
+        if (this.job !== job) return;
         if (!this.current(job)) { job.invalid = true; queueMicrotask(() => { if (this.job === job) { this.release(); this.metrics.expired++; this.publish({ status: "expired", message: "Captured resource, revision, authority or view changed; rediscover colors." }); } }); }
         else if (job.preview && !this.currentPreview(job, job.preview)) { const preview = job.preview; preview.invalid = true; queueMicrotask(() => { if (this.job === job && job.preview === preview) { this.clearPreview(job); this.publish({ status: "colors", message: "Selection or folds changed; preview a fresh presentation." }); } }); }
     }
@@ -156,17 +155,15 @@ export class HostDocumentColors {
     apply(token: number | null, previewToken: number | null, id: string): void {
         const job = this.job, preview = job?.preview, choice = preview?.result?.presentations.find(p => p.id === id);
         if (!job || !preview || !choice || token !== job.input.id || previewToken !== preview.input.id || id !== preview.choice || !this.currentPreview(job, preview) || !this.editable(job.document.id)) { this.publish({ message: "Use a fresh applicable presentation with edit permission." }); return; }
-        this.publishing = true;
         try {
             if (!preview.capture.commit(() => {
-                const result = this.workspace.editDocuments(choice.edits.map(at => ({ documentId: job.document.id, expectedRevision: at.revision, edits: at.edits, origin: "host" as const, history: { kind: "refactor" as const }, view: job.origin.editor.view, selectionSet: renameSelections(job.document.buffer.length, preview.capture.selectionSet, at.edits) })));
+                const result = this.workspace.editDocuments(choice.edits.map(at => ({ documentId: job.document.id, expectedRevision: at.revision, edits: at.edits, origin: "host" as const, source: "color-presentation", history: { kind: "refactor" as const }, view: job.origin.editor.view, selectionSet: renameSelections(job.document.buffer.length, preview.capture.selectionSet, at.edits) })));
                 if (!result.applied) throw new Error(result.reason); return true;
             })) throw new Error("Captured color presentation changed before application.");
             const changed = this.workspace.document(job.document.id).revision !== job.document.revision; if (changed) this.metrics.applied++; else this.metrics.unchanged++; this.release();
             this.publish({ status: "applied", message: changed ? "Applied the captured color presentation as one shared undo command." : "Presentation already matches; text and history are unchanged.", changed: { document: job.document.id, title: job.document.title.slice(0, 128) } });
             if (this.available(job.origin)) { job.origin.editor.viewport.revealOffset(job.origin.editor.view.getSnapshot().selection.head); job.origin.editor.focus(); }
         } catch (error) { this.release(); this.publish({ status: "failed", message: error instanceof Error ? error.message : "Color edit rejected; source is unchanged." }); }
-        finally { this.publishing = false; }
     }
     readonly openChanged = (document: DocumentId): void => { if (this.disposed || this.job || this.cell.get().changed?.document !== document || !this.canCapture(document)) return; try { const editor = [...this.sessions.values()].find(s => s.editor.view.documentId === document && this.available(s))?.editor ?? this.present(document); editor?.focus(); } catch { this.publish({ message: "The changed color resource is no longer available." }); } };
     readonly nextPage = (): void => { const s = this.cell.get(); if ((s.page + 1) * colorLimits.page < s.count) this.publish({ page: s.page + 1 }); };

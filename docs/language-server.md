@@ -244,8 +244,10 @@ the changed document. Capability and connection changes reconcile the participat
 
 The client opens a document only when static or matching dynamic capabilities cover both open/close
 and incremental change. Losing that coverage closes the remote copy. Regaining it sends the current
-full text. For later edits, the client sends proven transaction ranges in descending original-offset
-order. If it skipped a revision, lacks a usable map, cannot prove a gap, or the batch would cost too
+full text. Workspace bindings use `DocumentChange.edits`. A direct session binding accepts the
+same previous-revision edits in `document.update(expectedRevision, revision, buffer, edits)`.
+The client sends proven ranges in descending original-offset order.
+If it skipped a revision, lacks usable edits, cannot prove a gap, or the batch would cost too
 much to encode, it sends one replacement between the known shared edges. A transport failure leaves
 the edit unsent or unacknowledged. The client does not retry it.
 

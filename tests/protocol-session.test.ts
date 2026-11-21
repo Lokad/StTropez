@@ -129,8 +129,9 @@ test("batch range overhead falls back before sending when the host message or JS
     for (const rpc of [{ maxMessageUnits: 4096 }, { maxJsonNodes: 128 }]) {
         const host = fixture(t), errors: Error[] = [], session = new LspSession({ ...host, rpc, onError: error => errors.push(error) }); t.after(() => session.dispose());
         const initial = input("abcdefghij\n".repeat(100)), document = session.bindDocument(initial); await session.connect();
-        const edit = initial.buffer.apply(Array.from({ length: 60 }, (_, i) => ({ from: i * 11 + 2, to: i * 11 + 2, insert: "!" })));
-        document.update(40, 41, edit.buffer, edit.mapping); await session.flush(); await settled();
+        const edits = Array.from({ length: 60 }, (_, i) => ({ from: i * 11 + 2, to: i * 11 + 2, insert: "!" }));
+        const edit = initial.buffer.apply(edits);
+        document.update(40, 41, edit.buffer, edits); await session.flush(); await settled();
         const peer = host.peers[0]!, changes = (peer.wire.messages[0] as { method: string; params: DidChangeTextDocumentParams }[]).filter(message => message.method === "textDocument/didChange");
         assert.equal(changes.length, 1); assert.equal(changes[0]!.params.contentChanges.length, 1);
         assert.equal(peer.documents.get(initial.uri)!.getText(), edit.buffer.slice(0, edit.buffer.length));
@@ -392,9 +393,9 @@ test("local edits retain useful indexing while URI replacement cancels obsolete 
         const host = fixture(t); let change: (() => void) | undefined, turns = 0, time = 0;
         const session = new LspSession({ ...host, now: () => time += 4, schedule: (ms, callback) => host.schedule(ms, () => { if (change && ms === 0 && ++turns === 2) { const apply = change; change = undefined; apply(); } callback(); }) }); t.after(() => session.dispose());
         const initial = input("small"), original = session.bindDocument(initial); await session.connect(); await settled();
-        const large = TextBuffer.from("line\r\n".repeat(40_000)), edit = large.apply([{ from: 0, to: 4, insert: "current" }]), latest = edit.buffer; let current = original;
+        const large = TextBuffer.from("line\r\n".repeat(40_000)), edits = [{ from: 0, to: 4, insert: "current" }], latest = large.apply(edits).buffer; let current = original;
         change = () => { if (replacement) { original.dispose(); current = session.bindDocument(input("replacement", initial.uri, "other-resource", 0)); }
-            else original.update(41, 42, latest, edit.mapping); };
+            else original.update(41, 42, latest, edits); };
         original.update(40, 41, large); await session.flush(); await settled(); const peer = host.peers[0]!;
         if (replacement) assert.ok(large.readMetrics().sliceUnits < 16500, "A replaced binding stops after its first bounded chunk.");
         else assert.ok(latest.readMetrics().sliceUnits < latest.length + 128, "A newer revision reuses completed indexing and exports only its final wire delta.");

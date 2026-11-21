@@ -31,7 +31,6 @@ export class HostRenameTools {
     private readonly backendFactory: LspRenameFactory;
     private disposed = false;
     private disconnected = false;
-    private publishing = false;
     private nameInput: HTMLInputElement | undefined;
     private nameEvents: AbortController | undefined;
     private serial = 0;
@@ -79,7 +78,7 @@ export class HostRenameTools {
             canApply: editable && this.validName(state.name) && (this.editCount(job) > 0) });
     }
     private changed(job: Job): void {
-        if (!this.publishing && this.job === job && !this.current(job)) {
+        if (this.job === job && !this.current(job)) {
             job.invalid = true;
             queueMicrotask(() => { if (this.job === job) { this.metrics.expired++; this.release(); this.publish({ status: "expired", message: "Captured revision, selection, view or edit authority changed; prepare a fresh preview.", locations: [] }); } });
         }
@@ -194,17 +193,15 @@ export class HostRenameTools {
         const job = this.job, name = this.cell.get().name;
         if (!job?.ready || !job.workspaceEdit || token !== job.capture.input.id || !this.current(job) || !this.validName(name) || !this.editCount(job)) { this.publish({ message: "Use a fresh complete preview and a valid new name." }); return; }
         if (!this.editableTargets(job)) { this.publish(); return; }
-        this.publishing = true;
         try {
             let documents: readonly DocumentSnapshot[] = [];
             if (!job.viewCapture.commit(() => {
-                documents = applyLspWorkspaceEdit(this.workspace, job.workspaceEdit!, { origin: "host", requiredOrigins: ["human"], view: job.origin.editor.view });
+                documents = applyLspWorkspaceEdit(this.workspace, job.workspaceEdit!, { origin: "host", source: "rename", requiredOrigins: ["human"], view: job.origin.editor.view });
                 return true;
             })) throw new Error("Captured rename context changed before application.");
             const changes = documents.map(doc => ({ document: doc.id, title: doc.title.slice(0, 128) }));
             this.metrics.applied++; this.release(); this.publish({ status: "applied", message: `Applied ${this.editCount(job)} captured provider edits in ${changes.length} resources as one undo command.`, changes, locations: [] });
         } catch (error) { this.release(); this.publish({ status: "failed", message: error instanceof Error ? error.message : "Rename rejected; source is unchanged.", locations: [] }); }
-        finally { this.publishing = false; }
     }
     openChanged(document: DocumentId): void {
         if (this.job || this.disposed || !this.cell.get().changes.some(c => c.document === document) || !this.canCapture(document)) return;

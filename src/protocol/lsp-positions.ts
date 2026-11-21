@@ -2,14 +2,13 @@ import { isLspUint } from "./wire.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import { BufferChangeCursor } from "../core/buffer-change.ts";
 import { partitionPoint } from "../core/bound-search.ts";
-import { positionChanges } from "../core/positions.ts";
-import type { PositionMapping } from "../core/positions.ts";
+import type { TextEdit } from "../core/changes.ts";
 
 export type LspPosition = Readonly<{ line: number; character: number }>;
 export type LspRange = Readonly<{ start: LspPosition; end: LspPosition }>;
 export type LspTextChange = Readonly<{ range: LspRange; text: string }>;
 export type LspCooperate = () => Promise<void>;
-export type LspChangeHint = Readonly<{ before: TextBuffer; mapping: PositionMapping }>;
+export type LspChangeHint = Readonly<{ before: TextBuffer; edits: readonly TextEdit[] }>;
 type Span = { from: number; to: number; insertFrom: number; insertTo: number };
 const chunkUnits = 16384;
 function lowerBound(values: Uint32Array, key: number): number {
@@ -37,8 +36,7 @@ async function replacement(before: TextBuffer, after: TextBuffer, cooperate: Lsp
     return { from, to, insertFrom: from, insertTo: end };
 }
 async function spans(before: TextBuffer, after: TextBuffer, cooperate: LspCooperate, hint?: LspChangeHint): Promise<readonly Span[]> {
-    const changes = hint?.before === before && hint.mapping.oldLength === before.length && hint.mapping.newLength === after.length
-        ? positionChanges(hint.mapping) : undefined;
+    const changes = hint?.before === before ? hint.edits : undefined;
     if (changes) {
         const result: Span[] = []; let delta = 0, oldEnd = 0, newEnd = 0, work = 0;
         const shared = async (to: number, otherTo: number) => {
@@ -54,7 +52,10 @@ async function spans(before: TextBuffer, after: TextBuffer, cooperate: LspCooper
         };
         let valid = true;
         for (const change of changes) {
-            const insertFrom = change.from + delta, insertTo = insertFrom + change.insertedLength;
+            if (!Number.isSafeInteger(change.from) || !Number.isSafeInteger(change.to) || change.from < oldEnd
+                || change.to < change.from || change.to > before.length || typeof change.insert !== "string") { valid = false; break; }
+            const insertFrom = change.from + delta, insertTo = insertFrom + change.insert.length;
+            if (insertTo > after.length) { valid = false; break; }
             if (!await shared(change.from, insertFrom)) { valid = false; break; }
             // Merge close ranges before expansion, so boundary reads cannot cross another edit.
             const prior = result.at(-1);

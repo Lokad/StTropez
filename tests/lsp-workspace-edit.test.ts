@@ -38,9 +38,9 @@ test("decoded workspace edits bind exact resources and share undo with an unmoun
         transactions.push([f.workspace.document(a.id).change?.transactionId, f.workspace.document(b.id).change?.transactionId]);
     });
     try {
-        const changed = applyLspWorkspaceEdit(f.workspace, plan, { origin: "host", requiredOrigins: ["human"], historyKind: "refactor", view });
+        const changed = applyLspWorkspaceEdit(f.workspace, plan, { origin: "host", source: "rename", requiredOrigins: ["human"], historyKind: "refactor", view });
         assert.ok(Object.isFrozen(changed)); assert.deepEqual(changed.map(doc => doc.id), [a.id, b.id]);
-        assert.ok(changed.every(doc => doc.change?.kind === "refactor"));
+        assert.ok(changed.every(doc => doc.change?.kind === "refactor" && doc.change.source === "rename"));
         assert.equal(changed[0], f.workspace.document(a.id)); assert.equal(changed[1]!.buffer.slice(0, 7), "alpha\nB");
         const afterSelections = view.getSnapshot().selectionSet;
         assert.equal(afterSelections.ranges.length, 2); assert.equal(afterSelections.primary, 1);

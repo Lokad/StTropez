@@ -3,10 +3,10 @@ import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { TextDocument } from "vscode-languageserver-protocol/node.js";
 import type { TextBuffer as Buffer } from "../src/core/text-buffer.ts";
-import type { PositionMapping } from "../src/core/positions.ts";
+import type { TextEdit } from "../src/core/changes.ts";
 import type { LspLineIndex as LineIndex } from "../src/protocol/index.ts";
 
-import { TextBuffer, PositionMap, composePositionMaps } from "../src/index.ts";
+import { TextBuffer, Workspace } from "../src/index.ts";
 import { LspLineIndex } from "../src/protocol/index.ts";
 const cooperate = async () => {};
 function apply(text: string, changes: readonly { range: { start: { line: number; character: number }; end: { line: number; character: number } }; text: string }[]): string {
@@ -44,13 +44,13 @@ test("incremental newline joins/splits and history jumps apply exactly through t
     const history = [{ buffer, text }], inserts = ["", "\r", "\n", "\r\n", "😀é", "\ud800", "x\ry\nz"];
     const random = (max: number) => { seed = nextSeed(seed); return seed % max; };
     for (let step = 0; step < 300; step++) {
-        let next: Buffer, expected: string, mapping: PositionMapping | undefined;
+        let next: Buffer, expected: string, edits: readonly TextEdit[] | undefined;
         if (step % 17 === 16) { const old = history[random(history.length)]!; next = old.buffer; expected = old.text; }
         else { const from = random(text.length + 1), to = from + random(text.length - from + 1), insert = inserts[random(inserts.length)]!;
             const second = to + random(text.length - to + 1), final = second + random(text.length - second + 1), tail = inserts[random(inserts.length)]!;
-            const result = buffer.apply([{ from, to, insert }, { from: second, to: final, insert: tail }]); next = result.buffer; mapping = result.mapping;
+            edits = [{ from, to, insert }, { from: second, to: final, insert: tail }]; next = buffer.apply(edits).buffer;
             expected = text.slice(0, from) + insert + text.slice(to, second) + tail + text.slice(final); }
-        const result = await index.change(next, cooperate, mapping ? { before: buffer, mapping } : undefined);
+        const result = await index.change(next, cooperate, edits ? { before: buffer, edits } : undefined);
         assert.equal(apply(text, result.changes), expected);
         index = result.index; text = expected; buffer = next; check(index, text); history.push({ buffer, text });
     }
@@ -58,9 +58,15 @@ test("incremental newline joins/splits and history jumps apply exactly through t
 
 test("distant batch changes and their inverses send bounded text instead of the intervening 100k lines", async t => {
     const text = "row 😀\r\n".repeat(100_000), before = TextBuffer.from(text), index = await LspLineIndex.create(before, cooperate);
-    const far = before.offsetAt(99_998) + 2, result = before.apply([{ from: 2, to: 2, insert: "Z\r" }, { from: far, to: far + 1, insert: "\n😀" }]);
+    const far = before.offsetAt(99_998) + 2, workspace = new Workspace();
+    const { documentId } = workspace.createTextResourceFromBuffer({ scope: "test", resource: "large", variant: "source" }, "Large", { buffer: before });
+    const edit = (edits: readonly TextEdit[], group?: string) => workspace.edit({ documentId, origin: "human", expectedRevision: workspace.document(documentId).revision,
+        edits, ...(group ? { history: { kind: "typing" as const, group } } : {}) });
+    const undoEdit = () => workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision });
+    edit([{ from: 2, to: 2, insert: "Z\r" }, { from: far, to: far + 1, insert: "\n😀" }]);
+    const result = workspace.document(documentId);
     const fallback = await index.change(result.buffer, cooperate), oldReads = before.readMetrics().sliceUnits, newReads = result.buffer.readMetrics().sliceUnits;
-    const exact = await index.change(result.buffer, cooperate, { before, mapping: result.mapping });
+    const exact = await index.change(result.buffer, cooperate, { before, edits: result.change!.edits });
     const counts = { fallbackUnits: fallback.changes.reduce((sum, change) => sum + change.text.length, 0),
         batchUnits: exact.changes.reduce((sum, change) => sum + change.text.length, 0),
         batchReads: before.readMetrics().sliceUnits - oldReads + result.buffer.readMetrics().sliceUnits - newReads };
@@ -68,22 +74,25 @@ test("distant batch changes and their inverses send bounded text instead of the 
     assert.ok(counts.fallbackUnits > 700_000); assert.ok(counts.batchUnits < 32); assert.ok(counts.batchReads < 256);
     assert.equal(exact.changes.length, 2); assert.ok(exact.changes[0]!.range.start.line > exact.changes[1]!.range.start.line);
     assert.equal(apply(text, exact.changes), result.buffer.slice(0, result.buffer.length));
-    const reverse = await exact.index.change(before, cooperate, { before: result.buffer, mapping: result.mapping.invert() });
+    undoEdit();
+    const reverse = await exact.index.change(before, cooperate, { before: result.buffer, edits: workspace.document(documentId).change!.edits });
     assert.equal(reverse.changes.length, 2); assert.equal(apply(result.buffer.slice(0, result.buffer.length), reverse.changes), text);
-    const a = before.apply([{ from: 2, to: 2, insert: "a" }, { from: far, to: far, insert: "a" }]);
-    const b = a.buffer.apply([{ from: 3, to: 3, insert: "b" }, { from: far + 2, to: far + 2, insert: "b" }]);
-    const grouped = composePositionMaps(a.mapping, b.mapping), group = await index.change(b.buffer, cooperate, { before, mapping: grouped });
+    edit([{ from: 2, to: 2, insert: "a" }, { from: far, to: far, insert: "a" }], "letters");
+    edit([{ from: 3, to: 3, insert: "b" }, { from: far + 2, to: far + 2, insert: "b" }], "letters");
+    undoEdit(); const inverse = workspace.document(documentId).change!;
+    workspace.redo({ documentId, expectedRevision: inverse.revision });
+    const b = workspace.document(documentId), group = await index.change(b.buffer, cooperate, { before, edits: b.change!.edits });
     assert.equal(group.changes.length, 2); assert.equal(apply(text, group.changes), b.buffer.slice(0, b.buffer.length));
-    const undo = await group.index.change(before, cooperate, { before: b.buffer, mapping: grouped.invert() });
+    const undo = await group.index.change(before, cooperate, { before: b.buffer, edits: inverse.edits });
     assert.equal(undo.changes.length, 2); assert.equal(apply(b.buffer.slice(0, b.buffer.length), undo.changes), text);
 });
 
 test("unproved, mismatched and skipped change hints preserve the exact fallback", async () => {
     const before = TextBuffer.from("start\r\n" + "middle\r".repeat(40) + "end"), index = await LspLineIndex.create(before, cooperate);
     const a = before.apply([{ from: 0, to: 0, insert: "x" }]), b = a.buffer.apply([{ from: a.buffer.length, to: a.buffer.length, insert: "y" }]);
-    const opaque: PositionMapping = { ...a.mapping, map: a.mapping.map.bind(a.mapping), mapRange: a.mapping.mapRange.bind(a.mapping), invert: a.mapping.invert.bind(a.mapping) };
-    for (const hint of [{ before, mapping: new PositionMap(before.length, [{ from: 10, to: 10, insert: "xy" }]) },
-        { before: a.buffer, mapping: b.mapping }, { before, mapping: opaque }, { before, mapping: composePositionMaps(a.mapping, b.mapping) }]) {
+    for (const hint of [{ before, edits: [{ from: 10, to: 10, insert: "xy" }] },
+        { before: a.buffer, edits: [{ from: a.buffer.length, to: a.buffer.length, insert: "y" }] },
+        { before, edits: [{ from: -1, to: 5, insert: "" }] }, { before, edits: [] }]) {
         const result = await index.change(b.buffer, cooperate, hint);
         assert.equal(apply(before.slice(0, before.length), result.changes), b.buffer.slice(0, b.buffer.length));
         check(result.index, b.buffer.slice(0, b.buffer.length));
@@ -109,8 +118,9 @@ test("chunk-edge CRLF classification and cooperative cancellation preserve the o
     const large = before.replace(0, before.length, "\r".repeat(40_000)); let yields = 0;
     await assert.rejects(index.change(large, async () => { yields++; throw new Error("Cancelled plan"); }), /Cancelled plan/);
     assert.equal(yields, 1); assert.deepEqual(index.at(16_385), { line: 1, character: 0 });
-    const batch = before.apply(Array.from({ length: 200 }, (_, i) => ({ from: i * 60, to: i * 60, insert: "!" })));
-    await assert.rejects(index.change(batch.buffer, async () => { throw new Error("Cancelled batch"); }, { before, mapping: batch.mapping }), /Cancelled batch/);
+    const edits = Array.from({ length: 200 }, (_, i) => ({ from: i * 60, to: i * 60, insert: "!" }));
+    const batch = before.apply(edits);
+    await assert.rejects(index.change(batch.buffer, async () => { throw new Error("Cancelled batch"); }, { before, edits }), /Cancelled batch/);
     assert.deepEqual(index.at(16_385), { line: 1, character: 0 });
     const original = TextBuffer.from("row\r\n".repeat(60000)), captured = await LspLineIndex.create(original, cooperate); let fragmented = original;
     for (let i = 1; i <= 200; i++) { const at = i * 1000; fragmented = fragmented.replace(at, at, "x".repeat(65)).replace(at, at + 65, ""); }

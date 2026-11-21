@@ -86,7 +86,20 @@ const fixture = { text: () => workspace.document(documentId).text(),
             // This synthetic dispatch proves the shipped command route; native device qualification is separate.
             editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })); await wait();
             if (view.getSnapshot().selection.head !== footer || view.getSnapshot().selectionSet.ranges.length !== 2) throw new Error("Compiled folded navigation lost a target or secondary caret.");
-            const at = Math.floor(footer / 2); model.edit({ documentId: source.documentId, expectedRevision: 0, origin: "host", edits: [{ from: at, to: at, insert: "x\r\n" }] }); await wait();
+            const at = Math.floor(footer / 2);
+            let forwarded = false;
+            const stop = model.onDocumentChange(source.documentId, (change, afterDelivery) => {
+                afterDelivery(() => {
+                    const edit = change.edits[0];
+                    forwarded = change.source === "fold-pilot" && change.previousRevision === 0 && change.revision === 1
+                        && edit?.from === at && edit.to === at && edit.insert === "x\r\n";
+                });
+            });
+            try {
+                model.edit({ documentId: source.documentId, expectedRevision: 0, origin: "host", source: "fold-pilot", edits: [{ from: at, to: at, insert: "x\r\n" }] });
+                await wait();
+                if (!forwarded) throw new Error("Restored change subscription lost the edit or its provenance.");
+            } finally { stop(); }
             if (editor.viewport.snapshot().visibleLines !== 2) throw new Error("Compiled folded edit exposed hidden rows.");
             model.undo({ documentId: source.documentId, expectedRevision: 1 }); await wait(); exact();
             const saved = editor.captureView(), retired = editor;

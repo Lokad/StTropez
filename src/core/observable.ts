@@ -56,8 +56,12 @@ export class NotificationScope {
         const state = this.delivery;
         if (state.depth || state.draining || !state.following.length) return;
         state.draining = true;
-        try { for (const work of state.following) work(); }
-        finally { state.following.length = 0; state.draining = false; }
+        // Finish the initiating command, including its receipt and view cleanup, before
+        // a follow-up can edit the same resource or dispose the initiating attachment.
+        void Promise.resolve().then(() => {
+            try { for (const work of state.following) work(); }
+            finally { state.following.length = 0; state.draining = false; }
+        });
     }
 }
 

@@ -84,8 +84,8 @@ async function sessionJourney(large: boolean) {
         const opening = performance.now(); await session.connect(); const openMs = performance.now() - opening;
         const before = buffer.readMetrics().sliceUnits, from = large ? buffer.offsetAt(50_000) + 10 : buffer.offsetAt(1) + 1;
         const far = large ? buffer.offsetAt(99_998) : 0;
-        const edit = buffer.apply([{ from, to: from, insert: "Q\r\n" }, ...(large ? [{ from: far, to: far, insert: "Z" }] : [])]);
-        const next = edit.buffer, started = performance.now(); document.update(100, 107, next, edit.mapping); const enqueueMs = performance.now() - started;
+        const edits = [{ from, to: from, insert: "Q\r\n" }, ...(large ? [{ from: far, to: far, insert: "Z" }] : [])];
+        const next = buffer.apply(edits).buffer, started = performance.now(); document.update(100, 107, next, edits); const enqueueMs = performance.now() - started;
         await session.flush();
         const remote = await session.request("fixture/document", { uri, from: Math.max(0, from - 8), to: from + 14 }).result, syncMs = performance.now() - started;
         const boundedReads = { before: buffer.readMetrics().sliceUnits - before, after: next.readMetrics().sliceUnits, exports: buffer.readMetrics().textExports + next.readMetrics().textExports };

@@ -1,4 +1,3 @@
-import { BufferChangeCursor } from "../../src/index.ts";
 import type { DocumentSnapshot, BufferChangeSpan, DiscoveredFold } from "../../src/index.ts";
 import type { InlineDecoration, PresentedLine } from "../../src/browser/index.ts";
 import { DemoSyntaxColors } from "./syntax-colors.ts";
@@ -12,7 +11,7 @@ export class DemoPresentation {
     private timer: number | undefined;
     private job = 0;
     private synchronized: Readonly<{ capture: DocumentSnapshot; job: number }> | undefined;
-    private planner: BufferChangeCursor | undefined;
+    private unchanged: { prefix: number; suffix: number } | undefined;
     private uploading: number | undefined;
     private emit: boolean;
     private capture: DocumentSnapshot | undefined;
@@ -50,7 +49,6 @@ export class DemoPresentation {
     private post(message: SyntaxRequest): void { this.worker!.postMessage(message); }
     private cancelWork(): void {
         if (this.timer !== undefined) window.clearTimeout(this.timer); this.timer = undefined;
-        this.planner?.dispose(); this.planner = undefined;
         if (this.uploading !== undefined) {
             try { this.post({ job: this.uploading, kind: "cancel" }); } catch { /* A failed worker will be replaced by retry. */ }
             this.uploading = undefined;
@@ -77,6 +75,14 @@ export class DemoPresentation {
     update(capture: DocumentSnapshot, plain = false): void {
         if (this.disposed || this.capture?.buffer === capture.buffer && this.capture.id === capture.id && this.capture.key === capture.key
             && this.capture.revision === capture.revision && this.plain === plain) return;
+        const previous = this.capture, change = capture.change;
+        if (this.unchanged && previous?.key === capture.key && previous.id === capture.id && change?.previousRevision === previous.revision) {
+            const edits = change.edits;
+            if (edits.length) {
+                this.unchanged.prefix = Math.min(this.unchanged.prefix, edits[0]!.from);
+                this.unchanged.suffix = Math.min(this.unchanged.suffix, previous.buffer.length - edits[edits.length - 1]!.to);
+            }
+        } else this.unchanged = undefined;
         this.plain = plain;
         this.foldRanges = undefined;
         if (plain) {
@@ -108,19 +114,13 @@ export class DemoPresentation {
     private prepare(capture: DocumentSnapshot, job: number): void {
         if (this.disposed || job !== this.job) return;
         const previous = this.synchronized;
-        if (!previous || previous.capture.key !== capture.key || previous.capture.id !== capture.id) {
+        const edges = this.unchanged;
+        if (!previous || !edges || previous.capture.key !== capture.key || previous.capture.id !== capture.id) {
             this.beginUpload(capture, job, { from: 0, to: 0, insertFrom: 0, insertTo: capture.buffer.length }); return;
         }
-        const planner = this.planner = new BufferChangeCursor(previous.capture.buffer, capture.buffer);
-        const advance = () => {
-            if (this.disposed || job !== this.job) return;
-            try {
-                const step = planner.next();
-                if (step.status === "ready") { planner.dispose(); this.planner = undefined; this.beginUpload(capture, job, step.result!, previous.job); }
-                else this.timer = window.setTimeout(() => { this.timer = undefined; advance(); }, 0);
-            } catch { this.fail(); }
-        };
-        advance();
+        const from = edges.prefix, length = previous.capture.buffer.length;
+        const suffix = Math.min(edges.suffix, length - from);
+        this.beginUpload(capture, job, { from, to: length - suffix, insertFrom: from, insertTo: capture.buffer.length - suffix }, previous.job);
     }
     private beginUpload(capture: DocumentSnapshot, job: number, span: BufferChangeSpan, base?: number): void {
         try {
@@ -137,7 +137,8 @@ export class DemoPresentation {
                 this.post({ job, kind: "finish", options: { ...this.options, emit: this.emit } }); this.uploading = undefined;
                 // Worker messages are ordered. The next delta may build on a queued finish,
                 // even if its analysis reply is late or no longer belongs to the visible job.
-                this.synchronized = { capture, job }; return;
+                this.synchronized = { capture, job };
+                this.unchanged = { prefix: capture.buffer.length, suffix: capture.buffer.length }; return;
             }
             this.timer = window.setTimeout(() => { this.timer = undefined; this.upload(capture, job, to, end); }, 0);
         } catch { this.fail(); }
