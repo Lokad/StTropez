@@ -7,8 +7,8 @@ import { TextBuffer, createSelectionSet } from "../src/index.ts";
 
 type Change = Omit<HistoryChange, "mapping">;
 type Row = Omit<HistoryEntry, "changes"> & { changes: readonly Change[]; direction: "undo" | "redo"; stamp: number };
-const ranges = (changes: readonly Change[]) => changes.reduce((sum, change) => sum + (change.selection
-    ? change.selection.before.ranges.length + change.selection.after.ranges.length : 0), 0);
+const ranges = (changes: readonly Change[]) => changes.flatMap(change => change.selections)
+    .reduce((sum, view) => sum + view.before.ranges.length + view.after.ranges.length, 0);
 
 /** Slow oracle: a global ledger, recomputed totals and fixed-point membership, without per-document stacks. */
 class Ledger {
@@ -54,12 +54,13 @@ class Ledger {
         let content = changes, steps = 1, totalUnits = units;
         if (previous && old && changes.length === 1 && previous.changes.length === 1 && group !== undefined
             && previous.group === group && previous.kind === kind && previous.origin === origin
-            && first.before === old.after && first.selection?.viewId === old.selection?.viewId
+            && first.before === old.after && first.initiatingView === old.initiatingView
+            && first.selections.length === old.selections.length && first.selections.every(view => old.selections.some(other => view.viewId === other.viewId))
             && this.peek(first.documentId, "undo") === previous && previous.steps + 1 <= this.limits.maxChanges
             && previous.units + units <= this.limits.maxChangedUnits) {
             this.coverage.grouped++;
             content = [{ ...old, after: first.after, units: old.units + units,
-                selection: old.selection && first.selection ? { ...old.selection, after: first.selection.after } : null }];
+                selections: old.selections.map(view => ({ ...view, after: first.selections.find(other => other.viewId === view.viewId)!.after })) }];
             steps += previous.steps; totalUnits += previous.units; this.rows = this.rows.filter(row => row !== previous);
         }
         const row: Row = { id: ++this.id, stamp: ++this.stamp, direction: "undo", origin, kind, group: group ?? null, changes: content, steps, units: totalUnits };
@@ -79,7 +80,7 @@ class Ledger {
 
 function summary(entry: HistoryEntry | Row | undefined) {
     return entry && { id: entry.id, origin: entry.origin, kind: entry.kind, group: entry.group, steps: entry.steps, units: entry.units,
-        changes: entry.changes.map(({ documentId, before, after, units, selection }) => ({ documentId, before, after, units, selection })) };
+        changes: entry.changes.map(({ documentId, before, after, units, initiatingView, selections }) => ({ documentId, before, after, units, initiatingView, selections })) };
 }
 
 test("bounded history matches a recomputing ledger through grouping, linked movement, branching and every limit", t => {
@@ -98,9 +99,9 @@ test("bounded history matches a recomputing ledger through grouping, linked move
                 const changes = members.map(documentId => {
                     const before = buffers.get(documentId)!, result = before.apply([{ from: 0, to: random(3), insert: "x".repeat(1 + random(9)) }]);
                     const selections = (buffer: TextBuffer) => createSelectionSet(buffer.length, Array.from({ length: 1 + random(4) }, (_, i) => ({ anchor: i * 2, head: i * 2 })));
-                    const selection = action % 3 ? { viewId: documentId, before: selections(before), after: selections(result.buffer) } : null;
+                    const views = action % 3 ? [{ viewId: documentId, before: selections(before), after: selections(result.buffer) }] : [];
                     buffers.set(documentId, result.buffer);
-                    return { documentId, before, after: result.buffer, mapping: result.mapping, units: result.changedUnits, selection };
+                    return { documentId, before, after: result.buffer, mapping: result.mapping, units: result.changedUnits, initiatingView: views[0]?.viewId ?? null, selections: views };
                 });
                 const group = members.length === 1 && action % 2 ? "typing" : undefined;
                 actual.record(changes, "human", "typing", group); expected.record(changes, "human", "typing", group);
@@ -134,8 +135,8 @@ test("history admission, eviction and diagnostics do not recount unrelated retai
     const before = TextBuffer.from("a"), result = before.apply([{ from: 1, to: 1, insert: "b" }]);
     let selectionReads = 0;
     for (let i = 0; i < 1000; i++) history.record([Object.freeze({ documentId: String(i), before, after: result.buffer, mapping: result.mapping,
-        units: 1, get selection() { selectionReads++; return null; } })], "human", "replace");
-    const change = { documentId: "new", before, after: result.buffer, mapping: result.mapping, units: 1, selection: null };
+        units: 1, initiatingView: null, get selections() { selectionReads++; return []; } })], "human", "replace");
+    const change = { documentId: "new", before, after: result.buffer, mapping: result.mapping, units: 1, initiatingView: null, selections: [] };
     selectionReads = 0; history.record([change], "human", "replace"); const admission = selectionReads;
     selectionReads = 0; history.record([{ ...change, documentId: "last" }], "human", "replace"); const eviction = selectionReads;
     selectionReads = 0; const totals = history.diagnostics(), diagnostics = selectionReads;

@@ -140,6 +140,7 @@ test("case options retain raw Unicode matches, cancel captured plans and preserv
         const many = "K k K_\n".repeat(1100);
         workspace.edit({ documentId, expectedRevision: workspace.document(documentId).revision, origin: "human", edits: [{ from: 0, to: original.length, insert: many }] });
         find.setFlags({ matchCase: false, wholeWord: false }); find.setQuery("k"); drain(); assert.equal(find.getSnapshot().count, 3300);
+        view.setSelection(workspace.document(documentId).revision, { anchor: 0, head: 0 });
         find.next(-1); assert.equal(view.getSnapshot().selection.anchor, many.lastIndexOf("K"));
         const revision = workspace.document(documentId).revision; find.replaceAll("x"); runOne();
         const primary = view.getSnapshot().selection;

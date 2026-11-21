@@ -1,5 +1,5 @@
 import type { TextEdit } from "./changes.ts";
-import { textDifference } from "./changes.ts";
+import { compactDocumentEdit, textDifference } from "./changes.ts";
 import { TextBuffer } from "./text-buffer.ts";
 import type { PositionMapping } from "./positions.ts";
 import { TextHistory, validateHistoryGroup } from "./history.ts";
@@ -99,6 +99,10 @@ type ViewRecord = { handle: DocumentView; state: Store<DocumentViewSnapshot>; fo
 type PreparedView = Readonly<{ view: ViewRecord; state: DocumentViewSnapshot; folds: FoldingSnapshot }>;
 type PreparedText = Readonly<{ record: ResourceRecord; buffer: TextBuffer; mapping: PositionMapping;
     state: ResourceSnapshot<SnapshotValue>; views: readonly PreparedView[] }>;
+function historySelections(text: PreparedText): HistoryChange["selections"] {
+    return Object.freeze(text.views.map(({ view, state }) => Object.freeze({ viewId: view.handle.id,
+        before: view.state.get().selectionSet, after: state.selectionSet })));
+}
 type ResourceRecord = {
     handle: ResourceHandle<SnapshotValue>; documentId: DocumentId | null;
     state: Store<ResourceSnapshot<SnapshotValue>>; metadata: Store<ResourceMetadata>;
@@ -344,14 +348,14 @@ export class Workspace {
             const view = request.view === undefined ? undefined : record.views.get(request.view.id);
             if ((request.view && view?.handle !== request.view) || ((request.selection || request.selectionSet) && !view)) throw new Error("Selection target must be a live view of this document.");
             if (request.selection && request.selectionSet) throw new Error("Choose a single selection or a selection set.");
-            const before = record.buffer!, result = before.apply(request.edits);
+            const before = record.buffer!, result = before.apply(compactDocumentEdit(before, request.edits));
             const afterSelections = request.selectionSet ? createSelectionSet(result.buffer.length, request.selectionSet.ranges, request.selectionSet.primary)
                 : request.selection ? createSelectionSet(result.buffer.length, [request.selection]) : view ? mapSelectionSet(result.mapping, view.state.get().selectionSet) : undefined;
             const text = result.buffer !== before ? this.prepareText(record, result.buffer, result.mapping,
-                view && afterSelections ? { viewId: view.handle.id, selectionSet: afterSelections } : undefined) : undefined;
+                target => target === view ? afterSelections : undefined) : undefined;
             const selection = !text && view && afterSelections
                 ? this.prepareView(view, request.documentId, record.state.get().revision, before, afterSelections, view.folds.get().regions) : undefined;
-            prepared.push({ request, record, before, after: result.buffer, mapping: result.mapping, units: result.changedUnits, view, afterSelections, text, selection });
+            prepared.push({ request, record, before, after: result.buffer, mapping: result.mapping, units: result.changedUnits, view, text, selection });
         }
         const actual = prepared.filter(change => change.before !== change.after);
         if (reset) {
@@ -360,8 +364,7 @@ export class Workspace {
         } else if (actual.length) {
             const changes: HistoryChange[] = actual.map(change => Object.freeze({ documentId: change.request.documentId, before: change.before, after: change.after,
                 mapping: change.mapping, units: change.units,
-                selection: change.view ? Object.freeze({ viewId: change.view.handle.id, before: change.view.state.get().selectionSet,
-                    after: change.afterSelections! }) : null }));
+                initiatingView: change.view?.handle.id ?? null, selections: historySelections(change.text!) }));
             this.history.record(changes, first.origin, kind, requests.length === 1 ? group : undefined);
         }
         const changed = new Set<Store<unknown>>(), transactionId = actual.length ? ++this.nextTransaction : 0;
@@ -395,10 +398,9 @@ export class Workspace {
         }
         const prepared = entry.changes.map(change => {
             const participant = this.documents.get(change.documentId as DocumentId)!, forward = change.mapping;
-            const view = change.selection ? participant.views.get(change.selection.viewId as ViewId) : undefined;
+            const selections = new Map(change.selections.map(view => [view.viewId, direction === "undo" ? view.before : view.after]));
             return this.prepareText(participant, direction === "undo" ? change.before : change.after, direction === "undo" ? forward.invert() : forward,
-                view && change.selection ? { viewId: view.handle.id,
-                    selectionSet: direction === "undo" ? change.selection.before : change.selection.after } : undefined);
+                view => selections.get(view.handle.id));
         });
         this.history.move(entry, direction);
         const changed = new Set<Store<unknown>>(), transactionId = ++this.nextTransaction, revisions = [];
@@ -410,11 +412,11 @@ export class Workspace {
     }
     /** Prepare every projection before history, resource or view mutation, including linked documents. */
     private prepareText(record: ResourceRecord, buffer: TextBuffer, mapping: PositionMapping,
-        override?: Readonly<{ viewId: ViewId; selectionSet: SelectionSet }>): PreparedText {
+        selectionFor?: (view: ViewRecord) => SelectionSet | undefined): PreparedText {
         const current = record.state.get(), revision = current.revision + 1, before = record.buffer!;
         const state = readySnapshot({ ...current.metadata, dirty: record.savedBuffer === null || !buffer.equals(record.savedBuffer) }, revision, buffer), views = [];
         for (const view of record.views.values()) {
-            const selections = override?.viewId === view.handle.id ? override.selectionSet : mapSelectionSet(mapping, view.state.get().selectionSet);
+            const selections = selectionFor?.(view) ?? mapSelectionSet(mapping, view.state.get().selectionSet);
             const priorFolds = view.folds.get(), mapped = mapFoldRegions(buffer, mapping, priorFolds.regions, before);
             views.push(this.prepareView(view, record.documentId!, revision, buffer, selections, mapped));
         }
@@ -618,8 +620,8 @@ export class Workspace {
                 && (savedBuffer ? !record.buffer!.equals(savedBuffer) : !equalValue(current.value(), savedValue));
             const canonical = savedBuffer && canonicalApplied ? record.buffer!.apply([textDifference(current.value() as string, savedValue as string)!]) : undefined;
             const text = canonical ? this.prepareText(record, canonical.buffer, canonical.mapping) : undefined;
-            if (canonical) this.history.record([Object.freeze({ documentId: record.documentId!, before: record.buffer!, after: canonical.buffer,
-                mapping: canonical.mapping, units: canonical.changedUnits, selection: null })], "host", "canonical");
+            if (canonical && text) this.history.record([Object.freeze({ documentId: record.documentId!, before: record.buffer!, after: canonical.buffer,
+                mapping: canonical.mapping, units: canonical.changedUnits, initiatingView: null, selections: historySelections(text) })], "host", "canonical");
             record.saved = savedBuffer ? undefined : savedValue; record.savedBuffer = savedBuffer; settled = true;
             const receipt = Object.freeze({ submission: submitted, savedValue, serverVersion: response.serverVersion, canonicalApplied });
             const changed = new Set<Store<unknown>>();

@@ -7,6 +7,37 @@ test.beforeEach(async ({ page }) => {
     await page.goto("/editing/"); await ready(page);
 });
 
+test("whole-file edits and history keep both panes on their own visible lines", async ({ page }) => {
+    const lines = Array.from({ length: 120 }, (_, i) => `row ${i + 1} abcdef\n`);
+    const original = lines.join(""), replacement = original.replace("row 55 abcdef", "row 55 longer replacement");
+    await page.evaluate(text => {
+        const f = window.editingFixture;
+        f.setText(text);
+        for (const [pane, row] of [["primary", "row 27"], ["secondary", "row 84"]] as const) {
+            const head = text.indexOf(row) + 2;
+            f.select(pane, { anchor: head, head });
+        }
+    }, original);
+    await ready(page);
+    const positions = () => page.locator(".st-editor").evaluateAll(editors => editors.map(editor => {
+        const top = editor.getBoundingClientRect().top;
+        const row = Array.from(editor.querySelectorAll(".st-viewport-row")).find(el => el.getBoundingClientRect().bottom > top);
+        return { top: editor.scrollTop, row: row?.textContent };
+    }));
+    const before = await positions();
+    expect(before).toHaveLength(2);
+    expect(before.every(pane => pane.top > 0 && pane.row)).toBe(true);
+    await page.evaluate(({ length, replacement }) => window.editingFixture.edit([{ from: 0, to: length, insert: replacement }]), { length: original.length, replacement });
+    for (const action of ["edit", "undo", "redo"] as const) {
+        if (action !== "edit") await page.evaluate(action => window.editingFixture.history(action), action);
+        await ready(page);
+        const current = action === "undo" ? original : replacement, snapshot = await state(page);
+        expect(await positions()).toEqual(before);
+        expect(snapshot.primary.selection.head).toBe(current.indexOf("row 27") + 2);
+        expect(snapshot.secondary.selection.head).toBe(current.indexOf("row 84") + 2);
+    }
+});
+
 test("trusted replacement input preserves UTF-16 selection across a surrogate pair", async ({ page }) => {
     await page.evaluate(() => window.editingFixture.setText("a😀b")); await ready(page);
     const input = page.getByRole("textbox", { name: "Primary source", exact: true });

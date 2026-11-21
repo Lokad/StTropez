@@ -131,9 +131,10 @@ selections and visible folds stay the same, subscribers receive nothing. Changin
 document’s history group, even in a batch that also edits another file.
 [Selection direction and affinity](text-model.md#selection-sets)
 
-Pass the initiating view with an edit’s `selection` or `selectionSet`. Undo and redo restore that
-view’s complete set and map selections in the others. A deleted range in another pane can collapse to
-a single point. Undo cannot recover its original endpoints from that point alone. Keep the
+Pass the initiating view with an edit’s `selection` or `selectionSet`. Undo and redo restore the
+complete selections of each surviving view that was open for the edit. Views created later map
+their current selections through the change. A whole-file edit preserves matching text at both
+ends, so selections and scroll anchors on those lines keep their place. Keep the
 `DocumentView` across remounts for selections and folds. The
 [editor](editor.md#view-state-activity-and-limits) captures and restores browser scroll.
 
@@ -187,7 +188,7 @@ history boundary and permissions. If later work in another file blocks a shared 
 An omitted history policy creates a standalone `replace` unit. Origins are `human`, `agent`
 and `host`; `EditKind` distinguishes typing, deletion, paste, composition, form, refactor,
 proposal, live update, replacement and canonical response. An explicit group joins only
-consecutive compatible edits with the same document, origin, kind, group and initiating view.
+consecutive compatible edits with the same document, origin, kind, group, initiating view and set of open views.
 Core grouping has no timer. Selection movement, undo/redo and that document's save
 capture/settlement seal its group; unrelated background documents do not split it.
 `sealHistory(documentId)` explicitly ends grouping without creating an undo entry or changing

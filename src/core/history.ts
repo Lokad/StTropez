@@ -9,12 +9,12 @@ export type HistoryOptions = Readonly<{ maxGroups?: number; maxChanges?: number;
 export type HistorySnapshot = Readonly<{ undoDepth: number; redoDepth: number }>;
 export type HistorySelection = Readonly<{ viewId: string; before: SelectionSet; after: SelectionSet }>;
 export type HistoryChange = Readonly<{ documentId: string; before: TextBuffer; after: TextBuffer;
-    mapping: PositionMapping; units: number; selection: HistorySelection | null }>;
+    mapping: PositionMapping; units: number; initiatingView: string | null; selections: readonly HistorySelection[] }>;
 export type HistoryEntry = Readonly<{ id: number; origin: string; kind: EditKind; group: string | null;
     changes: readonly HistoryChange[]; steps: number; units: number }>;
 
 const selectionRanges = (changes: readonly HistoryChange[]): number => changes.reduce((total, change) => total
-    + (change.selection ? change.selection.before.ranges.length + change.selection.after.ranges.length : 0), 0);
+    + change.selections.reduce((sum, view) => sum + view.before.ranges.length + view.after.ranges.length, 0), 0);
 export function validateHistoryGroup(group: string | undefined): void {
     if (group !== undefined && !group) throw new TypeError("Expected a nonempty history group.");
 }
@@ -60,10 +60,11 @@ export class TextHistory {
         const first = changes[0], old = previous?.changes[0];
         if (group !== undefined && previous && first && old && changes.length === 1 && previous.changes.length === 1
             && previous.origin === origin && previous.kind === kind && previous.group === group && first.documentId === old.documentId
-            && first.before === old.after && first.selection?.viewId === old.selection?.viewId
+            && first.before === old.after && first.initiatingView === old.initiatingView
+            && first.selections.length === old.selections.length && first.selections.every((view, i) => view.viewId === old.selections[i]!.viewId)
             && this.peek(first.documentId, "undo") === previous && previous.steps + 1 <= this.limits.changes && previous.units + units <= this.limits.units) {
             const change = Object.freeze({ ...old, after: first.after, mapping: composePositionMaps(old.mapping, first.mapping), units: old.units + first.units,
-                selection: old.selection && first.selection ? Object.freeze({ ...old.selection, after: first.selection.after }) : null });
+                selections: Object.freeze(old.selections.map((view, i) => Object.freeze({ ...view, after: first.selections[i]!.after }))) });
             const entry = Object.freeze({ ...previous, id: ++this.nextId, changes: Object.freeze([change]), steps: previous.steps + 1, units: previous.units + units });
             this.past.get(first.documentId)![this.past.get(first.documentId)!.length - 1] = entry; this.last.set(first.documentId, entry);
             this.discard(previous); this.retain(entry);

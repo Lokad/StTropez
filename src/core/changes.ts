@@ -1,3 +1,5 @@
+import type { TextBuffer } from "./text-buffer.ts";
+
 /** Offsets are UTF-16 code units in the original document. Ranges are half-open. */
 export type TextEdit = Readonly<{ from: number; to: number; insert: string }>;
 
@@ -33,4 +35,26 @@ export function textDifference(before: string, after: string): TextEdit | null {
     while (from < oldEnd && from < newEnd && before.charCodeAt(from) === after.charCodeAt(from)) from++;
     while (oldEnd > from && newEnd > from && before.charCodeAt(oldEnd - 1) === after.charCodeAt(newEnd - 1)) { oldEnd--; newEnd--; }
     return Object.freeze({ from, to: oldEnd, insert: after.slice(from, newEnd) });
+}
+
+/** Hosts can submit a whole file. Compare its edges without flattening a fragmented buffer. */
+export function compactDocumentEdit(before: TextBuffer, edits: readonly TextEdit[]): readonly TextEdit[] {
+    const edit = edits[0];
+    if (edits.length !== 1 || !edit || edit.from !== 0 || edit.to !== before.length || !before.length || !edit.insert.length) return edits;
+    const after = edit.insert, limit = Math.min(before.length, after.length);
+    function equalEdge(reverse: boolean, available: number): number {
+        let matched = 0;
+        while (matched < available) {
+            const size = Math.min(8192, available - matched);
+            const a = reverse ? before.length - matched - size : matched, b = reverse ? after.length - matched - size : matched;
+            const difference = textDifference(before.slice(a, a + size), after.slice(b, b + size));
+            if (difference) return matched + (reverse ? size - difference.to : difference.from);
+            matched += size;
+        }
+        return matched;
+    }
+    const prefix = equalEdge(false, limit), suffix = equalEdge(true, limit - prefix);
+    if (!prefix && !suffix) return edits;
+    if (prefix === before.length && prefix === after.length) return [];
+    return [{ from: prefix, to: before.length - suffix, insert: after.slice(prefix, after.length - suffix) }];
 }

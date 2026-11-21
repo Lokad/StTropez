@@ -156,7 +156,7 @@ test("explicit consecutive groups, origins, standalone intents and saved boundar
     }
 });
 
-test("two view selections map independently, history restores its initiating view, and leases survive tab close/reopen", () => {
+test("two view selections map independently and survive tab close/reopen and history traversal", () => {
     const { workspace, source, document } = fixture("a😀bcdef");
     const primary = workspace.createDocumentView(source.documentId, { anchor: 3, head: 3 });
     const secondary = workspace.createDocumentView(source.documentId, { anchor: 7, head: 4 });
@@ -178,6 +178,29 @@ test("two view selections map independently, history restores its initiating vie
     const releasedRevision = document().revision;
     workspace.close(reopened); primary.dispose(); secondary.dispose(); primary.dispose(); workspace.releaseResource(source.id, true);
     assert.equal(primary.setSelection(releasedRevision, { anchor: 0, head: 0 }), false);
+});
+
+test("undo restores selections inside a host replacement only to the views that owned them", () => {
+    const { workspace, source } = fixture("header\r\nline: abcdef\r\nfooter");
+    const documentId = source.documentId, keep = workspace.createDocumentView(documentId), closed = workspace.createDocumentView(documentId);
+    keep.setSelections(0, [{ anchor: 19, head: 16 }, { anchor: 2, head: 2 }], 0);
+    closed.setSelection(0, { anchor: 15, head: 15 });
+    const before = keep.getSnapshot().selectionSet;
+    const original = workspace.document(documentId).buffer;
+    workspace.edit({ documentId, expectedRevision: 0, origin: "host",
+        edits: [{ from: 0, to: original.length, insert: "header\r\nline: Z\r\nfooter" }] });
+    const after = keep.getSnapshot().selectionSet;
+    const mapped = keep.getSnapshot().selection;
+    assert.notEqual(mapped.head, before.ranges[before.primary]!.head);
+    closed.dispose();
+    const replacement = workspace.createDocumentView(documentId, { anchor: 3, head: 3 });
+    workspace.undo({ documentId, expectedRevision: 1 });
+    assert.deepEqual(keep.getSnapshot().selectionSet, before);
+    assert.equal(replacement.getSnapshot().selection.head, 3);
+    workspace.redo({ documentId, expectedRevision: 2 });
+    assert.deepEqual(keep.getSnapshot().selectionSet, after);
+    assert.equal(replacement.getSnapshot().selection.head, 3);
+    keep.dispose(); replacement.dispose();
 });
 
 test("typing grouping is local to its document while unrelated live traffic and saves continue", async () => {
