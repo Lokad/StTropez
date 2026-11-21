@@ -73,8 +73,11 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
     await group("expand"); await source.press("Control+Home"); await source.press("ArrowDown"); await source.press("ArrowDown"); await source.press("End");
     const selection = () => source.evaluate(node => ({ start: (node as HTMLTextAreaElement).selectionStart, end: (node as HTMLTextAreaElement).selectionEnd,
         direction: (node as HTMLTextAreaElement).selectionDirection }));
-    const inside = await selection(); await group("collapse"); await expect(inventory).toContainText("folded");
-    expect(await selection()).toEqual(inside); await group("expand"); expect(await selection()).toEqual(inside);
+    const headerEnd = original.indexOf("\n", original.indexOf("dataset Inventory:"));
+    expect((await selection()).start).toBeGreaterThan(headerEnd);
+    await group("collapse"); await expect(inventory).toContainText("folded");
+    await expect.poll(selection).toMatchObject({ start: headerEnd, end: headerEnd });
+    await group("expand"); expect(await selection()).toMatchObject({ start: headerEnd, end: headerEnd });
     await source.press("Control+Home"); await page.keyboard.insertText("# Prefix\n");
     await expect(inventory).toHaveAttribute("data-line", "4");
     await source.press("Control+z"); await expect(inventory).toHaveAttribute("data-line", "3");

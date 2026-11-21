@@ -124,7 +124,7 @@ for (const quote of shippingQuotes(parcel, "local")) {
     if (id === "host") {
         const workflow = '# Example-owned language; no compiler or execution.\ndataset Inventory:\n  columns sku, quantity\n  row "A-100", 12\n  row "B-200", 8\n\nrule Reorder:\n  when quantity < 10\n  emit "Review stock"\n';
         return { id, title: "Host integrations",
-            description: "Reorder starts folded. Code → Fold group controls both blocks while keeping your selection. Click the Inventory source note to open its CSV, then Code → Back to return. Notes follow edits and folds. Code → Paste format selects literal text or table-to-CSV conversion; Insert example table uses the same path without your clipboard. Ctrl+Alt+V changes paste mode; Ctrl+Alt+M adds a note.",
+            description: "Reorder starts folded. Use Code → Fold group to expand both blocks. Click the Inventory source note to open its CSV, then Code → Back to return. Notes follow edits and folds. Code → Paste format selects literal text or table-to-CSV conversion; Insert example table uses the same path without your clipboard. Ctrl+Alt+V changes paste mode; Ctrl+Alt+M adds a note.",
             files: { "workflow.rules": workflow, "inventory.csv": '"sku","quantity"\r\n"C-300","5"\r\n' },
             initialFolds: { "workflow.rules": [{ id: "initial-reorder", from: workflow.indexOf("rule Reorder:"), to: workflow.length, group: "blocks", collapsed: true }] } };
     }
