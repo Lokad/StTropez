@@ -24,7 +24,9 @@ export async function typeHostSuffix(input, text, type = () => input.pressSequen
         node.addEventListener("input", () => { const end = performance.now(), s = window.hostFixture.snapshot(); if (!active) throw new Error("Missing captured typing event."); Object.assign(active,
             { end, revision: s.source.revision, depth: s.history.undoDepth }); }, { signal: listeners.signal });
         node.addEventListener("blur", () => { blurred = true; }, { signal: listeners.signal });
-        /** @type {TypingWindow} */ (window).readHostTypingHistory = () => { listeners.abort(); return { events, blurred, beforeDepth: before.history.undoDepth, baseline: before.bindings.editor === "native" }; };
+        // Only the development host has a switch for the native textarea fixture.
+        const baseline = "editor" in before.bindings && before.bindings.editor === "native";
+        /** @type {TypingWindow} */ (window).readHostTypingHistory = () => { listeners.abort(); return { events, blurred, beforeDepth: before.history.undoDepth, baseline }; };
     });
     try { await type(); }
     catch (error) { await input.evaluate(() => /** @type {TypingWindow} */ (window).readHostTypingHistory()).catch(() => {}); throw error; }
