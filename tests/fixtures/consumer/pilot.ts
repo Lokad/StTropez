@@ -88,7 +88,7 @@ export function mountPackagedPilot(host: HTMLElement, original: string) {
         get settled() { return !disposed && !!primary && !!peer && !!comparison
             && editorSettled(primary) && editorSettled(peer) && comparisonSettled(comparison); },
         onSourceRender: (id: "primary" | "secondary" | "comparison", listener: () => void) => {
-            const editor = id === "primary" ? primary : id === "secondary" ? peer : comparison?.working;
+            const editor = id === "primary" ? primary : id === "secondary" ? peer : comparison?.panes.working;
             if (!editor) throw new Error("Source viewport is not mounted.");
             return editor.viewport.onRender(listener);
         },
@@ -104,7 +104,7 @@ export function mountPackagedPilot(host: HTMLElement, original: string) {
                         selection: editor.view.getSnapshot().selection, metrics: Object.freeze({ ...editor.snapshot(), viewport: editor.viewport.snapshot() }) })] : [])),
                     comparison: c && comparison ? Object.freeze({ status: c.status, generation: c.generation, baseline: c.baseline ? Object.freeze({ version: c.baseline.version, epoch: c.baseline.epoch, length: c.baseline.buffer.length }) : null,
                         workingRevision: c.working?.revision, referenceIsWorkingBuffer: c.baseline?.buffer === document?.buffer, viewId: reviewView.id, selection: reviewView.getSnapshot().selection,
-                        hunks: c.hunks.length, hunkRanges: c.hunks, progress: c.progress, work: comparison.getDiagnostics(), input: comparison.working.snapshot(), workingViewport: comparison.working.viewport.snapshot(), referenceViewport: comparison.referenceViewport()?.snapshot() }) : null }) });
+                        hunks: c.hunks.length, hunkRanges: c.hunks, progress: c.progress, work: comparison.getDiagnostics(), input: comparison.panes.working.snapshot(), workingViewport: comparison.panes.working.viewport.snapshot(), referenceViewport: comparison.panes.reference.viewport.snapshot() }) : null }) });
         },
         range: (from: number, to: number) => workspace.document(source.documentId).buffer.slice(from, to),
         referenceRange: (from: number, to: number) => comparison!.controller.getSnapshot().baseline!.buffer.slice(from, to),
@@ -119,11 +119,11 @@ export function mountPackagedPilot(host: HTMLElement, original: string) {
         },
         remount: () => {
             if (!primary || !peer || !comparison || disposed) return false;
-            const active = owner.activeElement, focus = active === primary.input ? "primary" : active === peer.input ? "secondary" : active === comparison.working.input ? "comparison" : null;
-            const states = [primary.captureView(), peer.captureView(), comparison.working.captureView()] as const, baseline = comparison.controller.getSnapshot().baseline!;
+            const active = owner.activeElement, focus = active === primary.input ? "primary" : active === peer.input ? "secondary" : active === comparison.panes.working.input ? "comparison" : null;
+            const states = [primary.captureView(), peer.captureView(), comparison.panes.working.captureView()] as const, baseline = comparison.controller.getSnapshot().baseline!;
             unmountViews(); mountViews(baseline);
-            primary!.restoreView(states[0]); peer!.restoreView(states[1]); comparison!.working.restoreView(states[2]);
-            if (focus === "primary") primary!.focus(); else if (focus === "secondary") peer!.focus(); else if (focus === "comparison") comparison!.working.focus();
+            primary!.restoreView(states[0]); peer!.restoreView(states[1]); comparison!.panes.working.restoreView(states[2]);
+            if (focus === "primary") primary!.focus(); else if (focus === "secondary") peer!.focus(); else if (focus === "comparison") comparison!.panes.working.focus();
             return true;
         },
         dispose: () => {

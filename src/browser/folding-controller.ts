@@ -87,11 +87,11 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
         }).catch(error => fail(capture, error));
     };
     const refresh = () => { if (!available()) return; cancel(); publish("pending", "Discovering folds…"); later(start, delay); };
-    let observed = workspace.document(view.documentId).buffer;
+    let observed = workspace.document(view.documentId).revision;
     const stopDocument = workspace.observeDocument(view.documentId).subscribe(() => {
         const next = workspace.observeDocument(view.documentId).getSnapshot();
         if (!next) { cancel(); return; }
-        if (next.buffer !== observed) { observed = next.buffer; refresh(); }
+        if (next.revision !== observed) { observed = next.revision; refresh(); }
     });
     const stopTab = target && workspace.tabState.subscribe(() => { if (!available()) cancel(); });
     const stopFolds = view.folding.subscribe(() => { if (!disposed) publish(cell.get().status, cell.get().message); });

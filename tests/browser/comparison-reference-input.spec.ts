@@ -50,10 +50,25 @@ for (const host of ["plain", "react"]) test(`${host} reference composition delay
     await reference(p).evaluate(node => node.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
     await p.getByRole("checkbox", { name: "Align review rows", exact: true }).check(); await p.waitForFunction(() => window.hostFixture.snapshot().bindings.comparison!.work.alignment.status === "waiting"); expect((await snapshot(p)).bindings.comparison!.referenceInput!.composing).toBe(true);
     await reference(p).evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "" }))); await waitForReview(p); expect((await snapshot(p)).bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline);
-    const old = await reference(p).elementHandle(); if (!old) throw new Error("Missing reference input.");
-    expect(await old.evaluate(node => { node.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true })); return window.hostFixture.snapshot().bindings.comparison!.referenceInput!.pendingCommand; })).toBe(true);
-    for (const name of ["Capture reference refresh", "Finish reference refresh"]) await button(p, name).click(); await waitForReview(p);
-    const after = await snapshot(p); expect(after.bindings.comparison!.baseline!.version).not.toBe(before.bindings.comparison!.baseline!.version); expect(after.history).toEqual(before.history);
-    await old.evaluate(node => { (node as HTMLTextAreaElement).value = "late attempt"; for (const event of [new InputEvent("input", { inputType: "insertText", data: "late attempt", bubbles: true }), new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true })]) node.dispatchEvent(event); }); await waitForReview(p); await exactWorking(p, raw); expect((await snapshot(p)).pendingSaves).toHaveLength(0); expect((await snapshot(p)).history).toEqual(before.history);
+    const captured = await reference(p).evaluate(node => {
+        node.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+        const pending = window.hostFixture.snapshot().bindings.comparison!.referenceInput!.pendingCommand;
+        for (const name of ["Capture reference refresh", "Finish reference refresh"])
+            [...document.querySelectorAll("button")].find(button => button.textContent === name)!.click();
+        return { pending, version: window.hostFixture.snapshot().bindings.comparison!.baseline!.version };
+    });
+    expect(captured.pending).toBe(true); expect(captured.version).not.toBe(before.bindings.comparison!.baseline!.version);
+    await waitForReview(p);
+    const after = await snapshot(p);
+    expect(after.bindings.comparison!.referenceInput!.pendingCommand).toBe(false);
+    const selection = after.bindings.comparison!.referenceViewport!.selection!;
+    expect(selection.anchor).toBe(selection.head);
+    await reference(p).evaluate(node => {
+        (node as HTMLTextAreaElement).value = "late attempt";
+        node.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "late attempt", bubbles: true }));
+    });
+    await waitForReview(p); await exactWorking(p, raw);
+    expect((await snapshot(p)).bindings.comparison!.referenceViewport!.selection).toEqual(selection);
+    expect((await snapshot(p)).history).toEqual(before.history);
     await reference(p).press("Control+a"); await waitForReview(p); expect((await snapshot(p)).bindings.comparison!.referenceViewport!.selection!.head).toBe(after.bindings.comparison!.baseline!.length); expect((await snapshot(p)).bindings.comparison!.referenceInput!.inputUnits).toBeLessThanOrEqual(257); await dispose(p);
 });

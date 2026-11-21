@@ -17,10 +17,10 @@ export function editorSettled(editor: TextEditor): boolean {
 }
 
 export function comparisonSettled(comparison: TextComparison): boolean {
-    const work = comparison.getDiagnostics(), reference = comparison.referenceEditor();
+    const work = comparison.getDiagnostics(), reference = comparison.panes.reference;
     if (work.alignment.status === "failed") throw new Error(work.alignment.failure);
     if (work.disposed || comparison.controller.getSnapshot().status !== "ready" || work.alignment.pending || work.pendingScroll
-        || !reference || !editorSettled(reference) || !editorSettled(comparison.working)) return false;
-    const workingRows = comparison.working.viewport.activity(), referenceRows = reference.viewport.activity();
+        || !editorSettled(reference) || !editorSettled(comparison.panes.working)) return false;
+    const workingRows = comparison.panes.working.viewport.activity(), referenceRows = reference.viewport.activity();
     return !work.rowsAligned || workingRows.aligned && referenceRows.aligned && workingRows.alignmentId === referenceRows.alignmentId;
 }

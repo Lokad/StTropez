@@ -6,8 +6,8 @@ import type { JsonValue } from "../../src/protocol/index.ts";
 import { EditingPresentation } from "../shared/language/presentation.ts";
 import { HostCell } from "../shared/observable.ts";
 
-type Session = { id: string; editor: TextEditor; tab: TabId; target: TabTarget; saveTarget: TabTarget; presentation: EditingPresentation;
-    provider?: ProviderController; stopProvider?: () => void; providerError?: string; reference?: ComparisonBaseline; find?: FindController; stopFind?: () => void; initialized: boolean };
+type Session = { id: string; editor: TextEditor; target: TabTarget; presentation: EditingPresentation;
+    provider?: ProviderController; stopProvider?: () => void; providerError?: string; reference?: () => ComparisonBaseline | null; find?: FindController; stopFind?: () => void; initialized: boolean };
 type DetachedOwner = Readonly<{ id: string; target: TabTarget; documentId: DocumentId; reference?: ComparisonBaseline }>;
 type FindCommand = Readonly<{ kind: "navigate"; direction: 1 | -1 } | { kind: "replace"; text: string }>;
 
@@ -61,8 +61,9 @@ export class HostLanguageTools {
         const previous = this.detachedOwner;
         if (!previous || previous.id !== session.id) return;
         this.detachedOwner = undefined;
-        const compatible = previous.reference && session.reference
-            ? previous.reference.buffer === session.reference.buffer && previous.reference.version === session.reference.version
+        const reference = session.reference?.();
+        const compatible = previous.reference && reference
+            ? previous.reference.buffer === reference.buffer && previous.reference.version === reference.version
             : !previous.reference && !session.reference && previous.documentId === session.editor.view.documentId
                 && previous.target.workspace === session.target.workspace && previous.target.id === session.target.id && previous.target.generation === session.target.generation;
         // A new attachment owns new jobs. Restoring the logical context starts none and never focuses.
@@ -94,7 +95,7 @@ export class HostLanguageTools {
     }
     attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void {
         if (this.sessions.has(id)) throw new Error("Language view already mounted.");
-        const target = this.workspace.captureTab(tab), session: Session = { id, tab, target, saveTarget: target, editor, presentation, initialized: false }, listeners = new AbortController();
+        const target = this.workspace.captureTab(tab), session: Session = { id, target, editor, presentation, initialized: false }, listeners = new AbortController();
         this.sessions.set(id, session); this.attachProvider(session);
         editor.input.addEventListener("focus", () => this.activate(session), { signal: listeners.signal });
         editor.input.addEventListener("keydown", event => {
@@ -108,18 +109,23 @@ export class HostLanguageTools {
         }, { signal: listeners.signal });
         this.resume(session); return this.detachSession(session, listeners);
     }
-    attachReferenceFind(id: string, target: TabTarget, editor: TextEditor, presentation: EditingPresentation, baseline: ComparisonBaseline, saveTarget: TabTarget, resume = false): () => void {
+    attachReferenceFind(id: string, editor: TextEditor, presentation: EditingPresentation, reference: () => ComparisonBaseline | null, target: TabTarget): () => void {
         if (this.sessions.has(id)) throw new Error("Find view already mounted.");
-        const tab = this.workspace.resolveTab(target);
-        if (tab?.surface.kind !== "text" || tab.surface.documentId !== editor.view.documentId || !this.workspace.ownsDocumentView(editor.view)
-            || this.workspace.document(editor.view.documentId).buffer !== baseline.buffer) throw new Error("Reference Find requires its captured view and baseline.");
-        const session: Session = { id, tab: target.id, target, saveTarget, editor, presentation, initialized: true, reference: baseline }, listeners = new AbortController();
+        const session: Session = { id, target, editor, presentation, initialized: true, reference }, listeners = new AbortController();
+        if (!this.ownsSession(session)) throw new Error("Reference Find requires its captured view and baseline.");
         this.sessions.set(id, session);
         editor.input.addEventListener("focus", () => this.activate(session), { signal: listeners.signal });
         editor.input.addEventListener("keydown", event => { if (!event.defaultPrevented && !event.isComposing && !editor.activity().composing) this.findKey(event, session); }, { signal: listeners.signal });
-        // Keep the logical field target after replacement, without starting old work or moving focus.
-        if (resume) this.activate(session); else this.resume(session);
+        // A host remount can restore the logical field target while the toolbar has focus.
+        this.resume(session);
         return this.detachSession(session, listeners);
+    }
+    private ownsSession(session: Session): boolean {
+        const surface = this.workspace.resolveTab(session.target)?.surface, view = session.editor.view;
+        if (surface?.kind !== "text" || !this.workspace.ownsDocumentView(view) || session.editor.signal.aborted) return false;
+        if (!session.reference) return surface.documentId === view.documentId;
+        const reference = session.reference();
+        return reference !== null && this.workspace.document(view.documentId).buffer === reference.buffer;
     }
     private findKey(event: KeyboardEvent, session: Session): boolean {
         if ((event.ctrlKey || event.metaKey) && !event.altKey && ["f", "h"].includes(event.key.toLowerCase())) {
@@ -156,12 +162,12 @@ export class HostLanguageTools {
             if (this.pendingFind?.stop === stop) this.pendingFind = undefined; };
         const current = () => {
             if (disability?.takeRecords().length) return false;
-            const state = find.getSnapshot(), tab = this.workspace.resolveTab(session.target);
+            const state = find.getSnapshot();
             return this.active === session && this.sessions.get(session.id) === session && session.find === find
                 && (capturedAuthority === undefined || authority() === capturedAuthority)
                 && origin.isConnected && owner.activeElement === origin && !(origin.closest("button,input,select,textarea") ?? origin).matches(":disabled")
                 && editor.element.isConnected && !editor.activity().disposed && !editor.activity().composing && this.workspace.ownsDocumentView(editor.view)
-                && tab?.surface.kind === "text" && tab.surface.documentId === editor.view.documentId
+                && this.ownsSession(session)
                 && this.workspace.document(editor.view.documentId).revision === captured.revision && editor.view.getSnapshot().selectionSet === selections
                 && state.revision === captured.revision && state.query === captured.query && state.wholeWord === captured.wholeWord
                 && state.matchCase === captured.matchCase && state.regularExpression === captured.regularExpression
@@ -194,8 +200,7 @@ export class HostLanguageTools {
         if (event.defaultPrevented || event.isComposing || !root?.isConnected || !realm || !(target instanceof realm.HTMLElement) || !root.contains(target) || !session
             || (target.closest("button,input,select,textarea") ?? target).matches(":disabled") || !session.editor.element.isConnected
             || session.editor.activity().disposed || session.editor.activity().composing || !this.workspace.ownsDocumentView(session.editor.view)) return;
-        const tab = this.workspace.resolveTab(session.target);
-        if (tab?.surface.kind !== "text" || tab.surface.documentId !== session.editor.view.documentId) return;
+        if (!this.ownsSession(session)) return;
         return { session, control: target };
     }
     readonly keyFromTools = (event: KeyboardEvent): void => {
@@ -204,7 +209,7 @@ export class HostLanguageTools {
         const replacement = event.target === this.replacementElement, enter = key === "enter" && (replacement || event.target === this.queryElement);
         if (!save && !find && !enter && key !== "escape") return;
         const owned = this.toolsSession(event); if (!owned) return;
-        if (save) this.saveShortcut(event, owned.control, owned.session.saveTarget, () => owned.session.editor.activity().composing);
+        if (save) this.saveShortcut(event, owned.control, owned.session.target, () => owned.session.editor.activity().composing);
         else if (find) this.findKey(event, owned.session);
         else if (enter) { event.preventDefault(); if (replacement) this.replaceCurrent(); else if (event.shiftKey) this.previous(); else this.next(); }
         else { event.preventDefault(); owned.session.find?.cancel(); owned.session.editor.focus(); }
@@ -215,7 +220,8 @@ export class HostLanguageTools {
             if (detached) return; detached = true;
             this.cancelFindCommand(session);
             if (this.active === session) {
-                this.detachedOwner = Object.freeze({ id: session.id, target: session.target, documentId: session.editor.view.documentId, ...(session.reference ? { reference: session.reference } : {}) });
+                const reference = session.reference?.();
+                this.detachedOwner = Object.freeze({ id: session.id, target: session.target, documentId: session.editor.view.documentId, ...(reference ? { reference } : {}) });
                 this.stopFolds?.(); this.stopFolds = undefined;
             }
             session.stopProvider?.(); listeners.abort(); session.stopFind?.(); session.find?.dispose();
@@ -260,9 +266,7 @@ export class HostLanguageTools {
     readonly focusEditor = (): void => { this.active?.editor.focus(); };
     private foldTarget(): Session | undefined {
         const session = this.active; if (!session) return;
-        const tab = this.workspace.resolveTab(session.target);
-        if (tab?.surface.kind !== "text" || tab.surface.documentId !== session.editor.view.documentId || !this.workspace.ownsDocumentView(session.editor.view)
-            || !session.editor.element.isConnected || session.editor.activity().disposed) return;
+        if (!this.ownsSession(session) || !session.editor.element.isConnected) return;
         if (session.editor.activity().composing) { this.cell.set({ ...this.cell.get(), foldMessage: "Finish composition before folding." }); return; }
         return session;
     }

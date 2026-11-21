@@ -197,29 +197,19 @@ host fetch separately if needed.
 
 ### Reference views and decoration
 
-The reference pane reads directly from the captured immutable buffer. Select, navigate and copy
-using the same source coordinates as the [editor](editor.md). Its internal resource rejects
-every edit origin, Save and Run. Workspace inventories omit that resource, its document and tab.
-You can inspect a captured reference handle and the diagnostic ownership counts.
+Both entries in `comparison.panes` are editor handles. Attach Find, folding and decoration providers
+once. Replacing a baseline keeps the reference editor, its settings and its view. Find reruns its
+current query, and folding maps surviving ranges to the new revision. Publish decoration ranges
+against the revision of the pane they describe. [Decoration layers](viewport.md#decoration-layers)
+
+The reference pane is read-only. Passing a workspace document displays it directly and follows
+its edits. An external baseline uses a private document with Save and Run disabled. It takes no tab
+and stays out of the workspace inventory. A host lease can retain it after comparison disposal.
 [Inventory visibility](workspace.md#inventory-visibility)
 
-`referenceEditor()` and `referenceViewport()` resolve the current attachment. The stable
-`reference` observable publishes `ComparisonReferenceView` with `{ editor, target, epoch, version }`.
-It publishes `undefined` before releasing an old attachment, then publishes its replacement.
-Queue host attachment/cleanup after notification delivery, resolve the latest handle, and cancel
-queued callbacks on unmount. Refresh disposes the old editor and pending input/navigation work.
-A retired reference resource stays readable while an independent view or host lease owns it.
-
-Apply [viewport settings](viewport.md#mounting-and-presentation) such as rulers, ligatures and
-current-line highlighting to `comparison.working.viewport` and the current reference editor’s
-viewport. Reapply them when `comparison.reference` publishes a replacement. The comparison mount
-accepts `TextComparisonOptions`. It does not forward arbitrary source-editor construction options.
-
-Keep saved reference view state with its immutable buffer/version; working view state belongs
-to the working document/view. [Viewport](viewport.md#scrolling-and-saved-views) describes captures.
-Each pane owns its change colors. Add [decoration layers](viewport.md#decoration-layers) to
-`working.decorations` and to the editor in the current `reference` snapshot. Attach fresh layers
-when the reference changes and publish ranges against that reference document's revision.
+`comparison.activePane()` returns the last focused pane and defaults to the working editor.
+Opening a toolbar leaves the command target intact. Pass shared settings at mount, then call
+`configure()` on either pane for per-pane changes. [Editor settings](editor.md)
 
 ### Linked scrolling and aligned rows
 
@@ -251,9 +241,7 @@ Both panes use the completed grid; partial row indexes are not installed.
 Both features wait for current comparison/view captures and settled input/navigation. Alignment
 also waits for pointer gestures. Edits, reference/fold changes, disable and disposal cancel stale
 work. Disabling either feature releases its subscriptions and pending work independently.
-The active features share pane render/fold observation; disabling both releases that optional
-observation. Reference replacement detaches the old pane before disposal and binds the new pane
-once. Composition and reference focus handling follow the pane's lifetime.
+Both features share pane render and fold subscriptions. Disabling both releases those subscriptions.
 Only the visible row window creates DOM. `getDiagnostics()` exposes `scrollLinked`, `pendingScroll`, `rowsAligned`
 and alignment phase/work/failure; controller readiness alone does not establish settled panes.
 

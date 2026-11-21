@@ -148,7 +148,7 @@ test("minimap projects comparison gaps and follows linked and independent scroll
         const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "review"), host = document.createElement("section");
         host.style.width = "900px"; document.body.append(host); lines.splice(40, 0, ...Array<string>(80).fill("baseline section"));
         const comparison = mountTextComparison(host, workspace, tab, { buffer: TextBuffer.from(lines.join("\n")), version: "one" }, { rowsAligned: true, settings: { minimap: true } });
-        window.presentationFixture = { workspace, host, tab, resource: resource.id, editor: comparison.working, comparison };
+        window.presentationFixture = { workspace, host, tab, resource: resource.id, editor: comparison.panes.working, comparison };
     });
     await page.waitForFunction(() => window.presentationFixture.editor.viewport.snapshot().aligned);
     const maps = page.locator(".st-minimap"), saved = maps.first(), working = maps.last();
@@ -159,20 +159,20 @@ test("minimap projects comparison gaps and follows linked and independent scroll
     await expect.poll(() => bandHasInk(saved)).toBe(true); await expect.poll(() => bandHasInk(working)).toBe(false);
     const box = (await saved.boundingBox())!;
     await page.mouse.click(box.x + 5, box.y + box.height * .8);
-    await page.waitForFunction(() => { const c = window.presentationFixture.comparison!, ref = c.referenceViewport()!.snapshot(), work = c.working.viewport.snapshot();
+    await page.waitForFunction(() => { const c = window.presentationFixture.comparison!, ref = c.panes.reference.viewport.snapshot(), work = c.panes.working.viewport.snapshot();
         return ref.firstLine > 140 && Math.abs(ref.scrollTop - work.scrollTop) < 2; });
     const independent = await page.evaluate(() => {
         const c = window.presentationFixture.comparison!; c.setRowsAligned(false); c.setScrollLinked(false);
-        const reference = c.referenceEditor()!, doc = window.presentationFixture.workspace.document(reference.view.documentId);
+        const reference = c.panes.reference, doc = window.presentationFixture.workspace.document(reference.view.documentId);
         reference.view.folding.setRanges(reference.view.folding.getSnapshot(), [{ id: "saved", from: 0, to: doc.buffer.offsetAt(39), collapsed: true }]);
-        reference.viewport.flush(); c.working.viewport.flush();
-        return { workingTop: c.working.viewport.snapshot().scrollTop, readOnly: reference.input.readOnly, selection: reference.view.getSnapshot().selectionSet };
+        reference.viewport.flush(); c.panes.working.viewport.flush();
+        return { workingTop: c.panes.working.viewport.snapshot().scrollTop, readOnly: reference.input.readOnly, selection: reference.view.getSnapshot().selectionSet };
     });
     expect(independent.readOnly).toBe(true);
     await saved.click({ position: { x: 5, y: 1 } });
-    await page.waitForFunction(() => window.presentationFixture.comparison!.referenceViewport()!.snapshot().scrollTop === 0);
+    await page.waitForFunction(() => window.presentationFixture.comparison!.panes.reference.viewport.snapshot().scrollTop === 0);
     const result = await page.evaluate(() => { const c = window.presentationFixture.comparison!;
-        return { work: c.working.viewport.snapshot(), ref: c.referenceViewport()!.snapshot(), selection: c.referenceEditor()!.view.getSnapshot().selectionSet }; });
+        return { work: c.panes.working.viewport.snapshot(), ref: c.panes.reference.viewport.snapshot(), selection: c.panes.reference.view.getSnapshot().selectionSet }; });
     expect(result.work.scrollTop).toBeCloseTo(independent.workingTop, 0); expect(result.work.visibleLines).toBe(160);
     expect(result.ref.visibleLines).toBe(202); expect(result.selection).toEqual(independent.selection);
 });
@@ -253,12 +253,12 @@ test.describe("scrolling beyond the last line", () => {
             const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "review"), host = document.createElement("section");
             host.style.cssText = "height:500px;width:800px"; document.body.append(host);
             const comparison = mountTextComparison(host, workspace, tab, { buffer: TextBuffer.from("extra\na\nb\nc"), version: "one" }, { rowsAligned: true });
-            window.presentationFixture = { workspace, resource: resource.id, host, tab, comparison, editor: comparison.working };
+            window.presentationFixture = { workspace, resource: resource.id, host, tab, comparison, editor: comparison.panes.working };
         });
         await page.waitForFunction(() => { const c = window.presentationFixture.comparison!;
-            return c.controller.getSnapshot().status === "ready" && c.getDiagnostics().rowsAligned && !c.working.viewport.activity().pending && !c.referenceViewport()?.activity().pending; });
+            return c.controller.getSnapshot().status === "ready" && c.getDiagnostics().rowsAligned && !c.panes.working.viewport.activity().pending && !c.panes.reference.viewport.activity().pending; });
         const result = await page.evaluate(() => {
-            const f = window.presentationFixture, c = f.comparison!, working = c.working.viewport, reference = c.referenceViewport()!;
+            const f = window.presentationFixture, c = f.comparison!, working = c.panes.working.viewport, reference = c.panes.reference.viewport;
             working.configure({ scrollBeyondLastLine: true }); working.scrollTo({ top: 1e12 }); working.flush();
             const independent = !reference.settings().scrollBeyondLastLine, grid = working.snapshot();
             reference.configure({ scrollBeyondLastLine: true }); reference.scrollTo({ top: 1e12 }); reference.flush();
@@ -517,9 +517,9 @@ test("current-line presentation follows the primary caret through input, folding
         f.comparison = mountTextComparison(f.host, f.workspace, f.tab, { buffer: TextBuffer.from("extra\nHEAD\nbody\nmore\nend\n"), version: "one" }, { rowsAligned: true });
     });
     await page.waitForFunction(() => { const c = window.presentationFixture.comparison!;
-        return c.controller.getSnapshot().status === "ready" && c.getDiagnostics().rowsAligned && !c.working.viewport.activity().pending && !c.referenceViewport()?.activity().pending; });
+        return c.controller.getSnapshot().status === "ready" && c.getDiagnostics().rowsAligned && !c.panes.working.viewport.activity().pending && !c.panes.reference.viewport.activity().pending; });
     const aligned = await page.evaluate(() => {
-        const f = window.presentationFixture, c = f.comparison!, working = c.working, reference = c.referenceEditor()!;
+        const f = window.presentationFixture, c = f.comparison!, working = c.panes.working, reference = c.panes.reference;
         const current = (editor: TextEditor) => editor.element.querySelector(".st-viewport-layer .st-current-line");
         working.viewport.configure({ highlightCurrentLine: true }); working.viewport.flush();
         const workingClass = current(working)!.className, referenceDefault = reference.viewport.settings().highlightCurrentLine;
@@ -541,7 +541,7 @@ test("current-line presentation follows the primary caret through input, folding
     expect(Math.abs(aligned.height - aligned.lineHeight)).toBeLessThan(.1);
     expect(aligned.edges).toContain("inset"); expect(aligned.fill).not.toBe("rgba(0, 0, 0, 0)");
     await info.attach("current-line-review", { body: await page.screenshot(), contentType: "image/png" });
-    const end = await page.evaluate(() => { const f = window.presentationFixture, c = f.comparison!, reference = c.referenceViewport()!;
+    const end = await page.evaluate(() => { const f = window.presentationFixture, c = f.comparison!, reference = c.panes.reference.viewport;
         c.dispose(); f.workspace.close(f.tab); f.workspace.releaseResource(f.resource, true);
         return { configured: reference.configure({ highlightCurrentLine: true }), enabled: reference.settings().highlightCurrentLine, children: f.host.childNodes.length,
             views: f.workspace.diagnostics().views, subscriptions: f.workspace.diagnostics().subscriptions }; });

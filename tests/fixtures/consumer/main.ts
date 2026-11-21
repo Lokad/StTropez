@@ -27,10 +27,9 @@ const reviewOptions: TextComparisonOptions = { view: comparisonView };
 function mountReview(baseline: Parameters<typeof mountTextComparison>[3]) {
     const review = mountTextComparison(document.getElementById("comparison")!, workspace, comparisonResource.documentId, baseline, reviewOptions);
     const tokens = { name: "review tokens", order: 0, provide: reviewDecorate };
-    review.working.decorations.addProvider(tokens);
-    const attach = () => review.referenceEditor()?.decorations.addProvider(tokens);
-    const stop = review.reference.subscribe(attach); attach();
-    return { ...review, dispose() { stop(); review.dispose(); } };
+    review.panes.working.decorations.addProvider(tokens);
+    review.panes.reference.decorations.addProvider(tokens);
+    return review;
 }
 let comparison = mountReview({ buffer: TextBuffer.from("baseline\r\n"), version: "reference-1" });
 function mountMultipleInput() {
@@ -321,20 +320,20 @@ const fixture = { text: () => workspace.document(documentId).text(),
             asset.dispose(); return { ...captured, released: document.fonts.size === before };
         } finally { asset.dispose(); }
     },
-    comparison: () => { const review: TextComparisonSnapshot = comparison.getSnapshot(), s = review.comparison, reference = comparison.reference.getSnapshot();
-        const visibility: ResourceVisibility | undefined = reference && workspace.resourceForDocument(reference.editor.view.documentId).metadata.getSnapshot().visibility;
+    comparison: () => { const review: TextComparisonSnapshot = comparison.getSnapshot(), s = review.comparison, reference = comparison.panes.reference;
+        const visibility: ResourceVisibility | undefined = workspace.resourceForDocument(reference.view.documentId).metadata.getSnapshot().visibility;
         const inventory = workspace.getSnapshot();
         const measurements: TextComparisonDiagnostics = comparison.getDiagnostics();
         return { measurements, status: s.status, generation: s.generation, count: s.hunks.length, version: s.baseline?.version,
-        internalBaseline: visibility === "internal" && !!reference && !inventory.documents.some(document => document.id === reference.editor.view.documentId)
-            && !inventory.tabs.some(tab => tab.id === reference.target.id),
+        internalBaseline: visibility === "internal" && !inventory.documents.some(document => document.id === reference.view.documentId)
+            && reference.tab === undefined,
         selectedHunk: review.selectedHunk, canNavigate: review.canNavigate, canRevert: review.canRevert,
-        viewId: comparisonView.id, selection: comparisonView.getSnapshot().selection, reference: comparison.referenceViewport()?.snapshot(), working: comparison.working.viewport.snapshot() }; },
+        viewId: comparisonView.id, selection: comparisonView.getSnapshot().selection, reference: comparison.panes.reference.viewport.snapshot(), working: comparison.panes.working.viewport.snapshot() }; },
     remountComparison: () => {
-        const baseline = comparison.controller.getSnapshot().baseline!, state = comparison.working.captureView();
+        const baseline = comparison.controller.getSnapshot().baseline!, state = comparison.panes.working.captureView();
         comparison.dispose(); const retained = workspace.ownsDocumentView(comparisonView);
         comparison = mountReview(baseline);
-        comparison.working.restoreView({ ...state, ...comparisonView.getSnapshot().selection }); return retained;
+        comparison.panes.working.restoreView({ ...state, ...comparisonView.getSnapshot().selection }); return retained;
     },
     acceptComparison: () => { const t = comparison.controller.beginAcceptance(); return t.complete({ buffer: t.capture.working.buffer, version: "accepted-2" }); },
     diff: () => { const d = new TextDiff(TextBuffer.from("a\r\n"), TextBuffer.from("a\n"));

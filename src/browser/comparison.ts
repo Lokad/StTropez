@@ -2,13 +2,13 @@ import { Store } from "../core/observable.ts";
 import { validateWorkBudget } from "../core/kernel-cursor.ts";
 import { partitionPoint } from "../core/bound-search.ts";
 import type { Observable } from "../core/observable.ts";
-import { createComparisonController } from "../core/comparison.ts";
+import { compareText } from "../core/comparison.ts";
 import type { ComparisonBaseline, ComparisonController, ComparisonSnapshot } from "../core/comparison.ts";
 import type { DiffRange } from "../core/diff.ts";
-import type { DocumentId, DocumentView, TabId, TabTarget, TextResourceHandle, Workspace } from "../core/workspace.ts";
+import type { DocumentId, DocumentView, TabId, TextResourceHandle, Workspace } from "../core/workspace.ts";
 import { mountEditor } from "./text-editor.ts";
 import type { EditorSettings, MountedTextEditor, TextEditor, TextEditorOptions } from "./text-editor.ts";
-import type { InlineDecoration, PresentedLine, TextViewport } from "./viewport.ts";
+import type { InlineDecoration, PresentedLine } from "./viewport.ts";
 import { createComparisonScroll } from "./comparison-scroll.ts";
 import { createComparisonAlignment } from "./comparison-alignment.ts";
 import type { ComparisonAlignmentSnapshot } from "./comparison-alignment.ts";
@@ -16,7 +16,6 @@ import { mountComparisonControls } from "./comparison-controls.ts";
 import { createComparisonPanes } from "./comparison-panes.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 
-export type ComparisonReferenceView = Readonly<{ editor: TextEditor; target: TabTarget; epoch: number; version: string }>;
 export type TextComparisonOptions = Readonly<{ ariaLabel?: string; workBudget?: number; view?: DocumentView; controls?: boolean; scrollLinked?: boolean; rowsAligned?: boolean; settings?: EditorSettings;
     requestLine?: NonNullable<TextEditorOptions["requestLine"]> }>;
 export type TextComparisonSnapshot = Readonly<{
@@ -26,12 +25,10 @@ export type TextComparisonSnapshot = Readonly<{
     canNavigate: boolean; canRevert: boolean;
     scrollLinked: boolean; alignment: ComparisonAlignmentSnapshot; disposed: boolean;
 }>;
-export type TextComparisonDiagnostics = Readonly<{ generation: number; steps: number; advances: number; maxStepMs: number; totalStepMs: number; scrollLinked: boolean; pendingScroll: boolean; rowsAligned: boolean; alignment: ComparisonAlignmentSnapshot; referenceSubscriptions: number; disposed: boolean }>;
+export type TextComparisonDiagnostics = Readonly<{ generation: number; steps: number; advances: number; maxStepMs: number; totalStepMs: number; scrollLinked: boolean; pendingScroll: boolean; rowsAligned: boolean; alignment: ComparisonAlignmentSnapshot; disposed: boolean }>;
 export type TextComparison = Observable<TextComparisonSnapshot> & Readonly<{
-    element: HTMLDivElement; controller: ComparisonController; working: TextEditor;
-    referenceViewport: () => TextViewport | undefined;
-    referenceEditor: () => TextEditor | undefined;
-    reference: Observable<ComparisonReferenceView | undefined>;
+    element: HTMLDivElement; controller: ComparisonController;
+    panes: Readonly<{ working: TextEditor; reference: TextEditor }>; activePane: () => TextEditor;
     getDiagnostics: () => TextComparisonDiagnostics;
     setScrollLinked: (linked: boolean) => void;
     setRowsAligned: (aligned: boolean) => void;
@@ -39,14 +36,17 @@ export type TextComparison = Observable<TextComparisonSnapshot> & Readonly<{
     revertHunk: (generation: number, index: number) => boolean; dispose: () => void;
 }>;
 /** Two independently virtualized panes. Hosts own reference retrieval, acceptance, saving and execution. */
-export function mountTextComparison(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId, baseline: ComparisonBaseline,
+export function mountTextComparison(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId, baseline: ComparisonBaseline | DocumentId,
     options: TextComparisonOptions = {}): TextComparison {
     const requestedBudget = options.workBudget ?? 4096;
     validateWorkBudget(requestedBudget, "Comparison");
     const budget = Math.min(requestedBudget, 4096);
     const owner = host.ownerDocument, win = owner.defaultView;
     if (!win) throw new Error("Comparison requires an attached browser document.");
-    const controller = createComparisonController(workspace, identity, baseline, options), runner = createCooperativeRunner(win);
+    let display: TextResourceHandle | undefined;
+    const controller = compareText(workspace, identity, baseline, options, typeof baseline === "string" ? undefined : next =>
+        !!display && workspace.adoptSaved(display.id, { text: next.buffer, serverVersion: next.version, history: "reset" }).applied);
+    const runner = createCooperativeRunner(win);
     const root = owner.createElement("div"), panes = owner.createElement("div");
     root.className = "st-comparison"; root.setAttribute("role", "group"); root.setAttribute("aria-label", options.ariaLabel ?? "Text comparison");
     panes.className = "st-comparison-panes";
@@ -56,13 +56,10 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     };
     const referencePane = pane(), workingPane = pane();
     root.append(panes); host.append(root);
-    let state = controller.getSnapshot(), display: TextResourceHandle | undefined, displayTab: TabId | undefined;
-    let displayTarget: TabTarget | undefined;
+    let state = controller.getSnapshot();
     let epoch = -1, selected = -1, selectedGeneration = -1, scheduled = false, disposed = false;
     let measuredGeneration = -1, steps = 0, advances = 0, maxStepMs = 0, totalStepMs = 0;
     let decoratedGeneration = -1, decoratedStatus: string | undefined;
-    const referenceScope = workspace.createNotificationScope(), referenceStore = new Store<ComparisonReferenceView | undefined>(undefined, referenceScope);
-    const publishReference = (value: ComparisonReferenceView | undefined) => { referenceScope.publish(referenceStore, value); };
     function rangeAt(side: "baseline" | "working", line: number): DiffRange | undefined {
         if (state.status !== "ready" && state.status !== "running") return;
         const low = partitionPoint(state.hunks.length, index => { const range = state.hunks[index]![side]; return Math.max(range.lineFrom + 1, range.lineTo) <= line; });
@@ -111,34 +108,29 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         stateScope.publish(stateStore, next);
     }
     function changed(): void { publishState(); schedule(); }
-    const setScrollLinked = (value: boolean) => { referenceScope.assertWritable(); scroll.setLinked(value); publishState(); };
+    const setScrollLinked = (value: boolean) => { stateScope.assertWritable(); scroll.setLinked(value); publishState(); };
     const setRowsAligned = (value: boolean) => {
-        referenceScope.assertWritable();
+        stateScope.assertWritable();
         if (value && !alignment.snapshot().enabled) scroll.setLinked(true);
         alignment.setEnabled(value); publishState();
     };
     function clearReference(): void {
         referenceDiff?.dispose(); referenceDiff = undefined;
-        publishReference(undefined);
         const retiredEditor = referenceEditor(); try { pair.setReference(undefined); } finally { retiredEditor?.dispose(); }
-        if (displayTarget && workspace.resolveTab(displayTarget)) workspace.close(displayTarget.id);
-        displayTab = undefined; displayTarget = undefined;
         if (display) { const retired = display; display = undefined; workspace.releaseResourceWhenUnowned(retired.id); }
     }
     function render(): void {
         if (disposed) return; state = controller.getSnapshot();
-        if (state.baseline && state.baseline.epoch !== epoch) {
-            clearReference(); epoch = state.baseline.epoch;
-            display = workspace.createTextResourceFromBuffer(workspace.createResourceKey("comparison", "baseline"), "Comparison baseline",
+        if (state.baseline && !referenceEditor()) {
+            if (typeof baseline !== "string") display = workspace.createTextResourceFromBuffer(workspace.createResourceKey("comparison", "baseline"), "Comparison baseline",
                 { buffer: state.baseline.buffer, serverVersion: state.baseline.version }, { edit: [], save: false, run: false }, { visibility: "internal" });
-            displayTab = workspace.open({ kind: "text", documentId: display.documentId }, display.id);
-            displayTarget = workspace.captureTab(displayTab);
-            const mounted = mountEditor(referencePane.content, workspace, displayTab, { ariaLabel: "Comparison baseline source", ...paneOptions });
+            const referenceId = typeof baseline === "string" ? baseline : display!.documentId;
+            const mounted = mountEditor(referencePane.content, workspace, referenceId, { ariaLabel: "Comparison baseline source", readOnly: true, ...paneOptions });
             const editor = mounted.editor;
             referenceDiff = differences(editor, "baseline");
             try { pair.setReference(mounted); } catch (error) { editor.dispose(); throw error; }
-            publishReference(Object.freeze({ editor, target: displayTarget, epoch, version: state.baseline.version }));
         } else if (!state.baseline && referenceViewport()) clearReference();
+        epoch = state.baseline?.epoch ?? -1;
         if (root.dataset.status !== state.status) root.dataset.status = state.status;
         alignment.update(); scroll.update();
         const generation = String(state.generation); if (root.dataset.generation !== generation) root.dataset.generation = generation;
@@ -165,7 +157,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         render(); if (controller.getSnapshot().status === "running") schedule();
     }
     function selectHunk(generation: number, index: number): boolean {
-        referenceScope.assertWritable();
+        stateScope.assertWritable();
         const current = controller.getSnapshot(), reference = referenceViewport();
         if (disposed || composing() || current.status !== "ready" || current.generation !== generation || !Number.isSafeInteger(index)) return false;
         const hunk = current.hunks[index]; if (!hunk || !current.working || !reference || epoch !== current.baseline?.epoch) return false;
@@ -177,7 +169,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         reference.revealOffset(hunk.baseline.from); working.viewport.revealOffset(hunk.working.from); render(); return true;
     }
     function revertHunk(generation: number, index: number): boolean {
-        referenceScope.assertWritable();
+        stateScope.assertWritable();
         if (disposed || composing() || working.input.readOnly || working.input.disabled) return false;
         return controller.revert(generation, index);
     }
@@ -186,7 +178,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     const unsubscribe = controller.subscribe(() => { state = controller.getSnapshot(); changed(); }),
         stopMetadata = workspace.resourceForDocument(controller.view.documentId).metadata.subscribe(changed);
     function dispose(): void {
-        if (disposed) return; referenceScope.assertWritable(); disposed = true; runner.cancel(); scheduled = false;
+        if (disposed) return; stateScope.assertWritable(); disposed = true; runner.cancel(); scheduled = false;
         try {
             unsubscribe(); stopMetadata(); scroll.dispose(); alignment.dispose();
             try { clearReference(); } finally { pair.dispose(); working.dispose(); }
@@ -196,9 +188,16 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     }
     try {
         render(); setRowsAligned(options.rowsAligned ?? false); setScrollLinked(options.scrollLinked ?? options.rowsAligned ?? false);
-        if (options.controls !== false) stopControls = mountComparisonControls({ element: root, working, ...stateStore.observable, selectHunk, revertHunk, setScrollLinked, setRowsAligned }, referencePane.section, workingPane.section);
+        const reference = referenceEditor();
+        if (!reference) throw new Error("Comparison reference expired during mount.");
+        const editors = Object.freeze({ working, reference });
+        let active = working;
+        for (const editor of Object.values(editors))
+            editor.element.addEventListener("focusin", () => { active = editor; }, { signal: editor.signal });
+        const review: TextComparison = Object.freeze({ element: root, controller, panes: editors, activePane: () => active, ...stateStore.observable, selectHunk, revertHunk, setScrollLinked, setRowsAligned,
+            getDiagnostics: () => Object.freeze({ generation: measuredGeneration, steps, advances, maxStepMs, totalStepMs, scrollLinked: scroll.snapshot().linked, pendingScroll: scroll.snapshot().pending, rowsAligned: alignment.snapshot().enabled, alignment: alignment.snapshot(), disposed }), dispose });
+        if (options.controls !== false) stopControls = mountComparisonControls(review, referencePane.section, workingPane.section);
         schedule();
+        return review;
     } catch (error) { dispose(); throw error; }
-    return Object.freeze({ element: root, controller, working, referenceViewport, referenceEditor, reference: referenceStore.observable, ...stateStore.observable, selectHunk, revertHunk, setScrollLinked, setRowsAligned,
-        getDiagnostics: () => Object.freeze({ generation: measuredGeneration, steps, advances, maxStepMs, totalStepMs, scrollLinked: scroll.snapshot().linked, pendingScroll: scroll.snapshot().pending, rowsAligned: alignment.snapshot().enabled, alignment: alignment.snapshot(), referenceSubscriptions: referenceScope.subscriptionCount(), disposed }), dispose });
 }

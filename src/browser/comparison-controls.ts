@@ -2,7 +2,7 @@ import type { TextComparison, TextComparisonSnapshot } from "./comparison.ts";
 
 /** Optional presentation. Pane ownership and command validation stay with the comparison. */
 export function mountComparisonControls(
-    comparison: Pick<TextComparison, "element" | "working" | "getSnapshot" | "subscribe" | "selectHunk" | "revertHunk" | "setScrollLinked" | "setRowsAligned">,
+    comparison: Pick<TextComparison, "element" | "panes" | "getSnapshot" | "subscribe" | "selectHunk" | "revertHunk" | "setScrollLinked" | "setRowsAligned">,
     referencePane: HTMLElement, workingPane: HTMLElement
 ): () => void {
     const owner = comparison.element.ownerDocument, controls = owner.createElement("div"), listeners = new AbortController();
@@ -59,7 +59,7 @@ export function mountComparisonControls(
     revert.addEventListener("click", () => {
         const state = comparison.getSnapshot();
         if (state.canRevert && state.selectedHunk !== null) {
-            comparison.working.focus();
+            comparison.panes.working.focus();
             comparison.revertHunk(state.comparison.generation, state.selectedHunk);
         }
     }, { signal: listeners.signal });

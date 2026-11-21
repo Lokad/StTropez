@@ -23,7 +23,6 @@ const element = (id: string) => document.getElementById(id)!;
 const field = (id: string) => element(id) as HTMLInputElement;
 const button = (id: string) => element(id) as HTMLButtonElement;
 const codeMenu = element("code-menu") as HTMLDetailsElement;
-const foldMenu = mountDemoFoldMenu(codeMenu);
 const projects = new Map<SampleId, DemoProject>(), activeFiles = new Map<SampleId, string>();
 const listeners = new AbortController(), sample = element("sample") as HTMLSelectElement;
 const pageOptions = new URL(location.href).searchParams;
@@ -31,6 +30,7 @@ const openProvider = selectDemoProvider(pageOptions.get("provider") ?? document.
 for (const choice of sampleChoices) { const option = document.createElement("option"); option.value = choice.id; option.textContent = choice.title; sample.append(option); }
 let project: DemoProject | undefined, active: DemoFile | undefined, editor: TextEditor | undefined;
 let comparison: TextComparison | undefined, find: FindController | undefined;
+const foldMenu = mountDemoFoldMenu(codeMenu, () => comparison?.activePane() ?? editor);
 let output: ReturnType<typeof mountDemoOutput> | undefined;
 let panel: "javascript" | "problems" | "changes" = "javascript", disposed = false, opening = 0;
 let metadataFrame: number | undefined;
@@ -298,32 +298,23 @@ function mountFile(file: DemoFile, focus = false): void {
         const hint = document.createElement("span"); hint.className = "demo-review-hint";
         hint.textContent = "Fold each pane independently. Shaded gaps keep matching lines aligned.";
         labels.append(savedLabel, workingLabel, hint); surface.prepend(labels);
-        editor = comparison.working;
-        const configureReference = () => {
-            stopReferenceFolding?.(); stopReferenceFolding = undefined;
-            referenceFolding?.dispose(); referenceFolding = undefined;
-            referencePresentation?.dispose(); referencePresentation = undefined;
-            const reference = comparison?.reference.getSnapshot(); if (!reference) return;
-            const plain = hostLanguage();
-            let tokens: DecorationProvider | undefined;
-            const syntax: DemoPresentation | undefined = plain ? undefined : new DemoPresentation(() => {
-                tokens?.invalidate(); if (syntax?.status === "ready") refreshBrackets(reference.editor); renderMetadata();
-            }, { emit: false, folds: true });
-            referencePresentation = syntax;
-            if (syntax || project?.sample.id === "host") tokens = reference.editor.decorations.addProvider({ name: "syntax", order: 0, provide: syntax?.decorate ?? hostDecorations });
-            reference.editor.configure({ language: editingConfiguration(syntax?.editing) });
-            syntax?.update(project!.workspace.document(reference.editor.view.documentId));
-            referenceFolding = createFoldingController(reference.editor,
-                (capture, signal) => plain
-                    ? discoverIndentationFolds(capture.buffer, outlineFolds(editingConfiguration().tabSize!)) : syntax!.discoverFolds(capture, signal));
-            stopReferenceFolding = foldMenu.bind(reference.editor, referenceFolding, "Saved copy", false);
-        };
-        let referenceSyncQueued = false, referenceSyncActive = true;
-        const unsubscribeReference = comparison.reference.subscribe(() => {
-            if (referenceSyncQueued) return; referenceSyncQueued = true;
-            queueMicrotask(() => { referenceSyncQueued = false; if (referenceSyncActive) configureReference(); });
-        });
-        stopReference = () => { referenceSyncActive = false; unsubscribeReference(); }; configureReference();
+        editor = comparison.panes.working;
+        const reference = comparison.panes.reference, plain = hostLanguage();
+        let tokens: DecorationProvider | undefined;
+        const syntax: DemoPresentation | undefined = plain ? undefined : new DemoPresentation(() => {
+            tokens?.invalidate(); if (syntax?.status === "ready") refreshBrackets(reference); renderMetadata();
+        }, { emit: false, folds: true });
+        referencePresentation = syntax;
+        if (syntax || project.sample.id === "host") tokens = reference.decorations.addProvider({ name: "syntax", order: 0, provide: syntax?.decorate ?? hostDecorations });
+        reference.configure({ language: editingConfiguration(syntax?.editing) });
+        if (syntax) {
+            const source = reference.workspace.observeDocument(reference.view.documentId);
+            const update = () => { const current = source.getSnapshot(); if (current) syntax.update(current); };
+            stopReference = source.subscribe(update); update();
+        }
+        referenceFolding = createFoldingController(reference,
+            (capture, signal) => plain ? discoverIndentationFolds(capture.buffer, outlineFolds(editingConfiguration().tabSize!)) : syntax!.discoverFolds(capture, signal));
+        stopReferenceFolding = foldMenu.bind(reference, referenceFolding, "Saved copy");
     } else {
         editor = mountTextEditor(surface, project.workspace, file.tab,
             { settings, view: file.view, ariaLabel: file.name, requestLine: linePrompt(document) });
@@ -335,7 +326,7 @@ function mountFile(file: DemoFile, focus = false): void {
     if (savedViews.has(file.view)) editor.restoreView({ ...savedViews.get(file.view)!, ...file.view.getSnapshot().selection,
         selectionSet: file.view.getSnapshot().selectionSet });
     folding = mountDemoFolding(project, editor, () => editingConfiguration().tabSize!);
-    stopFolding = foldMenu.bind(editor, folding, comparison ? "Your changes" : "Source", true);
+    stopFolding = foldMenu.bind(editor, folding, comparison ? "Your changes" : "Source");
     viewListeners = new AbortController();
     stopRender = editor.viewport.onRender(renderGutter);
     editor.input.addEventListener("compositionstart", renderMetadata, { signal: viewListeners.signal });
@@ -485,12 +476,12 @@ on("go-to-line", () => { editor?.focus(); editor?.runCommand("go-to-line"); });
 on("inspect-characters", () => { if (editor && project) inspectCharacters(editor, project.workspace, element("character-warning-details")); });
 field("character-warnings").addEventListener("change", () => {
     const enabled = field("character-warnings").checked;
-    editor?.configure({ characterWarnings: enabled }); comparison?.reference.getSnapshot()?.editor.configure({ characterWarnings: enabled });
+    editor?.configure({ characterWarnings: enabled }); comparison?.panes.reference.configure({ characterWarnings: enabled });
     element("character-warning-details").replaceChildren();
 }, { signal: listeners.signal });
 for (const id of ["view-rulers", "view-current-line", "view-ligatures", "view-trailing-space", "view-minimap"]) field(id).addEventListener("change", () => {
     const settings = presentationSettings();
-    editor?.configure(settings); comparison?.reference.getSnapshot()?.editor.configure(settings);
+    editor?.configure(settings); comparison?.panes.reference.configure(settings);
     output?.configure({ minimap: settings.minimap, fontLigatures: settings.fontLigatures });
 }, { signal: listeners.signal });
 on("quickfix", () => languageView?.quickfix());
@@ -499,7 +490,7 @@ for (const command of ["line-comment", "block-comment", "indent", "outdent"] as 
 });
 indentation.addEventListener("change", () => {
     editor?.configure({ language: editingConfiguration() });
-    comparison?.referenceEditor()?.configure({ language: editingConfiguration(referencePresentation?.editing) }); folding?.refresh(); referenceFolding?.refresh(); editor?.focus();
+    comparison?.panes.reference.configure({ language: editingConfiguration(referencePresentation?.editing) }); folding?.refresh(); referenceFolding?.refresh(); editor?.focus();
 }, { signal: listeners.signal });
 codeMenu.addEventListener("click", event => {
     const target = event.target as HTMLElement;

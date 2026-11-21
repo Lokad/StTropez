@@ -77,9 +77,9 @@ export class ViewBindings {
             const review = this.review.getSnapshot();
             this.reviewScrollLinked = review.scrollLinked;
             this.reviewRowsAligned = review.alignment.enabled;
-            const baseline = this.review.controller.getSnapshot().baseline, reference = this.review.referenceEditor();
-            if (baseline && reference) this.referenceState = { baseline, state: reference.captureView() };
-            if (this.review.controller.getSnapshot().working) this.retainState("comparison", this.review.working.view.documentId, this.review.working.captureView());
+            const baseline = this.review.controller.getSnapshot().baseline, reference = this.review.panes.reference;
+            if (baseline) this.referenceState = { baseline, state: reference.captureView() };
+            if (this.review.controller.getSnapshot().working) this.retainState("comparison", this.review.panes.working.view.documentId, this.review.panes.working.captureView());
         }
         const previous = this.reviewScope; this.reviewScope = undefined; previous?.dispose();
         if (!host) return;
@@ -100,45 +100,28 @@ export class ViewBindings {
             this.review = review;
             scope.defer(() => { if (this.review === review) this.review = undefined; review.dispose(); });
             const saveTarget = this.controller.workspace.captureTab(this.controller.viewTab("primary"));
-            this.attachTools(scope, "comparison", this.controller.viewTab("primary"), review.working, presentation);
+            this.attachTools(scope, "comparison", this.controller.viewTab("primary"), review.panes.working, presentation);
             scope.defer(() => referencePresentation.clear());
-            let detachReferenceFind: (() => void) | undefined;
-            let resumeReferenceFind = false;
-            const reviewReference = review.reference;
-            const syncReferenceFind = () => {
-                const active = this.language.state.getSnapshot().view;
-                resumeReferenceFind = active === "reference" || resumeReferenceFind && active === null;
-                detachReferenceFind?.(); detachReferenceFind = undefined; referencePresentation.clear();
-                const value = reviewReference.getSnapshot();
-                if (value) {
-                    value.editor.decorations.addProvider({ name: "syntax", order: 0, provide: referencePresentation.decorate });
-                    const reference = review.controller.getSnapshot().baseline!;
-                    detachReferenceFind = this.language.attachReferenceFind("reference", value.target, value.editor, referencePresentation, reference, saveTarget, resumeReferenceFind);
-                    resumeReferenceFind = false;
-                }
-            };
-            let referenceSyncQueued = false, referenceSyncActive = true;
-            const stopReferenceFind = reviewReference.subscribe(() => {
-                if (referenceSyncQueued) return; referenceSyncQueued = true;
-                queueMicrotask(() => { referenceSyncQueued = false; if (referenceSyncActive) syncReferenceFind(); });
-            });
-            scope.defer(() => detachReferenceFind?.());
-            scope.defer(stopReferenceFind);
-            scope.defer(() => { referenceSyncActive = false; });
-            syncReferenceFind();
+            const reference = review.panes.reference;
+            reference.decorations.addProvider({ name: "syntax", order: 0, provide: referencePresentation.decorate });
+            scope.defer(this.language.attachReferenceFind("reference", reference, referencePresentation, () => review.controller.getSnapshot().baseline, saveTarget));
             const state = this.states.get("comparison")?.get(view.documentId);
-            if (state) review.working.restoreView(this.restoreState(state, view));
-            if (this.referenceState?.baseline.buffer === baseline.buffer && this.referenceState.baseline.version === baseline.version)
-                review.referenceEditor()?.restoreView(this.referenceState.state);
-            else this.referenceState = undefined;
-            const documentId = review.working.view.documentId;
-            review.working.input.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
-            const working = review.working;
+            if (state) review.panes.working.restoreView(this.restoreState(state, view));
+            if (this.referenceState?.baseline.buffer === baseline.buffer && this.referenceState.baseline.version === baseline.version) {
+                // The new private document holds the same immutable bytes. Translate only anchors
+                // captured at the saved revision, including an anchor inside aligned-row padding.
+                const { folding: saved, verticalAnchor, horizontalAnchor, ...state } = this.referenceState.state;
+                const revision = reference.view.getSnapshot().revision;
+                reference.restoreView({ ...state,
+                    ...(saved && { folding: { ...saved, documentId: reference.view.documentId, revision } }),
+                    ...(verticalAnchor && verticalAnchor.revision === saved?.revision && { verticalAnchor: { ...verticalAnchor, revision } }),
+                    ...(horizontalAnchor && horizontalAnchor.revision === saved?.revision && { horizontalAnchor: { ...horizontalAnchor, revision } }) });
+            } else this.referenceState = undefined;
+            const documentId = review.panes.working.view.documentId;
+            review.panes.working.input.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
+            const working = review.panes.working;
             this.bindSaveShortcut(working.input, this.controller.viewTab("primary"), () => working.activity().composing, listeners.signal);
-            review.element.addEventListener("keydown", event => {
-                const reference = review.referenceEditor();
-                if (reference && event.target === reference.input) this.handleSaveShortcut(event, reference.input, saveTarget, () => reference.activity().composing);
-            }, { signal: listeners.signal });
+            reference.input.addEventListener("keydown", event => this.handleSaveShortcut(event, reference.input, saveTarget, () => reference.activity().composing), { signal: listeners.signal });
             scope.defer(this.controller.comparisonReference.subscribe(() => this.updateReference()));
             this.reviewScope = scope;
         } catch (error) { scope.rollback(error); }
@@ -181,14 +164,14 @@ export class ViewBindings {
     readonly finishReferenceRefresh = (): void => this.finishReference("refresh");
     readonly beginReviewAcceptance = (): void => this.beginReference("accept");
     readonly finishReviewAcceptance = (): void => this.finishReference("accept");
-    private composing(): boolean { return this.review?.working.activity().composing === true || [...this.mounted.values()].some(value => value.candidate?.activity().composing); }
+    private composing(): boolean { return this.review?.panes.working.activity().composing === true || [...this.mounted.values()].some(value => value.candidate?.activity().composing); }
     readonly beginDiscard = (): void => {
         if (!this.review) return;
         for (const { ticket } of this.discardTickets.splice(0)) ticket.cancel();
         if (this.composing() || this.review.controller.getSnapshot().status !== "ready") {
             this.reviewResult = "Finish composition and wait for the review before discarding changes."; this.reviewStatus!.textContent = this.reviewResult; return;
         }
-        if (this.review.working.input.disabled || this.review.working.input.readOnly) {
+        if (this.review.panes.working.input.disabled || this.review.panes.working.input.readOnly) {
             this.reviewResult = "The working source is read-only. Changes were retained."; this.reviewStatus!.textContent = this.reviewResult; return;
         }
         try { const ticket = this.review.controller.beginReversion(); this.discardTickets.push({ ticket, variantGeneration: this.controller.variants.state.getSnapshot().generation });
@@ -205,7 +188,7 @@ export class ViewBindings {
         this.reviewResult = "Discard cancelled. Working text was retained."; if (this.reviewStatus) this.reviewStatus.textContent = this.reviewResult; };
     referenceRange(from: number, to: number): string | undefined { return this.review?.controller.getSnapshot().baseline?.buffer.slice(from, to); }
     onSourceRender(id: "primary" | "secondary" | "comparison", listener: () => void): () => void {
-        const editor = id === "comparison" ? this.review?.working : this.mounted.get(id)?.candidate;
+        const editor = id === "comparison" ? this.review?.panes.working : this.mounted.get(id)?.candidate;
         if (!editor) throw new Error("Source viewport is not mounted.");
         return editor.viewport.onRender(listener);
     }
@@ -213,22 +196,22 @@ export class ViewBindings {
         return this.mounted.get(id)?.editor.view.setSelection(revision, selection) ?? false;
     }
     selectSourceSet(id: "primary" | "secondary" | "comparison", revision: number, ranges: readonly Selection[], primary = 0): boolean {
-        const view = id === "comparison" ? this.review?.working.view : this.mounted.get(id)?.editor.view;
+        const view = id === "comparison" ? this.review?.panes.working.view : this.mounted.get(id)?.editor.view;
         return view?.setSelections(revision, ranges, primary) ?? false;
     }
     configureSource(id: "primary" | "secondary" | "comparison", configuration: import("../../src/index.ts").LanguageConfiguration): boolean {
-        const editor = id === "comparison" ? this.review?.working : this.mounted.get(id)?.candidate;
+        const editor = id === "comparison" ? this.review?.panes.working : this.mounted.get(id)?.candidate;
         return editor?.configure({ language: configuration }) ?? false;
     }
     constructor(controller: HostController, editor: HostEditor = "candidate", mountNative?: NativeEditorMount) {
         if (editor === "native" && !mountNative) throw new Error("The native source control requires a fixture mount.");
         this.controller = controller; this.editor = editor; this.mountNative = mountNative;
         this.tablePaste = new HostTablePaste(controller.workspace, editor === "candidate");
-        this.domain = new HostDomainTools(controller.workspace, documentId => !this.tablePaste.hasPendingInput(documentId) && !(this.review?.working.view.documentId === documentId && (this.review.working.activity().pendingInput || this.review.working.activity().composing))
+        this.domain = new HostDomainTools(controller.workspace, documentId => !this.tablePaste.hasPendingInput(documentId) && !(this.review?.panes.working.view.documentId === documentId && (this.review.panes.working.activity().pendingInput || this.review.panes.working.activity().composing))
             && ![...this.mounted.values()].some(value => { const activity = value.candidate?.activity(); return value.documentId === documentId && (activity?.pendingInput || activity?.composing); }));
         const canCapture = (documentId: DocumentId) => {
             const busy = (activity: ReturnType<TextEditor["activity"]> | undefined) => activity && (activity.pendingInput || activity.pendingCommand || activity.composing);
-            return !this.tablePaste.hasPendingInput(documentId) && !(this.review?.working.view.documentId === documentId && busy(this.review.working.activity())) && ![...this.mounted.values()].some(value => value.documentId === documentId && busy(value.candidate?.activity()));
+            return !this.tablePaste.hasPendingInput(documentId) && !(this.review?.panes.working.view.documentId === documentId && busy(this.review.panes.working.activity())) && ![...this.mounted.values()].some(value => value.documentId === documentId && busy(value.candidate?.activity()));
         };
         const lsp = hostLspFactories(controller.workspace);
         this.lspOwner = lsp.owner;
@@ -245,11 +228,11 @@ export class ViewBindings {
             () => { const provider = this.language.state.getSnapshot().provider; return !!provider && (provider.pending || provider.offerText !== null); }, reconnectProvider);
         this.tools = [this.language, this.hover, this.tablePaste, this.domain, this.navigation, this.project,
             this.signature, this.rename, this.actions, this.links, this.colors];
-        this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.instructionMount?.hasPendingInput() && !this.tablePaste.hasPendingInput(controller.source.documentId) && !this.review?.working.activity().pendingInput
+        this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.instructionMount?.hasPendingInput() && !this.tablePaste.hasPendingInput(controller.source.documentId) && !this.review?.panes.working.activity().pendingInput
             && ![...this.mounted.values()].some(value => value.candidate?.activity().pendingInput),
             documentId => this.selections.get("primary")?.get(documentId) ?? this.selections.get("comparison")?.get(documentId) ?? this.selections.get("secondary")?.get(documentId));
         this.stopDocumentCleanup = controller.registerDetachedDocumentCleanup(documentId => {
-            if ([...this.mounted.values()].some(value => value.documentId === documentId) || this.review?.working.view.documentId === documentId) return;
+            if ([...this.mounted.values()].some(value => value.documentId === documentId) || this.review?.panes.working.view.documentId === documentId) return;
             for (const selections of this.selections.values()) { selections.get(documentId)?.dispose(); selections.delete(documentId); }
             for (const states of this.states.values()) states.delete(documentId);
         });
@@ -377,12 +360,12 @@ export class ViewBindings {
             referenceIsWorkingBuffer: comparison.baseline !== null && comparison.baseline.buffer === comparison.working?.buffer,
             progress: comparison.progress && { work: comparison.progress.work, readUnits: comparison.progress.readUnits,
                 lineEdits: comparison.progress.lineEdits },
-            viewId: this.review!.working.view.id, foldGeneration: this.review!.working.view.folding.getSnapshot().generation, selection: this.review!.working.view.getSnapshot().selection, selectionSet: this.review!.working.view.getSnapshot().selectionSet,
+            viewId: this.review!.panes.working.view.id, foldGeneration: this.review!.panes.working.view.folding.getSnapshot().generation, selection: this.review!.panes.working.view.getSnapshot().selection, selectionSet: this.review!.panes.working.view.getSnapshot().selectionSet,
             baseline: comparison.baseline && { version: comparison.baseline.version, epoch: comparison.baseline.epoch, length: comparison.baseline.buffer.length, exports: comparison.baseline.buffer.readMetrics().textExports },
             hunks: comparison.hunks.length, pending: this.reviewTickets.map(ticket => ({ kind: ticket.kind, revision: ticket.capture.working.revision, current: ticket.isCurrent() })),
-            result: this.reviewResult, work: this.review!.getDiagnostics(), input: this.review!.working.snapshot(), referenceInput: this.review!.referenceEditor()?.snapshot() ?? null,
+            result: this.reviewResult, work: this.review!.getDiagnostics(), input: this.review!.panes.working.snapshot(), referenceInput: this.review!.panes.reference.snapshot(),
             discards: this.discardTickets.map(({ ticket, variantGeneration }) => ({ revision: ticket.capture.working.revision, current: ticket.isCurrent() && this.controller.variants.state.getSnapshot().generation === variantGeneration })),
-            workingViewport: this.review!.working.viewport.snapshot(), referenceViewport: this.review!.referenceViewport()?.snapshot() } : null,
+            workingViewport: this.review!.panes.working.viewport.snapshot(), referenceViewport: this.review!.panes.reference.viewport.snapshot() } : null,
         views: [...this.mounted].map(([id, { editor, documentId }]) => ({ id, documentId, viewId: editor.view.id, foldGeneration: editor.view.folding.getSnapshot().generation,
             selection: editor.view.getSnapshot().selection, selectionSet: editor.view.getSnapshot().selectionSet, focused: editor.element.ownerDocument.activeElement === editor.element, metrics: editor.metrics() })) }; }
 }

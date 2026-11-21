@@ -52,11 +52,17 @@ for (const host of ["plain", "react"]) for (const editor of ["native", "candidat
         expect(remounted.referenceViewport!.selection).toEqual(before.referenceViewport!.selection);
         expect(remounted.referenceViewport!.scrollTop).toBeCloseTo(before.referenceViewport!.scrollTop, 3);
         expect(await input.evaluate(node => node === document.activeElement)).toBe(false);
+        // Select an unchanged character after both edits. Acceptance maps it onto the new saved copy.
+        const reference = page.getByRole("textbox", { name: "Comparison baseline source", exact: true });
+        await reference.press("Control+End"); await reference.press("Shift+ArrowLeft"); await waitForReview(page);
+        const retained = (await page.evaluate(() => window.hostFixture.snapshot())).bindings.comparison!;
         await click("Capture review acceptance"); await click("Finish review acceptance"); await waitForReview(page);
         const replaced = (await page.evaluate(() => window.hostFixture.snapshot())).bindings.comparison!;
         expect(replaced.viewId).toBe(before.viewId); expect(replaced.selection).toEqual(remounted.selection);
-        expect(replaced.referenceViewport!.selection).toMatchObject({ anchor: 0, head: 0 });
-        expect(replaced.referenceViewport!.scrollTop).toBe(0); expect(replaced.referenceViewport!.scrollLeft).toBe(0);
+        const shift = replaced.baseline!.length - retained.baseline!.length, selection = retained.referenceViewport!.selection!;
+        expect(replaced.referenceViewport!.selection).toEqual({ ...selection, anchor: selection.anchor + shift, head: selection.head + shift });
+        expect(replaced.referenceViewport!.scrollTop).toBeCloseTo(retained.referenceViewport!.scrollTop, 3);
+        expect(replaced.referenceViewport!.scrollLeft).toBeCloseTo(retained.referenceViewport!.scrollLeft, 3);
         await page.evaluate(() => window.hostFixture.dispose());
         expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 });
     });

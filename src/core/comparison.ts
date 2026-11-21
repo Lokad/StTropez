@@ -42,6 +42,13 @@ function baseline(value: ComparisonBaseline, epoch: number): ComparisonBaseline 
 /** A reference version is independent of the working resource's saved/server version. No I/O or implicit save. */
 export function createComparisonController(workspace: Workspace, identity: DocumentId | TabId, initial: ComparisonBaseline | DocumentId,
     options: Readonly<{ view?: DocumentView; onListenerError?: (error: unknown) => void }> = {}): ComparisonController {
+    return compareText(workspace, identity, initial, options);
+}
+
+/** The browser can project an external reference into a retained document in the same publication. */
+export function compareText(workspace: Workspace, identity: DocumentId | TabId, initial: ComparisonBaseline | DocumentId,
+    options: Readonly<{ view?: DocumentView; onListenerError?: (error: unknown) => void }>,
+    projectReference?: (next: ComparisonBaseline) => boolean): ComparisonController {
     const { documentId, resource, tab: target } = captureTextSurface(workspace, identity);
     const document = workspace.document(documentId);
     const referenceDocument = typeof initial === "string" ? workspace.observeDocument(initial) : undefined;
@@ -108,7 +115,11 @@ export function createComparisonController(workspace: Workspace, identity: Docum
                 // Acceptance always advances to the captured revision, even if more human edits arrived.
                 const next = baseline(kind === "accept" ? { buffer: capture.working.buffer, version: value.version } : value, capture.baselineEpoch + 1);
                 if (kind === "accept" && value.buffer !== capture.working.buffer) throw new Error("Acceptance must use its captured working buffer.");
-                restart(next, workspace.document(documentId)); return true;
+                if (!projectReference) { restart(next, workspace.document(documentId)); return true; }
+                return scope.batch(() => {
+                    if (!projectReference(next)) return false;
+                    restart(next, workspace.document(documentId)); return true;
+                });
             } finally { finish(); }
         }, cancel: finish, finish });
     }

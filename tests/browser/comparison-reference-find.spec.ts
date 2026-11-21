@@ -54,7 +54,6 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) {
         test.setTimeout(120000);
         const { n, raw, prefix } = await referenceCase(p, host, large);
         const before = await snapshot(p), providers = before.bindings.language.sessions.map(s => s.provider.posted), first = raw.indexOf("needle"), second = raw.indexOf("needle", first + 1);
-        expect(before.bindings.comparison!.work.referenceSubscriptions).toBe(1);
         await input(p).press("Control+Home");
         await input(p).press("Control+f");
         await expect(query(p)).toBeFocused();
@@ -156,18 +155,6 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) {
         await input(p, false).press("Control+Home");
         await flag(p, "Regular expression").check();
         await found(p, 1);
-        const beforeSelect = await snapshot(p);
-        await p.evaluate(() => { window.holdReferenceMatches = true; });
-        await query(p).fill("WORKING-ONLY|not-selected");
-        await p.waitForFunction(() => !!window.heldReferenceMatches?.length);
-        await replacement.press("Enter");
-        expect((await snapshot(p)).bindings.language.findCommandPending).toBe("replace");
-        await p.evaluate(() => { window.holdReferenceMatches = false; for (const { worker, data } of window.heldReferenceMatches!)
-            worker.dispatchEvent(new MessageEvent("message", { data })); window.heldReferenceMatches = []; });
-        await found(p, 1);
-        await expect.poll(async () => (await snapshot(p)).bindings.comparison!.selection).toMatchObject({ anchor: 0, head: 12 });
-        expect((await snapshot(p)).history).toEqual(beforeSelect.history);
-        await exact(p, prefix + raw);
         const beforeReplacement = await snapshot(p);
         await p.evaluate(() => { window.holdReferenceMatches = true; });
         await query(p).fill("WORKING-ONLY|not-present");
@@ -208,7 +195,6 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) {
         await waitForReview(p);
         let s = await snapshot(p);
         expect(s.bindings.language.referenceFind).toHaveLength(1);
-        expect(s.bindings.comparison!.work.referenceSubscriptions).toBe(1);
         expect(s.bindings.comparison!.referenceViewport!.selectionSet).toEqual(mounted.bindings.comparison!.referenceViewport!.selectionSet);
         expect(s.history).toEqual(mounted.history);
         expect(s.bindings.language.active).toBe("reference");
@@ -411,7 +397,7 @@ for (const host of ["plain", "react"]) {
         });
     }
 
-    test(`${host} reference refresh closes its old regex worker and rejects both queued replies`, async ({ page: p }) => {
+    test(`${host} reference refresh retains the query and rejects queued navigation from the old revision`, async ({ page: p }) => {
         test.setTimeout(120000);
         const raw = await regexCase(p, host, true);
         await input(p, false).press("Control+Home"); await input(p, false).press("Control+f");
@@ -425,31 +411,31 @@ for (const host of ["plain", "react"]) {
         await p.waitForFunction(() => window.heldReferenceMatches?.length === 2);
         await query(p).press("Shift+Enter");
         expect((await snapshot(p)).bindings.language.navigationPending).toBe(true);
-        const before = await snapshot(p), oldView = before.bindings.language.referenceFind[0]!.viewId, closed = (await heldRegexWorker(p)).waitForEvent("close", { timeout: 10000 });
+        const before = await snapshot(p), oldView = before.bindings.language.referenceFind[0]!.viewId;
         await p.evaluate(() => { for (const name of ["Capture reference refresh", "Finish reference refresh"]) {
             const button = [...document.querySelectorAll("button")].find(n => n.textContent === name);
             if (!button)
                 throw new Error("Missing refresh control.");
             button.click();
         } });
-        await closed;
+
         await waitForReview(p);
         let s = await snapshot(p);
         expect(s.bindings.language.active).toBe("reference");
         expect(s.bindings.language.referenceFind).toHaveLength(1);
-        expect(s.bindings.language.referenceFind[0]!.viewId).not.toBe(oldView);
-        expect(s.bindings.comparison!.work.referenceSubscriptions).toBe(1);
+        expect(s.bindings.language.referenceFind[0]!.viewId).toBe(oldView);
         expect(s.diagnostics.resources).toBe(before.diagnostics.resources);
         expect(s.diagnostics.documents).toBe(before.diagnostics.documents);
         expect(s.diagnostics.views).toBe(before.diagnostics.views);
-        expect(s.diagnostics.leases).toBe(before.diagnostics.leases - 1);
+        expect(s.diagnostics.leases).toBe(before.diagnostics.leases);
         await p.evaluate(() => { window.holdReferenceMatches = false; for (const { worker, data } of window.heldReferenceMatches!)
             worker.dispatchEvent(new MessageEvent("message", { data })); window.heldReferenceMatches = []; });
         await waitForReview(p);
         s = await snapshot(p);
         expect(s.history).toEqual(before.history);
         expect(s.source.revision).toBe(before.source.revision);
-        expect(s.bindings.language.referenceFind[0]!.find).toBeNull();
+        expect(s.bindings.language.referenceFind[0]!.find).toMatchObject({ query: before.bindings.language.referenceFind[0]!.find!.query, count: 0 });
+        await expect(query(p)).toBeFocused();
         expect(s.bindings.language.navigationPending).toBe(false);
         await exact(p, raw);
         await dispose(p);
@@ -556,7 +542,7 @@ for (const host of ["plain", "react"]) {
         await waitForReview(p);
         let s = await snapshot(p);
         expect(s.bindings.language.active).toBe("comparison");
-        expect(s.bindings.language.referenceFind[0]!.find).toBeNull();
+        expect(s.bindings.language.referenceFind[0]!.find?.query).toBe(freshQuery);
         await query(p).fill("needle");
         await found(p, 4000);
         expect((await snapshot(p)).bindings.language.active).toBe("comparison");

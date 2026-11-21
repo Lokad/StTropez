@@ -4,7 +4,7 @@ import { basename } from "node:path";
 
 test.beforeEach(async ({ page }) => {
     // Two evaluations of the browser entry share one core module, like separately loaded views.
-    const built = await build({ entryPoints: { core: "src/index.ts", comparison: "src/browser/comparison.ts" }, outdir: "artifacts/comparison-ownership",
+    const built = await build({ entryPoints: { core: "src/index.ts", comparison: "src/browser/comparison.ts", tools: "src/browser/index.ts" }, outdir: "artifacts/comparison-ownership",
         bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
     const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
     await page.route("**/comparison-ownership/**", route => {
@@ -23,7 +23,7 @@ test("independent comparison modules share workspace identity and release retain
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "source", variant: "working" }, "Working", { value: "working" });
         const tab = workspace.open({ kind: "text", documentId: source.documentId }, "working"), view = workspace.createDocumentView(source.documentId);
         const host = document.createElement("section"); document.body.append(host);
-        const baseline = { buffer: TextBuffer.from("baseline"), version: "one" };
+        const baseline = { buffer: TextBuffer.from("head\n  needle\nend"), version: "one" };
         let hiddenThroughout = true;
         const stopInventory = workspace.subscribe(() => {
             const state = workspace.getSnapshot();
@@ -33,20 +33,34 @@ test("independent comparison modules share workspace identity and release retain
         });
         const one = first.mountTextComparison(host, workspace, tab, baseline, { view, workBudget: 256 });
         const two = second.mountTextComparison(host, workspace, tab, baseline, { view, controls: false });
-        const oldEditor = one.referenceEditor()!, old = workspace.resourceForDocument(oldEditor.view.documentId), oldLease = workspace.acquire(old.id);
-        const distinct = old.id !== workspace.resourceForDocument(two.referenceEditor()!.view.documentId).id;
-        const internal = old.metadata.getSnapshot().visibility === "internal"
-            && workspace.resolveTab(one.reference.getSnapshot()!.target)?.visibility === "internal";
-        const changed = new Promise<void>(resolve => {
-            const stop = one.reference.subscribe(() => { if (one.reference.getSnapshot()?.version === "two") { stop(); resolve(); } });
-        });
-        one.controller.beginRefresh().complete({ buffer: TextBuffer.from("new baseline"), version: "two" });
-        while (one.controller.getSnapshot().status === "running") one.controller.advance();
-        const retiredRejected = !one.getSnapshot().canNavigate && !one.selectHunk(one.controller.getSnapshot().generation, 0);
-        await changed;
-        const afterRefresh = { old: old.getSnapshot().state, text: workspace.document(old.documentId).text(), oldEditorDisposed: oldEditor.snapshot().disposed,
-            retiredRejected, currentReady: one.getSnapshot().canNavigate };
-        const current = workspace.resourceForDocument(one.referenceEditor()!.view.documentId), currentLease = workspace.acquire(current.id);
+        const { createFindController, createFoldingController } = await import(path + "tools.js") as typeof import("../../src/browser/index.ts");
+        const editor = one.panes.reference, old = workspace.resourceForDocument(editor.view.documentId), oldLease = workspace.acquire(old.id);
+        const distinct = old.id !== workspace.resourceForDocument(two.panes.reference.view.documentId).id;
+        const internal = old.metadata.getSnapshot().visibility === "internal" && editor.tab === undefined && workspace.diagnostics().tabs === 1;
+        const initial = workspace.document(editor.view.documentId), find = createFindController(editor);
+        const folds = createFoldingController(editor, document => [{ from: 0, to: document.buffer.offsetAt(2) - 1 }], { delayMs: 0 });
+        const wait = async (ready: () => boolean) => {
+            const until = performance.now() + 5000;
+            while (!ready()) {
+                if (performance.now() > until) throw new Error("Reference tools did not settle.");
+                await new Promise<void>(resolve => setTimeout(resolve, 10));
+            }
+        };
+        editor.configure({ columnRulers: [72] }); find.setQuery("needle");
+        await wait(() => folds.getSnapshot().status === "ready" && find.getSnapshot().count === 1 && one.getSnapshot().canNavigate);
+        const defaultWorking = one.activePane() === one.panes.working;
+        const folded = folds.runCommand("collapse-all"), activeReference = one.activePane() === editor && document.activeElement === editor.input;
+        const generation = one.controller.getSnapshot().generation, next = initial.buffer.replace(initial.buffer.length, initial.buffer.length, "\nneedle");
+        const refresh = (version: string) => one.controller.beginRefresh().complete({ buffer: next, version });
+        if (!refresh("two")) throw new Error("Reference refresh failed.");
+        // A second authority revision can share the same buffer while discovery for the first is pending.
+        if (!refresh("three")) throw new Error("Equal reference refresh failed.");
+        const revision = workspace.document(editor.view.documentId).revision;
+        await wait(() => one.getSnapshot().canNavigate && find.getSnapshot().count === 2 && folds.getSnapshot().status === "ready" && folds.getSnapshot().revision === revision);
+        const afterRefresh = { stable: one.panes.reference === editor, oldText: initial.text(), text: workspace.document(editor.view.documentId).text(),
+            retiredRejected: !one.selectHunk(generation, 0), rulers: editor.settings().columnRulers, query: find.getSnapshot().query,
+            folded, collapsed: folds.getSnapshot().collapsed, defaultWorking, activeReference };
+        const current = workspace.resourceForDocument(one.panes.reference.view.documentId), currentLease = workspace.acquire(current.id);
         one.dispose(); one.dispose(); two.dispose(); stopInventory();
         const afterDestroy = { children: host.childElementCount, controllers: [one.controller.getSnapshot().status, two.controller.getSnapshot().status],
             leases: workspace.diagnostics().leases, views: workspace.diagnostics().views, subscriptions: workspace.diagnostics().subscriptions,
@@ -56,9 +70,37 @@ test("independent comparison modules share workspace identity and release retain
         view.dispose(); workspace.close(tab); workspace.releaseResource(source.id); host.remove();
         return { distinct, internal, hiddenThroughout, afterRefresh, afterDestroy, afterRelease, leases: workspace.diagnostics().leases };
     });
-    expect(result).toEqual({ distinct: true, internal: true, hiddenThroughout: true, afterRefresh: { old: "ready", text: "baseline", oldEditorDisposed: true, retiredRejected: true, currentReady: true },
+    expect(result).toEqual({ distinct: true, internal: true, hiddenThroughout: true, afterRefresh: { stable: true, oldText: "head\n  needle\nend", text: "head\n  needle\nend\nneedle", retiredRejected: true, rulers: [72], query: "needle", folded: true, collapsed: 1, defaultWorking: true, activeReference: true },
         afterDestroy: { children: 0, controllers: ["disposed", "disposed"], leases: 3, views: 1, subscriptions: 0, retained: ["ready", "ready"] },
         afterRelease: { resources: 1, retained: ["released", "released"] }, leases: 0 });
+});
+
+test("a document reference follows edits in its source editor and stays read-only in review", async ({ page }) => {
+    const ids = await page.evaluate(async () => {
+        const path = "/comparison-ownership/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { mountTextComparison, mountTextEditor } = await import(path + "tools.js") as typeof import("../../src/browser/index.ts");
+        const workspace = new Workspace();
+        const resource = (name: string) => workspace.createDocument({ scope: "review", resource: name, variant: "source" }, name, "a");
+        const working = resource("working"), baseline = resource("baseline");
+        const host = document.createElement("section"); host.id = "follow-document"; document.body.append(host);
+        const source = mountTextEditor(host, workspace, baseline, { ariaLabel: "Reference source editor" });
+        const review = mountTextComparison(host, workspace, working, baseline);
+        host.addEventListener("release", () => { review.dispose(); source.dispose(); host.remove(); }, { once: true });
+        return { tabs: workspace.diagnostics().tabs, reference: review.panes.reference.view.documentId === baseline };
+    });
+    expect(ids).toEqual({ tabs: 0, reference: true });
+    const host = page.locator("#follow-document"), source = host.getByRole("textbox", { name: "Reference source editor" });
+    const reference = host.getByRole("textbox", { name: "Comparison baseline source" });
+    await expect(host.locator(".st-comparison-controls output")).toHaveText("No changes");
+    await source.press("End"); await source.pressSequentially("b");
+    await expect(host.locator(".st-comparison-removed")).toHaveText("b");
+    await expect(host.locator(".st-comparison-controls output")).toHaveText("1 change");
+    await reference.pressSequentially("x");
+    await expect(reference).toHaveAttribute("readonly", "");
+    await expect(host.locator(".st-comparison-removed")).toHaveText("b");
+    await source.press("Control+z");
+    await expect(host.locator(".st-comparison-controls output")).toHaveText("No changes");
+    await host.dispatchEvent("release");
 });
 
 type Presentation = {
@@ -139,13 +181,13 @@ test("review highlights survive every typing paint while exact comparison work i
         const mounted = mountTextComparison(host, workspace, tab, { buffer: TextBuffer.from("new\n" + "unchanged\n".repeat(4000)), version: "one" });
         await new Promise<void>(resolve => { const stop = mounted.controller.subscribe(() => { if (mounted.controller.getSnapshot().status === "ready") { stop(); resolve(); } }); });
         const exact = mounted.controller.getSnapshot(); mounted.selectHunk(exact.generation, 0);
-        mounted.working.view.setSelection(0, { anchor: 1, head: 1 }); mounted.working.focus();
+        mounted.panes.working.view.setSelection(0, { anchor: 1, head: 1 }); mounted.panes.working.focus();
         const next = TextDiff.prototype.next;
         TextDiff.prototype.next = function() { return Object.freeze({ status: "running", work: 0, readUnits: 0, lineEdits: 0, hunks: Object.freeze([]), failure: null }); };
         const paints: { revision: number; text: string; color: string }[] = [];
-        mounted.working.viewport.onRender(() => {
+        mounted.panes.working.viewport.onRender(() => {
             const revision = workspace.document(source.documentId).revision; if (!revision) return;
-            const marked = mounted.working.viewport.element.querySelector(".st-comparison-added");
+            const marked = mounted.panes.working.viewport.element.querySelector(".st-comparison-added");
             paints.push({ revision, text: marked?.textContent ?? "", color: marked ? getComputedStyle(marked).backgroundColor : "" });
         });
         window.comparisonPresentation = {

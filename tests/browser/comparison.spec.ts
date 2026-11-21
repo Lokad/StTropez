@@ -86,7 +86,7 @@ test("out-of-order refresh rejects old results and never replaces the mounted wo
     const after = await page.evaluate(() => window.comparisonFixture.snapshot());
     expect(after.baseline).toEqual(fresh.baseline); expect(after.working).toEqual(before.working); expect(after.viewId).toBe(before.viewId);
     await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toHaveAttribute("data-retained", "yes");
-    expect(after.diagnostics).toMatchObject({ resources: 2, documents: 2, tabs: 2, views: 2, leases: 3 });
+    expect(after.diagnostics).toMatchObject({ resources: 2, documents: 2, tabs: 1, views: 2, leases: 3 });
 });
 
 test("a stale selected hunk cannot retarget after typing, and permissions gate revert", async ({ page }) => {
@@ -165,7 +165,7 @@ test("tab replacement expires pending work and teardown leaves only host resourc
     expect(await page.evaluate(() => window.comparisonFixture.finish("refresh"))).toBe(false);
     await page.evaluate(() => window.comparisonFixture.dispose());
     const state = await page.evaluate(() => window.comparisonFixture.snapshot());
-    expect(state.status).toBe("disposed"); expect(state.baseline).toBeNull(); expect(state.reference).toBeNull();
+    expect(state.status).toBe("disposed"); expect(state.baseline).toBeNull(); expect(state.reference).toMatchObject({ disposed: true, revision: null, rows: 0 });
     expect(state.pending).toEqual({ refreshes: 0, acceptances: 0 });
     await expect(page.getByRole("button", { name: "Request baseline refresh", exact: true })).toBeDisabled();
     expect(state.diagnostics).toMatchObject({ resources: 2, tabs: 1, views: 0, leases: 0, subscriptions: 0 });
