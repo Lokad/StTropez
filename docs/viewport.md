@@ -1,7 +1,8 @@
 # Text viewport
 
 `mountTextViewport` renders the visible part of a workspace document. It provides scrolling,
-decorations and local text geometry. Use it for a read-only view.
+decorations and local text geometry. For keyboard navigation, text selection and copying across
+virtualized rows, use a [read-only editor](editor.md) with `readOnly: true`.
 
 ## Use
 

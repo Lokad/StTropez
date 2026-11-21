@@ -5,6 +5,38 @@ import { dragBundleScrollbars, hoverString, selectInsideString } from "./demo-mi
 import { checkDemoLigatures } from "./demo-ligatures.ts";
 import { runDemoDiagnosticRetention } from "./demo-diagnostics.ts";
 import { demoSample } from "../../examples/demo/samples.ts";
+import { paintedCharacter } from "../helpers/painted-character.ts";
+import type { Locator } from "@playwright/test";
+
+function copyOutput(reader: Locator) {
+    return reader.evaluate(node => {
+        const event = new ClipboardEvent("copy", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
+        node.dispatchEvent(event);
+        return event.defaultPrevented ? event.clipboardData!.getData("text/plain") : null;
+    });
+}
+
+test("dragging across emitted JavaScript copies both lines and preserves the selection on re-emit", async ({ page, baseURL }) => {
+    const url = new URL(baseURL!); url.searchParams.set("sample", "shipping"); await page.goto(url.href);
+    const output = page.getByRole("region", { name: "JavaScript output", exact: true });
+    const reader = output.getByRole("textbox"), rows = output.locator(".st-viewport-row");
+    const start = await paintedCharacter(rows.filter({ hasText: "// Rates are in cents." }), "Rates", 0);
+    const end = await paintedCharacter(rows.filter({ hasText: "const services = [" }), "services", 7);
+    await page.mouse.move(start.x - 2, start.y); await page.mouse.down();
+    await page.mouse.move(end.x + 2, end.y, { steps: 12 }); await page.mouse.up();
+    await expect(reader).toBeFocused(); await expect(reader).toHaveJSProperty("readOnly", true);
+    const selected = "Rates are in cents. The base charge covers the first kilogram.\nconst services";
+    expect(await copyOutput(reader)).toBe(selected);
+    await reader.press("Delete"); await reader.pressSequentially("X"); expect(await copyOutput(reader)).toBe(selected);
+    const source = page.getByRole("textbox", { name: "shipping.ts", exact: true });
+    await source.press("Control+Home"); await page.keyboard.insertText("const recompiled = true;\n");
+    await expect(rows.first()).toHaveText("const recompiled = true;");
+    expect(await copyOutput(reader)).toBe(selected); await expect(source).toBeFocused();
+    const oldInput = await reader.elementHandle();
+    await page.getByRole("button", { name: "Problems", exact: true }).click(); await expect(reader).toHaveCount(0);
+    expect(await oldInput!.evaluate(node => node.dispatchEvent(new ClipboardEvent("copy", { clipboardData: new DataTransfer(), cancelable: true })))).toBe(true);
+    await oldInput!.dispose();
+});
 
 test("Go to line returns typing to the chosen large-file row and cancels when the source view closes", async ({ page, baseURL }) => {
     await page.goto(baseURL!); await page.locator("#sample").selectOption("large");
@@ -433,6 +465,10 @@ test("large browser-only sample keeps scroll content, editing/history and langua
     await output.evaluate(root => { root.scrollTop = root.scrollHeight; });
     await expect(output).toContainText("// Row 100000: try editing or searching here.");
     expect(await viewport.evaluate(root => root.scrollTop)).toBe(sourceTop);
+    const reader = output.getByRole("textbox");
+    await reader.press("ControlOrMeta+a");
+    const expectedOutput = demoSample("large").files["large.ts"] + "\n";
+    expect(await copyOutput(reader) === expectedOutput, "Select All copies every emitted row and its final line break").toBe(true);
     await page.locator("#find-toggle").click(); await page.locator("#find-query").fill("Row");
     await expect(page.locator("#find-status")).toHaveText("100000 matches");
     await expect.poll(() => page.locator("#editor .st-search-match").count()).toBeGreaterThan(0);

@@ -51,6 +51,9 @@ Open **Shopping cart** or **Fix a type error**. Edit the source, inspect JavaScr
 then open Changes to compare against the saved file. Save writes to this browser. The demo compiles
 TypeScript without executing it. The Code menu contains language, indentation and folding commands.
 
+Click in **JavaScript** to select and copy the emitted code. Ctrl+A (Cmd+A on macOS) selects the
+entire output, including lines outside the viewport. Edit the TypeScript pane to change the output.
+
 The demo serves Fira Code 6.2 under the SIL Open Font License. In Shopping cart, toggle
 **View → Font ligatures** to compare the arrow and comparisons in `readyToShip`. The glyphs
 change while the underlying characters stay editable. The font ships with the demo.

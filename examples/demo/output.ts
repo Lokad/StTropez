@@ -1,25 +1,19 @@
 import { Workspace } from "../../src/index.ts";
-import { mountTextViewport } from "../../src/browser/index.ts";
+import { mountTextEditor } from "../../src/browser/index.ts";
 
-/** Generated output uses the same bounded public view as source; it owns no editing history. */
+/** Compiler output has its own selection, scroll position and read-only document. */
 export function mountDemoOutput(host: HTMLElement, text: string, settings: Readonly<{ minimap: boolean; fontLigatures: boolean }>) {
     const workspace = new Workspace();
     const resource = workspace.createTextResource({ scope: "demo-output", resource: "javascript", variant: "generated" }, "JavaScript output",
         { value: text }, { edit: [], save: false, run: false });
-    const viewport = mountTextViewport(host, workspace, resource.documentId, { ariaLabel: "JavaScript output", settings });
-    viewport.element.classList.add("demo-output");
+    const editor = mountTextEditor(host, workspace, resource.documentId, { ariaLabel: "JavaScript output", readOnly: true, settings });
+    editor.element.classList.add("demo-output");
     let disposed = false;
-    return Object.freeze({ snapshot: viewport.snapshot, configure: viewport.configure, update: (next: string) => {
+    return Object.freeze({ snapshot: editor.viewport.snapshot, configure: editor.configure, update: (next: string) => {
         if (disposed || next === text) return;
-        const state = viewport.captureView(), anchor = state.verticalAnchor;
-        const line = anchor ? workspace.document(resource.documentId).buffer.lineAt(anchor.offset) : 0;
-        workspace.operations.beginLoad(resource).accept({ value: next }); text = next;
-        const current = workspace.document(resource.documentId);
-        viewport.restoreView({ anchor: 0, head: 0, scrollTop: state.scrollTop, scrollLeft: state.scrollLeft,
-            ...(anchor ? { verticalAnchor: { revision: current.revision,
-                offset: current.buffer.offsetAt(Math.min(line, current.buffer.lineCount - 1)), topRemainder: anchor.topRemainder } } : {}) });
+        if (workspace.adoptSaved(resource.id, { text: next, serverVersion: null, history: "reset" }).applied) text = next;
     }, dispose: () => {
         if (disposed) return;
-        disposed = true; viewport.dispose(); workspace.releaseResource(resource.id);
+        disposed = true; editor.dispose(); workspace.releaseResource(resource.id);
     } });
 }
