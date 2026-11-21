@@ -137,6 +137,8 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Backspace / Delete | Delete the selection or the adjacent grapheme. Backspace in leading spaces and tabs deletes to the previous tab stop. |
 | Word modifier + Backspace / Delete | Delete the selection, an adjacent run of two or more whitespace characters, or one word toward the key. |
 | Ctrl/Cmd + A | One whole-document selection |
+| Ctrl/Cmd + L | Select the touched lines with their line breaks. Press again to extend by one line. |
+| Ctrl + Up / Down, Alt/Option + PageUp / PageDown | Scroll by one visible row or one viewport height. The caret and selections stay in place. |
 | Ctrl/Cmd + Z, Ctrl/Cmd + Shift+Z, Ctrl+Y | Undo, redo, redo |
 | Tab / Shift+Tab | Indent/outdent; read-only views use normal focus traversal |
 | Enter | Contextual newline and configured Enter rule |
@@ -229,7 +231,9 @@ and frozen; callbacks receive the exact immutable buffer and source endpoints.
 | `enter` | Omitted: newline without indentation copying. `"keep"`: copy indentation. Callback: return `EnterIndent` with `indent: -1 \| 0 \| 1` and optional `split` |
 
 `EditingPair` describes delimiters; `LanguageEditContext` describes the immutable buffer/range.
-`ResolvedLanguageConfiguration` supplies validated defaults. `runCommand(EditingCommand)` accepts
+`ResolvedLanguageConfiguration` supplies validated defaults. Pass a `TextEditorCommand` to `runCommand`.
+The view commands `select-line`, `scroll-line-up`, `scroll-line-down`, `scroll-page-up` and
+`scroll-page-down` also work in read-only editors. The text-editing commands are
 `indent`, `indent-lines`, `outdent`, `line-comment`, `add-line-comment`, `remove-line-comment`,
 `block-comment`, `newline`, `move-line-up`, `move-line-down`, `copy-line-up`, `copy-line-down`,
 `delete-lines`, `insert-line-above` or `insert-line-below`. It returns `false` when the view

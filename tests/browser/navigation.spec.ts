@@ -7,6 +7,25 @@ async function setup(page: Page, text: string, head = 0) {
 }
 test.beforeEach(async ({ page }) => {  await page.goto("/editing/"); await ready(page); });
 
+test("line selection grows on repeat and scrolling leaves its text and keyboard focus in place", async ({ page }) => {
+    const source = "one\r\ntwo\nthree\n" + "row\n".repeat(200);
+    await setup(page, source, 2);
+    await page.keyboard.press("Control+l"); await page.keyboard.press("Control+l");
+    const before = await snapshot(page);
+    expect(before.primary.selection).toMatchObject({ anchor: 0, head: 9 });
+    const { lineHeight, height } = before.primary.viewport;
+    for (const [key, distance] of [["Control+ArrowDown", lineHeight], ["Alt+PageDown", lineHeight + height],
+        ["Control+ArrowUp", height], ["Alt+PageUp", 0]] as const) {
+        await page.keyboard.press(key); await ready(page);
+        const after = await snapshot(page);
+        expect(Math.abs(after.primary.viewport.scrollTop - distance)).toBeLessThanOrEqual(1);
+        expect(after.primary.selection).toEqual(before.primary.selection);
+    }
+    await expect(page.getByRole("textbox", { name: "Primary source", exact: true })).toBeFocused();
+    await page.keyboard.type("X");
+    await expect(page.locator("#primary .st-viewport-row").first()).toHaveJSProperty("textContent", "Xthree");
+});
+
 test("Backspace follows indentation stops, then typing paints at the resulting caret", async ({ page }) => {
     await setup(page, " \t      x  y", 8);
     await page.keyboard.press("Backspace"); await page.keyboard.press("Backspace"); await page.keyboard.type("A");

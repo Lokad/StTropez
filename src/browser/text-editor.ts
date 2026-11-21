@@ -40,7 +40,7 @@ import type { CharacterWarningOptions } from "../core/character-warnings.ts";
 import { mountCharacterWarnings } from "./character-warnings.ts";
 import type { CharacterWarningHighlights } from "./character-warnings.ts";
 import { classifyEditingKey } from "./editing-keys.ts";
-import type { KeyBinding, KeyStroke } from "./editing-keys.ts";
+import type { KeyBinding, KeyStroke, ViewCommand } from "./editing-keys.ts";
 import { commandBudget, createCooperativeRunner } from "./cooperative-runner.ts";
 import { createEdgeAutoscroll, edgeVelocity } from "./edge-autoscroll.ts";
 import { createOrderedInputQueue, typingRun } from "./ordered-input.ts";
@@ -52,6 +52,7 @@ export type TextEditorEdit = Readonly<{ expectedRevision: number; edits: readonl
 export type TextEditorEditTransform = (edit: TextEditorEdit) => Readonly<{ edits: readonly TextEdit[]; selectionSet: SelectionSet; complete?: (applied: boolean) => void }> | undefined;
 export type TextEditorActivity = Readonly<{ disposed: boolean; composing: boolean; pendingInput: boolean; pendingCommand: boolean;
     pendingCaret: boolean; pendingDragScroll: boolean; pendingWord: boolean; pendingGrapheme: boolean }>;
+export type TextEditorCommand = EditingCommand | ViewCommand;
 export type TextEditorOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; decorate?: LineDecorator; lineClass?: LineClass; language?: LanguageConfiguration;
         pasteLineEndings?: "local" | "preserve";
         bracketMatching?: boolean | BracketMatchOptions; characterWarnings?: boolean | CharacterWarningOptions;
@@ -66,7 +67,7 @@ export type TextEditor = Readonly<{ element: HTMLDivElement; input: HTMLTextArea
     bracketMatching: BracketHighlights;
     characterWarnings: CharacterWarningHighlights;
     /** Returns whether the command was accepted; long selections finish asynchronously. */
-    runCommand: (command: EditingCommand) => boolean;
+    runCommand: (command: TextEditorCommand) => boolean;
     focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void;
     /** Immutable activity capture, reused while its fields are unchanged. Does not collect metrics. */
     activity: () => TextEditorActivity;
@@ -743,6 +744,32 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         }, typeof command === "object" ? command.character : "");
         group = undefined; step(); return true;
     }
+    function runCommand(command: TextEditorCommand): boolean {
+        if (disposed || composing || input.disabled || !workspace.resolveTab(target)) return false;
+        switch (command) {
+            case "select-line": {
+                cancelWord(); syncSelection(); group = undefined; preferred = undefined;
+                const capture = commandCapture(false), buffer = capture.buffer;
+                eachRange(capture, "grapheme", (range, done) => {
+                    const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
+                    const anchor = buffer.offsetAt(buffer.lineAt(from)), last = buffer.lineAt(to);
+                    const endsAtStart = from < to && to === buffer.offsetAt(last);
+                    const through = endsAtStart && from !== anchor ? last : last + 1;
+                    done({ anchor, head: through < buffer.lineCount ? buffer.offsetAt(through) : buffer.length });
+                }, ranges => finishRanges(capture, ranges), { navigation: true });
+                return true;
+            }
+            case "scroll-line-up": case "scroll-line-down": case "scroll-page-up": case "scroll-page-down": {
+                group = undefined;
+                viewport.flush();
+                const state = viewport.snapshot(), page = command === "scroll-page-up" || command === "scroll-page-down";
+                const distance = page ? state.height : state.lineHeight;
+                viewport.scrollTo({ top: state.scrollTop + (command.endsWith("-up") ? -distance : distance) });
+                return true;
+            }
+            default: return languageCommand(command);
+        }
+    }
     const pairKey = (key: string) => key.length === 1 && language.pairs.some(pair => pair.open === key || pair.close === key);
     function configuredInput(type: string, text: string | null): boolean {
         if (type === "insertLineBreak") return languageCommand("newline");
@@ -922,8 +949,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             if (typeof binding === "object" && (!binding.edit || !input.readOnly)) { event.preventDefault(); appendInput(captureKey(event, binding)); return; }
             if (!(event.ctrlKey || event.metaKey || event.altKey)) return;
         }
-        view.folding.revealSelection(view.folding.getSnapshot());
         const command = typeof binding === "object" ? binding.command : undefined;
+        if (command?.kind === "view") { if (runCommand(command.command)) event.preventDefault(); return; }
+        view.folding.revealSelection(view.folding.getSnapshot());
         if (command && command.kind !== "delete" && command.kind !== "word" || binding === "escape" || binding === "prevent-navigation") group = undefined;
         if (command?.kind === "history") { event.preventDefault(); history(command.direction); return; }
         if (command?.kind === "select-all") { event.preventDefault(); cancelWord(); preferred = undefined; const length = workspace.document(documentId).buffer.length; view.setSelection(revision, { anchor: 0, head: length }); refresh(); return; }
@@ -1102,7 +1130,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
                 () => { if (hostInsertion === captured) hostInsertion = undefined; });
             hostInsertion = captured; return captured;
         },
-        runCommand: languageCommand,
+        runCommand,
         languageConfiguration: () => language,
         configureLanguage: configuration => {
             if (disposed || composing) return false;

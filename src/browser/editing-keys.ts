@@ -1,8 +1,10 @@
 import type { EditingCommand } from "../core/language-edits.ts";
 
 export type KeyStroke = Readonly<Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">>;
+export type ViewCommand = "select-line" | "scroll-line-up" | "scroll-line-down" | "scroll-page-up" | "scroll-page-down";
 type KeyCommand = Readonly<{ kind: "history"; direction: "undo" | "redo" }>
     | Readonly<{ kind: "select-all" }>
+    | Readonly<{ kind: "view"; command: ViewCommand }>
     | Readonly<{ kind: "horizontal"; key: "ArrowLeft" | "ArrowRight" | "Home" | "End"; extend: boolean; document: boolean }>
     | Readonly<{ kind: "vertical"; direction: -1 | 1; page: boolean; extend: boolean }>
     | Readonly<{ kind: "word"; direction: -1 | 1; deleting: boolean; extend: boolean }>
@@ -29,11 +31,16 @@ export function classifyEditingKey(event: KeyStroke, apple: boolean, escaped: bo
     }
     if (command && (key === "z" || event.ctrlKey && key === "y")) return bind({ kind: "history", direction: extend || key === "y" ? "redo" : "undo" }, true);
     if (command && key === "a") return bind({ kind: "select-all" });
+    if (command && !extend && key === "l") return bind({ kind: "view", command: "select-line" });
     if (command && (event.key === "Home" || event.key === "End")) return horizontal(event.key, true);
     if (apple && event.metaKey && !event.ctrlKey && !event.altKey) {
         if (event.key === "ArrowLeft" || event.key === "ArrowRight") return horizontal(event.key === "ArrowLeft" ? "Home" : "End");
         if (event.key === "ArrowUp" || event.key === "ArrowDown") return horizontal(event.key === "ArrowUp" ? "Home" : "End", true);
     }
+    if (command && !extend && (event.key === "ArrowUp" || event.key === "ArrowDown"))
+        return bind({ kind: "view", command: event.key === "ArrowUp" ? "scroll-line-up" : "scroll-line-down" });
+    if (event.altKey && !event.ctrlKey && !event.metaKey && !extend && (event.key === "PageUp" || event.key === "PageDown"))
+        return bind({ kind: "view", command: event.key === "PageUp" ? "scroll-page-up" : "scroll-page-down" });
     if (event.key === "Escape") return "escape";
     if (event.key === "Tab" && escaped) return "tab-escape";
     const word = !event.metaKey && (event.ctrlKey && !event.altKey || apple && event.altKey && !event.ctrlKey);
