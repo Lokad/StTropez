@@ -1,7 +1,7 @@
 import { Workspace } from "sttropez";
 import type { DocumentId, DocumentSnapshot, TextEdit } from "sttropez";
-import { createCompletionController, createDiagnosticController, mountAnchoredOverlay, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
-import { LspWorkspace, applyLspWorkspaceEdit, previewLspWorkspaceEdit, createLspActionClient, createLspColorClient, createLspHoverClient, createLspLinkClient, createLspNavigationClient, createLspRenameClient, createLspSignatureClient } from "sttropez/protocol";
+import { createCodeActionController, createCompletionController, createDiagnosticController, mountAnchoredOverlay, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
+import { LspWorkspace, applyLspWorkspaceEdit, previewLspWorkspaceEdit, createLspColorClient, createLspHoverClient, createLspLinkClient, createLspNavigationClient, createLspRenameClient, createLspSignatureClient } from "sttropez/protocol";
 import type { LspWorkspaceEdit } from "sttropez/protocol";
 
 const workspace = new Workspace();
@@ -23,9 +23,10 @@ const controller = createCompletionController(editor, provider, { autoConnect: f
 const diagnostics = createDiagnosticController(editor, provider, { autoConnect: false });
 const diagnosticHint = document.createElement("aside"); diagnosticHint.id = "diagnostic-hint"; document.body.append(diagnosticHint);
 const hint = mountAnchoredOverlay(editor, diagnosticHint);
-const hover = createLspHoverClient(provider), navigation = createLspNavigationClient(provider), rename = createLspRenameClient(provider), actions = createLspActionClient(provider);
+const hover = createLspHoverClient(provider), navigation = createLspNavigationClient(provider), rename = createLspRenameClient(provider);
 const signature = createLspSignatureClient(provider), links = createLspLinkClient(provider), colors = createLspColorClient(provider);
 const project = () => [workspace.document(source.documentId), workspace.document(companion.documentId)];
+const actions = createCodeActionController(editor, provider, { documents: project });
 const text = () => { const buffer = workspace.document(source.documentId).buffer; return buffer.slice(0, buffer.length); };
 const position = () => text().indexOf("catalogue") + 2;
 const result = document.getElementById("result")!, status = document.getElementById("status")!, choices = document.getElementById("choices")!;
@@ -56,10 +57,18 @@ command("Apply rename", () => {
     applyLspWorkspaceEdit(workspace, plan, { origin: "host", requiredOrigins: ["human"], view: editor.view });
     result.textContent = "Rename applied";
 });
-command("Code actions", async () => { const at = text().indexOf("TODO"), value = await actions.run(project(), source.documentId, at, at + 4);
-    if (!value.isCurrent()) throw new Error("Action preview expired"); notes.actions = value.actions.length;
-    const lazy = value.actions.find(action => action.resolve); if (lazy) { const resolved = await value.resolve(lazy); notes.resolved = resolved.edit !== null; }
-    result.textContent = `Action choices: ${notes.actions}`; });
+command("Code actions", () => { const at = text().indexOf("TODO");
+    editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: at, head: at + 4 }); actions.request(); });
+const resolveAction = command("Review lazy action", () => actions.getSnapshot().choices.find(choice => choice.needsResolve)?.select());
+const applyAction = command("Apply reviewed action", () => {});
+actions.subscribe(() => {
+    const state = actions.getSnapshot(), preview = state.preview, page = preview?.readPage();
+    notes.actions = state.choices.length;
+    resolveAction.disabled = !state.choices.some(choice => choice.needsResolve);
+    applyAction.disabled = !preview?.canApply; applyAction.onclick = preview?.confirm ?? null;
+    notes.resolved = !!preview && !!state.choices[preview.index]?.needsResolve && !!page?.count;
+    result.textContent = page?.notes.map(edit => edit.before + " → " + edit.insert).join("\n") || state.message;
+});
 command("Signature", async () => { const value = await signature.run(workspace.document(source.documentId), text().indexOf("lookup(") + 12).result;
     if (!value?.isCurrent()) throw new Error("Signature expired"); const active = value.signatures[value.activeSignature]!, parameter = active.parameters[active.activeParameter ?? 0];
     notes.signature = parameter ? active.label.slice(parameter.from, parameter.to) : active.label; result.textContent = notes.signature; });

@@ -222,7 +222,7 @@ export class ViewBindings {
         this.project = new HostProjectTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.project, lsp.owner, undefined, reconnectProvider);
         this.colors = new HostDocumentColors(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.colors, reconnectProvider);
         this.links = new HostDocumentLinks(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.links, reconnectProvider);
-        this.actions = new HostActionsTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.actions, this.project, lsp.owner, reconnectProvider);
+        this.actions = new HostActionsTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.actions, this.project, reconnectProvider);
         this.rename = new HostRenameTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.rename, reconnectProvider);
         this.signature = new HostSignatureTools(controller.workspace, canCapture, () => this.hover.dismiss(), lsp.signature,
             () => { const provider = this.language.state.getSnapshot().provider; return !!provider && (provider.pending || provider.offerText !== null); }, reconnectProvider);

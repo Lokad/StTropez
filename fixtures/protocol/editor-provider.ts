@@ -8,8 +8,7 @@ import { createLspHoverClient } from "../../examples/shared/language/lsp-hover-c
 import { createLspNavigationClient } from "../../examples/shared/language/lsp-navigation-client.ts";
 import { createLspRenameClient } from "../../examples/shared/language/lsp-rename-client.ts";
 import type { LspRenameFactory } from "../../examples/shared/language/lsp-rename-client.ts";
-import { createLspActionClient } from "../../examples/shared/language/lsp-action-client.ts";
-import type { LspActionFactory } from "../../examples/shared/language/lsp-action-client.ts";
+import type { ActionHostOptions } from "../../examples/hosts/code-actions.ts";
 import { createLspProjectClient } from "../../examples/shared/language/lsp-project-client.ts";
 import type { LspProjectFactory } from "../../examples/shared/language/lsp-project-client.ts";
 import type { HoverControllerFactory } from "../../examples/hosts/hover.ts";
@@ -23,7 +22,7 @@ import type { ColorBackendFactory } from "../../examples/hosts/document-colors.t
 import { fixtureDocumentUri } from "./document-uri.ts";
 
 /** Explicit development-host choice. Generic session/feature code has no fixture endpoint policy. */
-export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspace; provider: ProviderFactory; hover: HoverControllerFactory; navigation: NavigationServiceFactory; rename: LspRenameFactory; actions: LspActionFactory; project: LspProjectFactory; signature: SignatureBackendFactory; links: LinkBackendFactory; colors: ColorBackendFactory }> {
+export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspace; provider: ProviderFactory; hover: HoverControllerFactory; navigation: NavigationServiceFactory; rename: LspRenameFactory; actions: ActionHostOptions; project: LspProjectFactory; signature: SignatureBackendFactory; links: LinkBackendFactory; colors: ColorBackendFactory }> {
     const url = new URL("/lsp-fixture", location.href); url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const connect: LspSessionOptions["connect"] = context => { const abort = new AbortController(), stop = context.onCancel(() => abort.abort()); return openWebSocketTransport(url.href, { signal: abort.signal }).finally(stop); };
     const uri = (workspace: Workspace, id: DocumentId) => fixtureDocumentUri(workspace.resourceForDocument(id).id, id);
@@ -53,12 +52,12 @@ export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspa
             beforeRequest: (session, input) => connection.prepareRequest(session, input.kind === "definition" ? "textDocument/definition" : "textDocument/references", { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) }) }) },
         rename: () => createLspRenameClient({ provider: connection,
             beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/rename", configuration) }),
-        actions: () => createLspActionClient({ provider: connection,
+        actions: { provider: connection,
             beforeRequest: async (session, configuration) => {
                 await connection.prepareRequest(session, "textDocument/codeAction", configuration);
                 if (!session.commandNames().includes("fixture.review")) await session.request("fixture/reviewRegistration", { registered: true }).result;
             },
-            beforeResolve: (session, configuration) => connection.prepareRequest(session, "codeAction/resolve", configuration) }),
+            beforeResolve: (session, configuration) => connection.prepareRequest(session, "codeAction/resolve", configuration) },
         project: () => createLspProjectClient({ provider: connection, reviewCommand: "fixture.review", statusCommand: "fixture.status",
             beforeRequest: (session, input) => {
                 const policy = { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) };

@@ -1,6 +1,6 @@
 import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, TextEditor } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, CodeActionCommand, CodeActionExecution, TextEditor } from "../../src/browser/index.ts";
 import { createProjectBackend } from "../shared/language/project-backend.ts";
 import type { ProjectBackend } from "../shared/language/project-backend.ts";
 import { ProviderLane } from "../shared/provider-lane.ts";
@@ -9,7 +9,6 @@ import type { ProjectCommand, ProjectCommandKind } from "../../fixtures/language
 import { HostCell } from "../shared/observable.ts";
 import type { LspApplyEdit, LspApplyEditResult, LspRequestContext, LspWorkspaceEdit, LspWorkspace } from "../../src/protocol/index.ts";
 import type { LspProjectFactory } from "../shared/language/lsp-project-client.ts";
-import type { LspCommandReceipt, LspCommandScope } from "../../src/protocol/index.ts";
 import { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../../src/protocol/index.ts";
 import type { LspWorkspaceEditNote } from "../../src/protocol/index.ts";
 type Session = { token: number; id: string; target: TabTarget; editor: TextEditor };
@@ -18,12 +17,7 @@ type Job = { origin: Session; source: string; input: ProjectCommand; documents: 
     review?: Review; providerCurrent?: () => boolean; externalCancel?: () => void; changes: ProjectSnapshot["changes"] };
 type Review = { token: number; request: LspApplyEdit; context: LspRequestContext; finish: (result: LspApplyEditResult) => void; stop: () => void; timer: number; page: number };
 export type ProjectReview = Readonly<{ token: number; label: string; count: number; page: number; notes: readonly LspWorkspaceEditNote[]; canApply: boolean }>;
-export type ProjectActionReceipt = Readonly<{ success: boolean; applied: boolean; reason: string; changes: ProjectSnapshot["changes"] }>;
-export type ProjectActionHandle = Readonly<{ cancel: () => void; applied: () => boolean; result: Promise<ProjectActionReceipt> }>;
 export type ProjectActionEditPolicy = (request: LspApplyEdit) => "apply" | "review" | "decline";
-export type ProjectActionIntent = Readonly<{ editor: TextEditor; sources: readonly Readonly<{ document: DocumentSnapshot; authority: string }>[];
-    edit: LspWorkspaceEdit | null; isCurrent: () => boolean; subscribe: (listener: () => void) => () => void; cancel: () => void;
-    execute: (scope: LspCommandScope) => Promise<LspCommandReceipt> }>;
 export type ProjectSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; registered: boolean; pending: boolean;
     status: "idle" | "pending" | "ready" | "rejected" | "failed" | "cancelled"; message: string; view: string | null; changes: readonly Readonly<{ document: DocumentId; title: string }>[]; review: ProjectReview | null }>;
 /** Local protocol owner. Server edits use the workspace's existing atomic shared-history transaction. */
@@ -222,13 +216,13 @@ export class HostProjectTools {
     }
     canRunAction(editor: TextEditor): boolean { return (!this.disposed) && !this.job && !this.provider?.getSnapshot().commandRequiresReconnect && [...this.sessions.values()].some(session => session.editor === editor && this.available(session)); }
     /** Transfer a confirmed action to the existing review owner, independent of later focus. */
-    beginAction(intent: ProjectActionIntent): ProjectActionHandle | undefined {
+    beginAction(intent: CodeActionCommand & Readonly<{ editor: TextEditor }>): CodeActionExecution | undefined {
         const origin = [...this.sessions.values()].find(session => session.editor === intent.editor && this.available(session));
         if (!origin || !this.canRunAction(intent.editor) || !intent.isCurrent()) return undefined;
-        const docs = intent.sources.map(source => source.document), win = intent.editor.element.ownerDocument.defaultView!;
+        const docs = intent.documents, win = intent.editor.element.ownerDocument.defaultView!;
         const input = validateProjectCommand({ id: ++this.serial, kind: "review", documents: docs.map(doc => ({ document: doc.id, revision: doc.revision, length: doc.buffer.length })), delay: 0 });
         const capture = this.capture(origin); if (!capture) return undefined;
-        const job: Job = { origin, input, source: `project:${this.workspace.allocateIdentity()}`, documents: new Map(docs.map(doc => [doc.id, doc])), revisions: new Map(docs.map(doc => [doc.id, doc.revision])), authority: new Map(intent.sources.map(source => [source.document.id, source.authority])),
+        const job: Job = { origin, input, source: `project:${this.workspace.allocateIdentity()}`, documents: new Map(docs.map(doc => [doc.id, doc])), revisions: new Map(docs.map(doc => [doc.id, doc.revision])), authority: new Map(docs.map(doc => [doc.id, this.authority(doc.id)])),
             leases: [], stops: [], timer: 0, invalid: false, applied: false, capture,
             externalCancel: intent.cancel, providerCurrent: intent.isCurrent, changes: [] };
         this.job = job;
@@ -251,7 +245,7 @@ export class HostProjectTools {
             if (this.job === job) { this.release(job); this.publish({ status: "failed", message: reason }); }
             return Object.freeze({ success: false, applied: job.applied, reason, changes: Object.freeze([...job.changes]) });
         });
-        return Object.freeze({ cancel: () => { if (this.job === job) this.cancel(); }, applied: () => job.applied, result });
+        return Object.freeze({ cancel: () => { if (this.job === job) this.cancel(); return { applied: job.applied }; }, result });
     }
     declineReview(token: number | null): void { const job = this.job, review = job?.review; if (job && review && token === review.token) { this.metrics.rejected++; this.finishReview(job, review, { applied: false, failureReason: "Provider edits declined." }); this.publish({ message: "Provider edits declined; waiting for acknowledgement." }); } }
     nextReviewPage(): void { const job = this.job, review = job?.review; if (job && review && this.current(job) && (review.page + 1) * 64 < (this.cell.get().review?.count ?? 0)) { review.page++; this.publish(); } }

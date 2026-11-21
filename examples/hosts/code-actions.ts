@@ -1,57 +1,52 @@
-import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
-import { captureViewRequest } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, TextEditor } from "../../src/browser/index.ts";
-import { createActionBackend } from "../shared/language/action-backend.ts";
-import type { ActionBackend, ActionProviderBatch } from "../shared/language/action-backend.ts";
-import { ProviderLane } from "../shared/provider-lane.ts";
+import type { DocumentId, TabId, TabTarget, Workspace } from "../../src/index.ts";
+import { createCodeActionController } from "../../src/browser/index.ts";
+import type { CodeActionChoice, CodeActionController, CodeActionPreview, TextEditor } from "../../src/browser/index.ts";
+import type { LspCommandPolicy, LspScopeAccess, LspWorkspace, LspWorkspaceEditPreview } from "../../src/protocol/index.ts";
 import { validateActionInput } from "../../fixtures/language/actions.ts";
 import type { ActionInput } from "../../fixtures/language/actions.ts";
 import { HostCell } from "../shared/observable.ts";
-import { RpcError, applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../../src/protocol/index.ts";
-import type { LspCodeAction, LspWorkspace } from "../../src/protocol/index.ts";
-import type { LspActionFactory } from "../shared/language/lsp-action-client.ts";
-import type { HostProjectTools, ProjectActionHandle } from "./project.ts";
+import type { HostProjectTools } from "./project.ts";
 type Session = { token: number; id: string; target: TabTarget; editor: TextEditor };
-type Job = { origin: Session; input: ActionInput; document: DocumentSnapshot; capture: CapturedViewRequest;
-    sources: Map<DocumentId, Readonly<{ document: DocumentSnapshot; authority: string }>>; leases: ResourceLease[];
-    stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean;
-    batch?: ActionProviderBatch; selected?: LspCodeAction; confirm?: (() => void) | undefined; choice: number | null; choicePage: number; resolving: boolean; page: number };
+export type ActionHostOptions = Readonly<{ provider: LspWorkspace; commandPolicy?: LspCommandPolicy;
+    beforeRequest?: (scope: LspScopeAccess, config: Pick<ActionInput, "module" | "delay" | "fault">) => Promise<unknown>;
+    beforeResolve?: (scope: LspScopeAccess, config: Pick<ActionInput, "module" | "delay" | "fault">) => Promise<unknown> }>;
+export type ActionChoice = CodeActionChoice;
 export type ActionNote = Readonly<{ document: string; resource: string; title: string; revision: number; from: number; to: number; insert: string; context: string; before?: string; insertUnits?: number }>;
-type DirectAction = (action: LspCodeAction) => boolean;
-export type ActionChoice = Readonly<{ index: number; title: string; kind: string | null; preferred: boolean; disabled: string | null; needsResolve: boolean;
-    select: (applyWhen?: DirectAction) => void }>;
 type ActionChange = Readonly<{ document: DocumentId; title: string }>;
 export type ActionsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; pending: boolean; canApply: boolean; confirm: (() => void) | null; token: number | null; module: string;
     status: "idle" | "pending" | "ready" | "expired" | "failed" | "applied" | "executed"; message: string; title: string; disabled: string | null; work: number; total: number; command: string | null;
     edits: readonly ActionNote[]; changed: ActionChange | null; changes: readonly ActionChange[]; choices: readonly ActionChoice[]; choice: number | null; choicePage: number; resolving: boolean; page: number; editCount: number }>;
-/** Host-owned edit-bearing action. No provider command can execute without explicit confirmation. */
+
+type Panel = { source: Session; input: ActionInput; controller: CodeActionController; stop: () => void;
+    preview: CodeActionPreview | null; page: number; choicePage: number; edits: LspWorkspaceEditPreview | undefined };
+/** Routes the shared host sidebar to its originating editor and supplies fixture and command policy. */
 export class HostActionsTools {
     private readonly workspace: Workspace;
     private readonly canCapture: (id: DocumentId) => boolean;
     private readonly present: (id: DocumentId) => TextEditor | undefined;
+    private readonly options: ActionHostOptions;
+    private readonly reviewOwner: HostProjectTools | undefined;
+    private readonly reconnectProvider: (() => void) | undefined;
     private readonly sessions = new Map<number, Session>();
     private active: Session | undefined;
-    private job: Job | undefined;
-    private readonly lane = new ProviderLane<ActionBackend>(backend => this.connectionChanged(backend));
-    private readonly backendFactory: LspActionFactory;
-    private readonly provider: LspWorkspace | undefined;
-    private readonly reviewOwner: HostProjectTools | undefined;
+    private panel: Panel | undefined;
     private readonly stopReviewOwner: (() => void) | undefined;
-    private execution: { token: number; handle: ProjectActionHandle } | undefined;
     private moduleInput: HTMLInputElement | undefined;
     private moduleEvents: AbortController | undefined;
-    private sequence = 0;
+
     private disposed = false;
     private disconnected = false;
     private delay = 0;
     private fault: ActionInput["fault"];
-    private readonly metrics = { requested: 0, applied: 0, cancelled: 0, expired: 0, failed: 0 };
+    private requested = 0;
     private readonly cell = new HostCell<ActionsSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, pending: false, canApply: false, confirm: null, token: null, module: "sample-utils", status: "idle", message: "Focus a candidate source to preview a module-import action.", title: "", disabled: null, work: 0, total: 0, command: null, edits: [], changed: null, changes: [], choices: [], choice: null, choicePage: 0, resolving: false, page: 0, editCount: 0 });
     readonly state = this.cell.observable;
-    private readonly reconnectProvider: (() => void) | undefined;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined, backendFactory: LspActionFactory, reviewOwner?: HostProjectTools, provider?: LspWorkspace, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider;
-        this.provider = provider;
-        this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backendFactory = backendFactory; this.reviewOwner = reviewOwner;
+
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean,
+        present: (id: DocumentId) => TextEditor | undefined, options: ActionHostOptions,
+        reviewOwner?: HostProjectTools, reconnectProvider?: () => void) {
+        this.workspace = workspace; this.canCapture = canCapture; this.present = present;
+        this.options = options; this.reviewOwner = reviewOwner; this.reconnectProvider = reconnectProvider;
         this.stopReviewOwner = reviewOwner?.state.subscribe(() => this.publish());
     }
     private available(s: Session): boolean {
@@ -59,76 +54,41 @@ export class HostActionsTools {
         return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
             && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
     }
-    private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
-    private editable(id: DocumentId): boolean { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return m.capabilities.edit.includes("human") && m.capabilities.edit.includes("host") && m.editLock === null; }
-    private currentCapture(job: Job): boolean {
-        if (this.job !== job || job.invalid || job.input.module !== this.cell.get().module) return false;
-        try {
-            if (!job.capture.isCurrent()) return false;
-            for (const source of job.sources.values()) if (source.document.id !== job.capture.document.id
-                && (!this.canCapture(source.document.id) || this.workspace.observeDocument(source.document.id).getSnapshot()?.revision !== source.document.revision || this.authority(source.document.id) !== source.authority)) return false;
-        } catch { return false; }
-        return true;
-    }
-    private current(job: Job): boolean { return this.currentCapture(job) && (!job.batch || job.batch.isCurrent()); }
-    private expire(job: Job): void {
-        if (this.job !== job || job.invalid) return;
-        job.invalid = true;
-        queueMicrotask(() => {
-            if (this.job !== job) return;
-            this.release();
-            this.metrics.expired++;
-            this.publish({ status: "expired", message: this.disconnected
-                ? "Action provider disconnected; reconnect and preview fresh actions."
-                : "Captured resource, selection, view, module or authority changed; preview a fresh action.",
-                edits: [], title: "", choices: [], page: 0, editCount: 0 });
-        });
-    }
-    private disabled(action: LspCodeAction): string | null { return action.disabled ?? (action.command ? !this.reviewOwner || !this.job?.batch?.supports(action.command) ? "This captured command is not permitted by the host." : null : !action.resolve && !action.edit?.documents.some(change => change.edits.length) ? "The provider returned no text changes." : null); }
+
     private publish(patch: Partial<ActionsSnapshot> = {}): void {
-        const job = this.job; this.cell.set({ ...this.cell.get(), ...patch, choicePage: job?.choicePage ?? 0, available: !!this.active && this.available(this.active), connected: this.lane.value?.snapshot().connected ?? false,
-            disconnected: this.disconnected, reconnectRequired: this.provider?.getSnapshot().commandRequiresReconnect ?? false, token: this.execution?.token ?? job?.input.id ?? null, pending: !!this.execution || !!job && (!job.ready || job.resolving), choice: job?.choice ?? null, resolving: job?.resolving ?? false, command: job?.selected?.command?.command ?? null, confirm: job?.confirm ?? null,
-            canApply: !this.execution && !!job?.ready && !job.resolving && this.current(job) && (!!job.batch && !!job.selected && !!(job.selected.edit || job.selected.command) && !this.disabled(job.selected)
-                && (!job.selected.command || !!this.reviewOwner?.canRunAction(job.origin.editor)) && (job.selected.edit?.documents ?? []).filter(change => change.edits.length).every(change => this.editable(change.target.document.documentId as DocumentId))) });
-    }
-    private changed(job: Job): void {
-        if (this.job !== job) return;
-        // Resolution owns its terminal error; local capture changes still expire immediately.
-        if (this.currentCapture(job) && (job.resolving || this.current(job))) return;
-        this.expire(job);
-    }
-    private connectionChanged(backend: ActionBackend): void {
-        const state = backend.snapshot(), job = this.job;
-        if (!job) return; // A handed-off command has its own captured batch subscription.
-        if (job.ready && !state.connected) this.disconnected = true;
-        this.changed(job); this.publish();
-    }
-    private release(): void {
-        const job = this.job; this.job = undefined; if (!job) return; job.invalid = true;
-        job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.stops.splice(0).forEach(stop => stop()); job.capture.cancel(); job.leases.splice(0).forEach(lease => lease.release()); if (!job.ready || job.resolving) this.lane.drop(); else if (!this.execution) this.lane.value?.cancel();
-    }
-    private retainTargets(job: Job, actions: readonly LspCodeAction[]): void {
-        for (const action of actions) for (const change of action.edit?.documents ?? []) {
-            const target = change.target.document; if (job.sources.has(target.documentId as DocumentId)) continue;
-            const document = this.workspace.getSnapshot().documents.find(document => document.id === target.documentId);
-            if (!document || document.resourceId !== target.resourceId || document.revision !== target.revision || document.buffer !== target.buffer
-                || !change.target.isCurrent() || !this.canCapture(document.id)) throw new Error("A resolved action target changed.");
-            job.sources.set(document.id, { document, authority: this.authority(document.id) });
-            const changed = () => this.changed(job);
-            job.stops.push(this.workspace.observeDocument(document.id).subscribe(changed), this.workspace.resourceForDocument(document.id).metadata.subscribe(changed));
+        const panel = this.panel, state = panel?.controller.getSnapshot(), preview = state?.preview;
+        const status = state?.status, provider = this.options.provider.getSnapshot();
+        if (panel && panel.preview !== (preview ?? null)) {
+            panel.preview = preview ?? null; panel.page = 0; panel.edits = preview?.readPage();
+            if (state?.choice != null) panel.choicePage = Math.floor(state.choice / 16);
         }
+        if (provider.phase === "disconnected" && (status === "expired" || status === "failed")) this.disconnected = true;
+        const active = status && ["pending", "resolving", "ready", "executing"].includes(status);
+        const changes = state?.changes ?? [];
+        this.cell.set({ ...this.cell.get(), available: !!this.active && this.available(this.active), connected: !!panel && provider.phase === "ready",
+            disconnected: this.disconnected, reconnectRequired: provider.commandRequiresReconnect, token: active ? panel!.input.id : null,
+            pending: status === "pending" || status === "executing" || status === "resolving", resolving: status === "resolving",
+            status: status === "executing" || status === "resolving" ? "pending" : status ?? "idle",
+            title: preview?.title ?? (state?.choice != null ? state.choices[state.choice]?.title : "") ?? "",
+            message: state?.message ?? this.cell.get().message, command: preview?.command ?? null, choices: state?.choices ?? [], choice: state?.choice ?? null,
+            canApply: !!preview?.canApply && (!preview.command || !!this.reviewOwner?.canRunAction(panel!.source.editor)), confirm: preview?.confirm ?? null,
+            disabled: preview?.disabled ?? null, page: panel?.page ?? 0, editCount: panel?.edits?.count ?? 0, edits: panel?.edits?.notes ?? [],
+            choicePage: panel?.choicePage ?? 0, work: state?.status === "ready" ? panel!.input.length : 0, total: panel?.input.length ?? 0,
+            changes, changed: changes.find(c => c.document === panel?.source.editor.view.documentId) ?? changes[0] ?? null, ...patch });
     }
-    readonly cancel = (): void => { const execution = this.execution, applied = execution?.handle.applied() ?? false; this.execution = undefined; execution?.handle.cancel(); if (this.job || execution) this.metrics.cancelled++; this.release();
-        this.publish({ status: "idle", message: applied ? "Action command cancelled after application; the edits remain undoable." : "Action preview dismissed; source is unchanged by this action.", edits: [], title: "", disabled: null, work: 0, total: 0, choices: [], page: 0, editCount: 0 }); };
-    readonly disconnect = (): void => { this.cancel(); this.lane.drop(); this.disconnected = true; this.publish({ message: "Action provider disconnected; local editing remains available." }); };
-    readonly reconnect = (): void => { this.cancel(); this.lane.drop(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ message: "Preview a fresh action with current source." }); };
+    readonly cancel = (): void => {
+        const panel = this.panel; this.panel = undefined; panel?.stop(); panel?.controller.dispose();
+        this.publish(panel ? { message: panel.controller.getSnapshot().message || "Action preview dismissed." } : {});
+    };
+    readonly disconnect = (): void => { this.disconnected = true; this.cancel(); this.publish({ message: "Action provider disconnected; local editing remains available." }); };
+    readonly reconnect = (): void => { this.disconnected = false; this.cancel(); this.reconnectProvider?.(); this.publish({ message: "Preview a fresh action with current source." }); };
     setModule(value: string): void { if (value === this.cell.get().module) return; this.cancel(); this.publish({ module: value.slice(0, 65), status: "idle", message: "Module changed; preview a fresh action.", title: "", disabled: null, edits: [], work: 0, total: 0, choices: [], page: 0, editCount: 0 }); }
     readonly bindModule = (input: HTMLInputElement | null): void => {
         this.moduleEvents?.abort(); this.moduleEvents = undefined; this.moduleInput = input ?? undefined; if (!input || this.disposed) return;
         const events = new AbortController(); this.moduleEvents = events;
         input.addEventListener("keydown", event => {
             if (event.defaultPrevented || event.isComposing) return;
-            if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); const origin = this.job?.origin ?? this.active; this.cancel(); if (origin && this.available(origin)) origin.editor.focus(); }
+            if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); const origin = this.panel?.source ?? this.active; this.cancel(); if (origin && this.available(origin)) origin.editor.focus(); }
             else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) { event.preventDefault(); this.request(); }
         }, { signal: events.signal });
     };
@@ -140,135 +100,64 @@ export class HostActionsTools {
                 event.preventDefault(); event.stopImmediatePropagation(); this.active = s; this.start(true);
             }
         }, { capture: true, signal: events.signal });
-        for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.job?.sources.has(editor.view.documentId)) this.cancel(); }, { signal: events.signal });
-        let detached = false; return () => { if (detached) return; detached = true; if (this.job?.origin === s) this.cancel(); events.abort(); this.sessions.delete(s.token); if (this.active === s) this.active = undefined; if (!this.sessions.size) this.lane.drop(); this.publish(); };
+        for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.panel && this.panel.source !== s && this.cell.get().token !== null && this.panel.controller.getSnapshot().status !== "executing" && this.workspace.document(editor.view.documentId).key.variant === "working") this.cancel(); }, { signal: events.signal });
+        let detached = false; return () => { if (detached) return; detached = true; if (this.panel?.source === s) this.cancel(); events.abort(); this.sessions.delete(s.token); if (this.active === s) this.active = undefined; this.publish(); };
     }
     readonly request = (): void => this.start(false);
-    /** Start a host command from its named mounted source, independent of later focus. */
-    begin(id: string): void {
-        const source = [...this.sessions.values()].find(session => session.id === id);
-        if (!source) return; this.active = source; this.start(false);
-    }
     private start(keyboard: boolean): void {
         const origin = this.active, module = this.cell.get().module;
         if (this.disconnected || !origin || !this.available(origin)) { this.publish({ message: "Focus an available source and reconnect first." }); return; }
-        if (!this.canCapture(origin.editor.view.documentId)) { this.publish({ message: "Finish pending input, navigation, table conversion or composition first." }); return; }
-        this.cancel(); const doc = this.workspace.document(origin.editor.view.documentId), selected = origin.editor.view.getSnapshot();
-        if (doc.key.variant !== "working") { this.publish({ status: "failed", message: "Only a working source can receive an action." }); return; }
-        const documents = this.workspace.getSnapshot().documents.filter(doc => doc.key.variant === "working");
-        if (documents.some(doc => !this.canCapture(doc.id))) { this.publish({ message: "Finish pending input, navigation, table conversion or composition in the captured project first." }); return; }
-        let input: ActionInput;
-        try { input = validateActionInput({ operation: "action-start", id: ++this.sequence, document: doc.id, revision: doc.revision, length: doc.buffer.length, from: Math.min(selected.selection.anchor, selected.selection.head), to: Math.max(selected.selection.anchor, selected.selection.head), module, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
-        catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid action capture." }); return; }
-        this.fault = undefined;
-        const sources = new Map(documents.map(doc => [doc.id, { document: doc, authority: this.authority(doc.id) }]));
-        const capture = captureViewRequest(this.workspace, origin.target, origin.editor.view, { available: () => this.available(origin) && this.canCapture(origin.editor.view.documentId) });
-        if (!capture) { this.publish({ message: "The source changed before capture; request a fresh action." }); return; }
-        const win = origin.editor.element.ownerDocument.defaultView!, job: Job = { origin, input, document: capture.document, capture,
-            sources, leases: [], stops: [], timer: 0, invalid: false, ready: false, choice: null, choicePage: 0, resolving: false, page: 0 };
-        this.job = job; this.metrics.requested++;
-        const changed = () => this.changed(job);
-        try {
-            capture.signal.addEventListener("abort", changed, { once: true });
-            for (const doc of documents) if (doc.id !== capture.document.id) { job.leases.push(this.workspace.acquire(doc.resourceId)); job.stops.push(this.workspace.observeDocument(doc.id).subscribe(changed), this.workspace.resourceForDocument(doc.id).metadata.subscribe(changed)); }
-            job.timer = win.setTimeout(() => { if (this.job === job && !job.ready) { this.release(); this.metrics.failed++; this.publish({ status: "failed", message: "Action provider timed out; source is unchanged.", edits: [], choices: [] }); } }, 30000);
-            this.publish({ status: "pending", message: "Requesting captured provider actions.", edits: [], title: "", disabled: null, work: 0, total: doc.buffer.length });
-            const backend = this.lane.acquire(notify => createActionBackend(this.backendFactory, notify));
-            void backend.run({ documents, input }).then(value => {
-                job.batch = value.batch;
-                if (!this.current(job)) { changed(); return; }
-                const batch = value.batch; this.retainTargets(job, batch.actions); job.ready = true; win.clearTimeout(job.timer);
-                const token = input.id;
-                const choices = Object.freeze(batch.actions.map((action, index) => Object.freeze({ index, title: action.title, kind: action.kind, preferred: action.preferred, disabled: this.disabled(action), needsResolve: action.resolve !== null,
-                    select: (applyWhen?: DirectAction) => { if (this.job?.input.id === token) this.choose(index, applyWhen); } })));
-                this.publish({ status: "ready", choices, message: choices.length ? "Choose a captured action and review its edits before applying." : "No provider actions for this captured range.", work: input.length });
-                if (batch.actions[0]?.edit && !this.disabled(batch.actions[0])) choices[0]!.select();
-            }).catch(error => { if (this.job !== job) return; this.release(); this.lane.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Action failed; source is unchanged.", edits: [], title: "", choices: [], editCount: 0 }); });
-            if (keyboard && this.moduleInput && this.current(job)) {  this.moduleInput.focus(); this.moduleInput.select(); }
-        } catch (error) { this.release(); this.lane.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Action provider unavailable.", edits: [] }); }
-    }
-    private choose(index: number, applyWhen?: DirectAction): void {
-        const job = this.job, action = job?.batch?.actions[index]; if (!job?.ready || job.resolving || !action || !this.current(job)) return;
-        job.choice = index; job.selected = action; job.confirm = undefined; job.page = 0; job.choicePage = Math.floor(index / 16);
-        const preview = (selection: LspCodeAction) => {
-            const confirm = () => { if (this.job?.confirm === confirm) this.applySelected(); };
-            job.confirm = confirm; this.showChoice(job);
-            if (!this.disabled(selection) && applyWhen?.(selection)) confirm();
-        };
-        if (!action.resolve || this.disabled(action)) { preview(action); return; }
-        const win = job.origin.editor.element.ownerDocument.defaultView!, configuration = { module: job.input.module, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }; this.fault = undefined;
-        job.resolving = true; this.publish({ status: "pending", title: action.title, edits: [], editCount: 0, page: 0, disabled: null, message: "Resolving the captured action's edit preview." });
-        job.timer = win.setTimeout(() => { if (this.job === job && job.resolving) { this.release(); this.metrics.failed++; this.publish({ status: "failed", message: "Action resolution timed out; source is unchanged.", edits: [], choices: [], editCount: 0 }); } }, 30000);
-        void job.batch!.resolve(action, configuration).then(resolved => {
-            if (this.job !== job || job.choice !== index) return;
-            if (!this.current(job)) { this.expire(job); return; }
-            this.retainTargets(job, [resolved]); job.selected = resolved;
-            job.resolving = false;
-            win.clearTimeout(job.timer);
-            preview(resolved);
-        }).catch(error => {
-            if (this.job !== job) return;
-            if (!this.currentCapture(job) || error instanceof RpcError && (error.code === -32800 || error.code === -32801)) {
-                this.expire(job); return;
-            }
-            this.release(); this.lane.drop(); this.metrics.failed++;
-            this.publish({ status: "failed", message: error instanceof Error ? error.message : "Action resolution failed; source is unchanged.",
-                edits: [], choices: [], title: "", editCount: 0 });
-        });
-    }
-    private showChoice(job: Job): void {
-        const action = job.selected; if (!action || !this.current(job)) return;
-        const preview = action.edit ? previewLspWorkspaceEdit(action.edit, id => job.sources.get(id as DocumentId)!.document.title, job.page) : { count: 0, notes: [] }, disabled = this.disabled(action);
-        this.publish({ status: "ready", title: action.title, disabled, edits: preview.notes, editCount: preview.count, page: job.page,
-            message: disabled ?? (action.command ? `Confirm execution of ${action.command.title} (${action.command.command}) with ${action.command.arguments.length} captured arguments after ${preview.count} edits. Further edits follow the host's captured action policy.` : `Review ${preview.count} captured provider edits before confirming. Every target must permit application.`) });
-    }
-    nextPage(): void { const job = this.job; if (job?.selected?.edit && this.current(job) && !job.resolving && (job.page + 1) * 64 < this.cell.get().editCount) { job.page++; this.showChoice(job); } }
-    previousPage(): void { const job = this.job; if (job?.selected && this.current(job) && !job.resolving && job.page > 0) { job.page--; this.showChoice(job); } }
-    moveChoicePage(direction: -1 | 1): void {
-        const job = this.job, state = this.cell.get(), page = state.choicePage + direction;
-        if (job?.ready && !job.resolving && this.current(job) && page >= 0 && page * 16 < state.choices.length) { job.choicePage = page; this.publish(); }
-    }
-    private applySelected(): void {
-        const job = this.job; if (this.execution || !job?.ready || job.resolving || !this.current(job)
-            || (!job.batch || !job.selected || !(job.selected.edit || job.selected.command) || !!this.disabled(job.selected) || (job.selected.edit?.documents ?? []).some(change => change.edits.length && !this.editable(change.target.document.documentId as DocumentId)))) { this.publish({ message: "Use a fresh applicable preview with edit permission." }); return; }
-        if (job.selected?.command && job.batch && this.lane.value) {
-            const batch = job.batch, action = job.selected, backend = this.lane.value;
-            try {
-                const handle = this.reviewOwner?.beginAction({ editor: job.origin.editor, sources: [...job.sources.values()], edit: action.edit,
-                    isCurrent: batch.commandCurrent, subscribe: batch.subscribe, execute: scope => batch.execute(action, scope), cancel: () => { if (this.lane.value === backend) this.lane.drop(); else backend.dispose(); } });
-                if (!handle) { this.publish({ message: "Finish the current workspace-provider review before executing this action." }); return; }
-                const execution = { token: job.input.id, handle }; this.execution = execution; this.release();
-                this.publish({ status: "pending", message: "Executing the confirmed action under the host's captured edit policy.", edits: [], choices: [], editCount: 0, title: action.title });
-                void handle.result.then(receipt => { if (this.execution !== execution) return; this.execution = undefined; if (receipt.applied) this.metrics.applied++;
-                    if (this.provider ? this.provider.getSnapshot().phase !== "ready" : this.lane.value && !this.lane.value.snapshot().connected) this.disconnected = true;
-                    this.publish({ status: receipt.success ? receipt.applied ? "applied" : "executed" : "failed", message: receipt.reason,
-                        title: "", changes: receipt.changes, changed: receipt.changes.find(change => change.document === job.document.id) ?? receipt.changes[0] ?? null }); });
-            } catch (error) { this.publish({ message: error instanceof Error ? error.message : "Captured command cannot start." }); }
-            return;
+        const documents = () => this.workspace.getSnapshot().documents.filter(doc => doc.key.variant === "working");
+        const doc = this.workspace.document(origin.editor.view.documentId), range = origin.editor.view.getSnapshot().selection;
+        if (doc.key.variant !== "working" || documents().some(doc => !this.canCapture(doc.id))) {
+            this.publish({ message: "Finish pending input, navigation, table conversion or composition in the captured project first." }); return;
         }
-        try {
-            let documents: readonly DocumentSnapshot[] = [];
-            if (!job.capture.commit(() => {
-                documents = applyLspWorkspaceEdit(this.workspace, job.selected!.edit!, { origin: "host", source: "code-action", requiredOrigins: ["human"], historyKind: "refactor", view: job.origin.editor.view });
-                return true;
-            })) throw new Error("Captured action context changed before application.");
-            const changes = Object.freeze(documents.map(doc => Object.freeze({ document: doc.id, title: doc.title.slice(0, 128) })));
-            this.metrics.applied++; this.release(); this.publish({ status: "applied", message: "Applied exact captured provider edits as one shared undo command.", title: "", edits: [], choices: [], editCount: 0, page: 0, changes, changed: changes.find(change => change.document === job.document.id) ?? changes[0] ?? null });
-            if (this.available(job.origin)) { job.origin.editor.viewport.revealOffset(job.origin.editor.view.getSnapshot().selection.head); job.origin.editor.focus(); }
-        } catch (error) { this.release(); this.publish({ status: "failed", message: error instanceof Error ? error.message : "Action rejected; source is unchanged.", edits: [], title: "", choices: [], editCount: 0 }); }
+        this.cancel();
+        let input: ActionInput;
+        try { input = validateActionInput({ operation: "action-start", id: this.workspace.allocateIdentity(), document: doc.id, revision: doc.revision, length: doc.buffer.length,
+            from: Math.min(range.anchor, range.head), to: Math.max(range.anchor, range.head), module, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
+        catch (error) { this.fault = undefined; this.publish({ status: "failed", message: String(error) }); return; }
+        this.fault = undefined;
+        const { provider, commandPolicy, beforeRequest, beforeResolve } = this.options, review = this.reviewOwner;
+        const controller = createCodeActionController(origin.editor, provider, { documents, canCapture: this.canCapture,
+            ...(commandPolicy && { commandPolicy }), ...(beforeRequest && { prepareRequest: session => beforeRequest(session, input) }),
+            ...(beforeResolve && { prepareResolve: session => {
+                const settings = { module, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }; this.fault = undefined;
+                return beforeResolve(session, settings);
+            } }), ...(review && { runCommand: command => review.beginAction({ ...command, editor: origin.editor }) }) });
+        this.panel = { source: origin, input, controller, stop: controller.subscribe(() => this.publish()), page: 0, choicePage: 0, edits: undefined, preview: null };
+        this.requested++; controller.request();
+        if (keyboard && this.moduleInput && this.cell.get().pending) { this.moduleInput.focus(); this.moduleInput.select(); }
+    }
+    private goToPage(direction: -1 | 1): void {
+        const panel = this.panel; if (!panel?.preview || !panel.edits) return;
+        const page = panel.page + direction; if (page < 0 || page * 64 >= panel.edits.count) return;
+        panel.edits = panel.preview.readPage(page); panel.page = page; this.publish();
+    }
+    nextPage(): void { this.goToPage(1); }
+    previousPage(): void { this.goToPage(-1); }
+    moveChoicePage(direction: -1 | 1): void {
+        const panel = this.panel; if (!panel) return;
+        const state = panel.controller.getSnapshot(), page = panel.choicePage + direction;
+        if (state.status === "ready" && page >= 0 && page * 16 < state.choices.length) { panel.choicePage = page; this.publish(); }
     }
     readonly openChanged = (): void => {
         const changed = this.cell.get().changed; if (changed) this.openChangedDocument(changed.document);
     };
     openChangedDocument(document: DocumentId): void {
-        if (this.disposed || this.job || !this.cell.get().changes.some(change => change.document === document) || !this.canCapture(document)) return;
+        if (this.disposed || this.cell.get().token !== null || !this.cell.get().changes.some(change => change.document === document) || !this.canCapture(document)) return;
         try { const editor = [...this.sessions.values()].find(s => s.editor.view.documentId === document && this.available(s))?.editor ?? this.present(document);
             if (!editor || editor.view.documentId !== document) { this.publish({ message: "The captured changed resource cannot be presented in an available source view." }); return; } editor.focus(); }
         catch { this.publish({ message: "The changed resource is no longer available." }); }
     }
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid action delay."); this.delay = value; }
     faultNext(value: NonNullable<ActionInput["fault"]>): void { this.fault = value; }
-    faultIdle(): boolean { return this.lane.value?.faultIdle() ?? false; }
-    debug() { const job = this.job; return { ...this.metrics, state: this.cell.get(), capture: job ? { view: job.origin.id, input: job.input, selections: job.capture.selectionSet } : null, transport: this.lane.value?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
-    dispose(): void { if (this.disposed) return; this.cancel(); this.lane.dispose(); this.bindModule(null); this.stopReviewOwner?.(); this.disposed = true; this.active = undefined; this.publish({ changed: null, changes: [] }); }
+
+    faultIdle(): boolean {
+        if (!this.panel || this.cell.get().pending || this.options.provider.getSnapshot().phase !== "ready") return false;
+        this.options.provider.disconnect(); return true;
+    }
+    debug() { return { requested: this.requested, state: this.cell.get(), capture: this.panel && this.cell.get().token !== null ? { view: this.panel.source.id, input: this.panel.input } : null,
+        transport: this.panel ? "lsp3.17" : null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
+    dispose(): void { if (this.disposed) return; this.cancel(); this.bindModule(null); this.stopReviewOwner?.(); this.disposed = true; this.active = undefined; this.publish(); }
 }

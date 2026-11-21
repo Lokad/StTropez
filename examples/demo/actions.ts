@@ -1,9 +1,8 @@
 import type { Workspace } from "../../src/index.ts";
-import type { TextEditor } from "../../src/browser/index.ts";
+import { createCodeActionController } from "../../src/browser/index.ts";
+import type { CodeActionPreview, TextEditor } from "../../src/browser/index.ts";
 import type { LspCodeAction, LspWorkspace } from "../../src/protocol/index.ts";
-import { HostActionsTools } from "../hosts/code-actions.ts";
 import { HostProjectTools } from "../hosts/project.ts";
-import { createLspActionClient } from "../shared/language/lsp-action-client.ts";
 import { demoCommandPolicy } from "./action-commands.ts";
 import { projectReviewNote } from "./action-fixture.ts";
 import type { DemoFile } from "./project.ts";
@@ -32,9 +31,12 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
         && request.edit.documents[0]!.edits.length === 1 && request.edit.documents[0]!.edits.every(edit => edit.insert === projectReviewNote
             && edit.from === edit.to && edit.from === request.edit.documents[0]!.target.document.buffer.length) ? "apply" : "decline");
     scope.defer(() => commands.dispose());
-    const tools = new HostActionsTools(workspace, () => idle(), present,
-        () => createLspActionClient({ provider, commandPolicy: demoCommandPolicy(file, () => language.documentUri(file), idle),
-            beforeRequest: session => language.prepareActions(session, file) }), commands, provider);
+    const tools = createCodeActionController(editor, provider, {
+        documents: () => workspace.getSnapshot().documents.filter(doc => doc.key.variant === "working"), canCapture: idle,
+        commandPolicy: demoCommandPolicy(file, () => language.documentUri(file), idle),
+        prepareRequest: session => language.prepareActions(session, file),
+        runCommand: command => commands.beginAction({ ...command, editor })
+    });
     scope.defer(() => tools.dispose());
     // Host interaction policy only; all captures, permissions and history still pass through tools.
     const direct = (action: LspCodeAction) => {
@@ -51,49 +53,58 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     };
     const request = () => {
         if (!idle()) return; dismissOther(); editor.focus(); position();
-        commandAction = false; popup.hidden = false; tools.begin("source");
+        commandAction = false; popup.hidden = false; tools.request();
     };
-    let oldChoices: unknown, oldChoicePage = -1;
-    scope.defer(tools.state.subscribe(() => {
-        const state = tools.state.getSnapshot();
-        if (state.status === "ready") commandAction = state.command !== null;
+    let oldChoices: unknown, oldChoicePage = -1, choicePage = 0, editPage = 0, shown: CodeActionPreview | null = null;
+    function render(): void {
+        const state = tools.getSnapshot(), preview = state.preview;
+        if (shown !== preview) {
+            shown = preview; editPage = 0;
+            if (preview) choicePage = Math.floor(preview.index / 16);
+        }
+        if (!state.choices.length) choicePage = 0;
+        const page = preview?.readPage(editPage);
+        if (state.status === "ready") commandAction = !!preview?.command;
         if (!popup.hidden) position();
         status.textContent = state.status === "expired" ? "The code or selection changed. Request fixes again."
-            : state.status === "ready" ? state.choices.length ? state.command ? state.message : "Choose a small fix to apply it. Broader changes stay here for review before Apply." : "No quick fix at this position."
+            : state.status === "ready" ? state.choices.length ? preview?.command ? state.message : "Choose a small fix to apply it. Broader changes stay here for review before Apply." : "No quick fix at this position."
                 : state.message;
-        if (oldChoices !== state.choices || oldChoicePage !== state.choicePage) {
-            oldChoices = state.choices; oldChoicePage = state.choicePage; choices.replaceChildren(...state.choices.slice(state.choicePage * 16, (state.choicePage + 1) * 16).map(choice => {
+        if (oldChoices !== state.choices || oldChoicePage !== choicePage) {
+            oldChoices = state.choices; oldChoicePage = choicePage; choices.replaceChildren(...state.choices.slice(choicePage * 16, (choicePage + 1) * 16).map(choice => {
                 const button = document.createElement("button"); button.textContent = choice.title; button.disabled = choice.disabled !== null; button.title = choice.disabled ?? ""; button.dataset.choice = String(choice.index);
                 button.addEventListener("click", () => choice.select(direct)); return button;
             }));
         }
-        choicePages.hidden = state.choices.length <= 16; previousChoices.disabled = state.pending || state.choicePage === 0; nextChoices.disabled = state.pending || (state.choicePage + 1) * 16 >= state.choices.length;
-        choiceCount.textContent = `${state.choicePage * 16 + 1}–${Math.min((state.choicePage + 1) * 16, state.choices.length)} of ${state.choices.length}`;
+        choicePages.hidden = state.choices.length <= 16; previousChoices.disabled = state.status !== "ready" || choicePage === 0; nextChoices.disabled = state.status !== "ready" || (choicePage + 1) * 16 >= state.choices.length;
+        choiceCount.textContent = `${choicePage * 16 + 1}–${Math.min((choicePage + 1) * 16, state.choices.length)} of ${state.choices.length}`;
         for (const button of choices.querySelectorAll<HTMLButtonElement>("[data-choice]")) button.dataset.chosen = String(Number(button.dataset.choice) === state.choice);
-        edits.replaceChildren(...state.edits.map(at => {
+        edits.replaceChildren(...(page?.notes ?? []).map(at => {
             const item = document.createElement("li"), before = document.createElement("del"), after = document.createElement("ins");
             before.textContent = at.before ?? at.context; after.textContent = at.insert + ((at.insertUnits ?? at.insert.length) > at.insert.length ? "…" : "");
             item.append(`${at.title} `, before, " → ", after); return item;
         }));
-        const applyLabel = state.command ? "Run action" : "Apply fix"; if (apply.textContent !== applyLabel) apply.textContent = applyLabel;
-        apply.disabled = !state.canApply; apply.onclick = state.confirm;
-        pages.hidden = state.editCount <= 64; previous.disabled = state.page === 0; next.disabled = (state.page + 1) * 64 >= state.editCount;
-        if (state.status === "applied" && !commandAction) queueMicrotask(() => { if (!disposed && tools.state.getSnapshot() === state) { dismiss(); editor.focus(); } });
-    }));
+        const applyLabel = preview?.command ? "Run action" : "Apply fix"; if (apply.textContent !== applyLabel) apply.textContent = applyLabel;
+        apply.disabled = !preview?.canApply || !!preview.command && !commands.canRunAction(editor); apply.onclick = preview?.confirm ?? null;
+        const count = page?.count ?? 0;
+        pages.hidden = count <= 64; previous.disabled = editPage === 0; next.disabled = (editPage + 1) * 64 >= count;
+        if (state.status === "applied" && !commandAction) queueMicrotask(() => { if (!disposed && tools.getSnapshot() === state) { dismiss(); editor.focus(); } });
+    }
+    scope.defer(tools.subscribe(render));
+    scope.defer(commands.state.subscribe(() => { if (shown?.command) render(); }));
     scope.defer(editor.viewport.onRender(() => { if (!popup.hidden) position(); }));
     apply.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });
     choices.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });
     close.addEventListener("click", () => { dismiss(); editor.focus(); }, { signal: events.signal });
-    previous.addEventListener("click", () => tools.previousPage(), { signal: events.signal }); next.addEventListener("click", () => tools.nextPage(), { signal: events.signal });
-    previousChoices.addEventListener("click", () => tools.moveChoicePage(-1), { signal: events.signal }); nextChoices.addEventListener("click", () => tools.moveChoicePage(1), { signal: events.signal });
+    previous.addEventListener("click", () => { editPage--; render(); }, { signal: events.signal }); next.addEventListener("click", () => { editPage++; render(); }, { signal: events.signal });
+    previousChoices.addEventListener("click", () => { choicePage--; render(); }, { signal: events.signal }); nextChoices.addEventListener("click", () => { choicePage++; render(); }, { signal: events.signal });
     editor.input.addEventListener("keydown", event => {
         if (event.defaultPrevented || event.isComposing || editor.activity().composing) return;
         if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key === ".") { event.preventDefault(); event.stopImmediatePropagation(); request(); }
         else if (!popup.hidden && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
-            const state = tools.state.getSnapshot();
+            const state = tools.getSnapshot();
             if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); dismiss(); }
-            else if (event.key === "Enter" && state.canApply) { event.preventDefault(); event.stopImmediatePropagation(); state.confirm?.(); }
-            else if (event.key === "Enter" && !state.pending) dismiss();
+            else if (event.key === "Enter" && !apply.disabled && state.preview) { event.preventDefault(); event.stopImmediatePropagation(); state.preview.confirm(); }
+            else if (event.key === "Enter" && !["pending", "resolving", "executing"].includes(state.status)) dismiss();
             else if ((event.key === "ArrowDown" || event.key === "ArrowUp") && state.choices.length) {
                 event.preventDefault(); event.stopImmediatePropagation();
                 state.choices[((state.choice ?? 0) + (event.key === "ArrowDown" ? 1 : state.choices.length - 1)) % state.choices.length]!.select();
@@ -101,6 +112,5 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
         }
     }, { capture: true, signal: events.signal });
     scope.defer(commands.attach("source", file.tab, editor));
-    scope.defer(tools.attach("source", file.tab, editor));
     return Object.freeze({ request, dismiss, isOpen: () => !popup.hidden });
 }

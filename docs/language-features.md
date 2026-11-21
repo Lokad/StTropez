@@ -18,7 +18,7 @@ separately. Incoming edits and command execution have their own
 | Signature help | `createLspSignatureClient` | `textDocument/signatureHelp` |
 | Definition / references | `createLspNavigationClient` | `textDocument/definition` / `textDocument/references` |
 | Rename | `createLspRenameClient` | `textDocument/rename` |
-| Code actions | `createLspActionClient` | `textDocument/codeAction` |
+| Code actions | `createCodeActionController`, `createLspActionClient` | `textDocument/codeAction` |
 | Document links | `createLspLinkClient` | `textDocument/documentLink` |
 | Document colors | `createLspColorClient` | `textDocument/documentColor` and `textDocument/colorPresentation` |
 | Occurrences | `createLspHighlightClient`; browser `createLspHighlightController` | `textDocument/documentHighlight` |
@@ -430,6 +430,36 @@ adds one undo step across its changed files, including unmounted ones. Only a lo
 edit target blocks the batch. An unrelated read-only file can stay in the project.
 
 ### Code actions and commands
+
+`createCodeActionController(editor, provider, options?)` requests actions for the editor’s primary
+selection. The origin document is always included. Supply `documents` to include other project files.
+Render `getSnapshot().choices` and call the chosen item’s `select()` to resolve and preview it.
+If the first choice already has an edit, its preview opens with the list. A preview page contains up
+to 64 edits. Confirming applies the full edit across all affected files in one undo step.
+
+```ts
+import { createCodeActionController, type TextEditor } from "sttropez/browser";
+import type { LspWorkspace } from "sttropez/protocol";
+
+export function attachFixes(editor: TextEditor, provider: LspWorkspace) {
+    const actions = createCodeActionController(editor, provider);
+    const stop = actions.subscribe(() => {
+        const { choices, preview } = actions.getSnapshot();
+        // Bind each button to this choice or preview, including across a later render.
+        renderFixes(choices.map(choice => ({ title: choice.title, select: () => choice.select() })),
+            preview?.readPage()?.count ?? 0, preview?.canApply ? preview.confirm : undefined);
+    });
+    return { request: actions.request, dispose() { stop(); actions.dispose(); } };
+}
+
+declare function renderFixes(choices: { title: string; select(): void }[], edits: number, confirm?: () => void): void;
+```
+
+A change to the captured selection, fold projection, document revision or edit authority expires
+the preview. Replacing the editor disposes its controller. Old choices and confirmation buttons
+cannot edit the replacement. For a direct fix, an explicit choice button can pass a predicate to
+`select` that checks the resolved action before confirming it. Commands also require a host
+`runCommand` handler that owns authorization and review of any subsequent edits.
 
 `createLspActionClient(provider, options).run(project, originId, from, to, prepare?)` returns
 validated `actions`, currentness guards, `supports(command)`, `resolve(action)` and

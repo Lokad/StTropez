@@ -34,7 +34,12 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         await button("Rename preview").click(); await expect.poll(async () => (await state()).notes.renameEdits ?? 0).toBeGreaterThan(1);
         const history = (await state()).history.undoDepth; await button("Apply rename").click(); await expect(page.locator("#result")).toHaveText("Rename applied");
         assert.equal((await state()).history.undoDepth, history + 1); assert.ok((await text()).includes("inventory")); await input.press("Control+z"); assert.equal(await text(), typed);
-        await button("Code actions").click(); await expect.poll(async () => (await state()).notes.actions ?? 0).toBeGreaterThan(1); await expect.poll(async () => (await state()).notes.resolved).toBe(true);
+        await button("Code actions").click(); await expect.poll(async () => (await state()).notes.actions ?? 0).toBeGreaterThan(1);
+        await button("Review lazy action").click(); await expect.poll(async () => (await state()).notes.resolved).toBe(true);
+        await expect(page.locator("#result")).toContainText("TODO → DONE"); assert.equal(await text(), typed);
+        const actionDepth = (await state()).history.undoDepth; await button("Apply reviewed action").click();
+        await expect.poll(text).toBe(typed.replace("TODO", "DONE")); assert.equal((await state()).history.undoDepth, actionDepth + 1);
+        await input.press("Control+z"); assert.equal(await text(), typed);
         await page.evaluate(() => window.publicLsp.custom("fixture/completionStyle", { style: "interactive" }));
         await input.focus(); await page.evaluate(() => window.publicLsp.select(9)); await input.press("Backspace"); await input.pressSequentially("m");
         await expect(button("sampleWithImport")).toBeVisible(); await expect.poll(async () => (await state()).editor.pending).toBe(false);
