@@ -20,6 +20,8 @@ export function classifyEditingKey(event: KeyStroke, apple: boolean, escaped: bo
     if (command && !extend && commentChord && (key === "c" || key === "u"))
         return bind({ kind: "language", command: key === "c" ? "add-line-comment" : "remove-line-comment" }, true);
     if (command && !extend && key === "k") return "comment-prefix";
+    if (command && extend && key === "k") return bind({ kind: "language", command: "delete-lines" }, true);
+    if (command && event.key === "Enter") return bind({ kind: "language", command: extend ? "insert-line-above" : "insert-line-below" }, true);
     if (command && !extend && (key === "]" || key === "[")) return bind({ kind: "language", command: key === "]" ? "indent-lines" : "outdent" }, true);
     if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
         const up = event.key === "ArrowUp";

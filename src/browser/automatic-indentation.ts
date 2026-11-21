@@ -41,12 +41,13 @@ export function automaticIndentation() {
                 const text = edit.insert, start = edit.from + delta;
                 delta += text.length - (edit.to - edit.from);
                 if (!generated.has(text)) continue;
-                let newline = text.indexOf("\n");
-                while (newline >= 0) {
-                    const from = start + newline + 1, next = text.indexOf("\n", newline + 1);
+                for (let offset = 0; offset < text.length;) {
+                    const from = start + offset, next = text.indexOf("\n", offset);
                     const to = start + (next < 0 ? text.length : next - Number(text[next - 1] === "\r"));
-                    if (from < to && lineContentEnd(buffer, buffer.lineAt(from)) === to) spans.push({ from, to });
-                    newline = next;
+                    const line = buffer.lineAt(from);
+                    if (from < to && buffer.offsetAt(line) === from && lineContentEnd(buffer, line) === to) spans.push({ from, to });
+                    if (next < 0) break;
+                    offset = next + 1;
                 }
             }
             if (spans.length) {

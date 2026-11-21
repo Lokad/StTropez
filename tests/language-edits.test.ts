@@ -70,6 +70,23 @@ test("moving and copying line blocks retains directed selections, mixed endings 
     assert.equal(result.status, "ready"); assert.equal(result.result!.edits.length, 2); assert.ok(result.readUnits < 10);
 });
 
+test("inserting and deleting lines keeps local endings, collapses overlapping rows and clamps surviving columns", () => {
+    const source = "  x\r\nbb\nc";
+    const above = plan(source, [{ anchor: 5, head: 5 }, { anchor: 6, head: 6 }], "insert-line-above");
+    assert.equal(above.text, "  x\r\n  \r\nbb\nc"); assert.deepEqual(above.ranges, [[7, 7]]);
+    const below = plan(source, [{ anchor: 2, head: 2 }, { anchor: 6, head: 6 }], "insert-line-below");
+    assert.equal(below.text, "  x\r\n  \r\nbb\n\nc"); assert.deepEqual(below.ranges, [[7, 7], [12, 12]]);
+    assert.equal(plan(source, selection(2), "insert-line-above").text, "\r\n" + source);
+    const last = plan(source, selection(9), "delete-lines");
+    assert.equal(last.text, "  x\r\nbb"); assert.deepEqual(last.ranges, [[6, 6]]);
+    const middle = plan(source, selection(8, 7), "delete-lines");
+    assert.equal(middle.text, "  x\r\nc"); assert.deepEqual(middle.ranges, [[6, 6]]);
+    const all = plan(source, selection(source.length, 0), "delete-lines");
+    assert.equal(all.text, ""); assert.deepEqual(all.ranges, [[0, 0]]);
+    const blank = plan("a\r\n", selection(3), "delete-lines");
+    assert.equal(blank.text, "a"); assert.deepEqual(blank.ranges, [[0, 0]]);
+});
+
 test("block comments and pair surrounds retain directed and adjacent selections without copying selected text", () => {
     const selected = [{ anchor: 2, head: 0 }, { anchor: 2, head: 4 }];
     const comment = plan("abcd", selected, "block-comment");

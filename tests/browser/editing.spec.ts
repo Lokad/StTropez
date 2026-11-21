@@ -481,6 +481,21 @@ test("Alt arrows move and copy lines while typing and Undo follow the selected b
     await expect(rows).toHaveText(["a", "b", "c"]); expect((await state(page)).primary.selection).toMatchObject({ anchor: 4, head: 3 });
 });
 
+test("inserting lines above and below, deleting at EOF and Undo keep typing on the intended row", async ({ page }) => {
+    await page.evaluate(() => { const f = window.editingFixture;
+        f.configureLanguage({ enter: "keep" }); f.setText("  a\r\nend"); f.selections([{ anchor: 6, head: 6 }]); f.focus("primary");
+    });
+    const rows = page.locator("#primary .st-viewport-row");
+    await page.keyboard.press("Control+Shift+Enter"); await expect(rows.nth(1)).toHaveJSProperty("textContent", "  ");
+    await page.keyboard.press("Control+End"); await page.keyboard.press("Control+Enter"); await page.keyboard.type("last");
+    await expect(rows).toHaveText(["a", "", "end", "last"]); await expect(rows.nth(1)).toHaveJSProperty("textContent", "");
+    await page.keyboard.press("Control+Shift+k"); await page.keyboard.type("!");
+    await expect(rows.last()).toHaveJSProperty("textContent", "end!");
+    await page.keyboard.press("Control+z"); await page.keyboard.press("Control+z");
+    await expect(rows.last()).toHaveJSProperty("textContent", "last");
+    await expect(page.getByRole("textbox", { name: "Primary source", exact: true })).toBeFocused();
+});
+
 test("typing a closing brace realigns the line and Undo restores its indentation", async ({ page }) => {
     await page.evaluate(() => { const f = window.editingFixture, text = "  if (ok) {\n      ";
         f.setText(text); f.selections([{ anchor: text.length, head: text.length }]); f.focus("primary");

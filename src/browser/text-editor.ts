@@ -732,7 +732,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             rangeCommand = undefined; planner.dispose();
             completeCaptured(capture, () => {
                 const plan = result.result!;
-                const autoIndent = command === "newline" && language.enter !== undefined;
+                const autoIndent = language.enter !== undefined && (command === "newline" || command === "insert-line-above" || command === "insert-line-below");
                 if (plan.edits.length) return apply(plan.edits, plan.selectionSet, typeof command === "object" ? "typing" : "replace", undefined, capture.revision, undefined,
                     autoIndent, autoIndent ? edits => automaticIndent.remember(workspace.document(documentId), edits, plan.edits)
                         : typeof command === "object" ? acceptPairs : undefined);
