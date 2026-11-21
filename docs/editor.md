@@ -129,7 +129,8 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Word modifier + Left / Right | Code-word movement from the active head |
 | Up / Down | Previous/next visible line at the retained horizontal column |
 | PageUp / PageDown | Move by the viewport's visible page, retaining the column |
-| Home / End | Logical line start/end; End excludes CR in CRLF and includes a final lone CR |
+| Home / Shift+Home | Move to the first nonblank character, then to the line start on the next press. Shift extends the selection. On a blank line, move to the start. |
+| End | Logical line end, excluding CR in CRLF and including a final lone CR |
 | Ctrl/Cmd + Home / End | Document start/end |
 | Apple Cmd + Left / Right, Up / Down | Line endpoints, document endpoints respectively |
 | Backspace / Delete | Delete selections or the adjacent grapheme |

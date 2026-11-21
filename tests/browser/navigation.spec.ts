@@ -7,6 +7,25 @@ async function setup(page: Page, text: string, head = 0) {
 }
 test.beforeEach(async ({ page }) => {  await page.goto("/editing/"); await ready(page); });
 
+test("Home toggles between the first nonblank and the start of its own line", async ({ page }) => {
+    await setup(page, "one\r\n\t  second\r\n   \r\n", 13);
+    await page.keyboard.press("Shift+Home");
+    expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 13, head: 8 });
+    await page.keyboard.press("Shift+Home");
+    expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 13, head: 5 });
+    await page.keyboard.press("Home");
+    expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 8, head: 8 });
+    await page.keyboard.type("X");
+    await expect(page.locator("#primary .st-viewport-row").nth(1)).toHaveJSProperty("textContent", "\t  Xsecond");
+    await page.keyboard.press("Control+Home");
+    expect((await snapshot(page)).primary.selection.head).toBe(0);
+    await setup(page, " ".repeat(1_000_000) + "last", 1_000_004);
+    await page.keyboard.press("Home");
+    await page.keyboard.type("Y");
+    await ready(page);
+    expect(await page.evaluate(() => window.editingFixture.range(1_000_000, 1_000_005))).toBe("Ylast");
+});
+
 test("word keys navigate full model ranges, extend selections and delete one undoable code word", async ({ page }) => {
     const text = "alpha_beta  gamma.delta 😀 café"; await setup(page, text);
     for (const head of [12, 17, 18, 24, 27, 31]) { await page.keyboard.press("Control+ArrowRight"); await ready(page); expect((await snapshot(page)).primary.selection.head).toBe(head); }

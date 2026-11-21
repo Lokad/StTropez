@@ -473,8 +473,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         const document = workspace.document(documentId), buffer = document.buffer, selected = view.getSnapshot().selection;
         const capture = { buffer, revision: document.revision, selection: selected, selectionSet: view.getSnapshot().selectionSet, deleting: false };
         const line = buffer.lineAt(offset), from = buffer.offsetAt(line);
-        let to = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) - 1 : buffer.length;
-        if (line + 1 < buffer.lineCount && to > from && buffer.slice(to - 1, to) === "\r") to--;
+        const to = lineContentEnd(buffer, line);
         if (to === from) return;
         const command = { capture, purpose: "word" as const, release: () => {} }; rangeCommand = command;
         wordScanSteps = 0; maxWordScanStepMs = 0; graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
@@ -576,35 +575,48 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         }
         return shortRows(buffer, lines);
     }
-    function boundaryOffset(buffer: TextBuffer, head: number, key: string, documentBoundary: boolean): number {
-        if (documentBoundary) return key === "Home" ? 0 : buffer.length;
-        const line = buffer.lineAt(head), start = buffer.offsetAt(line);
-        if (key === "Home") return start;
-        let end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) - 1 : buffer.length;
-        if (line + 1 < buffer.lineCount && end > start && buffer.slice(end - 1, end) === "\r") end--;
-        return end;
+    function lineContentEnd(buffer: TextBuffer, line: number): number {
+        return line + 1 === buffer.lineCount ? buffer.length : buffer.offsetAt(line + 1) - lineEnding(buffer, line).length;
+    }
+    function moveToBoundary(key: "Home" | "End", extend: boolean, documentBoundary: boolean): void {
+        cancelWord();
+        navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
+        const capture = commandCapture(false), buffer = capture.buffer, firstNonblank = new Map<number, number>();
+        if (!validCommand(capture)) return;
+        eachRange(capture, "grapheme", (range, done) => {
+            const move = (offset: number) => done(moved(range, offset, extend));
+            if (documentBoundary) { move(key === "Home" ? 0 : buffer.length); return; }
+            const line = buffer.lineAt(range.head), end = lineContentEnd(buffer, line);
+            if (key === "End") { move(end); return; }
+            const start = buffer.offsetAt(line);
+            const home = (offset: number) => move(range.head === offset ? start : offset);
+            const cached = firstNonblank.get(line);
+            if (cached !== undefined) { home(cached); return; }
+            let at = start;
+            const scan = () => commandTurn(() => {
+                if (!validCommand(capture)) { cancelWord(); return; }
+                const result = commandRunner.slice(() => {
+                    const to = Math.min(end, at + commandBudget.cursorUnits), index = buffer.slice(at, to).search(/\S/u);
+                    if (index >= 0) return at + index;
+                    at = to; return at === end ? start : undefined;
+                }, result => result === undefined, commandBudget.wordCalls);
+                if (result === undefined) {
+                    cancelRangeTask = commandRunner.schedule(() => { cancelRangeTask = undefined; scan(); }, 0, navigationTurn);
+                } else { firstNonblank.set(line, result); home(result); }
+            });
+            scan();
+        }, ranges => finishRanges(capture, ranges), { navigation: true, inline: capture.selectionSet.ranges.length <= commandBudget.inlineRanges });
     }
     function horizontal(key: string, extend: boolean, documentBoundary = false): void {
         preferred = undefined;
         graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
-        // Indexed endpoints need no geometry. Finish bounded sets before the next input,
-        // which would otherwise cancel queued navigation and edit the previous ranges.
-        if ((key === "Home" || key === "End") && view.getSnapshot().selectionSet.ranges.length <= commandBudget.inlineRanges) {
-            cancelWord(); navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
-            navigationTurn(() => {
-                const capture = commandCapture(false); if (!validCommand(capture)) return;
-                finishRanges(capture, capture.selectionSet.ranges.map(range => moved(range, boundaryOffset(capture.buffer, range.head, key, documentBoundary), extend)));
-            }); return;
-        }
+        if (key === "Home" || key === "End") { moveToBoundary(key, extend, documentBoundary); return; }
         beginNavigation((capture, style, inline) => {
         const began = win.performance.now(); viewport.flush();
         if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
-        const layout = navigationLayout(style), buffer = capture.buffer, arrows = key === "ArrowLeft" || key === "ArrowRight", foldIndex = view.folding.getSnapshot().index;
+        const layout = navigationLayout(style), buffer = capture.buffer, foldIndex = view.folding.getSnapshot().index;
         navigationPreparationMs = win.performance.now() - began;
         eachRange(capture, "grapheme", (range, done) => {
-            if (key === "Home" || key === "End") {
-                done(moved(range, boundaryOffset(buffer, range.head, key, documentBoundary), extend)); return;
-            }
             const direction = key === "ArrowLeft" ? -1 : 1;
             const point = !extend && range.anchor !== range.head
                 ? navigation.collapseVisual(Math.min(range.anchor, range.head), Math.max(range.anchor, range.head), direction)
@@ -612,7 +624,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             if (point) { visualMoves++; done(moved(range, point.offset, extend, point.affinity)); return; }
             if (!extend && range.anchor !== range.head) { done(moved(range, direction < 0 ? Math.min(range.anchor, range.head) : Math.max(range.anchor, range.head), false)); return; }
             withGraphemes(capture, range.head, direction, "grapheme", at => done(moved(range, direction < 0 ? at.preceding ?? range.head : at.following ?? range.head, extend)), navigationTurn);
-        }, ranges => finishRanges(capture, ranges), { validLayout: () => navigationLayout() === layout, navigation: true, inline, ...(arrows && capture.selectionSet.ranges.length > 1 ? {
+        }, ranges => finishRanges(capture, ranges), { validLayout: () => navigationLayout() === layout, navigation: true, inline, ...(capture.selectionSet.ranges.length > 1 ? {
             batchSize: commandBudget.shortRangeBatch, prepare: (ranges: readonly Selection[]) => {
                 const lines = new Set<number>();
                 for (const range of ranges) {
