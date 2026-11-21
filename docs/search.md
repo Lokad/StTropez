@@ -41,6 +41,8 @@ Pass the mounted editor to `createFindController`. Its lease keeps the document 
 original view after focus moves. When mounted by tab, closing or replacing that tab expires Find.
 
 Pass the backend and delay in `FindControllerOptions`. Change `FindFlags` with `setFlags(flags)`.
+Set `highlightMatches: false` for navigation with a closed Find bar. The controller builds the
+index and selects on request. It skips match decorations and query previews.
 `getSnapshot()` and `subscribe()` expose an immutable `FindSnapshot` with the query, flags,
 revision, status, count, scan frontier, source length, current match index, navigation wrap, match version and
 notice.
@@ -54,6 +56,7 @@ notice.
 | `setQuery(query, { preview: true })` | Once the search finishes, marks a visible match or reveals the next one from the source selection. Preserves focus and the selection. |
 | `setFlags(flags)` | Patches supplied flags and restarts only when a value changes |
 | `next(direction?)` | Selects a match in the captured view; direction is `1` by default or `-1` |
+| `next(direction, { whenReady: true })` | Accepts one navigation request while the search finishes. The latest direction wins. Changing the query, revision, focus or selection invalidates the request. |
 | `replaceCurrent(text)` | Replaces the selected match, or the next match if none is selected, then selects the following match |
 | `replaceAll(text, options?)` | Plans a replacement from a completed index and commits one history command |
 | `cancel()` | Clears the index; later typing does not resume the cancelled search |

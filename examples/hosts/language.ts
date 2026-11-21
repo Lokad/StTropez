@@ -1,3 +1,4 @@
+import { bindFindCommands } from "../shared/find-commands.ts";
 import { createFindController, createRegexFindBackend } from "../../src/browser/index.ts";
 import type { TextEditor, FindController, FindSnapshot } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, DocumentId, FoldRange, FoldRegion, FoldingSnapshot, TabId, TabTarget, Workspace } from "../../src/index.ts";
@@ -89,14 +90,13 @@ export class HostLanguageTools {
     attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void {
         if (this.sessions.has(id)) throw new Error("Language view already mounted.");
         const target = this.workspace.tabs.capture(tab), session: Session = { id, target, editor, presentation, initialized: false }, listeners = new AbortController();
-        this.sessions.set(id, session); this.attachProvider(session);
+        this.sessions.set(id, session); this.attachProvider(session); this.bindFind(session, listeners.signal);
         editor.input.addEventListener("focus", () => this.activate(session), { signal: listeners.signal });
         editor.input.addEventListener("keydown", event => {
             if (event.isComposing || editor.activity().composing || event.defaultPrevented) return;
             if ((event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && (event.code === "BracketLeft" || event.code === "BracketRight")) {
                 event.preventDefault(); this.activate(session); if (event.code === "BracketLeft") this.foldSelection(); else this.expandFolds();
-            } else if (this.findKey(event, session)) return;
-            else if ((event.ctrlKey || event.metaKey) && !event.altKey && event.code === "Space") { event.preventDefault(); this.activate(session); session.provider?.request(); }
+            } else if ((event.ctrlKey || event.metaKey) && !event.altKey && event.code === "Space") { event.preventDefault(); this.activate(session); session.provider?.request(); }
             else if (event.altKey && event.key === "Enter" && session.provider?.getSnapshot().offerText != null) { event.preventDefault(); const state = session.provider.getSnapshot(); state.completionAt(state.choiceIndex ?? 0)?.accept("replace"); }
             else if (event.key === "Escape" && (session.provider?.getSnapshot().pending || session.provider?.getSnapshot().offerText != null)) { event.preventDefault(); session.provider?.cancel(); }
         }, { signal: listeners.signal });
@@ -108,7 +108,7 @@ export class HostLanguageTools {
         if (!this.ownsSession(session)) throw new Error("Reference Find requires its captured view and baseline.");
         this.sessions.set(id, session);
         editor.input.addEventListener("focus", () => this.activate(session), { signal: listeners.signal });
-        editor.input.addEventListener("keydown", event => { if (!event.defaultPrevented && !event.isComposing && !editor.activity().composing) this.findKey(event, session); }, { signal: listeners.signal });
+        this.bindFind(session, listeners.signal);
         // A host remount can restore the logical field target while the toolbar has focus.
         this.resume(session);
         return this.detachSession(session, listeners);
@@ -120,15 +120,15 @@ export class HostLanguageTools {
         const reference = session.reference();
         return reference !== null && this.workspace.document(view.documentId).buffer === reference.buffer;
     }
-    private findKey(event: KeyboardEvent, session: Session): boolean {
-        if ((event.ctrlKey || event.metaKey) && !event.altKey && ["f", "h"].includes(event.key.toLowerCase())) {
-            this.cancelFindCommand();
-            event.preventDefault(); this.activate(session); this.ensureFind();
-            const field = session.reference || event.key.toLowerCase() === "f" ? this.queryElement : this.replacementElement;
-            field?.focus(); field?.select(); return true;
-        }
-        if (event.key === "F3") { event.preventDefault(); this.activate(session); this.runFind(session, { kind: "navigate", direction: event.shiftKey ? -1 : 1 }); return true; }
-        return false;
+    private bindFind(session: Session, signal: AbortSignal): void {
+        bindFindCommands(session.editor, signal, replace => {
+            if (!this.ownsSession(session)) return;
+            this.cancelFindCommand(); this.activate(session); this.ensureFind();
+            const field = replace && !session.reference ? this.replacementElement : this.queryElement;
+            field?.focus(); field?.select();
+        }, direction => {
+            if (this.ownsSession(session)) { this.activate(session); this.runFind(session, { kind: "navigate", direction }); }
+        });
     }
     private cancelFindCommand(session?: Session): void {
         if (!session || this.pendingFind?.session === session) this.pendingFind?.stop();
@@ -198,14 +198,12 @@ export class HostLanguageTools {
     }
     readonly keyFromTools = (event: KeyboardEvent): void => {
         const key = event.key.toLowerCase(), modified = event.ctrlKey || event.metaKey;
-        const save = modified && key === "s", find = key === "f3" || modified && !event.altKey && (key === "f" || key === "h");
+        const save = modified && key === "s";
         const replacement = event.target === this.replacementElement, enter = key === "enter" && (replacement || event.target === this.queryElement);
-        if (!save && !find && !enter && key !== "escape") return;
-        const owned = this.toolsSession(event); if (!owned) return;
+        const owned = this.toolsSession(event); if (!owned || owned.session.editor.keymap.handle(event)) return;
         if (save) this.saveShortcut(event, owned.control, owned.session.target, () => owned.session.editor.activity().composing);
-        else if (find) this.findKey(event, owned.session);
         else if (enter) { event.preventDefault(); if (replacement) this.replaceCurrent(); else if (event.shiftKey) this.previous(); else this.next(); }
-        else { event.preventDefault(); owned.session.find?.cancel(); owned.session.editor.focus(); }
+        else if (key === "escape") { event.preventDefault(); owned.session.find?.cancel(); owned.session.editor.focus(); }
     };
     private detachSession(session: Session, listeners: AbortController): () => void {
         let detached = false;

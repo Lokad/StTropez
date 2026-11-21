@@ -3,6 +3,7 @@ import type { EditRefusedDetail, TextEditor, FindController, FindSnapshot, TextC
 import { discoverIndentationFolds } from "../../src/index.ts";
 import { DemoProject } from "./project.ts";
 import { linePrompt } from "../shared/line-prompt.ts";
+import { bindFindCommands } from "../shared/find-commands.ts";
 import { selectDemoProvider } from "./provider.ts";
 import type { DemoFile } from "./project.ts";
 import { DemoPresentation } from "./presentation.ts";
@@ -343,10 +344,6 @@ function mountFile(file: DemoFile, focus = false): void {
     editor.element.addEventListener("keydown", event => {
         if (event.isComposing || editor?.activity().composing || event.defaultPrevented) return;
         if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.key === "ArrowLeft") { event.preventDefault(); goBack(); return; }
-        if ((event.ctrlKey || event.metaKey) && !event.altKey) {
-            const key = event.key.toLowerCase();
-            if (key === "f" || key === "h") { event.preventDefault(); openFind(key === "h"); }
-        } else if (event.key === "F3") { event.preventDefault(); find?.next(event.shiftKey ? -1 : 1); }
     }, { signal: viewListeners.signal });
     watchFindFocus(editor);
     if (comparison) watchFindFocus(comparison.panes.reference);
@@ -457,15 +454,25 @@ function setPanel(next: typeof panel): void {
 }
 function watchFindFocus(target: TextEditor): void {
     target.element.addEventListener("focusin", () => useFindTarget(target), { signal: target.signal });
+    bindFindCommands(target, target.signal, replace => {
+        useFindTarget(target); openFind(replace);
+    }, direction => {
+        if (!field("find-query").value) return false;
+        useFindTarget(target, true); find?.next(direction, { whenReady: true });
+        return true;
+    });
+    target.commands.register({ id: "find.close", label: "Close Find", enabled: () => !element("find-bar").hidden, run: closeFind });
+    target.keymap.bind("Escape", "find.close", { shared: true });
 }
 function releaseFind(): void {
     stopFind?.(); stopFind = undefined; find?.dispose(); find = undefined;
 }
-function useFindTarget(target: TextEditor): void {
+function useFindTarget(target: TextEditor, repeat = false): void {
     if (findTarget === target && find) return;
     releaseFind(); findTarget = target;
-    if (element("find-bar").hidden) return;
-    const current = createFindController(target, { regularExpressionBackend: createRegexFindBackend({
+    const visible = !element("find-bar").hidden;
+    if (!visible && !repeat) return;
+    const current = createFindController(target, { highlightMatches: visible, regularExpressionBackend: createRegexFindBackend({
         clock: window, createWorker: () => new Worker(new URL("regex-worker.js", document.baseURI), { type: "module" }),
     }) });
     find = current; current.setFlags(findFlags());
@@ -509,9 +516,14 @@ function selectedFindQuery(source: TextEditor, regex: boolean): string | undefin
 function openFind(replace = false): void {
     const bar = element("find-bar"), query = field("find-query");
     if (!findTarget) return;
-    if (bar.hidden) query.value = selectedFindQuery(findTarget, findFlags().regularExpression) ?? query.value;
+    if (bar.hidden) {
+        query.value = selectedFindQuery(findTarget, findFlags().regularExpression) ?? query.value;
+        releaseFind();
+    }
     bar.hidden = false; element("replace-controls").hidden = !replace;
-    useFindTarget(findTarget); const target = replace ? field("replacement") : query; target.focus(); target.select();
+    useFindTarget(findTarget);
+    const target = replace && findTarget === editor && !active?.readOnly ? field("replacement") : query;
+    target.focus(); target.select();
 }
 function closeFind(): void {
     element("find-bar").hidden = true;
@@ -523,7 +535,8 @@ element("panel-content").addEventListener(editRefusedEvent, () => {
     project.message = "Generated JavaScript is read-only. Edit the TypeScript source.";
     element("status").textContent = project.message;
 }, { signal: listeners.signal });
-on("find-toggle", () => openFind()); on("find-close", closeFind);
+on("find-toggle", () => { findTarget?.commands.run("find.open"); });
+on("find-close", () => { findTarget?.commands.run("find.close"); });
 for (const toggle of element("find-options").querySelectorAll("button")) {
     on(toggle.id, () => {
         toggle.setAttribute("aria-pressed", String(toggle.getAttribute("aria-pressed") !== "true"));
@@ -532,7 +545,7 @@ for (const toggle of element("find-options").querySelectorAll("button")) {
     });
 }
 on("replace-toggle", () => { element("replace-controls").hidden = !element("replace-controls").hidden; });
-on("find-next", () => { find?.next(); }); on("find-previous", () => { find?.next(-1); });
+on("find-next", () => { findTarget?.commands.run("find.next"); }); on("find-previous", () => { findTarget?.commands.run("find.previous"); });
 on("replace-current", () => { find?.replaceCurrent(field("replacement").value); });
 on("replace-all", () => { find?.replaceAll(field("replacement").value, { focusEditor: true }); });
 on("compare", () => setPanel("changes")); on("analysis-retry", () => { presentation.retry(); referencePresentation?.retry(); referenceFolding?.refresh(); });
@@ -628,10 +641,13 @@ on("download", () => {
 for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.addEventListener("click", () => setPanel(tab.dataset.panel as typeof panel), { signal: listeners.signal });
 field("find-query").addEventListener("input", () => find?.setQuery(field("find-query").value, { preview: true }), { signal: listeners.signal });
 element("find-bar").addEventListener("keydown", event => {
-    if (event.key === "Escape") { event.preventDefault(); closeFind(); }
-    else if (event.key === "Enter" && event.target === field("find-query")) { event.preventDefault(); find?.next(event.shiftKey ? -1 : 1); }
+    if (event.isComposing || event.keyCode === 229 || event.defaultPrevented || findTarget?.keymap.handle(event)) return;
+    if (event.key === "Enter" && event.target === field("find-query")) { event.preventDefault(); findTarget?.commands.run(event.shiftKey ? "find.previous" : "find.next"); }
     else if (event.key === "Enter" && event.target === field("replacement")) { event.preventDefault(); button("replace-current").click(); }
 }, { signal: listeners.signal });
+for (const controls of document.querySelectorAll<HTMLElement>("header, #files, #panels")) {
+    controls.addEventListener("keydown", event => { findTarget?.keymap.handle(event); }, { signal: listeners.signal });
+}
 sample.addEventListener("change", () => { void openSample(sample.value as SampleId); }, { signal: listeners.signal });
 element("files").addEventListener("click", event => {
     const name = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-file]")?.dataset.file;

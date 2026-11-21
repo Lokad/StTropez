@@ -156,8 +156,14 @@ test("the Find toolbar follows generated output and both Changes panes", async (
     await reader.focus(); await open.click(); await query.fill("const cart =");
     await expect(label).toHaveText("JavaScript output · read-only"); await expect(status).toHaveText("1 of 1");
     await expect(output.locator(".st-search-match").first()).toBeVisible(); await expect(source.locator(".st-search-match")).toHaveCount(0);
-    await page.locator("#replace-toggle").click(); await expect(replace).toBeDisabled(); await expect(replaceAll).toBeDisabled();
-    await query.press("Escape"); await expect(reader).toBeFocused();
+    await query.press("Control+h"); await expect(query).toBeFocused(); await expect(replace).toBeVisible();
+    await expect(replace).toBeDisabled(); await expect(replaceAll).toBeDisabled();
+    await reader.press("Escape"); await expect(reader).toBeFocused(); await expect(query).toBeHidden();
+    await reader.press("F3");
+    const selected = (input: Locator) => input.evaluate(node => { const el = node as HTMLTextAreaElement; return el.value.slice(el.selectionStart, el.selectionEnd); });
+    await expect.poll(() => selected(reader)).toBe("const cart ="); await expect(query).toBeHidden();
+    await reader.press("Control+f"); await expect(query).toBeFocused(); await expect(query).toHaveValue("const cart =");
+    await query.press("Escape");
     await open.click(); await page.locator("#panel-collapse").click();
     await expect(label).toBeEmpty(); await expect(status).toHaveText("No matches");
     await query.press("Escape"); await expect(source.getByRole("textbox")).toBeFocused();
@@ -166,13 +172,19 @@ test("the Find toolbar follows generated output and both Changes panes", async (
     await page.locator('[data-panel="changes"]').click();
     const panes = page.locator(".st-comparison-panes > section"), saved = panes.first(), working = panes.last();
     const savedInput = saved.getByRole("textbox");
-    await savedInput.press("Control+Home"); await savedInput.press("Shift+End"); await open.click();
+    await savedInput.press("Control+Home"); await savedInput.press("Shift+End"); await savedInput.press("Control+f");
     await expect(label).toHaveText("Saved copy · read-only"); await expect(query).toHaveValue('import { calculateTotal } from "./pricing";');
     await expect(saved.locator(".st-search-match").first()).toBeVisible(); await expect(working.locator(".st-search-match")).toHaveCount(0);
     await page.locator("#replace-toggle").click(); await expect(replaceAll).toBeDisabled();
-    await query.press("Enter"); await expect(query).toBeFocused(); await expect(status).toHaveText("1 of 1 · Wrapped to start");
+    await query.press("F3"); await expect(query).toBeFocused(); await expect(status).toHaveText("1 of 1 · Wrapped to start");
     await working.getByRole("textbox").focus(); await expect(label).toBeEmpty(); await expect(replaceAll).toBeEnabled();
     await expect(saved.locator(".st-search-match")).toHaveCount(0); await expect(working.locator(".st-search-match").first()).toBeVisible();
+    await open.press("Control+h"); await expect(page.locator("#replacement")).toBeFocused();
+    await page.locator("#replacement").press("Control+f"); await expect(query).toBeFocused();
+    await query.fill("quantity"); await expect(status).toHaveText(/of 4$/); await query.press("Enter"); await query.press("Escape");
+    const workingInput = working.getByRole("textbox"), offset = () => workingInput.evaluate(node => (node as HTMLTextAreaElement).selectionStart);
+    const first = await offset(); await workingInput.press("F3"); await expect.poll(offset).toBeGreaterThan(first);
+    await workingInput.press("Shift+F3"); await expect.poll(offset).toBe(first); await expect(query).toBeHidden();
 });
 
 test("a pending regex search allows large-file scrolling and typing and expires on file change", async ({ page, baseURL }) => {
@@ -205,6 +217,13 @@ test("a pending regex search allows large-file scrolling and typing and expires 
     await page.evaluate(() => { const probe = (window as ProbeWindow).regexProbe; probe.holding = false; probe.pending.shift()!(); });
     await expect(page.locator("#find-status")).toHaveText("1 match");
     await expect(query).toBeFocused(); expect(await viewport.evaluate(root => root.scrollTop)).toBe(chosenScroll);
+    await viewport.evaluate(root => { root.scrollTop = root.scrollHeight / 2; });
+    await expect(viewport.locator('.st-viewport-row[data-line="50003"]')).toContainText("Row 50004:");
+    await page.evaluate(() => { (window as ProbeWindow).regexProbe.holding = true; });
+    await query.fill("Row (?:5|50004):"); await expect.poll(held, { timeout: 15000 }).toBe(1);
+    await query.press("Enter");
+    await page.evaluate(() => { const probe = (window as ProbeWindow).regexProbe; probe.holding = false; probe.pending.shift()!(); });
+    await expect(page.locator("#cursor")).toContainText("Ln 50004,"); await expect(query).toBeFocused();
     await page.evaluate(() => { (window as ProbeWindow).regexProbe.holding = true; });
     await query.fill(String.raw`\brow(?= \d| ")`);
     await expect.poll(held, { timeout: 15000 }).toBe(1);
@@ -214,6 +233,7 @@ test("a pending regex search allows large-file scrolling and typing and expires 
     await middle.click(); await source.press("End"); await source.press("!");
     await expect(middle).toHaveText("// Row 50001: try editing or searching here.!");
     await expect.poll(held, { timeout: 15000 }).toBe(2);
+    await source.press("F3");
     await page.evaluate(() => { (window as ProbeWindow).regexProbe.holding = false; });
     await page.locator("#sample").selectOption("host");
     await expect(page.getByRole("textbox", { name: "workflow.rules", exact: true })).toBeVisible();
@@ -225,6 +245,7 @@ test("a pending regex search allows large-file scrolling and typing and expires 
     });
     await expect(page.locator("#find-status")).toHaveText("2 matches");
     await expect(page.locator("#editor .st-search-match")).toHaveText(["row", "row"]);
+    await expect(page.locator("#cursor")).toHaveText("Ln 1, Col 1");
 });
 
 test("minimap shows compact colored code and previews the destination before a jump", async ({ page, baseURL }, info) => {

@@ -137,6 +137,20 @@ test("preview keeps the selection, replacement advances, and edits cancel a pend
     } finally { f.dispose(); }
 });
 
+test("only the latest deferred Find direction acts on an unchanged selection and query", () => {
+    const f = fixture("cat dog cat");
+    try {
+        f.find.setQuery("cat");
+        assert.equal(f.find.next(1, { whenReady: true }), true);
+        assert.equal(f.find.next(-1, { whenReady: true }), true);
+        f.drain(); assert.equal(f.find.getSnapshot().current, 1);
+        f.find.setQuery("dog"); f.find.next(1, { whenReady: true });
+        f.select(2); f.drain(); assert.equal(f.view.getSnapshot().selection.head, 2);
+        f.find.setQuery("cat"); f.find.next(1, { whenReady: true });
+        f.find.setQuery("dog"); f.drain(); assert.equal(f.find.getSnapshot().current, null);
+    } finally { f.dispose(); }
+});
+
 test("literal tasks bound advances and elapsed work, publish once and preserve repair and cancellation", () => {
     const original = LiteralSearch.prototype.next;
     for (const cost of [0, 1]) {

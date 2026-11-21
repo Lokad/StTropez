@@ -75,6 +75,8 @@ the active match and total, and reports when navigation wraps.
 Choose **Find** after focusing generated JavaScript or the saved copy to search that pane.
 The bar names the read-only target. Escape returns focus to it. Focusing the working source
 while the bar is open searches the same query there and enables replacement for matches.
+Ctrl/Cmd+F and Ctrl/Cmd+H open Find and Replace from the panes, Find fields and toolbar.
+Escape returns to the search pane. F3 and Shift+F3 continue the last query with the bar closed.
 
 ### Language tools and samples
 

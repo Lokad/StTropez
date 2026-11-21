@@ -17,7 +17,7 @@ import type { TextViewport } from "./viewport.ts";
 import type { DecorationLayers } from "./decoration-layers.ts";
 const literalBudget = Object.freeze({ units: 4096, matches: 1024, calls: 32 });
 export type FindFlags = Readonly<{ wholeWord?: boolean; matchCase?: boolean; regularExpression?: boolean }>;
-export type FindControllerOptions = Readonly<{ regularExpressionBackend?: FindBackend; regularExpressionDelayMs?: number }>;
+export type FindControllerOptions = Readonly<{ regularExpressionBackend?: FindBackend; regularExpressionDelayMs?: number; highlightMatches?: boolean }>;
 type FindEvents = Pick<EventTarget, "addEventListener" | "removeEventListener">;
 /** View operations consumed by find. A mounted TextEditor satisfies this contract directly. */
 export type FindHost = Readonly<{
@@ -44,7 +44,7 @@ export type FindController = Observable<FindSnapshot> & Readonly<{
     matchesIn: (from: number, to: number, capture?: FindSnapshot) => readonly SearchMatch[];
     setQuery: (query: string, options?: Readonly<{ preview?: boolean }>) => void;
     setFlags: (flags: FindFlags) => void;
-    next: (direction?: 1 | -1) => boolean;
+    next: (direction?: 1 | -1, options?: Readonly<{ whenReady?: boolean }>) => boolean;
     replaceCurrent: (replacement: string) => boolean; replaceAll: (replacement: string, options?: Readonly<{ focusEditor?: boolean }>) => void; cancel: () => void; dispose: () => void }>;
 // A notice is replaced atomically; progress-only patches retain both fields.
 type FindPatch = Partial<Omit<FindSnapshot, "reason" | "message">> &
@@ -71,6 +71,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     let navigatedZero: Readonly<{ index: number; selectionSet: SelectionSet }> | undefined;
     let replacedZero: Readonly<{ revision: number; head: number; selectionSet: SelectionSet }> | undefined;
     let advanceAfterReplace: SelectionSet | undefined;
+    let pendingNext: { direction: 1 | -1; selection: SelectionSet; origin: Element | null | undefined } | undefined;
     let pendingPreview: { selection: SelectionSet; scrollUnchanged: () => boolean; listeners: AbortController } | undefined;
     let previewed: { index: number; selection: SelectionSet } | undefined;
     const cancelPreview = () => { pendingPreview?.listeners.abort(); pendingPreview = undefined; };
@@ -99,7 +100,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     const stop = () => { generation++; runner.cancel();
         const active = cursor, plan = planCursor, authority = stopPlanAuthority; cursor = undefined; planCursor = undefined; stopPlanAuthority = undefined;
         navigatedZero = undefined; replacedZero = undefined; advanceAfterReplace = undefined;
-        cancelPreview(); previewed = undefined;
+        cancelPreview(); previewed = undefined; pendingNext = undefined;
         active?.dispose(); plan?.dispose(); authority?.(); };
     const reset = (patch: FindPatch) => {
         matches = new FindIndex(); count = 0; literal = undefined; edges = undefined; navigationTo = 0;
@@ -118,7 +119,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         if (to > state.length) throw new RangeError("Match range exceeds document length.");
         return matches.matchesIn(from, to);
     };
-    const layer = editor.decorations?.addProvider({ name: "find matches", order: 60, minimap: false, provide: line => {
+    const layer = options.highlightMatches === false ? undefined : editor.decorations?.addProvider({ name: "find matches", order: 60, minimap: false, provide: line => {
         const state = store.get();
         if (!state.count || state.revision !== line.revision) return [];
         const buffer = workspace.document(documentId).buffer;
@@ -218,7 +219,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
                 const state = store.get();
                 if (result.done || count !== state.count || result.scanned !== state.scanned)
                     publish({ count, matchesVersion: state.matchesVersion + (count !== state.count ? 1 : 0), scanned: result.scanned, status: result.done ? "ready" : "searching", retained: !!repair && !result.done });
-                if (result.done && token === generation) { finishPreview(); finishAdvance(); }
+                if (result.done && token === generation) { finishPreview(); finishAdvance(); finishNext(); }
                 if (!result.done && token === generation && regularExpression) later(step);
             };
             const receive = (result: SearchStep, asynchronous: boolean, dispatchMs: number) => {
@@ -307,12 +308,24 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const next = nextMatch(1);
         if (next) selectMatch(next.index, false);
     }
-    const next = (direction: 1 | -1 = 1): boolean => {
+    function finishNext(): void {
+        const pending = pendingNext;
+        pendingNext = undefined;
+        if (pending && valid() && pending.selection === editor.view.getSnapshot().selectionSet
+            && pending.origin === viewport?.element.ownerDocument.activeElement && !pending.origin?.matches(":disabled")) next(pending.direction);
+    }
+    const next: FindController["next"] = (direction = 1, options) => {
         scope.assertWritable();
-        cancelPreview();
+        pendingNext = undefined;
         if (!valid()) return false;
-        const match = nextMatch(direction); if (!match) return false;
         if (editor.activity().composing) { publish({ reason: "composition-active", message: "Finish composition before navigating." }); return false; }
+        const match = nextMatch(direction);
+        if (!match && options?.whenReady && store.get().status === "searching") {
+            pendingNext = { direction, selection: editor.view.getSnapshot().selectionSet, origin: viewport?.element.ownerDocument.activeElement };
+            return true;
+        }
+        cancelPreview();
+        if (!match) return false;
         advanceAfterReplace = undefined;
         return selectMatch(match.index, true, match.wrappedTo);
     };
@@ -392,15 +405,18 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         planReplacement(state, replacement, undefined, options?.focusEditor);
     };
     // Disabling the command button can clear activeElement without a new focus choice.
-    const focusChanged = () => { focusGeneration++; advanceAfterReplace = undefined; };
+    const focusChanged = () => { focusGeneration++; advanceAfterReplace = undefined; pendingNext = undefined; };
     owner.addEventListener("focusin", focusChanged);
+    const window = viewport?.element.ownerDocument.defaultView;
+    window?.addEventListener("blur", focusChanged);
     const compositionStarted = () => {
-        advanceAfterReplace = undefined;
+        advanceAfterReplace = undefined; pendingNext = undefined;
         if (store.get().status !== "replacing") return;
         stop(); publish({ status: "ready", reason: "composition-active", message: "Replacement cancelled for composition." });
     };
     editor.input.addEventListener("compositionstart", compositionStarted);
-    const subscriptions = [() => owner.removeEventListener("focusin", focusChanged), () => editor.input.removeEventListener("compositionstart", compositionStarted), workspace.observeDocument(documentId).subscribe(() => {
+    const subscriptions = [() => owner.removeEventListener("focusin", focusChanged), () => window?.removeEventListener("blur", focusChanged),
+        () => editor.input.removeEventListener("compositionstart", compositionStarted), workspace.observeDocument(documentId).subscribe(() => {
         const current = workspace.observeDocument(documentId).getSnapshot();
         if (current && sameOwner(observed, current) && current.revision === observed.revision && current.buffer === observed.buffer) return;
         if (store.get().status === "cancelled" && valid()) { observed = workspace.document(documentId); publish({ revision: observed.revision, length: observed.buffer.length }); }
@@ -418,10 +434,10 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     };
     editor.signal?.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ ...store.observable, getDiagnostics: () => Object.freeze({ maxScanStepMs: scanMaximum, replaceTransactionMs }), matchesIn,
-        setQuery: (query, options) => {
+        setQuery: (query, queryOptions) => {
             scope.assertWritable(); if (disposed) return;
             restart(query);
-            if (!options?.preview || store.get().status !== "searching") return;
+            if (!queryOptions?.preview || options.highlightMatches === false || store.get().status !== "searching") return;
             const listeners = new AbortController(), events = { signal: listeners.signal, passive: true };
             const root = viewport?.element, top = root?.scrollTop, left = root?.scrollLeft;
             const scrollUnchanged = () => root?.scrollTop === top && root?.scrollLeft === left;
