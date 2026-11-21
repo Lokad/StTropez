@@ -295,7 +295,8 @@ and frozen; callbacks receive the exact immutable buffer and source endpoints.
 | `enter` | Omitted: newline without indentation copying. `"keep"`: copy indentation. Callback: return `EnterIndent` with `indent: -1 \| 0 \| 1` and optional `split` |
 
 `EditingPair` describes delimiters; `LanguageEditContext` describes the immutable buffer/range.
-`ResolvedLanguageConfiguration` supplies validated defaults. Pass a `TextEditorCommand` to `runCommand`.
+`ResolvedLanguageConfiguration` supplies validated defaults. Pass a built-in `TextEditorCommand`
+or a registered host command ID to `editor.commands.run(id)`.
 The view commands `select-line`, `select-next-occurrence`, `select-all-occurrences`, `add-caret-above`, `add-caret-below`, `undo-caret`,
 `jump-to-bracket`, `scroll-line-up`, `scroll-line-down`, `scroll-page-up` and
 `scroll-page-down` also work in read-only editors. The text-editing commands are
@@ -304,6 +305,23 @@ The view commands `select-line`, `select-next-occurrence`, `select-all-occurrenc
 `delete-lines`, `insert-line-above` or `insert-line-below`. It returns `false` when the view
 cannot edit, is composing/disposed, or lacks the requested comment rule. Long plans yield, then
 commit once after validating the captured target; intermediate planning publishes no text.
+
+`editor.commands.list()` returns immutable entries with an ID, label and current enabled state.
+`register({ id, label, run, enabled })` adds a command to this mount. The optional `enabled`
+predicate also controls keyboard dispatch of host commands. Duplicate IDs throw.
+Disposing a registration removes its bindings. Disposing the editor retires the registry.
+
+`editor.keymap.bind("Mod+k Mod+i", id)` binds a two-stroke chord. A single stroke uses the
+same API. `Mod` means Meta on Apple platforms and Ctrl elsewhere. `Ctrl`, `Meta`, `Shift`
+and `Alt` match exact modifiers on `KeyboardEvent.key`. Use `Space` or `Plus` for those keys.
+Chords expire after 1.5 seconds or a change of focus, selection or document revision.
+Duplicate bindings and single strokes that conflict with chord prefixes throw.
+Use `keymap.unbind(keys)` to change a default binding. Disposing a binding removes that registration.
+
+Editor input dispatches registered shortcuts. A host can mark a binding `{ shared: true }`
+and forward a toolbar or form's bubbling keydown to the owning pane's `keymap.handle(event)`.
+It prevents the default action for a handled shortcut. Ordinary field input and composition
+stay with the field. [Host command example](host-integration.md)
 
 Tab advances to the next configured tab stop. A partial single-line selection is replaced by that
 whitespace. On a whitespace-only line with one caret, Tab first fills missing indentation from the

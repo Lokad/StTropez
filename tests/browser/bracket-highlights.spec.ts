@@ -82,7 +82,7 @@ test("bracket jump works without highlights and a delayed jump cannot move a rep
     const pending = await page.evaluate(() => {
         const f = window.bracketFixture;
         f.set("[" + "x".repeat(50_000) + "]", 0);
-        f.editor.runCommand("jump-to-bracket");
+        f.editor.commands.run("jump-to-bracket");
         const pending = f.editor.activity().pendingCommand;
         f.set("new", 1);
         return pending;

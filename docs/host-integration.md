@@ -133,15 +133,12 @@ export function ownInputRecovery(
 Bind each command to the intended editor. Remove its controls when the view detaches.
 
 ```ts
-import type { EditingCommand } from "sttropez";
 import type { TextEditor } from "sttropez/browser";
 
 export function editingActions(editor: TextEditor) {
-    const entries: readonly Readonly<{ label: string; command: EditingCommand }>[] = [
-        { label: "Toggle line comment", command: "line-comment" },
-        { label: "Indent selection", command: "indent" }
-    ];
-    return entries.map(entry => ({ label: entry.label, run: () => editor.runCommand(entry.command) }));
+    return editor.commands.list()
+        .filter(entry => entry.id === "line-comment" || entry.id === "indent")
+        .map(entry => ({ ...entry, run: () => editor.commands.run(entry.id) }));
 }
 ```
 

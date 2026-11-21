@@ -540,7 +540,7 @@ on("complete", () => languageView?.complete());
 on("inspect-type", () => languageView?.inspect()); on("signature", () => languageView?.signature());
 on("definition", () => languageView?.definition()); on("references", () => languageView?.references()); on("rename", () => languageView?.rename());
 on("navigate-back", goBack);
-on("go-to-line", () => { editor?.focus(); editor?.runCommand("go-to-line"); });
+on("go-to-line", () => { editor?.focus(); editor?.commands.run("go-to-line"); });
 on("inspect-characters", () => { if (editor && project) inspectCharacters(editor, project.workspace, element("character-warning-details")); });
 field("character-warnings").addEventListener("change", () => {
     const enabled = field("character-warnings").checked;
@@ -554,7 +554,7 @@ for (const id of ["view-rulers", "view-current-line", "view-ligatures", "view-tr
 }, { signal: listeners.signal });
 on("quickfix", () => languageView?.quickfix());
 for (const command of ["line-comment", "block-comment", "indent", "outdent"] as const) on(command, () => {
-    if (editor?.runCommand(command === "indent" ? "indent-lines" : command)) editor.focus();
+    if (editor?.commands.run(command === "indent" ? "indent-lines" : command)) editor.focus();
 });
 indentation.addEventListener("change", () => {
     editor?.configure({ language: editingConfiguration() });

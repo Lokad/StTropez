@@ -12,43 +12,21 @@ type KeyCommand = Readonly<{ kind: "history"; direction: "undo" | "redo" }>
     | Readonly<{ kind: "delete"; direction: -1 | 1 }>
     | Readonly<{ kind: "language"; command: EditingCommand | Readonly<{ character: string }> }>;
 export type KeyBinding = Readonly<{ command: KeyCommand; text: string; edit: boolean; fallback: boolean }>;
-type EditingKey = KeyBinding | "escape" | "tab-escape" | "prevent-navigation" | "comment-prefix" | undefined;
+type EditingKey = KeyBinding | "escape" | "tab-escape" | "prevent-navigation" | undefined;
 const navigationKeys = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"]);
 const bind = (command: KeyCommand, edit = false, text = "", fallback = false): KeyBinding => ({ command, edit, text, fallback });
 
 /** Shared interpretation for immediate execution and captured queued intent; no view/lifecycle authority. */
-export function classifyEditingKey(event: KeyStroke, apple: boolean, escaped: boolean, paired: (key: string) => boolean, commentChord = false): EditingKey {
+export function classifyEditingKey(event: KeyStroke, apple: boolean, escaped: boolean, paired: (key: string) => boolean): EditingKey {
     const command = (event.ctrlKey || event.metaKey) && !event.altKey, key = event.key.toLowerCase(), extend = event.shiftKey;
     const horizontal = (key: "ArrowLeft" | "ArrowRight" | "Home" | "End", document = false) => bind({ kind: "horizontal", key, extend, document });
-    if (command && !extend && commentChord && (key === "c" || key === "u"))
-        return bind({ kind: "language", command: key === "c" ? "add-line-comment" : "remove-line-comment" }, true);
-    if (command && !extend && key === "k") return "comment-prefix";
-    if (command && !extend && key === "u") return bind({ kind: "view", command: "undo-caret" });
-    if ((event.ctrlKey || event.metaKey) && event.altKey && !extend && (event.key === "ArrowUp" || event.key === "ArrowDown"))
-        return bind({ kind: "view", command: event.key === "ArrowUp" ? "add-caret-above" : "add-caret-below" });
-    if (command && extend && key === "k") return bind({ kind: "language", command: "delete-lines" }, true);
-    if (command && event.key === "Enter") return bind({ kind: "language", command: extend ? "insert-line-above" : "insert-line-below" }, true);
-    if (command && !extend && (key === "]" || key === "[")) return bind({ kind: "language", command: key === "]" ? "indent-lines" : "outdent" }, true);
-    if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
-        const up = event.key === "ArrowUp";
-        return bind({ kind: "language", command: extend ? (up ? "copy-line-up" : "copy-line-down") : (up ? "move-line-up" : "move-line-down") }, true);
-    }
     if (command && (key === "z" || event.ctrlKey && key === "y")) return bind({ kind: "history", direction: extend || key === "y" ? "redo" : "undo" }, true);
     if (command && key === "a") return bind({ kind: "select-all" });
-    if (command && !extend && key === "l") return bind({ kind: "view", command: "select-line" });
-    if (command && !extend && key === "d") return bind({ kind: "view", command: "select-next-occurrence" });
-    if (command && !extend && key === "g") return bind({ kind: "view", command: "go-to-line" });
-    if (command && extend && key === "l") return bind({ kind: "view", command: "select-all-occurrences" });
-    if (command && extend && (key === "\\" || key === "|")) return bind({ kind: "view", command: "jump-to-bracket" });
     if (command && (event.key === "Home" || event.key === "End")) return horizontal(event.key, true);
     if (apple && event.metaKey && !event.ctrlKey && !event.altKey) {
         if (event.key === "ArrowLeft" || event.key === "ArrowRight") return horizontal(event.key === "ArrowLeft" ? "Home" : "End");
         if (event.key === "ArrowUp" || event.key === "ArrowDown") return horizontal(event.key === "ArrowUp" ? "Home" : "End", true);
     }
-    if (command && !extend && (event.key === "ArrowUp" || event.key === "ArrowDown"))
-        return bind({ kind: "view", command: event.key === "ArrowUp" ? "scroll-line-up" : "scroll-line-down" });
-    if (event.altKey && !event.ctrlKey && !event.metaKey && !extend && (event.key === "PageUp" || event.key === "PageDown"))
-        return bind({ kind: "view", command: event.key === "PageUp" ? "scroll-page-up" : "scroll-page-down" });
     if (event.key === "Escape") return "escape";
     if (event.key === "Tab" && escaped) return "tab-escape";
     const word = !event.metaKey && (event.ctrlKey && !event.altKey || apple && event.altKey && !event.ctrlKey);
@@ -67,8 +45,6 @@ export function classifyEditingKey(event: KeyStroke, apple: boolean, escaped: bo
         }
         if (paired(event.key)) return bind({ kind: "language", command: { character: event.key } }, true, event.key, true);
     }
-    if (command && key === "/") return bind({ kind: "language", command: "line-comment" }, true);
-    if (!event.ctrlKey && !event.metaKey && extend && event.altKey && key === "a") return bind({ kind: "language", command: "block-comment" }, true);
     if (command && navigationKeys.has(event.key)) return "prevent-navigation";
     return;
 }

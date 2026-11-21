@@ -37,7 +37,7 @@ export function mountDemoInspection(scope: CleanupScope, workspace: Workspace, f
     scope.defer(signature.attach("source", file.tab, editor));
     return Object.freeze({
         dismiss: () => { hover.dismiss(); signature.dismiss(); },
-        inspect: () => { editor.focus(); hover.inspectCaret("source"); },
+        inspect: () => { editor.focus(); editor.commands.run("hover.inspect"); },
         signature: () => { cancelCompletion(); editor.focus(); signature.inspect(); },
     });
 }

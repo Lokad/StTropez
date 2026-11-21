@@ -1,3 +1,4 @@
+export type { EditorCommand, EditorCommands, EditorKeymap } from "./command-registry.ts";
 export type { ViewState } from "./view-state.ts";
 export { editRefusedEvent, inputConflictEvent } from "./input-conflict.ts";
 export type { EditRefusedDetail, InputConflictDetail } from "./input-conflict.ts";

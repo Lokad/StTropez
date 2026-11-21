@@ -124,9 +124,19 @@ const fixture = { text: () => workspace.document(documentId).text(),
                 op.apply({ edits: [{ from: 0, to: 0, insert: "expired" }] });
                 await op.step(new Promise<void>(() => {}));
             });
-            if (!editor.runCommand("go-to-line")) throw new Error("Restored host prompt was not requested.");
+            const open = editor.commands.register({ id: "sample.jump", label: "Jump to line", run: () => retired.commands.run("go-to-line") });
+            if (!editor.commands.list().some(entry => entry.id === "sample.jump" && entry.enabled)) throw new Error("Restored command missing from menu.");
+            let conflict = false;
+            try { editor.keymap.bind("Ctrl+g", "sample.jump"); } catch { conflict = true; }
+            if (!conflict) throw new Error("A host binding silently replaced the default Go to line shortcut.");
+            const binding = editor.keymap.bind("Alt+j", "sample.jump", { shared: true });
+            const jump = () => new KeyboardEvent("keydown", { key: "j", altKey: true, cancelable: true });
+            if (!editor.keymap.handle(jump())) throw new Error("Restored shared shortcut did not request the host prompt.");
             editor.dispose();
             editor = mountTextEditor(host, model, tab, options); editor.restoreView(saved); editor.focus(); await wait();
+            binding.dispose(); open.dispose();
+            if (retired.keymap.handle(jump()) || retired.commands.run("sample.jump") || editor.keymap.handle(jump()))
+                throw new Error("Retired host command survived editor replacement.");
             if ((await pending).status !== "stale") throw new Error("A retired editor kept its pending edit.");
             if (!promptSignal.aborted) throw new Error("Retired view left its line request active.");
             reply(200); await Promise.resolve();
@@ -139,7 +149,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
                 if (fresh.folding.getSnapshot().index.collapsedCount) throw new Error("A stale capture overwrote newer fold state.");
             } finally { restored.dispose(); fresh.dispose(); freshHost.remove(); }
             const buffer = model.document(source.documentId).buffer, line = buffer.lineAt(at), start = buffer.offsetAt(line);
-            editor.runCommand("go-to-line"); reply(line + 1); await Promise.resolve(); await wait();
+            editor.commands.run("go-to-line"); reply(line + 1); await Promise.resolve(); await wait();
             if (view.getSnapshot().selection.head !== start || view.folding.getSnapshot().index.collapsedCount || !editor.viewport.coordsAt(start)) throw new Error("Compiled line navigation did not reveal its folded destination.");
             if (model.document(source.documentId).buffer.readMetrics().textExports) throw new Error("Compiled folding exported the source value.");
             if (retired.viewport.coordsAt(0) !== undefined) throw new Error("Retired compiled geometry remained active.");

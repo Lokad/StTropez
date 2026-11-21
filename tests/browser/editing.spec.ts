@@ -526,6 +526,37 @@ test("comment chords and shifted slash act on the captured lines", async ({ page
     expect(await stroke("c")).toBe(false);
 });
 
+test("a rebound chord belongs to its editor and leaves host field editing local", async ({ page }) => {
+    const keys = await page.evaluate(() => {
+        window.editingFixture.setText("abc");
+        const { commands, keymap } = window.editingFixture;
+        const field = document.createElement("input"); document.body.append(field); field.focus();
+        let calls = 0, enabled = true;
+        const command = commands.register({ id: "sample.action", label: "Sample action", enabled: () => enabled, run: () => { calls++; } });
+        const keys = "Ctrl+k Ctrl+j";
+        const old = keymap.bind(keys, "sample.action", { shared: true });
+        keymap.unbind(keys); keymap.bind(keys, "sample.action", { shared: true }); old.dispose();
+        const forward = (event: KeyboardEvent) => { keymap.handle(event); };
+        field.addEventListener("keydown", forward);
+        document.body.addEventListener("keydown", forward);
+        const press = (key: string, isComposing = false) => !field.dispatchEvent(new KeyboardEvent("keydown", {
+            key, ctrlKey: true, cancelable: true, bubbles: true, isComposing,
+        }));
+        try {
+            const prefix = press("k"), chord = press("j");
+            press("k"); field.blur(); field.focus(); const afterBlur = press("j");
+            press("k"); window.editingFixture.selections([{ anchor: 1, head: 1 }]); const afterMove = press("j");
+            const local = press("d"), composing = press("k", true);
+            enabled = false; const disabled = commands.run("sample.action");
+            const listed = commands.list().find(entry => entry.id === "sample.action");
+            command.dispose();
+            return { prefix, chord, afterBlur, afterMove, local, composing, disabled, listed, retired: commands.run("sample.action"), calls };
+        } finally { command.dispose(); document.body.removeEventListener("keydown", forward); field.remove(); }
+    });
+    expect(keys).toEqual({ prefix: true, chord: true, afterBlur: false, afterMove: false, local: false, composing: false, disabled: false,
+        listed: { id: "sample.action", label: "Sample action", enabled: false }, retired: false, calls: 1 });
+});
+
 test("Alt arrows move and copy lines while typing and Undo follow the selected block", async ({ page }) => {
     await page.evaluate(() => { const f = window.editingFixture; f.setText("a\r\nb\nc"); f.selections([{ anchor: 4, head: 3 }]); f.focus("primary"); });
     const rows = page.locator("#primary .st-viewport-row");

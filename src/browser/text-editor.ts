@@ -43,6 +43,8 @@ import { CharacterWarnings } from "../core/character-warnings.ts";
 import type { CharacterWarningConfiguration, CharacterWarningOptions } from "../core/character-warnings.ts";
 import { mountCharacterWarnings } from "./character-warnings.ts";
 import type { CharacterWarningHighlights } from "./character-warnings.ts";
+import { createCommandRegistry, type EditorCommands, type EditorKeymap } from "./command-registry.ts";
+import { bindEditorDefaults, editCommand, editorCommandLabels, editorKeyCommand } from "./editor-commands.ts";
 import { classifyEditingKey } from "./editing-keys.ts";
 import type { KeyBinding, KeyStroke, ViewCommand } from "./editing-keys.ts";
 import { commandBudget, createCooperativeRunner } from "./cooperative-runner.ts";
@@ -76,7 +78,7 @@ export type TextEditor = Readonly<{ element: HTMLDivElement; input: HTMLTextArea
     bracketMatching: BracketHighlights;
     characterWarnings: CharacterWarningHighlights;
     /** Returns whether the command was accepted; long selections finish asynchronously. */
-    runCommand: (command: TextEditorCommand) => boolean;
+    commands: EditorCommands; keymap: EditorKeymap;
     focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void;
     /** Immutable activity capture, reused while its fields are unchanged. Does not collect metrics. */
     activity: () => TextEditorActivity;
@@ -131,8 +133,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     let revision = workspace.document(documentId).revision, context: InputContext = inputContext(contextBuffer, contextSelection);
     let disposed = false, composing = false, selecting = false, committing = false;
     let escapeSelection: SelectionSet | undefined;
-    let commentPrefix: { revision: number; selections: SelectionSet } | undefined;
-    const chordKeys = new WeakSet<KeyboardEvent>();
     let editTransform: TextEditorEditTransform | undefined;
     let hostInsertion: CapturedInsertion | undefined;
     const escapeState = (value: boolean) => {
@@ -187,6 +187,20 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             try { work(); } finally { maxQueuedInputTurnMs = Math.max(maxQueuedInputTurnMs, win.performance.now() - began); } },
     });
     const apple = /Mac|iPhone|iPad|iPod/.test(win.navigator.platform);
+    const registry = createCommandRegistry(apple, () => !disposed && !composing && !input.disabled && live(), () => {
+        const version = revision, selection = view.getSnapshot().selectionSet;
+        return () => version === revision && selection === view.getSnapshot().selectionSet;
+    });
+    for (const id of Object.keys(editorCommandLabels) as TextEditorCommand[]) {
+        registry.commands.register({ id, label: editorCommandLabels[id], run: () => runCommand(id), enabled: () => {
+            if (id === "go-to-line") return !!options.requestLine;
+            if (!editCommand(id)) return true;
+            if (input.readOnly) return false;
+            if (id === "block-comment") return !!language.blockComment;
+            return !["line-comment", "add-line-comment", "remove-line-comment"].includes(id) || !!language.lineComment;
+        } });
+    }
+    bindEditorDefaults(registry.keymap, apple);
     function cancelScans(): void {
         wordJob?.cursor.dispose(); wordJob = undefined;
         cancelWordTask?.(); cancelWordTask = undefined;
@@ -1016,7 +1030,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     }, { signal: listeners.signal });
     function startComposition(): void {
         cancelLineRequest();
-        commentPrefix = undefined;
+        registry.reset();
         escapeState(false);
         hostInsertion?.cancel();
         cancelWord();
@@ -1048,23 +1062,21 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (event.key === "Tab") refresh(); else syncSelection();
     }, { signal: listeners.signal });
     input.addEventListener("focus", scheduleCaret, { signal: listeners.signal });
-    input.addEventListener("blur", () => { syncSelection(); group = undefined; commentPrefix = undefined; scheduleCaret();
+    input.addEventListener("blur", () => { syncSelection(); group = undefined; registry.reset(); scheduleCaret();
         // Clear the Escape prefix after the browser completes focus traversal.
         if (escapeSelection) queueMicrotask(() => { if (!disposed) escapeState(false); }); }, { signal: listeners.signal });
-    // Consume the prefix even when the host handles the following key during capture.
-    root.addEventListener("keydown", event => {
-        if (!commentPrefix || ["Control", "Meta", "Shift", "Alt"].includes(event.key)) return;
-        const prefix = commentPrefix; commentPrefix = undefined;
-        if (event.target === input && prefix.revision === revision && prefix.selections === view.getSnapshot().selectionSet) chordKeys.add(event);
-    }, { capture: true, signal: listeners.signal });
     function keydown(event: KeyboardEvent, captured?: KeyBinding): void {
         if (escapeSelection && event.key !== "Tab" && event.key !== "Shift") escapeState(false);
         if (event.defaultPrevented || composing || event.isComposing || event.keyCode === 229) return;
         if (["Shift", "Control", "Meta", "Alt"].includes(event.key)) return;
         if (hostInsertion) { hostInsertion.cancel(); if (event.key === "Escape") { event.preventDefault(); return; } }
-        const chord = chordKeys.has(event);
-        if (chord && event.key === "Escape") { event.preventDefault(); return; }
-        const binding = captured ?? classifyEditingKey(event, apple, !!escapeSelection, pairKey, chord);
+        if (!captured && registry.handleEditor(event, id => {
+            const binding = editorKeyCommand(id);
+            if (!binding) return registry.commands.run(id);
+            keydown(event, binding);
+            return event.defaultPrevented;
+        })) return;
+        const binding = captured ?? classifyEditingKey(event, apple, !!escapeSelection, pairKey);
         if (input.readOnly && event.key !== "Tab") {
             // A read-only textarea suppresses beforeinput for ordinary printable keys.
             const printable = ((!event.ctrlKey && !event.metaKey && !event.altKey) || event.getModifierState("AltGraph"))
@@ -1072,13 +1084,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             if (printable || typeof binding === "object" && binding.edit) { refuseEdit(event); return; }
         }
         if (typeof binding === "object" && binding.command.kind === "view" && binding.command.command === "go-to-line" && !options.requestLine) return;
-        if (binding === "comment-prefix") {
-            if (!input.disabled) {
-                syncSelection(); group = undefined; event.preventDefault();
-                commentPrefix = { revision, selections: view.getSnapshot().selectionSet };
-            }
-            return;
-        }
         if (!inputQueue.draining && (inputQueue.pending || rangeCommand) && event.key !== "Escape") {
             if (typeof binding === "object" && (!binding.edit || !input.readOnly)) { event.preventDefault(); appendInput(captureKey(event, binding)); return; }
             if (!(event.ctrlKey || event.metaKey || event.altKey)) return;
@@ -1142,7 +1147,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         afterDrop: () => { commits++; revealCaret(); focus(); refresh(); },
         rejected: reason => { conflict(reason); refresh(); } });
     let mousePress: { event: PointerEvent; armed: boolean; revision: number; selectionSet: SelectionSet } | undefined;
-    root.addEventListener("pointerdown", () => { mousePress = undefined; draggedWord = false; commentPrefix = undefined; escapeState(false); }, { capture: true, signal: listeners.signal });
+    root.addEventListener("pointerdown", () => { mousePress = undefined; draggedWord = false; registry.reset(); escapeState(false); }, { capture: true, signal: listeners.signal });
     root.addEventListener("pointerdown", event => {
         if (event.button < 0 || event.button > 2 || disposed || composing || input.disabled || !live()) return;
         const target = event.target as Element | null;
@@ -1391,7 +1396,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 () => { if (hostInsertion === captured) hostInsertion = undefined; });
             hostInsertion = captured; return captured;
         },
-        runCommand,
+        commands: registry.commands, keymap: registry.keymap,
         settings,
         configure: changes => {
             if (disposed || composing && changes.language !== undefined) return false;
@@ -1403,7 +1408,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             const languageChanged = nextLanguage !== language;
             if (languageChanged || nextPaste !== pasteLineEndings) hostInsertion?.cancel();
             if (languageChanged) {
-                commentPrefix = undefined;
+                registry.reset();
                 if (language.pairs.length !== nextLanguage.pairs.length || language.pairs.some((pair, i) =>
                     pair.open !== nextLanguage.pairs[i]!.open || pair.close !== nextLanguage.pairs[i]!.close)) paired.clear();
                 cancelWord(); group = undefined; preferred = undefined;
@@ -1430,7 +1435,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         dispose: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; editTransform = undefined;
             cancelLineRequest();
-            brackets!.dispose(); paired.clear(); automaticIndent.clear(); commentPrefix = undefined;
+            registry.dispose(); brackets!.dispose(); paired.clear(); automaticIndent.clear();
             caretHistory.length = 0;
             clickedWord = undefined; mousePress = undefined;
             warnings!.dispose();

@@ -75,13 +75,15 @@ export class HostHoverTools {
                 const config = { ...settings }; delete settings.fault; return beforeRequest(session, config);
             } }) });
         const listeners = new AbortController(), win = editor.element.ownerDocument.defaultView!;
-        let pointerTimer: number | undefined, chordTimer: number | undefined, chord = false, key: string | undefined, scrolled = false;
+        let pointerTimer: number | undefined, key: string | undefined, scrolled = false;
         let requested: Readonly<{ revision: number; offset: number }> | undefined;
         const session: Session = { id, editor, controller, settings, revision: -1, affinity: "after", offset: 0, overTarget: false, scheduled: false, cancelTimers: () => {} };
         const cancelDwell = () => { if (pointerTimer !== undefined) win.clearTimeout(pointerTimer); pointerTimer = undefined; session.scheduled = false; key = undefined; };
         const cancelPointer = () => { cancelDwell(); requested = undefined; };
-        const cancelChord = () => { if (chordTimer !== undefined) win.clearTimeout(chordTimer); chordTimer = undefined; chord = false; };
-        session.cancelTimers = () => { cancelPointer(); cancelChord(); };
+        session.cancelTimers = cancelPointer;
+        const inspect = editor.commands.register({ id: "hover.inspect", label: "Inspect type",
+            enabled: () => this.canCapture(editor.view.documentId), run: () => this.inspectCaret(id) });
+        for (const modifier of ["Ctrl", "Meta"]) editor.keymap.bind(modifier + "+k " + modifier + "+i", "hover.inspect");
         this.sessions.set(id, session);
         const stop = controller.subscribe(() => { if (this.current === session) this.publish(); });
         const pointerAt = (x: number, y: number) => {
@@ -131,11 +133,8 @@ export class HostHoverTools {
             if (event.isComposing || editor.activity().composing) return;
             if (["Control", "Meta", "Shift", "Alt"].includes(event.key)) return;
             if (event.key === "Escape" && (this.current || session.scheduled)) { event.preventDefault(); event.stopImmediatePropagation(); this.dismiss(); return; }
-            const command = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey, name = event.key.toLowerCase();
-            if (command && name === "k") { if (!this.allowInspect("keyboard")) return; cancelChord(); chord = true; chordTimer = win.setTimeout(cancelChord, 1500); return; }
-            if (chord) { cancelChord(); if (command && name === "i") { event.preventDefault(); event.stopImmediatePropagation(); this.inspectCaret(id); } }
         }, { capture: true, signal: listeners.signal });
-        editor.input.addEventListener("blur", () => { cancelChord(); if (this.current === session && this.kind === "keyboard") this.dismiss(); }, { signal: listeners.signal });
+        editor.input.addEventListener("blur", () => { if (this.current === session && this.kind === "keyboard") this.dismiss(); }, { signal: listeners.signal });
         editor.input.addEventListener("compositionstart", () => { session.cancelTimers(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
         editor.input.addEventListener("beforeinput", () => { cancelPointer(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
         const scroll = () => {
@@ -152,7 +151,7 @@ export class HostHoverTools {
         win.addEventListener("resize", () => { cancelPointer(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
         let detached = false;
         return () => {
-            if (detached) return; detached = true; if (this.current === session) this.dismiss(); session.cancelTimers(); listeners.abort(); stop();
+            if (detached) return; detached = true; if (this.current === session) this.dismiss(); session.cancelTimers(); inspect.dispose(); listeners.abort(); stop();
             const counts = controller.getDiagnostics(); for (const name of Object.keys(this.retired) as (keyof typeof this.retired)[]) this.retired[name] += counts[name];
             controller.dispose(); this.sessions.delete(id);
         };
