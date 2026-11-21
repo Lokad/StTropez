@@ -35,9 +35,9 @@ const stop = controller.subscribe(() => {
     const state = controller.getSnapshot(); status.textContent = state.message;
     if (![state, state.diagnostics, state.choices, state.unversionedDiagnostics].every(Object.isFrozen)) throw new Error("Mutable public editor snapshot");
     choices.replaceChildren(...state.choices.map((label, index) => { const item = document.createElement("li"), button = document.createElement("button");
-        button.textContent = label; button.onclick = () => controller.chooseCompletion(index, state.completionId); item.append(button); return item; }));
+        button.textContent = label; button.onclick = () => state.completionAt(index)?.select(); item.append(button); return item; }));
 });
-command("Connect", controller.connect); command("Request completion", controller.request); command("Apply completion", () => { controller.apply("replace"); });
+command("Connect", controller.connect); command("Request completion", controller.request); command("Apply completion", () => { const state = controller.getSnapshot(); state.completionAt(state.choiceIndex)?.accept("replace"); });
 command("Hover", async () => { const value = await hover.run(workspace.document(source.documentId), position()).result;
     if (value?.isCurrent()) { notes.hover = value.text; result.textContent = value.text; } });
 command("Definition", async () => { const value = await navigation.run(project(), source.documentId, position(), "definition");

@@ -387,7 +387,10 @@ export async function runDemoSnippets(page: Page, url = "/") {
     await page.getByRole("button", { name: "Reset sample", exact: true }).click(); await request(); await source.press("Tab");
     await expect(controls).toContainText("Field 1 of 3"); await source.pressSequentially("entry");
     await expect(editor).toContainText("const entry"); await expect(editor).toContainText("console.log(entry)");
+    const previousField = await controls.getByRole("button", { name: "Finish snippet" }).elementHandle();
     await source.press("Tab"); await expect(controls).toContainText("Field 2 of 3");
+    await previousField!.evaluate(button => button.dispatchEvent(new MouseEvent("click", { bubbles: true }))); await previousField!.dispose();
+    await expect(controls).toContainText("Field 2 of 3");
     await source.press("Alt+ArrowDown"); await expect(controls.getByRole("button", { name: "ready", exact: true })).toHaveAttribute("aria-pressed", "true");
     await source.press("Shift+Tab"); await expect(controls).toContainText("Field 1 of 3");
     await source.evaluate(node => {

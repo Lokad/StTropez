@@ -1,5 +1,5 @@
 import { createLspEditor, createLspHighlightController } from "../../src/browser/index.ts";
-import type { TextEditor, LspEditorController, LspHighlightController } from "../../src/browser/index.ts";
+import type { TextEditor, LspEditorController, LspEditorSnippet, LspHighlightController } from "../../src/browser/index.ts";
 import type { Workspace } from "../../src/index.ts";
 import type { DemoFile } from "./project.ts";
 import type { DemoLanguage } from "./language.ts";
@@ -25,8 +25,8 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         const snippetPanel = document.createElement("div"); scope.defer(() => snippetPanel.remove());
         snippetPanel.className = "demo-snippet"; snippetPanel.hidden = true;
         snippetPanel.setAttribute("role", "region"); snippetPanel.setAttribute("aria-label", "Snippet controls"); document.body.append(snippetPanel);
-        let controller: LspEditorController | undefined, rendered = "";
-        let renderedSnippet = 0;
+        let controller: LspEditorController | undefined, renderedChoices: readonly string[] | undefined, renderedIndex = -1;
+        let renderedSnippet: LspEditorSnippet | undefined;
         let inspection: ReturnType<typeof mountDemoInspection> | undefined;
         let symbols: ReturnType<typeof mountDemoSymbols> | undefined;
         let actions: ReturnType<typeof mountDemoActions> | undefined;
@@ -35,26 +35,26 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         const render = () => {
             const state = controller?.getSnapshot();
             const snippet = state?.snippet; snippetPanel.hidden = !valid() || !snippet;
-            if (snippet && !snippetPanel.hidden && renderedSnippet !== snippet.id) {
-                renderedSnippet = snippet.id;
+            if (snippet && !snippetPanel.hidden && renderedSnippet !== snippet) {
+                renderedSnippet = snippet;
                 const label = document.createElement("span"); label.textContent = `Field ${snippet.position} of ${snippet.count} · Tab / Shift+Tab`;
                 const button = (label: string, action: () => void) => { const node = document.createElement("button"); node.type = "button"; node.textContent = label; node.addEventListener("click", action); return node; };
                 snippetPanel.replaceChildren(label, ...snippet.choices.map((value, index) => {
-                    const node = button(value || "Empty value", () => controller?.chooseSnippet(index, snippet.id)); node.setAttribute("aria-pressed", String(index === snippet.choiceIndex)); return node;
-                }), button("Previous field", () => controller?.moveSnippet(-1, snippet.id)), button("Next field", () => controller?.moveSnippet(1, snippet.id)), button("Finish snippet", () => { if (controller?.getSnapshot().snippet?.id === snippet.id) controller.cancel(); }));
+                    const node = button(value || "Empty value", () => snippet.choose(index)); node.setAttribute("aria-pressed", String(index === snippet.choiceIndex)); return node;
+                }), button("Previous field", () => snippet.move(-1)), button("Next field", () => snippet.move(1)), button("Finish snippet", snippet.finish));
             }
             popup.hidden = !valid() || !state?.choices.length || state.offerText === null;
             if (!state || popup.hidden) return;
             count.textContent = `${state.choiceIndex + 1} of ${state.choices.length}${state.completionIncomplete ? " · partial list" : ""}${state.omittedCompletions.length ? ` · ${state.omittedCompletions.length} unsupported` : ""} · type to filter`;
             count.title = state.omittedCompletions.map(item => `${item.label}: ${item.reason}`).join("\n");
-            const key = `${state.completionId}:${state.choiceIndex}`;
-            if (rendered !== key) {
-                rendered = key;
+            if (renderedChoices !== state.choices || renderedIndex !== state.choiceIndex) {
+                renderedChoices = state.choices; renderedIndex = state.choiceIndex;
                 const first = Math.max(0, state.choiceIndex - 7), last = Math.min(state.choices.length, first + 16);
                 choices.replaceChildren(...state.choices.slice(first, last).map((label, offset) => {
                     const option = document.createElement("button"); option.textContent = label; option.type = "button";
                     option.setAttribute("role", "option"); option.setAttribute("aria-selected", String(first + offset === state.choiceIndex));
-                    option.dataset.index = String(first + offset); option.dataset.completion = String(state.completionId); return option;
+                    const choice = state.completionAt(first + offset);
+                    option.onclick = () => choice?.accept("replace"); return option;
                 }));
             }
             detail.textContent = state.resolving ? "Loading details…" : state.completionDetail;
@@ -64,11 +64,6 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         };
         snippetPanel.addEventListener("pointerdown", event => event.preventDefault(), { signal: listeners.signal });
         popup.addEventListener("pointerdown", event => event.preventDefault(), { signal: listeners.signal });
-        popup.addEventListener("click", event => {
-            const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-index]"); if (!button || !controller) return;
-            const index = Number(button.dataset.index), id = Number(button.dataset.completion);
-            if (controller.chooseCompletion(index, id)) controller.accept("replace", id);
-        }, { signal: listeners.signal });
         scope.defer(editor.viewport.onRender(render));
         editor.input.addEventListener("keydown", event => {
             if (!controller && (event.ctrlKey || event.metaKey) && event.code === "Space") event.preventDefault();

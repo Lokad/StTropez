@@ -104,7 +104,7 @@ export class HostLanguageTools {
                 event.preventDefault(); this.activate(session); if (event.code === "BracketLeft") this.foldSelection(); else this.expandFolds();
             } else if (this.findKey(event, session)) return;
             else if ((event.ctrlKey || event.metaKey) && !event.altKey && event.code === "Space") { event.preventDefault(); this.activate(session); session.provider?.request(); }
-            else if (event.altKey && event.key === "Enter" && session.provider?.getSnapshot().offerText != null) { event.preventDefault(); session.provider.apply("replace"); }
+            else if (event.altKey && event.key === "Enter" && session.provider?.getSnapshot().offerText != null) { event.preventDefault(); const state = session.provider.getSnapshot(); state.completionAt(state.choiceIndex ?? 0)?.accept("replace"); }
             else if (event.key === "Escape" && (session.provider?.getSnapshot().pending || session.provider?.getSnapshot().offerText != null)) { event.preventDefault(); session.provider?.cancel(); }
         }, { signal: listeners.signal });
         this.resume(session); return this.detachSession(session, listeners);
@@ -244,8 +244,6 @@ export class HostLanguageTools {
         return session.find;
     }
     readonly request = (): void => { if (this.active) { this.activate(this.active); this.active.provider?.request(); } };
-    readonly insert = (completionId?: number): void => { this.active?.provider?.apply("insert", completionId); };
-    readonly replace = (completionId?: number): void => { this.active?.provider?.apply("replace", completionId); };
     readonly cancel = (): void => { this.active?.provider?.cancel(); };
     readonly disconnect = (): void => { this.active?.provider?.disconnect(); };
     readonly reconnect = (): void => {
@@ -299,7 +297,6 @@ export class HostLanguageTools {
         this.cell.set({ ...this.cell.get(), foldMessage: "All folds expanded." });
     };
     selectDiagnostic(index: number): void { this.active?.provider?.selectDiagnostic(index); }
-    chooseCompletion(index: number, completionId?: number): void { this.active?.provider?.chooseCompletion(index, completionId); }
     customRequest(method: string, params: JsonValue): Promise<JsonValue> {
         const provider = this.active?.provider; if (!provider?.customRequest) return Promise.reject(new Error("The active provider has no custom-message extension.")); return provider.customRequest(method, params);
     }

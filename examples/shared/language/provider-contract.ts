@@ -1,14 +1,14 @@
 import type { Observable } from "../../../src/index.ts";
 import type { JsonValue, LspSession } from "../../../src/protocol/index.ts";
-import type { TextEditor, LspEditorSnippet } from "../../../src/browser/index.ts";
+import type { TextEditor, LspEditorSnippet, LspEditorCompletion } from "../../../src/browser/index.ts";
 
 export type Diagnostic = Readonly<{ from: number; to: number; message: string }>;
 
 export type ProviderSnapshot = Readonly<{ message: string; connected: boolean; pending: boolean; offerText: string | null; diagnostics: readonly Diagnostic[]; diagnosticRevision: number; diagnosticsPending?: boolean;
-    choices?: readonly string[]; choiceIndex?: number; completionId?: number; completionDetail?: string; resolving?: boolean; unversionedDiagnostics?: readonly string[]; snippet?: LspEditorSnippet | null }>;
+    choices?: readonly string[]; choiceIndex?: number; completionAt: (index: number) => LspEditorCompletion | undefined; completionDetail?: string; resolving?: boolean; unversionedDiagnostics?: readonly string[]; snippet?: LspEditorSnippet | null }>;
 export type ProviderOptions = Readonly<{ autoConnect?: boolean; canCapture?: () => boolean }>;
-export type ProviderController = Observable<ProviderSnapshot> & Readonly<{ request: () => void; apply: (mode: "insert" | "replace", completionId?: number) => boolean;
-    cancel: () => void; connect: () => void; disconnect: () => void; selectDiagnostic: (index: number) => boolean; chooseCompletion: (index: number, completionId?: number) => boolean;
+export type ProviderController = Observable<ProviderSnapshot> & Readonly<{ request: () => void;
+    cancel: () => void; connect: () => void; disconnect: () => void; selectDiagnostic: (index: number) => boolean;
     setDelay: (value: number) => void; faultNext: (value: "malformed" | "failure") => void; dispose: () => void;
     customRequest?: (method: string, params: JsonValue) => Promise<JsonValue>;
     snapshot: () => Readonly<{ posted: number; received: number; applied: number; stale: number; cancelled: number; invalid: number; outOfScope?: number; failed: number; postedUnits?: number;

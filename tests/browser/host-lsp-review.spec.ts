@@ -57,14 +57,14 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP revie
     test("a read-only transition expires an offered completion and a corrected proposal survives save", async ({ page }) => {
         const original = "const saMORE = 1; // TODO";
         await seed(page, original); await offer(page);
-        const offered = await page.evaluate(() => window.hostFixture.providerState()!.completionId), before = await snapshot(page);
-        expect(offered).toBeGreaterThan(0); expect((await provider(page)).transport).toBe("lsp3.17");
+        const offered = await page.evaluateHandle(() => window.hostFixture.providerState()!.completionAt(0)!), before = await snapshot(page);
+        expect(await offered.evaluate(choice => choice.label)).toBeTruthy(); expect((await provider(page)).transport).toBe("lsp3.17");
         const obsoleteChoice = await page.getByRole("option", { name: "sample", exact: true }).getByRole("button").elementHandle();
         expect(obsoleteChoice).not.toBeNull();
         await page.evaluate(() => window.hostFixture.setSourceReadOnly(true));
         const revision = (await snapshot(page)).source.revision;
         await expect(page.getByRole("option")).toHaveCount(0); await expect(button(page, "Replace completion")).toBeDisabled();
-        expect(await page.evaluate(() => window.hostFixture.providerState()!.completionId)).not.toBe(offered);
+        expect(await offered.evaluate(choice => [choice.select(), choice.accept("replace")])).toEqual([false, false]); await offered.dispose();
         await obsoleteChoice!.evaluate(node => node.dispatchEvent(new MouseEvent("click", { bubbles: true }))); await obsoleteChoice!.dispose();
         await button(page, "Replace completion").dispatchEvent("click");
         expect((await snapshot(page)).source.revision).toBe(revision); expect(await source(page)).toBe(original);

@@ -46,13 +46,11 @@ list replaces it.
 import type { LspEditorController } from "sttropez/browser";
 
 export function completionActions(language: LspEditorController) {
-    const { choices, completionId } = language.getSnapshot();
-    return choices.map((label, index) => ({
-        label,
-        select: () => language.chooseCompletion(index, completionId),
-        accept: () => language.chooseCompletion(index, completionId)
-            && language.accept("replace", completionId)
-    }));
+    const state = language.getSnapshot();
+    return state.choices.map((label, index) => {
+        const item = state.completionAt(index)!;
+        return { label, select: item.select, accept: () => item.accept("replace") };
+    });
 }
 ```
 
@@ -173,9 +171,9 @@ Arrows select, Enter replaces, Tab inserts and Escape dismisses the choices or a
 neither is visible, Escape cancels pending requests and reaches the editor. Escape then Tab or
 Shift+Tab leaves the view.
 
-Save the `completionId` with a rendered control and pass it to `chooseCompletion`, `accept` or
-`apply`. Filtering a prefix gives the list a new ID. Unchanged labels keep the same immutable
-`choices` array across diagnostics, selection and detail updates.
+Read `completionAt(index)` from the snapshot that supplied the labels. Only rendered choices
+need handles. `select()` and `accept(mode)` act on that item. Filtering the list expires its
+handles. Diagnostics, selection and detail updates retain the same `choices` array.
 
 `decodeLspCompletions` accepts arrays, CompletionList or null, including defaults for edit ranges,
 insertion format/mode, commit characters and opaque data. It checks the primary and additional
@@ -199,9 +197,8 @@ Primary content may change only within the captured insertion/replacement ranges
 ranges belong to the resolve request's snapshot. Failed or malformed resolution dismisses the
 offer. Completion documentation is literal text.
 
-Use `accept(mode, completionId)` when the user chooses an item that may be resolving. A `true`
-return means the controller accepted the request. `apply` requires an item it can insert immediately
-and returns false during resolution. Typing, selection changes, blur, cancellation or lost permission
+Use `item.accept(mode)` when the user chooses an item that may be resolving. A `true`
+return means the controller accepted the request. Typing, selection changes, blur, cancellation or lost permission
 clears queued acceptance. Typing an advertised commit character while the item is unresolved inserts
 the character normally and closes the list. Once ready, the item and its commit character form one
 transaction. If the provider also advertises the character as a completion trigger, automatic
@@ -233,8 +230,8 @@ provider text, so indentation is applied once. A configuration change expires pe
 
 Snippet acceptance selects every occurrence of the first numbered field. Typing, deletion, paste
 and composition commit use the existing input/history paths to mirror fields. Tab/Shift+Tab
-traverse fields; Alt+Up/Down cycles choices. `moveSnippet` and `chooseSnippet` take the published
-snippet ID. Escape ends the session while keeping text and the primary selection; `$0` ends it
+traverse fields; Alt+Up/Down cycles choices. The current field exposes `move(direction)`, `choose(index)` and
+`finish()`. An expired field rejects all three actions. Escape ends the session while keeping text and the primary selection; `$0` ends it
 at the final carets. Focus loss, selections outside the field, changed authority, external edits,
 undo or redo end the session. Undo/redo restore text/selections without recreating it. Ready
 commit-character acceptance inserts expanded text plus the character without starting a session.

@@ -18,7 +18,7 @@ export { mountDocumentation } from "./documentation.ts";
 export type { DocumentationOptions, DocumentationView } from "./documentation.ts";
 export type { DocumentationContent, DocumentationPart } from "../core/documentation.ts";
 export type { LspHighlightSnapshot, LspHighlightController } from "./lsp-highlights.ts";
-export type { LspEditorController, LspEditorOptions, LspEditorSnapshot, LspEditorDiagnostic, LspEditorSnippet } from "./lsp-editor.ts";
+export type { LspEditorController, LspEditorOptions, LspEditorSnapshot, LspEditorDiagnostic, LspEditorSnippet, LspEditorCompletion } from "./lsp-editor.ts";
 export type { EditorSettings, ResolvedEditorSettings, LinePrompt, TextEditor, TextEditorActivity, TextEditorCommand, TextEditorEdit, TextEditorEditTransform, TextEditorOptions } from "./text-editor.ts";
 export type { CapturedInsertion } from "./captured-insertion.ts";
 export { captureViewRequest } from "./captured-view.ts";

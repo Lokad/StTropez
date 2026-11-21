@@ -87,14 +87,16 @@ test("domain annotation callbacks retain session and revision when another view 
 
 test("language result callbacks cannot follow a newer view or diagnostic batch while rendering stays snapshot-only", () => {
     type Snapshot = Parameters<typeof languagePanelModel>[1];
-    const chosen: [number, number | undefined][] = [], inserted: (number | undefined)[] = [], diagnostics: number[] = [];
+    const chosen: number[] = [], inserted: string[] = [], diagnostics: number[] = [];
     const state: Snapshot = Object.freeze({ readOnlyReference: false, view: "primary", providerError: null, find: null, folds: null, foldMessage: "Captured folds", query: "sa", replacement: "sample", wholeWord: false, matchCase: true, regularExpression: false,
-        provider: Object.freeze({ message: "Captured offer", connected: true, pending: false, offerText: "sample", completionId: 17, choices: Object.freeze(["sample"]),
+        provider: Object.freeze({ message: "Captured offer", connected: true, pending: false, offerText: "sample", choices: Object.freeze(["sample"]),
+            completionAt: (index: number) => ({ label: "sample", select: () => { chosen.push(index); return true; },
+                accept: (mode: "insert" | "replace") => { inserted.push(mode); return true; } }),
             diagnostics: Object.freeze([Object.freeze({ from: 5, to: 9, message: "First diagnostic" })]), diagnosticRevision: 1 }) });
     let current = state, reads = 0;
     const tools: Parameters<typeof languagePanelModel>[0] = { state: { getSnapshot: () => { reads++; return current; }, subscribe: () => noop }, toolsRef: noop, queryRef: noop, replacementRef: noop, keyFromTools: noop,
-        request: noop, insert: id => { inserted.push(id); }, replace: noop, cancel: noop, disconnect: noop, reconnect: noop, next: noop, previous: noop, replaceCurrent: noop, replaceAll: noop, cancelFind: noop, foldSelection: noop, expandFolds: noop, focusEditor: noop,
-        chooseCompletion: (index, id) => { chosen.push([index, id]); }, selectDiagnostic: index => { diagnostics.push(index); }, setQuery: noop, setReplacement: noop, setWholeWord: noop, setMatchCase: noop, setRegularExpression: noop };
+        request: noop, cancel: noop, disconnect: noop, reconnect: noop, next: noop, previous: noop, replaceCurrent: noop, replaceAll: noop, cancelFind: noop, foldSelection: noop, expandFolds: noop, focusEditor: noop,
+        selectDiagnostic: index => { diagnostics.push(index); }, setQuery: noop, setReplacement: noop, setWholeWord: noop, setMatchCase: noop, setRegularExpression: noop };
     const first = languagePanelModel(tools, state), oldChoice = first.choices.items()[0]!, oldDiagnostic = first.diagnostics.items()[0]!;
     assert.equal(reads, 0); assert.equal(first.folds.text, "Captured folds");
     current = { ...state, view: "secondary", provider: { ...state.provider!, diagnostics: [{ from: 10, to: 14, message: "Second diagnostic" }] } };
@@ -102,7 +104,7 @@ test("language result callbacks cannot follow a newer view or diagnostic batch w
     oldChoice.invoke(); oldDiagnostic.invoke(); first.actions.find(action => action.label === "Insert completion")!.invoke();
     assert.deepEqual(chosen, []); assert.deepEqual(diagnostics, []); assert.deepEqual(inserted, []);
     newer.choices.items()[0]!.invoke(); newer.diagnostics.items()[0]!.invoke(); newer.actions.find(action => action.label === "Insert completion")!.invoke();
-    assert.deepEqual(chosen, [[0, 17]]); assert.deepEqual(diagnostics, [0]); assert.deepEqual(inserted, [17]);
+    assert.deepEqual(chosen, [0]); assert.deepEqual(diagnostics, [0]); assert.deepEqual(inserted, ["insert"]);
     const oldCurrentDiagnostic = newer.diagnostics.items()[0]!; current = { ...current, query: "changed" }; const status = languagePanelModel(tools, current);
     assert.equal(status.diagnostics.items()[0]!.key, oldCurrentDiagnostic.key); oldCurrentDiagnostic.invoke(); assert.deepEqual(diagnostics, [0]);
     status.diagnostics.items()[0]!.invoke(); assert.deepEqual(diagnostics, [0, 0], "retained rows renew their activation snapshot");

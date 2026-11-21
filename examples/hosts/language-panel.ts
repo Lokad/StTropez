@@ -1,6 +1,6 @@
 import type { HostLanguageTools } from "./language.ts";
 type LanguageSnapshot = ReturnType<HostLanguageTools["state"]["getSnapshot"]>;
-type LanguagePanelTools = Pick<HostLanguageTools, "state" | "toolsRef" | "queryRef" | "replacementRef" | "keyFromTools" | "request" | "insert" | "replace" | "cancel" | "disconnect" | "reconnect" | "next" | "previous" | "replaceCurrent" | "replaceAll" | "cancelFind" | "foldSelection" | "expandFolds" | "focusEditor" | "chooseCompletion" | "selectDiagnostic" | "setQuery" | "setReplacement" | "setWholeWord" | "setMatchCase" | "setRegularExpression">;
+type LanguagePanelTools = Pick<HostLanguageTools, "state" | "toolsRef" | "queryRef" | "replacementRef" | "keyFromTools" | "request" | "cancel" | "disconnect" | "reconnect" | "next" | "previous" | "replaceCurrent" | "replaceAll" | "cancelFind" | "foldSelection" | "expandFolds" | "focusEditor" | "selectDiagnostic" | "setQuery" | "setReplacement" | "setWholeWord" | "setMatchCase" | "setRegularExpression">;
 const capturedCommand = (tools: Pick<LanguagePanelTools, "state">, state: LanguageSnapshot, invoke: () => void) => () => {
     if (tools.state.getSnapshot() === state) invoke();
 };
@@ -10,8 +10,8 @@ function languageActions(tools: LanguagePanelTools, state: LanguageSnapshot) {
     const found = !!state.find?.count && (state.find.status === "ready" || state.find.status === "searching" && state.find.retained);
     return [
         { label: "Request completion", invoke: tools.request, disabled: !providerAvailable },
-        { label: "Insert completion", invoke: capturedCommand(tools, state, () => tools.insert(state.provider?.completionId)), disabled: !offered || !!state.provider?.pending },
-        { label: "Replace completion", invoke: capturedCommand(tools, state, () => tools.replace(state.provider?.completionId)), disabled: !offered || !!state.provider?.pending },
+        { label: "Insert completion", invoke: capturedCommand(tools, state, () => state.provider?.completionAt(state.provider.choiceIndex ?? 0)?.accept("insert")), disabled: !offered || !!state.provider?.pending },
+        { label: "Replace completion", invoke: capturedCommand(tools, state, () => state.provider?.completionAt(state.provider.choiceIndex ?? 0)?.accept("replace")), disabled: !offered || !!state.provider?.pending },
         { label: "Cancel request", invoke: tools.cancel, disabled: !providerAvailable },
         { label: "Disconnect provider", invoke: tools.disconnect, disabled: !state.provider?.connected },
         { label: "Reconnect provider", invoke: tools.reconnect, disabled: !available || state.readOnlyReference },
@@ -35,15 +35,15 @@ function foldText(state: LanguageSnapshot): string {
 }
 /** Rendering only observes the supplied snapshot; result activation checks that it is still current. */
 export function languagePanelModel(tools: LanguagePanelTools, state: LanguageSnapshot) {
-    const offered = state.provider?.offerText, labels = state.provider?.choices ?? (offered != null ? [offered] : []), completionId = state.provider?.completionId;
+    const offered = state.provider?.offerText, labels = state.provider?.choices ?? (offered != null ? [offered] : []);
     return {
         label: "Language and find tools", title: "Language and find", bind: tools.toolsRef, key: tools.keyFromTools,
         help: "Ctrl+Space requests completion; Alt+Enter replaces it. Ctrl+F finds, Ctrl+H replaces, F3 moves to the next match, and Escape returns to source. Ctrl+S saves the working source.",
         status: { label: "Language status", text: state.readOnlyReference ? "Search in the read-only reference. Replacement is unavailable." : state.provider?.message
             ?? (state.providerError !== null ? `Language provider unavailable: ${state.providerError} Local editing and Find remain available. Use Reconnect provider to retry.` : "Focus a source view to use language actions.") },
-        choices: { label: "Completion choices", identity: String(completionId), selected: state.provider?.choiceIndex ?? 0,
-            items: () => labels.map((label, index) => ({ key: `${completionId}:${index}:${label}`, label,
-                invoke: capturedCommand(tools, state, () => tools.chooseCompletion(index, completionId)) } as const)) },
+        choices: { label: "Completion choices", identity: state.provider?.choices, selected: state.provider?.choiceIndex ?? 0,
+            items: () => labels.map((label, index) => ({ key: `${index}:${label}`, label,
+                invoke: capturedCommand(tools, state, () => state.provider?.completionAt(index)?.select()) } as const)) },
         detail: { label: "Completion detail", text: state.provider?.completionDetail ?? "" },
         diagnosticStatus: { label: "Diagnostic status", text: state.provider?.diagnosticsPending ? "Diagnostics pending analysis." : "" },
         diagnostics: { label: "Source diagnostics", items: () => (state.provider?.diagnostics ?? []).map((diagnostic, index) => ({ key: `${diagnostic.from}:${diagnostic.to}:${index}`,
@@ -78,13 +78,14 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
     const buttons = initial.actions.map(action => { const button = owner.createElement("button"); button.textContent = action.label; nav.append(button); return button; });
     host.append(heading, help, status, choices, detail, diagnosticStatus, diagnostics, uncertain, ...fields.map(f => f.label), ...options.map(f => f.label), findStatus, foldStatus, nav);
     const setText = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text; };
+    let renderedChoices: readonly string[] | undefined;
     let choiceButtons: HTMLButtonElement[] = [], diagnosticButtons: HTMLButtonElement[] = [];
     const render = () => {
         const model = languagePanelModel(tools, tools.state.getSnapshot());
         for (const [element, value] of [[status, model.status], [detail, model.detail], [diagnosticStatus, model.diagnosticStatus], [findStatus, model.find], [foldStatus, model.folds]] as const) setText(element, value.text);
         const offered = model.choices.items();
-        if (choices.dataset.completionId !== model.choices.identity || choices.childElementCount !== offered.length || offered.some((row, index) => choices.children.item(index)?.textContent !== row.label)) {
-            choices.dataset.completionId = model.choices.identity; for (const button of choiceButtons) button.onclick = null; choiceButtons = [];
+        if (renderedChoices !== model.choices.identity || choices.childElementCount !== offered.length || offered.some((row, index) => choices.children.item(index)?.textContent !== row.label)) {
+            renderedChoices = model.choices.identity; for (const button of choiceButtons) button.onclick = null; choiceButtons = [];
             choices.replaceChildren(...offered.map(row => { const item = owner.createElement("li"), button = owner.createElement("button");
                 item.setAttribute("role", "option"); button.textContent = row.label; choiceButtons.push(button); item.append(button); return item; }));
         }
