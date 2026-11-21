@@ -14,6 +14,27 @@ function fixture(suffix = "") {
 }
 function ready(controller: ComparisonController) { let state = controller.getSnapshot(); for (let i = 0; state.status === "running" && i < 10000; i++) state = controller.advance(512); assert.equal(state.status, "ready"); return state; }
 
+test("a comparison of two documents follows reference edits and rejects an older reversion", () => {
+    const workspace = new Workspace();
+    const working = workspace.createDocument({ scope: "test", resource: "work", variant: "text" }, "Working", "a\nb\n");
+    const reference = workspace.createDocument({ scope: "test", resource: "base", variant: "text" }, "Reference", "a\nc\n");
+    const comparison = createComparisonController(workspace, working, reference);
+    assert.equal(ready(comparison).hunks.length, 1);
+    const revert = comparison.beginReversion();
+    assert.equal(revert.capture.tab, undefined);
+    assert.throws(() => comparison.beginRefresh(), /followed reference/);
+    assert.throws(() => comparison.beginAcceptance(), /followed reference/);
+    workspace.edit({ documentId: reference, expectedRevision: 0, origin: "host", edits: [{ from: 2, to: 3, insert: "b" }] });
+    const next = ready(comparison);
+    assert.equal(next.baseline?.buffer, workspace.document(reference).buffer);
+    assert.equal(next.baseline.epoch, 1);
+    assert.equal(next.hunks.length, 0);
+    assert.equal(revert.complete(), false);
+    assert.equal(workspace.document(working).revision, 0);
+    comparison.dispose();
+    assert.deepEqual([workspace.diagnostics().tabs, workspace.diagnostics().leases, workspace.diagnostics().subscriptions], [0, 0, 0]);
+});
+
 test("invalid comparison budgets preserve live work and the shared minimum can finish it", () => {
     const workspace = new Workspace(), prefix = "same\r\n".repeat(1000), reference = TextBuffer.from(prefix + "baseline\n");
     const resource = workspace.createTextResource({ scope: "test", resource: "budget", variant: "working" }, "Working", { value: prefix + "working\n" });

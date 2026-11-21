@@ -7,22 +7,22 @@ chooses which changes to accept and saves the result.
 
 ## Use
 
-Pass the open tab and its `ComparisonBaseline`. Give the container a height and load the
+Pass the working document and its `ComparisonBaseline`. Give the container a height and load the
 editor stylesheet. [Page setup](getting-started.md#open-the-first-editor)
 
 ```ts
-import type { ComparisonBaseline, TabId, Workspace } from "sttropez";
+import type { ComparisonBaseline, DocumentId, Workspace } from "sttropez";
 import { mountTextComparison } from "sttropez/browser";
 import type { TextComparisonOptions } from "sttropez/browser";
 
 export function showChanges(
-    host: HTMLElement, workspace: Workspace, tab: TabId, reference: ComparisonBaseline
+    host: HTMLElement, workspace: Workspace, documentId: DocumentId, reference: ComparisonBaseline
 ) {
     const options: TextComparisonOptions = {
         ariaLabel: "Review changes",
         rowsAligned: true
     };
-    return mountTextComparison(host, workspace, tab, reference, options); // Call dispose() when the review attachment ends.
+    return mountTextComparison(host, workspace, documentId, reference, options); // Call dispose() when the review attachment ends.
 }
 ```
 
@@ -53,10 +53,15 @@ export function bindRestoreButton(button: HTMLButtonElement, review: TextCompari
 
 ### Identity and comparison state
 
-`createComparisonController` takes a baseline `TextBuffer`, an opaque string `version` and a live
-working text tab. A supplied view must belong to that workspace and document. The controller retains
-the resource and tab generation. Moving the tab preserves the comparison. Closing or replacing it
-expires the comparison. `mountTextComparison` attaches the controller and panes.
+Pass a working document or text tab to `createComparisonController`. A supplied view must belong
+to that workspace and document. Moving a tab preserves the comparison. Closing or replacing a
+captured tab expires it.
+
+For an external reference, supply a `TextBuffer` and opaque `version`. Alternatively, pass the
+reference’s `DocumentId`. The headless controller retains both documents, follows each reference
+revision, and uses its decimal revision as the baseline version. Editing either document expires
+old hunk commands. Refresh and acceptance tickets apply to external references.
+`mountTextComparison` attaches the controller and panes for a browser review.
 
 `ComparisonController` is an observable with immutable `ComparisonSnapshot` values:
 
@@ -96,8 +101,8 @@ a snapshot.
 CRLF, LF, tabs, spaces and final newlines participate in equality. `DiffHunk` contains baseline
 and working `DiffRange` values with exclusive text and line ends. `whitespaceOnly` describes a
 change without suppressing it. A hunk with only LF/CRLF substitutions has `lineEndingOnly: true`.
-The controls label it “line endings only”. Pass `settings` once to configure both panes, including the working paneâ€™s `pasteLineEndings` policy.
-Both panes use the hostâ€™s `requestLine` prompt for Go to Line.
+The controls label it “line endings only”. Pass `settings` once to configure both panes, including the working pane’s `pasteLineEndings` policy.
+Both panes use the host’s `requestLine` prompt for Go to Line.
 Alignment minimizes line insertions/deletions; it does not
 provide a globally minimal character diff or moved-block detection.
 

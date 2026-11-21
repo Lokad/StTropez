@@ -21,12 +21,11 @@ candidate.decorations.addProvider({ name: "tokens", order: 0, provide: line => {
 } });
 const find = createFindController(candidate);
 const comparisonResource = workspace.createTextResourceFromBuffer({ scope: "consumer", resource: "review", variant: "working" }, "Review", { buffer: TextBuffer.from("working\r\n"), serverVersion: "saved-1" });
-const comparisonTab = workspace.open({ kind: "text", documentId: comparisonResource.documentId }, "review");
 const comparisonView = workspace.createDocumentView(comparisonResource.documentId);
 const reviewDecorate = (line: PresentedLine) => [{ from: line.from, to: line.to, className: "consumer-review-token" }];
 const reviewOptions: TextComparisonOptions = { view: comparisonView };
 function mountReview(baseline: Parameters<typeof mountTextComparison>[3]) {
-    const review = mountTextComparison(document.getElementById("comparison")!, workspace, comparisonTab, baseline, reviewOptions);
+    const review = mountTextComparison(document.getElementById("comparison")!, workspace, comparisonResource.documentId, baseline, reviewOptions);
     const tokens = { name: "review tokens", order: 0, provide: reviewDecorate };
     review.working.decorations.addProvider(tokens);
     const attach = () => review.referenceEditor()?.decorations.addProvider(tokens);

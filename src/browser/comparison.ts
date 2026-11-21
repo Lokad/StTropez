@@ -5,7 +5,7 @@ import type { Observable } from "../core/observable.ts";
 import { createComparisonController } from "../core/comparison.ts";
 import type { ComparisonBaseline, ComparisonController, ComparisonSnapshot } from "../core/comparison.ts";
 import type { DiffRange } from "../core/diff.ts";
-import type { DocumentView, TabId, TabTarget, TextResourceHandle, Workspace } from "../core/workspace.ts";
+import type { DocumentId, DocumentView, TabId, TabTarget, TextResourceHandle, Workspace } from "../core/workspace.ts";
 import { mountEditor } from "./text-editor.ts";
 import type { EditorSettings, MountedTextEditor, TextEditor, TextEditorOptions } from "./text-editor.ts";
 import type { InlineDecoration, PresentedLine, TextViewport } from "./viewport.ts";
@@ -39,14 +39,14 @@ export type TextComparison = Observable<TextComparisonSnapshot> & Readonly<{
     revertHunk: (generation: number, index: number) => boolean; dispose: () => void;
 }>;
 /** Two independently virtualized panes. Hosts own reference retrieval, acceptance, saving and execution. */
-export function mountTextComparison(host: HTMLElement, workspace: Workspace, workingTab: TabId, baseline: ComparisonBaseline,
+export function mountTextComparison(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId, baseline: ComparisonBaseline,
     options: TextComparisonOptions = {}): TextComparison {
     const requestedBudget = options.workBudget ?? 4096;
     validateWorkBudget(requestedBudget, "Comparison");
     const budget = Math.min(requestedBudget, 4096);
     const owner = host.ownerDocument, win = owner.defaultView;
     if (!win) throw new Error("Comparison requires an attached browser document.");
-    const controller = createComparisonController(workspace, workingTab, baseline, options), runner = createCooperativeRunner(win);
+    const controller = createComparisonController(workspace, identity, baseline, options), runner = createCooperativeRunner(win);
     const root = owner.createElement("div"), panes = owner.createElement("div");
     root.className = "st-comparison"; root.setAttribute("role", "group"); root.setAttribute("aria-label", options.ariaLabel ?? "Text comparison");
     panes.className = "st-comparison-panes";
@@ -77,7 +77,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     const lineClass = (side: "baseline" | "working") => (line: PresentedLine) => (side !== "working" || line.revision === state.working?.revision) && rangeAt(side, line.line) ? `st-comparison-line-${side}` : undefined;
     const paneOptions = { ...(options.settings ? { settings: options.settings } : {}), ...(options.requestLine ? { requestLine: options.requestLine } : {}) };
     let workingMount: MountedTextEditor;
-    try { workingMount = mountEditor(workingPane.content, workspace, workingTab, { view: controller.view, ...paneOptions, ariaLabel: "Comparison working source" }); }
+    try { workingMount = mountEditor(workingPane.content, workspace, identity, { view: controller.view, ...paneOptions, ariaLabel: "Comparison working source" }); }
     catch (error) { root.remove(); controller.dispose(); throw error; }
     const working = workingMount.editor, pair = createComparisonPanes(workingMount, changed), referenceEditor = () => pair.reference()?.editor, referenceViewport = () => referenceEditor()?.viewport;
     const differences = (editor: TextEditor, side: "working" | "baseline") => editor.decorations.addProvider({

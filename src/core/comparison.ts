@@ -5,7 +5,8 @@ import { Store } from "./observable.ts";
 import { validateWorkBudget } from "./kernel-cursor.ts";
 import { mapComparisonHunks } from "./comparison-presentation.ts";
 import type { Observable } from "./observable.ts";
-import type { DocumentSnapshot, DocumentView, ResourceLease, TabId, TabTarget, TextResourceHandle, Workspace } from "./workspace.ts";
+import { captureTextSurface, ownsTextSurface } from "./workspace.ts";
+import type { DocumentId, DocumentSnapshot, DocumentView, ResourceLease, TabId, TabTarget, Workspace } from "./workspace.ts";
 import type { SelectionSet } from "./selections.ts";
 
 export type ComparisonBaseline = Readonly<{ buffer: TextBuffer; version: string }>;
@@ -24,7 +25,7 @@ export type ComparisonTicket = Readonly<{
     complete: (baseline: ComparisonBaseline) => boolean; cancel: () => void; finish: () => void;
 }>;
 export type ComparisonReversion = Readonly<{
-    kind: "revert"; capture: ComparisonCapture & Readonly<{ generation: number; tab: TabTarget; selectionSet: SelectionSet }>;
+    kind: "revert"; capture: ComparisonCapture & Readonly<{ generation: number; tab?: TabTarget; selectionSet: SelectionSet }>;
     isCurrent: () => boolean; complete: () => boolean; cancel: () => void; finish: () => void;
 }>;
 export type ComparisonController = Observable<ComparisonSnapshot> & Readonly<{
@@ -39,16 +40,18 @@ function baseline(value: ComparisonBaseline, epoch: number): ComparisonBaseline 
 }
 
 /** A reference version is independent of the working resource's saved/server version. No I/O or implicit save. */
-export function createComparisonController(workspace: Workspace, tabId: TabId, initial: ComparisonBaseline,
+export function createComparisonController(workspace: Workspace, identity: DocumentId | TabId, initial: ComparisonBaseline | DocumentId,
     options: Readonly<{ view?: DocumentView; onListenerError?: (error: unknown) => void }> = {}): ComparisonController {
-    const target: TabTarget = workspace.captureTab(tabId), tab = workspace.resolveTab(target);
-    if (!tab || tab.surface.kind !== "text") throw new Error("Expected a ready text tab.");
-    const documentId = tab.surface.documentId, resource: TextResourceHandle = workspace.resourceForDocument(documentId);
-    const initialBaseline = baseline(initial, 0), document = workspace.document(documentId);
+    const { documentId, resource, tab: target } = captureTextSurface(workspace, identity);
+    const document = workspace.document(documentId);
+    const referenceDocument = typeof initial === "string" ? workspace.observeDocument(initial) : undefined;
+    const fromDocument = (value: DocumentSnapshot, epoch: number) => baseline({ buffer: value.buffer, version: String(value.revision) }, epoch);
+    const initialBaseline = typeof initial === "string" ? fromDocument(workspace.document(initial), 0) : baseline(initial, 0);
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to another document or workspace.");
     const retention = workspace.acquire(resource.id);
     let view: DocumentView;
     try { view = options.view ?? workspace.createDocumentView(documentId); } catch (error) { retention.release(); throw error; }
+    const referenceLease = referenceDocument && workspace.acquire(referenceDocument.getSnapshot()!.resourceId);
     const scope = workspace.createNotificationScope(options.onListenerError);
     const state = new Store<ComparisonSnapshot>(Object.freeze({ status: "running", generation: 0, baseline: initialBaseline,
         working: document, hunks: empty, progress: null, failure: null }), scope);
@@ -57,7 +60,8 @@ export function createComparisonController(workspace: Workspace, tabId: TabId, i
     let reversionPolicy = resource.metadata.getSnapshot(), reversionPolicyGeneration = 0;
     const pending = new Set<() => void>();
     const publish = (next: ComparisonSnapshot) => { scope.publish(state, Object.freeze(next)); };
-    const live = () => !disposed && state.get().baseline !== null && workspace.ownsDocumentView(view) && workspace.resolveTab(target) !== undefined && resource.getSnapshot().state === "ready";
+    const live = () => !disposed && state.get().baseline !== null && ownsTextSurface(workspace, view, target)
+        && resource.getSnapshot().state === "ready" && (!referenceDocument || !!referenceDocument.getSnapshot());
     const canAccept = () => live() && resource.metadata.getSnapshot().capabilities.edit.includes("human") && resource.metadata.getSnapshot().editLock === null;
     function expire(): void {
         job?.dispose(); job = undefined;
@@ -77,13 +81,16 @@ export function createComparisonController(workspace: Workspace, tabId: TabId, i
         reversionPolicy = metadata;
         if (!live()) expire();
         else {
-            const current = workspace.document(documentId);
-            if (state.get().working?.revision !== current.revision) restart(state.get().baseline!, current);
+            const current = workspace.document(documentId), previous = state.get(), base = previous.baseline!, followed = referenceDocument?.getSnapshot();
+            if (followed && base.version !== String(followed.revision)) restart(fromDocument(followed, base.epoch + 1), current);
+            else if (previous.working?.revision !== current.revision) restart(base, current);
         }
     };
-    const stopDocument = workspace.observeDocument(documentId).subscribe(update), stopMetadata = resource.metadata.subscribe(update), stopTab = workspace.tabState.subscribe(update);
+    const stopDocument = workspace.observeDocument(documentId).subscribe(update), stopMetadata = resource.metadata.subscribe(update);
+    const stopTab = target && workspace.tabState.subscribe(update), stopReference = referenceDocument?.subscribe(update);
     function begin(kind: "refresh" | "accept"): ComparisonTicket {
         scope.assertWritable();
+        if (referenceDocument) throw new Error("A followed reference changes through its workspace document.");
         if (!(kind === "accept" ? canAccept() : live())) throw new Error("Comparison command is unavailable.");
         const previous = state.get(), reference = previous.baseline!, working = workspace.document(documentId);
         const capture: ComparisonCapture = Object.freeze({ baselineEpoch: reference.epoch, baselineVersion: reference.version,
@@ -110,7 +117,7 @@ export function createComparisonController(workspace: Workspace, tabId: TabId, i
         if (!canAccept() || current.status !== "ready" || !current.baseline || !current.working) throw new Error("Comparison reversion is unavailable.");
         const capture = Object.freeze({ baselineEpoch: current.baseline.epoch, baselineVersion: current.baseline.version,
             working: current.working, serverVersion: resource.metadata.getSnapshot().serverVersion,
-            generation: current.generation, tab: target, selectionSet: view.getSnapshot().selectionSet });
+            generation: current.generation, ...(target ? { tab: target } : {}), selectionSet: view.getSnapshot().selectionSet });
         const refresh = refreshGeneration, acceptance = acceptanceGeneration,
             policy = reversionPolicyGeneration, generation = ++reversionGeneration;
         const lease = workspace.acquire(resource.id); let finished = false;
@@ -160,7 +167,7 @@ export function createComparisonController(workspace: Workspace, tabId: TabId, i
         scope.assertWritable(); if (disposed) return;
         retention.release();
         for (const finish of [...pending]) finish();
-        disposed = true; stopDocument(); stopMetadata(); stopTab(); job?.dispose(); job = undefined;
+        disposed = true; stopDocument(); stopMetadata(); stopTab?.(); stopReference?.(); referenceLease?.release(); job?.dispose(); job = undefined;
         if (!options.view) view.dispose();
         publish({ status: "disposed", generation: state.get().generation + 1, baseline: null, working: null, hunks: empty, progress: null, failure: null });
     } });
