@@ -25,7 +25,7 @@ const ownerGroups = {
     "text-model": ["core/changes", "core/positions", "core/newlines", "core/text-buffer", "core/buffer-change", "core/selections", "core/snippets"],
     workspace: ["core/workspace", "core/commands"],
     editor: ["core/language-configuration", "core/language-edits", "core/bracket-matching", "browser/text-editor"],
-    viewport: ["browser/viewport"],
+    viewport: ["browser/viewport", "browser/anchored-overlay"],
     folding: ["core/folding", "core/fold-discovery", "browser/folding-controller", "protocol/lsp-folding"],
     search: ["core/search", "browser/find", "browser/regex-find"],
     comparison: ["core/diff", "core/comparison", "browser/comparison"],

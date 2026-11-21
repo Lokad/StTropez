@@ -150,6 +150,18 @@ silent. Removing a listener takes effect during delivery. New listeners start ne
 reports exceptions and continues. Recheck captures if an earlier listener could have changed the view.
 Disposal removes all listeners.
 
+### Anchored popups
+
+Append your popup to the document body and pass it to `mountAnchoredOverlay(editor, element)`.
+Call `show({ revision, offset, affinity? })` with a position from that editor. The popup follows
+the text through scrolling and resizing. It hides while its anchor is folded or offscreen and
+reappears when that position is visible again. A new document revision expires the anchor.
+
+The popup opens below the line by default. Pass `{ prefer: "above" }` to prefer the other side.
+If it cannot fit there, it uses the side with more room and limits its height. The host supplies
+content and styling. `hide()` releases the scroll and resize listeners. Call `dispose()` when
+removing the popup. Disposing the editor also releases the attachment.
+
 ### Input adapter ownership
 
 If you write your own input adapter, call `bindInput(focus)` once per viewport for a

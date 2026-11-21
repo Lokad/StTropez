@@ -6,6 +6,8 @@ export type { DecorationLayer, DecorationLayerOptions, DecorationLayers, Decorat
 export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RenderedRowBounds, RevealOptions, TextViewport, TextViewportOptions, ViewportSettings, ViewportActivity, ViewportSnapshot, ViewportInputBinding } from "./viewport.ts";
 export type { EditorOperation, EditorOperationLane, EditorOperationOptions, EditorOperationOutcome } from "./editor-operation.ts";
 export { mountTextEditor } from "./text-editor.ts";
+export { mountAnchoredOverlay } from "./anchored-overlay.ts";
+export type { AnchoredOverlay, AnchoredOverlayOptions, OverlayAnchor } from "./anchored-overlay.ts";
 export type { BracketHighlights, BracketHighlightSnapshot } from "./bracket-highlights.ts";
 export type { CharacterWarningHighlights, CharacterWarningCapture } from "./character-warnings.ts";
 export { createFoldingController } from "./folding-controller.ts";

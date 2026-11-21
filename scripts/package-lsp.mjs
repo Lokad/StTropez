@@ -60,6 +60,12 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         await expect(marker).toHaveText("TODO");
         assert.equal(await firstDiagnostic.evaluate(item => item.select()), false); await firstDiagnostic.dispose();
         assert.equal(await page.evaluate(() => window.publicLsp.diagnostics.getSnapshot().diagnostics[0]?.select()), true);
+        await page.evaluate(() => window.publicLsp.showDiagnostic());
+        const hint = page.locator("#diagnostic-hint"); await expect(hint).toBeVisible();
+        const marked = await marker.boundingBox(), popup = await hint.boundingBox();
+        assert.ok(marked && popup && popup.y >= marked.y + marked.height, "A first-line diagnostic opens below its source");
+        await expect(input).toBeFocused();
+        await input.pressSequentially("ok"); await expect(hint).toBeHidden();
         await page.evaluate(() => window.publicLsp.dispose()); const final = await state(); assert.equal(final.provider.scopes, 0); assert.equal(final.provider.created, final.provider.terminated);
         assert.deepEqual([final.diagnostics.leases, final.diagnostics.views, final.diagnostics.subscriptions], [0, 0, 0]); assert.deepEqual(final.errors, []); assert.deepEqual(errors, []);
         await writeFile(`artifacts/package/lsp-${browser.browserType().name()}.json`, JSON.stringify({ status: "passed", packageSha256, automaticCompletion: true, obsoleteListControlRejected: true, notes: final.notes, synchronization: counts, final, errors }, null, 2));

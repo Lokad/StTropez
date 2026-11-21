@@ -439,6 +439,16 @@ export async function runDemoCompletionCatalogue(page: Page, url = "/") {
     const popup = page.getByRole("listbox", { name: "Completions", exact: true });
     expect(await popup.getByRole("option").count()).toBeLessThanOrEqual(16);
     await expect(popup.locator(".demo-completion-count")).toHaveText("1 of 1200 · type to filter");
+    const caret = page.locator("#editor .st-input-caret");
+    await expect.poll(async () => {
+        const line = await caret.boundingBox(), list = await popup.boundingBox();
+        return !!line && !!list && list.y + list.height <= line.y;
+    }, { message: "The catalogue list opens above the last line" }).toBe(true);
+    const viewport = page.locator("#editor .st-viewport").first();
+    const scroll = await viewport.evaluate(node => { const before = node.scrollTop; node.scrollTop = 0; return before; });
+    await expect(popup).toBeHidden();
+    await viewport.evaluate((node, top) => { node.scrollTop = top; }, scroll);
+    await expect(popup).toBeVisible();
     await source.press("ArrowUp");
     await expect(page.getByRole("option", { name: "item1199", exact: true })).toHaveAttribute("aria-selected", "true");
     expect(await popup.getByRole("option").count()).toBeLessThanOrEqual(16);

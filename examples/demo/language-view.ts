@@ -1,4 +1,4 @@
-import { createCompletionController, createLspHighlightController } from "../../src/browser/index.ts";
+import { createCompletionController, createLspHighlightController, mountAnchoredOverlay } from "../../src/browser/index.ts";
 import type { TextEditor, CompletionController, CompletionSnippet, LspHighlightController } from "../../src/browser/index.ts";
 import type { Workspace } from "../../src/index.ts";
 import type { DemoFile } from "./project.ts";
@@ -22,6 +22,8 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         popup.className = "demo-completion"; popup.hidden = true; popup.setAttribute("role", "listbox"); popup.setAttribute("aria-label", "Completions");
         count.className = "demo-completion-count";
         popup.append(count, choices, detail); document.body.append(popup);
+        const completionOverlay = mountAnchoredOverlay(editor, popup);
+        scope.defer(completionOverlay.dispose);
         const snippetPanel = document.createElement("div"); scope.defer(() => snippetPanel.remove());
         snippetPanel.className = "demo-snippet"; snippetPanel.hidden = true;
         snippetPanel.setAttribute("role", "region"); snippetPanel.setAttribute("aria-label", "Snippet controls"); document.body.append(snippetPanel);
@@ -43,8 +45,7 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
                     const node = button(value || "Empty value", () => snippet.choose(index)); node.setAttribute("aria-pressed", String(index === snippet.choiceIndex)); return node;
                 }), button("Previous field", () => snippet.move(-1)), button("Next field", () => snippet.move(1)), button("Finish snippet", snippet.finish));
             }
-            popup.hidden = !valid() || !state?.choices.length || state.offerText === null;
-            if (!state || popup.hidden) return;
+            if (!valid() || !state?.choices.length || state.offerText === null) { completionOverlay.hide(); return; }
             count.textContent = `${state.choiceIndex + 1} of ${state.choices.length}${state.completionIncomplete ? " · partial list" : ""}${state.omittedCompletions.length ? ` · ${state.omittedCompletions.length} unsupported` : ""} · type to filter`;
             count.title = state.omittedCompletions.map(item => `${item.label}: ${item.reason}`).join("\n");
             if (renderedChoices !== state.choices || renderedIndex !== state.choiceIndex) {
@@ -58,13 +59,12 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
                 }));
             }
             detail.textContent = state.resolving ? "Loading details…" : state.completionDetail;
-            const selected = editor.view.getSnapshot().selection.head, point = editor.viewport.coordsAt(selected), box = editor.element.getBoundingClientRect();
-            const left = point?.left ?? box.left + 16, top = point ? point.top + point.height + 4 : box.top + 32;
-            popup.style.left = `${Math.max(8, Math.min(innerWidth - 350, left))}px`; popup.style.top = `${Math.max(8, Math.min(innerHeight - 320, top))}px`;
+            const selection = editor.view.getSnapshot().selection;
+            completionOverlay.show({ revision: workspace.document(editor.view.documentId).revision, offset: selection.head,
+                affinity: selection.headAffinity ?? "after" });
         };
         snippetPanel.addEventListener("pointerdown", event => event.preventDefault(), { signal: listeners.signal });
         popup.addEventListener("pointerdown", event => event.preventDefault(), { signal: listeners.signal });
-        scope.defer(editor.viewport.onRender(render));
         editor.input.addEventListener("keydown", event => {
             if (!controller && (event.ctrlKey || event.metaKey) && event.code === "Space") event.preventDefault();
         }, { capture: true, signal: listeners.signal });

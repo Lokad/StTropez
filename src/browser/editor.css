@@ -96,3 +96,5 @@
 .st-comparison-preview[hidden] { display: none; }
 .st-comparison-preview pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 700px) { .st-comparison-panes, .st-comparison-preview { grid-template-columns: minmax(0, 1fr); } }
+.st-editor-overlay { position: fixed; box-sizing: border-box; margin: 0; overflow: auto; }
+.st-editor-overlay[hidden] { display: none; }
