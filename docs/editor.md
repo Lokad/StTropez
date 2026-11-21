@@ -153,8 +153,10 @@ movement follows the [code-word rules](unicode.md#graphemes-and-word-movement). 
 move `max(1, floor(viewportHeight / lineHeight) - 1)` visible rows, accounting for folds and
 [aligned comparison rows](comparison.md).
 
-Clicking selects source text even where the transparent input overlaps it. Dragging either scrollbar
-keeps the selection. `--st-selection` paints above token and occurrence backgrounds. The gesture ends
+Clicking selects source text even where the transparent input overlaps it. Right- or middle-click
+places the caret at the pointer, or keeps the selections when you click inside one. Dragging a
+scrollbar or clicking its track keeps the selection and leaves the editor ready to type.
+`--st-selection` paints above token and occurrence backgrounds. A selection drag ends
 on pointer release, lost capture, cancellation or a source/view change. Hold a drag outside an edge to
 scroll, up to three viewport lengths per second per axis. Each callback advances at most 32 ms of
 movement. During composition the native input handles the pointer.

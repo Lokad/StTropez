@@ -137,7 +137,8 @@ returns `false` for a stale, unavailable or composing target. In browser UI, use
 `revertHunk(generation, index)`. It also checks disabled and read-only inputs before calling
 `controller.revert(generation, index)`. The controller checks readiness, generation, revision and
 edit permission, then restores the baseline range in one human history transaction. Undo restores
-the text and selection. A working edit clears the hunk selection.
+the text and selection. The built-in **Use baseline** button focuses the working editor so you can
+undo or type there immediately. A working edit clears the hunk selection.
 
 Take a ticket before fetching a reference or asking the user to confirm a change.
 

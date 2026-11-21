@@ -190,7 +190,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     }
     try {
         render(); setRowsAligned(options.rowsAligned ?? false); setScrollLinked(options.scrollLinked ?? options.rowsAligned ?? false);
-        if (options.controls !== false) stopControls = mountComparisonControls({ element: root, ...stateStore.observable, selectHunk, revertHunk, setScrollLinked, setRowsAligned }, referencePane.section, workingPane.section);
+        if (options.controls !== false) stopControls = mountComparisonControls({ element: root, working, ...stateStore.observable, selectHunk, revertHunk, setScrollLinked, setRowsAligned }, referencePane.section, workingPane.section);
         schedule();
     } catch (error) { dispose(); throw error; }
     return Object.freeze({ element: root, controller, working, referenceViewport, referenceEditor, reference: referenceStore.observable, ...stateStore.observable, selectHunk, revertHunk, setScrollLinked, setRowsAligned,

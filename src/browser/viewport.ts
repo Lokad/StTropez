@@ -626,11 +626,15 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
     foldLayer.addEventListener("click", event => {
         const button = foldButton(event.target); if (!button) return; event.stopPropagation();
         if (disposed || !workspace.resolveTab(target) || inputOwner?.composing) return;
+        const binding = inputOwner;
         view.folding.setCollapsed({ revision: Number(button.dataset.revision), generation: Number(button.dataset.generation) }, button.dataset.fold!, button.getAttribute("aria-expanded") === "true");
+        if (binding && inputOwner === binding && event.detail > 0) notify("focus");
     }, { signal: listeners.signal });
     foldLayer.addEventListener("keydown", event => { if (event.key === "Escape" && foldButton(event.target)) {
         event.preventDefault(); if (!disposed && workspace.resolveTab(target)) notify("focus");
     } }, { signal: listeners.signal });
+    // A native scrollbar press can focus the scroll container despite its negative tab index.
+    root.addEventListener("focus", () => { if (inputOwner) notify("focus"); }, { signal: listeners.signal });
     root.addEventListener("scroll", () => {
         const newTop = y.toLogical(root.scrollTop), newLeft = x.toLogical(root.scrollLeft);
         // Ignore quantization from writes to native fractional/scaled scroll offsets.

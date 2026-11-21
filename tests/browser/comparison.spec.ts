@@ -35,7 +35,9 @@ test("paired navigation exposes exact whitespace and reverts one hunk through sh
     await page.getByRole("button", { name: "Use baseline", exact: true }).click(); await ready(page);
     expect(await page.evaluate(() => window.comparisonFixture.range(0, 25))).toContain("Baseline");
     expect((await page.evaluate(() => window.comparisonFixture.snapshot())).history.undoDepth).toBe(1);
-    await page.getByRole("button", { name: "Undo working edit", exact: true }).click(); await ready(page);
+    await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toBeFocused();
+    await page.keyboard.press("Control+z"); await ready(page);
+    await expect(page.locator(".st-comparison-panes section").last().locator(".st-viewport-row").first()).toContainText("Working");
     expect(await page.evaluate(() => window.comparisonFixture.range(0, 24))).toContain("Working");
     await page.evaluate(() => window.comparisonFixture.setText("a\n")); await ready(page);
     await page.evaluate(() => { window.comparisonFixture.begin("accept"); window.comparisonFixture.finish("accept"); window.comparisonFixture.setText("a\r\n"); }); await ready(page);

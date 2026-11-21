@@ -125,7 +125,8 @@ Disposal removes all listeners.
 
 If you write your own input adapter, call `bindInput(focus)` once per viewport for a
 `ViewportInputBinding`. The [editor](editor.md) already does this. The callback restores source focus
-on Escape or when a focused fold control disappears. Binding removes the viewport root from the tab
+when the viewport itself receives focus, after a pointer fold toggle, on Escape from a fold button,
+or when a focused fold control disappears. Binding removes the viewport root from the tab
 order and hides its duplicate text from semantic navigation. `setComposing(boolean)` updates
 composition styling and guards fold clicks. `setTabEscape(boolean)` controls tab stops on current and
 future fold buttons. Changing DOM classes or attributes cannot claim the binding.

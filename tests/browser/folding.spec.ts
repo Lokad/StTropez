@@ -2,6 +2,27 @@ import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 
+test("a pointer fold returns to typing while keyboard activation keeps the disclosure focused", async ({ page }) => {
+    await page.goto("/editing/");
+    await page.evaluate(() => {
+        const fixture = window.editingFixture;
+        fixture.setText("header\nbody\ntail");
+        fixture.folds([{ id: "section", from: 0, to: 12 }]);
+        fixture.select("primary", { anchor: 3, head: 3 });
+    });
+    await ready(page);
+    const button = page.locator("#primary .st-fold-button");
+    await button.click();
+    await expect(button).toHaveAttribute("aria-expanded", "false");
+    await expect(input(page)).toBeFocused();
+    await page.keyboard.type("Z");
+    await expect(page.locator("#primary .st-viewport-row").first()).toHaveText("heaZder");
+    await button.focus();
+    await page.keyboard.press("Enter");
+    await expect(button).toHaveAttribute("aria-expanded", "true");
+    await expect(button).toBeFocused();
+});
+
 test("group folding preserves every selection and typing replaces the retained hidden ranges", async ({ page }) => {
     await page.goto("/editing/");
     const text = "outer\r\n  first\r\n    second\r\n  third\r\nother\r\n  last\r\nend";

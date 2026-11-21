@@ -882,12 +882,22 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         afterDrop: () => { commits++; revealCaret(); focus(); refresh(); },
         rejected: reason => { conflict(reason); refresh(); } });
     root.addEventListener("pointerdown", event => {
-        if (event.button !== 0 || disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
-        if (textDrag.arm(event)) return;
+        if (event.button < 0 || event.button > 2 || disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
+        if (event.button === 0 && textDrag.arm(event)) return;
         // The transparent native context can overlap source text; its default hit test uses context coordinates.
         const point = pointerHit(event); if (!point) return;
         event.preventDefault(); stopDrag(); cancelWord(); preferred = undefined; focus(); group = undefined;
-        const state = view.getSnapshot(), extending = event.shiftKey && !event.altKey;
+        const state = view.getSnapshot();
+        if (event.button !== 0) {
+            const inside = state.selectionSet.ranges.some(({ anchor, head }) =>
+                point.offset >= Math.min(anchor, head) && point.offset <= Math.max(anchor, head));
+            if (!inside) {
+                view.setSelection(revision, { anchor: point.offset, head: point.offset, anchorAffinity: point.affinity, headAffinity: point.affinity });
+                refresh();
+            }
+            return;
+        }
+        const extending = event.shiftKey && !event.altKey;
         const anchor = extending ? state.selection.anchor : point.offset, anchorAffinity = extending ? state.selection.anchorAffinity ?? "after" : point.affinity;
         const baseRanges = event.altKey ? state.selectionSet.ranges : extending ? state.selectionSet.ranges.filter((_, index) => index !== state.selectionSet.primary) : [];
         view.setSelections(revision, [...baseRanges, { anchor, head: point.offset, anchorAffinity, headAffinity: point.affinity }], baseRanges.length); refresh();
