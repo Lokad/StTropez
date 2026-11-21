@@ -113,9 +113,10 @@ extension anchors and endpoint affinities, then normalizes and publishes the res
 primary destination is revealed. Vertical commands retain each range's measured horizontal
 column across short lines until another selection, edit or layout breaks the sequence.
 
-Adjacent typing or same-direction deletion can share one undo step if it happens within one second in
-the same mount and view, with the expected revision and selections. A newline, composition, paste,
-replacement, focus loss, selection movement or an edit from another origin starts a new step. Undo
+Undo groups adjacent typing in the same view by word. A single space belongs to the following word.
+A run of two or more spaces forms its own step. Pausing mid-word keeps the group open.
+Consecutive deletes in the same direction can share a step. A command, newline, composition, paste,
+replacement, focus loss, caret movement or an edit from another origin starts a new step. Undo
 from either editable view. [Shared history and save boundaries](workspace.md#transactions-and-history)
 
 ### Keyboard and pointer commands

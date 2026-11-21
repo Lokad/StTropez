@@ -179,19 +179,16 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await primary.press("Control+z"); await expect(primary).toHaveValue("base");
         });
 
-        if (coversHost("plain-candidate", mode, editor)) test("a typing pause forms separate undo groups and each group returns exactly toward the saved capture", async ({ page }) => {
+        if (coversHost("plain-candidate", mode, editor)) test("a typing pause keeps the same word in one undo step to the saved capture", async ({ page }) => {
             const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
             await primary.fill("base"); await page.getByRole("button", { name: "Save source", exact: true }).click();
             await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().pendingSaves.length)).toBe(1);
             await primary.press("End"); await primary.pressSequentially(" la");
-            await page.waitForTimeout(1100); // The adapter's documented one-second typing-pause boundary.
+            await page.waitForTimeout(1100);
             await primary.pressSequentially("ter"); await page.evaluate(() => window.hostFixture.finishSave());
             await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().source.serverVersion)).toBe("v1");
-            await primary.press("Control+z"); await expect(primary).toHaveValue("base la");
-            expect((await page.evaluate(() => window.hostFixture.snapshot())).source.dirty).toBe(true);
             await primary.press("Control+z"); await expect(primary).toHaveValue("base");
             expect((await page.evaluate(() => window.hostFixture.snapshot())).source.dirty).toBe(false);
-            await primary.press("Control+Shift+z"); await expect(primary).toHaveValue("base la");
             await primary.press("Control+Shift+z"); await expect(primary).toHaveValue("base later");
         });
 

@@ -43,7 +43,7 @@ import { classifyEditingKey } from "./editing-keys.ts";
 import type { KeyBinding, KeyStroke } from "./editing-keys.ts";
 import { commandBudget, createCooperativeRunner } from "./cooperative-runner.ts";
 import { createEdgeAutoscroll, edgeVelocity } from "./edge-autoscroll.ts";
-import { createOrderedInputQueue } from "./ordered-input.ts";
+import { createOrderedInputQueue, typingRun } from "./ordered-input.ts";
 import type { InputKey, InputIntent, OrderedInput } from "./ordered-input.ts";
 
 export type TextEditorEdit = Readonly<{ expectedRevision: number; edits: readonly TextEdit[]; selectionSet: SelectionSet; kind: EditKind;
@@ -136,7 +136,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     let wordScanSteps = 0, maxWordScanStepMs = 0;
     let graphemeScanSteps = 0, maxGraphemeScanStepMs = 0;
     let visualMoves = 0;
-    let group: Readonly<{ type: string; revision: number; selectionSet: SelectionSet; time: number; key: string }> | undefined;
+    let group: Readonly<{ type: string; revision: number; selectionSet: SelectionSet; tail: ReturnType<typeof typingRun> | "spaces" | undefined; key: string }> | undefined;
     let drag: Readonly<{ pointer: number; anchor: number; anchorAffinity: Affinity; revision: number; x: number; y: number; selectionSet: SelectionSet; baseRanges: readonly Selection[]; padding: boolean }> | undefined;
     let dragScrollFrames = 0, maxDragScrollStepMs = 0;
     const commandRunner = createCooperativeRunner(win);
@@ -260,7 +260,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         cancelWord(); preferred = undefined;
         if (!workspace.resolveTab(target)) { conflict("expired-view", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
         let key: string | undefined;
-        const now = inputQueue.time ?? win.performance.now(), before = view.getSnapshot().selectionSet;
+        const before = view.getSnapshot().selectionSet, typed = type === "insertText" ? edits[0]?.insert : undefined;
+        let tail: NonNullable<typeof group>["tail"] = typed === undefined ? undefined : typingRun(typed);
         const document = workspace.document(documentId);
         const trimmed = document.revision === expectedRevision && automaticIndent.trim(document.buffer, edits, selection);
         if (trimmed) { edits = trimmed.edits; selection = trimmed.selectionSet; }
@@ -269,7 +270,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             ...(adjustNewlines ? { adjustNewlines: true } : {}) }));
         if (transformed) { edits = transformed.edits; selection = transformed.selectionSet; }
         if (type) {
-            const adjacent = group?.type === type && group.revision === expectedRevision && group.selectionSet === before && now - group.time < 1000;
+            const adjacent = group?.type === type && group.revision === expectedRevision && group.selectionSet === before
+                && tail !== "mixed" && group.tail !== "mixed"
+                && !(tail === "space" && group.tail === "word" || tail === "word" && group.tail === "spaces");
+            if (tail === "space" && (typed!.length > 1 || adjacent)) tail = "spaces";
             key = adjacent ? group!.key : `${view.id}:${scope}:${++serial}`;
         } else group = undefined;
         committing = true; let applied = false;
@@ -282,7 +286,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
                 inputQueue.consumeRunning();
                 if (accepted && workspace.document(documentId).revision === result.revision) accepted(edits);
                 commits++; const after = view.getSnapshot(); revealCaret(after.selection);
-                if (type && key) group = { type, revision: result.revision, selectionSet: after.selectionSet, time: now, key }; }
+                if (type && key) group = { type, revision: result.revision, selectionSet: after.selectionSet, tail, key }; }
             else conflict(result.reason, edits[0], expectedRevision, context.from, recoveryText);
         } finally { committing = false; try { transformed?.complete?.(applied); } finally { refresh(); } }
         return applied;
@@ -901,6 +905,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         }
         view.folding.revealSelection(view.folding.getSnapshot());
         const command = typeof binding === "object" ? binding.command : undefined;
+        if (command && command.kind !== "delete" && command.kind !== "word" || binding === "escape" || binding === "prevent-navigation") group = undefined;
         if (command?.kind === "history") { event.preventDefault(); history(command.direction); return; }
         if (command?.kind === "select-all") { event.preventDefault(); cancelWord(); preferred = undefined; const length = workspace.document(documentId).buffer.length; view.setSelection(revision, { anchor: 0, head: length }); refresh(); return; }
         if (binding === "escape") {

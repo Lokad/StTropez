@@ -38,6 +38,26 @@ test("whole-file edits and history keep both panes on their own visible lines", 
     }
 });
 
+test("Undo groups a leading space with its word and keeps a run of spaces separate", async ({ page }) => {
+    await page.evaluate(() => { const f = window.editingFixture; f.setText(""); f.focus("primary"); });
+    const row = page.locator("#primary .st-viewport-row").first();
+    await page.keyboard.type("abc def  ghi");
+    for (const expected of ["abc def  ", "abc def", "abc", ""]) {
+        await page.keyboard.press("Control+z"); await expect(row).toHaveJSProperty("textContent", expected);
+    }
+    await page.keyboard.press("Control+Shift+z"); await page.keyboard.press("End"); await page.keyboard.type("d");
+    await page.keyboard.press("Control+z"); await expect(row).toHaveJSProperty("textContent", "abc");
+    await page.evaluate(() => {
+        const f = window.editingFixture; f.setText("w".repeat(1_000_000)); f.selections([{ anchor: 0, head: 0 }]);
+        const input = document.querySelector("#primary textarea")!;
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true, bubbles: true, cancelable: true }));
+        if (!f.snapshot().primary.pendingWord) throw new Error("Expected pending navigation.");
+        for (const data of "abc def") input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data, bubbles: true, cancelable: true }));
+    });
+    await ready(page); await page.keyboard.press("Control+z"); await ready(page);
+    expect(await page.evaluate(() => { const f = window.editingFixture; return f.range(1_000_000, f.snapshot().document!.length); })).toBe("abc");
+});
+
 test("trusted replacement input preserves UTF-16 selection across a surrogate pair", async ({ page }) => {
     await page.evaluate(() => window.editingFixture.setText("a😀b")); await ready(page);
     const input = page.getByRole("textbox", { name: "Primary source", exact: true });

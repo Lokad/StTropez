@@ -3,7 +3,11 @@ import type { createCooperativeRunner } from "./cooperative-runner.ts";
 import type { KeyBinding, KeyStroke } from "./editing-keys.ts";
 
 export type InputKey = KeyStroke & KeyBinding & { kind: "key" };
-export type InputIntent = (InputKey | { kind: "text"; text: string; type: string; literal?: true; wholeLines?: boolean }) & { at?: number };
+export function typingRun(text: string): "word" | "space" | "mixed" {
+    if (!text || /[\r\n\t]/.test(text)) return "mixed";
+    return !text.includes(" ") ? "word" : /^ +$/.test(text) ? "space" : "mixed";
+}
+export type InputIntent = InputKey | { kind: "text"; text: string; type: string; literal?: true; wholeLines?: boolean; run?: ReturnType<typeof typingRun> };
 type Command<C> = Readonly<{ capture: C; purpose: "word" | "grapheme" }>;
 export type OrderedInput<C> = { capture: C; purpose: Command<C>["purpose"]; actions: InputIntent[]; units: number;
     edit: boolean; native: boolean; running?: InputIntent; cancelled?: boolean };
@@ -19,7 +23,7 @@ export function createOrderedInputQueue<C extends Readonly<{ deleting: boolean }
         commandTurn: (work: () => void) => void; deferredTurn: (work: () => void) => void;
     }>) {
     let ordered: OrderedInput<C> | undefined, executing: OrderedInput<C> | undefined, cancelTask: (() => void) | undefined;
-    let draining = false, replayTime: number | undefined;
+    let draining = false;
     function take(): OrderedInput<C> | undefined {
         cancelTask?.(); cancelTask = undefined;
         const pending = ordered; ordered = undefined; return pending;
@@ -39,13 +43,13 @@ export function createOrderedInputQueue<C extends Readonly<{ deleting: boolean }
     }
     function append(action: InputIntent): OrderedInput<C> | undefined {
         const pending = ensure(); if (!pending) return;
-        action.at = clock.now();
         if (!current(pending) || pending.actions.length >= commandBudget.queuedActions || pending.units + action.text.length > commandBudget.queuedUnits) {
             return pending;
         }
         const last = pending.actions.at(-1);
+        if (action.kind === "text" && action.type === "insertText") action.run = typingRun(action.text);
         if (last?.kind === "text" && action.kind === "text" && last.type === "insertText" && action.type === "insertText" && last.literal === action.literal
-            && !owner.pairKey(last.text) && !owner.pairKey(action.text) && action.at - (last.at ?? action.at) < 1000) { last.text += action.text; last.at = action.at; }
+            && action.run !== "mixed" && last.run === action.run && !owner.pairKey(last.text) && !owner.pairKey(action.text)) last.text += action.text;
         else pending.actions.push(action);
         pending.units += action.text.length; pending.edit ||= action.kind === "text" || action.edit;
         schedule();
@@ -61,13 +65,13 @@ export function createOrderedInputQueue<C extends Readonly<{ deleting: boolean }
         const began = clock.now(); let count = 0; draining = true; executing = pending;
         try { owner.commandTurn(() => {
             while (pending.actions.length && count++ < commandBudget.queuedCalls && clock.now() - began < commandBudget.sliceMs) {
-                const action = pending.actions.shift()!; pending.running = action; replayTime = action.at;
+                const action = pending.actions.shift()!; pending.running = action;
                 const result = owner.replay(action);
                 if (result !== true) {
                     if (result === "reported") delete pending.running;
                     recover(pending, "pending-input-rejected"); return;
                 }
-                replayTime = undefined; delete pending.running; pending.units -= action.text.length;
+                delete pending.running; pending.units -= action.text.length;
                 if (pending.cancelled || owner.disposed()) return;
                 const command = owner.command();
                 if (command) {
@@ -79,7 +83,7 @@ export function createOrderedInputQueue<C extends Readonly<{ deleting: boolean }
             }
             if (pending.actions.length || pending.native) { ordered = pending; schedule(); }
         }); }
-        finally { replayTime = undefined; if (executing === pending) executing = undefined; draining = false; }
+        finally { if (executing === pending) executing = undefined; draining = false; }
     }
     function complete(capture: C, work: () => boolean): boolean {
         const pending = ordered?.capture === capture ? take() : undefined;
@@ -95,7 +99,7 @@ export function createOrderedInputQueue<C extends Readonly<{ deleting: boolean }
         }
     }
     return Object.freeze({
-        get pending() { return ordered; }, get executing() { return executing; }, get draining() { return draining; }, get time() { return replayTime; },
+        get pending() { return ordered; }, get executing() { return executing; }, get draining() { return draining; },
         take, recover, current, ensure, append, schedule, complete,
         /** Consume recovery ownership immediately after commit, before presentation can fail. */
         consumeRunning(): void { if (executing) delete executing.running; },
