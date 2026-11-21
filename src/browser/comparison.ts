@@ -20,7 +20,7 @@ export type TextComparisonOptions = Readonly<{ ariaLabel?: string; workBudget?: 
     requestLine?: NonNullable<TextEditorOptions["requestLine"]> }>;
 export type TextComparisonSnapshot = Readonly<{
     comparison: ComparisonSnapshot;
-    /** Index in comparison.hunks; cleared when the comparison generation changes. */
+    /** Ready hunk at the active caret, including an explicitly selected hunk. */
     selectedHunk: number | null;
     canNavigate: boolean; canRevert: boolean;
     scrollLinked: boolean; alignment: ComparisonAlignmentSnapshot; disposed: boolean;
@@ -33,6 +33,8 @@ export type TextComparison = Observable<TextComparisonSnapshot> & Readonly<{
     getDiagnostics: () => TextComparisonDiagnostics;
     setScrollLinked: (linked: boolean) => void;
     setRowsAligned: (aligned: boolean) => void;
+    navigateHunk: (direction: -1 | 1) => boolean;
+    revertSelectedHunk: (shown?: TextComparisonSnapshot) => boolean;
     hunkAt: (index: number) => TextComparisonHunk | undefined; dispose: () => void;
 }>;
 /** Two independently virtualized panes. Hosts own reference retrieval, acceptance, saving and execution. */
@@ -57,7 +59,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     const referencePane = pane(), workingPane = pane();
     root.append(panes); host.append(root);
     let state = controller.getSnapshot();
-    let epoch = -1, selected = -1, selectedGeneration = -1, scheduled = false, disposed = false;
+    let epoch = -1, scheduled = false, disposed = false;
     let measuredGeneration = -1, steps = 0, advances = 0, maxStepMs = 0, totalStepMs = 0;
     let decoratedGeneration = -1, decoratedStatus: string | undefined;
     function rangeAt(side: "baseline" | "working", line: number): DiffRange | undefined {
@@ -101,12 +103,23 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     const scroll = createComparisonScroll(win, pair, controller.getSnapshot, () => {
         return !busy(working) && !busy(referenceEditor()) && !alignment.snapshot().pending;
     });
+    let active = working;
+    function caretPosition(comparison: ComparisonSnapshot) {
+        const side = active === working ? "working" : "baseline";
+        const { head, anchor } = active.view.getSnapshot().selection;
+        const next = partitionPoint(comparison.hunks.length, i => comparison.hunks[i]![side].from <= head);
+        const range = comparison.hunks[next - 1]?.[side];
+        // A selected hunk ends at its exclusive boundary. A collapsed caret there is between changes.
+        const selected = range && (head < range.to || head === range.to && (head === range.from || anchor === range.from))
+            ? next - 1 : null;
+        return { next, selected };
+    }
     const stateScope = workspace.createNotificationScope(), stateStore = new Store(captureState(), stateScope);
     let stopControls: (() => void) | undefined;
     function captureState(): TextComparisonSnapshot {
         const comparison = controller.getSnapshot(), ready = !disposed && comparison.status === "ready";
-        const selectedHunk = selectedGeneration === comparison.generation && comparison.hunks[selected] ? selected : null;
         const canNavigate = ready && comparison.hunks.length > 0 && !!referenceViewport() && epoch === comparison.baseline?.epoch && !composing();
+        const selectedHunk = ready && epoch === comparison.baseline?.epoch && comparison.hunks.length ? caretPosition(comparison).selected : null;
         const metadata = comparison.working ? workspace.resource(comparison.working.resourceId).metadata.getSnapshot() : undefined;
         const canRevert = canNavigate && selectedHunk !== null && !working.input.readOnly && !working.input.disabled
             && metadata?.capabilities.edit.includes("human") === true && metadata.editLock === null;
@@ -173,12 +186,34 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         const current = controller.getSnapshot(), reference = referenceViewport();
         if (disposed || composing() || current.status !== "ready" || current.generation !== generation || !Number.isSafeInteger(index)) return false;
         const hunk = current.hunks[index]; if (!hunk || !current.working || !reference || epoch !== current.baseline?.epoch) return false;
-        selected = index; selectedGeneration = generation; const document = reference.view.getSnapshot();
-        reference.view.setSelection(document.revision, { anchor: hunk.baseline.from, head: hunk.baseline.to });
-        controller.view.setSelection(current.working.revision, { anchor: hunk.working.from, head: hunk.working.to });
-        reference.view.folding.reveal(reference.view.folding.getSnapshot(), hunk.baseline.from, hunk.baseline.to);
-        working.view.folding.reveal(working.view.folding.getSnapshot(), hunk.working.from, hunk.working.to);
+        const document = reference.view.getSnapshot();
+        const revision = current.working.revision;
+        stateScope.batch(() => {
+            reference.view.setSelection(document.revision, { anchor: hunk.baseline.from, head: hunk.baseline.to });
+            controller.view.setSelection(revision, { anchor: hunk.working.from, head: hunk.working.to });
+            reference.view.folding.reveal(reference.view.folding.getSnapshot(), hunk.baseline.from, hunk.baseline.to);
+            working.view.folding.reveal(working.view.folding.getSnapshot(), hunk.working.from, hunk.working.to);
+        });
         reference.revealOffset(hunk.baseline.from); working.viewport.revealOffset(hunk.working.from); render(); return true;
+    }
+    function navigateHunk(direction: -1 | 1): boolean {
+        stateScope.assertWritable();
+        const current = stateStore.get();
+        if (!current.canNavigate || direction !== 1 && direction !== -1) return false;
+        const { next, selected } = caretPosition(current.comparison), count = current.comparison.hunks.length;
+        const index = direction === 1 ? next % count : ((selected ?? next) + count - 1) % count;
+        return selectHunk(current.comparison.generation, index);
+    }
+    function revertSelectedHunk(shown = stateStore.get()): boolean {
+        stateScope.assertWritable();
+        const current = stateStore.get();
+        if (!current.canRevert || !shown.canRevert || current.selectedHunk === null
+            || current.comparison !== shown.comparison || current.selectedHunk !== shown.selectedHunk) return false;
+        const hunk = hunkAt(current.selectedHunk);
+        if (!hunk) return false;
+        // Focusing the working pane can publish another selection or retire this generation.
+        working.focus();
+        return hunk.revert();
     }
     function hunkAt(index: number): TextComparisonHunk | undefined {
         const hunk = controller.hunkAt(index);
@@ -199,7 +234,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
             unsubscribe(); stopMetadata(); scroll.dispose(); alignment.dispose();
             try { clearReference(); } finally { pair.dispose(); working.dispose(); }
         } finally {
-            try { controller.dispose(); } finally { state = controller.getSnapshot(); selected = -1; publishState(); stopControls?.(); root.remove(); }
+            try { controller.dispose(); } finally { state = controller.getSnapshot(); publishState(); stopControls?.(); root.remove(); }
         }
     }
     try {
@@ -207,10 +242,16 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         const reference = referenceEditor();
         if (!reference) throw new Error("Comparison reference expired during mount.");
         const editors = Object.freeze({ working, reference });
-        let active = working;
-        for (const editor of Object.values(editors))
-            editor.element.addEventListener("focusin", () => { active = editor; }, { signal: editor.signal });
-        const review: TextComparison = Object.freeze({ element: root, controller, panes: editors, activePane: () => active, ...stateStore.observable, hunkAt, setScrollLinked, setRowsAligned,
+        for (const editor of Object.values(editors)) {
+            const stop = editor.view.subscribe(() => { if (active === editor && !disposed) publishState(); });
+            editor.signal.addEventListener("abort", stop, { once: true });
+            editor.element.addEventListener("focusin", () => { active = editor; publishState(); }, { signal: editor.signal });
+            editor.input.addEventListener("keydown", event => {
+                if (event.key === "F7" && !event.defaultPrevented && !event.isComposing && event.keyCode !== 229
+                    && !event.altKey && !event.metaKey && !event.ctrlKey && navigateHunk(event.shiftKey ? -1 : 1)) event.preventDefault();
+            }, { signal: editor.signal });
+        }
+        const review: TextComparison = Object.freeze({ element: root, controller, panes: editors, activePane: () => active, ...stateStore.observable, navigateHunk, revertSelectedHunk, hunkAt, setScrollLinked, setRowsAligned,
             getDiagnostics: () => Object.freeze({ generation: measuredGeneration, steps, advances, maxStepMs, totalStepMs, scrollLinked: scroll.snapshot().linked, pendingScroll: scroll.snapshot().pending, rowsAligned: alignment.snapshot().enabled, alignment: alignment.snapshot(), disposed }), dispose });
         if (options.controls !== false) stopControls = mountComparisonControls(review, referencePane.section, workingPane.section);
         schedule();

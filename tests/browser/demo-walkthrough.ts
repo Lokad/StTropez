@@ -550,8 +550,10 @@ export async function runDemoWalkthrough(page: Page, url = "/") {
     await page.getByRole("button", { name: "Compare", exact: true }).click();
     const working = page.getByRole("textbox", { name: "Comparison working source", exact: true });
     await expect(working).toBeFocused(); await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
-    await expect(page.locator(".st-comparison-controls output")).toContainText(/[1-9]\d* changes?/);
-    await page.getByRole("button", { name: "Next change", exact: true }).click(); await page.getByRole("button", { name: "Use baseline", exact: true }).click();
+    await expect(page.locator(".st-comparison-controls output")).toHaveText("Change 2 of 2");
+    await page.getByRole("button", { name: "Next change", exact: true }).click();
+    await expect(page.locator(".st-comparison-controls output")).toHaveText("Change 1 of 2");
+    await page.getByRole("button", { name: "Use baseline", exact: true }).click();
     await working.press("Control+z"); await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
     await expect(page.locator(".st-comparison-panes > section").last()).toContainText("basketTotal(cart, 0.2)");
     await working.press("Control+s"); await expect(page.locator("#status")).toContainText("Saved in this browser");

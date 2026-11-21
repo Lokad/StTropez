@@ -186,17 +186,17 @@ export async function runPackagedHunkPilot(browser, baseUrl, { directory, packag
                 await ready(); const beforeNavigation = await snapshot();
 
                 activeCase.stage = "navigate both hunks and revert first during pending reviewed save";
+                await page.getByRole("textbox", { name: "Comparison working source", exact: true }).press("Control+Home");
                 await button("Next change").click(); await ready();
                 let s = await snapshot(), ranges = review(s).hunkRanges;
                 assert.equal(ranges.length, 2); assert.equal(ranges[0].working.from, 0);
                 assert.equal(ranges[0].working.to, "local".length);
                 assert.equal(ranges[0].baseline.to, "remote".length);
-                assert.equal(review(s).selection.anchor, ranges[0].working.from);
-                assert.equal(review(s).selection.head, ranges[0].working.to);
-                await button("Previous change").click(); await ready(); s = await snapshot();
                 assert.equal(review(s).selection.anchor, ranges[1].working.from);
                 assert.equal(review(s).selection.head, ranges[1].working.to);
-                await button("Next change").click(); await ready();
+                await button("Previous change").click(); await ready(); s = await snapshot();
+                assert.equal(review(s).selection.anchor, ranges[0].working.from);
+                assert.equal(review(s).selection.head, ranges[0].working.to);
                 const beforeRevert = await snapshot();
                 assert.deepEqual(beforeRevert.bindings.views.map(v => v.selection), beforeNavigation.bindings.views.map(v => v.selection));
                 assert.equal(await button("Use baseline").isEnabled(), true);

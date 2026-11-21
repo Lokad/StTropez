@@ -2,6 +2,46 @@ import { ready, test, expect } from "./fixtures.ts";
 
 test.beforeEach(async ({ page }) => {  await page.goto("/comparison/"); await ready(page); });
 
+for (const custom of [false, true]) test(`${custom ? "host" : "built-in"} review controls follow the caret through navigation, restore and undo`, async ({ page }) => {
+    if (custom) { await page.goto("/comparison/?controls=host"); await ready(page); }
+    const base = "top\nold 1\nkeep A\nold 2\nkeep B\nold 3\nend", work = base.replaceAll("old", "new");
+    await page.evaluate(({ base, work }) => {
+        const f = window.comparisonFixture; f.setText(base); f.begin("accept"); f.finish("accept"); f.setText(work);
+    }, { base, work }); await ready(page);
+    const working = page.getByRole("textbox", { name: "Comparison working source", exact: true });
+    const reference = page.getByRole("textbox", { name: "Comparison baseline source", exact: true });
+    const button = (name: string) => page.getByRole("button", { name, exact: true });
+    const next = button(custom ? "Later change" : "Next change"), previous = button(custom ? "Earlier change" : "Previous change");
+    const restore = button(custom ? "Restore selected change" : "Use baseline");
+    const status = page.locator(custom ? "#review-controls output" : ".st-comparison-controls output");
+    const rows = (side: "working" | "baseline") => page.locator(".st-comparison-line-" + side);
+    await rows("working").nth(1).click({ position: { x: 6, y: 8 } });
+    await expect(working).toBeFocused(); await expect(status).toContainText(/change 2 of 3/i); await expect(restore).toBeEnabled();
+    await next.click(); await expect(status).toContainText(/change 3 of 3/i);
+    await next.click(); await expect(status).toContainText(/change 1 of 3/i);
+    await previous.click(); await expect(status).toContainText(/change 3 of 3/i);
+    await rows("baseline").nth(1).click({ position: { x: 6, y: 8 } });
+    await expect(reference).toBeFocused(); await expect(status).toContainText(/change 2 of 3/i);
+    const rect = await restore.boundingBox(); await page.mouse.move(rect!.x + rect!.width / 2, rect!.y + rect!.height / 2);
+    await page.mouse.down();
+    await page.evaluate(() => {
+        const controller = window.comparisonFixture.review.controller, baseline = controller.getSnapshot().baseline!;
+        const refresh = controller.beginRefresh(); try { refresh.complete({ buffer: baseline.buffer, version: "refreshed" }); }
+        finally { refresh.finish(); }
+    }); await ready(page);
+    await expect(status).toContainText(/change 2 of 3/i); await expect(restore).toBeEnabled();
+    await page.mouse.up(); await ready(page);
+    expect(await page.evaluate(n => window.comparisonFixture.range(0, n), work.length)).toBe(work);
+    await rows("baseline").nth(1).click({ position: { x: 6, y: 8 } });
+    await restore.click(); await ready(page);
+    expect(await page.evaluate(n => window.comparisonFixture.range(0, n), work.length)).toBe(work.replace("new 2", "old 2"));
+    await expect(working).toBeFocused();
+    await working.press("F7"); await expect(status).toContainText(/change 2 of 2/i);
+    await working.press("Shift+F7"); await expect(status).toContainText(/change 1 of 2/i);
+    await working.press("ControlOrMeta+z"); await ready(page);
+    expect(await page.evaluate(n => window.comparisonFixture.range(0, n), work.length)).toBe(work);
+});
+
 test("a one-sided change marks the empty range without tinting its unchanged neighbour", async ({ page }) => {
     const original = "first\nmiddle\nlast\n";
     await page.evaluate(text => {

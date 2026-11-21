@@ -2,13 +2,14 @@ import type { TextComparison, TextComparisonSnapshot } from "./comparison.ts";
 
 /** Optional presentation. Pane ownership and command validation stay with the comparison. */
 export function mountComparisonControls(
-    comparison: Pick<TextComparison, "element" | "panes" | "getSnapshot" | "subscribe" | "hunkAt" | "setScrollLinked" | "setRowsAligned">,
+    comparison: Pick<TextComparison, "element" | "getSnapshot" | "subscribe" | "navigateHunk" | "revertSelectedHunk" | "setScrollLinked" | "setRowsAligned">,
     referencePane: HTMLElement, workingPane: HTMLElement
 ): () => void {
     const owner = comparison.element.ownerDocument, controls = owner.createElement("div"), listeners = new AbortController();
     controls.className = "st-comparison-controls";
     const button = (label: string) => { const result = owner.createElement("button"); result.type = "button"; result.textContent = label; controls.append(result); return result; };
     const previous = button("Previous change"), next = button("Next change"), revert = button("Use baseline");
+    previous.title = "Previous change (Shift+F7)"; next.title = "Next change (F7)";
     const checkbox = (label: string) => {
         const wrapper = owner.createElement("label"), input = owner.createElement("input"); input.type = "checkbox";
         wrapper.append(input, ` ${label}`); controls.append(wrapper); return input;
@@ -34,6 +35,7 @@ export function mountComparisonControls(
         const count = state.hunks.length, hunk = selected === null ? undefined : state.hunks[selected];
         link.checked = scrollLinked; align.checked = layout.enabled; link.disabled = align.disabled = disposed || !state.baseline || !state.working;
         previous.disabled = next.disabled = !canNavigate; revert.disabled = !canRevert;
+        revert.title = selected === null ? "Place the caret in a change" : `Restore change ${selected + 1} of ${count} from the baseline`;
         setText(referenceHeading, state.baseline ? `Baseline · ${state.baseline.version}` : "Baseline unavailable");
         setText(workingHeading, state.working ? `Working · revision ${state.working.revision}` : "Working unavailable");
         const described = hunk ?? (count === 1 ? state.hunks[0] : undefined);
@@ -49,19 +51,16 @@ export function mountComparisonControls(
             setText(referencePreview, text("baseline")); setText(workingPreview, text("working"));
         } else { setText(referencePreview, ""); setText(workingPreview, ""); }
     }
-    function navigate(direction: -1 | 1): void {
-        const state = comparison.getSnapshot(), count = state.comparison.hunks.length;
-        const index = state.selectedHunk ?? (direction === 1 ? -1 : 0);
-        if (state.canNavigate) comparison.hunkAt((index + direction + count) % count)?.select();
-    }
-    previous.addEventListener("click", () => navigate(-1), { signal: listeners.signal });
-    next.addEventListener("click", () => navigate(1), { signal: listeners.signal });
-    revert.addEventListener("click", () => {
-        const state = comparison.getSnapshot();
-        if (state.canRevert && state.selectedHunk !== null) {
-            comparison.panes.working.focus();
-            comparison.hunkAt(state.selectedHunk)?.revert();
-        }
+    previous.addEventListener("click", () => comparison.navigateHunk(-1), { signal: listeners.signal });
+    next.addEventListener("click", () => comparison.navigateHunk(1), { signal: listeners.signal });
+    let press: TextComparisonSnapshot | null | undefined;
+    revert.addEventListener("pointerdown", () => { press = comparison.getSnapshot(); }, { signal: listeners.signal });
+    revert.addEventListener("keydown", event => { if (!event.repeat && (event.key === " " || event.key === "Enter")) press = comparison.getSnapshot(); }, { signal: listeners.signal });
+    revert.addEventListener("pointercancel", () => { press = undefined; }, { signal: listeners.signal });
+    revert.addEventListener("blur", () => { if (press) press = null; }, { signal: listeners.signal });
+    revert.addEventListener("click", event => {
+        const shown = event.isTrusted ? press : undefined; press = undefined;
+        if (shown !== null) comparison.revertSelectedHunk(shown);
     }, { signal: listeners.signal });
     link.addEventListener("change", () => comparison.setScrollLinked(link.checked), { signal: listeners.signal });
     align.addEventListener("change", () => comparison.setRowsAligned(align.checked), { signal: listeners.signal });

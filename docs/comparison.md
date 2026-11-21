@@ -43,10 +43,7 @@ import type { TextComparison } from "sttropez/browser";
 
 export function bindRestoreButton(button: HTMLButtonElement, review: TextComparison) {
     const render = () => { button.disabled = !review.getSnapshot().canRevert; };
-    const restore = () => {
-        const state = review.getSnapshot();
-        if (state.selectedHunk !== null) review.hunkAt(state.selectedHunk)?.revert();
-    };
+    const restore = () => review.revertSelectedHunk();
     const stop = review.subscribe(render);
     button.addEventListener("click", restore); render();
     return () => { stop(); button.removeEventListener("click", restore); };
@@ -85,7 +82,9 @@ A change to the progress count alone doesn't repaint the panes.
 
 Subscribe to `TextComparison` for a `TextComparisonSnapshot`. Repeated reads return the same
 immutable object until a field changes. Its `comparison` field holds the controller snapshot.
-`selectedHunk` indexes that snapshot's hunks, or is `null`. A new generation clears the selection.
+`selectedHunk` indexes the change at the last focused pane's caret. It is `null` between changes
+and while the comparison recomputes. A caret at an empty change selects that point. At the end of
+a nonempty change, selecting its full range keeps it current. A collapsed caret there is outside it.
 Use `canNavigate` and `canRevert` to enable buttons. They account for pane readiness, active
 composition and edit permission.
 
@@ -144,6 +143,15 @@ validate the budget and return the current progress.
 
 ### Reverting a change or accepting a version
 
+Call `review.navigateHunk(1)` for the next change or `review.navigateHunk(-1)` for the previous
+one. Both start at the active caret, wrap at either end and select the change in both panes.
+Inside an editor, F7 moves forward and Shift+F7 moves back.
+
+`review.revertSelectedHunk()` restores the change at the active caret and focuses the working pane.
+If a button press or host confirmation spans multiple events, capture `review.getSnapshot()` at
+the start and pass it to `revertSelectedHunk(shown)`. It returns `false` if the comparison or
+target changed before activation.
+
 Call `review.hunkAt(index)` when presenting a change. It returns a handle for that exact change,
 or `undefined` while the diff is pending or the index is out of range. Keep the handle through a
 confirmation dialog. Its `select()` reveals and selects both ranges, unfolding them if needed.
@@ -151,7 +159,7 @@ Its `revert()` restores the baseline range in one undoable edit. Both return `fa
 side changes or the review closes. Browser actions also guard composition, and revert checks
 write access. Headless consumers use `controller.hunkAt(index)?.revert()`. Undo restores
 the text and selection. The built-in **Use baseline** button focuses the working editor so you can
-undo or type there immediately. A working edit clears the hunk selection.
+undo or type there immediately. After a working edit the next ready comparison resolves the target again.
 
 Take a ticket before fetching a reference or asking the user to confirm a change.
 
