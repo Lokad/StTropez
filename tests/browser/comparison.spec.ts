@@ -2,6 +2,41 @@ import { ready, test, expect } from "./fixtures.ts";
 
 test.beforeEach(async ({ page }) => {  await page.goto("/comparison/"); await ready(page); });
 
+test("a one-sided change marks the empty range without tinting its unchanged neighbour", async ({ page }) => {
+    const original = "first\nmiddle\nlast\n";
+    await page.evaluate(text => {
+        const f = window.comparisonFixture; f.setText(text); f.begin("accept"); f.finish("accept");
+    }, original);
+    const sections = page.locator(".st-comparison-panes > section");
+    for (const insert of [true, false]) {
+        const working = insert ? "first\nextra\nmiddle\nlast\n" : "first\nlast\n";
+        await page.evaluate(text => window.comparisonFixture.setText(text), working); await ready(page);
+        const empty = insert ? sections.first() : sections.last(), changed = insert ? sections.last() : sections.first();
+        const row = empty.locator('.st-viewport-row[data-line="1"]');
+        for (const aligned of [true, false]) {
+            await page.getByRole("checkbox", { name: "Align review rows" }).setChecked(aligned); await ready(page);
+            await expect(row).toHaveText(insert ? "middle" : "last");
+            await expect(row).not.toHaveClass(/st-comparison-line-/);
+            const marker = row.locator('.st-comparison-anchor[data-ornament="point"]');
+            expect(await marker.evaluate(el => parseFloat(getComputedStyle(el, "::after").borderBottomWidth))).toBeGreaterThan(0);
+            await expect(changed.locator(insert ? ".st-comparison-line-working" : ".st-comparison-line-baseline")).toHaveText(insert ? "extra" : "middle");
+        }
+        await page.getByRole("button", { name: "Next change" }).click();
+        await page.getByRole("button", { name: "Use baseline", exact: true }).click(); await ready(page);
+        expect(await page.evaluate(length => window.comparisonFixture.range(0, length), original.length)).toBe(original);
+        await sections.last().getByRole("textbox").press("ControlOrMeta+z"); await ready(page);
+        expect(await page.evaluate(length => window.comparisonFixture.range(0, length), working.length)).toBe(working);
+    }
+    await page.evaluate(() => {
+        const f = window.comparisonFixture; f.setText("first\r\nlast"); f.begin("accept"); f.finish("accept"); f.setText("first\rX\nlast");
+    }); await ready(page);
+    const edge = sections.first().locator('.st-viewport-row[data-line="0"] .st-comparison-anchor');
+    expect(await edge.evaluate(marker => {
+        const prefix = document.createRange(); prefix.selectNodeContents(marker.closest(".st-viewport-row")!);
+        prefix.setEndBefore(marker); return prefix.toString();
+    })).toBe("first");
+});
+
 test("the two saved revisions stay read-only while navigating their changes", async ({ page }) => {
     await page.getByRole("link", { name: "Compare two saved revisions" }).click();
     await ready(page);

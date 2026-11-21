@@ -68,10 +68,22 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     const decorate = (side: "baseline" | "working") => (line: PresentedLine): readonly InlineDecoration[] => {
         if (side === "working" && line.revision !== state.working?.revision) return [];
         const range = rangeAt(side, line.line);
-        if (!range || range.from === range.to || range.from >= line.to || range.to <= line.from) return [];
+        if (!range) return [];
+        if (range.from === range.to) {
+            let at = range.from;
+            const buffer = state[side]!.buffer;
+            // A position between CR and LF shares the painted end of the line.
+            if (at === line.to + 1 && at < buffer.length && buffer.slice(line.to, at + 1) === "\r\n") at = line.to;
+            return at >= line.from && at <= line.to ? [{ from: at, to: at, className: "st-comparison-anchor" }] : [];
+        }
+        if (range.from >= line.to || range.to <= line.from) return [];
         return [{ from: range.from, to: range.to, className: side === "baseline" ? "st-comparison-removed" : "st-comparison-added" }];
     };
-    const lineClass = (side: "baseline" | "working") => (line: PresentedLine) => (side !== "working" || line.revision === state.working?.revision) && rangeAt(side, line.line) ? `st-comparison-line-${side}` : undefined;
+    const lineClass = (side: "baseline" | "working") => (line: PresentedLine) => {
+        if (side === "working" && line.revision !== state.working?.revision) return;
+        const range = rangeAt(side, line.line);
+        return range && range.from < range.to ? `st-comparison-line-${side}` : undefined;
+    };
     const paneOptions = { ...(options.settings ? { settings: options.settings } : {}), ...(options.requestLine ? { requestLine: options.requestLine } : {}) };
     let workingMount: MountedTextEditor;
     try { workingMount = mountEditor(workingPane.content, workspace, identity, { view: controller.view, ...paneOptions, ariaLabel: "Comparison working source" }); }

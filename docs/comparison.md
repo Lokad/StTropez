@@ -207,6 +207,9 @@ once. Replacing a baseline keeps the reference editor, its settings and its view
 current query, and folding maps surviving ranges to the new revision. Publish decoration ranges
 against the revision of the pane they describe. [Decoration layers](viewport.md#decoration-layers)
 
+A pure insertion or deletion marks the empty side with a point at the corresponding text position.
+Only the side containing changed text receives a changed-line background.
+
 The reference pane is read-only. Passing a workspace document displays it directly and follows
 its edits. An external baseline uses a private document with Save and Run disabled. It takes no tab
 and stays out of the workspace inventory. A host lease can retain it after comparison disposal.
