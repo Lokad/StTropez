@@ -92,7 +92,8 @@ test("optional comparison listeners detach, rebind current references and cancel
     try {
         idle();
         f.baselineEditor.input.dispatchEvent(new Event("compositionstart")); f.reference.element.dispatchEvent(new Event("focus"));
-        assert.equal(f.counters().compositions, 1); assert.equal(f.counters().focuses, 1);
+        // Each mounted editor routes viewport focus. A comparison must not redirect an armed native drag.
+        assert.equal(f.counters().compositions, 1); assert.equal(f.counters().focuses, 0);
         for (let pass = 0; pass < 2; pass++) {
             f.alignment.setEnabled(true); scroll.setLinked(true); f.drain(); assert.equal(observed.size, 2);
             assert.equal(f.working.renderListeners(), 1);
@@ -108,7 +109,7 @@ test("optional comparison listeners detach, rebind current references and cancel
         assert.equal(f.reference.renderListeners(), 0); assert.equal(observed.size, 1);
         assert.equal(f.reference.installed(), undefined); assert.equal(f.working.installed(), undefined);
         f.baselineEditor.input.dispatchEvent(new Event("compositionend")); f.reference.element.dispatchEvent(new Event("focus"));
-        assert.equal(f.counters().compositions, 1); assert.equal(f.counters().focuses, 1);
+        assert.equal(f.counters().compositions, 1); assert.equal(f.counters().focuses, 0);
         const before = f.counters().reads; f.reference.render(); f.reference.element.dispatchEvent(new Event("scroll"));
         assert.equal(f.counters().reads, before); assert.equal(f.tasks.size, 0);
         f.setReference(f.reference.value); f.drain();
