@@ -158,7 +158,7 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Escape | Cancel pending commands and keep only the primary range; arm focus traversal |
 | Escape then Tab / Shift+Tab | Leave the editor for the next/previous host control |
 | Click / Shift+click | One caret / extend the primary range while retaining secondary ranges |
-| Alt+click / Alt+drag / Alt+double-click | Add a caret / range / code-word selection |
+| Alt+click / Alt+drag / Alt+double-click | Add a caret / range / code-word selection. With several ranges, Alt+click removes the one under the pointer. |
 | Double-click | Select the code-word, symbol or whitespace run within the clicked logical line |
 
 The focused editor has a solid outline. After Escape the outline becomes dashed and the root
@@ -173,9 +173,10 @@ Only a valid reply from the same view moves the caret and returns focus.
 Host tools get first chance at shortcuts. Cancelled events and composition events (including keyCode
 229) bypass editor commands. [Example bindings](examples.md)
 
-Double-click selects a run up to a grapheme boundary and excludes the line ending. Keyboard word
-movement follows the [code-word rules](unicode.md#graphemes-and-word-movement). A single separator
-next to an identifier is skipped when moving toward that identifier. Beyond the last word, movement
+Double-click selects a run up to a grapheme boundary and excludes the line ending. Shift+click
+extends from a double-clicked word and keeps that entire word selected in either direction.
+Keyboard word movement follows the [code-word rules](unicode.md#graphemes-and-word-movement).
+A single separator next to an identifier is skipped when moving toward that identifier. Beyond the last word, movement
 stops at the line boundary. Press again to enter the adjacent line. Word Backspace at column one
 deletes the line break. Word Delete at the end of a line also removes the next line’s indentation.
 PageUp and PageDown
@@ -184,7 +185,8 @@ move `max(1, floor(viewportHeight / lineHeight) - 1)` visible rows, accounting f
 
 Clicking selects source text even where the transparent input overlaps it. Right- or middle-click
 places the caret at the pointer, or keeps the selections when you click inside one. Dragging a
-scrollbar or clicking its track keeps the selection and leaves the editor ready to type.
+scrollbar or clicking its track keeps the selection. Typing brings the edited line back into view,
+even during a track-click animation.
 `--st-selection` paints above token and occurrence backgrounds. A selection drag ends
 on pointer release, lost capture, cancellation or a source/view change. Hold a drag outside an edge to
 scroll, up to three viewport lengths per second per axis. Each callback advances at most 32 ms of
@@ -214,6 +216,7 @@ and tab/view identity. Editable sources in the same workspace move by default; C
 Drop validates an opaque token and the last accepted target revision/model offset independently
 of focus. An active internal drag that loses its token is refused without deleting the source.
 
+The destination selects the dropped text, including all fragments of a multiline drop.
 Same-document moves use one original-coordinate plan; cross-document moves use shared atomic
 history. Undo restores the initiating sets. Dragend does not delete text. External plain text
 inserts literally at the accepted offset; HTML is not interpreted and unsupported file drops

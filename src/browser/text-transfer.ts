@@ -52,7 +52,7 @@ export function applyTextDrop(request: TextDropRequest): TextDropResult {
     const removals = removed?.edits.filter(edit => edit.from !== edit.to) ?? [];
     const mapped = move && sameDocument ? new PositionMap(source!.buffer.length, removals).map(offset, "before").offset : offset;
     const head = mapped + text.length, targetLength = target.document.buffer.length + text.length - (sameDocument && move ? removals.reduce((sum, edit) => sum + edit.to - edit.from, 0) : 0);
-    const after = createSelectionSet(targetLength, [{ anchor: head, head }]);
+    const after = createSelectionSet(targetLength, [{ anchor: mapped, head }]);
     const edits = [...(move && sameDocument ? removals : []), { from: offset, to: offset, insert: text }].sort((a, b) => a.from - b.from || a.to - b.to);
     const initiator = move && sameDocument ? source!.view : view;
     const targetRequest = { documentId: view.documentId, expectedRevision, origin: "human" as const,
@@ -64,7 +64,7 @@ export function applyTextDrop(request: TextDropRequest): TextDropResult {
     if (!result.applied) return Object.freeze({ applied: false, reason: result.reason });
     const revision = result.revisions.find(item => item.documentId === view.documentId)!.revision;
     // Same-document history restores the drag-initiating view; other retained views map normally.
-    // The drop view gets the explicit insertion caret, independently of whichever view has focus.
+    // The drop view selects the inserted text, independently of whichever view has focus.
     if (initiator !== view && workspace.resolveTab(tab) && workspace.ownsDocumentView(view)) view.setSelections(revision, after.ranges, after.primary);
     return Object.freeze({ applied: true, operation: move ? "move" : "copy", revision, offset: head });
 }

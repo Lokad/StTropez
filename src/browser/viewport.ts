@@ -148,6 +148,18 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         const line = document.buffer.lineAt(primary.head); return index.hiddenBy(line)?.lineFrom ?? line;
     };
     let frame: number | undefined, disposed = false, previous: DocumentSnapshot | undefined;
+    let scrollbarPressed = false, revealSettling: number | undefined;
+    function releaseScrollbar(): void {
+        scrollbarPressed = false;
+        if (revealSettling !== undefined) win.cancelAnimationFrame(revealSettling);
+        revealSettling = undefined;
+    }
+    function settleScrollbarReveal(): void {
+        if (revealSettling !== undefined) win.cancelAnimationFrame(revealSettling);
+        // A track click can keep scrolling on the compositor after pointerup. Give the
+        // reveal ownership until two paint opportunities pass without another native delta.
+        revealSettling = win.requestAnimationFrame(() => { revealSettling = win.requestAnimationFrame(releaseScrollbar); });
+    }
     let top = 0, left = 0, width = 0, height = 0, lineHeight = 22.4, columnWidth = 8.4;
     let x = scrollAxis(0, 0), y = scrollAxis(0, 0), renderedRevision: number | null = null, renderedIndex: RowIndex = view.folding.getSnapshot().index, renderedFoldGeneration = -1, observedFoldRevision = view.folding.getSnapshot().revision;
     let comparisonRows: ViewportComparisonRows | undefined, rowGeneration = 0, renderedAlignmentId: number | null = null, naturalLineHeight = lineHeight;
@@ -228,6 +240,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
     const setScroll = (position: Readonly<{ top?: number; left?: number }>) => {
         if (disposed) return;
         validateScroll(position);
+        releaseScrollbar();
         if (position.top !== undefined) top = Math.max(0, position.top);
         if (position.left !== undefined) left = Math.max(0, position.left);
         anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
@@ -507,6 +520,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         // slightly smaller, making classic scrollbars repeatedly add/remove each other.
         spacer.style.width = `${Math.min(x.extent, x.physicalExtent) + mapWidth}px`; spacer.style.height = `${Math.min(y.extent, y.physicalExtent)}px`;
         const physicalLeft = x.toPhysical(left), physicalTop = y.toPhysical(top);
+        if (requested && scrollbarPressed) settleScrollbarReveal();
         root.scrollLeft = physicalLeft; root.scrollTop = physicalTop;
         layer.style.width = mapWidth ? `calc(100% - ${mapWidth}px)` : "100%"; layer.style.height = "100%";
         layer.style.transform = `translate(${physicalLeft}px, ${physicalTop}px)`;
@@ -634,14 +648,29 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         event.preventDefault(); if (!disposed && workspace.resolveTab(target)) notify("focus");
     } }, { signal: listeners.signal });
     // A native scrollbar press can focus the scroll container despite its negative tab index.
-    root.addEventListener("focus", () => { if (inputOwner) notify("focus"); }, { signal: listeners.signal });
+    // Moving focus during a native selection drag cancels dragstart in Chromium.
+    root.addEventListener("focus", () => { if (inputOwner && !root.draggable) notify("focus"); }, { signal: listeners.signal });
+    root.addEventListener("pointerdown", event => {
+        releaseScrollbar();
+        if (event.target !== root || event.button !== 0) return;
+        const box = clientBox(root);
+        scrollbarPressed = event.clientX >= box.right || event.clientY >= box.bottom;
+    }, { capture: true, signal: listeners.signal });
     root.addEventListener("scroll", () => {
+        if (revealSettling !== undefined) {
+            const targetTop = y.toPhysical(top), targetLeft = x.toPhysical(left);
+            if (Math.abs(root.scrollTop - targetTop) > 1 || Math.abs(root.scrollLeft - targetLeft) > 1) {
+                root.scrollTo(targetLeft, targetTop); settleScrollbarReveal();
+            }
+            return;
+        }
         const newTop = y.toLogical(root.scrollTop), newLeft = x.toLogical(root.scrollLeft);
         // Ignore quantization from writes to native fractional/scaled scroll offsets.
         if (Math.abs(root.scrollTop - y.toPhysical(top)) > 1 || Math.abs(root.scrollLeft - x.toPhysical(left)) > 1) { top = newTop; left = newLeft; anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined; schedule(); }
     }, { signal: listeners.signal });
     root.addEventListener("wheel", event => {
         if (event.defaultPrevented || event.ctrlKey || event.metaKey) return;
+        releaseScrollbar();
         const factor = event.deltaMode === 1 ? lineHeight : event.deltaMode === 2 ? height : 1;
         const nextTop = position(y, top + (event.shiftKey ? 0 : event.deltaY) * factor), nextLeft = position(x, left + (event.shiftKey ? event.deltaY : event.deltaX) * factor);
         if (nextTop !== top || nextLeft !== left) { event.preventDefault(); top = nextTop; left = nextLeft; anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined; schedule(); }
@@ -790,6 +819,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
             physicalHeight: y.physicalExtent, physicalWidth: x.physicalExtent }),
         dispose: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
+            releaseScrollbar();
             inputOwner?.detach(); inputOwner = undefined;
             for (const stop of observationStops) stop();
             rulers.clear(); columns = resolveColumnRulers();

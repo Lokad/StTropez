@@ -11,7 +11,7 @@ export type ComparisonPanes = ReturnType<typeof createComparisonPanes>;
 export function createComparisonPanes(working: MountedTextEditor, compositionChanged: () => void) {
     const listeners = new Map<Kind, Set<Registration>>(), replacements = new Set<(previous: MountedTextEditor | undefined) => void>();
     let reference: Binding | undefined, disposed = false, resize: ResizeObserver | undefined;
-    const source = bind(working, false);
+    const source = bind(working);
     const current = (binding: Binding) => !disposed && (binding === source || binding === reference);
     function emit(kind: Kind, binding: Binding, event?: Event): void {
         const observers = listeners.get(kind);
@@ -34,11 +34,10 @@ export function createComparisonPanes(working: MountedTextEditor, compositionCha
         });
         return () => events.abort();
     }
-    function bind(mount: MountedTextEditor, baseline: boolean): Binding {
+    function bind(mount: MountedTextEditor): Binding {
         const editor = mount.editor, binding: Binding = { mount, base: new AbortController(), stops: new Map() };
         try {
             for (const type of ["compositionstart", "compositionend"]) editor.input.addEventListener(type, compositionChanged, { signal: binding.base.signal });
-            if (baseline) editor.viewport.element.addEventListener("focus", () => editor.focus(), { signal: binding.base.signal });
             for (const [kind, observers] of listeners) if (observers.size) binding.stops.set(kind, watch(binding, kind));
             return binding;
         } catch (error) { unbind(binding); throw error; }
@@ -67,7 +66,7 @@ export function createComparisonPanes(working: MountedTextEditor, compositionCha
         setReference(mount: MountedTextEditor | undefined): void {
             if (disposed || reference?.mount === mount) return;
             const previous = reference; if (previous) unbind(previous); reference = undefined;
-            if (mount) reference = bind(mount, true);
+            if (mount) reference = bind(mount);
             for (const listener of [...replacements]) if (replacements.has(listener)) listener(previous?.mount);
         },
         observe,

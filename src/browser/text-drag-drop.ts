@@ -1,4 +1,5 @@
 import { clientBox } from "./dom-coordinates.ts";
+import { isFocused } from "./dom-focus.ts";
 import type { Affinity } from "../core/positions.ts";
 import type { DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
 import type { SelectionSet } from "../core/selections.ts";
@@ -53,7 +54,9 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
     }
     function finish(): void {
         if (activeDrags.get(document)?.owner === owner) activeDrags.delete(document);
+        const returnFocus = root.draggable && isFocused(root) && current();
         clearArm(); clearAim(); expired = false; clearPreview();
+        if (returnFocus) input.focus({ preventScroll: true });
     }
     function accepts(data: DataTransfer | null): data is DataTransfer {
         return !!data && (data.types.includes(transferType) || data.types.includes("text/plain"));

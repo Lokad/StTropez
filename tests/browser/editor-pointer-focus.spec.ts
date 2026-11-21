@@ -1,5 +1,23 @@
 import { expect, ready, test } from "./fixtures.ts";
 
+test("Alt-click removes a caret or selection and leaves the last caret ready to type", async ({ page }) => {
+    await page.goto("/editing/"); await page.evaluate(() => {
+        const f = window.editingFixture; f.setText("abc\ndef\nghi");
+        f.selections([{ anchor: 1, head: 1 }, { anchor: 4, head: 7 }]); f.focus("primary");
+    }); await ready(page);
+    const click = async (offset: number) => {
+        const at = await page.evaluate(offset => window.editingFixture.coords(offset), offset);
+        if (!at) throw new Error("Expected visible pointer target");
+        await page.mouse.click(at.left, at.top + at.height / 2);
+    };
+    await page.keyboard.down("Alt");
+    try { await click(5); await click(10); await click(1); await click(10); }
+    finally { await page.keyboard.up("Alt"); }
+    const set = await page.evaluate(() => window.editingFixture.selectionSet());
+    expect(set.ranges).toHaveLength(1); expect(set.ranges[0]).toMatchObject({ anchor: 10, head: 10 });
+    await page.keyboard.type("X"); await expect(page.locator("#primary .st-viewport-row")).toHaveText(["abc", "def", "ghXi"]);
+});
+
 test("a click, modifier tap or selection change cancels Escape before Tab", async ({ page }) => {
     await page.goto("/editing/");
     await page.evaluate(() => window.editingFixture.setText("first\nsecond"));
@@ -25,6 +43,24 @@ test("a click, modifier tap or selection change cancels Escape before Tab", asyn
     await page.keyboard.type("x y");
     await expect(input).toBeFocused();
     await expect(editor.locator(".st-viewport-row").nth(1)).toHaveJSProperty("textContent", "    x ysecond");
+});
+
+test("Shift-clicking on either side of a double-clicked word keeps the whole word", async ({ page }) => {
+    await page.goto("/editing/"); await page.evaluate(() => window.editingFixture.setText("left center right")); await ready(page);
+    const point = async (offset: number) => {
+        const at = await page.evaluate(offset => window.editingFixture.coords(offset), offset);
+        if (!at) throw new Error("Expected a visible word");
+        return { x: at.left + 1, y: at.top + at.height / 2 };
+    };
+    const inside = await point(7); await page.mouse.dblclick(inside.x, inside.y);
+    await page.keyboard.down("Shift");
+    try {
+        for (const [offset, anchor, head] of [[2, 11, 2], [15, 5, 15]] as const) {
+            const at = await point(offset); await page.mouse.click(at.x, at.y);
+            expect(await page.evaluate(() => window.editingFixture.snapshot().primary.selection)).toMatchObject({ anchor, head });
+        }
+    } finally { await page.keyboard.up("Shift"); }
+    await page.keyboard.type("X"); await expect(page.locator("#primary .st-viewport-row")).toHaveText("left Xht");
 });
 
 test("right-click targets the word under the pointer and preserves a selection clicked inside", async ({ page }) => {
@@ -90,6 +126,19 @@ test("typing after a native scrollbar drag or track click edits the selected sou
         await expect(input).toBeFocused();
         const letter = gesture === "drag" ? "D" : "T";
         await page.keyboard.type(letter);
-        await expect(viewport.locator(".st-viewport-row").first()).toHaveText(letter + "arget");
+        // Track clicks may keep animating after pointerup. Check the final painted row.
+        await viewport.evaluate(el => new Promise<void>(resolve => {
+            let quietFrames = 0;
+            const moved = () => { quietFrames = 0; };
+            el.addEventListener("scroll", moved);
+            function frame(): void {
+                if (++quietFrames < 4) requestAnimationFrame(frame);
+                else { el.removeEventListener("scroll", moved); resolve(); }
+            }
+            requestAnimationFrame(frame);
+        }));
+        const edited = viewport.locator('.st-viewport-row[data-line="0"]');
+        await expect(edited).toHaveText(letter + "arget");
+        await expect(edited).toBeInViewport();
     }
 });

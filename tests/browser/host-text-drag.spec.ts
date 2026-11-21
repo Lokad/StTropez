@@ -111,11 +111,12 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     const remaining = original.slice(5, second) + original.slice(second + 7), insertion = destination - 12, text = remaining.slice(0, insertion) + "alpha\ncharlie" + remaining.slice(insertion);
     await exact(page, text); const moved = await snapshot(page); expect(moved.source.revision).toBe(before.source.revision + 1); expect(moved.history.undoDepth).toBe(before.history.undoDepth + 1); expect(moved.source.exports).toBe(0);
     expect(moved.bindings.views.every(v => v.metrics!.inputUnits <= 2600 && v.metrics!.viewport.rows < 100 && v.metrics!.viewport.readUnits < 20000)).toBe(true);
-    expect(moved.bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: insertion + 13, head: insertion + 13 });
+    expect(moved.bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: insertion, head: insertion + 13 });
     await input(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, original); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet).toEqual(beforeSet);
     await input(page, "Comparison working source").press("Control+Shift+z"); await ready(page); await exact(page, text); expect((await snapshot(page)).source.exports).toBe(0);
     await input(page).evaluate(node => node.focus({ preventScroll: true })); await input(page).press("Control+s");
     await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1); await input(page).pressSequentially("z"); await ready(page);
+    await exact(page, remaining.slice(0, insertion) + "z" + remaining.slice(insertion));
     await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1");
     expect((await snapshot(page)).source.dirty).toBe(true); await input(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, text); expect((await snapshot(page)).source.dirty).toBe(false);
     const retained = await snapshot(page); await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); }); await ready(page);
