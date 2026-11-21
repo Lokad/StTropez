@@ -14,7 +14,7 @@ import type { LspCall, LspCompletion, LspCompletionBatch, LspCompletionResolutio
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 
-type Job = { id: number; revision: number; buffer: TextBuffer; caret: number; selections: SelectionSet; indentation: ReturnType<TextEditor["languageConfiguration"]>; authority: ResourceMetadata; folds: number; foldIndex: FoldIndex; lease: ResourceLease;
+type Job = { id: number; revision: number; buffer: TextBuffer; caret: number; selections: SelectionSet; indentation: ReturnType<TextEditor["settings"]>["language"]; authority: ResourceMetadata; folds: number; foldIndex: FoldIndex; lease: ResourceLease;
     call?: LspCall<LspCompletionBatch>; batch?: LspCompletionBatch; choices?: LspCompletions; visible: readonly LspCompletion[]; choice: number; cancelled: boolean; pendingList: boolean; requestGeneration: number;
     acceptance?: Readonly<{ id: number; item: LspCompletion; mode: "insert" | "replace" }> | undefined;
     resolution?: { item: LspCompletion; revision: number; call?: LspCall<LspCompletionResolution> } | undefined };
@@ -75,7 +75,7 @@ export function createLspEditor(editor: TextEditor, options: LspEditorOptions): 
             && (left === right || left.length === right.length && left.every((origin, index) => origin === right[index]))
             && before.editLock?.owner === after.editLock?.owner && before.editLock?.origin === after.editLock?.origin;
     };
-    const indentationCurrent = (before: Job["indentation"]) => { const after = editor.languageConfiguration(); return before.tabSize === after.tabSize && before.insertSpaces === after.insertSpaces; };
+    const indentationCurrent = (before: Job["indentation"]) => { const after = editor.settings().language; return before.tabSize === after.tabSize && before.insertSpaces === after.insertSpaces; };
     const current = (captured: Job) => job === captured && !captured.cancelled && available() && idle() && indentationCurrent(captured.indentation) && workspace.document(documentId).revision === captured.revision && workspace.document(documentId).buffer === captured.buffer
         && editor.view.getSnapshot().selectionSet === captured.selections && captured.foldIndex.sameProjection(editor.view.folding.getSnapshot().index) && authorityCurrent(captured.authority) && captured.lease.active();
     const bindingCurrent = (captured: Job) => captured.batch?.isBindingCurrent() ?? false;
@@ -142,7 +142,7 @@ export function createLspEditor(editor: TextEditor, options: LspEditorOptions): 
         if (!connecting && scope.getSnapshot().phase !== "ready") { publish("Reconnect the LSP provider before requesting completion."); return; }
         const previous = invocation.automatic && job?.choices && current(job) && bindingCurrent(job) ? job : undefined, provisional = previous?.choices, provisionalVisible = previous?.visible;
         release(!!previous); const document = workspace.document(documentId);
-        const captured: Job = { id: workspace.allocateIdentity(), revision: document.revision, buffer: document.buffer, caret: selected.head, selections, indentation: editor.languageConfiguration(), authority: authority(), folds: editor.view.folding.getSnapshot().generation, foldIndex: editor.view.folding.getSnapshot().index,
+        const captured: Job = { id: workspace.allocateIdentity(), revision: document.revision, buffer: document.buffer, caret: selected.head, selections, indentation: editor.settings().language, authority: authority(), folds: editor.view.folding.getSnapshot().generation, foldIndex: editor.view.folding.getSnapshot().index,
             lease: workspace.acquire(resource.id), choice: previous?.choice ?? 0, cancelled: false, pendingList: true, requestGeneration: 0, visible: provisionalVisible ?? Object.freeze([]), ...(provisional ? { choices: provisional } : {}), ...(previous?.batch ? { batch: previous.batch } : {}) };
         job = captured; counters.posted++; publish("LSP completion pending.");
         void (async () => {

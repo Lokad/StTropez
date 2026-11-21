@@ -26,7 +26,7 @@ import type { InputContext } from "./input-context.ts";
 import { inputConflictEvent } from "./input-conflict.ts";
 import type { InputConflictDetail } from "./input-conflict.ts";
 import { mountViewport } from "./viewport.ts";
-import type { TextViewport } from "./viewport.ts";
+import type { TextViewport, ViewportSettings } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
 import { lineColumnScanner, lineContentEnd, lineEnding, planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
 import { exportText } from "../core/newlines.ts";
@@ -38,7 +38,7 @@ import type { BracketHighlights } from "./bracket-highlights.ts";
 import type { BracketMatchOptions } from "../core/bracket-matching.ts";
 import { bracketMatchLimits } from "../core/bracket-matching.ts";
 import { CharacterWarnings } from "../core/character-warnings.ts";
-import type { CharacterWarningOptions } from "../core/character-warnings.ts";
+import type { CharacterWarningConfiguration, CharacterWarningOptions } from "../core/character-warnings.ts";
 import { mountCharacterWarnings } from "./character-warnings.ts";
 import type { CharacterWarningHighlights } from "./character-warnings.ts";
 import { classifyEditingKey } from "./editing-keys.ts";
@@ -57,17 +57,18 @@ export type TextEditorActivity = Readonly<{ disposed: boolean; composing: boolea
 export type TextEditorCommand = EditingCommand | ViewCommand;
 export type LinePrompt = (request: Readonly<{ currentLine: number; lineCount: number; signal: AbortSignal }>) =>
     number | undefined | PromiseLike<number | undefined>;
-export type TextEditorOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; language?: LanguageConfiguration;
-        pasteLineEndings?: "local" | "preserve"; requestLine?: LinePrompt;
-        bracketMatching?: boolean | BracketMatchOptions; characterWarnings?: boolean | CharacterWarningOptions;
-        columnRulers?: readonly number[]; highlightCurrentLine?: boolean; fontLigatures?: boolean; scrollBeyondLastLine?: boolean; minimap?: boolean }>;
+export type EditorSettings = Partial<ViewportSettings> & Readonly<{ language?: LanguageConfiguration;
+    pasteLineEndings?: "local" | "preserve"; bracketMatching?: boolean | BracketMatchOptions; characterWarnings?: boolean | CharacterWarningOptions }>;
+export type ResolvedEditorSettings = ViewportSettings & Readonly<{ language: ResolvedLanguageConfiguration;
+    pasteLineEndings: "local" | "preserve"; bracketMatching: false | Required<BracketMatchOptions>; characterWarnings: false | CharacterWarningConfiguration }>;
+export type TextEditorOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; requestLine?: LinePrompt; settings?: EditorSettings }>;
 export type TextEditor = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; workspace: Workspace; tab: TabTarget | undefined; signal: AbortSignal; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
     /** One pending host insertion, invalidated by later editing/selection/authority/lifecycle changes. */
     captureInsertion: (kind?: "paste" | "replace") => CapturedInsertion | undefined;
     /** One synchronous edit planner per view. Its result still passes Workspace validation/history. */
     registerEditTransform: (transform: TextEditorEditTransform) => () => void;
-    configureLanguage: (configuration: LanguageConfiguration) => boolean;
-    languageConfiguration: () => ResolvedLanguageConfiguration;
+    configure: (changes: EditorSettings) => boolean;
+    settings: () => ResolvedEditorSettings;
     bracketMatching: BracketHighlights;
     characterWarnings: CharacterWarningHighlights;
     /** Returns whether the command was accepted; long selections finish asynchronously. */
@@ -88,13 +89,19 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, identit
 /** Private pane mount; the comparison capability belongs to this exact editor lifetime. */
 export function mountEditor(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId,
     options: TextEditorOptions = {}): MountedTextEditor {
-    let language = resolveLanguageConfiguration(options.language);
+    const initial = options.settings;
+    const matching = (value: boolean | BracketMatchOptions) => value === false ? false : bracketMatchLimits(value === true ? {} : value);
+    const classifyWarnings = (value: boolean | CharacterWarningOptions) => value === false ? undefined : new CharacterWarnings(value === true ? {} : value);
+    const pastePolicy = (value: string) => {
+        if (value !== "local" && value !== "preserve") throw new TypeError("Invalid paste line-ending policy.");
+        return value;
+    };
+    let language = resolveLanguageConfiguration(initial?.language);
+    let pasteLineEndings: ResolvedEditorSettings["pasteLineEndings"] = pastePolicy(initial?.pasteLineEndings ?? "local");
+    let bracketOptions: ResolvedEditorSettings["bracketMatching"] = matching(initial?.bracketMatching ?? false);
+    let warningOptions = classifyWarnings(initial?.characterWarnings ?? false);
     const paired = autoClosedPairs();
     const automaticIndent = automaticIndentation();
-    const bracketOptions = options.bracketMatching === undefined || options.bracketMatching === false ? false
-        : bracketMatchLimits(options.bracketMatching === true ? {} : options.bracketMatching);
-    const warningOptions = options.characterWarnings === undefined || options.characterWarnings === false ? undefined
-        : new CharacterWarnings(options.characterWarnings === true ? {} : options.characterWarnings);
     const readOnly = options.readOnly === true;
     const surface = captureTextSurface(workspace, identity), { documentId, resource, tab: target } = surface;
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
@@ -334,7 +341,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             apply(plan.edits, plan.selectionSet, kind, typing || deleting ? type : undefined, captured.revision); return;
         }
         const buffer = workspace.document(documentId).buffer;
-        const converted = kind === "paste" && options.pasteLineEndings !== "preserve" && /[\r\n]/.test(edit.insert)
+        const converted = kind === "paste" && pasteLineEndings !== "preserve" && /[\r\n]/.test(edit.insert)
             ? exportText(edit.insert, lineEnding(buffer, buffer.lineAt(from)) === "\n" ? "lf" : "crlf") : undefined;
         const insert = converted?.text ?? edit.insert, delta = insert.length - (to - from);
         const map = (offset: number) => offset <= edit.from ? projection.toModel(offset)
@@ -356,7 +363,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     const focus = () => { if (!disposed) { input.focus({ preventScroll: true }); scheduleCaret(); } };
     const inputBinding = viewport.bindInput(focus);
     function planInput(buffer: TextBuffer, selections: SelectionSet, text: string, kind: EditKind, wholeLines = false) {
-        return kind === "paste" ? planClipboardPaste(buffer, selections, text, wholeLines, options.pasteLineEndings === "preserve")
+        return kind === "paste" ? planClipboardPaste(buffer, selections, text, wholeLines, pasteLineEndings === "preserve")
             : planSelectionEdits(buffer.length, selections, text);
     }
     function replaceSelection(insert: string, kind: EditKind, type?: string, recoveryText?: string, wholeLines = false): boolean {
@@ -1090,7 +1097,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     function pointerHit(event: MouseEvent) {
         // A native scrollbar press targets the scroll container. Only its client area is text.
         if (event.target === root) {
-            const bounds = clientBox(root, viewport.minimap());
+            const bounds = clientBox(root, viewport.settings().minimap);
             if (event.clientX < bounds.left || event.clientX >= bounds.right
                 || event.clientY < bounds.top || event.clientY >= bounds.bottom) return undefined;
         }
@@ -1198,7 +1205,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             && drag.revision === revision && drag.selectionSet === view.getSnapshot().selectionSet && live() && root.hasPointerCapture(drag.pointer);
     }
     function dragBounds() {
-        return clientBox(root, viewport.minimap());
+        return clientBox(root, viewport.settings().minimap);
     }
     function updateDragHead(): void {
         const current = drag; if (!current) return; const bounds = dragBounds();
@@ -1321,6 +1328,14 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     brackets = mountBracketHighlights(workspace, target, view, viewport, input, () => language,
         () => { const state = activity(); return !state.disposed && !state.composing && !state.pendingInput && !state.pendingCommand; }, bracketOptions);
     warnings = mountCharacterWarnings(workspace, target, view, viewport, warningOptions);
+    let cachedSettings: ResolvedEditorSettings | undefined, cachedViewport: ViewportSettings | undefined;
+    const settings = (): ResolvedEditorSettings => {
+        const presentation = viewport.settings();
+        if (cachedSettings && cachedViewport === presentation) return cachedSettings;
+        cachedViewport = presentation;
+        return cachedSettings = Object.freeze({ ...presentation, language, pasteLineEndings, bracketMatching: bracketOptions,
+            characterWarnings: warningOptions?.configuration ?? false });
+    };
     const editor: TextEditor = Object.freeze({ element: root, input, workspace, tab: target, signal: listeners.signal, view, viewport, decorations: viewport.decorations, focus, activity, bracketMatching: brackets.handle, characterWarnings: warnings.handle,
         captureInsertion: (kind = "paste") => {
             hostInsertion?.cancel();
@@ -1334,15 +1349,32 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             hostInsertion = captured; return captured;
         },
         runCommand,
-        languageConfiguration: () => language,
-        configureLanguage: configuration => {
-            if (disposed || composing) return false;
-            hostInsertion?.cancel();
-            const next = resolveLanguageConfiguration(configuration);
-            commentPrefix = undefined;
-            if (language.pairs.length !== next.pairs.length || language.pairs.some((pair, i) => pair.open !== next.pairs[i]!.open || pair.close !== next.pairs[i]!.close)) paired.clear();
-            cancelWord(); group = undefined; preferred = undefined; language = next;
-            root.style.tabSize = String(language.tabSize); viewport.invalidate(); refresh(); brackets!.refresh(); return true;
+        settings,
+        configure: changes => {
+            if (disposed || composing && changes.language !== undefined) return false;
+            const nextLanguage = changes.language === undefined ? language : resolveLanguageConfiguration(changes.language);
+            const nextPaste = changes.pasteLineEndings === undefined ? pasteLineEndings : pastePolicy(changes.pasteLineEndings);
+            const nextBrackets = changes.bracketMatching === undefined ? bracketOptions : matching(changes.bracketMatching);
+            const nextWarnings = changes.characterWarnings === undefined ? warningOptions : classifyWarnings(changes.characterWarnings);
+            if (!viewport.configure(changes)) return false;
+            const languageChanged = nextLanguage !== language;
+            if (languageChanged || nextPaste !== pasteLineEndings) hostInsertion?.cancel();
+            if (languageChanged) {
+                commentPrefix = undefined;
+                if (language.pairs.length !== nextLanguage.pairs.length || language.pairs.some((pair, i) =>
+                    pair.open !== nextLanguage.pairs[i]!.open || pair.close !== nextLanguage.pairs[i]!.close)) paired.clear();
+                cancelWord(); group = undefined; preferred = undefined;
+            }
+            if (languageChanged || nextPaste !== pasteLineEndings || nextWarnings !== warningOptions || nextBrackets !== bracketOptions)
+                cachedSettings = undefined;
+            language = nextLanguage; pasteLineEndings = nextPaste;
+            const warningsChanged = nextWarnings !== warningOptions;
+            bracketOptions = nextBrackets; warningOptions = nextWarnings;
+            if (warningsChanged) warnings!.configure(nextWarnings);
+            if (languageChanged) { root.style.tabSize = String(language.tabSize); viewport.invalidate(); refresh(); }
+            if (changes.bracketMatching !== undefined) brackets!.configure(nextBrackets);
+            if (languageChanged) brackets!.refresh();
+            return true;
         },
         registerEditTransform: transform => {
             if (disposed || editTransform) throw new Error("Editor is disposed or already owns an edit planner.");
@@ -1375,7 +1407,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             subscriptions.forEach(unsubscribe => unsubscribe());
             input.value = "";
             inputBinding.dispose();
-            viewport.dispose();
+            viewport.dispose(); cachedSettings = undefined; language = resolveLanguageConfiguration();
+            warningOptions = undefined; bracketOptions = false; pasteLineEndings = "local";
             if (!options.view) view.dispose();
         } });
     return Object.freeze({ editor, setComparisonRows });

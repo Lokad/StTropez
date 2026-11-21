@@ -54,16 +54,8 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     onRender: (listener: () => void) => () => void;
     /** One input owner controls composition, fold tab stops and source-focus recovery. */
     bindInput: (focus: () => void) => ViewportInputBinding;
-    columnRulers: () => readonly number[];
-    configureColumnRulers: (columns: readonly number[]) => boolean;
-    currentLineHighlight: () => boolean;
-    configureCurrentLineHighlight: (enabled: boolean) => boolean;
-    fontLigatures: () => boolean;
-    configureFontLigatures: (enabled: boolean) => boolean;
-    scrollBeyondLastLine: () => boolean;
-    minimap: () => boolean;
-    configureMinimap: (enabled: boolean) => boolean;
-    configureScrollBeyondLastLine: (enabled: boolean) => boolean;
+    settings: () => ViewportSettings;
+    configure: (changes: Partial<ViewportSettings>) => boolean;
     captureView: () => ViewState; restoreView: (state: ViewState) => void;
     scrollTo: (position: Readonly<{ top?: number; left?: number }>) => void;
     coordsAt: (offset: number, affinity?: Affinity) => CaretRectangle | undefined;
@@ -109,8 +101,31 @@ export type PresentedLine = Readonly<{ documentId: DocumentId; revision: number;
 export type LineDecorator = (line: PresentedLine) => readonly InlineDecoration[];
 export type LineClass = (line: PresentedLine) => string | undefined;
 export type RevealOptions = Readonly<{ horizontal?: "center" | "nearest"; vertical?: "center" | "nearest"; affinity?: Affinity }>;
-export type TextViewportOptions = Readonly<{ ariaLabel?: string; view?: DocumentView;
-    columnRulers?: readonly number[]; highlightCurrentLine?: boolean; fontLigatures?: boolean; scrollBeyondLastLine?: boolean; minimap?: boolean }>;
+export type ViewportSettings = Readonly<{ columnRulers: readonly number[]; highlightCurrentLine: boolean;
+    fontLigatures: boolean; scrollBeyondLastLine: boolean; minimap: boolean }>;
+export type TextViewportOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; settings?: Partial<ViewportSettings> }>;
+
+const defaultSettings: ViewportSettings = Object.freeze({ columnRulers: resolveColumnRulers(), highlightCurrentLine: false,
+    fontLigatures: false, scrollBeyondLastLine: false, minimap: false });
+function viewportSettings(previous: ViewportSettings, changes?: Partial<ViewportSettings>): ViewportSettings {
+    if (!changes) return previous;
+    const flag = (key: Exclude<keyof ViewportSettings, "columnRulers">) => {
+        const value = changes[key];
+        if (value === undefined) return previous[key];
+        if (typeof value !== "boolean") throw new TypeError(`${key} must be a boolean.`);
+        return value;
+    };
+    let columns = previous.columnRulers;
+    if (changes.columnRulers !== undefined && changes.columnRulers !== columns) {
+        const next = resolveColumnRulers(changes.columnRulers);
+        if (next.length !== columns.length || next.some((value, i) => value !== columns[i])) columns = next;
+    }
+    const highlightCurrentLine = flag("highlightCurrentLine"), fontLigatures = flag("fontLigatures");
+    const scrollBeyondLastLine = flag("scrollBeyondLastLine"), minimap = flag("minimap");
+    if (columns === previous.columnRulers && highlightCurrentLine === previous.highlightCurrentLine
+        && fontLigatures === previous.fontLigatures && scrollBeyondLastLine === previous.scrollBeyondLastLine && minimap === previous.minimap) return previous;
+    return Object.freeze({ columnRulers: columns, highlightCurrentLine, fontLigatures, scrollBeyondLastLine, minimap });
+}
 
 /** Bounded DOM view layer with local native text geometry. Native-device qualification remains separate. */
 export function mountTextViewport(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId,
@@ -121,10 +136,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, ident
 /** Internal mount: navigation and comparison publication share the viewport lifetime. */
 export function mountViewport(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId | ReturnType<typeof captureTextSurface>,
     options: TextViewportOptions = {}): Readonly<{ viewport: TextViewport; navigation: ViewportNavigation; setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean }> {
-    let columns = resolveColumnRulers(options.columnRulers);
-    let highlightCurrentLine = options.highlightCurrentLine === undefined ? false : options.highlightCurrentLine;
-    let fontLigatures = options.fontLigatures === undefined ? false : options.fontLigatures;
-    let scrollBeyondLastLine = options.scrollBeyondLastLine === undefined ? false : options.scrollBeyondLastLine;
+    let settings = viewportSettings(defaultSettings, options.settings);
     const { documentId, resource, tab } = typeof identity === "string" ? captureTextSurface(workspace, identity) : identity;
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
     const view = options.view ?? workspace.createDocumentView(documentId), owner = host.ownerDocument, browserWindow = owner.defaultView;
@@ -133,7 +145,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     const live = () => ownsTextSurface(workspace, view, tab);
     const root = owner.createElement("div"), spacer = owner.createElement("div"), layer = owner.createElement("div"), probeHost = owner.createElement("div"), probe = owner.createElement("span"), foldLayer = owner.createElement("div");
     root.className = "st-viewport"; root.tabIndex = 0; root.setAttribute("role", "region"); root.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
-    root.style.fontVariantLigatures = fontLigatures ? "normal" : "none";
+    root.style.fontVariantLigatures = settings.fontLigatures ? "normal" : "none";
     spacer.className = "st-viewport-spacer"; spacer.setAttribute("aria-hidden", "true");
     layer.className = "st-viewport-layer"; probe.className = "st-viewport-measure"; probe.textContent = "M".repeat(64); probe.setAttribute("aria-hidden", "true");
     probeHost.className = "st-viewport-measure-host"; probeHost.setAttribute("aria-hidden", "true"); probeHost.append(probe);
@@ -156,7 +168,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     let currentLineBackground: HTMLDivElement | undefined;
     const clearCurrentLine = () => { currentLineBackground?.remove(); currentLineBackground = undefined; };
     const currentLine = (document: DocumentSnapshot, selections: SelectionSet, index: RowIndex): number | undefined => {
-        if (!highlightCurrentLine) return;
+        if (!settings.highlightCurrentLine) return;
         const primary = selections.ranges[selections.primary]!; if (primary.anchor !== primary.head) return;
         const line = document.buffer.lineAt(primary.head); return index.hiddenBy(line)?.lineFrom ?? line;
     };
@@ -276,7 +288,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         // the next render. Make it observe the current destination, as a real thumb does.
         root.scrollTop = y.toPhysical(top);
     }, line => decorations.present(line, true), line => decorations.lineClasses(line, true));
-    let minimap = options.minimap ? createMinimap() : undefined;
+    let minimap = settings.minimap ? createMinimap() : undefined;
     function mapRowSources(current: DocumentSnapshot | undefined): void {
         if (current?.revision === rowSourceRevision) return;
         const change = current?.change;
@@ -513,7 +525,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         x = scrollAxis(Math.max(document.buffer.longestLineLength * columnWidth, measuredWidth) + padding * 2, width);
         // A lone visible row is already at the top. Do not inflate it to rounded clientHeight:
         // fractional fitting viewports would acquire mutually triggering classic scrollbars.
-        const trailingSpace = scrollBeyondLastLine && index.visibleLineCount > 1 ? Math.max(0, height - lineHeight - padding * 2) : 0;
+        const trailingSpace = settings.scrollBeyondLastLine && index.visibleLineCount > 1 ? Math.max(0, height - lineHeight - padding * 2) : 0;
         y = scrollAxis(index.visibleLineCount * lineHeight + padding * 2 + trailingSpace, height);
         // A measured label can widen the spacer without introducing a scrollbar. Only a
         // change in scroll range or viewport size affects which source fragments to paint.
@@ -523,10 +535,10 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         minimap?.paint(document, index, mapWidth, height, top, y.extent, lineHeight, padding, style.color,
             Math.max(1, parseFloat(style.tabSize) || 4), Math.max(2, Math.min(3, win.devicePixelRatio * zoom)), paintEpoch + overviewEpoch);
         // Presentation-only configuration can repaint guides without reading or rebuilding rows.
-        rulers.paint(columns, columnWidth, left, width);
+        rulers.paint(settings.columnRulers, columnWidth, left, width);
         const { selection: selected, selectionSet } = view.getSnapshot();
         const key = [document.revision, selectionSet, folds.generation, rowGeneration, comparisonRows?.id,
-            top, left, width, height, zoom, columnWidth, naturalLineHeight, lineHeight, font, x.maximum, y.extent, paintEpoch, highlightCurrentLine,
+            top, left, width, height, zoom, columnWidth, naturalLineHeight, lineHeight, font, x.maximum, y.extent, paintEpoch, settings.highlightCurrentLine,
             inputOwner?.composing ?? false, inputOwner?.tabEscaped ?? false];
         if (!requested && painted && painted.horizontalAnchor === horizontalAnchor && painted.placement === fragmentPlacement
             && key.every((value, index) => value === painted!.key[index])
@@ -779,38 +791,23 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
                     if (!disposed) invalidate();
                 } });
         },
-        columnRulers: () => columns,
-        configureColumnRulers: value => {
-            notifications.assertWritable(); if (disposed) return false;
-            const next = resolveColumnRulers(value);
-            if (next.length === columns.length && next.every((column, index) => column === columns[index])) return true;
-            columns = next; schedule(); return true;
-        },
-        currentLineHighlight: () => highlightCurrentLine,
-        configureCurrentLineHighlight: enabled => {
-            notifications.assertWritable(); if (disposed) return false;
-            if (highlightCurrentLine === enabled) return true;
-            highlightCurrentLine = enabled; clearPreparedRows(); commandGeometry = undefined; schedule(); return true;
-        },
-        fontLigatures: () => fontLigatures,
-        configureFontLigatures: enabled => {
-            notifications.assertWritable(); if (disposed) return false;
-            if (fontLigatures === enabled) return true;
-            fontLigatures = enabled; root.style.fontVariantLigatures = enabled ? "normal" : "none"; invalidate(); return true;
-        },
-        scrollBeyondLastLine: () => scrollBeyondLastLine,
-        minimap: () => !!minimap,
-        configureMinimap: enabled => {
-            notifications.assertWritable(); if (disposed || !live()) return false;
-            if (enabled === !!minimap) return true;
-            if (enabled) minimap = createMinimap();
-            else { minimap?.dispose(); minimap = undefined; }
-            schedule(); return true;
-        },
-        configureScrollBeyondLastLine: enabled => {
-            notifications.assertWritable(); if (disposed) return false;
-            if (scrollBeyondLastLine === enabled) return true;
-            scrollBeyondLastLine = enabled; schedule(); return true;
+        settings: () => settings,
+        configure: changes => {
+            notifications.assertWritable();
+            if (disposed || !live()) return false;
+            const previous = settings, next = viewportSettings(previous, changes);
+            if (next === previous) return true;
+            settings = next;
+            if (next.minimap !== previous.minimap) {
+                if (next.minimap) minimap = createMinimap();
+                else { minimap?.dispose(); minimap = undefined; }
+            }
+            if (next.highlightCurrentLine !== previous.highlightCurrentLine) { clearPreparedRows(); commandGeometry = undefined; }
+            if (next.fontLigatures !== previous.fontLigatures) {
+                root.style.fontVariantLigatures = next.fontLigatures ? "normal" : "none";
+                invalidate();
+            } else schedule();
+            return true;
         },
         invalidate,
         coordsAt: coordinates,
@@ -883,10 +880,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             decorations.dispose(); visibleItems = []; dirtyRows.clear();
             inputOwner?.detach(); inputOwner = undefined;
             for (const stop of observationStops) stop();
-            rulers.clear(); columns = resolveColumnRulers();
-            clearCurrentLine(); highlightCurrentLine = false;
-            fontLigatures = false;
-            scrollBeyondLastLine = false;
+            rulers.clear(); clearCurrentLine(); settings = defaultSettings;
             minimap?.dispose(); minimap = undefined;
             observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); rowSources.clear(); rowSourceRevision = null; paddingRows.clear(); comparisonRows = undefined; renderedAlignmentId = null; geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             painted = undefined; commandGeometry = undefined; commandRow.replaceChildren(); commandMeasure.remove(); clearPreparedRows();

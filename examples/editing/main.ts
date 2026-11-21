@@ -1,5 +1,5 @@
 import { Workspace } from "../../src/index.ts";
-import type { LanguageConfiguration, FoldRange, Selection, TextEdit } from "../../src/index.ts";
+import type { FoldRange, Selection, TextEdit } from "../../src/index.ts";
 import { inputConflictEvent, mountTextEditor, createFoldingController } from "../../src/browser/index.ts";
 import type { TextEditorCommand, TextEditorEditTransform, FoldDiscovery, FoldCommand, FoldingController, InputConflictDetail } from "../../src/browser/index.ts";
 import { corpus, corpusIds } from "../../fixtures/workloads.ts";
@@ -15,8 +15,7 @@ const pane = (id: string) => document.getElementById(id)!;
 const presentation = { primary: new EditingPresentation(), secondary: new EditingPresentation() };
 let failDecoration = false;
 const params = new URLSearchParams(location.search);
-const editors = { primary: mountTextEditor(pane("primary"), workspace, primaryTab, { ariaLabel: "Primary source", readOnly: params.has("readonly"),
-    pasteLineEndings: params.get("pasteLineEndings") === "preserve" ? "preserve" : "local" }),
+const editors = { primary: mountTextEditor(pane("primary"), workspace, primaryTab, { ariaLabel: "Primary source", readOnly: params.has("readonly"), settings: { pasteLineEndings: params.get("pasteLineEndings") === "preserve" ? "preserve" : "local" } }),
     secondary: mountTextEditor(pane("secondary"), workspace, secondaryTab, { ariaLabel: "Secondary source" }) };
 const primarySyntax = editors.primary.decorations.addProvider({ name: "syntax", order: 0, provide: slice => {
     if (failDecoration) { failDecoration = false; throw new Error("Fixture decoration failure"); }
@@ -50,7 +49,7 @@ const fixture = { ready: true, setText, edit, select, history,
     discoverFolds: (discover: FoldDiscovery) => { foldingController?.dispose(); foldingController = createFoldingController(editors.primary, discover, { delayMs: 0 }); },
     foldCommand: (command: FoldCommand, group?: string) => foldingController?.runCommand(command, group),
     refreshFolds: () => foldingController?.refresh(), foldStatus: () => foldingController?.getSnapshot(),
-    configureLanguage: (value: LanguageConfiguration) => editors.primary.configureLanguage(value),
+    configure: editors.primary.configure,
     command: (command: TextEditorCommand) => editors.primary.runCommand(command),
     selectionSet: () => editors.primary.view.getSnapshot().selectionSet,
     selections: (ranges: readonly Selection[], primary = 0) => editors.primary.view.setSelections(workspace.document(source.documentId).revision, ranges, primary),

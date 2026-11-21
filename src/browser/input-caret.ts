@@ -20,7 +20,7 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
         if (disposed) return;
         const composing = isComposing();
         const { selection: selected, selectionSet } = view.getSnapshot(), focused = isFocused(input);
-        let rectangle = clientBox(root, viewport.minimap());
+        let rectangle = clientBox(root, viewport.settings().minimap);
         const currentDocument = readDocument();
         let state = viewport.snapshot(), point = viewport.coordsAt(selected.head, selected.headAffinity);
         let visible = point && point.left >= rectangle.left && point.left < rectangle.right
@@ -37,7 +37,7 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
         if (layoutChanged) {
             viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" });
             viewport.flush();
-            rectangle = clientBox(root, viewport.minimap());
+            rectangle = clientBox(root, viewport.settings().minimap);
             state = viewport.snapshot(); point = viewport.coordsAt(selected.head, selected.headAffinity);
             visible = point && point.left >= rectangle.left && point.left < rectangle.right && point.top + point.height > rectangle.top && point.top < rectangle.bottom;
         }

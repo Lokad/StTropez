@@ -1,4 +1,4 @@
-import { BracketMatcher, bracketMatchLimits } from "../core/bracket-matching.ts";
+import { BracketMatcher } from "../core/bracket-matching.ts";
 import type { BracketMatchCursor, BracketMatchOptions, BracketMatchProgress, BracketMatchResult } from "../core/bracket-matching.ts";
 import type { ResolvedLanguageConfiguration } from "../core/language-edits.ts";
 import { Store } from "../core/observable.ts";
@@ -14,12 +14,12 @@ export type BracketHighlightSnapshot = Readonly<{ status: "disabled" | "idle" | 
     documentId: DocumentId; revision: number; caret: number | null; result: BracketMatchResult | null; failure: string | null;
     workUnits: number; readUnits: number; callbackCalls: number }>;
 export type BracketHighlights = Observable<BracketHighlightSnapshot> & Readonly<{
-    configure: (options: boolean | BracketMatchOptions) => boolean; refresh: () => void }>;
+    refresh: () => void }>;
 const empty: readonly InlineDecoration[] = Object.freeze([]);
 
 /** Internal view owner. The editor supplies its existing activity/configuration without a second editor state. */
 export function mountBracketHighlights(workspace: Workspace, target: TabTarget | undefined, view: DocumentView, viewport: TextViewport, input: HTMLTextAreaElement,
-    configuration: () => ResolvedLanguageConfiguration, idle: () => boolean, initial: boolean | BracketMatchOptions = false) {
+    configuration: () => ResolvedLanguageConfiguration, idle: () => boolean, initial: false | Required<BracketMatchOptions> = false) {
     const documentId = view.documentId, win = input.ownerDocument.defaultView!;
     const notifications = workspace.createNotificationScope(), runner = createCooperativeRunner(win);
     const cell = new Store<BracketHighlightSnapshot>(Object.freeze({ status: "disabled", documentId, revision: workspace.document(documentId).revision,
@@ -86,9 +86,9 @@ export function mountBracketHighlights(workspace: Workspace, target: TabTarget |
         runner.schedule(() => advance(captured));
     }
     const observed = () => refresh();
-    const configure = (value: boolean | BracketMatchOptions): boolean => {
+    const configure = (value: false | Required<BracketMatchOptions>): boolean => {
         if (disposed) return false;
-        const next = value === false ? undefined : bracketMatchLimits(value === true ? {} : value);
+        const next = value === false ? undefined : value;
         if (limits?.maxDepth === next?.maxDepth && limits?.maxWorkUnits === next?.maxWorkUnits) return true;
         limits = next;
         if (!limits) { events?.abort(); events = undefined; stops.splice(0).forEach(stop => stop()); matcher = undefined; language = undefined; }
@@ -101,9 +101,8 @@ export function mountBracketHighlights(workspace: Workspace, target: TabTarget |
         refresh(true); return true;
     };
     const handle: BracketHighlights = Object.freeze({ ...cell.observable,
-        configure: value => { notifications.assertWritable(); return configure(value); },
         refresh: () => { notifications.assertWritable(); refresh(true); } });
     configure(initial);
-    return Object.freeze({ handle, cursor, refresh: observed,
+    return Object.freeze({ handle, cursor, configure, refresh: observed,
         dispose: () => { if (disposed) return; disposed = true; current = undefined; cancel(); events?.abort(); stops.splice(0).forEach(stop => stop()); matcher = undefined; language = undefined; publish("disposed"); layer.dispose(); } });
 }

@@ -79,7 +79,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
                 || captured.token !== null && !activeDrags.get(document)?.source) return false;
             const hit = document.elementFromPoint(captured.x, captured.y); return !!hit && root.contains(hit);
         },
-        velocity: captured => edgeVelocity(captured, clientBox(root, viewport.minimap()), viewport.snapshot(), "inside"),
+        velocity: captured => edgeVelocity(captured, clientBox(root, viewport.settings().minimap), viewport.snapshot(), "inside"),
         update: captured => {
             const point = viewport.hitTest(captured.x, captured.y);
             if (aim !== captured) return;

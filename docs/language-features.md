@@ -227,7 +227,7 @@ first, so malformed data cannot hide behind an omission. Lazy unsupported snippe
 
 `insertTextMode: 1` preserves supplied text; mode 2 adjusts subsequent lines to the insertion
 line's indentation and newline convention. Mode 2 is the default. Decoder indentation defaults
-to tab size 4 and spaces; the browser captures the editor's `languageConfiguration()`. Additional
+to tab size 4 and spaces; the browser captures the editor's `settings().language`. Additional
 edits keep their supplied text. Resolution, rebasing and commit characters rebuild from raw
 provider text, so indentation is applied once. A configuration change expires pending acceptance.
 

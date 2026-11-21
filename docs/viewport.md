@@ -16,9 +16,7 @@ import type { TextViewportOptions } from "sttropez/browser";
 export function showPreview(host: HTMLElement, workspace: Workspace, documentId: DocumentId) {
     const options: TextViewportOptions = {
         ariaLabel: "Source preview",
-        columnRulers: [80, 120],
-        minimap: true,
-        highlightCurrentLine: true
+        settings: { columnRulers: [80, 120], minimap: true, highlightCurrentLine: true }
     };
     const viewport = mountTextViewport(host, workspace, documentId, options);
     viewport.revealOffset(0, { horizontal: "nearest", vertical: "nearest" });
@@ -41,6 +39,10 @@ workspace and document.
 | --- | --- |
 | `ariaLabel` | Document title when omitted |
 | `view` | A new independent document view when omitted |
+| `settings` | Initial presentation settings, all optional |
+
+| Setting | Default and validation |
+| --- | --- |
 | `columnRulers` | Empty; at most 128 positive safe integers, copied, sorted and deduplicated |
 | `highlightCurrentLine` | `false`; boolean |
 | `fontLigatures` | `false`; boolean |
@@ -80,18 +82,17 @@ can override an earlier CSS custom property. The stylesheet controls precedence 
 
 ### Viewport settings
 
-Each presentation option has a getter and a live setter:
+Call `viewport.configure({ columnRulers: [80], minimap: true })` to change several settings together.
+`viewport.settings()` returns their immutable values. Invalid settings leave the previous values intact.
+An unchanged viewport setting schedules no paint. Configuration returns `false` after disposal.
 
-| Getter | Setter | Effect |
-| --- | --- | --- |
-| `columnRulers()` | `configureColumnRulers(columns)` | Guides at measured monospace cells from the left text origin |
-| `currentLineHighlight()` | `configureCurrentLineHighlight(enabled)` | Background for the primary collapsed caret, including a folded header |
-| `fontLigatures()` | `configureFontLigatures(enabled)` | Native common/contextual font ligatures; invalidates font and caret measurements |
-| `minimap()` | `configureMinimap(enabled)` | A document overview with a draggable visible-region marker |
-| `scrollBeyondLastLine()` | `configureScrollBeyondLastLine(enabled)` | Space to scroll the last visible row to the top text padding |
-
-Call setters after workspace notifications finish. Each setter validates its argument before making
-changes. Setting the same value schedules no work. After disposal, setters return `false`.
+| Setting | Effect |
+| --- | --- |
+| `columnRulers` | Guides at measured monospace cells from the left text origin |
+| `highlightCurrentLine` | Background for the primary collapsed caret, including a folded header |
+| `fontLigatures` | Native common and contextual font ligatures. Changes invalidate font and caret measurements. |
+| `minimap` | A document overview with a draggable visible-region marker |
+| `scrollBeyondLastLine` | Space to scroll the last visible row to the top text padding |
 
 Rulers and line highlights add no text or scroll range. Only a collapsed primary caret gets a line
 highlight. Each view has its own settings. Set `--st-column-ruler`, `--st-current-line` and

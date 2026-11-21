@@ -218,7 +218,7 @@ export class ViewBindings {
     }
     configureSource(id: "primary" | "secondary" | "comparison", configuration: import("../../src/index.ts").LanguageConfiguration): boolean {
         const editor = id === "comparison" ? this.review?.working : this.mounted.get(id)?.candidate;
-        return editor?.configureLanguage(configuration) ?? false;
+        return editor?.configure({ language: configuration }) ?? false;
     }
     constructor(controller: HostController, editor: HostEditor = "candidate", mountNative?: NativeEditorMount) {
         if (editor === "native" && !mountNative) throw new Error("The native source control requires a fixture mount.");

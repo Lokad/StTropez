@@ -1,14 +1,12 @@
 import { CharacterWarnings } from "../core/character-warnings.ts";
 import { graphemeBoundaries } from "../core/graphemes.ts";
-import type { CharacterWarningBatch, CharacterWarningConfiguration, CharacterWarningLimits, CharacterWarningOptions } from "../core/character-warnings.ts";
+import type { CharacterWarningBatch, CharacterWarningLimits } from "../core/character-warnings.ts";
 import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
 import type { InlineDecoration, PresentedLine, TextViewport } from "./viewport.ts";
 
 export type CharacterWarningCapture = CharacterWarningBatch & Readonly<{ documentId: DocumentId; revision: number; isCurrent: () => boolean }>;
 export type CharacterWarningHighlights = Readonly<{
-    configuration: () => CharacterWarningConfiguration | null;
-    configure: (options: boolean | CharacterWarningOptions) => boolean;
     /** Bounded source query. Retain the capture and check isCurrent before acting on its ranges. */
     query: (from: number, to: number, limits?: CharacterWarningLimits) => CharacterWarningCapture | null;
 }>;
@@ -17,17 +15,10 @@ const empty: readonly InlineDecoration[] = Object.freeze([]);
 /** Internal view owner: no document scans, subscriptions or asynchronous work. */
 export function mountCharacterWarnings(workspace: Workspace, target: TabTarget | undefined, view: DocumentView, viewport: TextViewport, initial?: CharacterWarnings) {
     const documentId = view.documentId, resource = workspace.resourceForDocument(documentId);
-    const notifications = workspace.createNotificationScope();
     let classifier = initial, disposed = false;
     const rows = new Map<number, Readonly<{ from: number; text: string; decorations: readonly InlineDecoration[] }>>();
     const available = () => !disposed && ownsTextSurface(workspace, view, target) && resource.getSnapshot().state === "ready";
     const handle: CharacterWarningHighlights = Object.freeze({
-        configuration: () => classifier?.configuration ?? null,
-        configure: options => {
-            notifications.assertWritable(); if (disposed) return false;
-            const next = options === false ? undefined : new CharacterWarnings(options === true ? {} : options);
-            classifier = next; rows.clear(); layer.invalidate(); return true;
-        },
         query: (from, to, limits) => {
             if (!classifier || !available()) return null;
             const captured = classifier, document = workspace.document(documentId), batch = captured.scan(document.buffer, from, to, limits);
@@ -59,5 +50,7 @@ export function mountCharacterWarnings(workspace: Workspace, target: TabTarget |
             rows.set(line.line, { from: line.from, text: line.text, decorations }); return decorations;
         }
     });
-    return Object.freeze({ handle, dispose: () => { disposed = true; classifier = undefined; rows.clear(); layer.dispose(); } });
+    return Object.freeze({ handle, configure: (next: CharacterWarnings | undefined) => {
+        classifier = next; rows.clear(); layer.invalidate();
+    }, dispose: () => { disposed = true; classifier = undefined; rows.clear(); layer.dispose(); } });
 }

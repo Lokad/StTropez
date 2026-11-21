@@ -29,10 +29,10 @@ async function fixture(page: Page, text = "a\u00a0b\u200bc", enabled = false) {
         const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "warnings"), host = document.createElement("section");
         host.style.cssText = "height:240px;width:600px"; document.body.append(host);
         const before = workspace.diagnostics();
-        try { mountTextEditor(host, workspace, tab, { characterWarnings: { allow: ["two"] } }); throw new Error("Invalid allow-list accepted."); }
+        try { mountTextEditor(host, workspace, tab, { settings: { characterWarnings: { allow: ["two"] } } }); throw new Error("Invalid allow-list accepted."); }
         catch (error) { if (!(error instanceof TypeError)) throw error; }
         if (workspace.diagnostics().views !== before.views || host.childNodes.length) throw new Error("Invalid mount leaked a view or DOM.");
-        const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Warning source", characterWarnings: enabled });
+        const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Warning source", settings: { characterWarnings: enabled } });
         editor.decorations.addProvider({ name: "syntax", order: 0, provide: line => [{ from: line.from, to: line.to, className: "fixture-color" }] });
         window.warningFixture = { workspace, editor, tab, resource: resource.id, host,
             set: (text, caret = 0) => { const document = workspace.document(resource.documentId);
@@ -50,13 +50,13 @@ test("warning policy composes with colors and selection; captures expire on edit
     await fixture(page); await expect(marks(page)).toHaveCount(0);
     expect(await page.evaluate(() => window.warningFixture.editor.characterWarnings.query(0, 5))).toBeNull();
     const initial = await page.evaluate(() => {
-        const f = window.warningFixture; f.editor.characterWarnings.configure(true); f.capture = f.editor.characterWarnings.query(0, 5)!;
-        const first = f.capture; let rejected = false;
-        try { f.editor.characterWarnings.configure({ allow: ["ab"] }); } catch { rejected = true; }
-        return { current: first.isCurrent(), frozen: Object.isFrozen(first) && Object.isFrozen(first.warnings), rejected,
+        const f = window.warningFixture; f.editor.configure({ characterWarnings: true }); f.capture = f.editor.characterWarnings.query(0, 5)!;
+        const first = f.capture, settings = f.editor.settings(); let rejected = false;
+        try { f.editor.configure({ minimap: true, language: { tabSize: 2 }, characterWarnings: { allow: ["ab"] } }); } catch { rejected = true; }
+        return { unchanged: f.editor.settings() === settings && !f.host.querySelector(".st-minimap"), current: first.isCurrent(), frozen: Object.isFrozen(first) && Object.isFrozen(first.warnings), rejected,
             ranges: first.warnings.map(w => [w.from, w.to, w.kind]) };
     });
-    expect(initial).toEqual({ current: true, frozen: true, rejected: true, ranges: [[1, 2, "non-breaking-space"], [3, 4, "invisible"]] });
+    expect(initial).toEqual({ unchanged: true, current: true, frozen: true, rejected: true, ranges: [[1, 2, "non-breaking-space"], [3, 4, "invisible"]] });
     await expect(marks(page)).toHaveText(["\u00a0", "\u200b"]);
     await expect(marks(page).first()).toHaveCSS("color", "rgb(160, 30, 120)");
     await expect(marks(page).first()).toHaveCSS("outline-style", "dotted");
@@ -66,19 +66,19 @@ test("warning policy composes with colors and selection; captures expire on edit
     expect(await page.evaluate(() => window.warningFixture.capture!.isCurrent())).toBe(false);
     await page.keyboard.press("Control+z"); await expect(marks(page)).toHaveText(["\u00a0", "\u200b"]);
     await page.evaluate(() => { const f = window.warningFixture; f.capture = f.editor.characterWarnings.query(0, 5)!;
-        f.editor.characterWarnings.configure({ categories: { invisible: false } }); });
+        f.editor.configure({ characterWarnings: { categories: { invisible: false } } }); });
     expect(await page.evaluate(() => window.warningFixture.capture!.isCurrent())).toBe(false);
     await expect(marks(page)).toHaveText(["\u00a0"]);
-    await page.evaluate(() => window.warningFixture.editor.characterWarnings.configure({ allow: ["\u00a0"] }));
+    await page.evaluate(() => window.warningFixture.editor.configure({ characterWarnings: { allow: ["\u00a0"] } }));
     await expect(marks(page)).toHaveText(["\u200b"]);
     const end = await page.evaluate(() => {
         const f = window.warningFixture, capture = f.editor.characterWarnings.query(0, 5)!;
-        f.editor.dispose(); const configured = f.editor.characterWarnings.configure(true), query = f.editor.characterWarnings.query(0, 5);
+        f.editor.dispose(); const configured = f.editor.configure({ characterWarnings: true }), query = f.editor.characterWarnings.query(0, 5);
         f.workspace.close(f.tab); f.workspace.releaseResource(f.resource, true);
-        return { current: capture.isCurrent(), configured, query, configuration: f.editor.characterWarnings.configuration(), views: f.workspace.diagnostics().views,
+        return { current: capture.isCurrent(), configured, query, configuration: f.editor.settings().characterWarnings, views: f.workspace.diagnostics().views,
             subscriptions: f.workspace.diagnostics().subscriptions, children: f.host.childNodes.length };
     });
-    expect(end).toEqual({ current: false, configured: false, query: null, configuration: null, views: 0, subscriptions: 0, children: 0 });
+    expect(end).toEqual({ current: false, configured: false, query: null, configuration: false, views: 0, subscriptions: 0, children: 0 });
 });
 
 test("warning marks preserve native shaping, range geometry and hit testing", async ({ page }, info) => {
@@ -98,7 +98,7 @@ test("warning marks preserve native shaping, range geometry and hit testing", as
             }
             return { text: row.textContent, width: row.getBoundingClientRect().width, points };
         });
-        const before = measure(); f.editor.characterWarnings.configure(true); viewport.flush(); const after = measure();
+        const before = measure(); f.editor.configure({ characterWarnings: true }); viewport.flush(); const after = measure();
         return { before, after, marks: f.host.querySelectorAll(".st-viewport-layer .st-character-warning").length };
     });
     await info.attach("warning-geometry", { body: JSON.stringify(result), contentType: "application/json" });

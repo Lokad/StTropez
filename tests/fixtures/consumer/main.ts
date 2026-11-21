@@ -14,7 +14,7 @@ const tabId = workspace.open({ kind: "text", documentId }, "main");
 const host = document.getElementById("editor");
 if (!host) throw new Error("Missing editor host.");
 const sourceEditor = mountTextEditor(host, workspace, tabId);
-const viewport = mountTextViewport(document.getElementById("viewport")!, workspace, tabId, { ariaLabel: "Restored viewport", minimap: true } satisfies TextViewportOptions);
+const viewport = mountTextViewport(document.getElementById("viewport")!, workspace, tabId, { ariaLabel: "Restored viewport", settings: { minimap: true } } satisfies TextViewportOptions);
 const candidate = mountTextEditor(document.getElementById("candidate")!, workspace, tabId, { ariaLabel: "Restored candidate" });
 candidate.decorations.addProvider({ name: "tokens", order: 0, provide: line => {
     const from = line.text.indexOf("restored"); return from < 0 ? [] : [{ from: line.from + from, to: line.from + from + 8, className: "consumer-token" }];

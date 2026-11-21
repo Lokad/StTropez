@@ -20,11 +20,11 @@ export function attachSource(
 ) {
     const editor = mountTextEditor(host, workspace, documentId, {
         view, ariaLabel: "Source",
-        language: {
-            tabSize: 4, insertSpaces: true, lineComment: "//",
-            blockComment: { open: "/*", close: "*/" }, enter: "keep"
-        },
-        bracketMatching: true, columnRulers: [80], highlightCurrentLine: true
+        settings: {
+            language: { tabSize: 4, insertSpaces: true, lineComment: "//",
+                blockComment: { open: "/*", close: "*/" }, enter: "keep" },
+            bracketMatching: true, columnRulers: [80], highlightCurrentLine: true
+        }
     });
     try {
         if (saved) {
@@ -58,8 +58,13 @@ tab capture. `editor.signal` aborts when the mount is disposed.
 | `view` | Retained host view, or a new independent view when omitted |
 | `ariaLabel` | Input label; defaults to the document title |
 | `readOnly` | `false` by default; captured for this mount |
+| `settings` | Initial editor settings. Change individual fields with `editor.configure(changes)`. Read the resolved, immutable values with `editor.settings()`. |
+
+| Setting | Behavior |
+| --- | --- |
 | `language` | Host indentation, comment, pair and Enter rules; see [language configuration](#language-configuration) |
-| `columnRulers`, `highlightCurrentLine`, `fontLigatures`, `scrollBeyondLastLine`, `minimap` | Initial [viewport settings](viewport.md#mounting-and-presentation); live setters are on `editor.viewport` |
+| `columnRulers`, `highlightCurrentLine`, `fontLigatures`, `scrollBeyondLastLine`, `minimap` | [Viewport settings](viewport.md#viewport-settings) |
+| `pasteLineEndings` | `"local"` by default. `"preserve"` inserts clipboard line endings verbatim. |
 | `bracketMatching` | Off by default; `true` or explicit matching limits enable it |
 | `characterWarnings` | Off by default; `true` or a [character-warning policy](unicode.md#character-warnings) enables it |
 
@@ -206,7 +211,7 @@ preserves the caret’s column. Plain text from other applications inserts at th
 When the clipboard has one line per selection, each receives its corresponding line. Otherwise
 each receives the full text. Paste converts CR, LF and CRLF to the line ending at each destination
 and preserves indentation.
-Set `pasteLineEndings: "preserve"` when mounting the editor to insert clipboard text verbatim.
+Set `settings.pasteLineEndings` to `"preserve"` to insert clipboard text verbatim.
 An empty or nontext payload leaves selections and pending commands
 alone.
 
@@ -234,9 +239,9 @@ current, so an old frame cannot move or cancel a new target.
 ### Language configuration
 
 `LanguageConfiguration` defines editing rules without requiring a parser or language service.
-`configureLanguage(configuration)` validates and replaces the view's configuration, updates tab
+`editor.configure({ language: configuration })` validates and replaces the view's configuration, updates tab
 geometry and cancels pending commands. It returns `false` during composition or after disposal.
-`languageConfiguration()` returns the resolved snapshot. Arrays and delimiter objects are copied
+`editor.settings().language` returns the resolved snapshot. Arrays and delimiter objects are copied
 and frozen; callbacks receive the exact immutable buffer and source endpoints.
 
 | Field | Contract |
@@ -381,8 +386,7 @@ A `limited` result means the scan ran out of budget before it could decide. Othe
 `BracketMatchResult` values are `unmatched`, `none`, `vetoed` and `ambiguous`. Discard the result if
 the source or selection has changed.
 
-The browser's `BracketHighlights` handle is `editor.bracketMatching`. Its `getSnapshot()` and `subscribe()` methods expose `BracketHighlightSnapshot` for the primary collapsed caret. `configure(true)`
-or explicit limits enable matching; `configure(false)` removes its document/view listeners.
+The browser's `BracketHighlights` handle is `editor.bracketMatching`. Its `getSnapshot()` and `subscribe()` methods expose `BracketHighlightSnapshot` for the primary collapsed caret. Set `bracketMatching` to `true` or explicit limits through `editor.configure`. Setting it to `false` removes the matching listeners.
 Matching does not block input, and its pending work is separate from editor input activity.
 Edits, selection, configuration, composition, focus and disposal invalidate stale work, including
 changes made inside a host callback. Shadow-root inputs use their own focus root.

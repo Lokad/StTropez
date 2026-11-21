@@ -81,8 +81,8 @@ test("minimap gestures preserve focus and multiple selections as the document pr
         host.style.cssText = "width:410.5px;height:240.5px;zoom:1.25"; document.body.append(host);
         const editor = mountTextEditor(host, workspace, tab), viewport = editor.viewport;
         window.presentationFixture = { workspace, resource: resource.id, host, tab, editor };
-        if (viewport.minimap() || host.querySelector("canvas")) throw new Error("Expected an opt-in overview.");
-        viewport.configureMinimap(true);
+        if (viewport.settings().minimap || host.querySelector("canvas")) throw new Error("Expected an opt-in overview.");
+        viewport.configure({ minimap: true });
         editor.view.setSelections(workspace.document(resource.documentId).revision, [{ anchor: 6, head: 2 }, { anchor: 9, head: 9 }], 0);
         editor.focus(); viewport.flush();
         return editor.view.getSnapshot().selectionSet;
@@ -133,8 +133,8 @@ test("minimap gestures preserve focus and multiple selections as the document pr
     expect((await snapshot()).scrollLeft).toBeGreaterThan(0);
     const released = await page.evaluate(() => {
         const { editor, host } = window.presentationFixture, view = editor.viewport;
-        view.configureMinimap(false); view.flush(); editor.dispose();
-        return { nodes: host.childNodes.length, enabled: view.minimap(), accepted: view.configureMinimap(true) };
+        view.configure({ minimap: false }); view.flush(); editor.dispose();
+        return { nodes: host.childNodes.length, enabled: view.settings().minimap, accepted: view.configure({ minimap: true }) };
     });
     expect(released).toEqual({ nodes: 0, enabled: false, accepted: false });
 });
@@ -147,7 +147,7 @@ test("minimap projects comparison gaps and follows linked and independent scroll
         const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "map-review", variant: "text" }, "Working", { value: lines.join("\n") });
         const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "review"), host = document.createElement("section");
         host.style.width = "900px"; document.body.append(host); lines.splice(40, 0, ...Array<string>(80).fill("baseline section"));
-        const comparison = mountTextComparison(host, workspace, tab, { buffer: TextBuffer.from(lines.join("\n")), version: "one" }, { rowsAligned: true, minimap: true });
+        const comparison = mountTextComparison(host, workspace, tab, { buffer: TextBuffer.from(lines.join("\n")), version: "one" }, { rowsAligned: true, settings: { minimap: true } });
         window.presentationFixture = { workspace, host, tab, resource: resource.id, editor: comparison.working, comparison };
     });
     await page.waitForFunction(() => window.presentationFixture.editor.viewport.snapshot().aligned);
@@ -189,14 +189,14 @@ test.describe("scrolling beyond the last line", () => {
             const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Trailing source" }), viewport = editor.viewport;
             window.presentationFixture = { workspace, editor, host, tab, resource: resource.id };
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush();
-            const defaults = viewport.scrollBeyondLastLine(), ordinary = viewport.snapshot(), selection = editor.view.getSnapshot().selectionSet;
-            viewport.configureScrollBeyondLastLine(true); viewport.flush();
+            const defaults = viewport.settings().scrollBeyondLastLine, ordinary = viewport.snapshot(), selection = editor.view.getSnapshot().selectionSet;
+            viewport.configure({ scrollBeyondLastLine: true }); viewport.flush();
             const preserved = viewport.snapshot().scrollTop === ordinary.scrollTop, enabled = viewport.snapshot();
             viewport.scrollTo({ top: 1e12 }); viewport.flush(); const end = viewport.snapshot(), last = host.querySelector('.st-viewport-row[data-line="2"]')!.getBoundingClientRect();
             const layer = host.querySelector(".st-viewport-layer")!.getBoundingClientRect();
-            viewport.configureScrollBeyondLastLine(false); viewport.flush();
+            viewport.configure({ scrollBeyondLastLine: false }); viewport.flush();
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush(); const restored = viewport.snapshot();
-            const renders = restored.renders; viewport.configureScrollBeyondLastLine(false); viewport.flush();
+            const renders = restored.renders; viewport.configure({ scrollBeyondLastLine: false }); viewport.flush();
             return { defaults, ordinary, enabled, end, topError: Math.abs((last.top - layer.top) / 1.25 - 12), preserved,
                 restored, sameSelection: selection === editor.view.getSnapshot().selectionSet, noOpRenders: viewport.snapshot().renders - renders, pending: viewport.activity().pending };
         });
@@ -210,7 +210,7 @@ test.describe("scrolling beyond the last line", () => {
             const f = window.presentationFixture, viewport = f.editor.viewport, doc = f.workspace.document(f.editor.view.documentId);
             f.workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "host", edits: [{ from: 0, to: doc.buffer.length, insert: "x\n".repeat(110000) + "end" }] });
             viewport.element.style.fontSize = "20px"; viewport.element.style.lineHeight = "2"; f.host.style.height = "300.4px";
-            viewport.configureScrollBeyondLastLine(true); viewport.flush();
+            viewport.configure({ scrollBeyondLastLine: true }); viewport.flush();
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush();
             // Drive the native scrollbar to its physical end, then let its scroll event map back.
             viewport.element.scrollTop = viewport.element.scrollHeight;
@@ -237,8 +237,8 @@ test.describe("scrolling beyond the last line", () => {
             const f = window.presentationFixture, viewport = f.editor.viewport, doc = f.workspace.document(f.editor.view.documentId);
             f.editor.view.folding.setRanges(f.editor.view.folding.getSnapshot(), [{ id: "body", from: 0, to: doc.buffer.offsetAt(110000), collapsed: true }]); viewport.flush();
             viewport.scrollTo({ top: 1e12 }); viewport.flush(); const s = viewport.snapshot();
-            viewport.configureScrollBeyondLastLine(false); viewport.flush(); const clamped = viewport.snapshot().scrollTop;
-            f.editor.dispose(); return { s, clamped, rejected: !viewport.configureScrollBeyondLastLine(true), reset: !viewport.scrollBeyondLastLine(), nodes: f.host.childNodes.length, views: f.workspace.diagnostics().views };
+            viewport.configure({ scrollBeyondLastLine: false }); viewport.flush(); const clamped = viewport.snapshot().scrollTop;
+            f.editor.dispose(); return { s, clamped, rejected: !viewport.configure({ scrollBeyondLastLine: true }), reset: !viewport.settings().scrollBeyondLastLine, nodes: f.host.childNodes.length, views: f.workspace.diagnostics().views };
         });
         expect(folded.s.visibleLines).toBe(2); expect(folded.s.scrollTop).toBeCloseTo(folded.s.lineHeight, 5);
         expect(folded).toMatchObject({ clamped: 0, rejected: true, reset: true, nodes: 0, views: 0 });
@@ -259,13 +259,13 @@ test.describe("scrolling beyond the last line", () => {
             return c.controller.getSnapshot().status === "ready" && c.getDiagnostics().rowsAligned && !c.working.viewport.activity().pending && !c.referenceViewport()?.activity().pending; });
         const result = await page.evaluate(() => {
             const f = window.presentationFixture, c = f.comparison!, working = c.working.viewport, reference = c.referenceViewport()!;
-            working.configureScrollBeyondLastLine(true); working.scrollTo({ top: 1e12 }); working.flush();
-            const independent = !reference.scrollBeyondLastLine(), grid = working.snapshot();
-            reference.configureScrollBeyondLastLine(true); reference.scrollTo({ top: 1e12 }); reference.flush();
+            working.configure({ scrollBeyondLastLine: true }); working.scrollTo({ top: 1e12 }); working.flush();
+            const independent = !reference.settings().scrollBeyondLastLine, grid = working.snapshot();
+            reference.configure({ scrollBeyondLastLine: true }); reference.scrollTo({ top: 1e12 }); reference.flush();
             const top = (viewport: typeof working, line: number) => viewport.rowBounds(line)!.top - viewport.element.querySelector(".st-viewport-layer")!.getBoundingClientRect().top;
             const workingTop = top(working, 2), referenceTop = top(reference, 3), rows = reference.snapshot().visualRows;
-            working.configureScrollBeyondLastLine(false); working.flush();
-            const clamped = working.snapshot().scrollTop, retained = reference.scrollBeyondLastLine(); c.dispose();
+            working.configure({ scrollBeyondLastLine: false }); working.flush();
+            const clamped = working.snapshot().scrollTop, retained = reference.settings().scrollBeyondLastLine; c.dispose();
             return { independent, grid, rows, workingTop, referenceTop, clamped, retained, views: f.workspace.diagnostics().views };
         });
         expect(result).toMatchObject({ independent: true, rows: 4, clamped: 0, retained: true, views: 0 });
@@ -280,10 +280,10 @@ test.describe("scrolling beyond the last line", () => {
             const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "empty-trailing", variant: "text" }, "Empty", { value: "" });
             const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "empty"), host = document.createElement("section");
             host.style.cssText = "height:240.6px;width:600.6px;zoom:1.25"; document.body.append(host);
-            const editor = mountTextEditor(host, workspace, tab, { scrollBeyondLastLine: true }), viewport = editor.viewport;
+            const editor = mountTextEditor(host, workspace, tab, { settings: { scrollBeyondLastLine: true } }), viewport = editor.viewport;
             const samples: { width: number; height: number; overflow: boolean; extent: number; lineHeight: number }[] = [];
             for (const value of ["", "single"]) {
-                viewport.configureMinimap(value === "single");
+                viewport.configure({ minimap: value === "single" });
                 const doc = workspace.document(resource.documentId);
                 if (value) workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "host", edits: [{ from: 0, to: 0, insert: value }] });
                 for (let i = 0; i < 12; i++) {
@@ -291,7 +291,7 @@ test.describe("scrolling beyond the last line", () => {
                     samples.push({ width: root.clientWidth, height: root.clientHeight, overflow: root.scrollWidth > root.clientWidth || root.scrollHeight > root.clientHeight, extent: s.verticalExtent, lineHeight: s.lineHeight });
                 }
             }
-            const enabled = viewport.scrollBeyondLastLine(); editor.dispose(); return { samples, enabled, nodes: host.childNodes.length, views: workspace.diagnostics().views };
+            const enabled = viewport.settings().scrollBeyondLastLine; editor.dispose(); return { samples, enabled, nodes: host.childNodes.length, views: workspace.diagnostics().views };
         });
         expect(result).toMatchObject({ enabled: true, nodes: 0, views: 0 });
         expect(result.samples.every(sample => !sample.overflow && sample.extent === sample.lineHeight + 24)).toBe(true);
@@ -319,14 +319,14 @@ test("ligature policy changes native shaping while preserving caret, selection, 
                 range.setStart(row.firstChild!, offset); range.collapse(true); const native = range.getClientRects()[0]!, point = viewport.coordsAt(offset)!;
                 return { offset, left: point.left, error: Math.abs(point.left - native.left), hit: viewport.hitTest(point.left, point.top + point.height / 2)?.offset };
             });
-            return { enabled: viewport.fontLigatures(), css: getComputedStyle(row).fontVariantLigatures, width, points };
+            return { enabled: viewport.settings().fontLigatures, css: getComputedStyle(row).fontVariantLigatures, width, points };
         };
-        const off = sample(); viewport.configureFontLigatures(true); const on = sample();
-        viewport.configureFontLigatures(false); const restored = sample(); viewport.configureFontLigatures(true); const again = sample();
+        const off = sample(); viewport.configure({ fontLigatures: true }); const on = sample();
+        viewport.configure({ fontLigatures: false }); const restored = sample(); viewport.configure({ fontLigatures: true }); const again = sample();
         const observer = new MutationObserver(() => {}); observer.observe(viewport.element, { subtree: true, childList: true, attributes: true });
-        const renders = viewport.snapshot().renders; viewport.configureFontLigatures(true); viewport.flush();
+        const renders = viewport.snapshot().renders; viewport.configure({ fontLigatures: true }); viewport.flush();
         const noOp = { mutations: observer.takeRecords().length, renders: viewport.snapshot().renders - renders, pending: viewport.activity().pending }; observer.disconnect();
-        return { off, on, restored, again, noOp, enabled: viewport.fontLigatures(), sameChild: child === host.querySelector('.st-viewport-row[data-line="0"]')!.firstChild,
+        return { off, on, restored, again, noOp, enabled: viewport.settings().fontLigatures, sameChild: child === host.querySelector('.st-viewport-row[data-line="0"]')!.firstChild,
             sameSelection: selection === editor.view.getSnapshot().selectionSet, revision: workspace.document(resource.documentId).revision };
     }, Array.from(fontFixture({ ligatures: true })));
     expect(initial).toMatchObject({ enabled: true, sameChild: true, sameSelection: true, revision: 0,
@@ -360,10 +360,10 @@ test("ligature policy changes native shaping while preserving caret, selection, 
     await info.attach("ligature-selection", { body: await page.screenshot(), contentType: "image/png" });
     const disposed = await page.evaluate(async () => {
         const f = window.presentationFixture, viewport = f.editor.viewport;
-        f.editor.dispose(); const disabled = !viewport.fontLigatures(), rejected = !viewport.configureFontLigatures(true);
+        f.editor.dispose(); const disabled = !viewport.settings().fontLigatures, rejected = !viewport.configure({ fontLigatures: true });
         const path = "/presentation-fixture/", { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
-        const second = mountTextEditor(f.host, f.workspace, f.tab, { fontLigatures: true }); second.viewport.flush();
-        const mounted = second.viewport.fontLigatures(), css = getComputedStyle(second.element).fontVariantLigatures; second.dispose();
+        const second = mountTextEditor(f.host, f.workspace, f.tab, { settings: { fontLigatures: true } }); second.viewport.flush();
+        const mounted = second.viewport.settings().fontLigatures, css = getComputedStyle(second.element).fontVariantLigatures; second.dispose();
         return { disabled, rejected, mounted, css, nodes: f.host.childNodes.length, views: f.workspace.diagnostics().views };
     });
     expect(disposed).toEqual({ disabled: true, rejected: true, mounted: true, css: "normal", nodes: 0, views: 0 });
@@ -378,7 +378,7 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
         host.style.cssText = "height:240px;width:600px"; document.body.append(host);
         for (const columns of [[0], [-1], [1.5], [Infinity], [NaN], [Number.MAX_SAFE_INTEGER + 1], Array(1), Array(129).fill(80)]) {
             const before = workspace.diagnostics().views;
-            try { mountTextEditor(host, workspace, tab, { columnRulers: columns }); throw new Error("Invalid rulers accepted."); }
+            try { mountTextEditor(host, workspace, tab, { settings: { columnRulers: columns } }); throw new Error("Invalid rulers accepted."); }
             catch (error) { if (!(error instanceof RangeError)) throw error; }
             if (workspace.diagnostics().views !== before || host.childNodes.length) throw new Error("Invalid mount leaked ownership.");
         }
@@ -388,16 +388,16 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         settle(); const plain = viewport.snapshot(), point = viewport.coordsAt(20)!, row = host.querySelector('.st-viewport-row[data-line="0"]')!, child = row.firstChild;
         const plainExtent = [plain.horizontalExtent, plain.verticalExtent, viewport.element.scrollWidth, viewport.element.scrollHeight];
-        const defaults = viewport.columnRulers(), buffer = workspace.document(resource.documentId).buffer, beforeReads = buffer.readMetrics().sliceUnits;
-        const configured = [40, 20, 40, 1_000_000]; viewport.configureColumnRulers(configured); configured[0] = 1; viewport.flush();
-        const after = viewport.snapshot(), captured = viewport.columnRulers(), guide = host.querySelector<HTMLElement>('.st-column-ruler[data-column="20"]')!;
+        const defaults = viewport.settings().columnRulers, buffer = workspace.document(resource.documentId).buffer, beforeReads = buffer.readMetrics().sliceUnits;
+        const configured = [40, 20, 40, 1_000_000]; viewport.configure({ columnRulers: configured }); configured[0] = 1; viewport.flush();
+        const after = viewport.snapshot(), captured = viewport.settings().columnRulers, guide = host.querySelector<HTMLElement>('.st-column-ruler[data-column="20"]')!;
         const range = document.createRange(); range.setStart(child!, 20); range.collapse(true); const native = range.getClientRects()[0]!;
         const noRowReads = buffer.readMetrics().sliceUnits - beforeReads;
         const observer = new MutationObserver(() => {}); observer.observe(viewport.element, { subtree: true, childList: true, attributes: true });
-        viewport.configureColumnRulers([1_000_000, 40, 20, 20]); viewport.flush();
-        const noOp = { same: captured === viewport.columnRulers(), mutations: observer.takeRecords().length, pending: viewport.activity().pending }; observer.disconnect();
-        let invalid = false; try { viewport.configureColumnRulers([20, 0]); } catch { invalid = true; }
-        return { defaults, columns: captured, frozen: Object.isFrozen(captured), invalid, preservedPolicy: captured === viewport.columnRulers(), noRowReads, noOp,
+        viewport.configure({ columnRulers: [1_000_000, 40, 20, 20] }); viewport.flush();
+        const noOp = { same: captured === viewport.settings().columnRulers, mutations: observer.takeRecords().length, pending: viewport.activity().pending }; observer.disconnect();
+        let invalid = false; try { viewport.configure({ columnRulers: [20, 0] }); } catch { invalid = true; }
+        return { defaults, columns: captured, frozen: Object.isFrozen(captured), invalid, preservedPolicy: captured === viewport.settings().columnRulers, noRowReads, noOp,
             point, afterPoint: viewport.coordsAt(20), sameChild: child === row.firstChild, text: row.textContent,
             guideError: Math.abs(guide.getBoundingClientRect().left - native.left), nativeLeft: native.left, guideLeft: guide.getBoundingClientRect().left,
             placementError: Math.abs(guide.getBoundingClientRect().left - viewport.element.getBoundingClientRect().left - 12 - 20 * after.columnWidth), plain, after,
@@ -439,12 +439,12 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
         // The physical scrollbar is capped; rulers continue to use logical source columns.
         const doc = f.workspace.document(f.editor.view.documentId);
         f.workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "host", edits: [{ from: 0, to: doc.buffer.length, insert: "x".repeat(1_000_000) }] });
-        viewport.configureColumnRulers([500000]); settle(); viewport.scrollTo({ left: 500000 * viewport.snapshot().columnWidth }); settle();
+        viewport.configure({ columnRulers: [500000] }); settle(); viewport.scrollTo({ left: 500000 * viewport.snapshot().columnWidth }); settle();
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); settle();
         const s = viewport.snapshot(), guide = f.host.querySelector<HTMLElement>(".st-column-ruler")!, rectangle = f.host.querySelector(".st-viewport-layer")!.getBoundingClientRect();
         const scaledError = Math.abs(guide.getBoundingClientRect().left - rectangle.left - (12 + 500000 * s.columnWidth - s.scrollLeft) * 1.25);
         const markedPoint = viewport.coordsAt(500000), selected = f.editor.view.getSnapshot().selectionSet, extent = [viewport.element.scrollWidth, viewport.element.scrollHeight];
-        viewport.configureColumnRulers([]); settle();
+        viewport.configure({ columnRulers: [] }); settle();
         return { rows, retainedNode, scaledError, scaled: s.horizontalExtent > s.physicalWidth, scaledUnits: s.textUnits, noGuides: !f.host.querySelector(".st-column-rulers"),
             samePoint: JSON.stringify(markedPoint) === JSON.stringify(viewport.coordsAt(500000)), sameSelections: selected === f.editor.view.getSnapshot().selectionSet,
             extent, emptyExtent: [viewport.element.scrollWidth, viewport.element.scrollHeight], exports: f.workspace.document(f.editor.view.documentId).buffer.readMetrics().textExports };
@@ -455,9 +455,9 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
     expect(changes).toMatchObject({ retainedNode: true, scaled: true, noGuides: true, samePoint: true, sameSelections: true, exports: 0 });
     expect(changes.scaledError).toBeLessThan(.5); expect(changes.scaledUnits).toBeLessThan(1000); expect(changes.emptyExtent).toEqual(changes.extent);
     const end = await page.evaluate(() => { const f = window.presentationFixture, viewport = f.editor.viewport;
-        viewport.configureColumnRulers([20]); f.workspace.close(f.tab); viewport.flush(); const closed = !f.host.querySelector(".st-column-rulers");
+        viewport.configure({ columnRulers: [20] }); f.workspace.close(f.tab); viewport.flush(); const closed = !f.host.querySelector(".st-column-rulers");
         f.editor.dispose(); f.workspace.releaseResource(f.resource, true);
-        return { closed, configured: viewport.configureColumnRulers([20]), columns: viewport.columnRulers(), children: f.host.childNodes.length,
+        return { closed, configured: viewport.configure({ columnRulers: [20] }), columns: viewport.settings().columnRulers, children: f.host.childNodes.length,
             views: f.workspace.diagnostics().views, subscriptions: f.workspace.diagnostics().subscriptions }; });
     expect(end).toEqual({ closed: true, configured: false, columns: [], children: 0, views: 0, subscriptions: 0 });
     await info.attach("ruler-geometry", { body: JSON.stringify({ initial, changes, end }), contentType: "application/json" });
@@ -477,10 +477,10 @@ test("current-line presentation follows the primary caret through input, folding
             provide: line => [{ from: line.from, to: line.to, className: "host-color" }] });
         window.presentationFixture = { workspace, editor, tab, resource: resource.id, host };
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush();
-        const defaults = viewport.currentLineHighlight(), point = viewport.coordsAt(1), row = host.querySelector('.st-viewport-row[data-line="0"]')!, child = row.firstChild;
-        const extent = [viewport.element.scrollWidth, viewport.element.scrollHeight]; viewport.configureCurrentLineHighlight(true); viewport.flush();
-        const enabled = viewport.currentLineHighlight(), background = host.querySelector<HTMLElement>(".st-current-line-background")!;
-        viewport.configureCurrentLineHighlight(true);
+        const defaults = viewport.settings().highlightCurrentLine, point = viewport.coordsAt(1), row = host.querySelector('.st-viewport-row[data-line="0"]')!, child = row.firstChild;
+        const extent = [viewport.element.scrollWidth, viewport.element.scrollHeight]; viewport.configure({ highlightCurrentLine: true }); viewport.flush();
+        const enabled = viewport.settings().highlightCurrentLine, background = host.querySelector<HTMLElement>(".st-current-line-background")!;
+        viewport.configure({ highlightCurrentLine: true });
         return { defaults, enabled, noOpPending: viewport.activity().pending, samePoint: JSON.stringify(point) === JSON.stringify(viewport.coordsAt(1)),
             sameChild: row.firstChild === child, className: row.className, background: getComputedStyle(row).backgroundColor, color: getComputedStyle(child as HTMLElement).color,
             width: background.getBoundingClientRect().width, viewportWidth: viewport.element.clientWidth, extent,
@@ -521,9 +521,9 @@ test("current-line presentation follows the primary caret through input, folding
     const aligned = await page.evaluate(() => {
         const f = window.presentationFixture, c = f.comparison!, working = c.working, reference = c.referenceEditor()!;
         const current = (editor: TextEditor) => editor.element.querySelector(".st-viewport-layer .st-current-line");
-        working.viewport.configureCurrentLineHighlight(true); working.viewport.flush();
-        const workingClass = current(working)!.className, referenceDefault = reference.viewport.currentLineHighlight();
-        reference.viewport.configureCurrentLineHighlight(true); reference.view.setSelection(f.workspace.document(reference.view.documentId).revision, { anchor: 7, head: 7 }); reference.viewport.flush();
+        working.viewport.configure({ highlightCurrentLine: true }); working.viewport.flush();
+        const workingClass = current(working)!.className, referenceDefault = reference.viewport.settings().highlightCurrentLine;
+        reference.viewport.configure({ highlightCurrentLine: true }); reference.view.setSelection(f.workspace.document(reference.view.documentId).revision, { anchor: 7, head: 7 }); reference.viewport.flush();
         const referenceClass = current(reference)!.className;
         working.view.setSelection(f.workspace.document(working.view.documentId).revision, { anchor: 6, head: 6 }); working.viewport.flush();
         const row = current(working)!, backdrop = working.element.querySelector(".st-current-line-background")!, background = backdrop.getBoundingClientRect();
@@ -531,7 +531,7 @@ test("current-line presentation follows the primary caret through input, folding
             line: row.getAttribute("data-line"), rowGap: (working.viewport.rowBounds(1)!.top - working.viewport.rowBounds(0)!.top) / working.viewport.snapshot().lineHeight, topError: Math.abs(background.top - row.getBoundingClientRect().top),
             height: background.height, lineHeight: working.viewport.snapshot().lineHeight,
             edges: getComputedStyle(backdrop).boxShadow, fill: getComputedStyle(backdrop, "::before").backgroundColor };
-        working.viewport.configureCurrentLineHighlight(false); working.viewport.flush();
+        working.viewport.configure({ highlightCurrentLine: false }); working.viewport.flush();
         return { ...result, disabled: !current(working), referenceRetained: current(reference)?.getAttribute("data-line") };
     });
     expect(aligned.workingClass).toContain("st-comparison-line-working"); expect(aligned.workingClass).toContain("st-current-line");
@@ -543,7 +543,7 @@ test("current-line presentation follows the primary caret through input, folding
     await info.attach("current-line-review", { body: await page.screenshot(), contentType: "image/png" });
     const end = await page.evaluate(() => { const f = window.presentationFixture, c = f.comparison!, reference = c.referenceViewport()!;
         c.dispose(); f.workspace.close(f.tab); f.workspace.releaseResource(f.resource, true);
-        return { configured: reference.configureCurrentLineHighlight(true), enabled: reference.currentLineHighlight(), children: f.host.childNodes.length,
+        return { configured: reference.configure({ highlightCurrentLine: true }), enabled: reference.settings().highlightCurrentLine, children: f.host.childNodes.length,
             views: f.workspace.diagnostics().views, subscriptions: f.workspace.diagnostics().subscriptions }; });
     expect(end).toEqual({ configured: false, enabled: false, children: 0, views: 0, subscriptions: 0 });
     await info.attach("current-line-geometry", { body: JSON.stringify({ initial, projected, aligned, end }), contentType: "application/json" });

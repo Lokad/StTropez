@@ -161,9 +161,9 @@ complete code points, use `scanText(text, absoluteOffset)`. Show the plain-text 
 `characterWarningLabel`. A warning identifies the character and leaves its interpretation to the
 reader.
 
-Enable markers with the editor's `characterWarnings: true` or policy options, or call
-`editor.characterWarnings.configure(options)`. Markers are off by default; `false` clears
-them. `configuration()` returns a frozen policy or `null`. `query(from, to, limits)` returns
+Enable markers with `editor.configure({ characterWarnings: true })` or supply a policy.
+`editor.settings().characterWarnings` returns the frozen policy or `false` when disabled.
+`editor.characterWarnings.query(from, to, limits)` returns
 a bounded batch with document/revision and an `isCurrent()` guard, or `null` if unavailable.
 Edits, policy changes, view closure and disposal expire that capture. Invalid configuration
 preserves the existing policy; configure outside workspace notifications.

@@ -6,11 +6,10 @@ export function mountDemoOutput(host: HTMLElement, text: string, settings: Reado
     const workspace = new Workspace();
     const resource = workspace.createTextResource({ scope: "demo-output", resource: "javascript", variant: "generated" }, "JavaScript output",
         { value: text }, { edit: [], save: false, run: false });
-    const viewport = mountTextViewport(host, workspace, resource.documentId, { ariaLabel: "JavaScript output", ...settings });
+    const viewport = mountTextViewport(host, workspace, resource.documentId, { ariaLabel: "JavaScript output", settings });
     viewport.element.classList.add("demo-output");
     let disposed = false;
-    return Object.freeze({ snapshot: viewport.snapshot, configureMinimap: viewport.configureMinimap,
-        configureFontLigatures: viewport.configureFontLigatures, update: (next: string) => {
+    return Object.freeze({ snapshot: viewport.snapshot, configure: viewport.configure, update: (next: string) => {
         if (disposed || next === text) return;
         const state = viewport.captureView(), anchor = state.verticalAnchor;
         const line = anchor ? workspace.document(resource.documentId).buffer.lineAt(anchor.offset) : 0;

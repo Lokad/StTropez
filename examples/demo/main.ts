@@ -45,13 +45,10 @@ let stopRender: (() => void) | undefined;
 let reviewLabel: HTMLSpanElement | undefined;
 let hostIntegrations: ReturnType<typeof mountHostIntegrations> | undefined;
 const hostLanguage = () => project?.sample.id === "outline" || project?.sample.id === "host";
-function configurePresentation(view: TextEditor | undefined): void {
-    if (!view) return;
-    view.viewport.configureColumnRulers(field("view-rulers").checked ? [80, 120] : []);
-    view.viewport.configureCurrentLineHighlight(field("view-current-line").checked);
-    view.viewport.configureFontLigatures(field("view-ligatures").checked);
-    view.viewport.configureScrollBeyondLastLine(field("view-trailing-space").checked);
-    view.viewport.configureMinimap(field("view-minimap").checked);
+function presentationSettings() {
+    return { columnRulers: field("view-rulers").checked ? [80, 120] : [],
+        highlightCurrentLine: field("view-current-line").checked, fontLigatures: field("view-ligatures").checked,
+        scrollBeyondLastLine: field("view-trailing-space").checked, minimap: field("view-minimap").checked };
 }
 let referencePresentation: DemoPresentation | undefined;
 let syntaxLayer: DecorationProvider | undefined, diagnosticsLayer: DecorationLayer | undefined;
@@ -289,10 +286,11 @@ function mountFile(file: DemoFile, focus = false): void {
     detachView(); active = file; activeFiles.set(project.sample.id, file.name);
     initializeDemoFolds(project, file);
     element("workspace").classList.toggle("reviewing", panel === "changes");
+    const settings = { ...presentationSettings(), language: editingConfiguration(), bracketMatching: true, characterWarnings: field("character-warnings").checked };
     const surface = demoSurface(element(panel === "changes" ? "panel-content" : "editor"), project.sample.id === "host");
     if (panel === "changes") {
         comparison = mountTextComparison(surface, project.workspace, file.tab, project.baseline(file),
-            { view: file.view, requestLine: linePrompt(document), scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
+            { settings, view: file.view, requestLine: linePrompt(document), scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
         const labels = document.createElement("div"); labels.className = "demo-review-labels";
         const savedLabel = document.createElement("span"), workingLabel = document.createElement("span");
         reviewLabel = savedLabel;
@@ -313,9 +311,7 @@ function mountFile(file: DemoFile, focus = false): void {
             }, { emit: false, folds: true });
             referencePresentation = syntax;
             if (syntax || project?.sample.id === "host") tokens = reference.editor.decorations.addProvider({ name: "syntax", order: 0, provide: syntax?.decorate ?? hostDecorations });
-            reference.editor.configureLanguage(editingConfiguration(syntax?.editing)); reference.editor.bracketMatching.configure(true);
-            reference.editor.characterWarnings.configure(field("character-warnings").checked);
-            configurePresentation(reference.editor);
+            reference.editor.configure({ language: editingConfiguration(syntax?.editing) });
             syntax?.update(project!.workspace.document(reference.editor.view.documentId));
             referenceFolding = createFoldingController(reference.editor,
                 (capture, signal) => plain
@@ -330,15 +326,12 @@ function mountFile(file: DemoFile, focus = false): void {
         stopReference = () => { referenceSyncActive = false; unsubscribeReference(); }; configureReference();
     } else {
         editor = mountTextEditor(surface, project.workspace, file.tab,
-            { view: file.view, ariaLabel: file.name, requestLine: linePrompt(document) });
+            { settings, view: file.view, ariaLabel: file.name, requestLine: linePrompt(document) });
         renderProblems();
     }
     syntaxLayer = editor.decorations.addProvider({ name: "syntax", order: 0, provide: project.sample.id === "host" ? hostDecorations : presentation.decorate });
     diagnosticsLayer = editor.decorations.add({ name: "diagnostics", order: 40 });
-    editor.configureLanguage(editingConfiguration());
-    editor.bracketMatching.configure(true);
-    editor.characterWarnings.configure(field("character-warnings").checked); element("character-warning-details").replaceChildren();
-    configurePresentation(editor);
+    element("character-warning-details").replaceChildren();
     if (savedViews.has(file.view)) editor.restoreView({ ...savedViews.get(file.view)!, ...file.view.getSnapshot().selection,
         selectionSet: file.view.getSnapshot().selectionSet });
     folding = mountDemoFolding(project, editor, () => editingConfiguration().tabSize!);
@@ -492,21 +485,21 @@ on("go-to-line", () => { editor?.focus(); editor?.runCommand("go-to-line"); });
 on("inspect-characters", () => { if (editor && project) inspectCharacters(editor, project.workspace, element("character-warning-details")); });
 field("character-warnings").addEventListener("change", () => {
     const enabled = field("character-warnings").checked;
-    editor?.characterWarnings.configure(enabled); comparison?.reference.getSnapshot()?.editor.characterWarnings.configure(enabled);
+    editor?.configure({ characterWarnings: enabled }); comparison?.reference.getSnapshot()?.editor.configure({ characterWarnings: enabled });
     element("character-warning-details").replaceChildren();
 }, { signal: listeners.signal });
 for (const id of ["view-rulers", "view-current-line", "view-ligatures", "view-trailing-space", "view-minimap"]) field(id).addEventListener("change", () => {
-    configurePresentation(editor); configurePresentation(comparison?.reference.getSnapshot()?.editor);
-    output?.configureMinimap(field("view-minimap").checked);
-    output?.configureFontLigatures(field("view-ligatures").checked);
+    const settings = presentationSettings();
+    editor?.configure(settings); comparison?.reference.getSnapshot()?.editor.configure(settings);
+    output?.configure({ minimap: settings.minimap, fontLigatures: settings.fontLigatures });
 }, { signal: listeners.signal });
 on("quickfix", () => languageView?.quickfix());
 for (const command of ["line-comment", "block-comment", "indent", "outdent"] as const) on(command, () => {
     if (editor?.runCommand(command === "indent" ? "indent-lines" : command)) editor.focus();
 });
 indentation.addEventListener("change", () => {
-    editor?.configureLanguage(editingConfiguration());
-    comparison?.referenceEditor()?.configureLanguage(editingConfiguration(referencePresentation?.editing)); folding?.refresh(); referenceFolding?.refresh(); editor?.focus();
+    editor?.configure({ language: editingConfiguration() });
+    comparison?.referenceEditor()?.configure({ language: editingConfiguration(referencePresentation?.editing) }); folding?.refresh(); referenceFolding?.refresh(); editor?.focus();
 }, { signal: listeners.signal });
 codeMenu.addEventListener("click", event => {
     const target = event.target as HTMLElement;

@@ -100,7 +100,7 @@ test("failed command turns release input and report the cause before later typin
                 };
             }
             if (failure === "language-policy") {
-                f.configureLanguage({ allowPair: () => { throw new Error("Fixture language failure"); } });
+                f.configure({ language: { allowPair: () => { throw new Error("Fixture language failure"); } } });
                 input.dispatchEvent(new KeyboardEvent("keydown", { key: "(", bubbles: true, cancelable: true })); return;
             } else if (failure === "queued-transform") {
                 const release = f.registerEditTransform(() => { release(); throw new Error("Fixture transform failure"); });
@@ -125,7 +125,7 @@ test("failed command turns release input and report the cause before later typin
         expect(await page.evaluate(index => window.editingFixture.conflictText(index), before.conflicts.length)).toBe(failure === "language-policy" ? "(" : failure === "committed-tail" ? "remaining😀" : !immediate && !committed ? "queued" : "");
         if (committed) expect(failed.document!.length).toBe(text.length + 33 * "queued".length);
         if (failure === "committed-tail") expect(failed.conflicts.length).toBe(before.conflicts.length + 2);
-        await page.evaluate(() => { window.editingFixture.configureLanguage({}); window.editingFixture.select("primary", { anchor: 0, head: 0 }); }); await ready(page);
+        await page.evaluate(() => { window.editingFixture.configure({ language: {} }); window.editingFixture.select("primary", { anchor: 0, head: 0 }); }); await ready(page);
         await source.pressSequentially("after"); await ready(page);
         expect(await page.evaluate(() => window.editingFixture.range(0, 5))).toBe("after");
         expect((await state(page)).conflicts).toEqual(failed.conflicts);
@@ -156,7 +156,7 @@ test("Apple caret chords navigate the document and full line beyond native input
 });
 
 test("IME confirmation keycode does not invoke a language newline after compositionend", async ({ page }) => {
-    await page.evaluate(() => { const f = window.editingFixture; f.setText("a"); f.select("primary", { anchor: 1, head: 1 }); f.configureLanguage({ enter: "keep" }); }); await ready(page);
+    await page.evaluate(() => { const f = window.editingFixture; f.setText("a"); f.select("primary", { anchor: 1, head: 1 }); f.configure({ language: { enter: "keep" } }); }); await ready(page);
     const source = page.getByRole("textbox", { name: "Primary source", exact: true });
     expect(await source.evaluate(node => {
         node.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
@@ -171,7 +171,7 @@ test("typing, newline, paste and history keep a visible caret in place on both s
     const source = page.getByRole("textbox", { name: "Primary source", exact: true });
     await page.evaluate(() => window.editingFixture.setText((" ".repeat(60) + "x".repeat(340) + "\n").repeat(2000))); await ready(page);
     await page.evaluate(() => {
-        const f = window.editingFixture; f.configureLanguage({ enter: "keep" });
+        const f = window.editingFixture; f.configure({ language: { enter: "keep" } });
         const offset = 500 * 401 + 80; f.selections([{ anchor: offset, head: offset }]); f.focus("primary");
         const root = document.querySelector<HTMLElement>("#primary .st-viewport")!;
         root.scrollTop = f.snapshot().primary.viewport.lineHeight * 498; root.scrollLeft = 250;
@@ -431,7 +431,7 @@ test("line indentation/outdent, CRLF Enter, paired brackets and vertical navigat
     expect((await state(page)).primary.selection.head).toBe(4);
     await page.keyboard.press("ArrowUp"); expect((await state(page)).primary.selection.head).toBe(0);
     await page.evaluate(() => {
-        window.editingFixture.configureLanguage({ tabSize: 4 });
+        window.editingFixture.configure({ language: { tabSize: 4 } });
         window.editingFixture.setText("  \tone\r\nnext");
         window.editingFixture.select("primary", { anchor: 6, head: 6 }); window.editingFixture.focus("primary");
     }); await ready(page);
@@ -451,7 +451,7 @@ test("line indentation/outdent, CRLF Enter, paired brackets and vertical navigat
 
 test("comment chords and shifted slash act on the captured lines", async ({ page }) => {
     await page.evaluate(() => { const f = window.editingFixture;
-        f.configureLanguage({ tabSize: 2, lineComment: "//", blockComment: { open: "/*", close: "*/" } });
+        f.configure({ language: { tabSize: 2, lineComment: "//", blockComment: { open: "/*", close: "*/" } } });
         f.setText("  alpha\n// beta"); f.focus("primary");
     });
     const input = page.getByRole("textbox", { name: "Primary source", exact: true });
@@ -483,7 +483,7 @@ test("Alt arrows move and copy lines while typing and Undo follow the selected b
 
 test("inserting lines above and below, deleting at EOF and Undo keep typing on the intended row", async ({ page }) => {
     await page.evaluate(() => { const f = window.editingFixture;
-        f.configureLanguage({ enter: "keep" }); f.setText("  a\r\nend"); f.selections([{ anchor: 6, head: 6 }]); f.focus("primary");
+        f.configure({ language: { enter: "keep" } }); f.setText("  a\r\nend"); f.selections([{ anchor: 6, head: 6 }]); f.focus("primary");
     });
     const rows = page.locator("#primary .st-viewport-row");
     await page.keyboard.press("Control+Shift+Enter"); await expect(rows.nth(1)).toHaveJSProperty("textContent", "  ");
@@ -509,7 +509,7 @@ test("typing a closing brace realigns the line and Undo restores its indentation
 
 test("leaving an automatically indented blank line trims it with the next edit", async ({ page }) => {
     await page.evaluate(() => { const f = window.editingFixture;
-        f.configureLanguage({ enter: "keep" }); f.setText("  a\r\nz"); f.selections([{ anchor: 3, head: 3 }]); f.focus("primary");
+        f.configure({ language: { enter: "keep" } }); f.setText("  a\r\nz"); f.selections([{ anchor: 3, head: 3 }]); f.focus("primary");
     });
     const text = () => page.evaluate(() => { const f = window.editingFixture; return f.range(0, f.snapshot().document!.length); });
     await page.keyboard.press("Enter"); expect(await text()).toBe("  a\r\n  \r\nz");
@@ -550,7 +550,7 @@ test("yielding multiline indentation publishes one reversible transaction", asyn
 
 test("configured commands retain native ordering and expire on configuration changes", async ({ page }) => {
     await page.evaluate(() => {
-        window.editingFixture.configureLanguage({ tabSize: 2, lineComment: "//" });
+        window.editingFixture.configure({ language: { tabSize: 2, lineComment: "//" } });
         window.editingFixture.setText("x\n".repeat(4096)); window.editingFixture.select("primary", { anchor: 0, head: 8192 });
         window.editingFixture.focus("primary");
         window.editingFixture.command("line-comment");
@@ -573,7 +573,7 @@ test("configured commands retain native ordering and expire on configuration cha
         window.editingFixture.setText("x\n".repeat(4096)); window.editingFixture.select("primary", { anchor: 0, head: 8192 });
         window.editingFixture.command("line-comment");
         if (!window.editingFixture.snapshot().primary.pendingCommand) throw new Error("Expected deferred comment planning");
-        window.editingFixture.configureLanguage({ tabSize: 4 });
+        window.editingFixture.configure({ language: { tabSize: 4 } });
     });
     await expect.poll(async () => (await state(page)).primary.pendingCommand).toBe(false);
     expect((await state(page)).document!.length).toBe(8192);

@@ -96,8 +96,8 @@ a snapshot.
 CRLF, LF, tabs, spaces and final newlines participate in equality. `DiffHunk` contains baseline
 and working `DiffRange` values with exclusive text and line ends. `whitespaceOnly` describes a
 change without suppressing it. A hunk with only LF/CRLF substitutions has `lineEndingOnly: true`.
-The controls label it “line endings only”. The working pane accepts the same `pasteLineEndings`
-option as the editor. Both panes accept the same host `requestLine` prompt for Go to Line.
+The controls label it “line endings only”. Pass `settings` once to configure both panes, including the working paneâ€™s `pasteLineEndings` policy.
+Both panes use the hostâ€™s `requestLine` prompt for Go to Line.
 Alignment minimizes line insertions/deletions; it does not
 provide a globally minimal character diff or moved-block detection.
 
@@ -218,7 +218,7 @@ when the reference changes and publish ranges against that reference document's 
 
 ### Linked scrolling and aligned rows
 
-Pass `minimap: true` to show the [viewport minimap](viewport.md#mounting-and-presentation)
+Pass `settings: { minimap: true }` to show the [viewport minimap](viewport.md#mounting-and-presentation)
 in both panes, including each replacement baseline. Each pane follows its own row projection.
 
 With the default options, the panes scroll independently. Pass `rowsAligned: true` to line up

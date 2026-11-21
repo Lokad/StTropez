@@ -230,8 +230,8 @@ const second = document.createElement("section");
 second.id = "split";
 document.getElementById("panes")?.after(second);
 const split = mountTextEditor(second, workspace, file.documentId, {
-    ariaLabel: "Checklist split", minimap: true,
-    language: { tabSize: 2, insertSpaces: true, blockComment: { open: "<!--", close: "-->" } }
+    ariaLabel: "Checklist split", settings: { minimap: true,
+        language: { tabSize: 2, insertSpaces: true, blockComment: { open: "<!--", close: "-->" } } }
 });
 const checklist = split.decorations.addProvider({
     name: "checklist", order: 0,

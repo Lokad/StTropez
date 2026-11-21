@@ -7,7 +7,7 @@ import type { ComparisonBaseline, ComparisonController, ComparisonSnapshot } fro
 import type { DiffRange } from "../core/diff.ts";
 import type { DocumentView, TabId, TabTarget, TextResourceHandle, Workspace } from "../core/workspace.ts";
 import { mountEditor } from "./text-editor.ts";
-import type { MountedTextEditor, TextEditor, TextEditorOptions } from "./text-editor.ts";
+import type { EditorSettings, MountedTextEditor, TextEditor, TextEditorOptions } from "./text-editor.ts";
 import type { InlineDecoration, PresentedLine, TextViewport } from "./viewport.ts";
 import { createComparisonScroll } from "./comparison-scroll.ts";
 import { createComparisonAlignment } from "./comparison-alignment.ts";
@@ -17,9 +17,8 @@ import { createComparisonPanes } from "./comparison-panes.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 
 export type ComparisonReferenceView = Readonly<{ editor: TextEditor; target: TabTarget; epoch: number; version: string }>;
-export type TextComparisonOptions = Readonly<{ ariaLabel?: string; workBudget?: number; view?: DocumentView; controls?: boolean; scrollLinked?: boolean; rowsAligned?: boolean; minimap?: boolean;
-    requestLine?: NonNullable<TextEditorOptions["requestLine"]>;
-    pasteLineEndings?: NonNullable<TextEditorOptions["pasteLineEndings"]> }>;
+export type TextComparisonOptions = Readonly<{ ariaLabel?: string; workBudget?: number; view?: DocumentView; controls?: boolean; scrollLinked?: boolean; rowsAligned?: boolean; settings?: EditorSettings;
+    requestLine?: NonNullable<TextEditorOptions["requestLine"]> }>;
 export type TextComparisonSnapshot = Readonly<{
     comparison: ComparisonSnapshot;
     /** Index in comparison.hunks; cleared when the comparison generation changes. */
@@ -45,7 +44,6 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     const requestedBudget = options.workBudget ?? 4096;
     validateWorkBudget(requestedBudget, "Comparison");
     const budget = Math.min(requestedBudget, 4096);
-    const minimap = options.minimap === undefined ? false : options.minimap;
     const owner = host.ownerDocument, win = owner.defaultView;
     if (!win) throw new Error("Comparison requires an attached browser document.");
     const controller = createComparisonController(workspace, workingTab, baseline, options), runner = createCooperativeRunner(win);
@@ -77,9 +75,9 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
         return [{ from: range.from, to: range.to, className: side === "baseline" ? "st-comparison-removed" : "st-comparison-added" }];
     };
     const lineClass = (side: "baseline" | "working") => (line: PresentedLine) => (side !== "working" || line.revision === state.working?.revision) && rangeAt(side, line.line) ? `st-comparison-line-${side}` : undefined;
-    const navigation = options.requestLine ? { requestLine: options.requestLine } : {};
+    const paneOptions = { ...(options.settings ? { settings: options.settings } : {}), ...(options.requestLine ? { requestLine: options.requestLine } : {}) };
     let workingMount: MountedTextEditor;
-    try { workingMount = mountEditor(workingPane.content, workspace, workingTab, { view: controller.view, minimap, ...navigation, pasteLineEndings: options.pasteLineEndings ?? "local", ariaLabel: "Comparison working source" }); }
+    try { workingMount = mountEditor(workingPane.content, workspace, workingTab, { view: controller.view, ...paneOptions, ariaLabel: "Comparison working source" }); }
     catch (error) { root.remove(); controller.dispose(); throw error; }
     const working = workingMount.editor, pair = createComparisonPanes(workingMount, changed), referenceEditor = () => pair.reference()?.editor, referenceViewport = () => referenceEditor()?.viewport;
     const differences = (editor: TextEditor, side: "working" | "baseline") => editor.decorations.addProvider({
@@ -135,7 +133,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
                 { buffer: state.baseline.buffer, serverVersion: state.baseline.version }, { edit: [], save: false, run: false }, { visibility: "internal" });
             displayTab = workspace.open({ kind: "text", documentId: display.documentId }, display.id);
             displayTarget = workspace.captureTab(displayTab);
-            const mounted = mountEditor(referencePane.content, workspace, displayTab, { ariaLabel: "Comparison baseline source", minimap, ...navigation });
+            const mounted = mountEditor(referencePane.content, workspace, displayTab, { ariaLabel: "Comparison baseline source", ...paneOptions });
             const editor = mounted.editor;
             referenceDiff = differences(editor, "baseline");
             try { pair.setReference(mounted); } catch (error) { editor.dispose(); throw error; }

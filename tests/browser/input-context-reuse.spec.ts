@@ -53,7 +53,7 @@ test("input refresh reuses bounded projections while repairing native state and 
             measure("authority and language refreshes", () => {
                 workspace.setCapabilities(source.id, { ...capabilities, edit: ["host"] }); locked = input.readOnly;
                 denied = !input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "Q", cancelable: true, bubbles: true }));
-                workspace.setCapabilities(source.id, capabilities); editor.configureLanguage({ tabSize: 8 });
+                workspace.setCapabilities(source.id, capabilities); editor.configure({ language: { tabSize: 8 } });
             });
             const authority = locked && denied && !input.readOnly && exact(compressed);
             editor.view.setSelection(doc().revision, { anchor: at, head: at + 5000 });
