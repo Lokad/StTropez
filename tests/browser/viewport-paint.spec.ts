@@ -61,7 +61,8 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
             changes.push(work("synchronous font", () => { viewport.element.style.fontSize = "18px"; }));
             const wider = viewport.snapshot().columnWidth > middle.columnWidth;
             changes.push(work("synchronous resize", () => { host.style.width = "450px"; host.style.height = "150px"; }));
-            const resized = viewport.snapshot().width === viewport.element.clientWidth && viewport.snapshot().height === viewport.element.clientHeight;
+            const size = viewport.snapshot();
+            const resized = size.width + size.gutterWidth === viewport.element.clientWidth && size.height === viewport.element.clientHeight;
             changes.push(work("zoom", () => { host.style.zoom = "1.25"; }));
             changes.push(work("font completion", () => document.fonts.dispatchEvent(new Event("loadingdone"))));
             viewport.revealOffset(buffer.offsetAt(50000)); settle();

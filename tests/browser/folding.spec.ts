@@ -26,6 +26,31 @@ test("a pointer fold returns to typing while keyboard activation keeps the discl
     await expect(button).toBeFocused();
 });
 
+test("horizontal scrolling keeps fold controls clear of the first visible text column", async ({ page }) => {
+    await page.goto("/editing/");
+    await page.evaluate(() => {
+        const f = window.editingFixture, header = "0123456789".repeat(200);
+        f.setText(header + "\ninside\nafter"); f.folds([{ id: "section", from: 0, to: header.length + 8 }]);
+    });
+    await ready(page);
+    const root = page.locator("#primary .st-editor"), button = root.locator(".st-fold-button");
+    const before = await button.boundingBox(); if (!before) throw new Error("Missing fold control");
+    await root.evaluate(element => { element.scrollLeft = 500; });
+    await expect.poll(() => page.evaluate(() => window.editingFixture.snapshot().primary.viewport.scrollLeft)).toBeGreaterThan(450);
+    const point = await root.evaluate(element => {
+        const gutter = element.querySelector(".st-viewport-gutter")!.getBoundingClientRect();
+        const row = element.querySelector('.st-viewport-row[data-line="0"]')!.getBoundingClientRect();
+        return { x: gutter.right + 1, y: row.top + row.height / 2 };
+    });
+    expect((await button.boundingBox())?.x).toBeCloseTo(before.x, 0);
+    await page.mouse.click(point.x, point.y);
+    await expect(button).toHaveAttribute("aria-expanded", "true");
+    const head = await page.evaluate(() => window.editingFixture.selectionSet().ranges[0]!.head);
+    expect(head).toBeGreaterThan(0);
+    await page.keyboard.type("X");
+    expect(await page.evaluate(offset => window.editingFixture.range(offset, offset + 1), head)).toBe("X");
+});
+
 test("group folding preserves every selection and typing replaces the retained hidden ranges", async ({ page }) => {
     await page.goto("/editing/");
     const text = "outer\r\n  first\r\n    second\r\n  third\r\nother\r\n  last\r\nend";

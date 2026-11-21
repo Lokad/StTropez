@@ -41,12 +41,12 @@ test("viewport input ownership and render delivery survive removal, reentrancy a
             const button = root.querySelector<HTMLButtonElement>(".st-fold-button")!; button.disabled = false;
             button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
             const guarded = !folding.getSnapshot().regions[0]!.collapsed;
-            binding.setComposing(false); binding.setTabEscape(true);
+            binding.setComposing(false);
             const existingEscaped = button.tabIndex === -1;
             folding.setRanges(folding.getSnapshot(), ranges); viewport.flush();
             const newEscaped = [...root.querySelectorAll<HTMLButtonElement>(".st-fold-button")].every(button => button.tabIndex === -1);
-            binding.setTabEscape(false); root.setAttribute("data-st-tab-escape", ""); viewport.invalidate(); viewport.flush();
-            const markersIgnored = [...root.querySelectorAll<HTMLButtonElement>(".st-fold-button")].every(button => button.tabIndex === 0);
+            root.setAttribute("data-st-tab-escape", ""); viewport.invalidate(); viewport.flush();
+            const markersIgnored = [...root.querySelectorAll<HTMLButtonElement>(".st-fold-button")].every(button => button.tabIndex === -1);
             button.focus(); button.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
             const escapedFocus = document.activeElement === input && focus === 1;
             button.focus(); folding.setRanges(folding.getSnapshot(), []); viewport.flush();
@@ -58,7 +58,7 @@ test("viewport input ownership and render delivery survive removal, reentrancy a
             root.querySelector<HTMLButtonElement>(".st-fold-button")!.focus();
             let afterDestroy = 0; viewport.onRender(() => afterDestroy++);
             folding.setRanges(folding.getSnapshot(), []); viewport.flush();
-            const destroyed = viewport.snapshot(); const inactive = !replacement.setTabEscape(true); replacement.dispose();
+            const destroyed = viewport.snapshot(); const inactive = !replacement.setComposing(true); replacement.dispose();
             viewport.onRender(() => afterDestroy++)(); viewport.flush();
             return { firstOrder, secondOrder, revision: workspace.document(source.documentId).revision, errors, afterError, duplicate,
                 guarded, existingEscaped, newEscaped, markersIgnored, escapedFocus, removedFocus, detached, expired, inactive, afterDestroy,

@@ -134,7 +134,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (!!escapeSelection === value) return;
         escapeSelection = value ? view.getSnapshot().selectionSet : undefined;
         root.toggleAttribute("data-st-tab-escape", value);
-        inputBinding.setTabEscape(value);
     };
     let commits = 0, conflicts = 0, serial = 0, inputEvents = 0, lastInputMs = 0;
     let beforeInputEvents = 0, lastBeforeInputMs = 0, maxQueuedInputTurnMs = 0;
@@ -1033,7 +1032,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     }, { signal: listeners.signal });
     input.addEventListener("focus", scheduleCaret, { signal: listeners.signal });
     input.addEventListener("blur", () => { syncSelection(); group = undefined; commentPrefix = undefined; scheduleCaret();
-        // Restore disclosure tab stops after the browser has completed focus traversal.
+        // Clear the Escape prefix after the browser completes focus traversal.
         if (escapeSelection) queueMicrotask(() => { if (!disposed) escapeState(false); }); }, { signal: listeners.signal });
     // Consume the prefix even when the host handles the following key during capture.
     root.addEventListener("keydown", event => {
@@ -1108,7 +1107,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const began = win.performance.now();
         try {
         wordSelectionEvents++;
-        if (event.button !== 0 || disposed || composing || input.disabled || !live()) return;
+        if (event.button !== 0 || disposed || composing || input.disabled || !live()
+            || (event.target as Element | null)?.closest(".st-viewport-gutter")) return;
         const point = pointerHit(event); if (!point) return;
         event.preventDefault(); if (!draggedWord) selectWord(point.offset, event.altKey);
         } finally { lastWordSelectionMs = win.performance.now() - began; maxWordSelectionTurnMs = Math.max(maxWordSelectionTurnMs, lastWordSelectionMs); }
@@ -1122,6 +1122,11 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     root.addEventListener("pointerdown", () => { mousePress = undefined; draggedWord = false; commentPrefix = undefined; escapeState(false); }, { capture: true, signal: listeners.signal });
     root.addEventListener("pointerdown", event => {
         if (event.button < 0 || event.button > 2 || disposed || composing || input.disabled || !live()) return;
+        const target = event.target as Element | null;
+        if (target?.closest(".st-viewport-gutter")) {
+            if (event.button === 0 && target.closest(".st-line-numbers span")) beginPointer(event, 1, event, true);
+            return;
+        }
         const armed = event.button === 0 && textDrag.arm(event);
         // All engines supply the native multi-click count on mousedown. Pointerdown also
         // supplies the pointer id used for capture and arms native drag before default handling.
@@ -1143,7 +1148,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const line = buffer.lineAt(offset);
         return { anchor: buffer.offsetAt(line), head: line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length };
     }
-    function beginPointer(event: PointerEvent, clicks: number, native: MouseEvent): void {
+    function lineSelection(origin: Selection, target: Selection): Selection {
+        return target.anchor < origin.anchor ? { anchor: origin.head, head: target.anchor } : { anchor: origin.anchor, head: target.head };
+    }
+    function beginPointer(event: PointerEvent, clicks: number, native: MouseEvent, gutter = false): void {
         if (disposed || composing || input.disabled || !live()) return;
         // The transparent native context can overlap source text; its default hit test uses context coordinates.
         const point = pointerHit(event); if (!point) return;
@@ -1159,7 +1167,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             return;
         }
         const extending = event.shiftKey && !event.altKey;
-        if (event.altKey && clicks < 2) {
+        if (!gutter && event.altKey && clicks < 2) {
             const { ranges, primary } = state.selectionSet;
             const hit = ranges.findIndex(range => point.offset >= Math.min(range.anchor, range.head) && point.offset <= Math.max(range.anchor, range.head));
             if (hit >= 0) {
@@ -1171,7 +1179,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 return;
             }
         }
-        const word = extending && clickedWord?.selections === state.selectionSet ? clickedWord.range : undefined;
+        const word = !gutter && extending && clickedWord?.selections === state.selectionSet ? clickedWord.range : undefined;
         let anchor = extending ? state.selection.anchor : point.offset, head = point.offset;
         let anchorAffinity = extending ? state.selection.anchorAffinity ?? "after" : point.affinity;
         if (word) {
@@ -1180,14 +1188,21 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             anchorAffinity = backward ? "before" : "after";
             if (!backward) head = Math.max(head, word.head);
         }
-        const baseRanges = event.altKey ? state.selectionSet.ranges : extending ? state.selectionSet.ranges.filter((_, index) => index !== state.selectionSet.primary) : [];
+        const baseRanges = !gutter && event.altKey ? state.selectionSet.ranges : extending ? state.selectionSet.ranges.filter((_, index) => index !== state.selectionSet.primary) : [];
         let unit: DragUnit | undefined;
         if (clicks >= 4) {
             view.setSelection(revision, { anchor: 0, head: workspace.document(documentId).buffer.length }); refresh(); return;
         }
-        if (clicks === 3) {
-            const range = wholeLine(workspace.document(documentId).buffer, point.offset);
-            unit = { kind: "line", range }; anchor = range.anchor; head = range.head;
+        if (gutter || clicks === 3) {
+            const buffer = workspace.document(documentId).buffer, target = wholeLine(buffer, point.offset);
+            let range = target;
+            if (gutter && extending) {
+                const { anchor, head } = state.selection;
+                const atLineStart = buffer.offsetAt(buffer.lineAt(anchor)) === anchor;
+                range = wholeLine(buffer, head < anchor && atLineStart ? anchor - 1 : anchor);
+            }
+            unit = { kind: "line", range };
+            ({ anchor, head } = lineSelection(range, target));
         } else if (clicks === 2) unit = { kind: "word", origin: point.offset };
         view.setSelections(revision, [...baseRanges, { anchor, head, anchorAffinity, headAffinity: point.affinity }], baseRanges.length); refresh();
         if (word) clickedWord = { range: word, selections: view.getSnapshot().selectionSet };
@@ -1205,7 +1220,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             && drag.revision === revision && drag.selectionSet === view.getSnapshot().selectionSet && live() && root.hasPointerCapture(drag.pointer);
     }
     function dragBounds() {
-        return clientBox(root, viewport.settings().minimap);
+        return clientBox(root, viewport.settings().minimap, viewport.snapshot().gutterWidth);
     }
     function updateDragHead(): void {
         const current = drag; if (!current) return; const bounds = dragBounds();
@@ -1216,7 +1231,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             if (unit.lastHit === point.offset) return;
             unit.lastHit = point.offset;
             const applyUnits = (origin: Selection, target: Selection) => {
-                const range = target.anchor < origin.anchor ? { anchor: origin.head, head: target.anchor } : { anchor: origin.anchor, head: target.head };
+                const range = lineSelection(origin, target);
                 view.setSelections(current.revision, [...current.baseRanges, range], current.baseRanges.length);
                 if (drag?.unit === unit) drag = { ...drag, selectionSet: view.getSnapshot().selectionSet, padding: point.padding === true };
                 if (unit.kind === "word") clickedWord = { range: origin, selections: view.getSnapshot().selectionSet };
@@ -1243,7 +1258,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     }
     const dragScrolling = createEdgeAutoscroll(win, viewport, {
         capture: () => drag, valid: () => validDrag(),
-        velocity: captured => edgeVelocity(captured, dragBounds(), viewport.snapshot(), "outside"),
+        velocity: captured => {
+            const velocity = edgeVelocity(captured, dragBounds(), viewport.snapshot(), "outside");
+            return captured.unit?.kind === "line" ? { x: 0, y: velocity.y } : velocity;
+        },
         update: () => { updateDragHead(); dragScrollFrames++; }, cancel: () => stopDrag(),
         turn: work => { const started = win.performance.now();
             try { work(); } finally { maxDragScrollStepMs = Math.max(maxDragScrollStepMs, win.performance.now() - started); } },

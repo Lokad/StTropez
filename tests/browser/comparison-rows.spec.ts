@@ -15,7 +15,7 @@ async function setup(p: Page, host: string, raw: string): Promise<void> {  await
 async function sourceSet(p: Page, ranges: readonly { anchor: number; head: number }[], primary = 0): Promise<void> { await input(p).focus(); await p.evaluate(({ ranges, primary }) => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, ranges, primary); }, { ranges, primary }); await waitForReview(p); }
 async function scroll(p: Page, row: number): Promise<void> { await panes(p).last().evaluate((node, row) => { const c = window.hostFixture.snapshot().bindings.comparison!; node.scrollTop = 12 + row * c.workingViewport.lineHeight; node.dispatchEvent(new Event("scroll")); }, row); await waitForReview(p); }
 async function dispose(p: Page): Promise<void> { await p.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(p); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.bindings.comparison).toBeNull(); }
-async function paddingPoint(p: Page): Promise<{ x: number; y: number }> { await panes(p).last().scrollIntoViewIfNeeded(); return panes(p).last().evaluate(node => { const root = node.getBoundingClientRect(); const row = [...node.querySelectorAll<HTMLElement>(".st-comparison-padding")].find(n => { const r = n.getBoundingClientRect(); return r.top >= root.top + 12 && r.bottom <= root.bottom - 12; }); if (!row) throw new Error("Missing visible padding target."); const r = row.getBoundingClientRect(); return { x: root.left + 50, y: r.top + r.height / 2 }; }); }
+async function paddingPoint(p: Page): Promise<{ x: number; y: number }> { await panes(p).last().scrollIntoViewIfNeeded(); return panes(p).last().evaluate(node => { const root = node.getBoundingClientRect(); const row = [...node.querySelectorAll<HTMLElement>(".st-comparison-padding")].find(n => { const r = n.getBoundingClientRect(); return r.top >= root.top + 12 && r.bottom <= root.bottom - 12; }); if (!row) throw new Error("Missing visible padding target."); const r = row.getBoundingClientRect(); return { x: r.left + 12, y: r.top + r.height / 2 }; }); }
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} aligned rows preserve painted correspondence, complete sets, navigation, history, save and remount`, async ({ page: p }) => {
     test.setTimeout(120000); const rows = Array.from({ length: large ? 100000 : 900 }, (_, i) => `row ${i.toString().padStart(6, "0")}: café😀;ok;\r\n`), raw = rows.join(""), offset = (line: number) => rows.slice(0, line).join("").length;
     await setup(p, host, raw); const edits = [{ from: offset(20) + 4, to: offset(20) + 4, insert: "XYZ" }, { from: offset(30), to: offset(30), insert: "inserted\r\n".repeat(5) }, { from: offset(80), to: offset(87), insert: "" }];
@@ -29,6 +29,18 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     const tops = await p.locator('.st-comparison-panes .st-viewport-row').filter({ hasText: "row 000400:" }).evaluateAll(nodes => nodes.map(n => n.getBoundingClientRect().top)); expect(Math.abs(tops[0]! - tops[1]!)).toBeLessThan(1);
     await scroll(p, 31); expect(await panes(p).first().locator(".st-comparison-padding").count()).toBeGreaterThan(0);
     expect(await panes(p).first().locator(".st-comparison-padding").evaluateAll(nodes => nodes.every(n => n.getAttribute("aria-hidden") === "true" && n.textContent === ""))).toBe(true);
+    for (const pane of await panes(p).all()) {
+        const alignedNumbers = await pane.evaluate(node => {
+            const rows = new Map([...node.querySelectorAll<HTMLElement>(".st-viewport-row")]
+                .map(row => [Number(row.dataset.line) + 1, row.getBoundingClientRect().top]));
+            const numbers = [...node.querySelectorAll(".st-line-numbers span")];
+            return rows.size === numbers.length && numbers.every(number => {
+                const top = rows.get(Number(number.textContent));
+                return top !== undefined && Math.abs(top - number.getBoundingClientRect().top) < 1;
+            });
+        });
+        expect(alignedNumbers).toBe(true);
+    }
     // Arrows cross a working-side padding block without creating a phantom caret.
     const from = working.indexOf("row 000079") + 4, next = working.indexOf("row 000087") + 4; await sourceSet(p, [{ anchor: from, head: from }]);
     await input(p).press("ArrowDown"); await waitForReview(p); expect((await snapshot(p)).bindings.comparison!.selection.head).toBe(next);

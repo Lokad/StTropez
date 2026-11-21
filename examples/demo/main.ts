@@ -41,7 +41,6 @@ let stopReference: (() => void) | undefined;
 let stopReferenceFolding: (() => void) | undefined;
 let folding: FoldingController | undefined, referenceFolding: FoldingController | undefined, stopFolding: (() => void) | undefined;
 let viewListeners: AbortController | undefined;
-let stopRender: (() => void) | undefined;
 let reviewLabel: HTMLSpanElement | undefined;
 let hostIntegrations: ReturnType<typeof mountHostIntegrations> | undefined;
 const hostLanguage = () => project?.sample.id === "outline" || project?.sample.id === "host";
@@ -86,18 +85,6 @@ function renderOutput(): void {
         note.textContent = presentation.status === "failed" ? "JavaScript output is unavailable. Use Retry to restart analysis. Your source is still editable."
             : "Updating JavaScript…"; host.replaceChildren(note);
     }
-}
-function renderGutter(): void {
-    if (!editor || panel === "changes") return;
-    const viewport = editor.viewport.snapshot(), gutter = element("gutter");
-    const spans: HTMLSpanElement[] = [], index = editor.view.folding.getSnapshot().index;
-    if (viewport.firstLine < 0 || viewport.lastLine > index.lineCount || viewport.lastLine <= viewport.firstLine) { gutter.replaceChildren(); return; }
-    for (let row = index.rowAt(viewport.firstLine), last = index.rowAt(viewport.lastLine - 1); row <= last; row++) {
-        const line = index.lineAt(row);
-        const number = document.createElement("span"); number.textContent = String(line + 1);
-        number.style.top = `${12 + row * viewport.lineHeight - viewport.scrollTop}px`; spans.push(number);
-    }
-    gutter.replaceChildren(...spans);
 }
 function renderProblems(): void {
     if (!project || panel !== "problems") return;
@@ -243,7 +230,6 @@ function detachView(): void {
     detachLanguage();
     stopView?.(); stopView = undefined; stopFind?.(); stopFind = undefined;
     viewListeners?.abort(); viewListeners = undefined;
-    stopRender?.(); stopRender = undefined;
     find?.dispose(); find = undefined; syntaxLayer = undefined; diagnosticsLayer = undefined; paintedDiagnostics = undefined;
     if (comparison) comparison.dispose(); else editor?.dispose();
     comparison = undefined; editor = undefined; reviewLabel = undefined;
@@ -328,7 +314,6 @@ function mountFile(file: DemoFile, focus = false): void {
     folding = mountDemoFolding(project, editor, () => editingConfiguration().tabSize!);
     stopFolding = foldMenu.bind(editor, folding, comparison ? "Your changes" : "Source");
     viewListeners = new AbortController();
-    stopRender = editor.viewport.onRender(renderGutter);
     editor.input.addEventListener("compositionstart", renderMetadata, { signal: viewListeners.signal });
     editor.input.addEventListener("compositionend", renderMetadata, { signal: viewListeners.signal });
     editor.element.addEventListener("keydown", event => {

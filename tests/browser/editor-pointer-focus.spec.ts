@@ -45,6 +45,27 @@ test("double and triple click drags extend by whole words and lines in both dire
     await page.keyboard.type("X"); await expect(page.locator("#primary .st-viewport-row")).toHaveText(["Xlast"]);
 });
 
+test("gutter selects complete source lines, extends backwards and scrolls with the editor", async ({ page }) => {
+    await page.goto("/editing/");
+    await page.evaluate(() => window.editingFixture.setText("first\r\n\r\nthird\r\nlast\r\n" + "more\r\n".repeat(90)));
+    await ready(page);
+    const root = page.locator("#primary .st-editor"), numbers = root.locator(".st-line-numbers span");
+    const input = page.getByRole("textbox", { name: "Primary source", exact: true });
+    const selection = () => page.evaluate(() => window.editingFixture.selectionSet().ranges[0]);
+    const number = (value: string) => numbers.filter({ hasText: new RegExp("^" + value + "$") });
+    await number("2").click();
+    expect(await selection()).toMatchObject({ anchor: 7, head: 9 });
+    await expect(input).toBeFocused();
+    await number("4").click({ modifiers: ["Shift"] });
+    expect(await selection()).toMatchObject({ anchor: 7, head: 22 });
+    await number("3").hover(); await page.mouse.down(); await number("1").hover(); await page.mouse.up();
+    expect(await selection()).toMatchObject({ anchor: 16, head: 0 });
+    await page.keyboard.type("X"); await expect(root.locator('.st-viewport-row[data-line="0"]')).toHaveText("Xlast");
+    await number("1").hover(); await page.mouse.wheel(0, 300);
+    await expect.poll(() => root.evaluate(node => node.scrollTop)).toBeGreaterThan(0);
+    await expect(input).toBeFocused();
+});
+
 test("Alt-click removes a caret or selection and leaves the last caret ready to type", async ({ page }) => {
     await page.goto("/editing/"); await page.evaluate(() => {
         const f = window.editingFixture; f.setText("abc\ndef\nghi");

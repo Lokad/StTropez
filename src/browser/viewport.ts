@@ -34,11 +34,11 @@ export type ViewportActivity = Readonly<{ revision: number | null; selectionSet:
     aligned: boolean; alignmentId: number | null; rowGeneration: number; pending: boolean; disposed: boolean }>;
 export type ViewportSnapshot = ViewportActivity & Readonly<{ selection: Selection | null; renders: number; firstLine: number; lastLine: number;
     visibleLines: number; collapsedFolds: number; visualRows: number; paddingRows: number; naturalLineHeight: number;
-    rows: number; partialRows: number; textUnits: number; readUnits: number; navigationReadUnits: number; navigationRows: number; navigationBatches: number; navigationPreparedRows: number; maxNavigationBatchRows: number; lastRenderMs: number; scrollTop: number; scrollLeft: number; width: number; height: number;
+    rows: number; partialRows: number; textUnits: number; readUnits: number; navigationReadUnits: number; navigationRows: number; navigationBatches: number; navigationPreparedRows: number; maxNavigationBatchRows: number; lastRenderMs: number; scrollTop: number; scrollLeft: number; width: number; height: number; gutterWidth: number;
     lineHeight: number; columnWidth: number; verticalExtent: number; horizontalExtent: number;
     physicalHeight: number; physicalWidth: number }>;
 export type ViewportInputBinding = Readonly<{ setComposing: (active: boolean) => boolean;
-    setTabEscape: (active: boolean) => boolean; dispose: () => void }>;
+    dispose: () => void }>;
 
 type ViewportNavigation = Readonly<{
     visualRowAt: (line: number) => number;
@@ -52,7 +52,7 @@ type ViewportNavigation = Readonly<{
 export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentView; decorations: DecorationLayers;
     /** Observe completed paints and consumed scheduled renders, including unchanged paints. */
     onRender: (listener: () => void) => () => void;
-    /** One input owner controls composition, fold tab stops and source-focus recovery. */
+    /** One input owner controls composition and source-focus recovery. */
     bindInput: (focus: () => void) => ViewportInputBinding;
     settings: () => ViewportSettings;
     configure: (changes: Partial<ViewportSettings>) => boolean;
@@ -149,13 +149,16 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     spacer.className = "st-viewport-spacer"; spacer.setAttribute("aria-hidden", "true");
     layer.className = "st-viewport-layer"; probe.className = "st-viewport-measure"; probe.textContent = "M".repeat(64); probe.setAttribute("aria-hidden", "true");
     probeHost.className = "st-viewport-measure-host"; probeHost.setAttribute("aria-hidden", "true"); probeHost.append(probe);
+    const gutter = owner.createElement("div"), numbers = owner.createElement("div"), lineNumbers = new Map<number, HTMLSpanElement>();
+    gutter.className = "st-viewport-gutter"; numbers.className = "st-line-numbers"; numbers.setAttribute("aria-hidden", "true");
+    gutter.append(numbers, foldLayer);
     foldLayer.className = "st-fold-controls"; const foldButtons = new Map<string, HTMLButtonElement>();
-    root.append(spacer, layer, probeHost, foldLayer); host.append(root);
+    root.append(spacer, layer, probeHost, gutter); host.append(root);
     const listeners = new AbortController(), padding = viewportPadding;
     // A private platform target preserves listener removal, reentrancy and error reporting
     // without routing editor coordination through the presentation DOM or model write guard.
     const events = new win.EventTarget(), observationStops = new Set<() => void>();
-    let inputOwner: { composing: boolean; tabEscaped: boolean; detach: () => void } | undefined;
+    let inputOwner: { composing: boolean; detach: () => void } | undefined;
     const observe = (type: "render" | "focus", listener: () => void): (() => void) => {
         if (disposed || !live()) return () => {};
         const invoke = () => { if (!disposed && live()) listener(); };
@@ -185,7 +188,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         // reveal ownership until two paint opportunities pass without another native delta.
         revealSettling = win.requestAnimationFrame(() => { revealSettling = win.requestAnimationFrame(releaseScrollbar); });
     }
-    let top = 0, left = 0, width = 0, height = 0, lineHeight = 22.4, columnWidth = 8.4;
+    let top = 0, left = 0, width = 0, height = 0, gutterWidth = 0, lineHeight = 22.4, columnWidth = 8.4;
     let x = scrollAxis(0, 0), y = scrollAxis(0, 0), renderedRevision: number | null = null, renderedIndex: RowIndex = view.folding.getSnapshot().index, renderedFoldGeneration = -1, observedFoldRevision = view.folding.getSnapshot().revision;
     let comparisonRows: ViewportComparisonRows | undefined, rowGeneration = 0, renderedAlignmentId: number | null = null, naturalLineHeight = lineHeight;
     let renderedSelection: Selection | null = null;
@@ -449,7 +452,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     function withRow<T>(line: number, scrollLeft: number, offset: number | undefined, complete: boolean, work: (row: MeasuredRow) => T): T | undefined {
         const document = workspace.observeDocument(documentId).getSnapshot();
         if (disposed || !live() || document?.revision !== renderedRevision) return;
-        const existing = rows.get(line), rectangle = clientBox(root);
+        const existing = rows.get(line), rectangle = clientBox(root, false, gutterWidth);
         if (existing && (existing.dataset.complete === "true" || !complete && scrollLeft === left
             && (offset === undefined || offset >= Number(existing.dataset.from) && offset <= Number(existing.dataset.to)))) {
             const value = geometry(existing);
@@ -481,7 +484,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const started = win.performance.now();
         // Read container metrics before writing rows; bounded shaping reads follow the writes.
         const clientWidth = root.clientWidth, mapWidth = minimap ? minimapWidth(clientWidth) : 0;
-        width = clientWidth - mapWidth; height = root.clientHeight;
+        height = root.clientHeight;
         const zoom = cssZoom(root);
         columnWidth = probe.getBoundingClientRect().width / zoom / 64 || 8.4;
         const style = win.getComputedStyle(root); naturalLineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.6; lineHeight = naturalLineHeight;
@@ -490,7 +493,11 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             style.fontFeatureSettings, style.fontVariationSettings, style.textAlign, style.textTransform, style.textIndent].join("|");
         if (font !== measuredFont) { measuredWidth = 0; measuredFont = font; }
         const document = live() ? workspace.observeDocument(documentId).getSnapshot() : undefined;
+        // Reserve space by document line count. Scrolling and folding keep the text origin fixed.
+        gutterWidth = document ? Math.min(Math.floor(clientWidth / 3), Math.ceil(columnWidth * String(document.buffer.lineCount).length) + 26) : 0;
+        width = clientWidth - mapWidth - gutterWidth;
         if (!document) {
+            lineNumbers.clear(); numbers.replaceChildren(); gutter.style.width = "0px";
             dirtyRows.clear(); visibleItems = [];
             minimap?.dispose(); minimap = undefined;
             rulers.clear();
@@ -529,7 +536,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         y = scrollAxis(index.visibleLineCount * lineHeight + padding * 2 + trailingSpace, height);
         // A measured label can widen the spacer without introducing a scrollbar. Only a
         // change in scroll range or viewport size affects which source fragments to paint.
-        const nextWidth = Math.min(x.extent, x.physicalExtent) + mapWidth;
+        const nextWidth = Math.min(x.extent, x.physicalExtent) + mapWidth + gutterWidth;
         if (nextWidth !== spacerWidth) { spacerWidth = nextWidth; spacer.style.width = `${spacerWidth}px`; }
         top = position(y, top); left = position(x, left);
         minimap?.paint(document, index, mapWidth, height, top, y.extent, lineHeight, padding, style.color,
@@ -538,8 +545,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         rulers.paint(settings.columnRulers, columnWidth, left, width);
         const { selection: selected, selectionSet } = view.getSnapshot();
         const key = [document.revision, selectionSet, folds.generation, rowGeneration, comparisonRows?.id,
-            top, left, width, height, zoom, columnWidth, naturalLineHeight, lineHeight, font, x.maximum, y.extent, paintEpoch, settings.highlightCurrentLine,
-            inputOwner?.composing ?? false, inputOwner?.tabEscaped ?? false];
+            top, left, width, height, gutterWidth, zoom, columnWidth, naturalLineHeight, lineHeight, font, x.maximum, y.extent, paintEpoch, settings.highlightCurrentLine,
+            inputOwner?.composing ?? false];
         if (!requested && painted && painted.horizontalAnchor === horizontalAnchor && painted.placement === fragmentPlacement
             && key.every((value, index) => value === painted!.key[index])
             && Math.abs(root.scrollTop - y.toPhysical(top)) <= 1 && Math.abs(root.scrollLeft - x.toPhysical(left)) <= 1) {
@@ -582,8 +589,10 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const physicalLeft = x.toPhysical(left), physicalTop = y.toPhysical(top);
         if (requested && scrollbarPressed) settleScrollbarReveal();
         root.scrollLeft = physicalLeft; root.scrollTop = physicalTop;
-        layer.style.width = mapWidth ? `calc(100% - ${mapWidth}px)` : "100%"; layer.style.height = "100%";
-        layer.style.transform = `translate(${physicalLeft}px, ${physicalTop}px)`;
+        layer.style.width = `calc(100% - ${mapWidth + gutterWidth}px)`; layer.style.height = "100%";
+        layer.style.transform = `translate(${physicalLeft + gutterWidth}px, ${physicalTop}px)`;
+        gutter.style.transform = `translate(${physicalLeft}px, ${physicalTop}px)`;
+        gutter.style.width = `${gutterWidth}px`; gutter.style.height = `${height}px`;
         const highlightedTop = highlightedLine === undefined ? undefined : padding + index.rowAt(highlightedLine) * lineHeight - top;
         if (highlightedTop === undefined || highlightedTop + lineHeight <= 0 || highlightedTop >= height) clearCurrentLine();
         else {
@@ -621,6 +630,13 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         renderedRevision = document.revision; rowSourceRevision = document.revision; renderedSelection = selected; renderedSelectionSet = selectionSet; previous = document; renderedIndex = index; renderedFoldGeneration = folds.generation; renderedAlignmentId = comparisonRows?.id ?? null; renders++;
         const visibleFolds = new Set<string>(), orderedButtons: HTMLButtonElement[] = [];
         for (const item of next) {
+            const rowTop = padding + index.rowAt(item.line) * lineHeight - top;
+            let number = lineNumbers.get(item.line);
+            if (!number) {
+                number = owner.createElement("span"); number.textContent = String(item.line + 1);
+                lineNumbers.set(item.line, number); numbers.append(number);
+            }
+            number.style.top = `${rowTop}px`; number.style.lineHeight = `${lineHeight}px`;
             const region = index.headerAt(item.line); if (!region) continue; visibleFolds.add(region.id);
             let button = foldButtons.get(region.id);
             if (!button) {
@@ -637,9 +653,10 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             // Replacing even identical text during a pointer press cancels WebKit's native click.
             const arrow = region.collapsed ? "▸" : "▾"; if (button.textContent !== arrow) button.textContent = arrow;
             button.disabled = inputOwner?.composing ?? false;
-            button.tabIndex = inputOwner?.tabEscaped ? -1 : 0;
-            button.style.left = `${physicalLeft + 1}px`; button.style.top = `${physicalTop + padding + index.rowAt(item.line) * lineHeight - top}px`; button.style.height = `${lineHeight}px`;
+            button.tabIndex = -1;
+            button.style.top = `${rowTop}px`; button.style.height = `${lineHeight}px`;
         }
+        for (const [line, number] of lineNumbers) if (!rows.has(line)) { number.remove(); lineNumbers.delete(line); }
         for (const [id, button] of foldButtons) if (!visibleFolds.has(id)) {
             const focused = isFocused(button); button.remove(); foldButtons.delete(id);
             if (focused) notify("focus");
@@ -656,7 +673,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         if (measured > measuredWidth + .01) { measuredWidth = measured; if (measuredWidth + padding * 2 > x.extent + .01) schedule(); }
         const requestedRow = requested?.revision === document.revision ? rows.get(document.buffer.lineAt(requested.offset)) : undefined;
         if (requestedRow?.dataset.complete === "false") {
-            const caret = coordinates(requested!.offset, requested!.affinity), rectangle = clientBox(root);
+            const caret = coordinates(requested!.offset, requested!.affinity), rectangle = clientBox(root, false, gutterWidth);
             if (caret) {
                 const actual = (caret.left - rectangle.left) / rectangle.zoom, desired = requested!.horizontal === "center" ? width / 2 : horizontalPosition(actual);
                 if (Math.abs(desired - actual) > 1) horizontalAnchor = { revision: document.revision, offset: requested!.offset, affinity: requested!.affinity, left: desired };
@@ -667,7 +684,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         if (horizontalAnchor?.revision === document.revision) {
             const at = horizontalAnchor, line = document.buffer.lineAt(at.offset), item = next.find(item => item.line === line), element = rows.get(line);
             if (item && !item.complete && element && at.offset >= item.from && at.offset <= item.to) {
-                const caret = coordinates(at.offset, at.affinity), rectangle = clientBox(root);
+                const caret = coordinates(at.offset, at.affinity), rectangle = clientBox(root, false, gutterWidth);
                 if (caret) {
                     const desired = horizontalPosition(at.left), delta = desired - (caret.left - rectangle.left) / rectangle.zoom;
                     if (Math.abs(delta) > 1) {
@@ -679,7 +696,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
                 }
             }
         } else if (requested?.revision === document.revision && requestedRow?.dataset.complete === "true") {
-            const caret = coordinates(requested.offset, requested.affinity), rectangle = clientBox(root);
+            const caret = coordinates(requested.offset, requested.affinity), rectangle = clientBox(root, false, gutterWidth);
             if (caret) {
                 const actual = (caret.left - rectangle.left) / rectangle.zoom + left;
                 const desired = requested.horizontal === "nearest" ? expose(actual, 1, left, width) : Math.max(0, actual - width / 2);
@@ -774,20 +791,20 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         onRender: listener => observe("render", listener),
         bindInput: focus => {
             if (disposed || !live() || inputOwner) throw new Error("Viewport requires one current input owner.");
-            const binding = { composing: false, tabEscaped: false, detach: observe("focus", focus) };
+            const binding = { composing: false, detach: observe("focus", focus) };
             inputOwner = binding; root.tabIndex = -1; layer.setAttribute("aria-hidden", "true");
-            const update = (key: "composing" | "tabEscaped", value: boolean): boolean => {
-                if (disposed || inputOwner !== binding || !live() || binding[key] === value) return false;
-                binding[key] = value;
-                if (key === "composing") { root.classList.toggle("st-composing", value); invalidate(); }
-                for (const button of foldButtons.values()) { button.disabled = binding.composing; button.tabIndex = binding.tabEscaped ? -1 : 0; }
+            const setComposing = (value: boolean): boolean => {
+                if (disposed || inputOwner !== binding || !live() || binding.composing === value) return false;
+                binding.composing = value;
+                root.classList.toggle("st-composing", value); invalidate();
+                for (const button of foldButtons.values()) button.disabled = value;
                 return true;
             };
-            return Object.freeze({ setComposing: (active: boolean) => update("composing", active), setTabEscape: (active: boolean) => update("tabEscaped", active),
+            return Object.freeze({ setComposing,
                 dispose: () => {
                     if (inputOwner !== binding) return; binding.detach(); inputOwner = undefined;
                     root.classList.remove("st-composing"); root.tabIndex = 0; layer.removeAttribute("aria-hidden");
-                    for (const button of foldButtons.values()) { button.disabled = false; button.tabIndex = 0; }
+                    for (const button of foldButtons.values()) button.disabled = false;
                     if (!disposed) invalidate();
                 } });
         },
@@ -821,7 +838,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         hitTest: (clientX: number, clientY: number) => {
             if (!Number.isFinite(clientX) || !Number.isFinite(clientY) || disposed || !live()
                 || workspace.observeDocument(documentId).getSnapshot()?.revision !== renderedRevision) return undefined;
-            const rectangle = clientBox(root, !!minimap);
+            const rectangle = clientBox(root, !!minimap, gutterWidth);
             if (minimap && clientX >= rectangle.right) return undefined;
             const at = Math.max(0, Math.min(renderedIndex.visibleLineCount - 1, Math.floor(((clientY - rectangle.top) / rectangle.zoom + top - padding) / lineHeight))), gap = gapAt(renderedIndex, at);
             if (gap) return Object.freeze({ offset: gap.offset, affinity: "after", left: rectangle.left + (padding - left) * rectangle.zoom, top: rectangle.top + (padding + at * lineHeight - top) * rectangle.zoom, height: lineHeight * rectangle.zoom, revision: renderedRevision!, padding: true });
@@ -872,7 +889,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             reveal = { revision: document.revision, foldGeneration: view.folding.getSnapshot().generation, offset, horizontal, vertical, affinity }; schedule();
         },
         snapshot: () => Object.freeze({ ...activity(), selection: renderedSelection, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, visibleLines: previous ? view.folding.getSnapshot().index.visibleLineCount : 0, collapsedFolds: previous ? renderedIndex.collapsedCount : 0, visualRows: previous ? renderedIndex.visibleLineCount : 0, paddingRows: paddingRows.size, naturalLineHeight, navigationReadUnits, navigationRows, navigationBatches, navigationPreparedRows: preparedRows?.rows.size ?? 0, maxNavigationBatchRows, lastRenderMs,
-            scrollTop: top, scrollLeft: left, width, height, lineHeight, columnWidth, verticalExtent: y.extent, horizontalExtent: x.extent,
+            scrollTop: top, scrollLeft: left, width, height, gutterWidth, lineHeight, columnWidth, verticalExtent: y.extent, horizontalExtent: x.extent,
             physicalHeight: y.physicalExtent, physicalWidth: x.physicalExtent }),
         dispose: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
@@ -885,7 +902,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); rowSources.clear(); rowSourceRevision = null; paddingRows.clear(); comparisonRows = undefined; renderedAlignmentId = null; geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             painted = undefined; commandGeometry = undefined; commandRow.replaceChildren(); commandMeasure.remove(); clearPreparedRows();
             navigationBatches = 0; maxNavigationBatchRows = 0;
-            renderedIndex = emptyIndex; renderedFoldGeneration = -1; foldButtons.clear(); foldLayer.replaceChildren();
+            renderedIndex = emptyIndex; renderedFoldGeneration = -1; lineNumbers.clear(); numbers.replaceChildren(); foldButtons.clear(); foldLayer.replaceChildren();
             renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; navigationReadUnits = 0; navigationRows = 0; layer.replaceChildren(); root.replaceChildren(); root.remove();
             if (!options.view) view.dispose();
         }
@@ -907,7 +924,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             if (disposed || !live()) return;
             const document = workspace.observeDocument(documentId).getSnapshot();
             if (document?.revision !== renderedRevision || view.folding.getSnapshot().generation !== renderedFoldGeneration) return;
-            const visible = coordinates(offset, affinity), rectangle = clientBox(root);
+            const visible = coordinates(offset, affinity), rectangle = clientBox(root, false, gutterWidth);
             if (visible) return (visible.left - rectangle.left) / rectangle.zoom + left;
             const originalLine = document.buffer.lineAt(offset), hidden = renderedIndex.hiddenBy(originalLine), line = hidden?.lineFrom ?? originalLine;
             const projected = hidden ? row(document.buffer, line).to : offset, scroll = Math.max(0, padding + (projected - document.buffer.offsetAt(line)) * columnWidth - width / 2);

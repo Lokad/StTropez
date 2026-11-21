@@ -127,6 +127,11 @@ from either editable view. [Shared history and save boundaries](workspace.md#tra
 
 ### Keyboard and pointer commands
 
+Click a line number to select the line and its line break. Drag across numbers to select several
+lines, or Shift+click a number to extend to that line. The editor keeps keyboard focus. The
+gutter scrolls with the wheel and stays in place horizontally. Both comparison panes use their
+own source line numbers. Alignment gaps have no number.
+
 Ctrl/Cmd means either Control or Meta, without Alt. The word modifier is Control, or Option
 on Apple platforms. Shift extends movement from each selection's anchor.
 

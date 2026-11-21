@@ -215,7 +215,8 @@ export async function runDemoFolding(page: Page, url = "/") {
     await page.locator("#code-menu summary").click(); await page.locator("#fold-group").selectOption("regions"); await page.locator("#fold-group-collapse").click();
     await expect(page.locator('#editor .st-fold-button[aria-expanded="false"]')).toHaveCount(1);
     await expect(page.locator('#editor .st-viewport-row[data-line="8"]')).toHaveCount(0);
-    expect(await page.locator("#gutter span").allTextContents()).toEqual(await page.locator("#editor .st-viewport-row").evaluateAll(rows => rows.map(row => String(Number((row as HTMLElement).dataset.line) + 1))));
+    expect((await page.locator("#editor .st-line-numbers span").allTextContents()).map(Number).sort((a, b) => a - b))
+        .toEqual(await page.locator("#editor .st-viewport-row").evaluateAll(rows => rows.map(row => Number((row as HTMLElement).dataset.line) + 1).sort((a, b) => a - b)));
     await page.locator("#find-toggle").click(); await page.locator("#find-query").fill("validate");
     await expect(page.locator("#find-status")).toHaveText("1 matches"); await page.locator("#find-next").click(); await page.locator("#find-close").click();
     await expect(page.locator('#editor .st-viewport-row[data-line="8"]')).toContainText("validate");

@@ -136,6 +136,8 @@ Read the viewport snapshot for the available text width. Scroll in local CSS uni
 host control, set the captured view’s selection and call `revealOffset`. The [editor](editor.md)
 handles keyboard movement, preferred columns and temporary measurement batches.
 
+`snapshot().width` measures the text area. `gutterWidth` measures the fixed strip for line numbers and fold controls, in CSS pixels. The gutter omits folded lines and comparison padding rows.
+
 Check `activity()` for the painted revision, selections, fold/alignment IDs, row generation, pending
 frame and disposal. The immutable `ViewportActivity` is cached and reads no layout. Even with
 `pending: false`, compare the painted state with the model and view. Call `flush()` to paint pending
@@ -155,11 +157,10 @@ If you write your own input adapter, call `bindInput(focus)` once per viewport f
 when the viewport itself receives focus, after a pointer fold toggle, on Escape from a fold button,
 or when a focused fold control disappears. Binding removes the viewport root from the tab
 order and hides its duplicate text from semantic navigation. `setComposing(boolean)` updates
-composition styling and guards fold clicks. `setTabEscape(boolean)` controls tab stops on current and
-future fold buttons. Changing DOM classes or attributes cannot claim the binding.
+composition styling and guards fold clicks. Fold controls stay outside the Tab order.
 
-The setters return whether they changed the live binding. Call `dispose()` to restore tab stops and
-clear composition styling. An expired binding’s setters return `false`, even after a new adapter
+`setComposing` returns whether it changed the live binding. Call `dispose()` to restore the viewport’s tab stop and
+clear composition styling. An expired binding returns `false` from `setComposing`, even after a new adapter
 binds. Binding twice, or binding a destroyed or replaced viewport, throws. The viewport drops its
 focus callback and render listeners on disposal. If the focus callback detaches the mount, rendering
 stops there.

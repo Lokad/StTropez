@@ -400,7 +400,7 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
         return { defaults, columns: captured, frozen: Object.isFrozen(captured), invalid, preservedPolicy: captured === viewport.settings().columnRulers, noRowReads, noOp,
             point, afterPoint: viewport.coordsAt(20), sameChild: child === row.firstChild, text: row.textContent,
             guideError: Math.abs(guide.getBoundingClientRect().left - native.left), nativeLeft: native.left, guideLeft: guide.getBoundingClientRect().left,
-            placementError: Math.abs(guide.getBoundingClientRect().left - viewport.element.getBoundingClientRect().left - 12 - 20 * after.columnWidth), plain, after,
+            placementError: Math.abs(guide.getBoundingClientRect().left - viewport.element.getBoundingClientRect().left - after.gutterWidth - 12 - 20 * after.columnWidth), plain, after,
             pointer: getComputedStyle(guide).pointerEvents,
             visible: host.querySelectorAll(".st-column-ruler").length, plainExtent,
             afterExtent: [after.horizontalExtent, after.verticalExtent, viewport.element.scrollWidth, viewport.element.scrollHeight],
@@ -483,7 +483,7 @@ test("current-line presentation follows the primary caret through input, folding
         viewport.configure({ highlightCurrentLine: true });
         return { defaults, enabled, noOpPending: viewport.activity().pending, samePoint: JSON.stringify(point) === JSON.stringify(viewport.coordsAt(1)),
             sameChild: row.firstChild === child, className: row.className, background: getComputedStyle(row).backgroundColor, color: getComputedStyle(child as HTMLElement).color,
-            width: background.getBoundingClientRect().width, viewportWidth: viewport.element.clientWidth, extent,
+            width: background.getBoundingClientRect().width, viewportWidth: viewport.element.clientWidth - viewport.snapshot().gutterWidth, extent,
             nextExtent: [viewport.element.scrollWidth, viewport.element.scrollHeight] };
     });
     expect(initial).toMatchObject({ defaults: false, enabled: true, noOpPending: false, samePoint: true, sameChild: true,

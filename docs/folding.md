@@ -152,8 +152,8 @@ shows the header and preserves hidden selection endpoints. Busy or unavailable v
 command.
 
 A collapsed logical caret paints at its header. Arrow/Page traversal skips hidden rows.
-Explicit selection, typing, Find and reveal expand hidden targets. Disclosure buttons toggle
-with Enter or Space and keep keyboard focus. Clicking a disclosure returns focus to the editor input,
+Explicit selection, typing, Find and reveal expand hidden targets. Fold buttons stay outside the Tab order. A focused button toggles
+with Enter or Space and keeps keyboard focus. Clicking a disclosure returns focus to the editor input,
 as does pressing Escape on the button. Buttons capture tab, revision and fold
 generation. For the `imports` group the button reads **Collapse imports** or **Expand imports**.
 Inline hidden-line counts add no source text, clipboard data or caret offsets.

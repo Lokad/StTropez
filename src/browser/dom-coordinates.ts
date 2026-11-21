@@ -16,9 +16,9 @@ export function minimapWidth(clientWidth: number): number {
     return Math.min(112, Math.floor(clientWidth * .18));
 }
 
-export function clientBox(element: HTMLElement, minimap = false) {
+export function clientBox(element: HTMLElement, minimap = false, gutter = 0) {
     const zoom = cssZoom(element), rectangle = element.getBoundingClientRect();
     const left = rectangle.left + element.clientLeft * zoom, top = rectangle.top + element.clientTop * zoom;
     const width = element.clientWidth;
-    return { left, top, right: left + (minimap ? width - minimapWidth(width) : width) * zoom, bottom: top + element.clientHeight * zoom, zoom };
+    return { left: left + gutter * zoom, top, right: left + (minimap ? width - minimapWidth(width) : width) * zoom, bottom: top + element.clientHeight * zoom, zoom };
 }

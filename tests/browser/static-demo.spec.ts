@@ -415,7 +415,7 @@ test("large browser-only sample keeps scroll content, editing/history and langua
         const row = [...root.querySelectorAll<HTMLElement>(".st-viewport-row")].find(row => {
             const at = row.getBoundingClientRect(); return at.top >= box.top && at.bottom <= box.bottom;
         });
-        const line = Number(row?.dataset.line), gutter = [...document.querySelectorAll("#gutter span")];
+        const line = Number(row?.dataset.line), gutter = [...document.querySelectorAll("#editor .st-line-numbers span")];
         return line > 40000 && line < 60000 && row?.textContent === `// Row ${line + 1}: try editing or searching here.`
             && gutter.some(number => number.textContent === String(line + 1) && Math.abs(number.getBoundingClientRect().top - row!.getBoundingClientRect().top) < 1);
     })).toBe(true);

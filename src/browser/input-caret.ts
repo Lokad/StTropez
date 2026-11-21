@@ -23,7 +23,7 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
         let rectangle = clientBox(root, viewport.settings().minimap);
         const currentDocument = readDocument();
         let state = viewport.snapshot(), point = viewport.coordsAt(selected.head, selected.headAffinity);
-        let visible = point && point.left >= rectangle.left && point.left < rectangle.right
+        let visible = point && point.left >= rectangle.left + state.gutterWidth * rectangle.zoom && point.left < rectangle.right
             && point.top + point.height > rectangle.top && point.top < rectangle.bottom;
         const prior = caretLayout;
         // Reuse bounded reveal after layout changes hide a previously visible focused head.
@@ -39,7 +39,7 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
             viewport.flush();
             rectangle = clientBox(root, viewport.settings().minimap);
             state = viewport.snapshot(); point = viewport.coordsAt(selected.head, selected.headAffinity);
-            visible = point && point.left >= rectangle.left && point.left < rectangle.right && point.top + point.height > rectangle.top && point.top < rectangle.bottom;
+            visible = point && point.left >= rectangle.left + state.gutterWidth * rectangle.zoom && point.left < rectangle.right && point.top + point.height > rectangle.top && point.top < rectangle.bottom;
         }
         // DOM layout can advance before ResizeObserver queues a render. Retain the last valid
         // placement until measured metrics arrive, then attempt reveal once even if no point exists.
@@ -57,7 +57,7 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
                 if (index === selectionSet.primary || range.anchor !== range.head) continue;
                 if (view.folding.getSnapshot().index.hiddenBy(buffer.lineAt(range.head))) continue;
                 const at = viewport.coordsAt(range.head, range.headAffinity);
-                if (at && at.left >= rectangle.left && at.left < rectangle.right
+                if (at && at.left >= rectangle.left + state.gutterWidth * rectangle.zoom && at.left < rectangle.right
                     && at.top + at.height > rectangle.top && at.top < rectangle.bottom) points.push(at);
             }
         }
