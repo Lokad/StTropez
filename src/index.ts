@@ -36,6 +36,7 @@ export type { CharacterWarningKind, CharacterWarningOptions, CharacterWarningCon
 export { parseSnippet, offsetSnippetStops, planSnippetEdit, snippetChoiceText, planSnippetChoice } from "./core/snippets.ts";
 export type { Snippet, SnippetStop, SnippetOccurrence, SnippetParseResult, SnippetEditPlan } from "./core/snippets.ts";
 export { Workspace } from "./core/workspace.ts";
+export type { WorkspaceOperations } from "./core/workspace-operations.ts";
 export type { WorkspaceTabs } from "./core/workspace-tabs.ts";
 export type {
     BatchEditResult, Capabilities, ChangeResult, CloseIntent, CloseOperation, DocumentChange, DocumentId, DocumentSnapshot, DocumentView,

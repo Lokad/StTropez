@@ -76,7 +76,7 @@ export function createWorkspaceTabs(workspace: Workspace, scope: NotificationSco
             release(previous);
         },
         beginClose(id: TabId): CloseOperation {
-            const intent = captureClose(id), operation = workspace.beginOperation(intent.resource.id, `close:${id}`, intent.tab);
+            const intent = captureClose(id), operation = workspace.operations.begin(intent.resource.id, `close:${id}`, intent.tab);
             return Object.freeze({ ...operation, intent, complete: (decision: "keep-open" | "close") => {
                 try { return operation.isCurrent() && completeClose(intent, decision); }
                 finally { operation.finish(); }

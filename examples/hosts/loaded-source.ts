@@ -69,7 +69,7 @@ export class HostLoadedSource {
         if (this.loaded?.metadata.getSnapshot().dirty) {
             this.layout.error("Loaded source has unsaved changes. Reopen or explicitly discard it before starting another load."); return;
         }
-        const loaded = this.loaded ?? this.createResource(), target = this.layout.targetText(loaded.documentId), operation = this.workspace.beginLoad(loaded);
+        const loaded = this.loaded ?? this.createResource(), target = this.layout.targetText(loaded.documentId), operation = this.workspace.operations.beginLoad(loaded);
         this.layout.surface("loading");
         this.pendingLoad = () => {
             operation.accept({ value: "loaded resource", serverVersion: "loaded-v1" });

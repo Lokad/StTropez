@@ -1,4 +1,6 @@
-import { createWorkspaceTabs, surfaceResource } from "./workspace-tabs.ts";
+import { createWorkspaceOperations } from "./workspace-operations.ts";
+import type { WorkspaceOperations } from "./workspace-operations.ts";
+import { createWorkspaceTabs } from "./workspace-tabs.ts";
 import type { WorkspaceTabs } from "./workspace-tabs.ts";
 import type { TextEdit } from "./changes.ts";
 import { compactDocumentEdit, replacementSpan, textDifference } from "./changes.ts";
@@ -132,7 +134,7 @@ type ResourceRecord = {
     document: Store<DocumentSnapshot | undefined>; saved: SnapshotValue | undefined;
     buffer: TextBuffer | null; savedBuffer: TextBuffer | null; change: DocumentChange | null; history: Store<HistorySnapshot>;
     views: Map<ViewId, ViewRecord>;
-    leases: Set<symbol>; operations: Map<string | symbol, Operation>; nextOperation: number;
+    leases: Set<symbol>;
     saveReservations: number; reloadReservations: number; saving: symbol | null; editLease: EditLease | null;
 };
 const defaultCapabilities: Capabilities = Object.freeze({ edit: Object.freeze(["human", "agent", "host"] as const), save: true, run: true });
@@ -173,11 +175,15 @@ export class Workspace {
     private readonly deferredReleases = new Map<ResourceId, boolean>();
     private readonly queuedReleases = new Set<ResourceId>();
     private readonly documents = new Map<DocumentId, ResourceRecord>();
+    private requests?: WorkspaceOperations;
     private layout?: ReturnType<typeof createWorkspaceTabs>;
     private readonly state: Store<number>;
     private snapshot: WorkspaceSnapshot | undefined;
     readonly getSnapshot: () => WorkspaceSnapshot;
     readonly subscribe: (listener: () => void) => () => void;
+    get operations(): WorkspaceOperations {
+        return this.requests ??= createWorkspaceOperations(this, this.scope, handle => this.load(handle));
+    }
     get tabs(): WorkspaceTabs {
         this.layout ??= createWorkspaceTabs(this, this.scope, this.lifetime, changed => this.publish(changed), id => this.scheduleRelease(id));
         return this.layout.api;
@@ -253,7 +259,7 @@ export class Workspace {
         const record: ResourceRecord = { handle, documentId, state, metadata: meta,
             document: new Store<DocumentSnapshot | undefined>(undefined, this.scope), saved: buffer ? undefined : value,
             buffer, savedBuffer: buffer, change: null, history: new Store<HistorySnapshot>(this.history.snapshot(documentId ?? ""), this.scope), views: new Map(),
-            leases: new Set(), operations: new Map(), nextOperation: 0,
+            leases: new Set(),
             saveReservations: 0, reloadReservations: 0, saving: null, editLease: null };
         this.records.set(id, record); this.resourceKeys.add(identity); this.handles.set(handle, record);
         if (documentId !== null) this.documents.set(documentId, record);
@@ -536,39 +542,12 @@ export class Workspace {
         const record = this.requireResource(id);
         return Object.freeze({ leases: record.leases.size, saves: record.saveReservations, tabs: this.layout?.count(id) ?? 0 });
     }
-    beginOperation(id: ResourceId, lane: string | symbol, presentation?: TabTarget): Operation {
-        return this.operation(id, lane, presentation);
-    }
-    private operation(id: ResourceId, lane: string | symbol, presentation?: TabTarget): Operation {
-        this.scope.assertWritable();
-        if (presentation !== undefined) {
-            const tab = this.tabs.resolve(presentation);
-            if (!tab || surfaceResource(this, tab.surface) !== id) throw new Error("Operation presentation does not own this resource.");
-        }
-        const record = this.requireResource(id), lease = this.acquire(id);
-        record.operations.get(lane)?.cancel();
-        let cancelled = false, finished = false;
-        const target = this.captureResource(id);
-        const operation: Operation = Object.freeze({ target, revision: record.state.get().revision, generation: ++record.nextOperation,
-            isCurrent: () => !cancelled && !finished && record.operations.get(lane) === operation && this.records.get(id) === record,
-            isCancelled: () => cancelled,
-            presentationCurrent: () => operation.isCurrent() && (presentation === undefined || this.tabs.resolve(presentation) !== undefined),
-            cancel: () => { this.scope.assertWritable(); cancelled = true; },
-            finish: () => {
-                this.scope.assertWritable();
-                if (finished) return;
-                finished = true; lease.release();
-                if (record.operations.get(lane) === operation) record.operations.delete(lane);
-            } });
-        record.operations.set(lane, operation);
-        return operation;
-    }
-    beginLoad<T extends SnapshotValue>(handle: ResourceHandle<T>): LoadOperation<T> {
+    private load<T extends SnapshotValue>(handle: ResourceHandle<T>): LoadOperation<T> {
         this.scope.assertWritable();
         const record = this.handles.get(handle);
         if (!record || record.state.get().state === "released") throw new Error("Unknown resource.");
         if (record.metadata.get().dirty || record.saveReservations || record.editLease || record.reloadReservations) throw new Error("Cannot refresh local, locked or pending work.");
-        const operation = this.beginOperation(handle.id, "load");
+        const operation = this.operations.begin(handle.id, "load");
         const state = record.state.get();
         this.commitRecord(record, { state: "loading", revision: state.revision, metadata: { ...state.metadata, state: "loading", failure: null } });
         return Object.freeze({ ...operation, accept: (loaded: LoadedResource<T>) => {

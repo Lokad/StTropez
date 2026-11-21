@@ -97,7 +97,7 @@ export class HostSourceReview {
     readonly reviewSaveConflict = (expected: SaveConflict | null = this.conflictCell.get()): void => {
         if (this.disposed || expected !== this.conflictCell.get()) return;
         const conflict = this.conflictCell.get(); if (!conflict) return;
-        const presentation = this.ports.presentation(), operation = this.workspace.beginOperation(this.source.id, "save-conflict-review", presentation);
+        const presentation = this.ports.presentation(), operation = this.workspace.operations.begin(this.source.id, "save-conflict-review", presentation);
         this.conflictReads.push({ operation, presentation, conflictId: conflict.id, ...this.ports.server(),
             reference: this.referenceCell.get(), currentRequest: this.beginReferenceRequest() });
         this.conflictReference = undefined; this.conflictPresentation = undefined;

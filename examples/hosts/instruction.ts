@@ -101,7 +101,7 @@ export class TransferInstruction {
         if (this.disposed || !this.parsed || this.parsed.validation || !this.span) return; this.cancelCopy();
         const t = this.host.transfer.resource, s = t.getSnapshot(); if (s.state !== "ready" || !s.metadata.capabilities.edit.includes("human") || s.metadata.editLock !== null) return;
         const authority = () => { const m = t.metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }, stamp = authority(); let stale = false;
-        const operation = this.host.workspace.beginOperation(t.id, "instruction-copy"), sourceLease = this.host.workspace.acquire(this.host.source.id);
+        const operation = this.host.workspace.operations.begin(t.id, "instruction-copy"), sourceLease = this.host.workspace.acquire(this.host.source.id);
         this.copy = { operation, sourceLease, source: this.host.workspace.captureResource(this.host.source.id), revision: s.revision, version: s.metadata.serverVersion, authority: stamp,
             sourceRevision: this.revision, values: this.parsed.values, stale: () => stale, stop: t.subscribe(() => { if (authority() !== stamp) stale = true; }) };
         this.publish({ pendingCopy: true, message: "Instruction values captured. Finish the explicit copy into transfer settings." });

@@ -264,7 +264,7 @@ persists drafts separately from in-memory undo.
 
 ### Loading and resource lifetime
 
-Omitting an initial value creates a loading resource. `beginLoad(handle)` returns a guarded
+Omitting an initial value creates a loading resource. `workspace.operations.beginLoad(handle)` returns a guarded
 load; `accept({ value, serverVersion })` or `fail(message)` settles it. A newer load supersedes
 the earlier generation. Refresh is refused for dirty or locked content, reserved saves and
 leases acquired with `preventReload: true`.
@@ -292,7 +292,8 @@ Capabilities enforce local policy, not service authorization.
 
 ### Keep a delayed reply on the right tab
 
-Use `beginOperation(id, lane, presentation?)` before starting delayed work. It captures the resource
+`workspace.operations` supplies request and load tickets independently of the tab layout.
+Use `workspace.operations.begin(id, lane, presentation?)` before starting delayed work. It captures the resource
 identity, revision and generation and holds a lease. A new operation in that lane cancels the old one.
 Other lanes continue. After `await`, check `isCurrent` for ownership and cancellation, and compare the
 content revision yourself. To update a tab, also check `presentationCurrent` for its generation.
@@ -309,7 +310,7 @@ export async function computeForTab<T>(
     const tab = workspace.tabs.resolve(target);
     if (tab?.surface.kind !== "text") return false;
     const document = workspace.document(tab.surface.documentId);
-    const operation = workspace.beginOperation(document.resourceId, "analysis", target);
+    const operation = workspace.operations.begin(document.resourceId, "analysis", target);
     try {
         const result = await compute(document.buffer, operation.isCancelled);
         if (!operation.presentationCurrent() ||

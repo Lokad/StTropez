@@ -458,7 +458,7 @@ test("pending diagnostics map consecutive edits and undo without renewing provid
     await scope.flush(); await send([], scope.synchronized(binding)!.version);
     assert.equal(state.getSnapshot().status, "current"); assert.equal(state.getSnapshot().isCurrent(), true); assert.deepEqual(state.getSnapshot().result!.items, []);
     assert.equal(f.workspace.document(f.source.documentId).buffer.diagnostics().textExports, 0);
-    const beforeLoad = state.getSnapshot(), load = f.workspace.beginLoad(f.source);
+    const beforeLoad = state.getSnapshot(), load = f.workspace.operations.beginLoad(f.source);
     assert.equal(load.accept({ value: "replacement source" }), true); await scope.flush();
     assert.equal(beforeLoad.isPlacementCurrent(), false); assert.equal(state.getSnapshot().status, "expired"); assert.equal(state.getSnapshot().result, null);
 });

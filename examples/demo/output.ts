@@ -13,7 +13,7 @@ export function mountDemoOutput(host: HTMLElement, text: string, settings: Reado
         if (disposed || next === text) return;
         const state = viewport.captureView(), anchor = state.verticalAnchor;
         const line = anchor ? workspace.document(resource.documentId).buffer.lineAt(anchor.offset) : 0;
-        workspace.beginLoad(resource).accept({ value: next }); text = next;
+        workspace.operations.beginLoad(resource).accept({ value: next }); text = next;
         const current = workspace.document(resource.documentId);
         viewport.restoreView({ anchor: 0, head: 0, scrollTop: state.scrollTop, scrollLeft: state.scrollLeft,
             ...(anchor ? { verticalAnchor: { revision: current.revision,

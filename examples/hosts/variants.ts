@@ -63,7 +63,7 @@ export class ReviewVariants {
         const presentation = this.ports.presentation(), tab = this.workspace.tabs.resolve(presentation);
         if (tab?.surface.kind !== "text" || tab.surface.documentId !== this.source.documentId) return false;
         this.ports.present();
-        const operation = this.workspace.beginOperation(this.source.id, this.lane, presentation);
+        const operation = this.workspace.operations.begin(this.source.id, this.lane, presentation);
         this.loads.push({ operation, baseline: captureBaseline(baseline), choice, reference: this.ports.reference.getSnapshot(),
             currentRequest: this.ports.beginReferenceRequest() });
         this.cell.set({ ...this.cell.get(), generation: this.cell.get().generation + 1, choices: this.choices(), requested: choice, status: "loading", pending: this.loads.length,

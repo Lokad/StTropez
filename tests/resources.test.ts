@@ -138,18 +138,18 @@ test("a non-text panel traverses load failure, retry, ownership and release with
     const workspace = new Workspace();
     const form = workspace.createResource<{ path: string }>({ scope: "probe", resource: "form", variant: "working" }, "Form");
     const tab = workspace.tabs.open({ kind: "panel", resourceId: form.id, panelType: "form" }, "left");
-    const first = workspace.beginLoad(form);
+    const first = workspace.operations.beginLoad(form);
     workspace.tabs.move(tab, "right"); assert.equal(first.fail("Temporary failure"), true);
     assert.equal(form.getSnapshot().state, "failed"); assert.equal(workspace.getSnapshot().documents.length, 0);
-    const retry = workspace.beginLoad(form), value = { path: "loaded.csv" };
+    const retry = workspace.operations.beginLoad(form), value = { path: "loaded.csv" };
     workspace.tabs.close(tab); assert.throws(() => workspace.releaseResource(form.id));
     assert.equal(retry.accept({ value, serverVersion: "f1" }), true);
     value.path = "later host mutation";
     const ready = form.getSnapshot(); assert.ok(ready.state === "ready"); assert.equal(ready.value().path, "loaded.csv");
     assert.equal(workspace.getSnapshot().documents.length, 0);
     const ordinary = workspace.acquire(form.id), protectedWork = workspace.acquire(form.id, { preventReload: true });
-    assert.throws(() => workspace.beginLoad(form)); protectedWork.release(); protectedWork.release();
-    const refresh = workspace.beginLoad(form); refresh.accept({ value: { path: "refreshed.csv" } });
+    assert.throws(() => workspace.operations.beginLoad(form)); protectedWork.release(); protectedWork.release();
+    const refresh = workspace.operations.beginLoad(form); refresh.accept({ value: { path: "refreshed.csv" } });
     assert.equal(workspace.ownership(form.id).leases, 1); ordinary.release();
     workspace.releaseResource(form.id); assert.equal(form.getSnapshot().state, "released");
 });
@@ -219,13 +219,13 @@ test("loads distinguish readiness, ignore superseded responses and retain cancel
     assert.equal(handle.getSnapshot().state, "loading");
     assert.throws(() => workspace.document(handle.documentId));
     assert.equal(workspace.edit({ documentId: handle.documentId, expectedRevision: 0, origin: "human", edits: [] }).applied, false);
-    const first = workspace.beginLoad(handle), second = workspace.beginLoad(handle);
+    const first = workspace.operations.beginLoad(handle), second = workspace.operations.beginLoad(handle);
     workspace.tabs.move(tab, "right"); workspace.tabs.close(tab);
     assert.equal(first.isCancelled(), true);
     assert.throws(() => workspace.releaseResource(handle.id));
     assert.equal(second.fail("Synthetic failure"), true);
     assert.equal(handle.getSnapshot().state, "failed");
-    const retry = workspace.beginLoad(handle);
+    const retry = workspace.operations.beginLoad(handle);
     const reopened = workspace.tabs.open({ kind: "text", documentId: handle.documentId }, "right");
     assert.equal(retry.accept({ value: "ready", serverVersion: "v1" }), true);
     assert.equal(first.accept({ value: "stale", serverVersion: "old" }), false);
@@ -260,7 +260,7 @@ test("text reload resets every view's folds and selection at the accepted docume
         }
     });
     for (const value of ["", "a\nb\nc\nd\ne\n", "short"]) {
-        assert.equal(workspace.beginLoad(resource).accept({ value }), true);
+        assert.equal(workspace.operations.beginLoad(resource).accept({ value }), true);
         const document = workspace.document(resource.documentId);
         for (const [i, view] of views.entries()) {
             const folds = view.folding.getSnapshot();
@@ -351,7 +351,7 @@ test("capabilities reject all edit origins and prevent stale refresh from erasin
     assert.throws(() => workspace.captureSave(source));
     workspace.setCapabilities(source.id, { edit: ["human"], save: true, run: true });
     edit("new work");
-    assert.throws(() => workspace.beginLoad(source));
+    assert.throws(() => workspace.operations.beginLoad(source));
     assert.equal(workspace.document(source.documentId).text(), "new work");
 });
 
@@ -364,7 +364,7 @@ test("two queued saves capture exact contents; canonical replies and close/reope
     edit("second"); const second = commands.save(workspace.captureSave(source), port);
     edit("human correction"); workspace.tabs.move(tab, "right"); workspace.tabs.close(tab);
     assert.throws(() => workspace.releaseResource(source.id, true));
-    assert.throws(() => workspace.beginLoad(source));
+    assert.throws(() => workspace.operations.beginLoad(source));
     await Promise.resolve(); assert.equal(calls.length, 1); assert.equal(calls[0]!.value, "first");
     responses[0]!.resolve({ kind: "saved", serverVersion: "v1", canonical: "FIRST" });
     const receipt = await first;
@@ -423,9 +423,9 @@ test("invalid host values publish nothing and mismatched operation presentations
         assert.throws(() => workspace.updateResource(form, { expectedRevision: 0, origin: "host", value: value as never }));
         assert.equal(form.getSnapshot(), before);
     }
-    assert.throws(() => workspace.beginOperation(form.id, "preview", workspace.tabs.capture(tab)));
+    assert.throws(() => workspace.operations.begin(form.id, "preview", workspace.tabs.capture(tab)));
     assert.equal(workspace.ownership(form.id).leases, 0);
-    const operation = workspace.beginOperation(source.id, "preview", workspace.tabs.capture(tab));
+    const operation = workspace.operations.begin(source.id, "preview", workspace.tabs.capture(tab));
     workspace.tabs.move(tab, "right"); assert.equal(operation.presentationCurrent(), true);
     workspace.tabs.replace(tab, { kind: "panel", resourceId: form.id, panelType: "form" });
     assert.equal(operation.isCurrent(), true); assert.equal(operation.presentationCurrent(), false);

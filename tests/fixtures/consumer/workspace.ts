@@ -57,7 +57,7 @@ export function createActivationSession(original: string, selection: Selection) 
     };
     const captureJob = () => {
         if (job || !current.tab || !view(current).canUnmount()) return; const d = workspace.document(current.resource.documentId);
-        job = { operation: workspace.beginOperation(current.resource.id, "consumer-job"), resourceId: current.resource.id, revision: d.revision, buffer: d.buffer };
+        job = { operation: workspace.operations.begin(current.resource.id, "consumer-job"), resourceId: current.resource.id, revision: d.revision, buffer: d.buffer };
         notify(`Job captured ${current.title} at revision ${d.revision}.`);
     };
     const finishJob = () => { if (!job) return; const captured = job; job = undefined;
