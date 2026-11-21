@@ -316,15 +316,19 @@ try {
         await target.press("Control+Shift+z"); assert.equal(await page.evaluate(() => window.consumer.text()), "abeditededited restored package");
         await target.press("Control+z"); assert.equal(await page.evaluate(() => window.consumer.text()), "edited restored package");
     }
+    await candidateInput.press("Control+Home"); await candidateInput.press("Space"); await candidateInput.press("Tab");
+    assert.equal(await page.evaluate(() => window.consumer.text()), "    edited restored package");
+    await candidateInput.press("Backspace");
+    assert.equal(await page.evaluate(() => window.consumer.text()), "edited restored package");
     const capturedSelection = await candidateInput.evaluate(input => { if (!(input instanceof HTMLTextAreaElement)) throw new Error("Restored input requires its native textarea."); input.setSelectionRange(2, 5, "backward"); return window.consumer.captureCandidate(); });
     assert.equal(capturedSelection.anchor, 5); assert.equal(capturedSelection.head, 2);
     const navigation = await page.evaluate(() => window.consumer.navigation());
     assert.equal(navigation.offset, 100_002); assert.ok(navigation.advances > 1); assert.equal(navigation.exports, 0);
     assert.equal(navigation.runOffset, 100_000); assert.ok(navigation.runAdvances > 1);
     await candidateInput.press("Control+Home"); await candidateInput.press("Control+ArrowRight");
-    assert.equal((await page.evaluate(() => window.consumer.captureCandidate())).head, 7);
+    assert.equal((await page.evaluate(() => window.consumer.captureCandidate())).head, 6);
     await candidateInput.press("Control+Shift+ArrowRight");
-    assert.deepEqual(await page.evaluate(() => { const s = window.consumer.captureCandidate(); return { anchor: s.anchor, head: s.head }; }), { anchor: 7, head: 16 });
+    assert.deepEqual(await page.evaluate(() => { const s = window.consumer.captureCandidate(); return { anchor: s.anchor, head: s.head }; }), { anchor: 6, head: 15 });
     await page.waitForFunction(() => document.querySelector("#candidate .consumer-token")?.textContent === "restored");
     const wordPoint = await page.locator("#candidate .st-editor").evaluate(element => {
         const row = element.querySelector(".st-viewport-row"); if (!row) throw new Error("Missing restored word row.");

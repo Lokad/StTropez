@@ -7,6 +7,19 @@ async function setup(page: Page, text: string, head = 0) {
 }
 test.beforeEach(async ({ page }) => {  await page.goto("/editing/"); await ready(page); });
 
+test("Backspace follows indentation stops, then typing paints at the resulting caret", async ({ page }) => {
+    await setup(page, " \t      x  y", 8);
+    await page.keyboard.press("Backspace"); await page.keyboard.press("Backspace"); await page.keyboard.type("A");
+    await expect(page.locator("#primary .st-viewport-row").first()).toHaveJSProperty("textContent", " \tAx  y");
+    await page.keyboard.press("Home"); await page.keyboard.press("Backspace");
+    await expect(page.locator("#primary .st-viewport-row").first()).toHaveJSProperty("textContent", "Ax  y");
+    await page.keyboard.press("End"); await page.keyboard.press("ArrowLeft"); await page.keyboard.press("Backspace");
+    await expect(page.locator("#primary .st-viewport-row").first()).toHaveJSProperty("textContent", "Ax y");
+    await setup(page, " ".repeat(1_000_000) + "end", 1_000_000);
+    await page.keyboard.press("Backspace"); await page.keyboard.type("Y"); await ready(page);
+    expect(await page.evaluate(() => window.editingFixture.range(999_996, 1_000_000))).toBe("Yend");
+});
+
 test("Home toggles between the first nonblank and the start of its own line", async ({ page }) => {
     await setup(page, "one\r\n\t  second\r\n   \r\n", 13);
     await page.keyboard.press("Shift+Home");

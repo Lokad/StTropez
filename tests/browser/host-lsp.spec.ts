@@ -58,7 +58,7 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         await seed(page, "object", 6); await expect.poll(async () => (await provider(page)).connected).toBe(true); await field(page).pressSequentially(".");
         await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible(); expect(calls.at(-1)).toEqual({ triggerKind: 2, triggerCharacter: "." });
         await field(page).press("Escape"); await expect(page.getByRole("option")).toHaveCount(0); expect(await source(page)).toBe("object.");
-        await field(page).press("Tab"); await expect(field(page)).toBeFocused(); expect(await source(page)).toBe("object.    ");
+        await field(page).press("Tab"); await expect(field(page)).toBeFocused(); expect(await source(page)).toBe("object. ");
         await field(page).press("Control+z"); expect(await source(page)).toBe("object.");
     });
     if (mode === "plain") for (const completed of [false, true]) test(`${completed ? "empty" : "pending"} invisible completion preserves Escape focus traversal`, async ({ page }) => {

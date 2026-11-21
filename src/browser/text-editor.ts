@@ -23,7 +23,7 @@ import type { InputConflictDetail } from "./input-conflict.ts";
 import { mountViewport } from "./viewport.ts";
 import type { LineClass, LineDecorator, TextViewport } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
-import { lineContentEnd, lineEnding, planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
+import { lineColumnScanner, lineContentEnd, lineEnding, planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
 import { exportText } from "../core/newlines.ts";
 import type { EditingCommand, LanguageConfiguration, ResolvedLanguageConfiguration } from "../core/language-edits.ts";
 import { captureInsertion } from "./captured-insertion.ts";
@@ -427,16 +427,27 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     function grapheme(direction: -1 | 1, deleting: boolean, extend = false): void {
         cancelWord(); if (disposed || composing || input.disabled || deleting && input.readOnly) return; syncSelection();
         const capture = commandCapture(deleting); graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
+        const scanColumns = lineColumnScanner((from, to) => capture.buffer.slice(from, to), language.tabSize);
         eachRange(capture, "grapheme", (range, done) => {
             if (range.anchor !== range.head && (deleting || !extend)) {
                 done(deleting ? range : moved(range, direction < 0 ? Math.min(range.anchor, range.head) : Math.max(range.anchor, range.head), false)); return;
             }
             const offset = range.head;
-            withGraphemes(capture, offset, direction, "grapheme", point => {
+            const adjacent = () => withGraphemes(capture, offset, direction, "grapheme", point => {
                 if (deleting) { const from = direction < 0 && point.floor === offset ? point.preceding ?? offset : point.floor, to = direction > 0 ? point.following ?? offset : point.ceil;
                     done({ anchor: from, head: to }); }
                 else done(moved(range, direction < 0 ? point.preceding ?? offset : point.following ?? offset, extend));
             });
+            if (!deleting || direction > 0 || !offset || !/[ \t]/.test(capture.buffer.slice(offset - 1, offset))) { adjacent(); return; }
+            const start = capture.buffer.offsetAt(capture.buffer.lineAt(offset));
+            const columns = scanColumns(start, offset, true);
+            const step = () => commandTurn(() => {
+                if (!validCommand(capture)) { cancelWord(); return; }
+                const result = commandRunner.slice(() => columns.next(), result => !result.done, commandBudget.wordCalls);
+                if (!result.done) { cancelRangeTask = commandRunner.schedule(() => { cancelRangeTask = undefined; step(); }); return; }
+                if (result.value.indentation) done({ anchor: result.value.previousStop, head: offset }); else adjacent();
+            });
+            step();
         }, ranges => finishRanges(capture, ranges, deleting ? direction < 0 ? "deleteContentBackward" : "deleteContentForward" : undefined));
     }
     function word(direction: -1 | 1, deleting: boolean, extend = false): void {

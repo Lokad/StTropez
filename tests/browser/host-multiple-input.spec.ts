@@ -169,7 +169,7 @@ for (const host of ["plain", "react"]) {
         await input(page).press(")"); await ready(page); await exact(page, "a() b()\r\n    c d\r\n");
         expect(coords((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet.ranges)).toEqual([{ anchor: 3, head: 3 }, { anchor: 7, head: 7 }]);
         await input(page).press("Control+z"); await ready(page); await exact(page, original);
-        await select(page, [{ anchor: 0, head: 1 }, { anchor: 3, head: 2 }, { anchor: 10, head: 10 }], 1);
+        await select(page, [{ anchor: 0, head: 3 }, { anchor: 12, head: 5 }], 1);
         const before = await snapshot(page); await input(page).press("Tab"); await ready(page); await exact(page, "    a b\r\n        c d\r\n");
         expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
         await input(page).press("Shift+Tab"); await ready(page); await exact(page, original);

@@ -19,6 +19,17 @@ function plan(text: string, ranges: readonly Selection[], command: EditingComman
 }
 const selection = (anchor: number, head = anchor) => [{ anchor, head }];
 
+test("Tab advances each inline range to a stop and indents complete lines in the same transaction", () => {
+    const config: LanguageConfiguration = { tabSize: 4, enter: () => ({ indent: 1 }) };
+    const mixed = plan("a\tbcd\nx\n", [{ anchor: 3, head: 2 }, { anchor: 4, head: 5 }, { anchor: 6, head: 7 }], "indent", config);
+    assert.equal(mixed.text, "a\t    c  \n    x\n"); assert.deepEqual(mixed.ranges, [[6, 6], [9, 9], [14, 15]]);
+    const blank = plan("  {\r\n  ", selection(6), "indent", config);
+    assert.equal(blank.text, "  {\r\n      "); assert.deepEqual(blank.ranges, [[11, 11]]);
+    assert.equal(plan(blank.text, selection(11), "indent", config).text, blank.text + "  ");
+    assert.equal(plan(" \t{\n ", selection(5), "indent", { ...config, insertSpaces: false }).text, " \t{\n \t\t");
+    assert.equal(plan("ab", selection(0, 1), "indent", { insertSpaces: false }).text, "\tb");
+});
+
 test("configured line indentation and comments preserve reversed selections, blank lines and end-at-next-line", () => {
     const text = "  one\n\ttwo\n\nlast";
     const indented = plan(text, selection(11, 0), "indent");

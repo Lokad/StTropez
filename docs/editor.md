@@ -133,7 +133,7 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | End | Logical line end, excluding CR in CRLF and including a final lone CR |
 | Ctrl/Cmd + Home / End | Document start/end |
 | Apple Cmd + Left / Right, Up / Down | Line endpoints, document endpoints respectively |
-| Backspace / Delete | Delete selections or the adjacent grapheme |
+| Backspace / Delete | Delete the selection or the adjacent grapheme. Backspace in leading spaces and tabs deletes to the previous tab stop. |
 | Word modifier + Backspace / Delete | Delete the selection, an adjacent run of two or more whitespace characters, or one word toward the key. |
 | Ctrl/Cmd + A | One whole-document selection |
 | Ctrl/Cmd + Z, Ctrl/Cmd + Shift+Z, Ctrl+Y | Undo, redo, redo |
@@ -222,10 +222,13 @@ and frozen; callbacks receive the exact immutable buffer and source endpoints.
 cannot edit, is composing/disposed, or lacks the requested comment rule. Long plans yield, then
 commit once after validating the captured target; intermediate planning publishes no text.
 
-With carets only, indent inserts one configured unit at each caret. Once a range has selected text,
-indent and outdent visit each touched line once. Ending a selection at the start of the next line
-leaves that line alone. Outdent removes one tab stop’s worth of visual columns, even with mixed tabs
-and spaces. Line comments toggle nonblank lines. Block comments wrap or unwrap selections. Pair rules
+Tab advances to the next configured tab stop. A partial single-line selection is replaced by that
+whitespace. On a whitespace-only line with one caret, Tab first fills missing indentation from the
+preceding line’s Enter rule. A whole-line or multiline selection shifts each touched line once.
+Shift+Tab removes one indentation level from each touched line, including mixed tabs and spaces.
+A selection ending at the next line’s start excludes that line.
+
+Line comments toggle nonblank lines. Block comments wrap or unwrap selections. Pair rules
 can insert a pair, skip its closer or surround a selection.
 
 Enter chooses the current row's LF/CRLF terminator, falling back to the preceding terminator

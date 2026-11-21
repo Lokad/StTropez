@@ -335,7 +335,8 @@ export async function runDemoEditingRules(page: Page, url = "/") {
     await page.getByRole("textbox", { name: "Comparison working source", exact: true }).press("Control+z");
     await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toHaveValue("a\nb\n");
     await page.getByRole("button", { name: "JavaScript", exact: true }).click();
-    await replace("// pending\n".repeat(4096));
+    // Span more rows than one planning turn can shift, even on a fast machine.
+    await replace("// pending\n".repeat(20_000));
     await expect(page.locator("#recovery-status")).toHaveText("Recovery draft captured in this browser.");
     await source.press("Control+a");
     await source.evaluate(input => {

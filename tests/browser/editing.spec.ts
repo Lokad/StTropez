@@ -364,7 +364,7 @@ test("two views retain text and selections through persisted transitions, then d
     }
     await page.keyboard.type("!"); await ready(page);
     expect((await state(page)).secondary.selection).toMatchObject({ anchor: 7, head: 13 });
-    await page.keyboard.press("Tab"); expect(await page.evaluate(() => window.editingFixture.range(0, 6))).toBe("!    f");
+    await page.keyboard.press("Tab"); expect(await page.evaluate(() => window.editingFixture.range(0, 5))).toBe("!   f");
     await page.keyboard.press("Escape"); await page.keyboard.press("Tab"); await expect(page.getByRole("textbox", { name: "Secondary source" })).toBeFocused();
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false })));
     expect((await state(page)).diagnostics).toMatchObject({ resources: 0, documents: 0, views: 0, subscriptions: 0, leases: 0 });
