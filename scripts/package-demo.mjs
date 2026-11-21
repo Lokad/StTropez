@@ -137,7 +137,7 @@ const toolFiles = await Promise.all([...scripts, "package.json", "scripts/measur
     "scripts/package-host.mjs", "scripts/library-entries.mjs", "scripts/package-react-host.mjs", "scripts/demo-fonts.mjs",
     "examples/demo/provider-server.ts", "examples/demo/samples.ts", "examples/demo/completion-templates.ts",
     "examples/demo/diagnostics.ts", "examples/demo/action-fixture.ts", "examples/demo/typescript-folds.ts", "src/index.ts",
-    "tests/browser/demo-walkthrough.ts", "tests/browser/demo-host-integrations.ts", "tests/helpers/browser-errors.ts",
+    "tests/browser/demo-walkthrough.ts", "tests/browser/demo-host-integrations.ts", "tests/helpers/browser-errors.ts", "tests/helpers/painted-character.ts",
 ].map(path => realpath(resolve(project, path))));
 const toolRoots = [demoCompiler, ...compilerRoots, ...await Promise.all([
     "@types/node", "@types/ws", "@playwright/test", "playwright", "playwright-core", "undici-types", "esbuild", "fflate",

@@ -2,6 +2,7 @@ import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { coversHost } from "./host-cases.ts";
 import { holdLspReplies } from "../helpers/lsp-replies.ts";
+import { paintedCharacter } from "../helpers/painted-character.ts";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const field = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
@@ -65,7 +66,17 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await button(page, "Find definition").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(1); await page.evaluate(() => window.hostFixture.setSourceReadOnly(true)); await expect(results(page)).toHaveCount(0); await page.evaluate(() => window.hostFixture.setSourceReadOnly(false));
         replies.hold(); await field(page).press("F12"); await expect.poll(replies.waiting).toBe(true); await expect.poll(async () => (await snapshot(page)).bindings.navigation.pending).toBe(true);
         await field(page).press("ArrowLeft"); await expect.poll(replies.cancelled).toBe(true); await replies.release(); await waitForNavigation(page); await expect(results(page)).toHaveCount(0);
-        replies.hold(); await button(page, "Find definition").click(); await expect.poll(replies.waiting).toBe(true);
+        const row = page.locator('.st-editor:has(> textarea[aria-label="Primary source"]) .st-viewport-row[data-line="1"]');
+        await row.scrollIntoViewIfNeeded(); const point = await paintedCharacter(row, "target", 2);
+        const link = row.locator(".st-definition-link");
+        await field(page).focus(); await page.mouse.move(point.x, point.y);
+        replies.hold(); await page.keyboard.down("Meta"); await expect.poll(replies.waiting).toBe(true);
+        await page.mouse.click(point.x, point.y); await page.keyboard.up("Meta");
+        await expect.poll(async () => (await snapshot(page)).bindings.navigation.pending).toBe(true);
+        await page.keyboard.insertText("x"); await expect.poll(replies.cancelled).toBe(true); await replies.release(); await waitForNavigation(page);
+        await expect(results(page)).toHaveCount(0); await expect(link).toHaveCount(0); await field(page).press("Control+z");
+        replies.hold(); await page.keyboard.down("Control"); await page.mouse.click(point.x, point.y); await page.keyboard.up("Control");
+        await expect.poll(replies.waiting).toBe(true);
         await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); }); await expect.poll(replies.cancelled).toBe(true); await replies.release(); await waitForNavigation(page); await expect(results(page)).toHaveCount(0);
         await field(page).focus(); await select(page, text.length - 2); await button(page, "Find definition").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(1);
         await button(page, "Disconnect navigation provider").click(); await field(page).press("Control+End"); await field(page).pressSequentially(" local");

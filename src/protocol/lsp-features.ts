@@ -155,6 +155,17 @@ function parseLocationEntries(value: unknown, kind: "definition" | "references")
 }
 /** Validate wire syntax and line containment before asking the host to load missing targets. */
 export const lspLocationUris = (value: unknown, kind: "definition" | "references"): readonly string[] => locationEntries(value, kind).map(item => item.uri);
+/** Intersect supplied origin ranges at the queried position before loading any target. */
+export function definitionOriginRange(value: unknown, origin: LspDocumentCapture, offset: number) {
+    let result: Readonly<{ from: number; to: number }> | null = null;
+    for (const item of locationEntries(value, "definition")) {
+        if (!item.originRange) continue;
+        const range = rangeOffsets(origin.index, item.originRange);
+        if (range.from > offset || range.to <= offset) continue;
+        result = result ? { from: Math.max(result.from, range.from), to: Math.min(result.to, range.to) } : range;
+    }
+    return result && Object.freeze(result);
+}
 /** Resolve opaque URIs through captured host buffers; never fetch or open a server-supplied URI. */
 export function decodeLspLocations(value: unknown, kind: "definition" | "references", origin: LspDocumentCapture,
     resolve: (uri: string) => LspLocationTarget | undefined): readonly LspLocation[] {

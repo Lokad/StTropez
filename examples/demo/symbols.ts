@@ -1,7 +1,6 @@
 import type { DocumentId, Workspace } from "../../src/index.ts";
-import { captureViewRequest, mountAnchoredOverlay } from "../../src/browser/index.ts";
+import { captureViewRequest, createNavigationController, mountAnchoredOverlay } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, TextEditor } from "../../src/browser/index.ts";
-import { createLspNavigationClient } from "../../src/protocol/index.ts";
 import type { LspLocation, LspWorkspace } from "../../src/protocol/index.ts";
 import { HostRenameTools } from "../hosts/rename.ts";
 import { createLspRenameClient } from "../shared/language/lsp-rename-client.ts";
@@ -15,7 +14,6 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     provider: LspWorkspace, valid: () => boolean, dismissOther: () => void, open: (target: DemoSymbolTarget) => void) {
     const events = new AbortController(); let disposed = false;
     scope.defer(() => { disposed = true; events.abort(); });
-    const navigation = createLspNavigationClient(provider); scope.defer(() => navigation.dispose());
     const popup = document.createElement("section"); scope.defer(() => popup.remove());
     popup.className = "demo-symbols"; popup.hidden = true; popup.setAttribute("aria-label", "Symbol locations");
     const renamePopup = document.createElement("section"); scope.defer(() => renamePopup.remove());
@@ -25,13 +23,16 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     const locationsOverlay = mountAnchoredOverlay(editor, popup);
     const renameOverlay = mountAnchoredOverlay(editor, renamePopup, { onFocusedAnchorHidden: editor.focus });
     scope.defer(locationsOverlay.dispose); scope.defer(renameOverlay.dispose);
-    type Query = { choice: number; message: string; source: CapturedViewRequest; current: () => boolean; result?: Awaited<ReturnType<typeof navigation.run>> };
+    type Query = { choice: number; message: string; offset: number; source: CapturedViewRequest; current: () => boolean; result?: Awaited<ReturnType<typeof navigation.request>> };
     let query: Query | undefined;
     const idle = () => { const s = editor.activity(); return !disposed && valid() && !s.composing && !s.pendingInput && !s.pendingCommand; };
+    const navigation = createNavigationController(editor, provider, { canCapture: idle, documents: () => files().map(file => workspace.document(file.resource.documentId)),
+        onDefinition: offset => request("definition", offset) });
+    scope.defer(navigation.dispose);
     const target = workspace.tabs.capture(file.tab);
-    const captureSource = (available: () => boolean) => {
+    const captureSource = (available: () => boolean, revealCaret = true) => {
         const caret = editor.view.getSnapshot().selection;
-        editor.viewport.revealOffset(caret.head, { horizontal: "nearest", vertical: "nearest", affinity: caret.headAffinity ?? "after" });
+        if (revealCaret) editor.viewport.revealOffset(caret.head, { horizontal: "nearest", vertical: "nearest", affinity: caret.headAffinity ?? "after" });
         return captureViewRequest(workspace, target, editor.view, { available });
     };
     const sourceAnchor = (capture: CapturedViewRequest) => {
@@ -74,27 +75,27 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         };
         previous.onclick = () => move(-1); next.onclick = () => move(1); pages.append(previous, count, next);
         const close = document.createElement("button"); close.textContent = "Close locations"; close.addEventListener("click", () => { if (query === captured) { cancelNavigation(); editor.focus(); } });
-        popup.replaceChildren(note, pages, ...buttons, close); locationsOverlay.show(sourceAnchor(captured.source)); markChoice(captured);
+        popup.replaceChildren(note, pages, ...buttons, close); locationsOverlay.show({ revision: captured.source.document.revision, offset: captured.offset }); markChoice(captured);
         if (focused) editor.focus();
     };
-    const request = (kind: "definition" | "references") => {
+    function request(kind: "definition" | "references", pointed?: number) {
         if (!idle()) return; dismissOther(); closeRename(false); cancelNavigation(); editor.focus();
-        const source = captureSource(() => idle() && (document.activeElement === editor.input || popup.contains(document.activeElement)));
+        const source = captureSource(() => idle() && (document.activeElement === editor.input || popup.contains(document.activeElement)), pointed === undefined);
         if (!source) return;
         const snapshots = files().map(file => workspace.document(file.resource.documentId));
         const others = snapshots.filter(doc => doc.id !== source.document.id), metadata = others.map(doc => workspace.resourceForDocument(doc.id).metadata.getSnapshot());
-        const captured: Query = { choice: 0, message: "", source, current: () => source.isCurrent()
+        const captured: Query = { choice: 0, message: "", offset: pointed ?? sourceAnchor(source).offset, source, current: () => source.isCurrent()
             && others.every((doc, i) => { const current = workspace.document(doc.id), access = workspace.resourceForDocument(doc.id).metadata.getSnapshot();
                 return current.revision === doc.revision && current.buffer === doc.buffer && access.editLock === metadata[i]!.editLock && access.capabilities === metadata[i]!.capabilities; }) };
         query = captured; showNavigation(captured, kind === "definition" ? "Finding definition…" : "Finding references…");
-        void navigation.run(snapshots, source.document.id, sourceAnchor(source).offset, kind).then(result => {
+        void navigation.request(kind, captured.offset).then(result => {
             if (query !== captured || !captured.current() || !result.isCurrent()) return;
             captured.result = result;
             if (kind === "definition" && result.locations.length === 1) choose(captured, result.locations[0]!);
             else showNavigation(captured, result.locations.length ? `Choose a ${kind === "definition" ? "definition" : "reference"}.` : `No ${kind} in this sample.`);
         }).catch(error => { if (query === captured && captured.current()) showNavigation(captured,
             error instanceof Error ? `Cannot open this location: ${error.message}` : "This location is unavailable in the sample."); });
-    };
+    }
     const rename = new HostRenameTools(workspace, () => idle(), id => id === file.resource.documentId && valid() ? editor : undefined, () => createLspRenameClient({ provider }));
     scope.defer(() => rename.dispose());
     const heading = document.createElement("h2"), status = document.createElement("p"), label = document.createElement("label"), name = document.createElement("input");

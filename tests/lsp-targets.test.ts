@@ -43,8 +43,11 @@ test("navigation resolves an opaque target once without synchronizing it, and re
     const f = clientFixture(t, undefined, async (addressed, captured) => { calls++; context = captured; assert.equal(addressed, uri); lease = await retained(f);
         return { ...lease.value, target: { ...lease.value.target, isCurrent: () => captured.isCurrent() && lease!.value.target.isCurrent() } }; });
     const client = createLspNavigationClient(f.provider); t.after(client.dispose);
-    f.peer.onRequest("textDocument/definition", () => [{ uri, range }, { uri, range }]);
-    const source = f.document(), result = await client.run([source], source.id, 6, "definition");
+    f.peer.onRequest("textDocument/definition", () => [1, 2].map(() => ({ targetUri: uri, targetRange: range, targetSelectionRange: range, originSelectionRange: range })));
+    const source = f.document(), preview = await client.prepareDefinition([source], source.id, 6);
+    assert.deepEqual(preview.originRange, { from: 6, to: 10 }); assert.equal(preview.hasTargets, true); assert.equal(calls, 0);
+    const [result, same] = await Promise.all([preview.resolve(), preview.resolve()]);
+    assert.equal(result, same); assert.equal(f.sent("textDocument/definition").length, 1);
     assert.equal(calls, 1); assert.equal(result.locations.length, 2); assert.equal(context!.purpose, "navigation");
     assert.equal(context!.source!.documentId, source.id); assert.equal(result.locations[0]!.target.document.documentId, f.other.documentId);
     assert.equal(result.locations[0]!.from, 6); assert.equal(f.sent("textDocument/didOpen").length, 1); assert.equal(result.isCurrent(), true);

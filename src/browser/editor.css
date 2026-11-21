@@ -54,6 +54,7 @@
 .st-viewport-row [data-ornament="point"] { position: relative; }
 .st-viewport-row [data-ornament="point"]::after { content: ""; position: absolute; bottom: 0; left: 0; width: .35em; border-bottom: 2px solid currentColor; }
 .st-viewport-row .st-diagnostic { text-decoration: underline wavy var(--st-diagnostic-color, #da8550); text-underline-offset: 3px; }
+.st-viewport-row .st-definition-link { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; color: var(--st-definition-link-color, currentColor); }
 .st-viewport-row .st-diagnostic[data-ornament="point"]::after { border-color: var(--st-diagnostic-color, #da8550); }
 .st-viewport-row [data-ornament="before"] { display: inline-block; }
 .st-viewport-row [data-ornament="afterLine"]::after { content: attr(data-label); margin-left: .75em; }

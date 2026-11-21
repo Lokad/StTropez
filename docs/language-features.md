@@ -331,11 +331,29 @@ parameter content with the [documentation view](#hover-and-documentation).
 
 ### Navigation and target loading
 
+`createNavigationController(editor, provider, options)` handles definition links for one mounted
+view. Hold Ctrl or Cmd over a symbol to underline it. Hover preserves focus, selections and open
+tabs. Releasing the modifier clears the underline. A primary click while the modifier is held
+resolves the target even if the lookup is pending. Editing or remounting the source expires
+the gesture. Alt+click stays available for multiple carets.
+
+Supply the project with `options.documents`. A host that opens tabs or shows a chooser handles
+`options.onDefinition(offset)` by calling `controller.request("definition", offset)` during the
+callback. This reuses the hover reply. F12 and reference commands can call the same controller
+at the caret. Each result contains the validated locations and an `isCurrent()` check for
+delayed choices. Without a callback, the controller publishes the result through `getSnapshot()`
+and `subscribe()`. Call `cancel()` to dismiss navigation and `dispose()` to detach it.
+
 `createLspNavigationClient(provider).run(project, originId, offset, kind, includeDeclaration?,
 prepare?)` returns a promise of `{ locations, isCurrent }`, with `kind` equal to `"definition"`
 or `"references"`. `includeDeclaration` defaults to true and is sent for references. Standard
 reference locations contain no declaration flag, so the client does not infer one. Valid positions
 reach the server without requiring a local word match.
+
+For a custom pointer UI, `prepareDefinition(project, originId, offset)` returns a preview with
+`hasTargets`, `originRange`, `isCurrent()` and `resolve()`. It validates the reply without
+loading a destination. The editor underlines the provider's origin range when supplied and
+uses a bounded local word for a plain location. Calling `resolve()` loads the captured targets.
 
 `decodeLspLocations` accepts Location, Location[] or LocationLink[] for definitions and
 Location[] for references; null yields an empty result. Mixed location/link arrays are refused.

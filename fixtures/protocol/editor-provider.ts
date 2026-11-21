@@ -3,14 +3,13 @@ import type { LspWorkspace } from "../../src/protocol/index.ts";
 import { FixtureLspWorkspace } from "./fixture-workspace.ts";
 import { createLspProviderController } from "../../examples/shared/language/lsp-provider-controller.ts";
 import type { ProviderFactory } from "../../examples/shared/language/provider-contract.ts";
-import { createLspNavigationClient } from "../../examples/shared/language/lsp-navigation-client.ts";
 import { createLspRenameClient } from "../../examples/shared/language/lsp-rename-client.ts";
 import type { LspRenameFactory } from "../../examples/shared/language/lsp-rename-client.ts";
 import type { ActionHostOptions } from "../../examples/hosts/code-actions.ts";
 import { createLspProjectClient } from "../../examples/shared/language/lsp-project-client.ts";
 import type { LspProjectFactory } from "../../examples/shared/language/lsp-project-client.ts";
 import type { HoverHostOptions } from "../../examples/hosts/hover.ts";
-import type { NavigationServiceFactory } from "../../examples/shared/language/navigation-service.ts";
+import type { NavigationHostOptions } from "../../examples/hosts/navigation.ts";
 import type { DocumentId, Workspace } from "../../src/index.ts";
 import type { LspSessionOptions } from "../../src/protocol/index.ts";
 import { lspColorBackend, lspLinkBackend, lspSignatureBackend } from "../../examples/shared/language/lsp-language-clients.ts";
@@ -20,7 +19,7 @@ import type { ColorBackendFactory } from "../../examples/hosts/document-colors.t
 import { fixtureDocumentUri } from "./document-uri.ts";
 
 /** Explicit development-host choice. Generic session/feature code has no fixture endpoint policy. */
-export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspace; provider: ProviderFactory; hover: HoverHostOptions; navigation: NavigationServiceFactory; rename: LspRenameFactory; actions: ActionHostOptions; project: LspProjectFactory; signature: SignatureBackendFactory; links: LinkBackendFactory; colors: ColorBackendFactory }> {
+export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspace; provider: ProviderFactory; hover: HoverHostOptions; navigation: NavigationHostOptions; rename: LspRenameFactory; actions: ActionHostOptions; project: LspProjectFactory; signature: SignatureBackendFactory; links: LinkBackendFactory; colors: ColorBackendFactory }> {
     const url = new URL("/lsp-fixture", location.href); url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const connect: LspSessionOptions["connect"] = context => { const abort = new AbortController(), stop = context.onCancel(() => abort.abort()); return openWebSocketTransport(url.href, { signal: abort.signal }).finally(stop); };
     const uri = (workspace: Workspace, id: DocumentId) => fixtureDocumentUri(workspace.resourceForDocument(id).id, id);
@@ -44,8 +43,8 @@ export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspa
         provider: (editor, options) => createLspProviderController(editor, { ...options, provider: connection,
             beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/completion", configuration, { replacePending: true }) }),
         hover: { provider: connection, beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/hover", configuration) },
-        navigation: { create: (_clock, counts, changed) => createLspNavigationClient(owner, counts, changed, { provider: connection,
-            beforeRequest: (session, input) => connection.prepareRequest(session, input.kind === "definition" ? "textDocument/definition" : "textDocument/references", { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) }) }) },
+        navigation: { provider: connection, prepare: (kind, delay, fault) => session => connection.prepareRequest(session,
+            kind === "definition" ? "textDocument/definition" : "textDocument/references", { delay, ...(fault ? { fault } : {}) }) },
         rename: () => createLspRenameClient({ provider: connection,
             beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/rename", configuration) }),
         actions: { provider: connection,

@@ -1,7 +1,7 @@
 import { Workspace } from "sttropez";
 import type { DocumentId, DocumentSnapshot, TextEdit } from "sttropez";
-import { createCodeActionController, createCompletionController, createDiagnosticController, createHoverController, mountAnchoredOverlay, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
-import { LspWorkspace, applyLspWorkspaceEdit, previewLspWorkspaceEdit, createLspColorClient, createLspLinkClient, createLspNavigationClient, createLspRenameClient, createLspSignatureClient } from "sttropez/protocol";
+import { createCodeActionController, createCompletionController, createDiagnosticController, createHoverController, createNavigationController, mountAnchoredOverlay, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
+import { LspWorkspace, applyLspWorkspaceEdit, previewLspWorkspaceEdit, createLspColorClient, createLspLinkClient, createLspRenameClient, createLspSignatureClient } from "sttropez/protocol";
 import type { LspWorkspaceEdit } from "sttropez/protocol";
 
 const workspace = new Workspace();
@@ -23,9 +23,10 @@ const controller = createCompletionController(editor, provider, { autoConnect: f
 const diagnostics = createDiagnosticController(editor, provider, { autoConnect: false });
 const diagnosticHint = document.createElement("aside"); diagnosticHint.id = "diagnostic-hint"; document.body.append(diagnosticHint);
 const hint = mountAnchoredOverlay(editor, diagnosticHint);
-const hover = createHoverController(editor, provider, { diagnostics }), navigation = createLspNavigationClient(provider), rename = createLspRenameClient(provider);
+const hover = createHoverController(editor, provider, { diagnostics }), rename = createLspRenameClient(provider);
 const signature = createLspSignatureClient(provider), links = createLspLinkClient(provider), colors = createLspColorClient(provider);
 const project = () => [workspace.document(source.documentId), workspace.document(companion.documentId)];
+const navigation = createNavigationController(editor, provider, { documents: project });
 const actions = createCodeActionController(editor, provider, { documents: project });
 const text = () => { const buffer = workspace.document(source.documentId).buffer; return buffer.slice(0, buffer.length); };
 const position = () => text().indexOf("catalogue") + 2;
@@ -50,7 +51,7 @@ hover.subscribe(() => {
     const state = hover.getSnapshot();
     if (state.status === "ready") { notes.hover = state.text; result.textContent = state.text; }
 });
-command("Definition", async () => { const value = await navigation.run(project(), source.documentId, position(), "definition");
+command("Definition", async () => { const value = await navigation.request("definition", position());
     if (value.isCurrent()) { notes.navigation = value.locations[0]?.target.document.documentId; result.textContent = `Definition targets: ${value.locations.length}`; } });
 command("Rename preview", async () => { plan = await rename.run(project(), source.documentId, position(), "inventory");
     const preview = previewLspWorkspaceEdit(plan, id => workspace.document(id as DocumentId).title);

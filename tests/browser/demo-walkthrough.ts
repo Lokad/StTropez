@@ -1,5 +1,6 @@
 import { expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
+import { paintedCharacter } from "../helpers/painted-character.ts";
 
 export async function runDemoActions(page: Page, url = "/") {
     await page.goto(url);
@@ -77,7 +78,15 @@ export async function runDemoUnopenedNavigation(page: Page, url = "/") {
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await select(page, main, "const label = formatLabel"); await main.press("ArrowRight"); await main.press("ArrowLeft");
     const cursor = "Ln 6, Col 25"; await expect(page.locator("#cursor")).toHaveText(cursor);
-    await main.press("F12"); await expect(labels).toBeVisible();
+    const call = page.locator("#editor .st-viewport-row").filter({ hasText: "const label = formatLabel(record);" });
+    const point = await paintedCharacter(call, "formatLabel", 3);
+    await page.mouse.move(point.x, point.y); await page.keyboard.down("Control");
+    const link = call.locator(".st-definition-link"); await expect(link).toHaveText("formatLabel");
+    await expect(link).toHaveCSS("cursor", "pointer"); await expect(main).toBeFocused();
+    await expect(page.locator("#cursor")).toHaveText(cursor); await expect(page.locator("#files button")).toHaveText(["main.ts"]);
+    await page.keyboard.up("Control"); await expect(link).toHaveCount(0);
+    await page.keyboard.down("Control"); await expect(link).toBeVisible();
+    await page.mouse.click(point.x, point.y); await page.keyboard.up("Control"); await expect(labels).toBeVisible();
     await expect(page.locator("#editor")).toContainText("export function formatLabel");
     await labels.press("Control+End"); await page.keyboard.insertText("// edit the loaded module\n");
     await expect(page.locator("#files")).toContainText("labels.ts ●"); await labels.press("Control+z");

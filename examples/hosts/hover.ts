@@ -62,8 +62,9 @@ export class HostHoverTools {
     }
     inspectCaret(id: string): boolean {
         const session = this.sessions.get(id); if (!session) return false;
-        session.editor.view.folding.revealSelection(session.editor.view.folding.getSnapshot()); session.editor.viewport.flush();
-        const selected = session.editor.view.getSnapshot();
+        const { editor } = session, selected = editor.view.getSnapshot();
+        editor.viewport.revealOffset(selected.selection.head, { vertical: "nearest", horizontal: "nearest", affinity: selected.selection.headAffinity ?? "after" });
+        editor.viewport.flush(); editor.element.scrollIntoView({ block: "nearest", inline: "nearest" });
         return this.inspect(session, selected.revision, selected.selection.head, selected.selection.headAffinity ?? "after", "keyboard");
     }
     attach(id: string, _tab: TabId, editor: TextEditor): () => void {
@@ -100,7 +101,7 @@ export class HostHoverTools {
             // Browsers can deliver delayed pointer motion after a dialog or layout change.
             if (this.current && this.kind === "keyboard" && !event.buttons) { cancelPointer(); return; }
             if (!this.allowInspect("pointer")) { cancelPointer(); return; }
-            if (event.buttons || editor.activity().composing) { cancelPointer(); if (this.current === session) this.dismiss(); return; }
+            if (event.buttons || event.ctrlKey || event.metaKey || editor.activity().composing) { cancelPointer(); if (this.current === session) this.dismiss(); return; }
             const x = event.clientX, y = event.clientY, pending = editor.viewport.activity().pending, point = pointerAt(x, y);
             if (!pending && !point) {
                 cancelPointer(); if (this.current === session) this.dismiss(); return;
@@ -122,6 +123,10 @@ export class HostHoverTools {
         }, { signal: listeners.signal });
         editor.element.addEventListener("pointerleave", () => { cancelPointer(); session.overTarget = false; if (this.current === session) this.queueDismiss(session); }, { signal: listeners.signal });
         editor.element.addEventListener("pointerdown", () => { cancelPointer(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
+        win.addEventListener("keydown", event => {
+            if (event.key !== "Control" && event.key !== "Meta") return;
+            cancelPointer(); if (this.current === session && this.kind === "pointer") this.dismiss();
+        }, { signal: listeners.signal });
         editor.input.addEventListener("keydown", event => {
             if (event.isComposing || editor.activity().composing) return;
             if (["Control", "Meta", "Shift", "Alt"].includes(event.key)) return;
@@ -136,7 +141,7 @@ export class HostHoverTools {
         const scroll = () => {
             // An ancestor may report its completed scroll just after a pointer move.
             // A pending dwell can still open if the very same character is under the pointer.
-            scrolled = true; requested = undefined; if (this.current === session) this.dismiss();
+            scrolled = true; requested = undefined; if (this.current === session && this.kind === "pointer") this.dismiss();
         };
         editor.element.addEventListener("scroll", scroll, { capture: true, signal: listeners.signal });
         win.addEventListener("scroll", event => {
