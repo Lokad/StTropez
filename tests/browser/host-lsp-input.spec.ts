@@ -139,6 +139,7 @@ for (const host of ["plain", "react"]) test(`${host} LSP captures wait for movem
     expect(wire).toEqual([]);
     await select(page, longSource.indexOf(")")); await input(page).press("Control+Shift+Space");
     await expect(signature(page).getByLabel("Active signature parameter", { exact: true })).toHaveText("key: string");
+    expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.metrics!.viewport.scrollLeft).toBeGreaterThan(0);
     await input(page).press("Escape"); await expect(signature(page)).toBeHidden();
     await select(page, longSource.indexOf("#abc") + 2); await button(page, "Discover document colors").click();
     await expect.poll(async () => (await snapshot(page)).bindings.colors.state.count).toBe(1);

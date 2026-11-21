@@ -115,6 +115,10 @@ export class HostSignatureTools {
     private request(s: Session, context: LspSignatureContext = { triggerKind: 1, isRetrigger: false }): void {
         if (this.disconnected || !this.available(s) || !this.canCapture(s.editor.view.documentId)) { this.publish({ message: "Finish pending input, navigation, table conversion or composition first." }); return; }
         this.beforeRequest(); this.stopAuto(); this.clear("idle", "Capturing signature context."); this.armed = true;
+        if (context.triggerKind === 1) {
+            const caret = s.editor.view.getSnapshot().selection;
+            s.editor.viewport.revealOffset(caret.head, { horizontal: "nearest", vertical: "nearest", affinity: caret.headAffinity ?? "after" });
+        }
         const capture = captureViewRequest(this.workspace, s.target, s.editor.view, { available: () => this.available(s) && this.canCapture(s.editor.view.documentId) });
         if (!capture) { this.armed = false; this.publish({ status: "expired", message: "Captured signature context changed." }); return; }
         const doc = capture.document, selected = capture.selectionSet.ranges[capture.selectionSet.primary]!;
