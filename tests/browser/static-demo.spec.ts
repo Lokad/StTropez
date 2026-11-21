@@ -6,6 +6,23 @@ import { checkDemoLigatures } from "./demo-ligatures.ts";
 import { runDemoDiagnosticRetention } from "./demo-diagnostics.ts";
 import { demoSample } from "../../examples/demo/samples.ts";
 
+test("Go to line returns typing to the chosen large-file row and cancels when the source view closes", async ({ page, baseURL }) => {
+    await page.goto(baseURL!); await page.locator("#sample").selectOption("large");
+    const source = page.getByRole("textbox", { name: "large.ts", exact: true });
+    await source.press("Control+g");
+    const dialog = page.getByRole("dialog", { name: "Go to line" }), line = dialog.getByRole("spinbutton");
+    await line.fill("5000"); await line.press("Enter"); await expect(source).toBeFocused();
+    await page.keyboard.type("// "); await expect(page.locator("#cursor")).toHaveText("Ln 5000, Col 4");
+    await expect(page.locator("#editor .st-viewport-row").filter({ hasText: "// // Row 5000:" })).toBeVisible();
+    await page.locator("#compare").click();
+    const saved = page.getByRole("textbox", { name: "Comparison baseline source", exact: true });
+    await saved.press("Control+g"); await line.fill("20"); await line.press("Enter"); await expect(saved).toBeFocused();
+    await saved.press("Control+g"); await expect(line).toHaveValue("20");
+    // A host can change files while its own prompt is open.
+    await page.locator('[data-panel="javascript"]').evaluate(button => (button as HTMLButtonElement).click());
+    await expect(dialog).toHaveCount(0); await expect(source).toBeVisible();
+});
+
 test("Find toggles regex on the existing query and replaces captured groups in one undo", async ({ page, baseURL }) => {
     await page.goto(baseURL!);
     const query = page.getByRole("textbox", { name: "Find text" }), mode = page.getByRole("button", { name: "Use regular expression" });

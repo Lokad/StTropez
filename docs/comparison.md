@@ -97,7 +97,8 @@ CRLF, LF, tabs, spaces and final newlines participate in equality. `DiffHunk` co
 and working `DiffRange` values with exclusive text and line ends. `whitespaceOnly` describes a
 change without suppressing it. A hunk with only LF/CRLF substitutions has `lineEndingOnly: true`.
 The controls label it “line endings only”. The working pane accepts the same `pasteLineEndings`
-option as the editor. Alignment minimizes line insertions/deletions; it does not
+option as the editor. Both panes accept the same host `requestLine` prompt for Go to Line.
+Alignment minimizes line insertions/deletions; it does not
 provide a globally minimal character diff or moved-block detection.
 
 If you use `TextDiff` directly, your caller decides when to take the next step.

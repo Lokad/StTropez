@@ -2,6 +2,7 @@ import { mountTextEditor, mountTextComparison, createFindController, createRegex
 import type { TextEditor, FindController, TextComparison, FoldingController, PresentedLine } from "../../src/browser/index.ts";
 import { discoverIndentationFolds } from "../../src/index.ts";
 import { DemoProject } from "./project.ts";
+import { linePrompt } from "../shared/line-prompt.ts";
 import { selectDemoProvider } from "./provider.ts";
 import type { DemoFile } from "./project.ts";
 import { DemoPresentation } from "./presentation.ts";
@@ -294,7 +295,7 @@ function mountFile(file: DemoFile, focus = false): void {
     if (panel === "changes") {
         comparison = mountTextComparison(surface, project.workspace, file.tab, project.baseline(file),
             { view: file.view, workingDecorate: decorateWorking,
-                baselineDecorate: line => project?.sample.id === "host" ? hostDecorations(line) : referencePresentation?.decorate(line) ?? [], scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
+                baselineDecorate: line => project?.sample.id === "host" ? hostDecorations(line) : referencePresentation?.decorate(line) ?? [], requestLine: linePrompt(document), scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
         const labels = document.createElement("div"); labels.className = "demo-review-labels";
         const savedLabel = document.createElement("span"), workingLabel = document.createElement("span");
         reviewLabel = savedLabel;
@@ -330,7 +331,7 @@ function mountFile(file: DemoFile, focus = false): void {
         stopReference = () => { referenceSyncActive = false; unsubscribeReference(); }; configureReference();
     } else {
         editor = mountTextEditor(surface, project.workspace, file.tab,
-            { view: file.view, ariaLabel: file.name, decorate: decorateWorking });
+            { view: file.view, ariaLabel: file.name, decorate: decorateWorking, requestLine: linePrompt(document) });
         renderProblems();
     }
     editor.configureLanguage(editingConfiguration());
@@ -488,6 +489,7 @@ on("complete", () => languageView?.complete());
 on("inspect-type", () => languageView?.inspect()); on("signature", () => languageView?.signature());
 on("definition", () => languageView?.definition()); on("references", () => languageView?.references()); on("rename", () => languageView?.rename());
 on("navigate-back", goBack);
+on("go-to-line", () => { editor?.focus(); editor?.runCommand("go-to-line"); });
 on("inspect-characters", () => { if (editor && project) inspectCharacters(editor, project.workspace, element("character-warning-details")); });
 field("character-warnings").addEventListener("change", () => {
     const enabled = field("character-warnings").checked;

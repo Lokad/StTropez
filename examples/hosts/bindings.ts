@@ -5,6 +5,7 @@ import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../shared/language/presentation.ts";
 import { comparisonSettled, editorSettled } from "../shared/readiness.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
+import { linePrompt } from "../shared/line-prompt.ts";
 import { HostLanguageTools } from "./language.ts";
 import { hostLspFactories } from "../../fixtures/protocol/editor-provider.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
@@ -95,7 +96,7 @@ export class ViewBindings {
             const view = this.retainedView("comparison", this.controller.source.documentId);
             const presentation = new EditingPresentation(), referencePresentation = new EditingPresentation();
             const review = mountTextComparison(host, this.controller.workspace, this.controller.viewTab("primary"),
-                baseline, { ariaLabel: "Source review", view, scrollLinked: this.reviewScrollLinked, rowsAligned: this.reviewRowsAligned, workingDecorate: presentation.decorate, baselineDecorate: referencePresentation.decorate });
+                baseline, { ariaLabel: "Source review", view, requestLine: linePrompt(host.ownerDocument), scrollLinked: this.reviewScrollLinked, rowsAligned: this.reviewRowsAligned, workingDecorate: presentation.decorate, baselineDecorate: referencePresentation.decorate });
             this.review = review;
             scope.defer(() => { if (this.review === review) this.review = undefined; review.dispose(); });
             const saveTarget = this.controller.workspace.captureTab(this.controller.viewTab("primary"));
@@ -312,7 +313,7 @@ export class ViewBindings {
                 const presentation = new EditingPresentation();
                 const surface = id === "primary" && this.editor === "candidate" ? host.ownerDocument.createElement("div") : host;
                 if (surface !== host) { surface.className = "host-instruction-source"; host.append(surface); scope.defer(() => surface.remove()); }
-                const candidate = this.editor === "candidate" ? mountTextEditor(surface, workspace, tabId, { ariaLabel, view, decorate: presentation.decorate }) : undefined;
+                const candidate = this.editor === "candidate" ? mountTextEditor(surface, workspace, tabId, { ariaLabel, view, decorate: presentation.decorate, requestLine: linePrompt(surface.ownerDocument) }) : undefined;
                 const mounted: BoundEditor = candidate ? { element: candidate.input, view, captureView: candidate.captureView,
                     restoreView: candidate.restoreView, dispose: candidate.dispose,
                     metrics: () => ({ ...candidate.snapshot(), viewport: candidate.viewport.snapshot() }) }

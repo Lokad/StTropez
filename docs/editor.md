@@ -142,6 +142,7 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Ctrl/Cmd + Shift + L | Select all occurrences. A caret searches for whole words. An explicit selection searches for its exact, case-sensitive text. |
 | Ctrl/Cmd + Alt/Option + Up / Down | Add a caret at the same visual column on the preceding or following visible row. |
 | Ctrl/Cmd + U | Restore the previous selection set in this view. Each text revision starts a fresh caret history. |
+| Ctrl/Cmd + G | Open the host's line prompt, then move to the start of the chosen line. Requires `requestLine`. |
 | Ctrl/Cmd + Shift + backslash | Jump from each selection's active end to the matching bracket. Uses the configured pairs and scan limits even when highlighting is off. |
 | Ctrl + Up / Down, Alt/Option + PageUp / PageDown | Scroll by one visible row or one viewport height. The caret and selections stay in place. |
 | Ctrl/Cmd + Z, Ctrl/Cmd + Shift+Z, Ctrl+Y | Undo, redo, redo |
@@ -163,6 +164,11 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 The focused editor has a solid outline. After Escape the outline becomes dashed and the root
 has the `data-st-tab-escape` attribute. A pointer press, selection change, or intervening key
 cancels the exit. Holding Shift for the next Tab moves focus backward.
+
+Set `requestLine` to a `LinePrompt` to enable `go-to-line`. It receives the one-based current line,
+line count and an abort signal. Return a line number or a promise for it. Return `undefined` to
+cancel. A new prompt, composition, a changed revision or selection, or disposal expires the request.
+Only a valid reply from the same view moves the caret and returns focus.
 
 Host tools get first chance at shortcuts. Cancelled events and composition events (including keyCode
 229) bypass editor commands. [Example bindings](examples.md)

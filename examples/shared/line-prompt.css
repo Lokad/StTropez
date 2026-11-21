@@ -1,0 +1,5 @@
+.host-line-prompt { border: 1px solid GrayText; border-radius: 6px; padding: 1rem; font: inherit; }
+.host-line-prompt::backdrop { background: rgb(0 0 0 / 25%); }
+.host-line-prompt form { display: flex; align-items: end; gap: .5rem; }
+.host-line-prompt label { display: grid; gap: .35rem; }
+.host-line-prompt input { width: 10rem; }

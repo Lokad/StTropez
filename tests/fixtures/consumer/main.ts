@@ -5,7 +5,7 @@ import { fontFixture } from "./font-fixture.js";
 import { WorkspaceCommands } from "sttropez";
 import { createSelectionSet, planSelectionEdits } from "sttropez";
 import type { ResourceVisibility, SaveReview } from "sttropez";
-import type { FindDiagnostics, FindReason, TextComparisonDiagnostics, InputConflictDetail, PresentedLine, TextComparisonOptions, TextComparisonSnapshot, TextViewportOptions } from "sttropez/browser";
+import type { FindDiagnostics, FindReason, TextComparisonDiagnostics, InputConflictDetail, LinePrompt, PresentedLine, TextComparisonOptions, TextComparisonSnapshot, TextViewportOptions } from "sttropez/browser";
 import { JsonRpcConnection } from "sttropez/protocol";
 import { openWebSocketTransport } from "sttropez/browser";
 const workspace = new Workspace();
@@ -65,7 +65,10 @@ const fixture = { text: () => workspace.document(documentId).text(),
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "folding", variant: "working" }, "Folded source", { value: original });
         const tab = model.open({ kind: "text", documentId: source.documentId }, "folded"), view = model.createDocumentView(source.documentId), peer = model.createDocumentView(source.documentId);
         const host = document.createElement("div"), otherHost = document.createElement("div"); host.style.height = "180px"; otherHost.style.height = "180px"; document.body.append(host, otherHost);
-        let editor = mountTextEditor(host, model, tab, { view, ariaLabel: "Restored folding" });
+        let reply!: (line: number) => void, promptSignal!: AbortSignal;
+        const requestLine: LinePrompt = ({ signal }) => { promptSignal = signal; return new Promise<number>(resolve => { reply = resolve; }); };
+        const options = { view, ariaLabel: "Restored folding", requestLine };
+        let editor = mountTextEditor(host, model, tab, options);
         const other = mountTextEditor(otherHost, model, tab, { view: peer, ariaLabel: "Restored fold peer" });
         const wait = async () => { const deadline = performance.now() + 10000;
             while ([editor, other].some(e => { const s = e.snapshot(), p = e.viewport.snapshot(); return s.pendingCaret || s.pendingWord || s.pendingGrapheme || s.pendingDragScroll || p.pending
@@ -86,8 +89,12 @@ const fixture = { text: () => workspace.document(documentId).text(),
             const at = Math.floor(footer / 2); model.edit({ documentId: source.documentId, expectedRevision: 0, origin: "host", edits: [{ from: at, to: at, insert: "x\r\n" }] }); await wait();
             if (editor.viewport.snapshot().visibleLines !== 2) throw new Error("Compiled folded edit exposed hidden rows.");
             model.undo({ documentId: source.documentId, expectedRevision: 1 }); await wait(); exact();
-            const saved = editor.captureView(), retired = editor; editor.dispose();
-            editor = mountTextEditor(host, model, tab, { view, ariaLabel: "Restored folding" }); editor.restoreView(saved); editor.focus(); await wait();
+            const saved = editor.captureView(), retired = editor;
+            if (!editor.runCommand("go-to-line")) throw new Error("Restored host prompt was not requested.");
+            editor.dispose();
+            editor = mountTextEditor(host, model, tab, options); editor.restoreView(saved); editor.focus(); await wait();
+            if (!promptSignal.aborted) throw new Error("Retired view left its line request active.");
+            reply(200); await Promise.resolve();
             if (editor.viewport.snapshot().visibleLines !== 2 || view.getSnapshot().selectionSet.ranges.length !== 2) throw new Error("Compiled remount lost folds or complete selections.");
             const fresh = model.createDocumentView(source.documentId), freshHost = document.createElement("div"); freshHost.style.height = "180px"; document.body.append(freshHost);
             const restored = mountTextEditor(freshHost, model, tab, { view: fresh });
@@ -96,9 +103,9 @@ const fixture = { text: () => workspace.document(documentId).text(),
                 const current = fresh.folding.getSnapshot(); fresh.folding.setCollapsed(current, "body", false); restored.restoreView(saved);
                 if (fresh.folding.getSnapshot().index.collapsedCount) throw new Error("A stale capture overwrote newer fold state.");
             } finally { restored.dispose(); fresh.dispose(); freshHost.remove(); }
-            view.setSelection(model.document(source.documentId).revision, { anchor: at, head: at });
-            editor.viewport.revealOffset(at, { horizontal: "nearest", vertical: "nearest" }); await wait();
-            if (view.folding.getSnapshot().index.collapsedCount || !editor.viewport.coordsAt(at)) throw new Error("Compiled explicit selection did not reveal its row.");
+            const buffer = model.document(source.documentId).buffer, line = buffer.lineAt(at), start = buffer.offsetAt(line);
+            editor.runCommand("go-to-line"); reply(line + 1); await Promise.resolve(); await wait();
+            if (view.getSnapshot().selection.head !== start || view.folding.getSnapshot().index.collapsedCount || !editor.viewport.coordsAt(start)) throw new Error("Compiled line navigation did not reveal its folded destination.");
             if (model.document(source.documentId).buffer.readMetrics().textExports) throw new Error("Compiled folding exported the source value.");
             if (retired.viewport.coordsAt(0) !== undefined) throw new Error("Retired compiled geometry remained active.");
         } finally { editor.dispose(); other.dispose(); host.remove(); otherHost.remove(); view.dispose(); peer.dispose(); model.close(tab); model.releaseResource(source.id, true); }

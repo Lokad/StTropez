@@ -54,8 +54,10 @@ export type TextEditorEditTransform = (edit: TextEditorEdit) => Readonly<{ edits
 export type TextEditorActivity = Readonly<{ disposed: boolean; composing: boolean; pendingInput: boolean; pendingCommand: boolean;
     pendingCaret: boolean; pendingDragScroll: boolean; pendingWord: boolean; pendingGrapheme: boolean }>;
 export type TextEditorCommand = EditingCommand | ViewCommand;
+export type LinePrompt = (request: Readonly<{ currentLine: number; lineCount: number; signal: AbortSignal }>) =>
+    number | undefined | PromiseLike<number | undefined>;
 export type TextEditorOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; decorate?: LineDecorator; lineClass?: LineClass; language?: LanguageConfiguration;
-        pasteLineEndings?: "local" | "preserve";
+        pasteLineEndings?: "local" | "preserve"; requestLine?: LinePrompt;
         bracketMatching?: boolean | BracketMatchOptions; characterWarnings?: boolean | CharacterWarningOptions;
         columnRulers?: readonly number[]; highlightCurrentLine?: boolean; fontLigatures?: boolean; scrollBeyondLastLine?: boolean; minimap?: boolean }>;
 export type TextEditor = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; view: DocumentView; viewport: TextViewport;
@@ -147,6 +149,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     const commandRunner = createCooperativeRunner(win);
     let wordJob: Readonly<{ cursor: Pick<WordCursor, "next" | "dispose">; revision: number }> | undefined, cancelWordTask: (() => void) | undefined;
     type CommandCapture = Readonly<{ buffer: TextBuffer; revision: number; selection: Selection; selectionSet: SelectionSet; deleting: boolean }>;
+    let lineRequest: { capture: CommandCapture; abort: AbortController } | undefined;
+    function cancelLineRequest(): void {
+        const request = lineRequest; lineRequest = undefined; request?.abort.abort();
+    }
     let graphemeJob: Readonly<{ cursor: GraphemeCursor; capture: CommandCapture; purpose: "word" | "word-selection" | "grapheme" }> | undefined, cancelGraphemeTask: (() => void) | undefined;
     let graphemeCache: Readonly<{ buffer: TextBuffer; from: number; to: number; index: GraphemeIndex }> | undefined;
     const lineCopyFormat = "application/x-sttropez-lines";
@@ -192,6 +198,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         if (escapeSelection && escapeSelection !== view.getSnapshot().selectionSet) escapeState(false);
         if (disposed || selecting || committing) return;
         const state = resource.getSnapshot(); input.disabled = !workspace.resolveTab(target) || state.state !== "ready";
+        if (lineRequest && !validCommand(lineRequest.capture)) cancelLineRequest();
         if (input.disabled) contextBuffer = undefined;
         input.readOnly = readOnly || !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null;
         if (inputQueue.executing?.edit && input.readOnly) inputQueue.recover(inputQueue.executing, "pending-input-expired");
@@ -787,6 +794,26 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     function runCommand(command: TextEditorCommand): boolean {
         if (disposed || composing || input.disabled || !workspace.resolveTab(target)) return false;
         switch (command) {
+            case "go-to-line": {
+                const prompt = options.requestLine;
+                if (!prompt) return false;
+                cancelLineRequest(); cancelWord(); syncSelection(); group = undefined; preferred = undefined;
+                const capture = commandCapture(false), { buffer } = capture;
+                const request = lineRequest = { capture, abort: new AbortController() };
+                const finish = async () => {
+                    try {
+                        const line = await prompt({ currentLine: buffer.lineAt(capture.selection.head) + 1, lineCount: buffer.lineCount, signal: request.abort.signal });
+                        if (request !== lineRequest || !validCommand(capture) || !root.isConnected || !workspace.ownsDocumentView(view)) return;
+                        if (line === undefined || !Number.isSafeInteger(line) || line < 1 || line > buffer.lineCount) return;
+                        lineRequest = undefined;
+                        const head = buffer.offsetAt(line - 1);
+                        if (view.setSelection(capture.revision, { anchor: head, head })) { revealCaret(); focus(); }
+                    } catch (error) {
+                        if (!request.abort.signal.aborted) conflict("command-failed", undefined, capture.revision, 0, "", error);
+                    } finally { if (request === lineRequest) lineRequest = undefined; }
+                };
+                void finish(); return true;
+            }
             case "select-next-occurrence": case "select-all-occurrences":
                 selectOccurrences(command === "select-all-occurrences"); return true;
             case "add-caret-above": case "add-caret-below":
@@ -966,6 +993,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         lastInputMs = win.performance.now() - start; inputEvents++;
     }, { signal: listeners.signal });
     function startComposition(): void {
+        cancelLineRequest();
         commentPrefix = undefined;
         escapeState(false);
         hostInsertion?.cancel();
@@ -1015,6 +1043,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         const chord = chordKeys.has(event);
         if (chord && event.key === "Escape") { event.preventDefault(); return; }
         const binding = captured ?? classifyEditingKey(event, apple, !!escapeSelection, pairKey, chord);
+        if (typeof binding === "object" && binding.command.kind === "view" && binding.command.command === "go-to-line" && !options.requestLine) return;
         if (binding === "comment-prefix") {
             if (!input.disabled) {
                 syncSelection(); group = undefined; event.preventDefault();
@@ -1242,6 +1271,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             dragScrollFrames, maxDragScrollStepMs, commits, conflicts, queuedInputUnits: inputQueue.pending?.units ?? 0, wordScanSteps, maxWordScanStepMs, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves }),
         dispose: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; editTransform = undefined;
+            cancelLineRequest();
             brackets!.dispose(); paired.clear(); automaticIndent.clear(); commentPrefix = undefined;
             caretHistory.length = 0;
             warnings!.dispose();
