@@ -144,6 +144,7 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Ctrl/Cmd + K, then Ctrl/Cmd + C or U | Add or remove line comments |
 | Shift + Alt/Option + A | Toggle the block comment |
 | Ctrl/Cmd + ] or [ | Indent or outdent the touched lines |
+| Alt/Option + Up or Down | Move touched lines one row. Add Shift to copy them and move each selection to its copy. |
 | Escape | Cancel pending commands and keep only the primary range; arm focus traversal |
 | Escape then Tab / Shift+Tab | Leave the editor for the next/previous host control |
 | Click / Shift+click | One caret / extend the primary range while retaining secondary ranges |
@@ -228,7 +229,7 @@ and frozen; callbacks receive the exact immutable buffer and source endpoints.
 `EditingPair` describes delimiters; `LanguageEditContext` describes the immutable buffer/range.
 `ResolvedLanguageConfiguration` supplies validated defaults. `runCommand(EditingCommand)` accepts
 `indent`, `indent-lines`, `outdent`, `line-comment`, `add-line-comment`, `remove-line-comment`,
-`block-comment` or `newline`. It returns `false` when the view
+`block-comment`, `newline`, `move-line-up`, `move-line-down`, `copy-line-up` or `copy-line-down`. It returns `false` when the view
 cannot edit, is composing/disposed, or lacks the requested comment rule. Long plans yield, then
 commit once after validating the captured target; intermediate planning publishes no text.
 

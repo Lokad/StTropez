@@ -24,7 +24,8 @@ function checkpoint(state: MutablePlanning): boolean {
     state.checkpoint = state.workUnits; return true;
 }
 
-export type EditingCommand = "indent" | "indent-lines" | "outdent" | "line-comment" | "add-line-comment" | "remove-line-comment" | "block-comment" | "newline";
+type LineShift = "move-line-up" | "move-line-down" | "copy-line-up" | "copy-line-down";
+export type EditingCommand = LineShift | "indent" | "indent-lines" | "outdent" | "line-comment" | "add-line-comment" | "remove-line-comment" | "block-comment" | "newline";
 export { resolveLanguageConfiguration } from "./language-configuration.ts";
 export type { EditingPair, LanguageEditContext, PairingContext, EnterIndent, LanguageConfiguration, ResolvedLanguageConfiguration } from "./language-configuration.ts";
 type TypedCharacter = Readonly<{ character: string; canOvertype?: (offset: number) => boolean }>;
@@ -122,6 +123,74 @@ function* publish(edits: TextEdit[], selectionSet: SelectionSet, state: MutableP
     const result = Object.freeze({ edits: Object.freeze(edits), selectionSet });
     if (checkpoint(state)) yield;
     return result;
+}
+
+function touchedLines(buffer: TextBuffer, range: Selection) {
+    const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
+    const last = buffer.lineAt(to);
+    return { first: buffer.lineAt(from), last: to > from && to === buffer.offsetAt(last) ? last - 1 : last };
+}
+
+function* blockText(read: (from: number, to: number) => string, state: MutablePlanning, from: number, to: number): Generator<void, string> {
+    if (to - from <= 4096) return read(from, to);
+    const chunks: string[] = [];
+    for (let at = from; at < to; at += 4096) {
+        chunks.push(read(at, Math.min(at + 4096, to)));
+        if (checkpoint(state)) yield;
+    }
+    bulk(state, to - from);
+    return chunks.join("");
+}
+
+function* shiftLines(buffer: TextBuffer, selections: SelectionSet, command: LineShift,
+    read: (from: number, to: number) => string, state: MutablePlanning): Generator<void, SelectionEditPlan> {
+    const copy = command === "copy-line-up" || command === "copy-line-down", up = command.endsWith("-up");
+    const edits: TextEdit[] = [], ranges: Selection[] = [];
+    let delta = 0, i = 0;
+    while (i < selections.ranges.length) {
+        const firstRange = i++, group = touchedLines(buffer, selections.ranges[firstRange]!);
+        while (i < selections.ranges.length) {
+            const lines = touchedLines(buffer, selections.ranges[i]!);
+            if (lines.first > group.last + 1) break;
+            group.last = Math.max(group.last, lines.last); i++; state.workUnits++;
+            if (checkpoint(state)) yield;
+        }
+        const start = buffer.offsetAt(group.first), end = lineContentEnd(buffer, group.last);
+        const after = group.last + 1 < buffer.lineCount ? buffer.offsetAt(group.last + 1) : end;
+        let destination = start + delta, newEnding = after - end;
+        if (copy) {
+            const body = yield* blockText(read, state, start, end), separator = lineEnding(buffer, group.last);
+            const at = up ? start : end;
+            edits.push({ from: at, to: at, insert: up ? body + separator : separator + body });
+            if (up) newEnding = separator.length; else destination += body.length + separator.length;
+            delta += body.length + separator.length;
+        } else if (up && group.first > 0) {
+            // Move the neighbouring row around the selection. A million selected lines
+            // cost no more buffer reads than one selected line.
+            const before = buffer.offsetAt(group.first - 1), beforeEnd = lineContentEnd(buffer, group.first - 1);
+            const neighbour = yield* blockText(read, state, before, beforeEnd);
+            edits.push({ from: before, to: start, insert: "" }, { from: end, to: end, insert: read(beforeEnd, start) + neighbour });
+            destination = before; newEnding = start - beforeEnd;
+        } else if (!up && group.last + 1 < buffer.lineCount) {
+            const nextEnd = lineContentEnd(buffer, group.last + 1);
+            const neighbour = yield* blockText(read, state, after, nextEnd);
+            edits.push({ from: start, to: start, insert: neighbour + read(end, after) }, { from: end, to: nextEnd, insert: "" });
+            destination += nextEnd - end;
+            newEnding = group.last + 2 < buffer.lineCount ? buffer.offsetAt(group.last + 2) - nextEnd : 0;
+        }
+        const offset = (at: number) => {
+            if (at <= end) return destination + at - start;
+            const withinEnding = at === after ? newEnding : Math.min(at - end, newEnding);
+            return destination + end - start + withinEnding;
+        };
+        while (ranges.length < i) {
+            const range = selections.ranges[ranges.length]!;
+            ranges.push({ ...range, anchor: offset(range.anchor), head: offset(range.head) });
+            state.workUnits++; if (checkpoint(state)) yield;
+        }
+    }
+    state.phase = "map"; bulk(state, ranges.length);
+    return yield* publish(edits, createSelectionSet(buffer.length + delta, ranges, selections.primary), state);
 }
 
 function* indent(buffer: TextBuffer, selections: SelectionSet, config: ResolvedLanguageConfiguration,
@@ -223,14 +292,15 @@ function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCom
     };
     const reader = { lineCount: buffer.lineCount, offsetAt: (line: number) => buffer.offsetAt(line), slice: read };
     const unit = config.insertSpaces ? " ".repeat(config.tabSize) : "\t", edits: TextEdit[] = [];
+    if (command === "move-line-up" || command === "move-line-down" || command === "copy-line-up" || command === "copy-line-down")
+        return yield* shiftLines(buffer, selections, command, read, state);
     if (command === "indent") return yield* indent(buffer, selections, config, read, state);
     const commenting = command === "line-comment" || command === "add-line-comment" || command === "remove-line-comment";
     if (command === "outdent" || command === "indent-lines" || commenting) {
         if (commenting && !config.lineComment) return yield* publish(edits, selections, state);
         const intervals: { first: number; last: number }[] = [];
         for (const range of selections.ranges) {
-            const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
-            const first = buffer.lineAt(from), last = buffer.lineAt(to > from && buffer.offsetAt(buffer.lineAt(to)) === to ? to - 1 : to), previous = intervals.at(-1);
+            const { first, last } = touchedLines(buffer, range), previous = intervals.at(-1);
             if (previous && first <= previous.last + 1) previous.last = Math.max(previous.last, last); else intervals.push({ first, last });
             state.workUnits++; if (checkpoint(state)) yield;
         }

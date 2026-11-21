@@ -53,6 +53,23 @@ test("configured line indentation and comments preserve reversed selections, bla
     assert.deepEqual(result.result!.selectionSet.ranges, [{ anchor: 0, head: 0, anchorAffinity: "after", headAffinity: "after" }]);
 });
 
+test("moving and copying line blocks retains directed selections, mixed endings and final-line boundaries", () => {
+    const source = "aa\r\nb\ncc", reversed = selection(6, 4);
+    for (const [command, text, anchor, head] of [
+        ["move-line-up", "b\r\naa\ncc", 3, 0], ["move-line-down", "aa\r\ncc\nb", 8, 7],
+        ["copy-line-up", "aa\r\nb\nb\ncc", 6, 4], ["copy-line-down", "aa\r\nb\nb\ncc", 8, 6],
+    ] as const) {
+        const shifted = plan(source, reversed, command);
+        assert.equal(shifted.text, text); assert.deepEqual(shifted.ranges, [[anchor, head]]);
+    }
+    const adjacent = plan("a\nb\nc", [{ anchor: 2, head: 2 }, { anchor: 4, head: 4 }], "move-line-up");
+    assert.equal(adjacent.text, "b\nc\na"); assert.deepEqual(adjacent.ranges, [[0, 0], [2, 2]]);
+    const buffer = TextBuffer.from("a\n" + "b\n".repeat(100_000) + "c");
+    const cursor = planLanguageEdit(buffer, createSelectionSet(buffer.length, selection(2, buffer.length - 1)), "move-line-up", resolveLanguageConfiguration());
+    const result = cursor.next(256); cursor.dispose();
+    assert.equal(result.status, "ready"); assert.equal(result.result!.edits.length, 2); assert.ok(result.readUnits < 10);
+});
+
 test("block comments and pair surrounds retain directed and adjacent selections without copying selected text", () => {
     const selected = [{ anchor: 2, head: 0 }, { anchor: 2, head: 4 }];
     const comment = plan("abcd", selected, "block-comment");

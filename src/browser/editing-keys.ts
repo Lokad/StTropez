@@ -21,6 +21,10 @@ export function classifyEditingKey(event: KeyStroke, apple: boolean, escaped: bo
         return bind({ kind: "language", command: key === "c" ? "add-line-comment" : "remove-line-comment" }, true);
     if (command && !extend && key === "k") return "comment-prefix";
     if (command && !extend && (key === "]" || key === "[")) return bind({ kind: "language", command: key === "]" ? "indent-lines" : "outdent" }, true);
+    if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+        const up = event.key === "ArrowUp";
+        return bind({ kind: "language", command: extend ? (up ? "copy-line-up" : "copy-line-down") : (up ? "move-line-up" : "move-line-down") }, true);
+    }
     if (command && (key === "z" || event.ctrlKey && key === "y")) return bind({ kind: "history", direction: extend || key === "y" ? "redo" : "undo" }, true);
     if (command && key === "a") return bind({ kind: "select-all" });
     if (command && (event.key === "Home" || event.key === "End")) return horizontal(event.key, true);

@@ -471,6 +471,16 @@ test("comment chords and shifted slash act on the captured lines", async ({ page
     expect(await stroke("c")).toBe(false);
 });
 
+test("Alt arrows move and copy lines while typing and Undo follow the selected block", async ({ page }) => {
+    await page.evaluate(() => { const f = window.editingFixture; f.setText("a\r\nb\nc"); f.selections([{ anchor: 4, head: 3 }]); f.focus("primary"); });
+    const rows = page.locator("#primary .st-viewport-row");
+    await page.keyboard.press("Alt+ArrowUp"); await expect(rows).toHaveText(["b", "a", "c"]);
+    await page.keyboard.press("Alt+Shift+ArrowDown"); await page.keyboard.type("B");
+    await expect(rows).toHaveText(["b", "B", "a", "c"]);
+    await page.keyboard.press("Control+z"); await page.keyboard.press("Control+z"); await page.keyboard.press("Control+z");
+    await expect(rows).toHaveText(["a", "b", "c"]); expect((await state(page)).primary.selection).toMatchObject({ anchor: 4, head: 3 });
+});
+
 test("typing a closing brace realigns the line and Undo restores its indentation", async ({ page }) => {
     await page.evaluate(() => { const f = window.editingFixture, text = "  if (ok) {\n      ";
         f.setText(text); f.selections([{ anchor: text.length, head: text.length }]); f.focus("primary");
