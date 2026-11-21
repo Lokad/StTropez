@@ -228,15 +228,19 @@ preceding line’s Enter rule. A whole-line or multiline selection shifts each t
 Shift+Tab removes one indentation level from each touched line, including mixed tabs and spaces.
 A selection ending at the next line’s start excludes that line.
 
-Line comments toggle nonblank lines. Block comments wrap or unwrap selections. Pair rules
-can insert a pair, skip its closer or surround a selection.
+Line comments toggle nonblank lines. Block comments wrap or unwrap selections. Typing an opener
+can insert its closer or surround a selection. Typing the closer steps over it once if this view
+inserted it. Backspace or word Backspace between the two untouched delimiters deletes both.
+The view tracks its pairs across edits and undo/redo until disposal or a change of delimiters.
 
 Enter chooses the current row's LF/CRLF terminator, falling back to the preceding terminator
 at EOF and LF when absent. Callback indentation removes/keeps/adds one unit and can split the
 closing text onto another line. Pairing, comments and cancellable non-composing line-break input
 use the same transaction/transform path. Composition and noncancellable input use literal capture.
 
-For headless planning, use `resolveLanguageConfiguration` and `planLanguageEdit`. Advance the lazy
+For headless planning, use `resolveLanguageConfiguration` and `planLanguageEdit`. A character
+command can supply `canOvertype(offset)` to identify closers the caller inserted. Without it,
+typing a closer inserts the character. Advance the lazy
 cursor with `next(workBudget?)` or inspect it with `snapshot()`. Frozen progress gives `status`
 (`running`, `ready`, `failed`, `disposed`), `phase` (`validate`, `plan`, `map`, `publish`), counters,
 `result` and `failure`. Only `ready` gives a complete `SelectionEditPlan` to apply. An error records

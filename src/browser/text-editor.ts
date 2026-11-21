@@ -1,4 +1,5 @@
 import { mountInputCaret } from "./input-caret.ts";
+import { autoClosedPairs } from "./auto-closed-pairs.ts";
 import { clientBox, cssZoom } from "./dom-coordinates.ts";
 import { textDifference } from "../core/changes.ts";
 import { createWordCommandCursor, WordCursor } from "../core/words.ts";
@@ -83,6 +84,7 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
 export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabId,
     options: TextEditorOptions = {}): MountedTextEditor {
     let language = resolveLanguageConfiguration(options.language);
+    const paired = autoClosedPairs();
     const bracketOptions = options.bracketMatching === undefined || options.bracketMatching === false ? false
         : bracketMatchLimits(options.bracketMatching === true ? {} : options.bracketMatching);
     const warningOptions = options.characterWarnings === undefined || options.characterWarnings === false ? undefined
@@ -187,6 +189,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
 
         if (!input.disabled && !composing) {
             const document = workspace.document(documentId), { selection: selected, selectionSet } = view.getSnapshot();
+            paired.sync(document);
             if (graphemeCache?.buffer !== document.buffer) graphemeCache = undefined;
             const capture = rangeCommand?.capture ?? graphemeJob?.capture;
             if (capture && (capture.revision !== document.revision || capture.selectionSet !== selectionSet || capture.deleting && input.readOnly)) cancelWord();
@@ -244,7 +247,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     function revealCaret(selected = view.getSnapshot().selection): void {
         viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" });
     }
-    function apply(edits: readonly TextEdit[], selection: Selection | SelectionSet, kind: EditKind, type?: string, expectedRevision = revision, recoveryText?: string, adjustNewlines = false): boolean {
+    function apply(edits: readonly TextEdit[], selection: Selection | SelectionSet, kind: EditKind, type?: string, expectedRevision = revision, recoveryText?: string, adjustNewlines = false,
+        accepted?: (edits: readonly TextEdit[]) => void): boolean {
         if (disposed) return false;
         hostInsertion?.cancel();
         if (readOnly) { conflict("read-only", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
@@ -268,6 +272,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             applied = result.applied;
             if (result.applied) { // A later presentation/completion failure must not recover this text twice.
                 inputQueue.consumeRunning();
+                accepted?.(edits);
                 commits++; const after = view.getSnapshot(); revealCaret(after.selection);
                 if (type && key) group = { type, revision: result.revision, selectionSet: after.selectionSet, time: now, key }; }
             else conflict(result.reason, edits[0], expectedRevision, context.from, recoveryText);
@@ -433,6 +438,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
                 done(deleting ? range : moved(range, direction < 0 ? Math.min(range.anchor, range.head) : Math.max(range.anchor, range.head), false)); return;
             }
             const offset = range.head;
+            if (deleting && direction < 0 && paired.emptyAt(offset)) { done({ anchor: offset - 1, head: offset + 1 }); return; }
             const adjacent = () => withGraphemes(capture, offset, direction, "grapheme", point => {
                 if (deleting) { const from = direction < 0 && point.floor === offset ? point.preceding ?? offset : point.floor, to = direction > 0 ? point.following ?? offset : point.ceil;
                     done({ anchor: from, head: to }); }
@@ -457,6 +463,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         const capture = commandCapture(deleting);
         eachRange(capture, "word", (selected, done) => {
         if (deleting && selected.anchor !== selected.head) { done(selected); return; }
+        if (deleting && direction < 0 && paired.emptyAt(selected.head)) { done({ anchor: selected.head - 1, head: selected.head + 1 }); return; }
         withGraphemes(capture, selected.head, deleting ? direction < 0 ? 1 : -1 : direction, "word", point => {
         const start = (deleting ? -direction : direction) < 0 ? point.floor : point.ceil;
         const job = { cursor: createWordCommandCursor(capture.buffer, start, direction, deleting), revision: capture.revision }; wordJob = job;
@@ -690,7 +697,15 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         if (disposed || composing || input.disabled || input.readOnly) return false;
         if (command === "line-comment" && !language.lineComment || command === "block-comment" && !language.blockComment) return false;
         cancelWord(); syncSelection();
-        const capture = commandCapture(true), planner = planLanguageEdit(capture.buffer, capture.selectionSet, command, language);
+        const capture = commandCapture(true), overtyped: number[] = [];
+        const opening = typeof command === "object" ? language.pairs.find(pair => pair.open === command.character) : undefined;
+        const planner = planLanguageEdit(capture.buffer, capture.selectionSet, typeof command === "string" ? command : {
+            character: command.character, canOvertype: at => {
+                if (!paired.has(at)) return false;
+                overtyped.push(at); return true;
+            },
+        }, language);
+        const acceptPairs = (edits: readonly TextEdit[]) => paired.accept(workspace.document(documentId), capture.revision, edits, capture.selectionSet, opening, overtyped);
         let planning = false;
         const job = { capture, purpose: "grapheme" as const, release: () => { if (!planning) planner.dispose(); } }; rangeCommand = job;
         const step = () => commandTurn(() => {
@@ -710,7 +725,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             rangeCommand = undefined; planner.dispose();
             completeCaptured(capture, () => {
                 const plan = result.result!;
-                if (plan.edits.length) return apply(plan.edits, plan.selectionSet, typeof command === "object" ? "typing" : "replace", undefined, capture.revision, undefined, command === "newline" && language.enter !== undefined);
+                if (plan.edits.length) return apply(plan.edits, plan.selectionSet, typeof command === "object" ? "typing" : "replace", undefined, capture.revision, undefined,
+                    command === "newline" && language.enter !== undefined, typeof command === "object" ? acceptPairs : undefined);
+                if (overtyped.length) acceptPairs(plan.edits);
                 group = undefined; view.setSelections(capture.revision, plan.selectionSet.ranges, plan.selectionSet.primary);
                 revealCaret(); refresh(); return true;
             });
@@ -1060,6 +1077,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             if (disposed || composing) return false;
             hostInsertion?.cancel();
             const next = resolveLanguageConfiguration(configuration);
+            if (language.pairs.length !== next.pairs.length || language.pairs.some((pair, i) => pair.open !== next.pairs[i]!.open || pair.close !== next.pairs[i]!.close)) paired.clear();
             cancelWord(); group = undefined; preferred = undefined; language = next;
             root.style.tabSize = String(language.tabSize); viewport.invalidate(); refresh(); brackets!.refresh(); return true;
         },
@@ -1073,7 +1091,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             dragScrollFrames, maxDragScrollStepMs, commits, conflicts, queuedInputUnits: inputQueue.pending?.units ?? 0, wordScanSteps, maxWordScanStepMs, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves }),
         dispose: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; editTransform = undefined;
-            brackets!.dispose();
+            brackets!.dispose(); paired.clear();
             warnings!.dispose();
             hostInsertion?.cancel();
             if (inputQueue.executing) inputQueue.recover(inputQueue.executing, "pending-input-detached");

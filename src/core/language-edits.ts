@@ -24,6 +24,7 @@ function checkpoint(state: MutablePlanning): boolean {
 
 export type EditingCommand = "indent" | "outdent" | "line-comment" | "block-comment" | "newline";
 export type EditingPair = Readonly<{ open: string; close: string }>;
+type TypedCharacter = Readonly<{ character: string; canOvertype?: (offset: number) => boolean }>;
 export type LanguageEditContext = Readonly<{ buffer: TextBuffer; from: number; to: number }>;
 export type PairingContext = LanguageEditContext & Readonly<{ pair: EditingPair; operation: "open" | "close" | "surround" }>;
 export type EnterIndent = Readonly<{ indent: -1 | 0 | 1; split?: boolean }>;
@@ -198,14 +199,14 @@ function* indent(buffer: TextBuffer, selections: SelectionSet, config: ResolvedL
 }
 
 /** Lazy, DOM-free planning. Budgets count work, not milliseconds; only ready publishes a complete proposal. */
-export function planLanguageEdit(buffer: TextBuffer, selections: SelectionSet, command: EditingCommand | Readonly<{ character: string }>,
+export function planLanguageEdit(buffer: TextBuffer, selections: SelectionSet, command: EditingCommand | TypedCharacter,
     config: ResolvedLanguageConfiguration): LanguageEditCursor {
     const state: MutablePlanning = { phase: "validate", workUnits: 0, readUnits: 0, bulkWorkUnits: 0, checkpoint: 0 };
     return kernelCursor(plan(buffer, selections, command, config, state), () => state.workUnits,
         (status, result, failure) => Object.freeze({ status, phase: state.phase, workUnits: state.workUnits,
             readUnits: state.readUnits, bulkWorkUnits: state.bulkWorkUnits, result, failure }), "Language edit");
 }
-function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCommand | Readonly<{ character: string }>,
+function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCommand | TypedCharacter,
     config: ResolvedLanguageConfiguration, state: MutablePlanning): Generator<void, SelectionEditPlan> {
     bulk(state, selections.ranges.length);
     const normalized = createSelectionSet(buffer.length, selections.ranges, selections.primary);
@@ -270,12 +271,13 @@ function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCom
             bulk(state, config.pairs.length * 2);
             const closing = config.pairs.find(pair => pair.close === key), opening = config.pairs.find(pair => pair.open === key);
             const allowed = (pair: EditingPair, operation: PairingContext["operation"]) => { state.workUnits++; return config.allowPair?.({ ...context, pair, operation }) ?? true; };
-            if (from === to && closing && next === key && allowed(closing, "close")) { anchor = head = from + delta + 1; }
+            const atCloser = from === to && closing !== undefined && next === key;
+            if (atCloser && allowed(closing, "close") && command.canOvertype?.(from)) { anchor = head = from + delta + 1; }
             else if (opening && from !== to && allowed(opening, "surround")) {
                 edits.push({ from, to: from, insert: opening.open }, { from: to, to, insert: opening.close });
                 anchor = range.anchor + delta + 1; head = range.head + delta + 1; delta += 2;
             } else {
-                const pair = from === to && opening && (!next || /[\s)\]}"'`]/.test(next)) && allowed(opening, "open");
+                const pair = from === to && !atCloser && opening && (!next || /[\s)\]}"'`]/.test(next)) && allowed(opening, "open");
                 const insert = pair ? key + opening.close : key;
                 edits.push({ from, to, insert }); anchor = head = from + delta + key.length; delta += insert.length - (to - from);
             }

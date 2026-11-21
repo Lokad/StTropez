@@ -373,6 +373,33 @@ test("two views retain text and selections through persisted transitions, then d
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false })));
 });
 
+test("typed closers distinguish an automatically inserted delimiter at each caret", async ({ page }) => {
+    await page.evaluate(() => { const f = window.editingFixture; f.setText("\n)"); f.selections([{ anchor: 0, head: 0 }]); f.focus("primary"); });
+    await page.keyboard.type("(");
+    await page.evaluate(() => window.editingFixture.selections([{ anchor: 1, head: 1 }, { anchor: 3, head: 3 }]));
+    await page.keyboard.type(")"); await ready(page);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 5))).toBe("()\n))");
+    await page.evaluate(() => window.editingFixture.selections([{ anchor: 1, head: 1 }]));
+    await page.keyboard.type(")x");
+    await expect(page.locator("#primary .st-viewport-row").first()).toHaveJSProperty("textContent", "()x)");
+});
+
+test("Backspace removes an automatic pair through a mapped edit and undo, but leaves a literal closer", async ({ page }) => {
+    await page.evaluate(() => { const f = window.editingFixture; f.setText("a"); f.selections([{ anchor: 1, head: 1 }]); f.focus("primary"); });
+    await page.keyboard.type("(");
+    await page.evaluate(() => window.editingFixture.edit([{ from: 0, to: 0, insert: "b" }]));
+    const row = page.locator("#primary .st-viewport-row").first();
+    await page.keyboard.press("Control+Backspace"); await expect(row).toHaveJSProperty("textContent", "ba");
+    await page.keyboard.press("Control+z"); await expect(row).toHaveJSProperty("textContent", "ba()");
+    await page.keyboard.press("Backspace"); await expect(row).toHaveJSProperty("textContent", "ba");
+    await page.keyboard.press("Control+z");
+    await page.evaluate(() => { const f = window.editingFixture;
+        f.edit([{ from: 2, to: 3, insert: "[" }]); f.edit([{ from: 2, to: 3, insert: "(" }]); f.selections([{ anchor: 3, head: 3 }]);
+    });
+    await page.keyboard.press("Backspace"); await page.keyboard.type("X");
+    await expect(row).toHaveJSProperty("textContent", "baX)");
+});
+
 test("line indentation/outdent, CRLF Enter, paired brackets and vertical navigation use model selections", async ({ page }) => {
     await page.evaluate(() => { window.editingFixture.setText("one\n\ttwo\nthree"); window.editingFixture.select("primary", { anchor: 0, head: 9 }); window.editingFixture.focus("primary"); }); await ready(page);
     await page.keyboard.press("Tab"); expect(await page.evaluate(() => window.editingFixture.range(0, 22))).toBe("    one\n    \ttwo\nthree");

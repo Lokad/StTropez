@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer, createSelectionSet, resolveLanguageConfiguration, planLanguageEdit, Workspace } from "../src/index.ts";
-import type { EditingCommand, LanguageConfiguration, LanguageEditProgress, Selection } from "../src/index.ts";
+import type { LanguageConfiguration, LanguageEditProgress, Selection } from "../src/index.ts";
 
 const configuration: LanguageConfiguration = { tabSize: 2, lineComment: "//", blockComment: { open: "/*", close: "*/" }, enter: "keep",
     pairs: [{ open: "{", close: "}" }, { open: '"', close: '"' }] };
-function plan(text: string, ranges: readonly Selection[], command: EditingCommand | { character: string }, config = configuration) {
+function plan(text: string, ranges: readonly Selection[], command: Parameters<typeof planLanguageEdit>[2], config = configuration) {
     const buffer = TextBuffer.from(text), selections = createSelectionSet(text.length, ranges, ranges.length - 1);
     const iterator = planLanguageEdit(buffer, selections, command, resolveLanguageConfiguration(config));
     let step = iterator.next(256), turns = 1;
@@ -70,7 +70,8 @@ test("host pairing and Enter rules see exact buffers and can reject string/comme
     assert.equal(plan("// ", selection(3), { character: '"' }, config).text, '// "');
     const pair = plan("", selection(0), { character: '"' }, config);
     assert.equal(pair.text, '""'); assert.deepEqual(pair.ranges, [[1, 1]]);
-    const skip = plan(pair.text, pair.value.selectionSet.ranges, { character: '"' }, config);
+    assert.equal(plan(pair.text, pair.value.selectionSet.ranges, { character: '"' }, config).text, '"""');
+    const skip = plan(pair.text, pair.value.selectionSet.ranges, { character: '"', canOvertype: at => at === 1 }, config);
     assert.equal(skip.text, '""'); assert.equal(skip.value.edits.length, 0); assert.deepEqual(skip.ranges, [[2, 2]]);
     const enter = plan("  {}", selection(3), "newline", config);
     assert.equal(enter.text, "  {\n    \n  }"); assert.deepEqual(enter.ranges, [[8, 8]]);
