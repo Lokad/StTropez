@@ -47,9 +47,15 @@ test("100k lines render bounded indexed ranges and reach the final line without 
 });
 
 test("a huge line uses bounded horizontal text windows and scaled native scrollbar coordinates", async ({ page }) => {
+    const viewport = page.locator("#primary .st-viewport");
+    await viewport.evaluate(node => node.style.setProperty("--st-font-size", "15.3px"));
     await page.evaluate(() => window.viewportFixture.load("single-line")); await ready(page);
+    const initial = await page.evaluate(() => window.viewportFixture.snapshot().primary);
     await page.evaluate(() => window.viewportFixture.reveal("primary", 2_400_000)); await ready(page);
+    await viewport.evaluate(node => { node.parentElement!.style.height = "352px"; });
+    await expect.poll(() => page.evaluate(() => window.viewportFixture.snapshot().primary.height)).not.toBe(initial.height);
     const end = await page.evaluate(() => window.viewportFixture.snapshot());
+    expect(end.primary.columnWidth).toBe(initial.columnWidth);
     expect(end.primary.horizontalExtent).toBeGreaterThan(4_000_000); expect(end.primary.physicalWidth).toBe(4_000_000);
     expect(end.primary.textUnits).toBeLessThan(400); expect(end.primary.readUnits).toBeLessThan(410);
     expect(end.document!.exports).toBe(0);

@@ -519,8 +519,9 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const clientWidth = root.clientWidth, mapWidth = minimap ? minimapWidth(clientWidth) : 0;
         height = root.clientHeight;
         const zoom = cssZoom(root);
-        const probeBox = probe.getBoundingClientRect();
-        columnWidth = probeBox.width / zoom / 64 || 8.4;
+        // At multi-million-pixel scroll offsets a client rectangle loses fractional width.
+        // Use the probe's layout width in CSS pixels before scaling logical columns.
+        columnWidth = parseFloat(win.getComputedStyle(probe).width) / 64 || 8.4;
         const style = win.getComputedStyle(root); naturalLineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.6; lineHeight = naturalLineHeight;
         const font = [style.fontFamily, style.fontSize, style.fontWeight, style.fontStyle, style.fontStretch, style.letterSpacing, style.wordSpacing,
             style.tabSize, style.fontVariant, style.fontVariantLigatures, style.fontKerning,
@@ -591,7 +592,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             && (selectionMetrics?.font !== font || selectionMetrics.height !== lineHeight || selectionMetrics.zoom !== zoom)) {
             // Inline padding extends the painted background without changing shaping, advances or row height.
             const range = owner.createRange(); range.selectNodeContents(probe);
-            const glyph = range.getBoundingClientRect(), extra = (lineHeight - naturalLineHeight) / 2;
+            const glyph = range.getBoundingClientRect(), probeBox = probe.getBoundingClientRect(), extra = (lineHeight - naturalLineHeight) / 2;
             layer.style.setProperty("--st-selection-pad-top", `${Math.max(0, extra + (glyph.top - probeBox.top) / zoom)}px`);
             layer.style.setProperty("--st-selection-pad-bottom", `${Math.max(0, extra + (probeBox.bottom - glyph.bottom) / zoom)}px`);
             selectionMetrics = { font, height: lineHeight, zoom };

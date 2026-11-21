@@ -194,7 +194,7 @@ stops there.
 | --- | --- |
 | Document reads | Visible rows plus four surrounding rows per edge; horizontal fragments add 32 UTF-16 units per edge, with short-row and surrogate-boundary adjustments; no whole-document text export |
 | Short lines | Lines up to 512 UTF-16 units render with their complete shaping context |
-| Long lines | Horizontal windows estimate position from UTF-16 units and measured monospace cell width |
+| Long lines | Horizontal windows estimate position from UTF-16 units and the monospace cell’s layout width. The estimate stays stable across native scroll positions. |
 | Line endings | LF creates a row; CR before LF is omitted from display; lone CR is displayed as a control symbol |
 | Geometry | Native text ranges measure mounted fragments; geometry outside those fragments is unavailable |
 | Updates | Relevant changes coalesce into animation frames; unchanged row text/classes retain their nodes |
