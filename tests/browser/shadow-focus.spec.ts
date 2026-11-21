@@ -4,11 +4,11 @@ import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import type { Page } from "@playwright/test";
 import type { Workspace, TextResourceHandle, TabId } from "../../src/index.ts";
-import type { TextEditor, InputConflictDetail, LspEditorController, LspHighlightController } from "../../src/browser/index.ts";
+import type { TextEditor, InputConflictDetail, CompletionController, LspHighlightController } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 
 type Fixture = { workspace: Workspace; source: TextResourceHandle; tab: TabId; editor: TextEditor;
-    provider?: LspWorkspace; completion?: LspEditorController; highlights?: LspHighlightController;
+    provider?: LspWorkspace; completion?: CompletionController; highlights?: LspHighlightController;
     errors: string[]; cancellations: string[]; dispose: () => Promise<void> };
 declare global { interface Window { shadowFocus: Fixture } }
 let modules: Map<string, string>, css: string;
@@ -26,7 +26,7 @@ async function mount(page: Page, language: boolean) {
     await page.goto("/viewport/");
     await page.evaluate(async ({ css, language }) => {
         const path = "/shadow-focus/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
-        const { mountTextEditor, createLspEditor, createLspHighlightController, openWebSocketTransport } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const { mountTextEditor, createCompletionController, createLspHighlightController, openWebSocketTransport } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const { LspWorkspace, RpcError } = await import(path + "protocol.js") as typeof import("../../src/protocol/index.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "focus", resource: "source", variant: "text" }, "Source", { value: "sample sample\ns" });
         const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "source");
@@ -49,7 +49,7 @@ async function mount(page: Page, language: boolean) {
                     return openWebSocketTransport(endpoint.href, { signal: abort.signal }).finally(stop); },
                 schedule: (ms, work) => { const timer = setTimeout(work, ms); return () => clearTimeout(timer); },
                 features: ["textDocument/completion", "textDocument/documentHighlight"], onError: report });
-            f.completion = createLspEditor(editor, { provider: f.provider, onError: report });
+            f.completion = createCompletionController(editor, f.provider, { onError: report });
             f.highlights = createLspHighlightController(editor, { provider: f.provider, delayMs: 0 });
         }
     }, { css, language });
@@ -72,9 +72,9 @@ test("completion distinguishes host preparation failures from malformed provider
         await expect.poll(async () => (await completion(page)).connected).toBe(true);
         for (const failure of ["type", "range", "none"] as const) {
             await page.evaluate(async failure => {
-                const path = "/shadow-focus/", { createLspEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+                const path = "/shadow-focus/", { createCompletionController } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
                 const f = window.shadowFocus; f.completion!.dispose();
-                f.completion = createLspEditor(f.editor, { provider: f.provider!, autoConnect: false, automatic: false,
+                f.completion = createCompletionController(f.editor, f.provider!, { autoConnect: false, automatic: false,
                     prepareCompletion: async () => {
                         if (failure === "type") throw new TypeError("Host preparation failed.");
                         if (failure === "range") throw new RangeError("Host preparation failed.");
@@ -83,7 +83,7 @@ test("completion distinguishes host preparation failures from malformed provider
             await input.focus(); await input.press("Control+Space");
             const expected = failure === "none" ? { failed: 0, invalid: 1, received: 1 } : { failed: 1, invalid: 0, received: 0 };
             await expect.poll(() => page.evaluate(() => {
-                const { failed, invalid, received } = window.shadowFocus.completion!.snapshot(); return { failed, invalid, received };
+                const { failed, invalid, received } = window.shadowFocus.completion!.getDiagnostics(); return { failed, invalid, received };
             })).toEqual(expected);
             expect((await completion(page)).choices).toEqual([]);
         }

@@ -90,6 +90,20 @@ test("pending LSP diagnostics remain painted and navigable while server analysis
     const frames = await observation.evaluate(value => value.stop()); await observation.dispose();
     expect(frames.some(frame => frame.pending)).toBe(true);
     expect(frames.every(frame => frame.text === "TODO" && frame.revision === frame.source)).toBe(true);
+
+    const end = { line: 1, character: 0 };
+    client!.send(JSON.stringify({ jsonrpc: "2.0", method: "textDocument/publishDiagnostics", params: {
+        uri: await sourceDiagnosticUri(page), diagnostics: [{ range: { start: end, end }, message: "Missing expression" }]
+    } }));
+    await expect(diagnostic).toContainText("Missing expression");
+    const point = page.locator('[aria-label="Left host pane"] .st-diagnostic[data-ornament="point"]');
+    await expect(point).toHaveCount(1);
+    expect(await point.evaluate(mark => {
+        const ink = getComputedStyle(mark, "::after");
+        return ink.content !== "none" && parseFloat(ink.width) > 0 && parseFloat(ink.borderBottomWidth) > 0;
+    })).toBe(true);
+    await diagnostic.click();
+    expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: original.length, head: original.length });
 });
 
 test("unsupported completion commands preserve usable choices without issuing a command", async ({ page }) => {

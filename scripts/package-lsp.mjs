@@ -17,6 +17,14 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         /** @param {string} name */ const button = name => page.getByRole("button", { name, exact: true });
         const state = () => page.evaluate(() => window.publicLsp.state()), text = () => page.evaluate(() => window.publicLsp.text());
         await input.waitFor(); assert.equal((await state()).provider.created, 0); await button("Connect").click(); await expect.poll(async () => (await state()).editor.connected).toBe(true);
+        const marker = page.locator("#editor .st-diagnostic");
+        await expect(marker).toHaveText("TODO");
+        const firstDiagnostic = await page.evaluateHandle(() => {
+            const diagnostics = window.publicLsp.diagnostics, state = diagnostics.getSnapshot(), first = state.diagnostics[0];
+            if (!first || ![state, state.diagnostics, state.unversionedDiagnostics, first].every(Object.isFrozen)) throw new Error("Expected immutable diagnostics");
+            diagnostics.cancel(); return first;
+        });
+        await expect(marker).toHaveCount(0);
         await input.focus(); await page.evaluate(() => window.publicLsp.select(8)); await input.pressSequentially("x"); const typed = await text();
         await button("Request completion").click(); await expect(button("sampleWithImport")).toBeVisible(); await button("sampleWithImport").click();
         const depth = (await state()).history.undoDepth; await button("Apply completion").click(); assert.equal((await state()).history.undoDepth, depth + 1);
@@ -48,6 +56,10 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         assert.equal(counts.initialize, 1); assert.deepEqual(counts.failures, []);
         assert.ok(Array.isArray(counts.documents) && counts.documents.every(document => document && typeof document === "object"
             && !Array.isArray(document) && "open" in document && document.open === 1));
+        await page.evaluate(() => { window.publicLsp.stopCompletion(); window.publicLsp.diagnostics.request(); });
+        await expect(marker).toHaveText("TODO");
+        assert.equal(await firstDiagnostic.evaluate(item => item.select()), false); await firstDiagnostic.dispose();
+        assert.equal(await page.evaluate(() => window.publicLsp.diagnostics.getSnapshot().diagnostics[0]?.select()), true);
         await page.evaluate(() => window.publicLsp.dispose()); const final = await state(); assert.equal(final.provider.scopes, 0); assert.equal(final.provider.created, final.provider.terminated);
         assert.deepEqual([final.diagnostics.leases, final.diagnostics.views, final.diagnostics.subscriptions], [0, 0, 0]); assert.deepEqual(final.errors, []); assert.deepEqual(errors, []);
         await writeFile(`artifacts/package/lsp-${browser.browserType().name()}.json`, JSON.stringify({ status: "passed", packageSha256, automaticCompletion: true, obsoleteListControlRejected: true, notes: final.notes, synchronization: counts, final, errors }, null, 2));

@@ -1,7 +1,7 @@
 # Language features
 
 A completion list, hover or rename result belongs to the revision that produced it. Attach the browser
-controllers for completion and occurrence highlights. For other results, your host draws the UI, opens
+controllers for completion, diagnostics and occurrence highlights. For other results, your host draws the UI, opens
 files and decides which edits to apply. [Connect a provider](language-server.md)
 
 ## Use
@@ -12,7 +12,8 @@ separately. Incoming edits and command execution have their own
 
 | Feature | Client or controller | Enabled method |
 | --- | --- | --- |
-| Completion | `createLspCompletionClient`; browser `createLspEditor` | `textDocument/completion` |
+| Completion | `createLspCompletionClient`; browser `createCompletionController` | `textDocument/completion` |
+| Diagnostics | `createDiagnosticController` | `textDocument/publishDiagnostics` |
 | Hover | `createLspHoverClient` | `textDocument/hover` |
 | Signature help | `createLspSignatureClient` | `textDocument/signatureHelp` |
 | Definition / references | `createLspNavigationClient` | `textDocument/definition` / `textDocument/references` |
@@ -43,9 +44,9 @@ Capture the completion list ID when rendering an item. A delayed click will then
 list replaces it.
 
 ```ts
-import type { LspEditorController } from "sttropez/browser";
+import type { CompletionController } from "sttropez/browser";
 
-export function completionActions(language: LspEditorController) {
+export function completionActions(language: CompletionController) {
     const state = language.getSnapshot();
     return state.choices.map((label, index) => {
         const item = state.completionAt(index)!;
@@ -102,10 +103,14 @@ integer tags. Open related files only when the host requests them. For a code ac
 forwards overlapping, placed diagnostics only when their provider version is current. A pending or
 unversioned diagnostic cannot supply that context.
 
-Read `diagnostics`, `diagnosticsPending`, `diagnosticRevision` and `unversionedDiagnostics` on the
-browser controller. Use `selectDiagnostic(index)` to jump. Distinguish a pending recheck from a push
-of unknown age. Render messages as text. Your host pages the list, checks help links and opens related
-locations.
+Use `createDiagnosticController(editor, provider)` to paint diagnostics. The controller underlines
+ranges and marks empty ranges at their offset. Read `diagnostics`, `diagnosticsPending`,
+`diagnosticRevision` and `unversionedDiagnostics` from its snapshot. Each placed diagnostic has a
+`select()` method that reveals its range. An expired item returns `false`.
+
+`cancel()` clears the marks and pauses observation. `request()` resumes with the latest push.
+Pass `{ autoConnect: false }` if the host opens the connection. Render messages as text. Your host
+pages the list, checks help links and opens related locations.
 
 ### Completion
 
@@ -156,10 +161,11 @@ export async function completionLabels(
 }
 ```
 
-`createLspEditor(editor, options)` attaches completion and diagnostics to one view.
+`createCompletionController(editor, provider, options?)` attaches completion and snippets to one view.
 The controller handles input, selection checks and acceptance. The host renders choices and status.
 `request()` invokes completion. Set `automatic: false` to require explicit requests. Supply
-`canCapture` for additional readiness checks.
+`canCapture` for additional readiness checks. `getDiagnostics()` reports completion counts and time
+spent in its `beforeinput` and `keydown` handlers. These clocks stop when the handler returns.
 
 Completion and diagnostics share one binding and lease but have separate scopes. `prepareCompletion`
 receives the completion scope after synchronization. Cancellation skips pending preparation or

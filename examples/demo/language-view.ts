@@ -1,5 +1,5 @@
-import { createLspEditor, createLspHighlightController } from "../../src/browser/index.ts";
-import type { TextEditor, LspEditorController, LspEditorSnippet, LspHighlightController } from "../../src/browser/index.ts";
+import { createCompletionController, createLspHighlightController } from "../../src/browser/index.ts";
+import type { TextEditor, CompletionController, CompletionSnippet, LspHighlightController } from "../../src/browser/index.ts";
 import type { Workspace } from "../../src/index.ts";
 import type { DemoFile } from "./project.ts";
 import type { DemoLanguage } from "./language.ts";
@@ -25,8 +25,8 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         const snippetPanel = document.createElement("div"); scope.defer(() => snippetPanel.remove());
         snippetPanel.className = "demo-snippet"; snippetPanel.hidden = true;
         snippetPanel.setAttribute("role", "region"); snippetPanel.setAttribute("aria-label", "Snippet controls"); document.body.append(snippetPanel);
-        let controller: LspEditorController | undefined, renderedChoices: readonly string[] | undefined, renderedIndex = -1;
-        let renderedSnippet: LspEditorSnippet | undefined;
+        let controller: CompletionController | undefined, renderedChoices: readonly string[] | undefined, renderedIndex = -1;
+        let renderedSnippet: CompletionSnippet | undefined;
         let inspection: ReturnType<typeof mountDemoInspection> | undefined;
         let symbols: ReturnType<typeof mountDemoSymbols> | undefined;
         let actions: ReturnType<typeof mountDemoActions> | undefined;
@@ -71,7 +71,7 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         void language.connect().then(provider => {
             if (!valid()) return;
             try {
-                controller = createLspEditor(editor, { provider, autoConnect: false, filterManualCompletions: true, canCapture: valid });
+                controller = createCompletionController(editor, provider, { autoConnect: false, filterManualCompletions: true, canCapture: valid });
                 scope.defer(() => controller!.dispose());
                 highlights = createLspHighlightController(editor, { provider });
                 scope.defer(() => highlights!.dispose());

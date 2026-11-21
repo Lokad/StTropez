@@ -345,7 +345,7 @@ language server at the same origin’s `/lsp` WebSocket endpoint. It must speak 
 UTF-16 positions and recognize the URI below.
 
 ```js
-import { createLspEditor, openWebSocketTransport } from "sttropez/browser";
+import { createCompletionController, createDiagnosticController, openWebSocketTransport } from "sttropez/browser";
 import { LspWorkspace } from "sttropez/protocol";
 
 const endpoint = new URL("/lsp", location.href);
@@ -366,11 +366,14 @@ Attach the provider to the first pane. Use **Connect**, then Ctrl+Space in the e
 completion. Arrow keys choose a suggestion and Enter accepts it.
 
 ```js
-const language = createLspEditor(editor, { provider, autoConnect: false });
-const stopLanguage = language.subscribe(() => {
+const language = createCompletionController(editor, provider, { autoConnect: false });
+const diagnostics = createDiagnosticController(editor, provider, { autoConnect: false });
+function showLanguage() {
     const state = language.getSnapshot();
-    output.textContent = state.offerText ?? state.diagnostics[0]?.message ?? state.message;
-});
+    output.textContent = state.offerText ?? diagnostics.getSnapshot().diagnostics[0]?.message ?? state.message;
+}
+const stopLanguage = language.subscribe(showLanguage);
+const stopDiagnostics = diagnostics.subscribe(showLanguage);
 button("Connect", language.connect);
 ```
 
@@ -400,7 +403,9 @@ button("Close", () => {
     controls.abort();
     stopDirty();
     stopLanguage();
+    stopDiagnostics();
     language.dispose();
+    diagnostics.dispose();
     provider.dispose();
     review?.dispose();
     split.dispose();

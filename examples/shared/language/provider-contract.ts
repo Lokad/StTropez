@@ -1,11 +1,11 @@
 import type { Observable } from "../../../src/index.ts";
 import type { JsonValue, LspSession } from "../../../src/protocol/index.ts";
-import type { TextEditor, LspEditorSnippet, LspEditorCompletion } from "../../../src/browser/index.ts";
+import type { TextEditor, CompletionSnippet, CompletionChoice } from "../../../src/browser/index.ts";
 
 export type Diagnostic = Readonly<{ from: number; to: number; message: string }>;
 
 export type ProviderSnapshot = Readonly<{ message: string; connected: boolean; pending: boolean; offerText: string | null; diagnostics: readonly Diagnostic[]; diagnosticRevision: number; diagnosticsPending?: boolean;
-    choices?: readonly string[]; choiceIndex?: number; completionAt: (index: number) => LspEditorCompletion | undefined; completionDetail?: string; resolving?: boolean; unversionedDiagnostics?: readonly string[]; snippet?: LspEditorSnippet | null }>;
+    choices?: readonly string[]; choiceIndex?: number; completionAt: (index: number) => CompletionChoice | undefined; completionDetail?: string; resolving?: boolean; unversionedDiagnostics?: readonly string[]; snippet?: CompletionSnippet | null }>;
 export type ProviderOptions = Readonly<{ autoConnect?: boolean; canCapture?: () => boolean }>;
 export type ProviderController = Observable<ProviderSnapshot> & Readonly<{ request: () => void;
     cancel: () => void; connect: () => void; disconnect: () => void; selectDiagnostic: (index: number) => boolean;

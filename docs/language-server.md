@@ -64,10 +64,10 @@ When fetching credentials, honor the cancellation context. The example enables c
 diagnostics. `features` starts empty. Opt into diagnostics, workspace edits, incoming edits and
 Markdown separately.
 
-Attach completion and diagnostics to an existing mounted editor:
+Attach completion to an existing mounted editor.
 
 ```ts
-import { createLspEditor, type TextEditor } from "sttropez/browser";
+import { createCompletionController, type TextEditor } from "sttropez/browser";
 import type { LspWorkspace } from "sttropez/protocol";
 
 export function attachLanguage(
@@ -75,9 +75,7 @@ export function attachLanguage(
     provider: LspWorkspace,
     onError: (error: unknown) => void
 ) {
-    const language = createLspEditor(editor, {
-        provider, autoConnect: false, onError
-    });
+    const language = createCompletionController(editor, provider, { autoConnect: false, onError });
     language.connect();
     return language;
 }

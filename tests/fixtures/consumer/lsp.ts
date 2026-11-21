@@ -1,6 +1,6 @@
 import { Workspace } from "sttropez";
 import type { DocumentId, DocumentSnapshot, TextEdit } from "sttropez";
-import { createLspEditor, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
+import { createCompletionController, createDiagnosticController, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
 import { LspWorkspace, applyLspWorkspaceEdit, previewLspWorkspaceEdit, createLspActionClient, createLspColorClient, createLspHoverClient, createLspLinkClient, createLspNavigationClient, createLspRenameClient, createLspSignatureClient } from "sttropez/protocol";
 import type { LspWorkspaceEdit } from "sttropez/protocol";
 
@@ -19,7 +19,8 @@ const provider = new LspWorkspace(workspace, {
     diagnostics: true, workspaceEdits: true, applyEdit: true,
 });
 const errors: string[] = [];
-const controller = createLspEditor(editor, { provider, autoConnect: false, onError: error => errors.push(String(error)) });
+const controller = createCompletionController(editor, provider, { autoConnect: false, onError: error => errors.push(String(error)) });
+const diagnostics = createDiagnosticController(editor, provider, { autoConnect: false });
 const hover = createLspHoverClient(provider), navigation = createLspNavigationClient(provider), rename = createLspRenameClient(provider), actions = createLspActionClient(provider);
 const signature = createLspSignatureClient(provider), links = createLspLinkClient(provider), colors = createLspColorClient(provider);
 const project = () => [workspace.document(source.documentId), workspace.document(companion.documentId)];
@@ -33,7 +34,7 @@ const command = (label: string, invoke: () => void | Promise<unknown>) => { cons
     button.onclick = () => { void Promise.resolve().then(invoke).catch(error => { result.textContent = String(error); }); }; document.getElementById("controls")!.append(button); };
 const stop = controller.subscribe(() => {
     const state = controller.getSnapshot(); status.textContent = state.message;
-    if (![state, state.diagnostics, state.choices, state.unversionedDiagnostics].every(Object.isFrozen)) throw new Error("Mutable public editor snapshot");
+    if (![state, state.choices].every(Object.isFrozen)) throw new Error("Mutable completion snapshot");
     choices.replaceChildren(...state.choices.map((label, index) => { const item = document.createElement("li"), button = document.createElement("button");
         button.textContent = label; button.onclick = () => state.completionAt(index)?.select(); item.append(button); return item; }));
 });
@@ -65,9 +66,9 @@ command("Apply color", () => { if (!colorPlan?.isCurrent()) throw new Error("Col
     if (!metadata.capabilities.edit.includes("host") || !metadata.capabilities.edit.includes("human") || metadata.editLock !== null) throw new Error("Color target unavailable");
     const applied = workspace.edit({ documentId: source.documentId, expectedRevision: colorPlan.document.revision, edits: colorPlan.edits, origin: "host", view: editor.view, history: { kind: "refactor" } });
     if (!applied.applied) throw new Error(applied.reason); notes.colorApplied = true; result.textContent = "Color applied"; });
-const dispose = () => { if (disposed) return; disposed = true; stop(); controller.dispose(); hover.dispose(); navigation.dispose(); rename.dispose(); actions.dispose(); signature.dispose(); links.dispose(); colors.dispose(); provider.dispose(); editor.dispose(); };
+const dispose = () => { if (disposed) return; disposed = true; stop(); controller.dispose(); diagnostics.dispose(); hover.dispose(); navigation.dispose(); rename.dispose(); actions.dispose(); signature.dispose(); links.dispose(); colors.dispose(); provider.dispose(); editor.dispose(); };
 const bridge = { text, select: (at: number) => editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: at, head: at }),
-    state: () => ({ provider: provider.snapshot(), editor: controller.snapshot(), completion: controller.getSnapshot(), history: workspace.observeHistory(source.documentId).getSnapshot(), diagnostics: workspace.diagnostics(), notes, companion: companion.documentId, companionResource: companion.id, metrics: editor.snapshot(), errors }),
-    custom: controller.customRequest, dispose };
+    state: () => ({ provider: provider.snapshot(), editor: controller.getDiagnostics(), completion: controller.getSnapshot(), history: workspace.observeHistory(source.documentId).getSnapshot(), diagnostics: workspace.diagnostics(), notes, companion: companion.documentId, companionResource: companion.id, metrics: editor.snapshot(), errors }),
+    diagnostics, stopCompletion: controller.dispose, custom: controller.customRequest, dispose };
 Object.assign(window, { publicLsp: bridge });
 declare global { interface Window { publicLsp: typeof bridge } }

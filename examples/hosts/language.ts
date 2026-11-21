@@ -81,17 +81,8 @@ export class HostLanguageTools {
             return;
         }
         session.provider = provider; delete session.providerError;
-        const layer = editor.decorations.add({ name: "diagnostics", order: 40 });
-        let last: ProviderSnapshot | undefined;
-        const update = () => {
-            const state = provider.getSnapshot();
-            if (last?.diagnosticRevision !== state.diagnosticRevision || last.diagnostics !== state.diagnostics)
-                layer.set(state.diagnosticRevision, state.diagnostics.map(range => ({ ...range, className: "st-diagnostic" })));
-            last = state;
-            if (this.active === session) this.publish();
-        };
-        const stop = provider.subscribe(update);
-        session.stopProvider = () => { stop(); layer.dispose(); }; update();
+        const update = () => { if (this.active === session) this.publish(); };
+        session.stopProvider = provider.subscribe(update); update();
     }
     attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void {
         if (this.sessions.has(id)) throw new Error("Language view already mounted.");
