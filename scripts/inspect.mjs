@@ -115,7 +115,8 @@ try {
         await harness.page.waitForFunction(() => window.hostFixture.snapshot().pendingSaves.length === 1);
         await input.press("Control+End"); await input.pressSequentially(" later"); await harness.page.evaluate(() => window.hostFixture.finishSave());
         await harness.page.waitForFunction(() => window.hostFixture.snapshot().source.serverVersion === "v1");
-        if (await harness.page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length)) !== "const sample = 123; // A\r\nB\n😀 const value = 2; later") throw new Error("Host command inspection lost pasted CRLF or later typing.");
+        assert.equal(await harness.page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length)),
+            "const sample = 123; // A\nB\n😀 const value = 2; later", "Pasted text follows the local LF ending and saving preserves later typing.");
         const retainedSelection = await harness.page.evaluate(() => window.hostFixture.snapshot().bindings.views.find(v => v.id === "primary")?.selection);
         assert.ok(retainedSelection, "Inspection expected the primary source selection.");
         await input.press("Escape"); await input.press("Tab");
