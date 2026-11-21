@@ -237,7 +237,9 @@ An unmatched or ambiguous closer, a lexical veto or the bracket search limit lea
 
 Enter chooses the current row's LF/CRLF terminator, falling back to the preceding terminator
 at EOF and LF when absent. Callback indentation removes/keeps/adds one unit and can split the
-closing text onto another line. Pairing, comments and cancellable non-composing line-break input
+closing text onto another line. When Enter supplies all the whitespace on a blank line, the next
+edit in the view removes it if the selection has left that line. Undo restores it with the edit.
+Pairing, comments and cancellable non-composing line-break input
 use the same transaction/transform path. Composition and noncancellable input use literal capture.
 
 For headless planning, use `resolveLanguageConfiguration` and `planLanguageEdit`. A character

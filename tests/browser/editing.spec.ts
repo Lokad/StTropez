@@ -440,6 +440,22 @@ test("typing a closing brace realigns the line and Undo restores its indentation
     await page.keyboard.type("x}"); await expect(row).toHaveJSProperty("textContent", "      x}");
 });
 
+test("leaving an automatically indented blank line trims it with the next edit", async ({ page }) => {
+    await page.evaluate(() => { const f = window.editingFixture;
+        f.configureLanguage({ enter: "keep" }); f.setText("  a\r\nz"); f.selections([{ anchor: 3, head: 3 }]); f.focus("primary");
+    });
+    const text = () => page.evaluate(() => { const f = window.editingFixture; return f.range(0, f.snapshot().document!.length); });
+    await page.keyboard.press("Enter"); expect(await text()).toBe("  a\r\n  \r\nz");
+    await page.keyboard.press("Control+End"); expect(await text()).toBe("  a\r\n  \r\nz");
+    await page.keyboard.type("!"); expect(await text()).toBe("  a\r\n\r\nz!");
+    await page.keyboard.press("Control+z"); expect(await text()).toBe("  a\r\n  \r\nz");
+    await page.evaluate(() => { const f = window.editingFixture; f.edit([{ from: 0, to: 0, insert: "#" }]); f.selections([{ anchor: 8, head: 8 }]); });
+    await page.keyboard.press("Enter"); expect(await text()).toBe("#  a\r\n\r\n  \r\nz");
+    await page.keyboard.type(" "); await page.keyboard.press("Control+End"); await page.keyboard.type("?");
+    expect(await text()).toBe("#  a\r\n\r\n   \r\nz?");
+    await expect(page.locator("#primary .st-viewport-row").last()).toHaveJSProperty("textContent", "z?");
+});
+
 test("very long graphemes delete whole and stale yielding indentation cannot retarget later input", async ({ page }) => {
     await page.evaluate(() => { window.editingFixture.setText("x" + "\u0301".repeat(5000)); window.editingFixture.select("primary", { anchor: 5001, head: 5001 }); window.editingFixture.focus("primary"); });
     await page.keyboard.press("Backspace"); await expect.poll(async () => (await state(page)).document!.length).toBe(0);

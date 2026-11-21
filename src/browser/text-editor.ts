@@ -1,5 +1,6 @@
 import { mountInputCaret } from "./input-caret.ts";
 import { autoClosedPairs } from "./auto-closed-pairs.ts";
+import { automaticIndentation } from "./automatic-indentation.ts";
 import { clientBox, cssZoom } from "./dom-coordinates.ts";
 import { textDifference } from "../core/changes.ts";
 import { createWordCommandCursor, WordCursor } from "../core/words.ts";
@@ -85,6 +86,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     options: TextEditorOptions = {}): MountedTextEditor {
     let language = resolveLanguageConfiguration(options.language);
     const paired = autoClosedPairs();
+    const automaticIndent = automaticIndentation();
     const bracketOptions = options.bracketMatching === undefined || options.bracketMatching === false ? false
         : bracketMatchLimits(options.bracketMatching === true ? {} : options.bracketMatching);
     const warningOptions = options.characterWarnings === undefined || options.characterWarnings === false ? undefined
@@ -189,7 +191,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
 
         if (!input.disabled && !composing) {
             const document = workspace.document(documentId), { selection: selected, selectionSet } = view.getSnapshot();
-            paired.sync(document);
+            paired.sync(document); automaticIndent.sync(document);
             if (graphemeCache?.buffer !== document.buffer) graphemeCache = undefined;
             const capture = rangeCommand?.capture ?? graphemeJob?.capture;
             if (capture && (capture.revision !== document.revision || capture.selectionSet !== selectionSet || capture.deleting && input.readOnly)) cancelWord();
@@ -256,8 +258,11 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         if (!workspace.resolveTab(target)) { conflict("expired-view", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
         let key: string | undefined;
         const now = inputQueue.time ?? win.performance.now(), before = view.getSnapshot().selectionSet;
+        const document = workspace.document(documentId);
+        const trimmed = document.revision === expectedRevision && automaticIndent.trim(document.buffer, edits, selection);
+        if (trimmed) { edits = trimmed.edits; selection = trimmed.selectionSet; }
         const transformed = editTransform?.(Object.freeze({ expectedRevision, edits,
-            selectionSet: "ranges" in selection ? selection : createSelectionSet(workspace.document(documentId).buffer.length + edits.reduce((n, edit) => n + edit.insert.length - (edit.to - edit.from), 0), [selection]), kind,
+            selectionSet: "ranges" in selection ? selection : createSelectionSet(document.buffer.length + edits.reduce((n, edit) => n + edit.insert.length - (edit.to - edit.from), 0), [selection]), kind,
             ...(adjustNewlines ? { adjustNewlines: true } : {}) }));
         if (transformed) { edits = transformed.edits; selection = transformed.selectionSet; }
         if (type) {
@@ -272,7 +277,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             applied = result.applied;
             if (result.applied) { // A later presentation/completion failure must not recover this text twice.
                 inputQueue.consumeRunning();
-                accepted?.(edits);
+                if (accepted && workspace.document(documentId).revision === result.revision) accepted(edits);
                 commits++; const after = view.getSnapshot(); revealCaret(after.selection);
                 if (type && key) group = { type, revision: result.revision, selectionSet: after.selectionSet, time: now, key }; }
             else conflict(result.reason, edits[0], expectedRevision, context.from, recoveryText);
@@ -725,8 +730,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             rangeCommand = undefined; planner.dispose();
             completeCaptured(capture, () => {
                 const plan = result.result!;
+                const autoIndent = command === "newline" && language.enter !== undefined;
                 if (plan.edits.length) return apply(plan.edits, plan.selectionSet, typeof command === "object" ? "typing" : "replace", undefined, capture.revision, undefined,
-                    command === "newline" && language.enter !== undefined, typeof command === "object" ? acceptPairs : undefined);
+                    autoIndent, autoIndent ? edits => automaticIndent.remember(workspace.document(documentId), edits, plan.edits)
+                        : typeof command === "object" ? acceptPairs : undefined);
                 if (overtyped.length) acceptPairs(plan.edits);
                 group = undefined; view.setSelections(capture.revision, plan.selectionSet.ranges, plan.selectionSet.primary);
                 revealCaret(); refresh(); return true;
@@ -1091,7 +1098,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             dragScrollFrames, maxDragScrollStepMs, commits, conflicts, queuedInputUnits: inputQueue.pending?.units ?? 0, wordScanSteps, maxWordScanStepMs, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves }),
         dispose: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; editTransform = undefined;
-            brackets!.dispose(); paired.clear();
+            brackets!.dispose(); paired.clear(); automaticIndent.clear();
             warnings!.dispose();
             hostInsertion?.cancel();
             if (inputQueue.executing) inputQueue.recover(inputQueue.executing, "pending-input-detached");
