@@ -571,6 +571,7 @@ test("large browser-only sample keeps scroll content, editing/history and langua
     await reader.press("ControlOrMeta+a");
     const expectedOutput = demoSample("large").files["large.ts"] + "\n";
     expect(await copyOutput(reader) === expectedOutput, "Select All copies every emitted row and its final line break").toBe(true);
+    await source.focus();
     await page.locator("#find-toggle").click(); await page.locator("#find-query").fill("Row");
     await expect(page.locator("#find-status")).toHaveText(/^\d+ of 100000$/);
     await expect.poll(() => page.locator("#editor .st-search-match").count()).toBeGreaterThan(0);
