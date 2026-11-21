@@ -193,7 +193,9 @@ inside the primary insert range. The browser additionally requires matching sele
 generation, authority, URI, binding and language configuration. Mapped primary/additional ranges
 are validated again.
 Undo, replacements, host edits, unknown/composed changes or incompatible navigation expire the
-offer. Incomplete lists retrigger with context kind 3 while compatible choices stay visible.
+offer. When the editor input loses focus, it dismisses the list and cancels pending completion work.
+Keep focus in the editor on pointer-down in a suggestion so its click can accept the item.
+Incomplete lists retrigger with context kind 3 while compatible choices stay visible.
 `completionIncomplete` preserves provider partial-list status independently of client filtering.
 
 When the provider advertises resolution, the selected item can resolve `detail`, `documentation`,

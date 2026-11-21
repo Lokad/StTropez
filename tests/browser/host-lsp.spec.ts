@@ -132,8 +132,10 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         await field(page).press("Control+z"); expect(await source(page)).toBe("const saMORE = 1;");
         await seed(page, "const sMORE = 1;", 7);
         hold = true; await pending();
-        await field(page).press("Tab"); await field(page, "Secondary source").focus(); await complete();
-        expect(await source(page)).toBe("const saMORE = 1;");
+        const retired = await page.evaluateHandle(() => window.hostFixture.providerState()!.completionAt(0)!);
+        await field(page).press("Tab"); await field(page, "Secondary source").focus(); await field(page).focus(); await complete();
+        await expect(page.getByRole("option")).toHaveCount(0); expect(await retired.evaluate(item => item.accept("replace"))).toBe(false);
+        await retired.dispose(); expect(await source(page)).toBe("const saMORE = 1;");
         await seed(page, "const sMORE = 1;", 7);
         hold = true; await pending();
         await field(page).press("Tab"); await field(page).pressSequentially(";"); await complete(); await ready(page);
@@ -193,8 +195,8 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         await field(page).press("ArrowRight"); await expect.poll(async () => (await provider(page)).pending).toBe(false); await expect(page.getByRole("option")).toHaveCount(0);
         await page.evaluate(() => window.hostFixture.setProviderDelay(0)); await offer(page);
         const choice = await page.evaluateHandle(() => window.hostFixture.providerState()!.completionAt(0)!);
-        await button(page, "Save source").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
-        await button(page, "Finish save").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(0);
+        await field(page).press("Control+s"); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
+        await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(0);
         expect(await choice.evaluate(item => item.select())).toBe(true); await choice.dispose(); await expect(page.getByRole("option")).toHaveCount(2);
         await page.evaluate(() => window.hostFixture.setSourceReadOnly(true));
         await expect(page.getByRole("option")).toHaveCount(0); expect(await source(page)).toBe(original); await page.evaluate(() => window.hostFixture.setSourceReadOnly(false));

@@ -386,7 +386,11 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     }),
     resource.metadata.subscribe(() => { if (snippet && !authorityCurrent(snippet.authority)) { snippet = undefined; publish("Snippet ended after authority changed."); } if (job && !authorityCurrent(job.authority)) expire("LSP completion expired after authority changed."); })];
     if (target) stops.push(workspace.tabs.subscribe(() => { if (!available()) { snippet = undefined; expire("Captured LSP view is unavailable."); } }));
-    editor.input.addEventListener("blur", () => { if (job) job.acceptance = undefined; if (snippet && !editor.activity().composing) { snippet = undefined; publish("Snippet ended after focus changed."); } }, { signal: listeners.signal });
+    editor.input.addEventListener("blur", () => {
+        cancelAuto();
+        if (job) { counters.cancelled++; release(); publish("Completion dismissed after focus changed."); }
+        if (snippet && !editor.activity().composing) { snippet = undefined; publish("Snippet ended after focus changed."); }
+    }, { signal: listeners.signal });
     editor.input.addEventListener("compositionstart", () => { cancelAuto(); expire("Finish composition before completion."); }, { signal: listeners.signal });
     editor.input.addEventListener("beforeinput", event => { const started = clock.performance.now();
         try { typed(event); } finally { counters.completionBeforeInputEvents++; counters.lastCompletionBeforeInputMs = clock.performance.now() - started; }
@@ -394,7 +398,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     editor.input.addEventListener("input", () => { if (inputIntent) scheduleAuto(); }, { signal: listeners.signal });
     editor.input.addEventListener("compositionend", event => {
         if (snippet) { if (!isFocused(editor.input)) { snippet = undefined; publish("Snippet ended after composition lost focus."); } return; }
-        if (!event.data || options.automatic === false || !Array.from(event.data).every(value => word.test(value))) return;
+        if (!isFocused(editor.input) || !event.data || options.automatic === false || !Array.from(event.data).every(value => word.test(value))) return;
         const selections = editor.view.getSnapshot().selectionSet, caret = selections.ranges[selections.primary]!;
         inputIntent = { revision: workspace.document(documentId).revision, selections, caret: caret.head, data: event.data, word: true, reused: false }; scheduleAuto();
     }, { signal: listeners.signal });

@@ -368,10 +368,16 @@ test("browser global completion filters its catalogue after a typed prefix", asy
     await page.goto(baseURL!); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+End"); await source.pressSequentially("\ncalculateTotal(cart, ");
-    await source.press("Control+Space"); await expect(page.getByRole("listbox", { name: "Completions", exact: true })).toBeVisible();
+    const list = page.getByRole("listbox", { name: "Completions", exact: true });
+    await source.press("Control+Space"); await expect(list).toBeVisible();
+    await page.locator("#panel-content .st-viewport-row").first().click(); await expect(source).not.toBeFocused(); await expect(list).toBeHidden();
+    await source.press("Control+Space"); await expect(list).toBeVisible();
+    await source.press("Control+f"); await expect(page.locator("#find-query")).toBeFocused(); await expect(list).toBeHidden();
+    await page.locator("#find-query").press("Escape"); await expect(source).toBeFocused();
+    await source.press("Control+Space"); await expect(list).toBeVisible();
     await source.pressSequentially("Mat"); await expect(page.getByRole("option", { name: "Math", exact: true })).toBeVisible();
-    await source.press("Escape"); await expect(page.getByRole("listbox", { name: "Completions", exact: true })).toBeHidden();
-    await expect(source).toBeFocused();
+    await page.getByRole("option", { name: "Math", exact: true }).click(); await expect(list).toBeHidden();
+    await expect(source).toBeFocused(); await expect(page.locator("#editor")).toContainText("calculateTotal(cart, Math");
 });
 
 test("the real 1200-field catalogue reaches the last candidate with bounded rows, keyboard acceptance and undo", async ({ page, baseURL }) => {

@@ -5,13 +5,15 @@ const capturedCommand = (tools: Pick<LanguagePanelTools, "state">, state: Langua
     if (tools.state.getSnapshot() === state) invoke();
 };
 
-function languageActions(tools: LanguagePanelTools, state: LanguageSnapshot) {
+function languageActions(tools: LanguagePanelTools, state: LanguageSnapshot): readonly Readonly<{
+    label: string; invoke: () => void; disabled: boolean; keepEditorFocus?: boolean
+}>[] {
     const available = state.view !== null, providerAvailable = state.provider !== null, offered = state.provider?.offerText != null;
     const found = !!state.find?.count && (state.find.status === "ready" || state.find.status === "searching" && state.find.retained);
     return [
         { label: "Request completion", invoke: tools.request, disabled: !providerAvailable },
-        { label: "Insert completion", invoke: capturedCommand(tools, state, () => state.provider?.completionAt(state.provider.choiceIndex ?? 0)?.accept("insert")), disabled: !offered || !!state.provider?.pending },
-        { label: "Replace completion", invoke: capturedCommand(tools, state, () => state.provider?.completionAt(state.provider.choiceIndex ?? 0)?.accept("replace")), disabled: !offered || !!state.provider?.pending },
+        { label: "Insert completion", invoke: capturedCommand(tools, state, () => state.provider?.completionAt(state.provider.choiceIndex ?? 0)?.accept("insert")), disabled: !offered || !!state.provider?.pending, keepEditorFocus: true },
+        { label: "Replace completion", invoke: capturedCommand(tools, state, () => state.provider?.completionAt(state.provider.choiceIndex ?? 0)?.accept("replace")), disabled: !offered || !!state.provider?.pending, keepEditorFocus: true },
         { label: "Cancel request", invoke: tools.cancel, disabled: !providerAvailable },
         { label: "Disconnect provider", invoke: tools.disconnect, disabled: !state.provider?.connected },
         { label: "Reconnect provider", invoke: tools.reconnect, disabled: !available || state.readOnlyReference },
@@ -67,6 +69,7 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
     for (const [element, model] of [[status, initial.status], [detail, initial.detail], [diagnosticStatus, initial.diagnosticStatus], [findStatus, initial.find], [foldStatus, initial.folds]] as const) element.setAttribute("aria-label", model.label);
     const choices = owner.createElement("ul"), diagnostics = owner.createElement("ul"), uncertain = owner.createElement("ul"), nav = owner.createElement("div");
     choices.setAttribute("role", "listbox"); choices.setAttribute("aria-label", initial.choices.label); diagnostics.setAttribute("aria-label", initial.diagnostics.label); uncertain.setAttribute("aria-label", initial.uncertain.label);
+    choices.addEventListener("pointerdown", event => event.preventDefault(), { signal: listeners.signal });
     const fields = [initial.query, initial.replacement].map(model => {
         const label = owner.createElement("label"), field = owner.createElement("input"); label.append(model.label, field); model.bind(field);
         field.addEventListener("input", () => model.change(field.value), { signal: listeners.signal }); return { label, field };
@@ -75,7 +78,11 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
         const label = owner.createElement("label"), field = owner.createElement("input"); field.type = "checkbox"; label.append(field, model.label);
         field.addEventListener("change", () => model.change(field.checked), { signal: listeners.signal }); return { label, field };
     });
-    const buttons = initial.actions.map(action => { const button = owner.createElement("button"); button.textContent = action.label; nav.append(button); return button; });
+    const buttons = initial.actions.map(action => {
+        const button = owner.createElement("button"); button.textContent = action.label; nav.append(button);
+        if (action.keepEditorFocus) button.addEventListener("pointerdown", event => event.preventDefault(), { signal: listeners.signal });
+        return button;
+    });
     host.append(heading, help, status, choices, detail, diagnosticStatus, diagnostics, uncertain, ...fields.map(f => f.label), ...options.map(f => f.label), findStatus, foldStatus, nav);
     const setText = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text; };
     let renderedChoices: readonly string[] | undefined;
