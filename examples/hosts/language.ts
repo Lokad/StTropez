@@ -95,7 +95,7 @@ export class HostLanguageTools {
     }
     attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void {
         if (this.sessions.has(id)) throw new Error("Language view already mounted.");
-        const target = this.workspace.captureTab(tab), session: Session = { id, target, editor, presentation, initialized: false }, listeners = new AbortController();
+        const target = this.workspace.tabs.capture(tab), session: Session = { id, target, editor, presentation, initialized: false }, listeners = new AbortController();
         this.sessions.set(id, session); this.attachProvider(session);
         editor.input.addEventListener("focus", () => this.activate(session), { signal: listeners.signal });
         editor.input.addEventListener("keydown", event => {
@@ -121,7 +121,7 @@ export class HostLanguageTools {
         return this.detachSession(session, listeners);
     }
     private ownsSession(session: Session): boolean {
-        const surface = this.workspace.resolveTab(session.target)?.surface, view = session.editor.view;
+        const surface = this.workspace.tabs.resolve(session.target)?.surface, view = session.editor.view;
         if (surface?.kind !== "text" || !this.workspace.ownsDocumentView(view) || session.editor.signal.aborted) return false;
         if (!session.reference) return surface.documentId === view.documentId;
         const reference = session.reference();
@@ -191,7 +191,7 @@ export class HostLanguageTools {
         origin.addEventListener("compositionstart", stop, { signal: listeners.signal });
         editor.input.addEventListener("compositionstart", stop, { signal: listeners.signal });
         clock.addEventListener("blur", stop, { signal: listeners.signal });
-        stops.push(find.subscribe(changed), this.workspace.observeDocument(editor.view.documentId).subscribe(changed), editor.view.subscribe(changed), this.workspace.tabState.subscribe(changed));
+        stops.push(find.subscribe(changed), this.workspace.observeDocument(editor.view.documentId).subscribe(changed), editor.view.subscribe(changed), this.workspace.tabs.subscribe(changed));
         if (command.kind === "replace") stops.push(metadata.subscribe(changed));
         changed();
     }

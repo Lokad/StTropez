@@ -96,7 +96,7 @@ export function mountBracketHighlights(workspace: Workspace, target: TabTarget |
             events = new AbortController();
             for (const name of ["focus", "blur", "compositionstart", "compositionend", "input", "keyup"] as const) input.addEventListener(name, observed, { signal: events.signal });
             stops.push(workspace.observeDocument(documentId).subscribe(observed), view.subscribe(observed));
-            if (target) stops.push(workspace.tabState.subscribe(() => { if (!available()) refresh(); }));
+            if (target) stops.push(workspace.tabs.subscribe(() => { if (!available()) refresh(); }));
         }
         refresh(true); return true;
     };

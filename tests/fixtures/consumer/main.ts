@@ -10,7 +10,7 @@ import { JsonRpcConnection } from "sttropez/protocol";
 import { openWebSocketTransport } from "sttropez/browser";
 const workspace = new Workspace();
 const documentId = workspace.createDocument({ scope: "consumer", resource: "source", variant: "working" }, "Consumer source", "restored assets");
-const tabId = workspace.open({ kind: "text", documentId }, "main");
+const tabId = workspace.tabs.open({ kind: "text", documentId }, "main");
 const host = document.getElementById("editor");
 if (!host) throw new Error("Missing editor host.");
 const sourceEditor = mountTextEditor(host, workspace, tabId);
@@ -34,7 +34,7 @@ function mountReview(baseline: Parameters<typeof mountTextComparison>[3]) {
 let comparison = mountReview({ buffer: TextBuffer.from("baseline\r\n"), version: "reference-1" });
 function mountMultipleInput() {
     const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "multiple-input", variant: "working" }, "Multiple input", { value: "abcd" });
-    const tab = model.open({ kind: "text", documentId: source.documentId }, "multiple-input"), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
+    const tab = model.tabs.open({ kind: "text", documentId: source.documentId }, "multiple-input"), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
     const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored multiple input" }); editor.focus();
     editor.view.setSelections(0, [{ anchor: 0, head: 1 }, { anchor: 4, head: 3 }], 1);
     return { model, source, tab, host, editor };
@@ -49,7 +49,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             .filter(name => name in viewport || name in sourceEditor.viewport) }),
     clipboardBoundary: () => {
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "clipboard-boundary", variant: "working" }, "Source", { value: "before\r\nend" });
-        const tab = model.open({ kind: "text", documentId: source.documentId }, "clipboard"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
+        const tab = model.tabs.open({ kind: "text", documentId: source.documentId }, "clipboard"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
         const editor = mountTextEditor(host, model, tab), original = "before\r\nend";
         try {
             editor.view.setSelections(0, [{ anchor: 3, head: 1 }, { anchor: 10, head: 8 }], 1); const selections = editor.view.getSnapshot().selectionSet;
@@ -63,14 +63,14 @@ const fixture = { text: () => workspace.document(documentId).text(),
             const d = model.document(source.documentId);
             if (d.revision || d.buffer.slice(0, d.buffer.length) !== original || editor.view.getSnapshot().selectionSet !== selections || model.observeHistory(source.documentId).getSnapshot().undoDepth) throw new Error("Compiled canceled/empty clipboard input changed text, complete selections or history.");
             if (d.buffer.readMetrics().textExports) throw new Error("Compiled clipboard boundary exported text.");
-        } finally { editor.dispose(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
+        } finally { editor.dispose(); host.remove(); model.tabs.close(tab); model.releaseResource(source.id, true); }
         const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled clipboard resources leaked.");
         return { cancelledOwnership: true, emptyPayloadNoDeletion: true, completeSets: true, noHistory: true, zeroExports: true, events: "synthetic", released: { views, leases, subscriptions } };
     },
     foldingPilot: async () => {
         const original = "header\r\n" + "const unchanged = 123;\r\n".repeat(100000) + "footer", footer = original.length - 6;
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "folding", variant: "working" }, "Folded source", { value: original });
-        const tab = model.open({ kind: "text", documentId: source.documentId }, "folded"), view = model.createDocumentView(source.documentId), peer = model.createDocumentView(source.documentId);
+        const tab = model.tabs.open({ kind: "text", documentId: source.documentId }, "folded"), view = model.createDocumentView(source.documentId), peer = model.createDocumentView(source.documentId);
         const host = document.createElement("div"), otherHost = document.createElement("div"); host.style.height = "180px"; otherHost.style.height = "180px"; document.body.append(host, otherHost);
         let reply!: (line: number) => void, promptSignal!: AbortSignal;
         const requestLine: LinePrompt = ({ signal }) => { promptSignal = signal; return new Promise<number>(resolve => { reply = resolve; }); };
@@ -128,7 +128,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             if (view.getSnapshot().selection.head !== start || view.folding.getSnapshot().index.collapsedCount || !editor.viewport.coordsAt(start)) throw new Error("Compiled line navigation did not reveal its folded destination.");
             if (model.document(source.documentId).buffer.readMetrics().textExports) throw new Error("Compiled folding exported the source value.");
             if (retired.viewport.coordsAt(0) !== undefined) throw new Error("Retired compiled geometry remained active.");
-        } finally { editor.dispose(); other.dispose(); host.remove(); otherHost.remove(); view.dispose(); peer.dispose(); model.close(tab); model.releaseResource(source.id, true); }
+        } finally { editor.dispose(); other.dispose(); host.remove(); otherHost.remove(); view.dispose(); peer.dispose(); model.tabs.close(tab); model.releaseResource(source.id, true); }
         if (editor.viewport.coordsAt(0) !== undefined) throw new Error("Released compiled geometry queried a missing source.");
         const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled fold resources leaked.");
         return { units: original.length, visibleRows: 2, independentViews: true, capturedVersions: true, completeSets: true, navigation: true,
@@ -139,7 +139,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
         const original = "foobar foo foo_ K k K_ 𐐀 𐐨\r\n" + "const unchanged = 123;\r\n".repeat(100000);
         const expected = "[foobar] [foo] foo_ [K] [k] K_ [𐐀] [𐐨]\r\n" + original.slice(original.indexOf("\n") + 1);
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "regex", variant: "working" }, "Regex", { value: original });
-        const tab = model.open({ kind: "text", documentId: source.documentId }, "regex"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
+        const tab = model.tabs.open({ kind: "text", documentId: source.documentId }, "regex"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
         let workers = 0;
         const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored regex" }), find = createFindController(editor, {
             regularExpressionBackend: createRegexFindBackend({ clock: window, createWorker: () => { workers++; return new Worker("/regex-worker.js", { type: "module" }); } }) });
@@ -174,7 +174,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             find.replaceAll("|"); await wait("ready"); exact("|😀|x|\r|\n|l|a|s|t|");
             find.setQuery("("); await wait("failed"); exact("|😀|x|\r|\n|l|a|s|t|");
             if (model.document(source.documentId).buffer.readMetrics().textExports) throw new Error("Compiled regex exported the model value.");
-        } finally { find.dispose(); editor.dispose(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
+        } finally { find.dispose(); editor.dispose(); host.remove(); model.tabs.close(tab); model.releaseResource(source.id, true); }
         const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled regex resources leaked.");
         if (editor.viewport.coordsAt(4) !== undefined) throw new Error("Disposed compiled viewport still exposes geometry.");
         return { measurements, terminalMeasurements: find.getDiagnostics(), actualWorker: workers > 0, workerCount: workers, units: original.length, atomicReplacement: true, completeSelectionUndo: true,
@@ -184,7 +184,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
         const cases = [];
         for (const change of ["permission", "lease"] as const) {
             const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "find-authority", variant: "working" }, "Captured find", { value: "cat cat" });
-            const tab = model.open({ kind: "text", documentId: source.documentId }, "find"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
+            const tab = model.tabs.open({ kind: "text", documentId: source.documentId }, "find"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
             const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored captured find" }), find = createFindController(editor);
             const ready = async () => { for (let turn = 0; find.getSnapshot().status !== "ready"; turn++) {
                 if (turn >= 1000) throw new Error("Compiled find did not settle."); await new Promise<void>(resolve => setTimeout(resolve, 1)); } };
@@ -207,7 +207,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
                 if (model.document(source.documentId).buffer.slice(0, 7) !== "cat cat" || JSON.stringify(editor.view.getSnapshot().selectionSet) !== JSON.stringify(selected)) throw new Error("Compiled retry undo lost selections.");
                 find.replaceAll("cat"); await ready();
                 if (model.diagnostics().subscriptions !== subscriptions || model.document(source.documentId).buffer.readMetrics().textExports !== 0) throw new Error("Compiled replacement retained idle observation or exported text.");
-            } finally { find.dispose(); editor.dispose(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
+            } finally { find.dispose(); editor.dispose(); host.remove(); model.tabs.close(tab); model.releaseResource(source.id, true); }
             const { views, leases, subscriptions } = model.diagnostics();
             if (views || leases || subscriptions) throw new Error("Compiled find resources leaked.");
             cases.push({ change, cancelled: true, explicitRetry: true, sharedUndoSets: true, noOpReleased: true, zeroCompleteExports: true, released: { views, leases, subscriptions } });
@@ -222,7 +222,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             const heads = kind === "many-carets" ? Array.from({ length: 1024 }, (_, i) => i * 80 * 12 + 4) : [0];
             const destinations = kind === "many-carets" ? heads.map(head => head + 12) : [1000001], text = kind === "paste-word" ? "😀é\r\n" : "😀é";
             const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: kind, variant: "working" }, kind, { value: original });
-            const tab = model.open({ kind: "text", documentId: source.documentId }, kind), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
+            const tab = model.tabs.open({ kind: "text", documentId: source.documentId }, kind), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
             const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored ordered input" }), recovered: string[] = [];
             editor.input.addEventListener(inputConflictEvent, event => recovered.push((event as CustomEvent<InputConflictDetail>).detail.attemptedText));
             const ready = async () => { for (let turn = 0; ; turn++) { const s = editor.snapshot();
@@ -251,7 +251,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
                 if (editor.view.getSnapshot().selectionSet.ranges.some((range, i) => kind === "pointer-word" ? range.anchor !== 0 || range.head !== original.length : range.anchor !== destinations[i] || range.head !== destinations[i])) throw new Error("Compiled undo lost moved selections.");
                 const document = model.document(source.documentId); editor.view.setSelections(document.revision, heads.map(head => ({ anchor: head, head })), heads.length - 1); await ready(); command(); type(); editor.dispose();
                 if (recovered.length !== 1 || recovered[0] !== text || model.document(source.documentId).buffer !== document.buffer) throw new Error("Compiled detach lost pending input.");
-            } finally { editor.dispose(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
+            } finally { editor.dispose(); host.remove(); model.tabs.close(tab); model.releaseResource(source.id, true); }
             const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled ordered input leaked.");
             results.push({ kind, exactText: true, sharedHistory: true, detachRecovery: true, exports: 0, released: { views, leases, subscriptions } });
         }
@@ -265,11 +265,11 @@ const fixture = { text: () => workspace.document(documentId).text(),
             edits: [{ from: 0, to: before.buffer.length, insert: "a\r\nb\r" }], view: editor.view,
             selectionSet: createSelectionSet(5, [{ anchor: 0, head: 0 }, { anchor: 3, head: 3 }]), history: { kind: "replace" } });
         if (!result.applied) throw new Error("End target setup rejected."); },
-    finishMultipleInput: () => { const { model, source, tab, host, editor } = multipleInput!; editor.dispose(); host.remove(); model.close(tab); model.releaseResource(source.id, true); multipleInput = undefined;
+    finishMultipleInput: () => { const { model, source, tab, host, editor } = multipleInput!; editor.dispose(); host.remove(); model.tabs.close(tab); model.releaseResource(source.id, true); multipleInput = undefined;
         return { views: model.diagnostics().views, leases: model.diagnostics().leases }; },
     readonlyIndent: async (outdent: boolean) => {
         const model = new Workspace(), text = "    const sample = 1;\r\n".repeat(1024), source = model.createTextResource({ scope: "consumer", resource: "readonly-indent", variant: "working" }, "Locked command", { value: text });
-        const tab = model.open({ kind: "text", documentId: source.documentId }, "locked-command"), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
+        const tab = model.tabs.open({ kind: "text", documentId: source.documentId }, "locked-command"), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
         const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored locked command" });
         try {
             editor.view.setSelection(0, { anchor: 0, head: text.length }); model.setCapabilities(source.id, { edit: ["host"], save: true, run: true });
@@ -281,7 +281,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             const current = model.document(source.documentId);
             return { outdent, lockedAtHandler, revision: current.revision, sameText: current.buffer.slice(0, text.length) === text,
                 undoBefore: before.undoDepth, undoAfter: model.observeHistory(source.documentId).getSnapshot().undoDepth, exports: current.buffer.readMetrics().textExports };
-        } finally { editor.dispose(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
+        } finally { editor.dispose(); host.remove(); model.tabs.close(tab); model.releaseResource(source.id, true); }
     },
     saveReview: async () => {
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "retry", variant: "working" }, "Retry", { value: "base", serverVersion: "v0" });

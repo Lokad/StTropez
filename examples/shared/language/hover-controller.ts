@@ -10,14 +10,14 @@ export type HoverSnapshot = Readonly<{ status: "idle" | "pending" | "ready" | "e
 
 /** Host-owned read-only service with an explicit captured async backend. */
 export function createHoverController(workspace: Workspace, tabId: TabId, editor: TextEditor, options: Readonly<{ backend: HoverBackend; canCapture?: () => boolean }>) {
-    const target = workspace.captureTab(tabId), documentId = editor.view.documentId, resource = workspace.resourceForDocument(documentId), tab = workspace.resolveTab(target);
+    const target = workspace.tabs.capture(tabId), documentId = editor.view.documentId, resource = workspace.resourceForDocument(documentId), tab = workspace.tabs.resolve(target);
     if (tab?.surface.kind !== "text" || tab.surface.documentId !== documentId || !workspace.ownsDocumentView(editor.view)) throw new Error("Hover requires the captured document view.");
     const win = editor.element.ownerDocument.defaultView!, counts = { posted: 0, received: 0, stale: 0, invalid: 0, failed: 0, cancelled: 0 };
     const cell = new HostCell<HoverSnapshot>({ status: "idle", message: "Inspect a symbol for information.", revision: null, range: null, text: "" });
     let pending: Capture | undefined, capture: Capture | undefined, timer: number | undefined, disposed = false, intent = 0, delay = 0, fault: HoverInput["fault"];
     let subscriptions: (() => void)[] = [];
     let backendCall: ReturnType<HoverBackend["run"]> | undefined, backendCurrent: (() => boolean) | undefined;
-    const valid = () => !disposed && workspace.resolveTab(target) !== undefined && workspace.ownsDocumentView(editor.view) && !editor.activity().disposed && resource.getSnapshot().state === "ready";
+    const valid = () => !disposed && workspace.tabs.resolve(target) !== undefined && workspace.ownsDocumentView(editor.view) && !editor.activity().disposed && resource.getSnapshot().state === "ready";
     const current = (value: Capture) => valid() && workspace.document(documentId).revision === value.revision && editor.view.getSnapshot().selectionSet === value.selectionSet
         && value.folds.sameProjection(editor.view.folding.getSnapshot().index) && (options.canCapture?.() ?? true) && (backendCurrent?.() ?? true);
     const release = () => { const value = pending, call = backendCall; pending = undefined; backendCall = undefined; value?.lease.release(); call?.cancel(); if (timer !== undefined) win.clearTimeout(timer); timer = undefined; };
@@ -38,7 +38,7 @@ export function createHoverController(workspace: Workspace, tabId: TabId, editor
         clear("idle", "Reading captured symbol information.");
         const configuration = { delay, ...(fault ? { fault } : {}) }; fault = undefined;
         pending = Object.freeze({ revision: document.revision, selectionSet: editor.view.getSnapshot().selectionSet, folds: editor.view.folding.getSnapshot().index, lease: workspace.acquire(resource.id) });
-        subscriptions = [workspace.observeDocument(documentId).subscribe(invalidate), editor.view.subscribe(invalidate), editor.view.folding.subscribe(invalidate), workspace.tabState.subscribe(invalidate)];
+        subscriptions = [workspace.observeDocument(documentId).subscribe(invalidate), editor.view.subscribe(invalidate), editor.view.folding.subscribe(invalidate), workspace.tabs.subscribe(invalidate)];
         counts.posted++;
         const value = pending, token = intent;
         try { backendCall = options.backend.run(document, offset, configuration);

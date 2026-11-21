@@ -76,7 +76,7 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     let sceneListeners: AbortController | undefined;
     const readScene = () => {
         const layout = controller.layout.getSnapshot();
-        const tab = controller.workspace.tabState.getSnapshot().find(tab => tab.id === controller.viewTab("primary"));
+        const tab = controller.workspace.tabs.getSnapshot().find(tab => tab.id === controller.viewTab("primary"));
         const ready = tab?.surface.kind === "text" && controller.workspace.observeDocument(tab.surface.documentId).getSnapshot() !== undefined;
         return hostSceneModel(layout, tab, ready, controller.source.documentId);
     };

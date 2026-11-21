@@ -45,7 +45,7 @@ export class HostSignatureTools {
     private readonly reconnectProvider: (() => void) | undefined;
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, beforeRequest: () => void, factory: SignatureBackendFactory, completionOpen?: () => boolean, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.beforeRequest = beforeRequest; this.factory = factory; this.completionOpen = completionOpen; }
     private available(s: Session): boolean {
-        const tab = this.workspace.resolveTab(s.target);
+        const tab = this.workspace.tabs.resolve(s.target);
         return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
             && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
     }
@@ -146,7 +146,7 @@ export class HostSignatureTools {
         } catch (error) { this.counts.failed++; this.armed = false; this.clear("failed", error instanceof Error ? error.message : "Signature help is unavailable."); }
     }
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const s: Session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.captureTab(tab), editor, stop: () => {} }, events = new AbortController(), win = editor.element.ownerDocument.defaultView!;
+        const s: Session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor, stop: () => {} }, events = new AbortController(), win = editor.element.ownerDocument.defaultView!;
         this.sessions.set(s.token, s);
         editor.input.addEventListener("focus", () => { if (this.active !== s) { this.dismiss(); this.active = s; this.publish(); } }, { signal: events.signal });
         editor.input.addEventListener("blur", () => { if (this.active === s) this.dismiss(); }, { signal: events.signal });

@@ -60,7 +60,7 @@ export class ReviewVariants {
         if (this.disposed || this.source.getSnapshot().state !== "ready") return false;
         const choice = this.choices().find(item => item.id === id), baseline = id === "saved" ? this.ports.saved() : id === "server" ? this.ports.server() : id === "draft" ? this.draft : this.history.get(id);
         if (!choice || !baseline) { this.cell.set({ ...this.cell.get(), generation: this.cell.get().generation + 1, status: "expired", message: "That version is no longer available." }); return false; }
-        const presentation = this.ports.presentation(), tab = this.workspace.resolveTab(presentation);
+        const presentation = this.ports.presentation(), tab = this.workspace.tabs.resolve(presentation);
         if (tab?.surface.kind !== "text" || tab.surface.documentId !== this.source.documentId) return false;
         this.ports.present();
         const operation = this.workspace.beginOperation(this.source.id, this.lane, presentation);

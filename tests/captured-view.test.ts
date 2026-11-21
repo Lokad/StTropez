@@ -6,12 +6,12 @@ import { captureViewRequest } from "../src/browser/index.ts";
 
 function fixture(t: TestContext) {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "capture", resource: "source", variant: "working" }, "Source", { value: "alpha\nbeta\ngamma" });
-    const tab = workspace.open({ kind: "text", documentId: source.documentId }, "left"), view = workspace.createDocumentView(source.documentId);
+    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left"), view = workspace.createDocumentView(source.documentId);
     t.after(async () => {
-        await Promise.resolve(); view.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true);
+        await Promise.resolve(); view.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true);
         assert.deepEqual({ leases: workspace.diagnostics().leases, subscriptions: workspace.diagnostics().subscriptions }, { leases: 0, subscriptions: 0 });
     });
-    return { workspace, source, tab, view, target: workspace.captureTab(tab) };
+    return { workspace, source, tab, view, target: workspace.tabs.capture(tab) };
 }
 
 test("read captures survive expanded fold metadata and defer abort handlers beyond observer delivery", async t => {

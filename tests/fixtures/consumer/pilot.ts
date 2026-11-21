@@ -10,7 +10,7 @@ export function mountPackagedPilot(host: HTMLElement, original: string) {
     const errors: string[] = [], workspace = new Workspace({ onListenerError: error => errors.push(String(error)) });
     const initial = TextBuffer.from(original), source = workspace.createTextResourceFromBuffer(
         { scope: "package-pilot", resource: "source", variant: "working" }, "Packaged source", { buffer: initial, serverVersion: "v0" });
-    const tab = workspace.open({ kind: "text", documentId: source.documentId }, "source");
+    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "source");
     const primaryView = workspace.createDocumentView(source.documentId), peerView = workspace.createDocumentView(source.documentId, { anchor: 12, head: 3 });
     const reviewView = workspace.createDocumentView(source.documentId, { anchor: 2, head: 2 });
     const root = owner.createElement("section"), heading = owner.createElement("h1"), controls = owner.createElement("div");
@@ -128,7 +128,7 @@ export function mountPackagedPilot(host: HTMLElement, original: string) {
         },
         dispose: () => {
             if (disposed) return; disposed = true; win.clearInterval(timer); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); unmountViews();
-            primaryView.dispose(); peerView.dispose(); reviewView.dispose(); workspace.close(tab); root.remove();
+            primaryView.dispose(); peerView.dispose(); reviewView.dispose(); workspace.tabs.close(tab); root.remove();
             // Unsaved source remains owned by this host after a late failure, with no view/listener lease.
         },
         release: () => {

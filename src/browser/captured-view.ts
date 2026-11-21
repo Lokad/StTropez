@@ -49,7 +49,7 @@ export function captureViewRequest<T extends TabTarget | undefined>(workspace: W
     const changed = () => { isCurrent(); };
     stops.push(workspace.observeDocument(document.id).subscribe(changed), view.subscribe(changed), view.folding.subscribe(changed),
         resource.metadata.subscribe(changed));
-    if (capturedTarget) stops.push(workspace.tabState.subscribe(changed));
+    if (capturedTarget) stops.push(workspace.tabs.subscribe(changed));
     if (!isCurrent()) return;
     return Object.freeze({ target: capturedTarget, view, document, selectionSet, folding, signal: abort.signal, isCurrent,
         cancel: () => cancel(), commit: operation => {

@@ -159,7 +159,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
     win.addEventListener("pagehide", finish, { signal: listeners.signal });
     const resource = workspace.resourceForDocument(view.documentId);
     const subscriptions = [workspace.observeDocument(view.documentId).subscribe(changed), view.subscribe(changed), resource.metadata.subscribe(changed)];
-    if (tab) subscriptions.push(workspace.tabState.subscribe(changed));
+    if (tab) subscriptions.push(workspace.tabs.subscribe(changed));
     return Object.freeze({
         disarm: clearArm,
         arm: (event: PointerEvent): boolean => {

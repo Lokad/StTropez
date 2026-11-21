@@ -54,7 +54,7 @@ export class HostProjectTools {
         this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backendFactory = backendFactory; this.provider = provider; this.actionEditPolicy = actionEditPolicy;
     }
     private available(s: Session): boolean {
-        const tab = this.workspace.resolveTab(s.target);
+        const tab = this.workspace.tabs.resolve(s.target);
         return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
             && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && this.workspace.observeDocument(s.editor.view.documentId).getSnapshot() !== undefined;
     }
@@ -118,7 +118,7 @@ export class HostProjectTools {
             }));
         }
         // Worker workspace commands are resource-scoped and intentionally permit selection movement.
-        if (!job.capture) job.stops.push(this.workspace.tabState.subscribe(changed));
+        if (!job.capture) job.stops.push(this.workspace.tabs.subscribe(changed));
     }
     private commit(job: Job, operation: () => void): void {
         if (!this.current(job) || !job.capture) throw new Error("Captured command context changed before application.");
@@ -151,7 +151,7 @@ export class HostProjectTools {
     private readonly reconnectProvider: (() => void) | undefined;
     readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ status: "idle", message: "Register again with current working snapshots." }); };
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(session.token, session);
+        const session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor }, events = new AbortController(); this.sessions.set(session.token, session);
         editor.input.addEventListener("focus", () => { this.active = session; this.publish(); }, { signal: events.signal });
         for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.job?.documents.has(editor.view.documentId)) this.cancel(); }, { signal: events.signal });
         let detached = false;

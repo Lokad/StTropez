@@ -45,7 +45,7 @@ export class HostRenameTools {
     }
     private validName(name: string): boolean { return (name.length > 0 && name.length <= 256 && !/[\u0000-\u001f\u007f]/.test(name)); }
     private available(s: Session): boolean {
-        const tab = this.workspace.resolveTab(s.target);
+        const tab = this.workspace.tabs.resolve(s.target);
         return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
             && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
     }
@@ -114,7 +114,7 @@ export class HostRenameTools {
         }, { signal: events.signal });
     };
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const s: Session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
+        const s: Session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
         editor.input.addEventListener("focus", () => { this.active = s; this.publish(); }, { signal: events.signal });
         editor.input.addEventListener("keydown", event => {
             if (event.defaultPrevented || event.isComposing || editor.activity().composing) return;

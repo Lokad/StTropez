@@ -18,7 +18,7 @@ for (const shadow of [false, true]) test(`${shadow ? "shadow" : "document"} care
         const { mountTextViewport } = await import(path + "viewport.js") as typeof import("../../src/browser/viewport.ts");
         const { mountInputCaret } = await import(path + "caret.js") as typeof import("../../src/browser/input-caret.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "caret", variant: "text" }, "Caret", { value: ("0123456789".repeat(16) + "\n").repeat(1000) });
-        const tab = workspace.open({ kind: "text", documentId: source.documentId }, "caret"), host = document.createElement("section");
+        const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "caret"), host = document.createElement("section");
         const container = document.createElement("div"); document.body.append(container);
         const tree = shadow ? container.attachShadow({ mode: "closed" }) : container;
         const style = document.createElement("style"); style.textContent = css; tree.append(style, host);
@@ -97,7 +97,7 @@ for (const shadow of [false, true]) test(`${shadow ? "shadow" : "document"} care
             const offscreen = { hidden: primary.hidden, height: parseFloat(input.style.height), expectedHeight: viewport.snapshot().lineHeight, reveals };
             layer.dispose(); layer.schedule();
             return { work, composition, beforeResize, revealed, blurred, offscreen, disposed: !layer.pending() && !root.contains(primary) };
-        } finally { layer.dispose(); viewport.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true); container.remove(); }
+        } finally { layer.dispose(); viewport.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); container.remove(); }
     }, { shadow, css: await readFile("src/browser/editor.css", "utf8") });
     await testInfo.attach("caret-placement", { body: JSON.stringify(result), contentType: "application/json" });
     for (const work of result.work) {

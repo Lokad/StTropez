@@ -10,7 +10,7 @@ import type { CorpusId } from "../../fixtures/workloads.ts";
 import "./style.css";
 
 const workspace = new Workspace(), source = workspace.createTextResource({ scope: "editing", resource: "source", variant: "working" }, "Source", { value: corpus("lines-100000") });
-const primaryTab = workspace.open({ kind: "text", documentId: source.documentId }, "left"), secondaryTab = workspace.open({ kind: "text", documentId: source.documentId }, "right");
+const primaryTab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left"), secondaryTab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "right");
 const pane = (id: string) => document.getElementById(id)!;
 const presentation = { primary: new EditingPresentation(), secondary: new EditingPresentation() };
 let failDecoration = false;
@@ -64,7 +64,7 @@ const fixture = { ready: true, setText, edit, select, history,
     coords: (offset: number, affinity: "before" | "after" = "after") => editors.primary.viewport.coordsAt(offset, affinity),
     hit: (x: number, y: number) => editors.primary.viewport.hitTest(x, y),
     readOnly: (value: boolean) => workspace.setCapabilities(source.id, { edit: value ? ["host"] : ["human", "host", "agent"], save: true, run: true }),
-    replacePrimary: () => workspace.replace(primaryTab, { kind: "text", documentId: source.documentId }),
+    replacePrimary: () => workspace.tabs.replace(primaryTab, { kind: "text", documentId: source.documentId }),
     snapshot: () => {
         const current = workspace.getSnapshot().documents.find(document => document.id === source.documentId);
         return { document: current ? { revision: current.revision, length: current.buffer.length, exports: current.buffer.readMetrics().textExports } : null,
@@ -79,7 +79,7 @@ const fixture = { ready: true, setText, edit, select, history,
     dispose: () => {
         if (disposed) return; disposed = true; foldingController?.dispose(); listeners.abort(); unsubscribe(); findUI.dispose();
         Object.values(editors).forEach(editor => editor.dispose()); Object.values(presentation).forEach(value => value.clear());
-        for (const tab of workspace.tabState.getSnapshot()) workspace.close(tab.id); workspace.releaseResource(source.id, true);
+        for (const tab of workspace.tabs.getSnapshot()) workspace.tabs.close(tab.id); workspace.releaseResource(source.id, true);
     } };
 window.editingFixture = fixture;
 window.addEventListener("pagehide", event => { if (!event.persisted) fixture.dispose(); }, { signal: listeners.signal });

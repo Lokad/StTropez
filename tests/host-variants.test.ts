@@ -43,7 +43,7 @@ test("version reads follow their captured tab through moves and reject replaced 
             host.externalWrite("captured"); host.variants.review("server"); const before = host.comparisonReference.getSnapshot();
             if (action === "move") host.move();
             if (action === "replace") { host.replacePrimary(); host.reopenPrimary(); }
-            if (action === "close") host.workspace.close(host.viewTab("primary"));
+            if (action === "close") host.workspace.tabs.close(host.viewTab("primary"));
             assert.equal(host.variants.finishNext(), action === "move");
             if (action === "move") assert.equal(reference(host), "captured"); else assert.equal(host.comparisonReference.getSnapshot(), before);
             assert.equal(text(host), "start"); assert.equal(host.debug().diagnostics.leases, 0);

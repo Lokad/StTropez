@@ -44,7 +44,7 @@ test("draft panel decisions cannot confirm or cancel a newer capture of the same
 test("checkpoint includes dirty temporary text after close and reopen", async () => {
     const store = storage(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d);
     try {
-        c.beginDeferredLoad(); c.finishLoad(); const tab = c.workspace.getSnapshot().tabs.find(t => t.id === c.viewTab("primary"))!;
+        c.beginDeferredLoad(); c.finishLoad(); const tab = c.workspace.tabs.getSnapshot().find(t => t.id === c.viewTab("primary"))!;
         assert.equal(tab.surface.kind, "text"); if (tab.surface.kind !== "text") throw Error("Missing loaded source");
         const doc = c.workspace.document(tab.surface.documentId), value = "loaded café😀\r\ndirty draft";
         c.workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "human", edits: [{ from: 0, to: doc.buffer.length, insert: value }] });

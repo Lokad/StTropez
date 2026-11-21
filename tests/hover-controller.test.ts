@@ -24,12 +24,12 @@ function asynchronousBackend() {
         assertDisposed: () => { assert.equal(disposed, true); assert.equal(listeners.size, 0); } };
 }
 function fixture(text: string, backend: HoverBackend) {
-    const workspace = new Workspace(), documentId = workspace.createDocument({ scope: "hover", resource: "source", variant: "working" }, "Source", text), tab = workspace.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId);
+    const workspace = new Workspace(), documentId = workspace.createDocument({ scope: "hover", resource: "source", variant: "working" }, "Source", text), tab = workspace.tabs.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId);
     const timers = new Map<number, () => void>(); let serial = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { setTimeout: (work: () => void) => { timers.set(++serial, work); return serial; }, clearTimeout: (id: number) => timers.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), activity: () => ({ composing: false, disposed: false }), focus: () => { throw new Error("Hover must not focus an editor."); } } as unknown as TextEditor;
     const hover = createHoverController(workspace, tab, editor, { backend });
-    return { workspace, documentId, tab, view, hover, timers, leasesBefore: workspace.diagnostics().leases, finish: () => { hover.dispose(); view.dispose(); workspace.close(tab); assert.equal(timers.size, 0); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().subscriptions, 0); } };
+    return { workspace, documentId, tab, view, hover, timers, leasesBefore: workspace.diagnostics().leases, finish: () => { hover.dispose(); view.dispose(); workspace.tabs.close(tab); assert.equal(timers.size, 0); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().subscriptions, 0); } };
 }
 test("an asynchronous hover backend accepts absent ranges and expires its guarded result without a worker", async () => {
     const controlled = asynchronousBackend(), f = fixture("const value", controlled.backend), before = f.workspace.document(f.documentId); let live = true;
@@ -52,7 +52,7 @@ test("deferred invalidation releases old leases without cancelling a newer captu
         assert.equal(f.hover.state.getSnapshot().text, "current");
         f.hover.request(1, 2); f.view.setSelection(1, { anchor: 8, head: 8 }); await Promise.resolve(); assert.equal(f.hover.state.getSnapshot().status, "expired"); assert.equal(f.workspace.diagnostics().leases, f.leasesBefore);
         assert.equal(controlled.calls[2]!.cancelled, true);
-        f.hover.request(1, 8); f.workspace.replace(f.tab, { kind: "panel", resourceId: f.workspace.resourceForDocument(f.documentId).id, panelType: "configuration" }); await Promise.resolve();
+        f.hover.request(1, 8); f.workspace.tabs.replace(f.tab, { kind: "panel", resourceId: f.workspace.resourceForDocument(f.documentId).id, panelType: "configuration" }); await Promise.resolve();
         assert.equal(f.hover.state.getSnapshot().status, "expired"); assert.equal(f.workspace.diagnostics().leases, f.leasesBefore); assert.equal(f.hover.request(1, 8), false);
         assert.equal(controlled.calls[3]!.cancelled, true);
     } finally { f.finish(); controlled.assertDisposed(); }

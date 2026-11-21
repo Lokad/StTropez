@@ -99,7 +99,7 @@ export class ViewBindings {
                 baseline, { ariaLabel: "Source review", view, requestLine: linePrompt(host.ownerDocument), scrollLinked: this.reviewScrollLinked, rowsAligned: this.reviewRowsAligned });
             this.review = review;
             scope.defer(() => { if (this.review === review) this.review = undefined; review.dispose(); });
-            const saveTarget = this.controller.workspace.captureTab(this.controller.viewTab("primary"));
+            const saveTarget = this.controller.workspace.tabs.capture(this.controller.viewTab("primary"));
             this.attachTools(scope, "comparison", this.controller.viewTab("primary"), review.panes.working, presentation);
             scope.defer(() => referencePresentation.clear());
             const reference = review.panes.reference;
@@ -127,14 +127,14 @@ export class ViewBindings {
         } catch (error) { scope.rollback(error); }
     };
     private bindSaveShortcut(input: HTMLTextAreaElement, tabId: TabId, composing: () => boolean, signal: AbortSignal): void {
-        const target = this.controller.workspace.captureTab(tabId);
+        const target = this.controller.workspace.tabs.capture(tabId);
         input.addEventListener("keydown", event => this.handleSaveShortcut(event, input, target, composing), { signal });
     }
     private handleSaveShortcut(event: KeyboardEvent, input: HTMLElement, target: TabTarget, composing: () => boolean): void {
         if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "s"
             || event.defaultPrevented || event.isComposing || !input.isConnected
             || (input.closest("button,input,select,textarea") ?? input).matches(":disabled") || composing()) return;
-        const tab = this.controller.workspace.resolveTab(target);
+        const tab = this.controller.workspace.tabs.resolve(target);
         if (tab?.surface.kind !== "text" || tab.surface.documentId !== this.controller.source.documentId) return;
         event.preventDefault();
         if (!event.repeat) this.controller.save();
@@ -276,10 +276,10 @@ export class ViewBindings {
         if (this.editor !== "candidate") return;
         const previous = this.mounted.get("secondary"), host = previous?.editor.element.closest<HTMLDivElement>(".editor-host"), activity = previous?.candidate?.activity();
         if (!previous || !host?.isConnected || activity?.composing || activity?.pendingInput || activity?.pendingCommand) return;
-        const workspace = this.controller.workspace, target = workspace.captureTab(this.controller.viewTab("secondary"));
-        if (!workspace.resolveTab(target) || !workspace.observeDocument(documentId).getSnapshot()) return;
+        const workspace = this.controller.workspace, target = workspace.tabs.capture(this.controller.viewTab("secondary"));
+        if (!workspace.tabs.resolve(target) || !workspace.observeDocument(documentId).getSnapshot()) return;
         // Explicit host lifecycle: replace this captured pane synchronously; React owns only its stable ref.
-        this.detach("secondary"); workspace.replace(target.id, { kind: "text", documentId }); this.secondary(host);
+        this.detach("secondary"); workspace.tabs.replace(target.id, { kind: "text", documentId }); this.secondary(host);
         return this.mounted.get("secondary")?.candidate;
     }
     private ref(id: "primary" | "secondary", ariaLabel: string): (host: HTMLDivElement | null) => void {
@@ -287,7 +287,7 @@ export class ViewBindings {
             this.detach(id);
             if (host === null) return;
             const workspace = this.controller.workspace, tabId = this.controller.viewTab(id);
-            const tab = workspace.resolveTab(workspace.captureTab(tabId));
+            const tab = workspace.tabs.resolve(workspace.tabs.capture(tabId));
             if (tab?.surface.kind !== "text") throw new Error("Text view requires a text tab.");
             const documentId = tab.surface.documentId;
             const view = this.retainedView(id, documentId);

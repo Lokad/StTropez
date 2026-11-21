@@ -31,7 +31,7 @@ test("conflict presentation observes authority and keeps old controls out of new
         host.workspace.setCapabilities(host.source.id, { ...capabilities, save: false }); assert.equal(notified.canSaveReviewed, false);
         host.workspace.setCapabilities(host.source.id, capabilities); assert.equal(notified.canSaveReviewed, true);
         const layout = host.layout.getSnapshot();
-        host.workspace.replace(host.viewTab("primary"), { kind: "panel", resourceId: host.connection.id, panelType: "configuration" });
+        host.workspace.tabs.replace(host.viewTab("primary"), { kind: "panel", resourceId: host.connection.id, panelType: "configuration" });
         assert.equal(host.layout.getSnapshot(), layout); assert.equal(notified.canSaveReviewed, false);
         host.reopenPrimary(); model().actions[0].invoke(); model().actions[1].invoke(); const latest = model();
         second.actions[2].invoke(); await settled(); assert.equal(host.debug().pendingSaves.length, 0);

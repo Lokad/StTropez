@@ -38,7 +38,7 @@ export class HostSourceReview {
         this.referenceCell = new HostCell<Reference>({ generation: 0, baseline: this.savedReference }); this.comparisonReference = this.referenceCell.observable;
         this.saveConflictPresentation = Object.freeze({ getSnapshot: () => this.presentationSnapshot(), subscribe: (listener: () => void) => {
             const stops: (() => void)[] = [];
-            try { for (const store of [this.saveConflict, this.comparisonReference, this.source.metadata, this.workspace.tabState]) stops.push(store.subscribe(listener)); }
+            try { for (const store of [this.saveConflict, this.comparisonReference, this.source.metadata, this.workspace.tabs]) stops.push(store.subscribe(listener)); }
             catch (error) { stops.reverse().forEach(stop => stop()); throw error; }
             return () => { stops.forEach(stop => stop()); };
         } });
@@ -124,7 +124,7 @@ export class HostSourceReview {
         const conflict = this.conflictCell.get(), reference = this.referenceCell.get().baseline, metadata = this.source.metadata.getSnapshot();
         const canSaveReviewed = !this.disposed && conflict?.review === "ready" && conflict.reviewVersion !== null && this.conflictReference?.buffer === reference.buffer
             && this.conflictReference.version === reference.version && this.conflictPresentation !== undefined
-            && this.workspace.resolveTab(this.conflictPresentation) !== undefined && metadata.state === "ready" && metadata.capabilities.save
+            && this.workspace.tabs.resolve(this.conflictPresentation) !== undefined && metadata.state === "ready" && metadata.capabilities.save
             && metadata.editLock === null && metadata.saveStatus !== "saving";
         const cached = this.cachedPresentation;
         if (cached && cached.conflict === conflict && cached.canSaveReviewed === canSaveReviewed && cached.disposed === this.disposed) return cached;

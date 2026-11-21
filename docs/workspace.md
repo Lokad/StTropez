@@ -1,7 +1,7 @@
 # Workspace
 
-`Workspace` holds resources, tabs, document revisions and undo history. Views share text and keep
-independent selections. `WorkspaceCommands` calls host services to save or run captured inputs.
+`Workspace` holds resources, document revisions and undo history. Views share text and keep
+independent selections. Hosts with panes or a tab strip can use `workspace.tabs`. `WorkspaceCommands` calls host services to save or run captured inputs.
 
 ## Use
 
@@ -21,10 +21,10 @@ export function createWorkset() {
         { scope: "project", resource: "configuration", variant: "working" },
         "Configuration", { value: { limit: 100 }, serverVersion: "config-v1" }
     );
-    const sourceTab = workspace.open(
+    const sourceTab = workspace.tabs.open(
         { kind: "text", documentId: source.documentId }, "main"
     );
-    const configurationTab = workspace.open(
+    const configurationTab = workspace.tabs.open(
         { kind: "panel", resourceId: configuration.id, panelType: "configuration" }, "side"
     );
     return { workspace, commands: new WorkspaceCommands(workspace), source,
@@ -53,7 +53,9 @@ applying a delayed result, also check its view, tab generation and document revi
 | `DocumentView`, `ViewId` | A retained selection/folding state over a document; scroll belongs to the browser/host |
 | `ResourceTarget` | A captured resource identity in a particular workspace |
 
-Use `captureTab` and `resolveTab` for work that belongs to a tab, such as a close prompt. Moving the
+`workspace.tabs` returns one `WorkspaceTabs` handle on first use. Read the visible tabs with
+`getSnapshot()` and observe layout changes with `subscribe()`. A document-only editor can mount
+its `DocumentId` directly. Use `tabs.capture(id)` and `tabs.resolve(target)` for a close prompt. Moving the
 tab keeps the prompt valid. Closing or replacing it expires the target. If the work belongs to a
 resource, use `captureResource` and `resolveResource` instead. A save can outlive its tab. Use
 `createResourceKey` for a unique variant. Recreating a released resource under the same key gives it a
@@ -108,13 +110,12 @@ export function createReference(workspace: Workspace, buffer: TextBuffer) {
 }
 ```
 
-`WorkspaceSnapshot.resources`, `documents`, `tabs` and `tabState.getSnapshot()` list visible
-entries. Direct lookup, captures and leases also reach internal entries. `diagnostics()` counts
+The workspace snapshot lists visible resources and documents. The tab handle lists visible tabs. Direct lookup, captures and leases also reach internal entries. `diagnostics()` counts
 both. Visibility grants no edit, Save or Run permissions. The creator closes internal tabs and
 releases resources once views and leases allow it.
 
-`tabState` notifies on internal tab moves, replacements and closes, even when its visible array
-keeps the same identity. Recheck `resolveTab(target)` in the callback. Internal resource changes
+`workspace.tabs.subscribe()` notifies on internal tab moves, replacements and closes, even when its visible array
+keeps the same identity. Recheck `tabs.resolve(target)` in the callback. Internal resource changes
 also notify workspace observers without adding entries to the inventory.
 
 ### Document views
@@ -304,8 +305,8 @@ export async function computeForTab<T>(
     compute: (buffer: TextBuffer, cancelled: () => boolean) => Promise<T>,
     publish: (result: T, target: TabTarget) => void
 ) {
-    const target = workspace.captureTab(tabId);
-    const tab = workspace.resolveTab(target);
+    const target = workspace.tabs.capture(tabId);
+    const tab = workspace.tabs.resolve(target);
     if (tab?.surface.kind !== "text") return false;
     const document = workspace.document(tab.surface.documentId);
     const operation = workspace.beginOperation(document.resourceId, "analysis", target);
@@ -326,10 +327,10 @@ Call `finish` in `finally`, including after cancellation, failure or a stale rep
 and `fail` also settle their tickets. Operation mutations follow the same notification rules as
 edits.
 
-For a dirty-close prompt, call `beginClose(tabId)`, then `complete("close" | "keep-open")` when the
+For a dirty-close prompt, call `workspace.tabs.beginClose(tabId)`, then `complete("close" | "keep-open")` when the
 user decides. Completion checks the tab generation and revision and releases the prompt lease. If the
 prompt fails, finish the operation. A move preserves the decision. Closing, replacing or editing the
-target expires it. Use `close` for an immediate decision or `captureClose` for an intent without a
+target expires it. Use `tabs.close` for an immediate decision or `tabs.captureClose` for an intent without a
 lease.
 
 ### Save, conflicts and Run
@@ -412,7 +413,7 @@ the returned promise. These callbacks perform no built-in networking, storage or
 
 All changed snapshots are readable before listeners run. Unchanged snapshots keep their identity.
 Metadata excludes content revision, so typing alone need not notify a metadata subscriber. Subscribe
-to the resource, metadata, document, history or `tabState` you display. Use the workspace observable
+to the resource, metadata, document, history or tab handle you display. Use the workspace observable
 for the whole inventory.
 
 Each `subscribe` call has its own lifetime, even with the same callback. Delivery uses the listener

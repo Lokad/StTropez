@@ -81,8 +81,8 @@ export class DemoProject {
             const resource = this.workspace.createTextResource({ scope: `demo:${this.sample.id}`, resource: name, variant: "working" }, name,
                 { value, serverVersion: this.token }, readOnly ? { edit: [], save: false, run: false } : undefined);
             owners.defer(() => { this.workspace.releaseResource(resource.id, true); });
-            const tab = this.workspace.open({ kind: "text", documentId: resource.documentId }, "editor");
-            owners.defer(() => { this.workspace.close(tab); });
+            const tab = this.workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "editor");
+            owners.defer(() => { this.workspace.tabs.close(tab); });
             const view = this.workspace.createDocumentView(resource.documentId); owners.defer(() => view.dispose());
             file = Object.freeze({ name, resource, tab, view, readOnly });
             this.baselines.set(name, { buffer: this.workspace.document(resource.documentId).buffer, version: this.token ?? "sample" });

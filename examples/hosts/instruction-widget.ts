@@ -11,12 +11,12 @@ type InputCapture = Readonly<{ model: InstructionCapture; raw: string; projectio
 type Field = { key: InstructionField; node: HTMLTextAreaElement; capture: InputCapture | undefined; composing: boolean; ignored: boolean };
 
 export function mountInstructionWidget(host: HTMLElement, lane: HTMLElement, editor: TextEditor, controller: HostController, tabId: TabId, memory: InstructionViewState) {
-    const owner = host.ownerDocument, win = owner.defaultView!, model = controller.instruction, target = controller.workspace.captureTab(tabId), listeners = new AbortController();
+    const owner = host.ownerDocument, win = owner.defaultView!, model = controller.instruction, target = controller.workspace.tabs.capture(tabId), listeners = new AbortController();
     let frame: number | undefined, panel: HTMLDivElement | undefined, fieldListeners: AbortController | undefined, fields: Field[] = [], status: HTMLOutputElement | undefined;
     let copy: HTMLButtonElement | undefined, finish: HTMLButtonElement | undefined, cancel: HTMLButtonElement | undefined;
     let disposed = false, visible = false, renders = 0, lastLayoutMs = 0, maxLayoutMs = 0, top = 0, anchorTop = 0, groupSerial = 0, groupField: InstructionField | undefined, groupAt = 0, groupRevision = -1;
     let layouts = 0, layoutWorkMs = 0, formInputs = 0, lastFormInputMs = 0;
-    const current = () => { const tab = controller.workspace.resolveTab(target); return tab?.surface.kind === "text" && tab.surface.documentId === controller.source.documentId; };
+    const current = () => { const tab = controller.workspace.tabs.resolve(target); return tab?.surface.kind === "text" && tab.surface.documentId === controller.source.documentId; };
     const capture = (field: Field): InputCapture | undefined => { const value = model.capture(field.key); return value ? { model: value, raw: model.state.getSnapshot().values[field.key], projection: exportText(model.state.getSnapshot().values[field.key], "lf") } : undefined; };
     const value = (field: Field, captured: InputCapture): string => {
         const diff = textDifference(captured.projection.text, field.node.value); if (!diff) return captured.raw;

@@ -19,7 +19,7 @@ test("decorated viewport bounds endpoint reads and preserves overlap order, sele
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextViewport } = await import(path + "viewport.js") as typeof import("../../src/browser/viewport.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "paint", variant: "text" }, "Paint", { value: "x".repeat(512) });
-        const tab = workspace.open({ kind: "text", documentId: source.documentId }, "paint"), host = document.createElement("section"), style = document.createElement("style");
+        const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "paint"), host = document.createElement("section"), style = document.createElement("style");
         host.style.cssText = "height:200px;width:1000px"; style.textContent = ".paint-first { color: rgb(200, 20, 30) } .paint-second { background-color: rgb(10, 30, 60) }"; document.body.append(host, style);
         let reads = 0, overlap = false;
         const disjoint = Array.from({ length: 256 }, (_, i) => ({ get from() { reads++; return i * 2; }, get to() { reads++; return i * 2 + 1; }, className: "paint-first" }));
@@ -38,7 +38,7 @@ test("decorated viewport bounds endpoint reads and preserves overlap order, sele
             tokens.invalidate(0, 1); viewport.flush();
             const reused = children.every((node, i) => row.childNodes[i] === node && node.firstChild === texts[i]);
             return { endpointReads, exact, colored, parts, color, selectedBackground, decorationBackground, reused, exports: workspace.document(source.documentId).buffer.readMetrics().textExports };
-        } finally { viewport.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); style.remove(); }
+        } finally { viewport.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); style.remove(); }
     });
     expect(result).toMatchObject({ endpointReads: 512, exact: true, colored: 256, color: "rgb(200, 20, 30)",
         selectedBackground: "rgb(36, 73, 107)", decorationBackground: "rgb(10, 30, 60)", reused: true, exports: 0 });
@@ -59,7 +59,7 @@ test("a retained diagnostic, swatch and point follow typing and history in a 100
         const lines = Array<string>(100000).fill("const item = 1;");
         lines[target] = "paint red"; lines[target + 1] = "";
         const id = workspace.createDocument({ scope: "test", resource: "marks", variant: "text" }, "Paint", lines.join("\r\n"));
-        const tab = workspace.open({ kind: "text", documentId: id }, "marks");
+        const tab = workspace.tabs.open({ kind: "text", documentId: id }, "marks");
         const host = document.createElement("div"), style = document.createElement("style");
         style.textContent = ".swatch { width: .7em; height: .7em; background: var(--color) }";
         host.style.cssText = "position:fixed;inset:0;width:700px;height:260px";

@@ -18,33 +18,33 @@ export class HostLayout {
     private closeOperation: CloseOperation | undefined;
     constructor(workspace: Workspace, source: TextResourceHandle, configuration: ResourceId) {
         this.workspace = workspace; this.source = source; this.configuration = configuration;
-        this.primaryTab = workspace.open({ kind: "text", documentId: source.documentId }, "left");
-        this.secondaryTab = workspace.open({ kind: "text", documentId: source.documentId }, "right");
-        this.formTab = workspace.open({ kind: "panel", resourceId: configuration, panelType: "configuration" }, "right");
+        this.primaryTab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left");
+        this.secondaryTab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "right");
+        this.formTab = workspace.tabs.open({ kind: "panel", resourceId: configuration, panelType: "configuration" }, "right");
     }
     viewTab(id: "primary" | "secondary"): TabId { return id === "primary" ? this.primaryTab : this.secondaryTab; }
-    presentation(): TabTarget { return this.workspace.captureTab(this.primaryTab); }
+    presentation(): TabTarget { return this.workspace.tabs.capture(this.primaryTab); }
     navigate(kind: "workspace" | "review"): void { this.cell.set({ ...this.cell.get(), navigation: { kind } }); }
     error(message: string): void { this.cell.set({ ...this.cell.get(), modal: { kind: "error", message } }); }
     surface(primarySurface: "text" | "loading"): void { this.cell.set({ ...this.cell.get(), primarySurface }); }
     /** Select the captured tab before a caller begins its load; publish its surface afterwards. */
     targetText(documentId: DocumentId): TabTarget {
-        if (this.cell.get().primarySurface === "closed") this.primaryTab = this.workspace.open({ kind: "text", documentId }, this.cell.get().position);
-        else this.workspace.replace(this.primaryTab, { kind: "text", documentId });
+        if (this.cell.get().primarySurface === "closed") this.primaryTab = this.workspace.tabs.open({ kind: "text", documentId }, this.cell.get().position);
+        else this.workspace.tabs.replace(this.primaryTab, { kind: "text", documentId });
         return this.presentation();
     }
     primaryContains(documentId: DocumentId): boolean {
-        const tab = this.workspace.getSnapshot().tabs.find(tab => tab.id === this.primaryTab);
+        const tab = this.workspace.tabs.getSnapshot().find(tab => tab.id === this.primaryTab);
         return tab?.surface.kind === "text" && tab.surface.documentId === documentId;
     }
     readonly move = (): void => {
         const position = this.cell.get().position === "left" ? "right" : "left";
-        if (this.cell.get().primarySurface !== "closed") this.workspace.move(this.primaryTab, position);
+        if (this.cell.get().primarySurface !== "closed") this.workspace.tabs.move(this.primaryTab, position);
         this.cell.set({ ...this.cell.get(), position });
     };
     readonly toggleViews = (): void => { this.cell.set({ ...this.cell.get(), visible: !this.cell.get().visible }); };
     readonly openClosePrompt = (): void => {
-        this.closeOperation?.finish(); this.closeOperation = this.workspace.beginClose(this.primaryTab);
+        this.closeOperation?.finish(); this.closeOperation = this.workspace.tabs.beginClose(this.primaryTab);
         this.cell.set({ ...this.cell.get(), modal: { kind: "close", tabId: this.primaryTab } });
     };
     readonly confirmClose = (): boolean => {
@@ -53,7 +53,7 @@ export class HostLayout {
         return closed === true;
     };
     readonly replacePrimary = (): void => {
-        this.workspace.replace(this.primaryTab, { kind: "panel", resourceId: this.configuration, panelType: "configuration" });
+        this.workspace.tabs.replace(this.primaryTab, { kind: "panel", resourceId: this.configuration, panelType: "configuration" });
         this.cell.set({ ...this.cell.get(), primarySurface: "panel" });
     };
     readonly reopenPrimary = (): void => { this.targetText(this.source.documentId); this.surface("text"); };

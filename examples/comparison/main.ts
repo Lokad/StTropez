@@ -13,7 +13,7 @@ const workingBuffer = TextBuffer.from("const title = 'Working';\r\n// shared sep
 const resource = workspace.createTextResourceFromBuffer({ scope: "fixture", resource: "working", variant: "source" }, "Working source",
     { buffer: workingBuffer, serverVersion: fixedRevisions ? "saved-2" : "saved-1" },
     fixedRevisions ? { edit: [], save: false, run: false } : undefined);
-const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "main");
+const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "main");
 const customControls = options.get("controls") === "host";
 const comparison = mountTextComparison(document.querySelector<HTMLElement>("#comparison")!, workspace, tab,
     { buffer: TextBuffer.from("const title = 'Baseline';\r\n// shared separator\r\nconst count = 1;\r\n// shared boundary\r\n  return title;\r\n"), version: fixedRevisions ? "saved-1" : "reference-1" }, { controls: !customControls });
@@ -34,7 +34,7 @@ function finish(kind: "refresh" | "accept", newest = false) {
 function history(direction: "undo" | "redo") { const current = workspace.document(resource.documentId); workspace[direction]({ documentId: current.id, expectedRevision: current.revision }); }
 function dispose() {
     if (disposed) return; comparison.dispose(); stopControls?.(); disposed = true;
-    if (fixedRevisions) { workspace.close(tab); workspace.releaseResource(resource.id); }
+    if (fixedRevisions) { workspace.tabs.close(tab); workspace.releaseResource(resource.id); }
     refreshes.length = acceptances.length = 0;
     for (const button of document.querySelectorAll<HTMLButtonElement>("nav button")) button.disabled = true;
     result = "Disposed"; status();
@@ -62,7 +62,7 @@ const fixture = Object.freeze({ snapshot, setText, begin, finish, dispose, revie
     range: (from: number, to: number) => workspace.document(resource.documentId).buffer.slice(from, to),
     baselineRange: (from: number, to: number) => comparison.controller.getSnapshot().baseline?.buffer.slice(from, to),
     readOnly: (value: boolean) => workspace.setCapabilities(resource.id, { edit: value ? [] : ["human", "agent", "host"], save: true, run: true }),
-    replaceTab: () => { const documentId = workspace.createDocument({ scope: "fixture", resource: "replacement", variant: "source" }, "Replacement", "replacement"); workspace.replace(tab, { kind: "text", documentId }); },
-    moveTab: () => workspace.move(tab, "moved"), history });
+    replaceTab: () => { const documentId = workspace.createDocument({ scope: "fixture", resource: "replacement", variant: "source" }, "Replacement", "replacement"); workspace.tabs.replace(tab, { kind: "text", documentId }); },
+    moveTab: () => workspace.tabs.move(tab, "moved"), history });
 declare global { interface Window { comparisonFixture: typeof fixture } }
 window.comparisonFixture = fixture; status();

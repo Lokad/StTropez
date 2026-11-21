@@ -19,17 +19,17 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
             let target: TabTarget | undefined;
             lifecycle.onDispose(async () => {
                 const index = inactive.findIndex(owner => owner.resource === resource); if (index >= 0) inactive.splice(index, 1);
-                if (target && controller.workspace.resolveTab(target)) controller.workspace.close(target.id);
+                if (target && controller.workspace.tabs.resolve(target)) controller.workspace.tabs.close(target.id);
                 // Provider bindings defer lease release out of workspace notification delivery.
                 await Promise.resolve();
                 controller.workspace.releaseResource(resource.id);
             });
-            const id = controller.workspace.open({ kind: "text", documentId: resource.documentId }, "inactive");
-            target = controller.workspace.captureTab(id); inactive.push({ resource, tab: target });
+            const id = controller.workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "inactive");
+            target = controller.workspace.tabs.capture(id); inactive.push({ resource, tab: target });
         }
     };
     const inactiveDocuments = () => Object.freeze(inactive.map(({ resource, tab }) => Object.freeze({ id: resource.id,
-        revision: resource.getSnapshot().revision, dirty: resource.metadata.getSnapshot().dirty, current: !!controller.workspace.resolveTab(tab),
+        revision: resource.getSnapshot().revision, dirty: resource.metadata.getSnapshot().dirty, current: !!controller.workspace.tabs.resolve(tab),
         exports: controller.workspace.document(resource.documentId).buffer.readMetrics().textExports })));
     const transferSnapshot = (): TransferTargetSnapshot => {
         if (!transferTarget) throw new Error("No transfer target is mounted.");
@@ -61,12 +61,12 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
             const resource = controller.workspace.createTextResource({ scope: "host-fixture", resource: "transfer-text", variant: "working" }, "Transfer target", { value: text });
             transferTarget = resource; let target: TabTarget | undefined;
             lifecycle.onDispose(async () => {
-                if (target && controller.workspace.resolveTab(target)) controller.workspace.close(target.id);
+                if (target && controller.workspace.tabs.resolve(target)) controller.workspace.tabs.close(target.id);
                 await Promise.resolve();
                 controller.workspace.releaseResource(resource.id, true); transferTarget = undefined;
             });
-            controller.workspace.replace(controller.viewTab("secondary"), { kind: "text", documentId: resource.documentId });
-            target = controller.workspace.captureTab(controller.viewTab("secondary")); lifecycle.mount();
+            controller.workspace.tabs.replace(controller.viewTab("secondary"), { kind: "text", documentId: resource.documentId });
+            target = controller.workspace.tabs.capture(controller.viewTab("secondary")); lifecycle.mount();
         },
         transferSnapshot,
         editTransferTarget: (expectedRevision: number, edits: readonly TextEdit[]) => controller.workspace.edit({ documentId: transferSnapshot().documentId, expectedRevision, edits, origin: "host" }),

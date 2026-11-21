@@ -41,7 +41,7 @@ export class HostNavigationTools {
         this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.createService = createService;
     }
     private available(session: Session): boolean {
-        const tab = this.workspace.resolveTab(session.target), editor = session.editor;
+        const tab = this.workspace.tabs.resolve(session.target), editor = session.editor;
         return !this.disposed && this.sessions.get(session.token) === session && editor.element.isConnected && !editor.activity().disposed && this.workspace.ownsDocumentView(editor.view)
             && tab?.surface.kind === "text" && tab.surface.documentId === editor.view.documentId && this.workspace.observeDocument(editor.view.documentId).getSnapshot() !== undefined;
     }
@@ -86,7 +86,7 @@ export class HostNavigationTools {
     readonly disconnect = (): void => { this.cancel(); this.dropClient(); this.disconnected = true; this.publish({ status: "disconnected", message: "Navigation provider disconnected; local editing remains available." }); };
     readonly reconnect = (): void => { this.cancel(); this.dropClient(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ status: "idle", message: "Request fresh navigation with current resources." }); };
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const session: Session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.captureTab(tab), editor }, listeners = new AbortController(); this.sessions.set(session.token, session);
+        const session: Session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor }, listeners = new AbortController(); this.sessions.set(session.token, session);
         editor.input.addEventListener("focus", () => { this.active = session; this.publish(); }, { signal: listeners.signal });
         editor.input.addEventListener("keydown", event => {
             if (event.defaultPrevented || event.isComposing || editor.activity().composing) return;

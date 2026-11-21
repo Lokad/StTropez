@@ -32,7 +32,7 @@ export class HostTablePaste {
         this.cancel(); this.cell.set({ ...this.cell.get(), enabled, status: "idle", message: enabled ? "Paste a table to insert quoted CSV." : "Literal paste is active." });
     };
     private validSession(session: Session): boolean {
-        const tab = this.workspace.resolveTab(session.target);
+        const tab = this.workspace.tabs.resolve(session.target);
         return this.sessions.get(session.id) === session && tab?.surface.kind === "text" && tab.surface.documentId === session.editor.view.documentId
             && this.workspace.ownsDocumentView(session.editor.view) && session.editor.element.isConnected && !session.editor.activity().disposed;
     }
@@ -96,7 +96,7 @@ export class HostTablePaste {
     }
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
         if (this.sessions.has(id)) throw new Error("Table paste view is already mounted.");
-        const session = { id, editor, target: this.workspace.captureTab(tab) }, listeners = new AbortController(); this.sessions.set(id, session);
+        const session = { id, editor, target: this.workspace.tabs.capture(tab) }, listeners = new AbortController(); this.sessions.set(id, session);
         editor.input.addEventListener("paste", event => { const began = editor.element.ownerDocument.defaultView!.performance.now();
             try { this.paste(session, event); } finally { this.lastCaptureHandlerMs = editor.element.ownerDocument.defaultView!.performance.now() - began; }
         }, { capture: true, signal: listeners.signal });

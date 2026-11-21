@@ -10,7 +10,7 @@ import { regexMatches, regexReplacement } from "../src/core/regex-search.ts";
 for (const terminal of ["ready", "failed", "cancelled"] as const)
 test(`unchanged regex transfer steps preserve snapshot identity and accumulated timing through ${terminal}`, async t => {
     const workspace = new Workspace(), documentId = workspace.createDocument({ scope: "find", resource: "progress", variant: "working" }, "Source", "catcat");
-    const tab = workspace.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>();
+    const tab = workspace.tabs.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>();
     let serial = 0, now = 0, calls = 0, disposed = false, late: ((step: SearchStep) => void) | undefined;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance: { now: () => now },
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
@@ -23,7 +23,7 @@ test(`unchanged regex transfer steps preserve snapshot identity and accumulated 
             return Promise.resolve({ done: calls === 53, scanned: calls === 53 ? 6 : calls > 50 ? 3 : 0,
                 readUnits: 1, matches: calls === 51 ? [{ from: 0, to: 3 }] : [] });
         } }) };
-    const find = findForView(workspace, workspace.captureTab(tab), editor, { regularExpressionBackend: backend, regularExpressionDelayMs: 0 });
+    const find = findForView(workspace, workspace.tabs.capture(tab), editor, { regularExpressionBackend: backend, regularExpressionDelayMs: 0 });
     find.setFlags({ regularExpression: true }); const states: FindSnapshot[] = [], stop = find.subscribe(() => states.push(find.getSnapshot()));
     const tick = async () => { const next = tasks.entries().next().value; if (next) { tasks.delete(next[0]); next[1](); } await Promise.resolve(); await Promise.resolve(); };
     try {
@@ -47,14 +47,14 @@ test(`unchanged regex transfer steps preserve snapshot identity and accumulated 
         t.diagnostic(JSON.stringify({ terminal, transferSteps: 50, publishedSnapshots: states.length, maxScanStepMs: find.getDiagnostics().maxScanStepMs }));
     } finally {
         stop(); find.dispose(); assert.equal(find.getSnapshot().reason, null); assert.equal(find.getSnapshot().message, "");
-        view.dispose(); workspace.close(tab); assert.equal(disposed, true); assert.equal(tasks.size, 0);
+        view.dispose(); workspace.tabs.close(tab); assert.equal(disposed, true); assert.equal(tasks.size, 0);
         assert.equal(workspace.diagnostics().subscriptions, 0); assert.equal(workspace.diagnostics().leases, 0);
     }
 });
 
 function fixture(text: string, supplied = true) {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "find", resource: "regex", variant: "working" }, "Source", { value: text });
-    const tab = workspace.open({ kind: "text", documentId: source.documentId }, "left"), view = workspace.createDocumentView(source.documentId), peer = workspace.createDocumentView(source.documentId);
+    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left"), view = workspace.createDocumentView(source.documentId), peer = workspace.createDocumentView(source.documentId);
     let serial = 0, focused = 0, composing = false, holdSecond = false, failPlan = false, badPlan = false, backendDisposed = false;
     const tasks = new Map<number, () => void>(), held: (() => void)[] = [], plans: { disposed: boolean; capture: FindQueryCapture }[] = [];
     const owner = Object.assign(new EventTarget(), { defaultView: { performance, setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
@@ -79,7 +79,7 @@ function fixture(text: string, supplied = true) {
             }, dispose: () => { job.disposed = true; } };
         },
     };
-    const find = findForView(workspace, workspace.captureTab(tab), editor, supplied ? { regularExpressionBackend: backend, regularExpressionDelayMs: 0 } : {});
+    const find = findForView(workspace, workspace.tabs.capture(tab), editor, supplied ? { regularExpressionBackend: backend, regularExpressionDelayMs: 0 } : {});
     const tick = async () => { if (tasks.size) { const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); } await Promise.resolve(); await Promise.resolve(); };
     const drain = async () => { for (let turns = 0; turns < 100; turns++) { await tick(); if (!tasks.size) return; } throw new Error("Find did not yield."); };
     return { workspace, source, tab, view, peer, owner, editor, find, plans, tick, drain,
@@ -87,7 +87,7 @@ function fixture(text: string, supplied = true) {
         hold: () => { holdSecond = true; }, fail: () => { failPlan = true; }, tamper: () => { badPlan = true; }, focused: () => focused,
         compose: () => { composing = true; editor.input.dispatchEvent(new Event("compositionstart")); },
         release: () => { held.splice(0).forEach(resolve => resolve()); },
-        finish: () => { find.dispose(); held.splice(0).forEach(resolve => resolve()); view.dispose(); peer.dispose(); workspace.close(tab);
+        finish: () => { find.dispose(); held.splice(0).forEach(resolve => resolve()); view.dispose(); peer.dispose(); workspace.tabs.close(tab);
             assert.equal(backendDisposed, supplied);
             assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().subscriptions, 0); assert.equal(workspace.diagnostics().leases, 0); } };
 }
@@ -168,8 +168,8 @@ test("a held replacement reply cannot edit a replacement document in the same ta
         f.find.setQuery("cat"); await f.drain();
         f.hold(); f.find.replaceAll("dog"); await f.tick(); await f.tick();
         assert.equal(f.find.getSnapshot().status, "replacing");
-        f.workspace.replace(f.tab, { kind: "text", documentId: replacement.documentId });
-        const next = findForView(f.workspace, f.workspace.captureTab(f.tab), { ...f.editor, view });
+        f.workspace.tabs.replace(f.tab, { kind: "text", documentId: replacement.documentId });
+        const next = findForView(f.workspace, f.workspace.tabs.capture(f.tab), { ...f.editor, view });
         try {
             next.setQuery("cat"); await f.drain();
             const ready = next.getSnapshot(), selected = view.getSnapshot(), original = f.workspace.document(replacement.documentId);

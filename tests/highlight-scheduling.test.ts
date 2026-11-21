@@ -6,7 +6,7 @@ import { clientFixture } from "./helpers/lsp-client.ts";
 
 test("occurrences coalesce refreshes and bound busy retries from the actual debounce turn", { timeout: 10000 }, async t => {
     for (const delay of [undefined, 37]) {
-        const f = clientFixture(t), tab = f.workspace.open({ kind: "text", documentId: f.source.documentId }, "source"), view = f.workspace.createDocumentView(f.source.documentId);
+        const f = clientFixture(t), tab = f.workspace.tabs.open({ kind: "text", documentId: f.source.documentId }, "source"), view = f.workspace.createDocumentView(f.source.documentId);
         f.peer.onRequest("textDocument/documentHighlight", () => [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } } }]);
         await f.provider.connect();
         const tasks = new Map<number, { run: () => void; delay: number }>(); let serial = 0, time = 0, busy = true;
@@ -14,7 +14,7 @@ test("occurrences coalesce refreshes and bound busy retries from the actual debo
             setTimeout: (run: () => void, delay: number) => { tasks.set(++serial, { run, delay }); return serial; },
             clearTimeout: (id: number) => { tasks.delete(id); } } };
         Object.assign(input, { getRootNode: () => owner });
-        const editor = { signal: new AbortController().signal, workspace: f.workspace, tab: f.workspace.captureTab(tab), view, input, element: Object.assign(new EventTarget(), { ownerDocument: owner }),
+        const editor = { signal: new AbortController().signal, workspace: f.workspace, tab: f.workspace.tabs.capture(tab), view, input, element: Object.assign(new EventTarget(), { ownerDocument: owner }),
             activity: () => ({ disposed: false, composing: false, pendingCommand: busy }) } as unknown as TextEditor;
         const fire = (delay: number, elapsed = delay) => {
             assert.equal(tasks.size, 1); const [id, task] = tasks.entries().next().value!;
@@ -37,7 +37,7 @@ test("occurrences coalesce refreshes and bound busy retries from the actual debo
             assert.equal(controller.getSnapshot().status, "ready");
             assert.deepEqual(controller.getSnapshot().items, [{ from: 0, to: 5, kind: "text" }]);
             controller.refresh(); assert.equal(tasks.size, 1);
-        } finally { stopReady(); controller.dispose(); view.dispose(); f.workspace.close(tab); await f.provider.flush(); }
+        } finally { stopReady(); controller.dispose(); view.dispose(); f.workspace.tabs.close(tab); await f.provider.flush(); }
         assert.equal(tasks.size, 0); assert.equal(f.workspace.diagnostics().leases, 0);
     }
 });

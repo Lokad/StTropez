@@ -17,7 +17,7 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
         const { mountViewport } = await import(path + "viewport.js") as typeof import("../../src/browser/viewport.ts");
         const { ComparisonRowsCursor } = await import(path + "rows.js") as typeof import("../../src/core/comparison-rows.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "paint-captures", variant: "text" }, "Paint", { value: "const sample = 123;\r\n".repeat(100000) });
-        const tab = workspace.open({ kind: "text", documentId: source.documentId }, "paint"), host = document.createElement("section");
+        const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "paint"), host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
         let calls = 0, notices = 0, shade = "paint-a";
         const { viewport, setComparisonRows } = mountViewport(host, workspace, tab);
@@ -84,7 +84,7 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
                 correcting, correctionPaints: corrected.renders - beforeCorrection, extentError: Math.abs(corrected.horizontalExtent - measured - 24),
                 idleAfterCorrection, partialIdle, partialAnchor: capture.horizontalAnchor !== undefined, restoredError: Math.abs(point.left - restored.left),
                 initialExports, exports: documentState().buffer.readMetrics().textExports };
-        } finally { observer.disconnect(); viewport.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
+        } finally { observer.disconnect(); viewport.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
     });
     await testInfo.attach("paint-work", { body: JSON.stringify(result), contentType: "application/json" });
     for (const work of [result.idle, result.afterSelection, result.idleAfterCorrection, result.partialIdle])

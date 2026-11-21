@@ -755,7 +755,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             overviewEpoch++; schedule();
         }
     }), workspace.observeDocument(documentId).subscribe(documentChanged), view.subscribe(schedule), view.folding.subscribe(foldsChanged), resource.metadata.subscribe(schedule)];
-    if (tab) subscriptions.push(workspace.tabState.subscribe(schedule));
+    if (tab) subscriptions.push(workspace.tabs.subscribe(schedule));
     let activitySnapshot: ViewportActivity | undefined;
     function activity(): ViewportActivity {
         const pending = frame !== undefined;

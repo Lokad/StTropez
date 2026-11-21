@@ -149,7 +149,7 @@ export function editingActions(editor: TextEditor) {
 
 ### Captured view requests
 
-Use `workspace.captureTab(tabId)` to get the target for
+Use `workspace.tabs.capture(tabId)` to get the target for
 `captureViewRequest(workspace, target, view, options?)`. The frozen handle retains the document,
 selection set and folding snapshot. It exposes `isCurrent()`, `signal`, `cancel()` and
 `commit(operation)`. Capture rejects foreign views, mismatched tabs and unavailable documents. It

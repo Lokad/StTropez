@@ -45,7 +45,7 @@ export class HostDocumentColors {
     readonly state = this.cell.observable;
     private readonly reconnectProvider: (() => void) | undefined;
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined, factory: ColorBackendFactory, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.factory = factory; }
-    private available(s: Session): boolean { const tab = this.workspace.resolveTab(s.target); return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
+    private available(s: Session): boolean { const tab = this.workspace.tabs.resolve(s.target); return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
         && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot(); }
     private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
     private editable(id: DocumentId): boolean { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return m.capabilities.edit.includes("human") && m.capabilities.edit.includes("host") && m.editLock === null; }
@@ -107,7 +107,7 @@ export class HostDocumentColors {
             else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) { event.preventDefault(); this.preview(); } }, { signal: events.signal }); };
     setValue(value: string): void { if (value === this.cell.get().value) return; if (this.job) this.clearPreview(this.job); this.publish({ value: value.slice(0, colorLimits.literal + 1), status: this.job?.colors ? "colors" : "idle", message: this.job ? "Proposed color changed; preview before confirming." : "Proposed color changed; discover colors before previewing." }); }
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const s = { token: this.workspace.allocateIdentity(), id, target: this.workspace.captureTab(tab), editor, layer: editor.decorations.add({ name: "document colors", order: 35 }) }, events = new AbortController(); this.sessions.set(s.token, s); this.sync(s);
+        const s = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor, layer: editor.decorations.add({ name: "document colors", order: 35 }) }, events = new AbortController(); this.sessions.set(s.token, s); this.sync(s);
         editor.input.addEventListener("focus", () => { this.active = s; this.publish(); }, { signal: events.signal });
         editor.input.addEventListener("keydown", event => { if (event.defaultPrevented || event.isComposing || editor.activity().composing || event.key !== "F6" || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return; event.preventDefault(); event.stopImmediatePropagation(); this.active = s; this.start(true); }, { capture: true, signal: events.signal });
         for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.job?.document.id === editor.view.documentId) this.cancel(); }, { signal: events.signal });
@@ -132,7 +132,7 @@ export class HostDocumentColors {
                 if (!this.current(job)) { this.changed(job); return; }
                 // Ready references outlive view movement. Retain their resource before ending discovery capture.
                 job.lease = this.workspace.acquire(doc.resourceId);
-                job.stops.push(this.workspace.observeDocument(doc.id).subscribe(changed), this.workspace.resourceForDocument(doc.id).metadata.subscribe(changed), this.workspace.tabState.subscribe(changed));
+                job.stops.push(this.workspace.observeDocument(doc.id).subscribe(changed), this.workspace.resourceForDocument(doc.id).metadata.subscribe(changed), this.workspace.tabs.subscribe(changed));
                 job.colors = result.colors; win.clearTimeout(job.timer); capture.cancel();
                 const at = result.colors.findIndex(c => c.from <= selected.selection.head && selected.selection.head <= c.to); job.selected = result.colors.length ? Math.max(0, at) : -1; this.syncAll();
                 const color = result.colors[job.selected]; this.publish({ status: "colors", message: `${result.colors.length} color literals. Inspect one, preview presentations and confirm explicitly.`, work: (0), page: job.selected < 0 ? 0 : Math.floor(job.selected / colorLimits.page), value: color ? rgbaColor(color.color) : "" });

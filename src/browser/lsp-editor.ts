@@ -391,7 +391,7 @@ export function createLspEditor(editor: TextEditor, options: LspEditorOptions): 
         else expire("LSP completion expired after visible folds changed.");
     }),
     resource.metadata.subscribe(() => { if (snippet && !authorityCurrent(snippet.authority)) { snippet = undefined; publish("Snippet ended after authority changed."); } if (job && !authorityCurrent(job.authority)) expire("LSP completion expired after authority changed."); })];
-    if (target) stops.push(workspace.tabState.subscribe(() => { if (!available()) { snippet = undefined; clearDiagnostics(); expire("Captured LSP view is unavailable."); } }));
+    if (target) stops.push(workspace.tabs.subscribe(() => { if (!available()) { snippet = undefined; clearDiagnostics(); expire("Captured LSP view is unavailable."); } }));
     editor.input.addEventListener("blur", () => { if (job) job.acceptance = undefined; if (snippet && !editor.activity().composing) { snippet = undefined; publish("Snippet ended after focus changed."); } }, { signal: listeners.signal });
     editor.input.addEventListener("compositionstart", () => { cancelAuto(); expire("Finish composition before completion."); }, { signal: listeners.signal });
     editor.input.addEventListener("beforeinput", event => { const started = clock.performance.now();

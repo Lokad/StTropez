@@ -21,15 +21,15 @@ test("independent comparison modules share workspace identity and release retain
         const first = await import(path + "comparison.js?one") as typeof import("../../src/browser/comparison.ts");
         const second = await import(path + "comparison.js?two") as typeof first;
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "source", variant: "working" }, "Working", { value: "working" });
-        const tab = workspace.open({ kind: "text", documentId: source.documentId }, "working"), view = workspace.createDocumentView(source.documentId);
+        const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "working"), view = workspace.createDocumentView(source.documentId);
         const host = document.createElement("section"); document.body.append(host);
         const baseline = { buffer: TextBuffer.from("head\n  needle\nend"), version: "one" };
         let hiddenThroughout = true;
         const stopInventory = workspace.subscribe(() => {
-            const state = workspace.getSnapshot();
+            const state = workspace.getSnapshot(), tabs = workspace.tabs.getSnapshot();
             hiddenThroughout &&= state.resources.length === 1 && state.resources[0]!.id === source.id
                 && state.documents.length === 1 && state.documents[0]!.id === source.documentId
-                && state.tabs.length === 1 && state.tabs[0]!.id === tab && workspace.tabState.getSnapshot() === state.tabs;
+                && tabs.length === 1 && tabs[0]!.id === tab;
         });
         const one = first.mountTextComparison(host, workspace, tab, baseline, { view, workBudget: 256 });
         const two = second.mountTextComparison(host, workspace, tab, baseline, { view, controls: false });
@@ -67,7 +67,7 @@ test("independent comparison modules share workspace identity and release retain
             retained: [old.getSnapshot().state, current.getSnapshot().state] };
         oldLease.release(); currentLease.release(); await Promise.resolve();
         const afterRelease = { resources: workspace.diagnostics().resources, retained: [old.getSnapshot().state, current.getSnapshot().state] };
-        view.dispose(); workspace.close(tab); workspace.releaseResource(source.id); host.remove();
+        view.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id); host.remove();
         return { distinct, internal, hiddenThroughout, afterRefresh, afterDestroy, afterRelease, leases: workspace.diagnostics().leases };
     });
     expect(result).toEqual({ distinct: true, internal: true, hiddenThroughout: true, afterRefresh: { stable: true, oldText: "head\n  needle\nend", text: "head\n  needle\nend\nneedle", retiredRejected: true, rulers: [72], query: "needle", folded: true, collapsed: 1, defaultWorking: true, activeReference: true },
@@ -79,7 +79,10 @@ test("a document reference follows edits in its source editor and stays read-onl
     const ids = await page.evaluate(async () => {
         const path = "/comparison-ownership/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextComparison, mountTextEditor } = await import(path + "tools.js") as typeof import("../../src/browser/index.ts");
-        const workspace = new Workspace();
+        class DocumentWorkspace extends Workspace {
+            override get tabs(): never { throw new Error("A document-only editor requested the tab layout."); }
+        }
+        const workspace = new DocumentWorkspace();
         const resource = (name: string) => workspace.createDocument({ scope: "review", resource: name, variant: "source" }, name, "a");
         const working = resource("working"), baseline = resource("baseline");
         const host = document.createElement("section"); host.id = "follow-document"; document.body.append(host);
@@ -134,7 +137,7 @@ test("browser comparison work yields with large requested budgets and cancels it
                 { requested: Number.MAX_SAFE_INTEGER, rate: 1 }, { requested: undefined, rate: 0 }]) {
                 clockRate = rate;
                 const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "budget", variant: "working" }, "Working", { value: "working" });
-                const tab = workspace.open({ kind: "text", documentId: source.documentId }, "working"), host = document.createElement("section"); document.body.append(host);
+                const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "working"), host = document.createElement("section"); document.body.append(host);
                 const baseline = { buffer: TextBuffer.from("baseline"), version: "one" }, before = workspace.diagnostics();
                 // Clamping must not make invalid public input acceptable or leak a mount.
                 for (const invalid of [255, 256.5, Infinity, NaN]) {
@@ -153,7 +156,7 @@ test("browser comparison work yields with large requested budgets and cancels it
                     for (const run of tasks.values()) run();
                     results.push({ requested: requested ?? null, clockRate, calls, elapsed: measured.maxStepMs, work, pending,
                         cancelled: tasks.size === 0 && calls === prior && workspace.diagnostics().leases === 0 && workspace.diagnostics().subscriptions === 0 });
-                } finally { mounted.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
+                } finally { mounted.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
             }
         } finally {
             window.setTimeout = timeout; window.clearTimeout = clear; TextDiff.prototype.next = next;
@@ -176,7 +179,7 @@ test("review highlights survive every typing paint while exact comparison work i
         const { Workspace, TextBuffer, TextDiff } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextComparison } = await import(path + "comparison.js") as typeof import("../../src/browser/comparison.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "paint", variant: "working" }, "Working", { value: "old\n" + "unchanged\n".repeat(4000) });
-        const tab = workspace.open({ kind: "text", documentId: source.documentId }, "working"), host = document.createElement("section");
+        const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "working"), host = document.createElement("section");
         host.id = "held-comparison"; document.body.append(host);
         const mounted = mountTextComparison(host, workspace, tab, { buffer: TextBuffer.from("new\n" + "unchanged\n".repeat(4000)), version: "one" });
         await new Promise<void>(resolve => { const stop = mounted.controller.subscribe(() => { if (mounted.controller.getSnapshot().status === "ready") { stop(); resolve(); } }); });
@@ -194,7 +197,7 @@ test("review highlights survive every typing paint while exact comparison work i
             capture: () => { const s = mounted.controller.getSnapshot(); return { status: s.status, revision: s.working!.revision, hunks: s.hunks.length, paints,
                 staleRevert: mounted.controller.revert(exact.generation, 0), currentRevert: mounted.controller.revert(s.generation, 0) }; },
             release: () => { TextDiff.prototype.next = next; },
-            dispose: () => { TextDiff.prototype.next = next; mounted.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); },
+            dispose: () => { TextDiff.prototype.next = next; mounted.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); },
         };
     });
     try {

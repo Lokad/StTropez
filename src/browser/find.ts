@@ -377,7 +377,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         if (store.get().status === "cancelled" && valid()) { observed = workspace.document(documentId); publish({ revision: observed.revision, length: observed.buffer.length }); }
         else { const state = store.get(); restart(state.query, state.wholeWord, state.matchCase, state.regularExpression, true); }
     })];
-    if (target) subscriptions.push(workspace.tabState.subscribe(() => { if (!valid()) { stop(); disposeBackends(); reset({ status: "expired", reason: "view-unavailable", message: "View is unavailable." }); } }));
+    if (target) subscriptions.push(workspace.tabs.subscribe(() => { if (!valid()) { stop(); disposeBackends(); reset({ status: "expired", reason: "view-unavailable", message: "View is unavailable." }); } }));
     const dispose = () => {
         if (disposed) return;
         scope.assertWritable();

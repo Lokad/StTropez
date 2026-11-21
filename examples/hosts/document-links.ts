@@ -45,7 +45,7 @@ export class HostDocumentLinks {
     private readonly reconnectProvider: (() => void) | undefined;
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined, factory: LinkBackendFactory, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.factory = factory; }
     private available(s: Session): boolean {
-        const tab = this.workspace.resolveTab(s.target);
+        const tab = this.workspace.tabs.resolve(s.target);
         return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
             && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
     }
@@ -87,7 +87,7 @@ export class HostDocumentLinks {
         list.addEventListener("keydown", event => { if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return; const origin = this.job?.origin; event.preventDefault(); event.stopPropagation(); this.cancel(); if (origin && this.available(origin)) origin.editor.focus(); }, { signal: events.signal });
     };
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const s = { token: this.workspace.allocateIdentity(), id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
+        const s = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
         editor.input.addEventListener("focus", () => { if (this.active !== s && this.job?.resolving !== undefined) this.cancel(); this.active = s; this.publish(); }, { signal: events.signal });
         editor.input.addEventListener("keydown", event => {
             if (event.defaultPrevented || event.isComposing || editor.activity().composing || event.key !== "F4" || event.ctrlKey || event.metaKey || event.altKey) return;

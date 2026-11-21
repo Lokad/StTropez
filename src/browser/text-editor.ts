@@ -1310,7 +1310,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         view.folding.subscribe(() => { const revision = view.folding.getSnapshot().revision;
             if (revision === observedFoldRevision) { cancelWord(); stopDrag(); preferred = undefined; group = undefined; }
             observedFoldRevision = revision; refresh(); }), resource.metadata.subscribe(refresh)];
-    if (target) subscriptions.push(workspace.tabState.subscribe(refresh));
+    if (target) subscriptions.push(workspace.tabs.subscribe(refresh));
     let activitySnapshot: TextEditorActivity | undefined;
     function activity(): TextEditorActivity {
         const pendingInput = hostInsertion !== undefined || inputQueue.pending !== undefined || inputQueue.executing !== undefined || rangeCommand?.capture.deleting === true;

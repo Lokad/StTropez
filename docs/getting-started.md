@@ -24,18 +24,11 @@ for regex matching and replacement planning. Local syntax coloring needs no serv
 enabled the connected provider computes its diagnostics and completions. The host decides where
 Save and Run execute. [Regex worker](search.md#regular-expressions-and-worker-limits)
 
-**Compared with Monaco.** Both separate the text model from the editor view and let the host
-draw the tab strip. A Monaco host can switch an editor between URI-identified models with
-`setModel`. StTropez also tracks each workspace tab, so a pending close can follow a moved tab
-and reject one whose contents or target changed. [Monaco editor API](https://microsoft.github.io/monaco-editor/docs.html)
-
 ## Use
 
 ### Open the first editor
 
-Start `app.js` with a checklist. `createTextResource` gives the file an identity,
-`open` gives it a tab, and `mountTextEditor` attaches a view to the page. You can type and undo
-as soon as it mounts.
+Start `app.js` with a checklist. Create a resource for the file and mount its document in the page.
 
 ```ts
 import { Workspace } from "sttropez";
@@ -46,11 +39,10 @@ const name = "tasks.md";
 const openedText = sessionStorage.getItem(name) ?? "- [ ] Review the draft\n";
 const file = workspace.createTextResource(
     { scope: "checklist", resource: name, variant: "working" }, name, { value: openedText });
-const tab = workspace.open({ kind: "text", documentId: file.documentId }, "main");
 
 const primary = document.querySelector("main");
 if (!primary) throw new Error("Missing <main>.");
-const editor = mountTextEditor(primary, workspace, tab, { ariaLabel: name });
+const editor = mountTextEditor(primary, workspace, file.documentId, { ariaLabel: name });
 editor.focus();
 ```
 
@@ -111,8 +103,8 @@ const button = (label, command) => {
 
 Choose **Notes** to open a second file. Switch back to the checklist, then return to Notes. Keeping
 both editors mounted preserves each caret, fold and scroll position. Your toolbar decides which tab to
-show and where to put focus. `workspace.move` keeps the tab ID and pending captures valid across
-panes. `workspace.replace` reuses the ID and expires captures for the old tab.
+show and where to put focus. `workspace.tabs.move` keeps the tab ID and pending captures valid across
+panes. `workspace.tabs.replace` reuses the ID and expires captures for the old tab.
 
 ```js
 const notes = workspace.createTextResource(
@@ -120,13 +112,13 @@ const notes = workspace.createTextResource(
 const notesHost = document.querySelector("aside");
 if (!notesHost) throw new Error("Missing notes pane.");
 const openNotes = () => {
-    const id = workspace.open({ kind: "text", documentId: notes.documentId }, "main");
-    return { target: workspace.captureTab(id),
+    const id = workspace.tabs.open({ kind: "text", documentId: notes.documentId }, "main");
+    return { target: workspace.tabs.capture(id),
         editor: mountTextEditor(notesHost, workspace, id, { ariaLabel: "notes.md" }) };
 };
 /** @type {ReturnType<typeof openNotes> | undefined} */
 let notesTab;
-const notesPane = () => notesTab && workspace.resolveTab(notesTab.target)?.paneId;
+const notesPane = () => notesTab && workspace.tabs.resolve(notesTab.target)?.paneId;
 ```
 
 ```js
@@ -144,7 +136,7 @@ button("Notes", () => {
 });
 button("Dock notes", () => {
     if (!notesTab) return;
-    workspace.move(notesTab.target.id, "side");
+    workspace.tabs.move(notesTab.target.id, "side");
     showChecklist();
 });
 ```
@@ -161,12 +153,12 @@ intact.
 let closing;
 button("Review close", () => {
     if (!notesTab) return;
-    closing = workspace.captureClose(notesTab.target.id);
+    closing = workspace.tabs.captureClose(notesTab.target.id);
     output.textContent = closing.dirty ? "Close notes and keep the draft?" : "Close notes?";
 });
 button("Close notes", () => {
     if (!closing) return;
-    const closed = workspace.completeClose(closing, "close");
+    const closed = workspace.tabs.completeClose(closing, "close");
     closing = undefined;
     if (!closed) { output.textContent = "Notes changed. Review close again."; return; }
     notesTab?.editor.dispose();
@@ -342,7 +334,7 @@ if (!reviewHost) throw new Error("Missing review container.");
 let review;
 button("Compare saved", () => {
     review?.dispose();
-    review = mountTextComparison(reviewHost, workspace, tab, baseline);
+    review = mountTextComparison(reviewHost, workspace, file.documentId, baseline);
 });
 ```
 
@@ -412,9 +404,8 @@ button("Close", () => {
     provider.dispose();
     review?.dispose();
     split.dispose();
-    if (notesTab) { notesTab.editor.dispose(); workspace.close(notesTab.target.id); }
+    if (notesTab) { notesTab.editor.dispose(); workspace.tabs.close(notesTab.target.id); }
     editor.dispose();
-    workspace.close(tab);
     workspace.releaseResourceWhenUnowned(file.id, dirty);
     workspace.releaseResourceWhenUnowned(notes.id, dirty);
     workspace.releaseResourceWhenUnowned(rules.id);

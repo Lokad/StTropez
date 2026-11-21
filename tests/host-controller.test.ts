@@ -93,7 +93,7 @@ function transfer(host: HostController) { const s = host.transfer.resource.getSn
 
 test("loaded drafts remain reachable until explicit discard and clean loads respect operation ownership", async () => {
     const host = new HostController();
-    const loaded = () => { const tab = host.workspace.resolveTab(host.workspace.captureTab(host.viewTab("primary")))!; assert.equal(tab.surface.kind, "text"); if (tab.surface.kind !== "text") throw Error("Missing text"); return host.workspace.resourceForDocument(tab.surface.documentId); };
+    const loaded = () => { const tab = host.workspace.tabs.resolve(host.workspace.tabs.capture(host.viewTab("primary")))!; assert.equal(tab.surface.kind, "text"); if (tab.surface.kind !== "text") throw Error("Missing text"); return host.workspace.resourceForDocument(tab.surface.documentId); };
     try {
         const before = host.debug().diagnostics; host.beginDeferredLoad(); host.finishLoad(); const clean = loaded(), lease = host.workspace.acquire(clean.id);
         host.replacePrimary(); assert.equal(clean.getSnapshot().state, "ready"); lease.release(); host.collectLoadedDocument(); assert.equal(clean.getSnapshot().state, "released");

@@ -94,7 +94,7 @@ export function compareText(workspace: Workspace, identity: DocumentId | TabId, 
         }
     };
     const stopDocument = workspace.observeDocument(documentId).subscribe(update), stopMetadata = resource.metadata.subscribe(update);
-    const stopTab = target && workspace.tabState.subscribe(update), stopReference = referenceDocument?.subscribe(update);
+    const stopTab = target && workspace.tabs.subscribe(update), stopReference = referenceDocument?.subscribe(update);
     function begin(kind: "refresh" | "accept"): ComparisonTicket {
         scope.assertWritable();
         if (referenceDocument) throw new Error("A followed reference changes through its workspace document.");

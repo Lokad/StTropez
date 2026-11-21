@@ -27,7 +27,7 @@ function projection(document: DocumentSnapshot): Projection {
 /** Native input baseline. Document history/selection are shared; whole-value rendering remains unbounded. */
 export function mountTextareaEditor(host: HTMLElement, workspace: Workspace, tabId: TabId,
     options: Readonly<{ ariaLabel?: string; view?: DocumentView }> = {}): TextareaEditor {
-    const target = workspace.captureTab(tabId), tab = workspace.resolveTab(target);
+    const target = workspace.tabs.capture(tabId), tab = workspace.tabs.resolve(target);
     if (!tab || tab.surface.kind !== "text") throw new Error("Expected a text surface.");
     const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId);
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
@@ -61,7 +61,7 @@ export function mountTextareaEditor(host: HTMLElement, workspace: Workspace, tab
     };
     const refresh = () => {
         if (destroyed || selecting) return;
-        if (!workspace.resolveTab(target)) { input.disabled = true; return; }
+        if (!workspace.tabs.resolve(target)) { input.disabled = true; return; }
         const state = resource.getSnapshot(); input.disabled = state.state !== "ready";
 
         input.readOnly = !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null;
@@ -82,7 +82,7 @@ export function mountTextareaEditor(host: HTMLElement, workspace: Workspace, tab
     const conflict = (reason: string, expectedRevision = revision) => input.dispatchEvent(new CustomEvent<InputConflictDetail>(inputConflictEvent, { bubbles: true,
         detail: Object.freeze({ documentId, expectedRevision, reason, attemptedText: input.value }) }));
     const history = (direction: "undo" | "redo") => {
-        if (!workspace.resolveTab(target)) { conflict("expired-view"); refresh(); return; }
+        if (!workspace.tabs.resolve(target)) { conflict("expired-view"); refresh(); return; }
         group = undefined; syncSelection();
         const result = workspace[direction]({ documentId, expectedRevision: revision });
         if (!result.applied && result.reason !== "history-empty") conflict(result.reason); refresh();
@@ -91,7 +91,7 @@ export function mountTextareaEditor(host: HTMLElement, workspace: Workspace, tab
         const captured = insertion; insertion = undefined;
         if (composing) return;
         if (type === "historyUndo" || type === "historyRedo") { refresh(); history(type === "historyUndo" ? "undo" : "redo"); return; }
-        if (!workspace.resolveTab(target)) { conflict("expired-view"); refresh(); return; }
+        if (!workspace.tabs.resolve(target)) { conflict("expired-view"); refresh(); return; }
         if (resource.getSnapshot().state !== "ready") { conflict("not-ready"); refresh(); return; }
         const document = workspace.document(documentId);
         if (document.revision !== revision) { conflict("stale-revision"); refresh(); return; }
@@ -143,7 +143,7 @@ export function mountTextareaEditor(host: HTMLElement, workspace: Workspace, tab
     input.addEventListener("compositionend", () => { composing = false; commit("insertCompositionText"); }, { signal: listeners.signal });
     input.addEventListener("input", event => commit((event as InputEvent).inputType), { signal: listeners.signal });
     const unsubscribers = [workspace.observeDocument(documentId).subscribe(refresh), view.subscribe(refresh),
-        resource.metadata.subscribe(refresh), workspace.tabState.subscribe(refresh)];
+        resource.metadata.subscribe(refresh), workspace.tabs.subscribe(refresh)];
     refresh();
     return Object.freeze({ element: input, view,
         captureView: () => { syncSelection(); const { selection, selectionSet } = view.getSnapshot();

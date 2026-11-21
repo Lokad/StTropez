@@ -25,14 +25,14 @@ const commandErrors: string[] = [];
 const commands = new WorkspaceCommands(workspace, () => { if (!disposed) commandErrors.push("Synthetic command failure"); });
 const documentId = workspace.createDocument({ scope: "demo", resource: "transform", variant: "working" },
     "Transform source", "// Synthetic sample\nconst rows = [12, 18, 24];\nconst total = rows.reduce((sum, value) => sum + value, 0);\n");
-const sourceTab = workspace.open({ kind: "text", documentId }, "left");
+const sourceTab = workspace.tabs.open({ kind: "text", documentId }, "left");
 const source = workspace.resourceForDocument(documentId);
-const secondaryTab = workspace.open({ kind: "text", documentId }, "secondary");
+const secondaryTab = workspace.tabs.open({ kind: "text", documentId }, "secondary");
 type Connection = Readonly<{ path: string; format: "csv" }>;
 const connection = workspace.createResource<Connection>({ scope: "demo", resource: "connection", variant: "working" },
     "Connection", { value: { path: "incoming/sample.csv", format: "csv" } });
-const panelTab = workspace.open({ kind: "panel", resourceId: connection.id, panelType: "connection" }, "right");
-for (const tab of [sourceTab, secondaryTab, panelTab]) cleanup.defer(() => workspace.close(tab));
+const panelTab = workspace.tabs.open({ kind: "panel", resourceId: connection.id, panelType: "connection" }, "right");
+for (const tab of [sourceTab, secondaryTab, panelTab]) cleanup.defer(() => workspace.tabs.close(tab));
 const editor = mountTextareaEditor(element("left"), workspace, sourceTab);
 cleanup.defer(() => editor.dispose());
 const conflicts: { reason: string; attemptedLength: number }[] = [];
@@ -106,15 +106,15 @@ for (const [title, focus] of [["Transform · Working copy", () => editor.element
     button.addEventListener("click", focus, { signal: events.signal }); element("tabs").append(button);
 }
 element("move").addEventListener("click", () => {
-    const tab = workspace.getSnapshot().tabs.find(t => t.id === sourceTab);
+    const tab = workspace.tabs.getSnapshot().find(t => t.id === sourceTab);
     if (!tab) return;
     const destination = tab.paneId === "left" ? "right" : "left";
     const view = editor.captureView();
     const opposite = destination === "left" ? "right" : "left";
     element(destination).append(editor.element);
     element(opposite).append(panel);
-    workspace.move(sourceTab, destination);
-    workspace.move(panelTab, opposite);
+    workspace.tabs.move(sourceTab, destination);
+    workspace.tabs.move(panelTab, opposite);
     editor.element.focus();
     editor.restoreView(view);
 }, { signal: events.signal });
@@ -171,7 +171,7 @@ const instrumentation = {
             savedWrites, lastSavedRevision, serverVersion, dirty: source.metadata.getSnapshot().dirty, lastRun, errors: [...commandErrors] },
         conflicts: [...conflicts],
         documents: workspace.getSnapshot().documents.map(d => ({ id: d.id, revision: d.revision, length: d.buffer.length })),
-        tabs: workspace.getSnapshot().tabs }),
+        tabs: workspace.tabs.getSnapshot() }),
     frameSamples: () => [...frameSamples],
     handlerSamples: () => [...handlerSamples],
     sampleCount: () => sampleCount,

@@ -26,7 +26,7 @@ const noop = () => {};
 test("scene identity ignores modal/review traffic while readiness and captured tab generations govern mounting", async () => {
     const host = new HostController();
     try {
-        const layout = host.layout.getSnapshot(), tab = host.workspace.resolveTab(host.workspace.captureTab(host.viewTab("primary")))!;
+        const layout = host.layout.getSnapshot(), tab = host.workspace.tabs.resolve(host.workspace.tabs.capture(host.viewTab("primary")))!;
         const derive = (next = layout, target = tab, ready = true) => hostSceneModel(next, target, ready, host.source.documentId);
         const initial = derive(), reviewLayout = { ...layout, navigation: { kind: "review" as const } }, review = derive(reviewLayout);
         assert.equal(review.key, initial.key); assert.equal(review.primaryKey, initial.primaryKey); assert.ok(review.reviewKey);

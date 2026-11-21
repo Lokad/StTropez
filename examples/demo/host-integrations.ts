@@ -19,7 +19,7 @@ export function hostDecorations(line: PresentedLine): readonly InlineDecoration[
 
 function mountNotes(model: HostSourceNotes, project: DemoProject, file: DemoFile, editor: TextEditor, open: (target: DemoSymbolTarget) => void) {
     const owner = editor.element.ownerDocument, layer = owner.createElement("div"), events = new AbortController(), nodes = new Map<number, HTMLElement>();
-    const origin = project.workspace.captureTab(file.tab);
+    const origin = project.workspace.tabs.capture(file.tab);
     // Sample-owned linkage: note labels and file names are host policy, not editor syntax.
     const inventory = file.name === "workflow.rules" ? project.files.find(candidate => candidate.name === "inventory.csv") : undefined;
     layer.className = "demo-source-notes"; layer.setAttribute("aria-label", "Host source notes"); owner.body.append(layer);
@@ -36,11 +36,11 @@ function mountNotes(model: HostSourceNotes, project: DemoProject, file: DemoFile
                 node = owner.createElement(destination ? "button" : "span"); node.className = "demo-source-note";
                 if (destination) {
                     const link = node as HTMLButtonElement, workspace = project.workspace;
-                    const resource = workspace.captureResource(destination.resource.id), tab = workspace.captureTab(destination.tab);
+                    const resource = workspace.captureResource(destination.resource.id), tab = workspace.tabs.capture(destination.tab);
                     const document = workspace.document(destination.resource.documentId);
                     link.type = "button"; link.title = `Open ${destination.name}`;
                     link.onclick = () => {
-                        const source = workspace.resolveTab(origin), target = workspace.resolveTab(tab);
+                        const source = workspace.tabs.resolve(origin), target = workspace.tabs.resolve(tab);
                         if (!link.isConnected || !editor.element.isConnected || editor.activity().disposed
                             || source?.surface.kind !== "text" || source.surface.documentId !== file.resource.documentId
                             || target?.surface.kind !== "text" || target.surface.documentId !== document.id

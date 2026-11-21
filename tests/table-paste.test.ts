@@ -7,12 +7,12 @@ import { captureInsertion } from "../src/browser/captured-insertion.ts";
 
 function fixture() {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "table", resource: "source", variant: "working" }, "Source", { value: "abc\r\nxyz" });
-    const tab = workspace.open({ kind: "text", documentId: source.documentId }, "left"), view = workspace.createDocumentView(source.documentId), peer = workspace.createDocumentView(source.documentId);
+    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left"), view = workspace.createDocumentView(source.documentId), peer = workspace.createDocumentView(source.documentId);
     const timers = new Map<number, () => void>(); let serial = 0, composing = false;
     const owner = { defaultView: { performance, setTimeout: (work: () => void) => { timers.set(++serial, work); return serial; }, clearTimeout: (id: number) => timers.delete(id) }, activeElement: null };
     const input = Object.assign(new EventTarget(), { ownerDocument: owner });
     const editor = { view, input, element: { ownerDocument: owner, isConnected: true }, activity: () => ({ composing, disposed: false }), captureView: () => {},
-        captureInsertion: () => captureInsertion(workspace, workspace.captureTab(tab), view, () => !composing,
+        captureInsertion: () => captureInsertion(workspace, workspace.tabs.capture(tab), view, () => !composing,
             (plan, revision) => workspace.edit({ documentId: source.documentId, expectedRevision: revision, edits: plan.edits, selectionSet: plan.selectionSet, origin: "human", view, history: { kind: "paste" } }).applied, () => {}),
         focus: () => { throw new Error("Table paste must not focus a later editor."); } } as unknown as TextEditor;
     const tools = new HostTablePaste(workspace), detach = tools.attach("primary", tab, editor); tools.setEnabled(true);
@@ -21,7 +21,7 @@ function fixture() {
     const turn = () => { const entry = timers.entries().next().value; if (entry) { timers.delete(entry[0]); entry[1](); } };
     const drain = () => { let steps = 0; while (timers.size) { turn(); if (++steps > 1000) throw new Error("Conversion did not finish."); } };
     return { workspace, source, tab, view, peer, tools, paste, drain, turn, timers, input, text, detach, setComposing: (value: boolean) => { composing = value; },
-        finish: () => { detach(); view.dispose(); peer.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true); assert.equal(timers.size, 0); assert.deepEqual({ views: workspace.diagnostics().views, leases: workspace.diagnostics().leases, subscriptions: workspace.diagnostics().subscriptions }, { views: 0, leases: 0, subscriptions: 0 }); } };
+        finish: () => { detach(); view.dispose(); peer.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); assert.equal(timers.size, 0); assert.deepEqual({ views: workspace.diagnostics().views, leases: workspace.diagnostics().leases, subscriptions: workspace.diagnostics().subscriptions }, { views: 0, leases: 0, subscriptions: 0 }); } };
 }
 test("captured table paste replaces every range in one shared undo transaction without exporting or focusing", () => {
     const f = fixture(); try {
@@ -54,7 +54,7 @@ test("edits, away-and-back selections, new paste, fold changes and detach expire
             if (kind === "selection") { f.view.setSelection(0, { anchor: 1, head: 1 }); f.view.setSelection(0, { anchor: 0, head: 0 }); }
             if (kind === "fold") f.view.folding.setRanges(f.view.folding.getSnapshot(), [{ id: "body", from: 0, to: 8, collapsed: true }]);
             if (kind === "detach") f.detach();
-            if (kind === "tab") f.workspace.replace(f.tab, { kind: "panel", resourceId: f.source.id, panelType: "test" });
+            if (kind === "tab") f.workspace.tabs.replace(f.tab, { kind: "panel", resourceId: f.source.id, panelType: "test" });
             await Promise.resolve(); f.drain(); assert.equal(f.text(), kind === "edit" ? "abc\r\nxyz!" : "abc\r\nxyz"); assert.equal(f.tools.state.getSnapshot().status, "cancelled");
         } finally { f.finish(); }
     }

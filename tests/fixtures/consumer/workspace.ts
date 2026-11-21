@@ -12,11 +12,11 @@ export function createActivationSession(original: string, selection: Selection) 
     const workspace = new Workspace(), sources = new Map<ResourceId, Source>();
     const add = (key: string, title: string, text: string) => {
         const resource = workspace.createTextResource({ scope: "workspace-consumer", resource: key, variant: "working" }, title, { value: text });
-        const source: Source = { key, title, resource, tab: workspace.open({ kind: "text", documentId: resource.documentId }, "primary"), epoch: 0, primary: undefined };
+        const source: Source = { key, title, resource, tab: workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "primary"), epoch: 0, primary: undefined };
         sources.set(resource.id, source); return source;
     };
     let current = add("source", "Source", original);
-    const peerSource = add("peer", "Peer document", "// peer\r\n" + original), peerTab = workspace.open({ kind: "text", documentId: peerSource.resource.documentId }, "peer");
+    const peerSource = add("peer", "Peer document", "// peer\r\n" + original), peerTab = workspace.tabs.open({ kind: "text", documentId: peerSource.resource.documentId }, "peer");
     for (let i = 1; i <= 100; i++) add(`document-${i}`, `Document ${String(i).padStart(3, "0")}`, `// document ${i}\r\n` + "row Δ😀\r\n".repeat(1000));
     const view = (s: Source) => s.primary ??= createViewSession("", s.key === "source" ? selection : { anchor: 0, head: 0 }, { workspace, source: s.resource, tab: () => s.tab });
     let peer: ActivationSession | undefined = createViewSession("", { anchor: 4, head: 1 }, { workspace, source: peerSource.resource, tab: () => peerTab, label: "Peer source", focus: false });
@@ -46,12 +46,12 @@ export function createActivationSession(original: string, selection: Selection) 
     const mountPrimary = () => { if (primaryHost && current.tab) { view(current).mount(primaryHost, undefined, value => updateFind?.(value), readOnly); if (query) view(current).search(query, regex); else updateFind?.(""); } };
     const open = (s: Source) => {
         if (disposed || !view(current).canUnmount()) { notify("Finish primary typing before switching documents."); return; }
-        view(current).unmount(); if (!s.tab) { s.tab = workspace.open({ kind: "text", documentId: s.resource.documentId }, "primary"); s.epoch++; }
+        view(current).unmount(); if (!s.tab) { s.tab = workspace.tabs.open({ kind: "text", documentId: s.resource.documentId }, "primary"); s.epoch++; }
         current = s; mountPrimary(); release(); refresh();
     };
     const close = () => {
         if (!current.tab || !view(current).canUnmount()) { notify("Finish primary typing before closing its tab."); return; }
-        const s = current; view(s).unmount(); workspace.close(s.tab!); s.tab = undefined; s.epoch++; chosenClosed = s.resource.id;
+        const s = current; view(s).unmount(); workspace.tabs.close(s.tab!); s.tab = undefined; s.epoch++; chosenClosed = s.resource.id;
         const next = [...sources.values()].find(candidate => candidate.tab); if (next) { current = next; mountPrimary(); }
         notify("Tab closed. Its document and history are retained."); release();
     };
@@ -97,8 +97,8 @@ export function createActivationSession(original: string, selection: Selection) 
             selectPeer: (ranges: readonly Selection[], primary = 0) => peer?.select(ranges, primary),
         }),
         dispose: () => { if (!disposed) { lastBase = view(current).snapshot(); clearInterval(timer); job?.operation.finish(); job = undefined; discard = undefined; clearDOM();
-            peer?.dispose(); peer = undefined; workspace.close(peerTab);
-            for (const s of sources.values()) { s.primary?.dispose(); s.primary = undefined; if (s.tab) workspace.close(s.tab); s.tab = undefined; workspace.releaseResource(s.resource.id, true); }
+            peer?.dispose(); peer = undefined; workspace.tabs.close(peerTab);
+            for (const s of sources.values()) { s.primary?.dispose(); s.primary = undefined; if (s.tab) workspace.tabs.close(s.tab); s.tab = undefined; workspace.releaseResource(s.resource.id, true); }
             sources.clear(); disposed = true; } return workspace.diagnostics(); },
     });
 }

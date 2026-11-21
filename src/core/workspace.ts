@@ -1,3 +1,5 @@
+import { createWorkspaceTabs, surfaceResource } from "./workspace-tabs.ts";
+import type { WorkspaceTabs } from "./workspace-tabs.ts";
 import type { TextEdit } from "./changes.ts";
 import { compactDocumentEdit, replacementSpan, textDifference } from "./changes.ts";
 import { documentChange } from "./document-change.ts";
@@ -28,7 +30,7 @@ export function captureTextSurface(workspace: Workspace, identity: DocumentId | 
         const resource = workspace.resourceForDocument(identity as DocumentId);
         return { documentId: resource.documentId, resource, tab: undefined };
     }
-    const tab = workspace.captureTab(identity as TabId), surface = workspace.resolveTab(tab)?.surface;
+    const tab = workspace.tabs.capture(identity as TabId), surface = workspace.tabs.resolve(tab)?.surface;
     if (surface?.kind !== "text") throw new Error("Expected a text surface.");
     return { documentId: surface.documentId, resource: workspace.resourceForDocument(surface.documentId), tab };
 }
@@ -36,7 +38,7 @@ export function captureTextSurface(workspace: Workspace, identity: DocumentId | 
 export function ownsTextSurface(workspace: Workspace, view: DocumentView, target: TabTarget | undefined): boolean {
     if (!workspace.ownsDocumentView(view)) return false;
     if (!target) return true;
-    const surface = workspace.resolveTab(target)?.surface;
+    const surface = workspace.tabs.resolve(target)?.surface;
     return surface?.kind === "text" && surface.documentId === view.documentId;
 }
 export type ResourceKey = Readonly<{ scope: string; resource: string; variant: string }>;
@@ -79,7 +81,7 @@ export type Surface = Readonly<
 export type TabSnapshot = Readonly<{ id: TabId; paneId: PaneId; generation: number; surface: Surface; visibility: ResourceVisibility }>;
 export type WorkspaceSnapshot = Readonly<{
     revision: number; resources: readonly ResourceMetadata[];
-    documents: readonly DocumentSnapshot[]; tabs: readonly TabSnapshot[];
+    documents: readonly DocumentSnapshot[];
 }>;
 export type TabTarget = Readonly<{ workspace: symbol; id: TabId; generation: number }>;
 export type ResourceTarget = Readonly<{ workspace: symbol; id: ResourceId }>;
@@ -171,22 +173,20 @@ export class Workspace {
     private readonly deferredReleases = new Map<ResourceId, boolean>();
     private readonly queuedReleases = new Set<ResourceId>();
     private readonly documents = new Map<DocumentId, ResourceRecord>();
-    private readonly tabs: Store<readonly TabSnapshot[]>;
-    private readonly tabIndex = new Map<TabId, TabSnapshot>();
-    private inventoryTabs: readonly TabSnapshot[] = Object.freeze([]);
+    private layout?: ReturnType<typeof createWorkspaceTabs>;
     private readonly state: Store<number>;
     private snapshot: WorkspaceSnapshot | undefined;
     readonly getSnapshot: () => WorkspaceSnapshot;
     readonly subscribe: (listener: () => void) => () => void;
-    readonly tabState: Observable<readonly TabSnapshot[]>;
+    get tabs(): WorkspaceTabs {
+        this.layout ??= createWorkspaceTabs(this, this.scope, this.lifetime, changed => this.publish(changed), id => this.scheduleRelease(id));
+        return this.layout.api;
+    }
 
     constructor(options: WorkspaceOptions = {}) {
         this.history = new TextHistory(options.history);
         this.scope = new NotificationScope(options.onListenerError ?? (() => {}));
-        this.tabs = new Store<readonly TabSnapshot[]>(Object.freeze([]), this.scope);
         this.state = new Store(0, this.scope);
-        // Internal tabs still notify captured owners when their lifetime changes.
-        this.tabState = Object.freeze({ getSnapshot: () => this.inventoryTabs, subscribe: this.tabs.observable.subscribe });
         this.getSnapshot = () => {
             if (!this.snapshot) {
                 const resources: ResourceMetadata[] = [], documents: DocumentSnapshot[] = [];
@@ -195,7 +195,7 @@ export class Workspace {
                     resources.push(metadata); const document = record.document.get(); if (document) documents.push(document);
                 }
                 this.snapshot = Object.freeze({ revision: this.state.get(),
-                    resources: Object.freeze(resources), documents: Object.freeze(documents), tabs: this.inventoryTabs });
+                    resources: Object.freeze(resources), documents: Object.freeze(documents) });
             }
             return this.snapshot;
         };
@@ -265,7 +265,7 @@ export class Workspace {
     resource(id: ResourceId): ResourceHandle<SnapshotValue> { return this.requireResource(id).handle; }
     diagnostics(): Readonly<{ resources: number; documents: number; tabs: number; views: number; leases: number; subscriptions: number;
         history: Readonly<{ groups: number; changes: number; changedUnits: number }> }> {
-        return Object.freeze({ resources: this.records.size, documents: this.documents.size, tabs: this.tabs.get().length,
+        return Object.freeze({ resources: this.records.size, documents: this.documents.size, tabs: this.layout?.count() ?? 0,
             views: [...this.documents.values()].reduce((total, record) => total + record.views.size, 0), history: this.history.diagnostics(),
             leases: [...this.records.values()].reduce((total, record) => total + record.leases.size, 0), subscriptions: this.scope.subscriptionCount() });
     }
@@ -534,7 +534,7 @@ export class Workspace {
     }
     ownership(id: ResourceId): Readonly<{ leases: number; tabs: number; saves: number }> {
         const record = this.requireResource(id);
-        return Object.freeze({ leases: record.leases.size, saves: record.saveReservations, tabs: this.tabs.get().filter(tab => this.surfaceResource(tab.surface) === id).length });
+        return Object.freeze({ leases: record.leases.size, saves: record.saveReservations, tabs: this.layout?.count(id) ?? 0 });
     }
     beginOperation(id: ResourceId, lane: string | symbol, presentation?: TabTarget): Operation {
         return this.operation(id, lane, presentation);
@@ -542,8 +542,8 @@ export class Workspace {
     private operation(id: ResourceId, lane: string | symbol, presentation?: TabTarget): Operation {
         this.scope.assertWritable();
         if (presentation !== undefined) {
-            const tab = this.resolveTab(presentation);
-            if (!tab || this.surfaceResource(tab.surface) !== id) throw new Error("Operation presentation does not own this resource.");
+            const tab = this.tabs.resolve(presentation);
+            if (!tab || surfaceResource(this, tab.surface) !== id) throw new Error("Operation presentation does not own this resource.");
         }
         const record = this.requireResource(id), lease = this.acquire(id);
         record.operations.get(lane)?.cancel();
@@ -552,7 +552,7 @@ export class Workspace {
         const operation: Operation = Object.freeze({ target, revision: record.state.get().revision, generation: ++record.nextOperation,
             isCurrent: () => !cancelled && !finished && record.operations.get(lane) === operation && this.records.get(id) === record,
             isCancelled: () => cancelled,
-            presentationCurrent: () => operation.isCurrent() && (presentation === undefined || this.resolveTab(presentation) !== undefined),
+            presentationCurrent: () => operation.isCurrent() && (presentation === undefined || this.tabs.resolve(presentation) !== undefined),
             cancel: () => { this.scope.assertWritable(); cancelled = true; },
             finish: () => {
                 this.scope.assertWritable();
@@ -711,49 +711,6 @@ export class Workspace {
         } });
     }
 
-    open(surface: Surface, paneId: PaneId): TabId {
-        this.scope.assertWritable(); const visibility = this.requireResource(this.surfaceResource(surface)).metadata.get().visibility;
-        const id = `tab-${++this.nextId}` as TabId;
-        this.publishTabs([...this.tabs.get(), Object.freeze({ id, paneId, generation: 0, surface: Object.freeze({ ...surface }), visibility })]);
-        return id;
-    }
-    move(id: TabId, paneId: PaneId): void {
-        this.scope.assertWritable();
-        const current = this.requireTab(id);
-        if (current.paneId === paneId) return;
-        this.publishTabs(this.tabs.get().map(tab => tab.id === id ? Object.freeze({ ...tab, paneId }) : tab));
-    }
-    replace(id: TabId, surface: Surface): void {
-        this.scope.assertWritable(); const previous = this.surfaceResource(this.requireTab(id).surface);
-        const visibility = this.requireResource(this.surfaceResource(surface)).metadata.get().visibility;
-        this.publishTabs(this.tabs.get().map(tab => tab.id === id ? Object.freeze({ ...tab, generation: tab.generation + 1, surface: Object.freeze({ ...surface }), visibility }) : tab));
-        this.scheduleRelease(previous);
-    }
-    /** Immediate host decision. Use captureClose/completeClose for an asynchronous dirty prompt. */
-    close(id: TabId): void {
-        this.scope.assertWritable(); const previous = this.surfaceResource(this.requireTab(id).surface);
-        this.publishTabs(this.tabs.get().filter(tab => tab.id !== id));
-        this.scheduleRelease(previous);
-    }
-    captureClose(id: TabId): CloseIntent {
-        const tab = this.requireTab(id), resource = this.requireResource(this.surfaceResource(tab.surface));
-        return Object.freeze({ tab: this.captureTab(id), resource: this.captureResource(resource.handle.id),
-            revision: resource.state.get().revision, dirty: resource.metadata.get().dirty });
-    }
-    completeClose(intent: CloseIntent, decision: "keep-open" | "close"): boolean {
-        this.scope.assertWritable();
-        if (decision === "keep-open" || !this.resolveTab(intent.tab)) return false;
-        const resource = this.resolveResource(intent.resource);
-        if (!resource || resource.getSnapshot().revision !== intent.revision) return false;
-        this.close(intent.tab.id); return true;
-    }
-    beginClose(id: TabId): CloseOperation {
-        const intent = this.captureClose(id), operation = this.beginOperation(intent.resource.id, `close:${id}`, intent.tab);
-        return Object.freeze({ ...operation, intent, complete: (decision: "keep-open" | "close") => {
-            try { return operation.isCurrent() && this.completeClose(intent, decision); }
-            finally { operation.finish(); }
-        } });
-    }
     /** Release now, or after the last tab/lease leaves. Unsaved changes cancel a non-discarding release. */
     releaseResourceWhenUnowned(id: ResourceId, discard = false): void {
         this.scope.assertWritable(); const record = this.requireResource(id), owners = this.ownership(id);
@@ -790,23 +747,9 @@ export class Workspace {
         this.publish(changed);
     }
     releaseDocument(id: DocumentId, discard = false): void { this.releaseResource(this.resourceForDocument(id).id, discard); }
-    captureTab(id: TabId): TabTarget {
-        const tab = this.requireTab(id); return Object.freeze({ workspace: this.lifetime, id, generation: tab.generation });
-    }
-    resolveTab(target: TabTarget): TabSnapshot | undefined {
-        const tab = target.workspace === this.lifetime ? this.tabIndex.get(target.id) : undefined;
-        return tab?.generation === target.generation ? tab : undefined;
-    }
-    private requireTab(id: TabId): TabSnapshot {
-        const tab = this.tabIndex.get(id);
-        if (!tab) throw new Error("Unknown tab."); return tab;
-    }
     private requireResource(id: ResourceId): ResourceRecord {
         const record = this.records.get(id);
         if (!record) throw new Error("Unknown resource."); return record;
-    }
-    private surfaceResource(surface: Surface): ResourceId {
-        return surface.kind === "text" ? this.resourceForDocument(surface.documentId).id : this.requireResource(surface.resourceId).handle.id;
     }
     private projectDocument(record: ResourceRecord, changed: Set<Store<unknown>>): void {
         const state = record.state.get(), previous = record.document.get();
@@ -825,17 +768,6 @@ export class Workspace {
     }
     private commitRecord(record: ResourceRecord, next: ResourceSnapshot<SnapshotValue>): void {
         const changed = new Set<Store<unknown>>(); this.setRecord(record, next, changed); this.publish(changed);
-    }
-    private publishTabs(tabs: readonly TabSnapshot[]): void {
-        const visible: TabSnapshot[] = []; let sameVisible = true;
-        this.tabIndex.clear();
-        for (const tab of tabs) {
-            this.tabIndex.set(tab.id, tab);
-            if (tab.visibility === "workspace") { if (tab !== this.inventoryTabs[visible.length]) sameVisible = false; visible.push(tab); }
-        }
-        const all = Object.freeze(tabs);
-        if (!sameVisible || visible.length !== this.inventoryTabs.length) this.inventoryTabs = visible.length === all.length ? all : Object.freeze(visible);
-        const changed = new Set<Store<unknown>>(); this.tabs.set(all, changed); this.publish(changed);
     }
     private publish(changed: Set<Store<unknown>>): void {
         // Scoped consumers need no coarse inventory. A requested snapshot is captured in full,

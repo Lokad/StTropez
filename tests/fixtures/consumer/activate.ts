@@ -6,7 +6,7 @@ import type { TextEditor, FindController, ViewState } from "sttropez/browser";
 /** Loaded only by an explicit host action; model/history outlive individual DOM attachments. */
 export function createActivationSession(original: string, selection: Selection, shared?: Readonly<{ workspace: Workspace; source: TextResourceHandle; tab: () => TabId | undefined; label?: string; focus?: boolean }>) {
     const workspace = shared?.workspace ?? new Workspace(), source = shared?.source ?? workspace.createTextResource({ scope: "activation", resource: "source", variant: "working" }, "Source", { value: original });
-    const ownTab = shared ? undefined : workspace.open({ kind: "text", documentId: source.documentId }, "source"), view = workspace.createDocumentView(source.documentId, selection), history = workspace.observeHistory(source.documentId);
+    const ownTab = shared ? undefined : workspace.tabs.open({ kind: "text", documentId: source.documentId }, "source"), view = workspace.createDocumentView(source.documentId, selection), history = workspace.observeHistory(source.documentId);
     let editor: TextEditor | undefined, find: FindController | undefined, stopFind: (() => void) | undefined, viewState: ViewState | undefined;
     let disposed = false, mounts = 0, workers = 0;
     const busy = () => { const s = editor?.snapshot(); return !!s && (s.composing || s.pendingInput || s.pendingCommand || s.pendingWord || s.pendingGrapheme || s.pendingDragScroll); };
@@ -36,12 +36,12 @@ export function createActivationSession(original: string, selection: Selection, 
         selection: () => view.getSnapshot().selection,
         text: () => { const b = workspace.document(source.documentId).buffer; return b.slice(0, b.length); },
         snapshot: () => ({ resourceId: source.id, documentId: source.documentId, viewId: view.id, revision: source.getSnapshot().revision, selections: view.getSnapshot().selectionSet,
-            tab: workspace.tabState.getSnapshot().find(tab => tab.id === (shared ? shared.tab() : ownTab)) ?? null, readOnly: editor?.input.readOnly ?? null,
+            tab: workspace.tabs.getSnapshot().find(tab => tab.id === (shared ? shared.tab() : ownTab)) ?? null, readOnly: editor?.input.readOnly ?? null,
             history: history.getSnapshot(), diagnostics: workspace.diagnostics(), mounts, workers, disposed,
             input: editor?.snapshot() ?? null, viewport: editor?.viewport.snapshot() ?? null, find: find?.getSnapshot() ?? null,
             exports: disposed ? 0 : workspace.document(source.documentId).buffer.readMetrics().textExports }),
         dispose: () => { if (!disposed) { stopFind?.(); stopFind = undefined; find?.dispose(); editor?.dispose(); editor = undefined; find = undefined; view.dispose();
-            if (!shared) { workspace.close(ownTab!); workspace.releaseResource(source.id, true); } disposed = true; } return workspace.diagnostics(); },
+            if (!shared) { workspace.tabs.close(ownTab!); workspace.releaseResource(source.id, true); } disposed = true; } return workspace.diagnostics(); },
     });
 }
 export type ActivationSession = ReturnType<typeof createActivationSession>;

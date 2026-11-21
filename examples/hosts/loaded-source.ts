@@ -73,7 +73,7 @@ export class HostLoadedSource {
         this.layout.surface("loading");
         this.pendingLoad = () => {
             operation.accept({ value: "loaded resource", serverVersion: "loaded-v1" });
-            if (this.workspace.resolveTab(target)) this.layout.surface("text");
+            if (this.workspace.tabs.resolve(target)) this.layout.surface("text");
             this.collect();
         };
         this.setLoaded(loaded);

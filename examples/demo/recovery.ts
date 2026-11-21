@@ -80,12 +80,12 @@ export class DemoRecovery {
     }
     private capture(): Capture {
         return this.files.map(file => ({ file, document: this.workspace.document(file.resource.documentId), metadata: file.resource.metadata.getSnapshot(),
-            target: this.workspace.captureResource(file.resource.id), tab: this.workspace.captureTab(file.tab) }));
+            target: this.workspace.captureResource(file.resource.id), tab: this.workspace.tabs.capture(file.tab) }));
     }
     private targetsCurrent(capture: Capture): boolean {
         const files = this.files;
         return !this.disposed && this.inputIdle() && capture.length === files.length && capture.every(item => files.includes(item.file) && this.workspace.resolveResource(item.target) === item.file.resource
-            && this.workspace.resolveTab(item.tab)?.surface.kind === "text" && this.workspace.ownsDocumentView(item.file.view)
+            && this.workspace.tabs.resolve(item.tab)?.surface.kind === "text" && this.workspace.ownsDocumentView(item.file.view)
             && this.workspace.document(item.document.id).revision === item.document.revision
             && item.file.resource.metadata.getSnapshot() === item.metadata && item.metadata.editLock === null
             && item.metadata.saveStatus !== "saving" && item.metadata.capabilities.edit.includes("human"));

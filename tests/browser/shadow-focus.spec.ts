@@ -29,7 +29,7 @@ async function mount(page: Page, language: boolean) {
         const { mountTextEditor, createLspEditor, createLspHighlightController, openWebSocketTransport } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const { LspWorkspace, RpcError } = await import(path + "protocol.js") as typeof import("../../src/protocol/index.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "focus", resource: "source", variant: "text" }, "Source", { value: "sample sample\ns" });
-        const tab = workspace.open({ kind: "text", documentId: source.documentId }, "source");
+        const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "source");
         const outer = document.createElement("div"), inner = document.createElement("div"), outside = document.createElement("button");
         outside.id = "shadow-focus-outside"; outside.textContent = "Outside"; document.body.append(outside, outer); outer.attachShadow({ mode: "open" }).append(inner);
         const tree = inner.attachShadow({ mode: "closed" }), style = document.createElement("style"), host = document.createElement("section");
@@ -39,7 +39,7 @@ async function mount(page: Page, language: boolean) {
         // The protocol reports that late reply; keep it distinct from unexpected diagnostics.
         const report = (error: unknown) => { if (error instanceof RpcError && error.code === -32800) cancellations.push(error.message); else errors.push(String(error)); };
         const f: Fixture = { workspace, source, tab, editor, errors, cancellations, dispose: async () => {
-            f.highlights?.dispose(); f.completion?.dispose(); f.provider?.dispose(); editor.dispose(); workspace.close(tab);
+            f.highlights?.dispose(); f.completion?.dispose(); f.provider?.dispose(); editor.dispose(); workspace.tabs.close(tab);
             await Promise.resolve(); workspace.releaseResource(source.id, true); outer.remove(); outside.remove();
         } }; window.shadowFocus = f;
         if (language) {

@@ -15,7 +15,7 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
     const scope = new CleanupScope(); let disposed = false;
     const dispose = () => { disposed = true; scope.dispose(); };
     try {
-        const target = workspace.captureTab(file.tab), listeners = new AbortController();
+        const target = workspace.tabs.capture(file.tab), listeners = new AbortController();
         scope.defer(() => listeners.abort());
         const popup = document.createElement("div"), count = document.createElement("div"), choices = document.createElement("div"), detail = document.createElement("pre");
         scope.defer(() => popup.remove());
@@ -31,7 +31,7 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         let symbols: ReturnType<typeof mountDemoSymbols> | undefined;
         let actions: ReturnType<typeof mountDemoActions> | undefined;
         let highlights: LspHighlightController | undefined;
-        const valid = () => !disposed && editor.element.isConnected && !editor.activity().disposed && workspace.resolveTab(target)?.surface.kind === "text";
+        const valid = () => !disposed && editor.element.isConnected && !editor.activity().disposed && workspace.tabs.resolve(target)?.surface.kind === "text";
         const render = () => {
             const state = controller?.getSnapshot();
             const snippet = state?.snippet; snippetPanel.hidden = !valid() || !snippet;

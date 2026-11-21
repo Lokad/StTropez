@@ -93,7 +93,7 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
         if (!next) { cancel(); return; }
         if (next.revision !== observed) { observed = next.revision; refresh(); }
     });
-    const stopTab = target && workspace.tabState.subscribe(() => { if (!available()) cancel(); });
+    const stopTab = target && workspace.tabs.subscribe(() => { if (!available()) cancel(); });
     const stopFolds = view.folding.subscribe(() => { if (!disposed) publish(cell.get().status, cell.get().message); });
     const commandFilter = (command: FoldCommand, group?: string) => {
         const collapse = command === "collapse" || command === "collapse-all";

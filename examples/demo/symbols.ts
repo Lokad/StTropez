@@ -127,7 +127,7 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         query = undefined; popup.hidden = true; queueMicrotask(() => { if (!disposed && !query) navigation.cancel(); });
     } };
     // Expanded discovery metadata does not change the captured source projection.
-    for (const state of [editor.view, editor.view.folding, workspace.tabState, provider]) scope.defer(state.subscribe(changed));
+    for (const state of [editor.view, editor.view.folding, workspace.tabs, provider]) scope.defer(state.subscribe(changed));
     for (const file of files()) {
         scope.defer(workspace.observeDocument(file.resource.documentId).subscribe(changed));
         scope.defer(file.resource.metadata.subscribe(changed));

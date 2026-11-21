@@ -9,7 +9,7 @@ import { DemoLanguage } from "../examples/demo/language.ts";
 async function fixture(count: number) {
     const workspace = new Workspace(), files = Array.from({ length: count }, (_, i) => {
         const name = `${i}.ts`, resource = workspace.createTextResource({ scope: "diagnostics", resource: name, variant: "working" }, name, { value: "let value = 1;" });
-        return { name, resource, tab: workspace.open({ kind: "text", documentId: resource.documentId }, "editor"), view: workspace.createDocumentView(resource.documentId) };
+        return { name, resource, tab: workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "editor"), view: workspace.createDocumentView(resource.documentId) };
     });
     const captures = new Map<string, LspDocumentCapture>(), valid = files.map(() => true), calls: { uri: string; kind: string }[] = [];
     let visits = 0, beforeReply = (_uri: string) => {};

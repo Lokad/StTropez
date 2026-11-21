@@ -26,7 +26,7 @@ async function fixture(page: Page, shadow = false) {
         const path = "/bracket-fixture/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "brackets", variant: "text" }, "Brackets", { value: "(a) [b]" });
-        const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "brackets"), container = document.createElement("div"); document.body.append(container);
+        const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "brackets"), container = document.createElement("div"); document.body.append(container);
         const root = shadow ? container.attachShadow({ mode: "open" }) : container, style = document.createElement("style"), host = document.createElement("section");
         style.textContent = css + ".fixture-color { color: rgb(160, 30, 120) }"; host.style.cssText = "height:240px;width:600px"; root.append(style, host);
         const before = workspace.diagnostics();
@@ -112,7 +112,7 @@ test("bracket budgets, syntax refresh and reentrant cancellation never publish s
         f.editor.configure({ bracketMatching: true }); f.set("(" + "x\n".repeat(100000) + ")", 0);
         const pending = f.editor.bracketMatching.getSnapshot().status;
         f.editor.dispose(); f.stop?.(); const state = f.editor.bracketMatching.getSnapshot();
-        f.workspace.close(f.tab); f.workspace.releaseResource(f.resource, true);
+        f.workspace.tabs.close(f.tab); f.workspace.releaseResource(f.resource, true);
         await new Promise(resolve => setTimeout(resolve, 30));
         return { disabled, pending, status: state.status, result: state.result, views: f.workspace.diagnostics().views, subscriptions: f.workspace.diagnostics().subscriptions,
             markers: f.host.querySelectorAll(".st-matching-bracket").length, states: f.states };

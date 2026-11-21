@@ -110,7 +110,7 @@ function Form() {
         onChange={event => model.field.change(event.currentTarget.value)} /></label><p>{model.validation}</p></div> : <p>{model.status}</p>;
 }
 function useScene() {
-    const layout = useObserved(controller.layout), tabs = useObserved(controller.workspace.tabState);
+    const layout = useObserved(controller.layout), tabs = useObserved(controller.workspace.tabs);
     const tab = tabs.find(candidate => candidate.id === controller.viewTab("primary"));
     const ready = tab?.surface.kind === "text" && controller.workspace.observeDocument(tab.surface.documentId).getSnapshot() !== undefined;
     return hostSceneModel(layout, tab, ready, controller.source.documentId);

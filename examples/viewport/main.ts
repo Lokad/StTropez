@@ -11,7 +11,7 @@ import "./style.css";
 
 const workspace = new Workspace(), source = workspace.createTextResource({ scope: "viewport", resource: "source", variant: "working" }, "Source", { value: corpus("lines-100000") });
 const progress = workspace.createResource({ scope: "viewport", resource: "progress", variant: "working" }, "Progress", { value: 0 });
-const primaryTab = workspace.open({ kind: "text", documentId: source.documentId }, "left"), secondaryTab = workspace.open({ kind: "text", documentId: source.documentId }, "right");
+const primaryTab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left"), secondaryTab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "right");
 const pane = (name: string) => document.getElementById(name)!;
 const views = { primary: mountTextViewport(pane("primary"), workspace, primaryTab, { ariaLabel: "Primary text viewport" }),
     secondary: mountTextViewport(pane("secondary"), workspace, secondaryTab, { ariaLabel: "Secondary text viewport" }) };
@@ -50,7 +50,7 @@ const fixture = { ready: true, load, edit, background,
     select: (which: "primary" | "secondary", ranges: readonly Selection[], primary = 0) => views[which].view.setSelections(workspace.document(source.documentId).revision, ranges, primary),
     capture: (which: "primary" | "secondary") => views[which].captureView(),
     restore: (which: "primary" | "secondary", state: ViewState) => views[which].restoreView(state),
-    replacePrimary: () => workspace.replace(primaryTab, { kind: "panel", resourceId: progress.id, panelType: "progress" }),
+    replacePrimary: () => workspace.tabs.replace(primaryTab, { kind: "panel", resourceId: progress.id, panelType: "progress" }),
     scroll: (which: "primary" | "secondary", top: number, left: number) => views[which].scrollTo({ top, left }),
     reveal: (which: "primary" | "secondary", offset: number) => views[which].revealOffset(offset),
     resize: (width: number, height: number, lineHeight = "1.6") => {
@@ -66,7 +66,7 @@ const fixture = { ready: true, load, edit, background,
     dispose: () => {
         if (disposed) return; disposed = true; background(false); unsubscribe(); listeners.abort(); native?.dispose(); native = undefined;
         Object.values(views).forEach(view => view.dispose());
-        for (const tab of workspace.tabState.getSnapshot()) workspace.close(tab.id);
+        for (const tab of workspace.tabs.getSnapshot()) workspace.tabs.close(tab.id);
         workspace.releaseResource(source.id, true); workspace.releaseResource(progress.id, true);
     } };
 window.viewportFixture = fixture;

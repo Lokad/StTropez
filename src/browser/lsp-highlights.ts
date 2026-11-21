@@ -61,7 +61,7 @@ export function createLspHighlightController(editor: TextEditor,
             const next = options.provider.getSnapshot(), changed = next.phase !== provider.phase || next.epoch !== provider.epoch || next.registrationGeneration !== provider.registrationGeneration;
             provider = next; if (changed) refresh();
         })];
-    if (target) stops.push(workspace.tabState.subscribe(() => { if (!available()) refresh(); }));
+    if (target) stops.push(workspace.tabs.subscribe(() => { if (!available()) refresh(); }));
     for (const event of ["focus", "blur", "compositionstart", "compositionend"] as const) editor.input.addEventListener(event, refresh, { signal: events.signal });
     const dispose = () => {
         if (disposed) return;

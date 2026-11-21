@@ -60,7 +60,7 @@ export class RunResources {
     }
     readonly open = (id: ResourceId): void => {
         if (this.disposed || !this.resources.has(id) && ![this.source.id, this.configuration.id, this.transfer.id].includes(id)) return;
-        const tab = this.tabs.get(id); if (!tab || !this.workspace.getSnapshot().tabs.some(t => t.id === tab)) this.tabs.set(id, this.workspace.open({ kind: "panel", resourceId: id, panelType: "resource-inspection" }, "right"));
+        const tab = this.tabs.get(id); if (!tab || !this.workspace.tabs.getSnapshot().some(t => t.id === tab)) this.tabs.set(id, this.workspace.tabs.open({ kind: "panel", resourceId: id, panelType: "resource-inspection" }, "right"));
         this.cell.set({ ...this.cell.get(), selected: id, inspection: this.readInspection(id) });
     };
     capture(id: ResourceId): RunInput | null {
@@ -80,5 +80,5 @@ export class RunResources {
         return { id, title: current.metadata.title, text: `Current resource ${id} revision ${current.revision} at inspection. Refresh to inspect later edits; captured Run inputs remain separate.`, preview: current.state === "ready" ? JSON.stringify(current.value()).slice(0, 512) : null, links: [] };
     }
     debug() { return { runs: this.cell.get().runs, selected: this.cell.get().selected, pending: this.pending.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
-    dispose(): void { if (this.disposed) return; this.disposed = true; for (const id of [...this.pending.keys()]) this.finish(id, "interrupted"); for (const tab of this.tabs.values()) this.workspace.close(tab); this.tabs.clear(); }
+    dispose(): void { if (this.disposed) return; this.disposed = true; for (const id of [...this.pending.keys()]) this.finish(id, "interrupted"); for (const tab of this.tabs.values()) this.workspace.tabs.close(tab); this.tabs.clear(); }
 }

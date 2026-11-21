@@ -33,7 +33,7 @@ export function startAnalysis(
     view: DocumentView,
     analyze: (buffer: TextBuffer, signal: AbortSignal) => Promise<string>
 ) {
-    const capture = captureViewRequest(workspace, workspace.captureTab(tabId), view);
+    const capture = captureViewRequest(workspace, workspace.tabs.capture(tabId), view);
     if (!capture) return;
     const settled = (async () => {
         try {

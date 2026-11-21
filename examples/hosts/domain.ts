@@ -34,7 +34,7 @@ export class HostDomainTools {
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean = () => true,
         provider?: DomainProvider) { this.workspace = workspace; this.canCapture = canCapture; this.provider = provider ?? this.fixture; }
     private available(session: Session): boolean {
-        const tab = this.workspace.resolveTab(session.target), editor = session.editor;
+        const tab = this.workspace.tabs.resolve(session.target), editor = session.editor;
         return !this.disposed && this.sessions.get(session.token) === session && editor.element.isConnected && !editor.activity().disposed
             && tab?.surface.kind === "text" && tab.surface.documentId === editor.view.documentId && this.workspace.ownsDocumentView(editor.view)
             && this.workspace.resourceForDocument(editor.view.documentId).getSnapshot().state === "ready";
@@ -69,9 +69,9 @@ export class HostDomainTools {
         const token = `domain-session-${this.workspace.allocateIdentity()}`, revision = this.workspace.document(editor.view.documentId).revision;
         const data = this.data.get(editor.view) ?? { revision, owned: new Map<string, OwnedFold>(), annotations: noAnnotations };
         const layer = editor.decorations.add({ name: "domain annotations", order: 30 });
-        this.data.set(editor.view, data); const session = { token, id, editor, layer, data, target: this.workspace.captureTab(tab) }, listeners = new AbortController(); this.sessions.set(token, session);
+        this.data.set(editor.view, data); const session = { token, id, editor, layer, data, target: this.workspace.tabs.capture(tab) }, listeners = new AbortController(); this.sessions.set(token, session);
         const changed = () => { this.sync(session); if (this.job?.session === session && !this.current(this.job)) this.invalidate(this.job); };
-        const stops = [this.workspace.observeDocument(editor.view.documentId).subscribe(changed), editor.view.folding.subscribe(changed), this.workspace.tabState.subscribe(changed), this.workspace.resourceForDocument(editor.view.documentId).metadata.subscribe(changed)];
+        const stops = [this.workspace.observeDocument(editor.view.documentId).subscribe(changed), editor.view.folding.subscribe(changed), this.workspace.tabs.subscribe(changed), this.workspace.resourceForDocument(editor.view.documentId).metadata.subscribe(changed)];
         editor.input.addEventListener("focus", () => { this.active = session; this.sync(session); }, { signal: listeners.signal });
         for (const event of ["compositionstart", "beforeinput", "paste", "cut"] as const) editor.input.addEventListener(event, () => {
             if (this.job?.session.editor.view.documentId === editor.view.documentId) this.cancel();

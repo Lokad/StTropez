@@ -160,14 +160,14 @@ test("two view selections map independently and survive tab close/reopen and his
     const { workspace, source, document } = fixture("a😀bcdef");
     const primary = workspace.createDocumentView(source.documentId, { anchor: 3, head: 3 });
     const secondary = workspace.createDocumentView(source.documentId, { anchor: 7, head: 4 });
-    const tab = workspace.open({ kind: "text", documentId: source.documentId }, "left");
+    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left");
     const after: Selection = { anchor: 5, head: 5 };
     workspace.edit({ documentId: source.documentId, expectedRevision: 0, origin: "human", history: { kind: "typing", group: "one" }, view: primary,
         selection: after, edits: [{ from: 3, to: 3, insert: "XY" }] });
     assert.deepEqual([primary.getSnapshot().selection.anchor, primary.getSnapshot().selection.head], [5, 5]);
     assert.deepEqual([secondary.getSnapshot().selection.anchor, secondary.getSnapshot().selection.head], [9, 6]);
-    workspace.move(tab, "right"); workspace.close(tab); assert.throws(() => workspace.releaseResource(source.id, true));
-    const reopened = workspace.open({ kind: "text", documentId: source.documentId }, "left");
+    workspace.tabs.move(tab, "right"); workspace.tabs.close(tab); assert.throws(() => workspace.releaseResource(source.id, true));
+    const reopened = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left");
     workspace.undo({ documentId: source.documentId, expectedRevision: document().revision });
     assert.equal(document().text(), "a😀bcdef"); assert.deepEqual([primary.getSnapshot().selection.anchor, primary.getSnapshot().selection.head], [3, 3]);
     assert.deepEqual([secondary.getSnapshot().selection.anchor, secondary.getSnapshot().selection.head], [7, 4]);
@@ -176,7 +176,7 @@ test("two view selections map independently and survive tab close/reopen and his
     assert.equal(primary.setSelection(0, { anchor: 0, head: 0 }), false);
     assert.throws(() => primary.setSelection(document().revision, { anchor: -1, head: 0 }));
     const releasedRevision = document().revision;
-    workspace.close(reopened); primary.dispose(); secondary.dispose(); primary.dispose(); workspace.releaseResource(source.id, true);
+    workspace.tabs.close(reopened); primary.dispose(); secondary.dispose(); primary.dispose(); workspace.releaseResource(source.id, true);
     assert.equal(primary.setSelection(releasedRevision, { anchor: 0, head: 0 }), false);
 });
 

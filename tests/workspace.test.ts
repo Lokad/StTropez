@@ -6,7 +6,7 @@ import type { DocumentChange } from "../src/index.ts";
 function fixture() {
     const workspace = new Workspace();
     const documentId = workspace.createDocument({ scope: "demo", resource: "sample", variant: "working" }, "Sample", "abc");
-    const tabId = workspace.open({ kind: "text", documentId }, "left");
+    const tabId = workspace.tabs.open({ kind: "text", documentId }, "left");
     return { workspace, documentId, tabId };
 }
 
@@ -57,54 +57,54 @@ test("follow-up writes run after listeners in order and expire with their subscr
 
 test("delayed actions follow a moved tab and expire after replacement or close", async () => {
     const { workspace, documentId, tabId } = fixture();
-    const target = workspace.captureTab(tabId);
-    const before = workspace.tabState.getSnapshot();
-    let observed = workspace.resolveTab(target);
-    const stop = workspace.tabState.subscribe(() => { observed = workspace.resolveTab(target); });
-    workspace.move(tabId, "right");
+    const target = workspace.tabs.capture(tabId);
+    const before = workspace.tabs.getSnapshot();
+    let observed = workspace.tabs.resolve(target);
+    const stop = workspace.tabs.subscribe(() => { observed = workspace.tabs.resolve(target); });
+    workspace.tabs.move(tabId, "right");
     await Promise.resolve();
-    assert.equal(workspace.resolveTab(target)?.paneId, "right");
-    assert.equal(observed, workspace.resolveTab(target)); assert.equal(before[0]!.paneId, "left");
-    const moved = workspace.tabState.getSnapshot();
-    assert.throws(() => workspace.replace(tabId, { kind: "text", documentId: "missing" as typeof documentId }));
-    assert.equal(workspace.tabState.getSnapshot(), moved); assert.equal(workspace.resolveTab(target), moved[0]);
-    workspace.replace(tabId, { kind: "panel", resourceId: workspace.resourceForDocument(documentId).id, panelType: "configuration" });
-    assert.equal(workspace.resolveTab(target), undefined); assert.equal(observed, undefined);
-    const replacement = workspace.captureTab(tabId);
-    workspace.close(tabId);
-    workspace.open({ kind: "text", documentId }, "right");
-    assert.equal(workspace.resolveTab(replacement), undefined);
-    assert.throws(() => workspace.captureTab(tabId), /Unknown tab/); stop();
+    assert.equal(workspace.tabs.resolve(target)?.paneId, "right");
+    assert.equal(observed, workspace.tabs.resolve(target)); assert.equal(before[0]!.paneId, "left");
+    const moved = workspace.tabs.getSnapshot();
+    assert.throws(() => workspace.tabs.replace(tabId, { kind: "text", documentId: "missing" as typeof documentId }));
+    assert.equal(workspace.tabs.getSnapshot(), moved); assert.equal(workspace.tabs.resolve(target), moved[0]);
+    workspace.tabs.replace(tabId, { kind: "panel", resourceId: workspace.resourceForDocument(documentId).id, panelType: "configuration" });
+    assert.equal(workspace.tabs.resolve(target), undefined); assert.equal(observed, undefined);
+    const replacement = workspace.tabs.capture(tabId);
+    workspace.tabs.close(tabId);
+    workspace.tabs.open({ kind: "text", documentId }, "right");
+    assert.equal(workspace.tabs.resolve(replacement), undefined);
+    assert.throws(() => workspace.tabs.capture(tabId), /Unknown tab/); stop();
 });
 
 test("tab replacement follows resource visibility without reviving captured generations", () => {
-    const { workspace, documentId, tabId } = fixture(), before = workspace.getSnapshot(), original = workspace.captureTab(tabId);
+    const { workspace, documentId, tabId } = fixture(), before = workspace.tabs.getSnapshot(), original = workspace.tabs.capture(tabId);
     const internal = workspace.createResource({ scope: "test", resource: "preview", variant: "internal" }, "Preview", { value: 0 }, undefined, { visibility: "internal" });
-    let observed = workspace.tabState.getSnapshot();
-    const stop = workspace.tabState.subscribe(() => { observed = workspace.tabState.getSnapshot(); assert.equal(workspace.getSnapshot().tabs, observed); });
-    workspace.replace(tabId, { kind: "panel", resourceId: internal.id, panelType: "preview" });
-    assert.equal(workspace.resolveTab(original), undefined); assert.deepEqual(observed, []);
-    const privateTarget = workspace.captureTab(tabId), privateSnapshot = workspace.resolveTab(privateTarget)!;
+    let observed = workspace.tabs.getSnapshot();
+    const stop = workspace.tabs.subscribe(() => { observed = workspace.tabs.getSnapshot(); });
+    workspace.tabs.replace(tabId, { kind: "panel", resourceId: internal.id, panelType: "preview" });
+    assert.equal(workspace.tabs.resolve(original), undefined); assert.deepEqual(observed, []);
+    const privateTarget = workspace.tabs.capture(tabId), privateSnapshot = workspace.tabs.resolve(privateTarget)!;
     assert.equal(privateSnapshot.visibility, "internal"); assert.equal(privateSnapshot.generation, original.generation + 1);
-    workspace.move(tabId, "right"); assert.equal(workspace.resolveTab(privateTarget)?.paneId, "right"); assert.deepEqual(observed, []);
-    workspace.replace(tabId, { kind: "text", documentId });
-    const visible = workspace.tabState.getSnapshot();
-    assert.equal(workspace.resolveTab(privateTarget), undefined); assert.equal(observed, visible); assert.equal(visible.length, 1);
+    workspace.tabs.move(tabId, "right"); assert.equal(workspace.tabs.resolve(privateTarget)?.paneId, "right"); assert.deepEqual(observed, []);
+    workspace.tabs.replace(tabId, { kind: "text", documentId });
+    const visible = workspace.tabs.getSnapshot();
+    assert.equal(workspace.tabs.resolve(privateTarget), undefined); assert.equal(observed, visible); assert.equal(visible.length, 1);
     assert.equal(visible[0]!.visibility, "workspace"); assert.equal(visible[0]!.generation, original.generation + 2);
-    assert.equal(before.tabs[0]!.visibility, "workspace"); assert.equal(privateSnapshot.visibility, "internal");
-    stop(); workspace.close(tabId); workspace.releaseResource(internal.id); workspace.releaseDocument(documentId);
+    assert.equal(before[0]!.visibility, "workspace"); assert.equal(privateSnapshot.visibility, "internal");
+    stop(); workspace.tabs.close(tabId); workspace.releaseResource(internal.id); workspace.releaseDocument(documentId);
 });
 
 test("repeated tab captures and resolution do not scan the tab inventory", t => {
     const workspace = new Workspace(), documentId = workspace.createDocument({ scope: "tabs", resource: "shared", variant: "working" }, "Document", "x");
-    const tabs = Array.from({ length: 1000 }, () => workspace.open({ kind: "text", documentId }, "main"));
-    const id = tabs.at(-1)!, target = workspace.captureTab(id), snapshot = workspace.tabState.getSnapshot().at(-1);
+    const tabs = Array.from({ length: 1000 }, () => workspace.tabs.open({ kind: "text", documentId }, "main"));
+    const id = tabs.at(-1)!, target = workspace.tabs.capture(id), snapshot = workspace.tabs.getSnapshot().at(-1);
     const find = Array.prototype.find; let visits = 0, valid = true;
     Array.prototype.find = function<T>(this: T[], predicate: (value: T, index: number, values: T[]) => unknown, thisArg?: unknown) {
         return find.call(this, (value, index, values) => { visits++; return predicate.call(thisArg, value, index, values); });
     };
     try {
-        for (let i = 0; i < 100; i++) valid &&= workspace.captureTab(id).generation === target.generation && workspace.resolveTab(target) === snapshot;
+        for (let i = 0; i < 100; i++) valid &&= workspace.tabs.capture(id).generation === target.generation && workspace.tabs.resolve(target) === snapshot;
     } finally { Array.prototype.find = find; }
     t.diagnostic(JSON.stringify({ captures: 100, resolutions: 100, predicateVisits: visits }));
     assert.equal(valid, true); assert.equal(visits, 0);
@@ -113,7 +113,7 @@ test("repeated tab captures and resolution do not scan the tab inventory", t => 
 test("guards cannot target a different workspace with identical local IDs", () => {
     const first = fixture();
     const second = fixture();
-    assert.equal(second.workspace.resolveTab(first.workspace.captureTab(first.tabId)), undefined);
+    assert.equal(second.workspace.tabs.resolve(first.workspace.tabs.capture(first.tabId)), undefined);
 });
 
 test("late agent edits cannot overwrite a newer human revision", () => {
@@ -126,10 +126,10 @@ test("late agent edits cannot overwrite a newer human revision", () => {
 
 test("all surfaces share one document while ownership prevents premature release", () => {
     const { workspace, documentId, tabId } = fixture();
-    const panel = workspace.open({ kind: "panel", resourceId: workspace.resourceForDocument(documentId).id, panelType: "configuration" }, "right");
-    workspace.close(tabId);
+    const panel = workspace.tabs.open({ kind: "panel", resourceId: workspace.resourceForDocument(documentId).id, panelType: "configuration" }, "right");
+    workspace.tabs.close(tabId);
     assert.throws(() => workspace.releaseDocument(documentId));
-    workspace.close(panel);
+    workspace.tabs.close(panel);
     assert.equal(workspace.document(documentId).text(), "abc");
     workspace.releaseDocument(documentId);
     assert.throws(() => workspace.document(documentId));
@@ -149,7 +149,7 @@ test("snapshots are immutable, stable between changes and notify subscribers onc
     assert.equal(before.documents[0]?.text(), "abc");
     assert.ok(Object.isFrozen(workspace.getSnapshot().documents));
     unsubscribe(); stopDocument();
-    workspace.move(workspace.getSnapshot().tabs[0]!.id, "other");
+    workspace.tabs.move(workspace.tabs.getSnapshot()[0]!.id, "other");
     assert.equal(calls, 1);
 });
 
@@ -180,7 +180,7 @@ test("scoped publication defers inventory traversal until the coarse snapshot is
         assert.equal(after.revision, before.revision + 1); assert.equal(after, workspace.getSnapshot());
         assert.equal(before.resources[0]!.dirty, false); assert.equal(after.resources[0]!.dirty, true);
         assert.equal(after.resources[1], before.resources[1]);
-        for (const value of [after, after.resources, after.documents, after.tabs]) assert.ok(Object.isFrozen(value));
+        for (const value of [after, after.resources, after.documents]) assert.ok(Object.isFrozen(value));
         workspace.releaseResource(forms[0]!.id, true);
         assert.equal(notifications, 2); assert.equal(workspace.getSnapshot().resources.length, forms.length - 1);
         assert.equal(after.resources.length, forms.length); assert.equal(after.resources[0]!.state, "ready");

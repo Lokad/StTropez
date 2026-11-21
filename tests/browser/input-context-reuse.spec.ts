@@ -18,9 +18,9 @@ test("input refresh reuses bounded projections while repairing native state and 
         const { inputContext } = await import(path + "context.js") as typeof import("../../src/browser/input-context.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "context-reuse", variant: "text" }, "Context",
             { value: "const row = '東京 😀';\r\n".repeat(100000) });
-        const tab = workspace.open({ kind: "text", documentId: source.documentId }, "context"), host = document.createElement("section");
+        const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "context"), host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
-        const editor = mountTextEditor(host, workspace, tab), input = editor.input, target = workspace.captureTab(tab);
+        const editor = mountTextEditor(host, workspace, tab), input = editor.input, target = workspace.tabs.capture(tab);
         const doc = () => workspace.document(source.documentId), refresh = () => input.dispatchEvent(new KeyboardEvent("keyup", { key: "Tab", bubbles: true }));
         const settle = async () => { for (let i = 0; i < 60; i++) {
             await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
@@ -82,12 +82,12 @@ test("input refresh reuses bounded projections while repairing native state and 
             const crlf = doc().buffer.offsetAt(1) - 1;
             editor.view.setSelection(doc().revision, { anchor: crlf, head: crlf }); refresh(); input.dispatchEvent(new Event("select"));
             const rawCrLf = editor.view.getSnapshot().selection.head === crlf && exact();
-            await settle(); workspace.close(tab); const disabled = input.disabled;
+            await settle(); workspace.tabs.close(tab); const disabled = input.disabled;
             editor.dispose(); const reads = doc().buffer.readMetrics().sliceUnits; refresh();
             return { work, compressedExact, repaired, authority, directionChanged, completeSet, newBuffer, expiredComposition, rawCrLf, disabled,
                 disposed: !input.isConnected && input.value === "" && doc().buffer.readMetrics().sliceUnits === reads,
                 exports: doc().buffer.readMetrics().textExports };
-        } finally { editor.dispose(); if (workspace.resolveTab(target)) workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
+        } finally { editor.dispose(); if (workspace.tabs.resolve(target)) workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
     });
     await testInfo.attach("input-context-reuse", { body: JSON.stringify(result), contentType: "application/json" });
     for (const item of result.work) expect(item.sliceUnits, item.name).toBe(0);

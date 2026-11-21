@@ -16,7 +16,7 @@ test("viewport retains valid native geometry and expires changed captures withou
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextViewport } = await import(path + "viewport.js") as typeof import("../../src/browser/viewport.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "geometry", variant: "text" }, "Geometry", { value: ("x".repeat(500) + "\r\n").repeat(60) });
-        const tab = workspace.open({ kind: "text", documentId: source.documentId }, "geometry"), host = document.createElement("section"), style = document.createElement("style");
+        const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "geometry"), host = document.createElement("section"), style = document.createElement("style");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host, style);
         const viewport = mountTextViewport(host, workspace, tab);
         viewport.decorations.addProvider({ name: "geometry", order: 0, provide: line => [{ from: line.from, to: line.from + 250, className: "geometry-a" }, { from: line.from + 250, to: line.to, className: "geometry-b" }] });
@@ -73,7 +73,7 @@ test("viewport retains valid native geometry and expires changed captures withou
                 staleFold, folded: folded.offset === 4 && folded.left === header.left && folded.top === header.top, disposed };
         } finally {
             document.createRange = createRange; Range.prototype.getClientRects = getClientRects;
-            viewport.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); style.remove();
+            viewport.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); style.remove();
         }
     });
     expect(result).toMatchObject({ stale: true, retainedNodes: true, movedBy: 12, sameWidth: true, removed: true, exports: 0, staleFold: true, folded: true, disposed: true });

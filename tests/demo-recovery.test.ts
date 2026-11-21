@@ -29,7 +29,7 @@ function fixture(store = new MemoryDraftStore(), inputIdle = () => true) {
     const workspace = new Workspace();
     const files = ["a.ts", "b.ts"].map(name => {
         const resource = workspace.createTextResource({ scope: "test", resource: name, variant: "working" }, name, { value: `original ${name}` });
-        const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "editor");
+        const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "editor");
         return { name, resource, tab, view: workspace.createDocumentView(resource.documentId) };
     });
     const recovery = new DemoRecovery(workspace, files, "sample", () => null, inputIdle, store);
@@ -53,7 +53,7 @@ test("partial editor inventories checkpoint every file and restore only against 
         let recovery: DemoRecovery | undefined;
         const load = (name: string) => {
             const resource = workspace.createTextResource({ scope: "partial", resource: name, variant: "working" }, name, { value: unloaded[name]! });
-            const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "editor");
+            const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "editor");
             files.push({ name, resource, tab, view: workspace.createDocumentView(resource.documentId) }); delete unloaded[name]; recovery?.filesChanged();
         };
         load("a.ts");
@@ -158,7 +158,7 @@ test("disposal during a pending claim prevents late application after resources 
     let finish!: () => void; f.store.beforeWrite = () => new Promise<void>(resolve => { finish = resolve; });
     const restoring = f.recovery.restore(); await Promise.resolve(); const disposal = f.recovery.dispose();
     assert.equal(f.recovery.dispose(), disposal); assert.equal(f.store.closed, false);
-    for (const file of f.files) { file.view.dispose(); f.workspace.close(file.tab); f.workspace.releaseResource(file.resource.id, true); }
+    for (const file of f.files) { file.view.dispose(); f.workspace.tabs.close(file.tab); f.workspace.releaseResource(file.resource.id, true); }
     finish(); await restoring; await disposal; await f.recovery.refresh();
     assert.equal(f.store.closed, true);
     assert.equal(f.workspace.getSnapshot().documents.length, 0);

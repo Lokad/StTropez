@@ -26,7 +26,7 @@ async function fixture(page: Page, text = "a\u00a0b\u200bc", enabled = false) {
         const path = "/warning-fixture/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "warnings", variant: "text" }, "Warnings", { value: text });
-        const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "warnings"), host = document.createElement("section");
+        const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "warnings"), host = document.createElement("section");
         host.style.cssText = "height:240px;width:600px"; document.body.append(host);
         const before = workspace.diagnostics();
         try { mountTextEditor(host, workspace, tab, { settings: { characterWarnings: { allow: ["two"] } } }); throw new Error("Invalid allow-list accepted."); }
@@ -74,7 +74,7 @@ test("warning policy composes with colors and selection; captures expire on edit
     const end = await page.evaluate(() => {
         const f = window.warningFixture, capture = f.editor.characterWarnings.query(0, 5)!;
         f.editor.dispose(); const configured = f.editor.configure({ characterWarnings: true }), query = f.editor.characterWarnings.query(0, 5);
-        f.workspace.close(f.tab); f.workspace.releaseResource(f.resource, true);
+        f.workspace.tabs.close(f.tab); f.workspace.releaseResource(f.resource, true);
         return { current: capture.isCurrent(), configured, query, configuration: f.editor.settings().characterWarnings, views: f.workspace.diagnostics().views,
             subscriptions: f.workspace.diagnostics().subscriptions, children: f.host.childNodes.length };
     });
