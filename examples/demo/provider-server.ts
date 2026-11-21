@@ -16,6 +16,7 @@ import { demoTemplateCompletions, demoTemplateUri, resolveDemoTemplate } from ".
 import { demoDiagnosticFixture } from "./diagnostics.ts";
 import { demoProjectActions } from "./action-fixture.ts";
 import { typeScriptFoldingRanges } from "./typescript-folds.ts";
+import { changeDemoDocument } from "./document-changes.ts";
 import type { OutlineSpan } from "./typescript-folds.ts";
 
 const compiler = fileURLToPath(import.meta.resolve("typescript-demo/lib/tsserver.js"));
@@ -236,10 +237,14 @@ export function attachDemoProvider(server: Server, options: Readonly<{ refactori
                     documents.set(doc.uri, TextDocument.create(doc.uri, doc.languageId, doc.version, doc.text));
                 } else if (message.method === "textDocument/didChange") {
                     const params = message.params as DidChangeTextDocumentParams, before = documents.get(params.textDocument.uri);
-                    if (!before) throw new Error("Document not open."); let text = before.getText();
-                    for (const change of params.contentChanges) text = "range" in change
-                        ? TextDocument.applyEdits(TextDocument.create(before.uri, before.languageId, before.version, text), [{ range: change.range, newText: change.text }]) : change.text;
-                    documents.set(before.uri, TextDocument.create(before.uri, before.languageId, params.textDocument.version, text));
+                    if (!before) throw new Error("Document not open.");
+                    const after = changeDemoDocument(before, params.textDocument.version, params.contentChanges);
+                    documents.set(before.uri, after);
+                    // The development language server sends a separate tsserver command per range.
+                    // Bound that fan-out for bulk edits while keeping ordinary changes incremental.
+                    if (params.contentChanges.length > 256) {
+                        params.contentChanges = [{ range: { start: { line: 0, character: 0 }, end: before.positionAt(before.getText().length) }, text: after.getText() }];
+                    }
                     problems.clear();
                 } else if (message.method === "textDocument/didClose" && object(message.params) && object(message.params.textDocument)) {
                     const uri = String(message.params.textDocument.uri); documents.delete(uri); problems.clear();

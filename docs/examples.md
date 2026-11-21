@@ -140,6 +140,10 @@ Both providers use the [public LSP clients](language-server.md). The
 per task. Cancellation removes queued work. A running compiler call finishes synchronously. If the
 queue fills or a document notification fails, Retry starts a new session with the current files.
 
+Replace All sends edits from the end of the file toward the start. Both providers reuse the
+line index across those ranges. For batches over 256 changes, the development bridge sends the
+compiler one ranged replacement covering the file.
+
 When comparing results from the two providers, keep these differences in mind.
 
 - Both providers return standard diagnostics in a custom `sttropez/diagnostics` response. The demo

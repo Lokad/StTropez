@@ -80,8 +80,9 @@ test("real demo provider uses public workspace capture/sync over WebSocket and r
         const response = await fetch(url + "/demo-provider?sample=errors", { method: "POST" }); assert.equal(response.status, 200);
         const config = await response.json() as DemoProviderBootstrap;
         assert.equal(config.versions.typescript, "5.9.3"); assert.equal(config.versions.server, "5.1.3");
+        const comments = "\n// Example row".repeat(300);
         const workspace = new Workspace(), files = Object.entries(demoSample("errors").files).map(([name, value]) => ({ name,
-            resource: workspace.createTextResource({ scope: "demo-test", resource: name, variant: "working" }, name, { value }) }));
+            resource: workspace.createTextResource({ scope: "demo-test", resource: name, variant: "working" }, name, { value: name === "main.ts" ? value + comments : value }) }));
         owner = new LspWorkspace(workspace, { connect: () => openWebSocketTransport(url.replace("http:", "ws:") + config.endpoint),
             rootUri: config.rootUri, features: ["textDocument/hover", "textDocument/definition", "workspace/executeCommand"],
             schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
@@ -94,8 +95,13 @@ test("real demo provider uses public workspace capture/sync over WebSocket and r
         assert.match(JSON.stringify(diagnostics), /2345/);
         const captured = scope.synchronized(binding); assert.ok(captured); assert.ok(captured.isCurrent());
         const document = workspace.document(source.resource.documentId), from = document.text().indexOf('"10%"');
-        assert.ok(from > 0); workspace.edit({ documentId: document.id, expectedRevision: document.revision, origin: "human", edits: [{ from, to: from + 5, insert: "0.1" }] });
+        assert.ok(from > 0);
+        const rows = [...document.text().matchAll(/Example row/g)].map(({ index }) => ({ from: index, to: index + 11, insert: "Updated" }));
+        assert.equal(rows.length, 300);
+        workspace.edit({ documentId: document.id, expectedRevision: document.revision, origin: "human", edits: [{ from, to: from + 5, insert: "0.1" }, ...rows] });
         await scope.flush(); assert.equal(captured.isCurrent(), false);
+        const uri = config.documents["main.ts"]!.uri;
+        assert.deepEqual(await scope.request("sttropez/readDocument", { uri }).result, { uri, text: workspace.document(document.id).text() });
         const fixed = await scope.requestCommand("typescript.tsserverRequest", ["semanticDiagnosticsSync", { file: config.documents["main.ts"]!.path }, {}]).result;
         assert.doesNotMatch(JSON.stringify(fixed), /2345/);
         await assert.rejects(scope.request("demo/probe", { uri: "file:///outside-demo.ts" }).result, /Only this demo/);

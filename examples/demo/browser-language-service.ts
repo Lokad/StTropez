@@ -1,5 +1,6 @@
 import ts from "typescript-demo";
 import { typeScriptFoldingRanges } from "./typescript-folds.ts";
+import { changeDemoDocument } from "./document-changes.ts";
 import { TextDocument } from "vscode-languageserver-protocol/browser.js";
 import { RpcError } from "../../src/protocol/index.ts";
 import { demoTemplateCompletions, demoTemplateUri, resolveDemoTemplate } from "./completion-templates.ts";
@@ -97,13 +98,11 @@ export class BrowserLanguageService {
         } else if (method === "textDocument/didChange") {
             const p = object(params), identity = object(p.textDocument), file = this.file(identity.uri), version = integer(identity.version);
             if (!Array.isArray(p.contentChanges) || version <= file.document.version) throw new RpcError(-32602, "Invalid incremental synchronization.");
-            let text = file.document.getText();
-            for (const value of p.contentChanges) {
+            const changes = p.contentChanges.map(value => {
                 const change = object(value), next = string(change.text);
-                text = change.range === undefined ? next : TextDocument.applyEdits(TextDocument.create(file.document.uri, "typescript", version, text), [{ range: range(change.range), newText: next }]);
-                if (text.length > 8_000_000) throw new RpcError(-32602, "Demo document exceeds its limit.");
-            }
-            this.files.set(file.document.uri, { path: file.path, document: TextDocument.create(file.document.uri, "typescript", version, text) }); this.version++;
+                return change.range === undefined ? { text: next } : { range: range(change.range), text: next };
+            });
+            this.files.set(file.document.uri, { path: file.path, document: changeDemoDocument(file.document, version, changes, 8_000_000) }); this.version++;
         } else if (method === "textDocument/didClose") {
             const file = this.file(object(object(params).textDocument).uri);
             this.files.delete(file.document.uri); this.snapshots.delete(file.path); this.version++;

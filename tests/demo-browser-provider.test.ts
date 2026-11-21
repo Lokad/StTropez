@@ -3,8 +3,26 @@ import test from "node:test";
 import { readFile, readdir } from "node:fs/promises";
 import { TextDocument } from "vscode-languageserver-protocol/browser.js";
 import { BrowserLanguageService } from "../examples/demo/browser-language-service.ts";
+import { changeDemoDocument } from "../examples/demo/document-changes.ts";
 import { demoSample } from "../examples/demo/samples.ts";
 import type { CompletionList, CompletionItem } from "vscode-languageserver-protocol/browser.js";
+
+test("provider mirrors apply each change against the preceding text and preserve captured versions", () => {
+    const doc = TextDocument.create("file:///main.ts", "typescript", 1, "ab\rcd\r\n😀 end");
+    const at = (line: number, start: number, end: number, text: string) =>
+        ({ range: { start: { line, character: start }, end: { line, character: end } }, text });
+    const changes = [
+        at(2, 3, 6, "fin"), at(1, 1, 2, "D"), at(0, 0, 1, "A"),
+        at(2, 3, 6, "last"), { text: "A\rB" }, at(1, 0, 0, "\n"), at(1, 0, 1, "C"),
+        at(1, 1, 1, "!"), at(1, 1, 1, "?"),
+    ];
+    const result = changeDemoDocument(doc, 2, changes);
+    assert.equal(result.getText(), "A\r\nC?!");
+    assert.equal(result.version, 2);
+    assert.equal(doc.getText(), "ab\rcd\r\n😀 end");
+    assert.equal(changeDemoDocument(doc, 2, changes.slice(0, 4)).getText(), "Ab\rcD\r\n😀 last");
+    assert.throws(() => changeDemoDocument(doc, 2, [{ text: "oversize" }, { text: "" }], 4), /exceeds its limit/);
+});
 
 test("browser provider resolves closed sample modules and declarations without pretending they are synchronized", () => {
     const sample = demoSample("navigation"), backing = { ...sample.files, ...sample.declarations };
