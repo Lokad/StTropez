@@ -90,6 +90,9 @@ const fixture = { text: () => workspace.document(documentId).text(),
             if (!view.folding.setRanges(initial, [{ id: "body", from: 0, to: footer, collapsed: true }]) || view.folding.setCollapsed(initial, "body", false)) throw new Error("Compiled folding did not enforce captured versions.");
             editor.focus(); await wait();
             if (editor.viewport.snapshot().rows !== 2 || editor.viewport.snapshot().visibleLines !== 2 || peer.folding.getSnapshot().index.collapsedCount) throw new Error("Compiled folded projection is not bounded or independent.");
+            const summary = host.querySelector<HTMLElement>(".st-fold-summary");
+            if (!summary || !getComputedStyle(summary, "::after").content.includes("100000 lines hidden") || getComputedStyle(summary).pointerEvents !== "auto")
+                throw new Error("Restored assets did not present a clickable hidden-line count.");
             // This synthetic dispatch proves the shipped command route; native device qualification is separate.
             editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })); await wait();
             if (view.getSnapshot().selection.head !== footer || view.getSnapshot().selectionSet.ranges.length !== 2) throw new Error("Compiled folded navigation lost a target or secondary caret.");

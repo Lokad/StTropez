@@ -1,7 +1,7 @@
 import type { InlineDecoration } from "./viewport.ts";
 
 export type RowPart = Readonly<{ text: string; className: string; properties?: InlineDecoration["properties"];
-    ornament?: "point" | "before" | "afterLine"; label?: string }>;
+    ornament?: "point" | "before" | "afterLine" | "fold"; label?: string }>;
 type Boundary = { at: number; id: number; add: boolean };
 const classes = new Set<string>();
 export function applyDecorationProperties(element: HTMLElement, properties: InlineDecoration["properties"]): void {

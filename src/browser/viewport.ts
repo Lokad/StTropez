@@ -13,6 +13,7 @@ import type { CaretRectangle } from "./text-geometry.ts";
 import type { Affinity } from "../core/positions.ts";
 import { unchangedPositionEdges } from "../core/positions.ts";
 import { createFoldRegions, FoldIndex } from "../core/folding.ts";
+import type { FoldVersion } from "../core/folding.ts";
 import { sameSelectionSet } from "../core/selections.ts";
 import { partitionPoint } from "../core/bound-search.ts";
 import { applyDecorationProperties, decorationParts } from "./decoration-parts.ts";
@@ -386,7 +387,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         return { line, start, end: displayEnd, breakEnd: line + 1 < buffer.lineCount ? end + 1 : end,
             from, to, text: readRow(buffer, from, to).replaceAll("\r", "␍"), left: padding + (from - start) * columnWidth - scrollLeft, complete: from === start && to === displayEnd, endsLine: to === displayEnd };
     };
-    const paintRow = (element: HTMLDivElement, item: Row, document: DocumentSnapshot, selectionSet: SelectionSet, highlightedLine?: number): boolean => {
+    const paintRow = (element: HTMLDivElement, item: Row, document: DocumentSnapshot, selectionSet: SelectionSet, highlightedLine?: number, index?: RowIndex): boolean => {
         element.dataset.line = String(item.line); element.dataset.from = String(item.from); element.dataset.to = String(item.to); element.dataset.complete = String(item.complete);
         const low = partitionPoint(selectionSet.ranges.length, index => {
             const range = selectionSet.ranges[index]!;
@@ -408,8 +409,13 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const changed = element.className !== className; element.className = className;
         const inline = decorations.present(presented, false, item.endsLine);
         const marks = selectedBreak ? [...inline, { from: item.to, to: item.to, className: "st-selected-line-break" }] : inline;
-        return renderRowChildren(element, decorationParts(item.text, item.from, item.to, document.buffer.length, marks, selections,
-            item.endsLine ? item.start : undefined)) || changed;
+        const parts = decorationParts(item.text, item.from, item.to, document.buffer.length, marks, selections, item.endsLine ? item.start : undefined);
+        const fold = item.endsLine && index?.headerAt(item.line);
+        if (fold && fold.collapsed) {
+            const count = fold.lineTo - fold.lineFrom - 1;
+            parts.push({ text: "", className: "st-fold-summary", ornament: "fold", label: `… ${count} ${count === 1 ? "line" : "lines"} hidden` });
+        }
+        return renderRowChildren(element, parts) || changed;
     };
     type MeasuredRow = Readonly<{ complete: boolean; point: (offset: number, affinity?: Affinity) => CaretRectangle | undefined;
         visual: (offset: number, direction: -1 | 1) => CaretRectangle | undefined;
@@ -574,7 +580,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
                 const changed: HTMLDivElement[] = [];
                 for (const item of visibleItems) if (dirtyRows.has(item.line)) {
                     const element = rows.get(item.line)!;
-                    if (paintRow(element, item, document, selectionSet, highlighted)) {
+                    if (paintRow(element, item, document, selectionSet, highlighted, index)) {
                         geometries.delete(item.line);
                         if (item.complete) changed.push(element);
                     }
@@ -628,11 +634,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             element.style.transform = `translate(${item.left + shift}px, ${padding + index.rowAt(item.line) * lineHeight - top}px)`;
             element.style.height = `${lineHeight}px`;
             element.style.lineHeight = comparisonRows ? `${lineHeight}px` : "";
-            if (paintRow(element, item, document, selectionSet, highlightedLine)) geometries.delete(item.line);
-            const fold = index.headerAt(item.line), hidden = fold?.collapsed && item.endsLine ? fold.lineTo - fold.lineFrom - 1 : 0;
-            // Generated content stays outside text nodes, native text geometry and clipboard data.
-            if (hidden) element.dataset.foldedSummary = `… ${hidden} ${hidden === 1 ? "line" : "lines"} hidden`;
-            else delete element.dataset.foldedSummary;
+            if (paintRow(element, item, document, selectionSet, highlightedLine, index)) geometries.delete(item.line);
             textUnits += item.text.length;
             rowSources.set(element, item);
         }
@@ -732,18 +734,38 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const button = (target as Element | null)?.closest?.("button.st-fold-button") as HTMLButtonElement | null | undefined;
         return button && foldLayer.contains(button) ? button : undefined;
     };
+    const activateFold = (version: FoldVersion, id: string, collapse: boolean, focus: boolean) => {
+        if (disposed || !live() || inputOwner?.composing) return false;
+        const binding = inputOwner;
+        if (!view.folding.setCollapsed(version, id, collapse, { moveHiddenCarets: true })) return false;
+        // A second press may arrive before the next animation frame.
+        flush();
+        if (focus && binding && inputOwner === binding) notify("focus");
+        return true;
+    };
+    let pressedSummary: { marker: Element; id: string; version: FoldVersion } | undefined;
+    layer.addEventListener("pointerdown", event => {
+        pressedSummary = undefined;
+        const marker = event.target as HTMLElement;
+        if (!event.isPrimary || event.button !== 0 || marker.dataset?.ornament !== "fold") return;
+        event.stopPropagation(); event.preventDefault();
+        const fold = renderedIndex.headerAt(Number(marker.parentElement?.dataset.line));
+        if (fold?.collapsed && renderedRevision !== null && !inputOwner?.composing)
+            pressedSummary = { marker, id: fold.id, version: { revision: renderedRevision, generation: renderedFoldGeneration } };
+    }, { signal: listeners.signal });
+    layer.addEventListener("pointercancel", () => { pressedSummary = undefined; }, { signal: listeners.signal });
+    layer.addEventListener("click", event => {
+        const pressed = pressedSummary; pressedSummary = undefined;
+        if (!pressed || event.target !== pressed.marker) return;
+        event.stopPropagation();
+        if (activateFold(pressed.version, pressed.id, false, true) && !inputOwner && !disposed) root.focus({ preventScroll: true });
+    }, { signal: listeners.signal });
     foldLayer.addEventListener("pointerdown", event => { if (foldButton(event.target)) event.stopPropagation(); }, { signal: listeners.signal });
     foldLayer.addEventListener("dblclick", event => { if (foldButton(event.target)) event.stopPropagation(); }, { signal: listeners.signal });
     foldLayer.addEventListener("click", event => {
         const button = foldButton(event.target); if (!button) return; event.stopPropagation();
-        if (disposed || !live() || inputOwner?.composing) return;
-        const binding = inputOwner;
-        const changed = view.folding.setCollapsed({ revision: Number(button.dataset.revision), generation: Number(button.dataset.generation) }, button.dataset.fold!,
-            button.getAttribute("aria-expanded") === "true", { moveHiddenCarets: true });
-        // The second click can arrive before the next frame. Publish the new disclosure
-        // generation before another activation reads the old button.
-        if (changed) flush();
-        if (binding && inputOwner === binding && event.detail > 0) notify("focus");
+        activateFold({ revision: Number(button.dataset.revision), generation: Number(button.dataset.generation) }, button.dataset.fold!,
+            button.getAttribute("aria-expanded") === "true", event.detail > 0);
     }, { signal: listeners.signal });
     foldLayer.addEventListener("keydown", event => { if (event.key === "Escape" && foldButton(event.target)) {
         event.preventDefault(); if (!disposed && live()) notify("focus");
@@ -913,7 +935,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             physicalHeight: y.physicalExtent, physicalWidth: x.physicalExtent }),
         dispose: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
-            releaseScrollbar();
+            releaseScrollbar(); pressedSummary = undefined;
             decorations.dispose(); visibleItems = []; dirtyRows.clear();
             inputOwner?.detach(); inputOwner = undefined;
             for (const stop of observationStops) stop();

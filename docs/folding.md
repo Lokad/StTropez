@@ -162,7 +162,8 @@ Explicit selection, typing, Find and reveal expand hidden targets. Fold buttons 
 with Enter or Space and keeps keyboard focus. Clicking a disclosure returns focus to the editor input,
 as does pressing Escape on the button. Buttons capture tab, revision and fold
 generation. For the `imports` group the button reads **Collapse imports** or **Expand imports**.
-Inline hidden-line counts add no source text, clipboard data or caret offsets.
+Click the hidden-line count after a header to expand that block and keep the selection.
+The count adds no source text, clipboard data or caret offsets.
 Comparison panes retain independent fold choices; hunk reveal expands the entire target range.
 
 Keep the `DocumentView` if you want the same folds after remounting. To initialize a fresh view from a

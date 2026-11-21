@@ -301,7 +301,7 @@ export async function runDemoFolding(page: Page, url = "/") {
     await expect(page.locator("#fold")).toBeDisabled(); await expect(page.locator("#fold-group-collapse")).toBeEnabled();
     await expect(page.locator("#fold-group-expand")).toBeDisabled(); await page.locator("#code-menu summary").click();
     await collapse.click();
-    await expect(header).toHaveAttribute("data-folded-summary", "… 2 lines hidden");
+    await expect(header.locator(".st-fold-summary")).toHaveAttribute("data-label", "… 2 lines hidden");
     await expect(imports).toHaveValue(original); await expect(page.locator('#editor .st-viewport-row[data-line="1"]')).toHaveCount(0);
     await page.getByRole("button", { name: "Compare", exact: true }).click();
     await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
@@ -309,12 +309,13 @@ export async function runDemoFolding(page: Page, url = "/") {
     await expect(coloredImport(left)).toHaveText("import"); await expect(coloredImport(right)).toHaveText("import");
     await expect(left.getByRole("button", { name: "Collapse imports" })).toHaveAttribute("aria-expanded", "true");
     await expect(right.getByRole("button", { name: "Expand imports" })).toHaveAttribute("aria-expanded", "false");
-    await expect(right.locator('[data-folded-summary]')).toHaveAttribute("data-folded-summary", "… 2 lines hidden");
-    await right.locator(".st-fold-button").click();
-    await expect(right.locator('[data-folded-summary]')).toHaveCount(0);
+    const rightSummary = right.locator(".st-fold-summary");
+    await expect(rightSummary).toHaveAttribute("data-label", "… 2 lines hidden");
+    await rightSummary.click(); await expect(rightSummary).toHaveCount(0);
+    await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toBeFocused();
     await expect.poll(() => right.locator(".st-viewport-row").allTextContents()).toEqual(await left.locator(".st-viewport-row").allTextContents());
     await left.locator(".st-fold-button").click(); await expect(right.locator(".st-fold-button")).toHaveAttribute("aria-expanded", "true");
-    await left.locator(".st-fold-button").click();
+    await left.locator(".st-fold-summary").click();
     const working = page.getByRole("textbox", { name: "Comparison working source", exact: true });
     await working.press("Control+Home"); await working.press("ArrowDown"); await working.press("Home"); await working.press("Shift+End"); await working.press("Delete");
     await expect(right.locator(".st-fold-button")).toHaveCount(0); await expect(left.locator(".st-fold-button")).toHaveCount(1);
@@ -329,7 +330,7 @@ export async function runDemoFolding(page: Page, url = "/") {
     await expect(page.locator(".st-comparison-controls output")).toHaveText("No changes");
     await expect(left.locator(".st-fold-button")).toHaveCount(1);
     await right.locator(".st-fold-button").click(); await page.locator('[data-panel="javascript"]').click();
-    await expect(page.locator('#editor [data-folded-summary]')).toHaveAttribute("data-folded-summary", "… 2 lines hidden");
+    await expect(page.locator("#editor .st-fold-summary")).toHaveAttribute("data-label", "… 2 lines hidden");
     await expect(imports).toHaveValue("// working only\n" + original);
 }
 
