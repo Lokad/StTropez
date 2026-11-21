@@ -44,6 +44,7 @@ const unsubscribe = workspace.observeDocument(source.documentId).subscribe(statu
 const fixture = { ready: true, setText, edit, select, history,
     get settled() { return !disposed && editorSettled(editors.primary) && editorSettled(editors.secondary); },
     failNextDecoration: () => { failDecoration = true; primarySyntax.invalidate(); },
+    operation: editors.primary.operation, latestOperation: editors.primary.latestOperation,
     captureInsertion: () => editors.primary.captureInsertion(),
     registerEditTransform: (transform: TextEditorEditTransform) => editors.primary.registerEditTransform(transform),
     discoverFolds: (discover: FoldDiscovery) => { foldingController?.dispose(); foldingController = createFoldingController(editors.primary, discover, { delayMs: 0 }); },

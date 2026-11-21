@@ -32,6 +32,8 @@ import { lineColumnScanner, lineContentEnd, lineEnding, planLanguageEdit, resolv
 import { exportText } from "../core/newlines.ts";
 import type { EditingCommand, LanguageConfiguration, ResolvedLanguageConfiguration } from "../core/language-edits.ts";
 import { captureInsertion } from "./captured-insertion.ts";
+import { createOperationLane, runEditorOperation } from "./editor-operation.ts";
+import type { EditorOperation, EditorOperationLane, EditorOperationOptions, EditorOperationOutcome } from "./editor-operation.ts";
 import type { CapturedInsertion } from "./captured-insertion.ts";
 import { mountBracketHighlights } from "./bracket-highlights.ts";
 import type { BracketHighlights } from "./bracket-highlights.ts";
@@ -63,6 +65,8 @@ export type ResolvedEditorSettings = ViewportSettings & Readonly<{ language: Res
     pasteLineEndings: "local" | "preserve"; bracketMatching: false | Required<BracketMatchOptions>; characterWarnings: false | CharacterWarningConfiguration }>;
 export type TextEditorOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; requestLine?: LinePrompt; settings?: EditorSettings }>;
 export type TextEditor = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; workspace: Workspace; tab: TabTarget | undefined; signal: AbortSignal; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
+    operation: <T>(options: EditorOperationOptions, work: (op: EditorOperation) => T | PromiseLike<T>) => Promise<EditorOperationOutcome<T>>;
+    latestOperation: () => EditorOperationLane;
     /** One pending host insertion, invalidated by later editing/selection/authority/lifecycle changes. */
     captureInsertion: (kind?: "paste" | "replace") => CapturedInsertion | undefined;
     /** One synchronous edit planner per view. Its result still passes Workspace validation/history. */
@@ -1355,6 +1359,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             characterWarnings: warningOptions?.configuration ?? false });
     };
     const editor: TextEditor = Object.freeze({ element: root, input, workspace, tab: target, signal: listeners.signal, view, viewport, decorations: viewport.decorations, focus, activity, bracketMatching: brackets.handle, characterWarnings: warnings.handle,
+        operation: (options, work) => runEditorOperation(editor, options, work),
+        latestOperation: () => createOperationLane(editor),
         captureInsertion: (kind = "paste") => {
             hostInsertion?.cancel();
             const available = () => !disposed && root.isConnected && !readOnly && !input.disabled && !input.readOnly && !composing

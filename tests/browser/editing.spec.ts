@@ -1,6 +1,61 @@
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
+test("an async editor operation applies once and releases every expired or failed request", async ({ page }) => {
+    const result = await page.evaluate(async () => {
+        const f = window.editingFixture; f.setText("abc");
+        const ownership = () => { const d = f.snapshot().diagnostics; return [d.leases, d.subscriptions]; };
+        const before = ownership(), edit = { edits: [{ from: 0, to: 1, insert: "X" }], source: "test" };
+        const applied = await f.operation({ write: true }, async op => {
+            await op.step(Promise.resolve("ready"));
+            return [op.apply(edit), op.apply(edit)];
+        });
+        let cancelled = 0, continued = false;
+        const delayed = f.operation({ write: true }, async op => {
+            op.apply({ edits: [{ from: 0, to: 1, insert: "never" }] });
+            await op.step({ result: new Promise<void>(() => {}), cancel: () => { cancelled++; } });
+            continued = true; return op.apply(edit);
+        });
+        const retained = ownership(); f.edit([{ from: 3, to: 3, insert: "!" }]);
+        const stale = await delayed;
+        let providerCurrent = true;
+        const withdrawn = await f.operation({ write: true }, async op => {
+            await op.step(Promise.resolve({ isCurrent: () => providerCurrent }));
+            op.apply({ edits: [{ from: 0, to: 1, insert: "expired" }] }); providerCurrent = false;
+        });
+        let error = "";
+        try { await f.operation({ write: true }, op => op.apply({ edits: [{ from: -1, to: 0, insert: "" }] })); }
+        catch (cause) { error = cause instanceof Error ? cause.name : String(cause); }
+        const abort = new AbortController();
+        const abandoned = f.operation({ signal: abort.signal }, () => new Promise<void>(() => {}));
+        abort.abort(); const interrupted = await abandoned;
+        const lane = f.latestOperation(), independent = f.latestOperation();
+        let finish!: () => void;
+        const other = independent.run({}, op => op.step(new Promise<void>(resolve => { finish = resolve; })));
+        const first = lane.run({ write: true }, async op => {
+            op.apply({ edits: [{ from: 0, to: 0, insert: "superseded" }] });
+            await op.step(new Promise<void>(() => {}));
+        });
+        const second = lane.run({ signal: new AbortController().signal }, op => op.document.revision);
+        finish();
+        const latest = [(await first).status, (await second).status, (await other).status];
+        lane.dispose(); independent.dispose();
+        latest.push((await lane.run({}, () => 0)).status);
+        const after = ownership(), text = f.range(0, 4);
+        const replaced = f.operation({ write: true }, async op => {
+            await op.step(Promise.resolve()); return op.apply(edit);
+        });
+        f.replacePrimary();
+        return { before, retained, after, applied, stale, withdrawn, error, interrupted, cancelled, continued, text, latest, replaced: await replaced };
+    });
+    expect(result.applied).toEqual({ status: "completed", value: [true, false] });
+    for (const outcome of [result.stale, result.withdrawn, result.interrupted, result.replaced]) expect(outcome).toEqual({ status: "stale" });
+    expect(result.retained[0]).toBe(result.before[0]! + 1);
+    expect(result.after).toEqual(result.before);
+    expect(result.latest).toEqual(["stale", "completed", "completed", "stale"]);
+    expect(result).toMatchObject({ error: "RangeError", cancelled: 1, continued: false, text: "Xbc!" });
+});
+
 const state = (page: Page) => page.evaluate(() => window.editingFixture.snapshot());
 test.beforeEach(async ({ page }) => {
 

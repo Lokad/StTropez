@@ -113,9 +113,14 @@ const fixture = { text: () => workspace.document(documentId).text(),
             if (editor.viewport.snapshot().visibleLines !== 2) throw new Error("Compiled folded edit exposed hidden rows.");
             model.undo({ documentId: source.documentId, expectedRevision: 1 }); await wait(); exact();
             const saved = editor.captureView(), retired = editor;
+            const pending = editor.operation({ write: true }, async op => {
+                op.apply({ edits: [{ from: 0, to: 0, insert: "expired" }] });
+                await op.step(new Promise<void>(() => {}));
+            });
             if (!editor.runCommand("go-to-line")) throw new Error("Restored host prompt was not requested.");
             editor.dispose();
             editor = mountTextEditor(host, model, tab, options); editor.restoreView(saved); editor.focus(); await wait();
+            if ((await pending).status !== "stale") throw new Error("A retired editor kept its pending edit.");
             if (!promptSignal.aborted) throw new Error("Retired view left its line request active.");
             reply(200); await Promise.resolve();
             if (editor.viewport.snapshot().visibleLines !== 2 || view.getSnapshot().selectionSet.ranges.length !== 2) throw new Error("Compiled remount lost folds or complete selections.");

@@ -79,6 +79,37 @@ to resource capabilities and locks. Remount with the same view to change this op
 
 <a id="native-input-and-ordered-commands"></a>
 
+### Async operations
+
+Use `editor.operation(options, work)` for a request that belongs to the current editor, document
+revision, selections and folds. The callback receives the captured document and an abort signal.
+Await `op.step(call)` for a promise or a provider call with `result` and `cancel()`. The editor
+cancels an outstanding call when the target expires. A result with an `isCurrent()` method stays
+part of the check through the next step and any edit.
+
+```ts
+import type { TextEditor } from "sttropez/browser";
+
+export function formatSelection(editor: TextEditor, format: (text: string, signal: AbortSignal) => Promise<string>) {
+    return editor.operation({ write: true }, async op => {
+        const range = op.selectionSet.ranges[op.selectionSet.primary]!;
+        const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
+        const insert = await op.step(format(op.document.buffer.slice(from, to), op.signal));
+        return op.apply({ edits: [{ from, to, insert }], source: "format", history: { kind: "refactor" } });
+    });
+}
+```
+
+A completed call returns `{ status: "completed", value }`. A replaced target, composition or caller
+cancellation returns `{ status: "stale" }`. Pass a host `signal` to cancel a request. The handle
+expires when the callback ends. With `write: true`, `op.apply` stages one edit. It commits with human edit authority when the callback
+finishes and all captured results are current. A throw or cancellation discards the staged edit.
+For hover or other requests that replace each other, create one lane with `editor.latestOperation()`.
+`lane.run(options, work)` cancels its previous pending request. Other lanes run independently.
+`lane.cancel()` dismisses a request and `lane.dispose()` retires the lane.
+
+Provider and validation errors propagate to the caller. The editor releases the capture on every exit.
+
 ### What happens when you type during a command
 
 The textarea holds the selection and nearby text, using LF for native input. A large selection appears
