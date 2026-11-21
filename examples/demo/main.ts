@@ -115,16 +115,22 @@ function renderProblems(): void {
         item.textContent = `${problem.name} · ${code}${problem.message}`;
         const current = () => project === captured && captured.language.state.getSnapshot() === state;
         const open = (target: { documentId: typeof problem.documentId; revision: number; from: number; to: number }) => {
-            if (!current() || !confirmed || editor?.activity().composing) return;
+            if (!current() || !confirmed || editor?.activity().composing) return false;
             const file = captured.files.find(file => file.resource.documentId === target.documentId);
-            if (!file || captured.workspace.document(target.documentId).revision !== target.revision) return;
-            mountFile(file, true); file.view.setSelection(target.revision, { anchor: target.from, head: target.to });
-            editor?.viewport.revealOffset(target.from); editor?.focus();
+            if (!file || captured.workspace.document(target.documentId).revision !== target.revision) return false;
+            mountFile(file, true);
+            if (!editor || !file.view.setSelection(target.revision, { anchor: target.from, head: target.to })) return false;
+            editor.viewport.revealOffset(target.from); editor.focus(); return true;
         };
         item.disabled = !confirmed;
         item.addEventListener("click", () => open(problem));
         metadata.textContent = [({ 1: "Error", 2: "Warning", 3: "Information", 4: "Hint" } as Record<number, string>)[problem.severity ?? 1],
             problem.source, ...(!confirmed ? ["Awaiting recheck"] : []), ...(problem.tags ?? []).flatMap(tag => tag === 1 ? ["Unnecessary"] : tag === 2 ? ["Deprecated"] : [])].filter(Boolean).join(" · ");
+        if (captured.files.some(file => file.resource.documentId === problem.documentId && !file.readOnly)) {
+            const fixes = document.createElement("button"); fixes.textContent = "Check quick fixes"; fixes.disabled = !confirmed;
+            fixes.onclick = () => { if (open(problem)) languageView?.quickfix(); };
+            metadata.append(" · ", fixes);
+        }
         const href = problem.codeDescription?.href;
         if (href && canOpenDemoHelp(href)) {
             const help = document.createElement("button"); help.textContent = "Diagnostic help"; help.title = href;

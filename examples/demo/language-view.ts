@@ -1,6 +1,7 @@
 import { createCompletionController, createLspHighlightController, mountAnchoredOverlay } from "../../src/browser/index.ts";
 import type { TextEditor, CompletionController, CompletionSnippet, LspHighlightController } from "../../src/browser/index.ts";
 import type { Workspace } from "../../src/index.ts";
+import type { LspWorkspace } from "../../src/protocol/index.ts";
 import type { DemoFile } from "./project.ts";
 import type { DemoLanguage } from "./language.ts";
 import { mountDemoInspection } from "./inspect.ts";
@@ -68,7 +69,7 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         editor.input.addEventListener("keydown", event => {
             if (!controller && (event.ctrlKey || event.metaKey) && event.code === "Space") event.preventDefault();
         }, { capture: true, signal: listeners.signal });
-        void language.connect().then(provider => {
+        const attach = (provider: LspWorkspace) => {
             if (!valid()) return;
             try {
                 controller = createCompletionController(editor, provider, { autoConnect: false, filterManualCompletions: true, canCapture: valid });
@@ -93,7 +94,10 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
                 disposed = true;
                 try { scope.rollback(error); } catch (failure) { reportError(failure); }
             }
-        }, () => { /* Connection failure is already reported by the project, with its own retry. */ });
+        };
+        const connected = language.connectedProvider;
+        if (connected) attach(connected);
+        else void language.connect().then(attach, () => { /* The project reports connection failures and owns retry. */ });
         return Object.freeze({ complete: () => { actions?.dismiss(); symbols?.dismiss(); inspection?.dismiss(); editor.focus(); controller?.request(); }, inspect: () => inspection?.inspect(), signature: () => inspection?.signature(),
             definition: () => symbols?.definition(), references: () => symbols?.references(), rename: () => symbols?.rename(),
             quickfix: () => actions?.request(),

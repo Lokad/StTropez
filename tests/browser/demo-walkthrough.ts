@@ -35,9 +35,12 @@ export async function runDemoActions(page: Page, url = "/") {
     await choice.click(); await expect(actions.getByLabel("Quick-fix edits").locator("li")).toHaveCount(3);
     await expect(actions.getByLabel("Quick-fix edits")).toContainText("rate.ts");
     await expect(page.locator("#editor")).toContainText("import { exampleRate }");
-    await source.press("Control+End"); await page.keyboard.insertText("// Keep this later edit\n");
+    await source.press("Control+End"); await page.keyboard.insertText("// Keep this later edit");
     await expect(actions.getByRole("button", { name: "Apply fix", exact: true })).toBeDisabled();
     await expect(actions).toContainText("The code or selection changed");
+    await source.press("Enter"); await expect(actions).toBeHidden(); await expect(source).toBeFocused();
+    await source.pressSequentially("// Separate line");
+    await expect(page.locator("#editor .st-viewport-row").filter({ hasText: "// Separate line" })).toHaveText("// Separate line");
     await source.press("Control+."); await choice.click();
     await actions.getByRole("button", { name: "Apply fix", exact: true }).click(); await expect(actions).toBeHidden();
     await expect(page.locator("#editor")).toContainText("import { discountRate }");

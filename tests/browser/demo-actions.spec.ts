@@ -18,7 +18,10 @@ async function typo(page: Page) {
 
 test("selecting a real spelling fix applies once and shares undo/redo with actual typing", async ({ page }) => {
     await openDemo(page); const source = await typo(page);
-    await page.locator("#code-menu summary").click(); await page.getByRole("button", { name: "Quick fix", exact: true }).click();
+    await page.locator('[data-file="pricing.ts"]').click();
+    const problem = page.locator(".demo-problem").filter({ hasText: "main.ts · TS2552:" });
+    await problem.getByRole("button", { name: "Check quick fixes", exact: true }).click();
+    await expect(source).toBeFocused();
     const popup = page.getByRole("region", { name: "Quick fixes", exact: true });
     await expect(popup.getByRole("button", { name: "Change spelling to 'calculateTotal'", exact: true })).toBeVisible();
     await expect.poll(async () => {
@@ -107,4 +110,7 @@ test("a clean position offers no fabricated fix and Escape preserves source and 
     const popup = page.getByRole("region", { name: "Quick fixes", exact: true });
     await expect(popup).toContainText("No quick fix at this position."); await expect(popup.getByRole("button", { name: "Apply fix", exact: true })).toBeDisabled();
     await source.press("Escape"); await expect(popup).toBeHidden(); await expect(source).toBeFocused(); await expect(page.locator("#files")).not.toContainText("●");
+    await source.press("Control+."); await expect(popup).toContainText("No quick fix at this position.");
+    await source.press("Enter"); await expect(popup).toBeHidden(); await expect(source).toBeFocused();
+    await expect(page.locator("#cursor")).toHaveText("Ln 2, Col 1");
 });

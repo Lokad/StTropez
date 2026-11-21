@@ -58,6 +58,9 @@ export class DemoLanguage {
         this.publish({ checking: this.active, diagnostics: this.diagnostics.diagnostics });
     }
     private valid(lifecycle: number): boolean { return !this.disposed && this.active && lifecycle === this.lifecycle; }
+    get connectedProvider(): LspWorkspace | undefined {
+        return this.active && this.owner?.getSnapshot().phase === "ready" ? this.owner : undefined;
+    }
     connect(): Promise<LspWorkspace> {
         if (this.disposed) return Promise.reject(new Error("Language project is disposed."));
         this.active = true;

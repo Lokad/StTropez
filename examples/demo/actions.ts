@@ -92,7 +92,8 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
         else if (!popup.hidden && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
             const state = tools.state.getSnapshot();
             if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); dismiss(); }
-            else if (event.key === "Enter") { event.preventDefault(); event.stopImmediatePropagation(); if (state.canApply) tools.apply(state.token); }
+            else if (event.key === "Enter" && state.canApply) { event.preventDefault(); event.stopImmediatePropagation(); tools.apply(state.token); }
+            else if (event.key === "Enter" && !state.pending) dismiss();
             else if ((event.key === "ArrowDown" || event.key === "ArrowUp") && state.choices.length) {
                 event.preventDefault(); event.stopImmediatePropagation(); tools.selectChoice(((state.choice ?? 0) + (event.key === "ArrowDown" ? 1 : state.choices.length - 1)) % state.choices.length);
             }
