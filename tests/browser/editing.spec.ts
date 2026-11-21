@@ -449,6 +449,28 @@ test("line indentation/outdent, CRLF Enter, paired brackets and vertical navigat
     expect((await state(page)).primary.selection.head).toBe(5);
 });
 
+test("comment chords and shifted slash act on the captured lines", async ({ page }) => {
+    await page.evaluate(() => { const f = window.editingFixture;
+        f.configureLanguage({ tabSize: 2, lineComment: "//", blockComment: { open: "/*", close: "*/" } });
+        f.setText("  alpha\n// beta"); f.focus("primary");
+    });
+    const input = page.getByRole("textbox", { name: "Primary source", exact: true });
+    const rows = page.locator("#primary .st-viewport-row");
+    const stroke = (key: string, shiftKey = false) => input.evaluate((node, args) =>
+        !node.dispatchEvent(new KeyboardEvent("keydown", { ...args, ctrlKey: true, bubbles: true, cancelable: true })), { key, shiftKey });
+    await input.press("Control+a"); await input.press("Control+k"); expect(await stroke("c")).toBe(true);
+    await expect(rows).toHaveText(["  // alpha", "// beta"]);
+    await input.press("Control+k"); await input.press("Control+u"); await expect(rows).toHaveText(["  alpha", "beta"]);
+    await page.evaluate(() => window.editingFixture.selections([{ anchor: 3, head: 5 }]));
+    await input.press("Control+]"); await expect(rows.first()).toHaveJSProperty("textContent", "    alpha");
+    await input.press("Control+["); await expect(rows.first()).toHaveJSProperty("textContent", "  alpha");
+    expect(await stroke("/", true)).toBe(true); await expect(rows.first()).toHaveJSProperty("textContent", "  // alpha");
+    expect(await stroke("/", true)).toBe(true);
+    await input.press("Shift+Alt+a"); await expect(rows.first()).toHaveJSProperty("textContent", "  a/*lp*/ha");
+    await input.press("Control+k"); await page.evaluate(() => window.editingFixture.selections([{ anchor: 0, head: 0 }]));
+    expect(await stroke("c")).toBe(false);
+});
+
 test("typing a closing brace realigns the line and Undo restores its indentation", async ({ page }) => {
     await page.evaluate(() => { const f = window.editingFixture, text = "  if (ok) {\n      ";
         f.setText(text); f.selections([{ anchor: text.length, head: text.length }]); f.focus("primary");

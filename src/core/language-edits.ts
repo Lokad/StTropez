@@ -24,7 +24,7 @@ function checkpoint(state: MutablePlanning): boolean {
     state.checkpoint = state.workUnits; return true;
 }
 
-export type EditingCommand = "indent" | "outdent" | "line-comment" | "block-comment" | "newline";
+export type EditingCommand = "indent" | "indent-lines" | "outdent" | "line-comment" | "add-line-comment" | "remove-line-comment" | "block-comment" | "newline";
 export { resolveLanguageConfiguration } from "./language-configuration.ts";
 export type { EditingPair, LanguageEditContext, PairingContext, EnterIndent, LanguageConfiguration, ResolvedLanguageConfiguration } from "./language-configuration.ts";
 type TypedCharacter = Readonly<{ character: string; canOvertype?: (offset: number) => boolean }>;
@@ -224,8 +224,9 @@ function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCom
     const reader = { lineCount: buffer.lineCount, offsetAt: (line: number) => buffer.offsetAt(line), slice: read };
     const unit = config.insertSpaces ? " ".repeat(config.tabSize) : "\t", edits: TextEdit[] = [];
     if (command === "indent") return yield* indent(buffer, selections, config, read, state);
-    if (command === "outdent" || command === "line-comment") {
-        if (command === "line-comment" && !config.lineComment) return yield* publish(edits, selections, state);
+    const commenting = command === "line-comment" || command === "add-line-comment" || command === "remove-line-comment";
+    if (command === "outdent" || command === "indent-lines" || commenting) {
+        if (commenting && !config.lineComment) return yield* publish(edits, selections, state);
         const intervals: { first: number; last: number }[] = [];
         for (const range of selections.ranges) {
             const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
@@ -237,12 +238,14 @@ function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCom
         let allCommented = true, anyText = false;
         for (const interval of intervals) for (let line = interval.first; line <= interval.last; line++) {
             const from = buffer.offsetAt(line);
-            if (command === "line-comment") {
+            if (commenting) {
                 const end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
                 const at = yield* whitespace(read, state, from, end), next = read(at, Math.min(end, at + config.lineComment!.length));
                 const blank = !next || /^[\r\n]/.test(next), commented = next === config.lineComment;
                 if (!blank) { anyText = true; allCommented &&= commented; }
                 comments.push({ from: at, commented, blank });
+            } else if (command === "indent-lines") {
+                edits.push({ from, to: from, insert: unit });
             } else {
                 const prefix = read(from, Math.min(buffer.length, from + config.tabSize));
                 const removed = outdentLength(prefix, config.tabSize);
@@ -250,10 +253,11 @@ function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCom
             }
             state.workUnits++; if (checkpoint(state)) yield;
         }
-        if (command === "line-comment") for (const line of comments) {
+        if (commenting) for (const line of comments) {
             state.workUnits++; if (checkpoint(state)) yield;
             if (line.blank && anyText) continue;
-            const uncomment = anyText && allCommented;
+            if (command === "add-line-comment" && line.commented || command === "remove-line-comment" && !line.commented) continue;
+            const uncomment = command === "remove-line-comment" || command === "line-comment" && anyText && allCommented;
             const end = line.from + config.lineComment!.length;
             const space = uncomment && read(end, Math.min(buffer.length, end + 1)) === " " ? 1 : 0;
             edits.push({ from: line.from, to: uncomment ? end + space : line.from, insert: uncomment ? "" : config.lineComment! + " " });

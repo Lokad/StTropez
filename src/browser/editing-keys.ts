@@ -9,14 +9,18 @@ type KeyCommand = Readonly<{ kind: "history"; direction: "undo" | "redo" }>
     | Readonly<{ kind: "delete"; direction: -1 | 1 }>
     | Readonly<{ kind: "language"; command: EditingCommand | Readonly<{ character: string }> }>;
 export type KeyBinding = Readonly<{ command: KeyCommand; text: string; edit: boolean; fallback: boolean }>;
-type EditingKey = KeyBinding | "escape" | "tab-escape" | "prevent-navigation" | undefined;
+type EditingKey = KeyBinding | "escape" | "tab-escape" | "prevent-navigation" | "comment-prefix" | undefined;
 const navigationKeys = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"]);
 const bind = (command: KeyCommand, edit = false, text = "", fallback = false): KeyBinding => ({ command, edit, text, fallback });
 
 /** Shared interpretation for immediate execution and captured queued intent; no view/lifecycle authority. */
-export function classifyEditingKey(event: KeyStroke, apple: boolean, escaped: boolean, paired: (key: string) => boolean): EditingKey {
+export function classifyEditingKey(event: KeyStroke, apple: boolean, escaped: boolean, paired: (key: string) => boolean, commentChord = false): EditingKey {
     const command = (event.ctrlKey || event.metaKey) && !event.altKey, key = event.key.toLowerCase(), extend = event.shiftKey;
     const horizontal = (key: "ArrowLeft" | "ArrowRight" | "Home" | "End", document = false) => bind({ kind: "horizontal", key, extend, document });
+    if (command && !extend && commentChord && (key === "c" || key === "u"))
+        return bind({ kind: "language", command: key === "c" ? "add-line-comment" : "remove-line-comment" }, true);
+    if (command && !extend && key === "k") return "comment-prefix";
+    if (command && !extend && (key === "]" || key === "[")) return bind({ kind: "language", command: key === "]" ? "indent-lines" : "outdent" }, true);
     if (command && (key === "z" || event.ctrlKey && key === "y")) return bind({ kind: "history", direction: extend || key === "y" ? "redo" : "undo" }, true);
     if (command && key === "a") return bind({ kind: "select-all" });
     if (command && (event.key === "Home" || event.key === "End")) return horizontal(event.key, true);
@@ -42,7 +46,8 @@ export function classifyEditingKey(event: KeyStroke, apple: boolean, escaped: bo
         }
         if (paired(event.key)) return bind({ kind: "language", command: { character: event.key } }, true, event.key, true);
     }
-    if (command && (key === "/" || key === "?" && extend)) return bind({ kind: "language", command: extend ? "block-comment" : "line-comment" }, true);
+    if (command && key === "/") return bind({ kind: "language", command: "line-comment" }, true);
+    if (!event.ctrlKey && !event.metaKey && extend && event.altKey && key === "a") return bind({ kind: "language", command: "block-comment" }, true);
     if (command && navigationKeys.has(event.key)) return "prevent-navigation";
     return;
 }

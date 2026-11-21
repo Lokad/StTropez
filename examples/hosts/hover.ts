@@ -139,7 +139,7 @@ export class HostHoverTools {
             if (["Control", "Meta", "Shift", "Alt"].includes(event.key)) return;
             if (event.key === "Escape" && (this.current || session.scheduled)) { event.preventDefault(); event.stopImmediatePropagation(); this.dismiss(); return; }
             const command = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey, name = event.key.toLowerCase();
-            if (command && name === "k") { if (!this.allowInspect("keyboard")) return; event.preventDefault(); event.stopImmediatePropagation(); cancelChord(); chord = true; chordTimer = win.setTimeout(cancelChord, 1500); return; }
+            if (command && name === "k") { if (!this.allowInspect("keyboard")) return; cancelChord(); chord = true; chordTimer = win.setTimeout(cancelChord, 1500); return; }
             if (chord) { cancelChord(); if (command && name === "i") { event.preventDefault(); event.stopImmediatePropagation(); this.inspectCaret(id); } }
         }, { capture: true, signal: listeners.signal });
         editor.input.addEventListener("blur", () => { cancelChord(); if (this.current === session && this.kind === "keyboard") this.dismiss(); }, { signal: listeners.signal });

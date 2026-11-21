@@ -501,7 +501,7 @@ for (const id of ["view-rulers", "view-current-line", "view-ligatures", "view-tr
 }, { signal: listeners.signal });
 on("quickfix", () => languageView?.quickfix());
 for (const command of ["line-comment", "block-comment", "indent", "outdent"] as const) on(command, () => {
-    if (editor?.runCommand(command)) editor.focus();
+    if (editor?.runCommand(command === "indent" ? "indent-lines" : command)) editor.focus();
 });
 indentation.addEventListener("change", () => {
     editor?.configureLanguage(editingConfiguration());
