@@ -27,7 +27,9 @@ test("dragging across emitted JavaScript copies both lines and preserves the sel
     await expect(reader).toBeFocused(); await expect(reader).toHaveJSProperty("readOnly", true);
     const selected = "Rates are in cents. The base charge covers the first kilogram.\nconst services";
     expect(await copyOutput(reader)).toBe(selected);
-    await reader.press("Delete"); await reader.pressSequentially("X"); expect(await copyOutput(reader)).toBe(selected);
+    const status = page.locator("#status");
+    await reader.press("Delete"); await expect(status).toHaveText("Generated JavaScript is read-only. Edit the TypeScript source.");
+    await reader.pressSequentially("X"); expect(await copyOutput(reader)).toBe(selected);
     const source = page.getByRole("textbox", { name: "shipping.ts", exact: true });
     await source.press("Control+Home"); await page.keyboard.insertText("const recompiled = true;\n");
     await expect(rows.first()).toHaveText("const recompiled = true;");

@@ -77,6 +77,9 @@ A `readOnly` mount supports navigation, selection, copy, Find and dragging a cop
 cut, paste, drop, undo, redo and replacement. Other views keep their own edit permissions, subject
 to resource capabilities and locks. Remount with the same view to change this option.
 
+The root's `data-read-only` attribute carries the reason while editing is unavailable.
+Use the [edit refusal event](host-integration.md#input-conflict-recovery) to explain it after a blocked gesture.
+
 <a id="native-input-and-ordered-commands"></a>
 
 ### Async operations

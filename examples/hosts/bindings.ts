@@ -1,5 +1,5 @@
-import { inputConflictEvent, mountTextEditor, mountTextComparison } from "../../src/browser/index.ts";
-import type { TextEditor, TextComparison, ViewportSnapshot, ViewState } from "../../src/browser/index.ts";
+import { editRefusedEvent, inputConflictEvent, mountTextEditor, mountTextComparison } from "../../src/browser/index.ts";
+import type { EditRefusedDetail, TextEditor, TextComparison, ViewportSnapshot, ViewState } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../shared/language/presentation.ts";
@@ -99,6 +99,11 @@ export class ViewBindings {
                 baseline, { ariaLabel: "Source review", view, requestLine: linePrompt(host.ownerDocument), scrollLinked: this.reviewScrollLinked, rowsAligned: this.reviewRowsAligned });
             this.review = review;
             scope.defer(() => { if (this.review === review) this.review = undefined; review.dispose(); });
+            host.addEventListener(editRefusedEvent, event => {
+                const { reason } = (event as CustomEvent<EditRefusedDetail>).detail;
+                status.textContent = reason === "edit-locked" ? "The source is locked for editing."
+                    : event.target === review.panes.reference.element ? "The comparison reference is read-only." : "This source is read-only.";
+            }, { signal: listeners.signal });
             const saveTarget = this.controller.workspace.tabs.capture(this.controller.viewTab("primary"));
             this.attachTools(scope, "comparison", this.controller.viewTab("primary"), review.panes.working, presentation);
             scope.defer(() => referencePresentation.clear());
@@ -310,7 +315,17 @@ export class ViewBindings {
                     this.instructionMount = instruction;
                     scope.defer(() => { if (this.instructionMount === instruction) this.instructionMount = undefined; instruction.dispose(); });
                 }
-                if (candidate) this.attachTools(scope, id, tabId, candidate, presentation);
+                if (candidate) {
+                    this.attachTools(scope, id, tabId, candidate, presentation);
+                    const feedback = host.ownerDocument.createElement("output");
+                    feedback.className = "host-edit-feedback"; feedback.setAttribute("aria-label", ariaLabel + " edit feedback");
+                    host.append(feedback); scope.defer(() => feedback.remove());
+                    candidate.element.addEventListener(editRefusedEvent, event => {
+                        const { reason } = (event as CustomEvent<EditRefusedDetail>).detail;
+                        feedback.textContent = reason === "edit-locked" ? "This source is locked for editing." : "This source is read-only.";
+                    }, { signal: listeners.signal });
+                    candidate.element.addEventListener("focusout", () => { feedback.textContent = ""; }, { signal: listeners.signal });
+                }
                 mounted.element.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
                 this.bindSaveShortcut(mounted.element, tabId, () => candidate?.activity().composing ?? false, listeners.signal);
                 const editor: BoundEditor = { ...mounted, dispose: scope.dispose };

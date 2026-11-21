@@ -23,7 +23,7 @@ import type { GraphemePoint } from "../core/grapheme-point.ts";
 import { captureNativeInsertion, resolveNativeInsertion } from "./input-target.ts";
 import type { NativeInsertionTarget } from "./input-target.ts";
 import type { InputContext } from "./input-context.ts";
-import { inputConflictEvent } from "./input-conflict.ts";
+import { editRefusedEvent, inputConflictEvent, type EditRefusedDetail } from "./input-conflict.ts";
 import type { InputConflictDetail } from "./input-conflict.ts";
 import { mountViewport } from "./viewport.ts";
 import type { TextViewport, ViewportSettings } from "./viewport.ts";
@@ -107,6 +107,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     const paired = autoClosedPairs();
     const automaticIndent = automaticIndentation();
     const readOnly = options.readOnly === true;
+    let readOnlyReason: EditRefusedDetail["reason"] | undefined;
     const surface = captureTextSurface(workspace, identity), { documentId, resource, tab: target } = surface;
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
     const view = options.view ?? workspace.createDocumentView(documentId);
@@ -208,7 +209,14 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const state = resource.getSnapshot(); input.disabled = !live() || state.state !== "ready";
         if (lineRequest && !validCommand(lineRequest.capture)) cancelLineRequest();
         if (input.disabled) contextBuffer = undefined;
-        input.readOnly = readOnly || !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null;
+        const reason = readOnly || !state.metadata.capabilities.edit.includes("human") ? "read-only"
+            : state.metadata.editLock !== null ? "edit-locked" : undefined;
+        if (reason !== readOnlyReason) {
+            readOnlyReason = reason;
+            input.readOnly = reason !== undefined;
+            if (reason) root.dataset.readOnly = reason;
+            else delete root.dataset.readOnly;
+        }
         if (inputQueue.executing?.edit && input.readOnly) inputQueue.recover(inputQueue.executing, "pending-input-expired");
         if (inputQueue.pending && (!inputQueue.current(inputQueue.pending) || inputQueue.pending.edit && input.readOnly)) cancelWord();
 
@@ -246,6 +254,11 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         try { if (view.setSelection(revision, { anchor, head })) projectedSet = view.getSnapshot().selectionSet; }
         finally { selecting = false; }
         scheduleCaret();
+    }
+    function refuseEdit(event: Event): void {
+        if (event.cancelable) event.preventDefault();
+        if (readOnlyReason && !input.disabled && live()) root.dispatchEvent(new CustomEvent<EditRefusedDetail>(editRefusedEvent,
+            { bubbles: true, detail: Object.freeze({ documentId, reason: readOnlyReason }) }));
     }
     const conflict = (reason: string, edit?: TextEdit, expectedRevision = revision, contextFrom = context.from, attemptedText = input.value, cause?: unknown) => {
         conflicts++; group = undefined;
@@ -959,7 +972,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         wordInput = undefined; insertion = undefined;
         if (nativeOrder) { if (!nativeOrder.invalid) cancelWord(); nativeOrder = undefined; }
         if (event.defaultPrevented) return;
-        if (input.readOnly) { if (event.cancelable) event.preventDefault(); return; }
+        if (input.readOnly) { refuseEdit(event); return; }
         if (captureOrderedInput(event)) return;
         if (!composing) view.folding.revealSelection(view.folding.getSnapshot());
         if (!composing && ["deleteWordBackward", "deleteWordForward", "deleteContentBackward", "deleteContentForward"].includes(event.inputType)) {
@@ -1052,6 +1065,12 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const chord = chordKeys.has(event);
         if (chord && event.key === "Escape") { event.preventDefault(); return; }
         const binding = captured ?? classifyEditingKey(event, apple, !!escapeSelection, pairKey, chord);
+        if (input.readOnly && event.key !== "Tab") {
+            // A read-only textarea suppresses beforeinput for ordinary printable keys.
+            const printable = ((!event.ctrlKey && !event.metaKey && !event.altKey) || event.getModifierState("AltGraph"))
+                && [...event.key].length === 1;
+            if (printable || typeof binding === "object" && binding.edit) { refuseEdit(event); return; }
+        }
         if (typeof binding === "object" && binding.command.kind === "view" && binding.command.command === "go-to-line" && !options.requestLine) return;
         if (binding === "comment-prefix") {
             if (!input.disabled) {
@@ -1287,6 +1306,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     for (const type of ["copy", "cut", "paste"] as const) input.addEventListener(type, event => {
         if (event.defaultPrevented) { cancelWord(); group = undefined; if (type !== "copy") stopDrag(); return; }
         if (input.disabled || composing || !event.clipboardData) return;
+        if (type !== "copy" && input.readOnly) { refuseEdit(event); return; }
         if (type === "paste" && (inputQueue.pending || rangeCommand) && !input.disabled && !input.readOnly) {
             event.preventDefault(); stopDrag();
             const text = event.clipboardData.getData("text/plain");
@@ -1298,7 +1318,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const selections = view.getSnapshot().selectionSet;
         if (type === "paste") { const text = event.clipboardData.getData("text/plain"); if (text.length) replaceSelection(text, "paste", undefined, text, copiedLines(event.clipboardData)); }
         else {
-            if (type === "cut" && input.readOnly) return;
             const buffer = workspace.document(documentId).buffer;
             if (selections.ranges.every(range => range.anchor === range.head)) {
                 const lines = copyCaretLines(buffer, selections, type === "cut");

@@ -166,7 +166,15 @@ for (const host of ["plain", "react"] as const) for (const editor of ["native", 
             await expect(primary(page)).toHaveAttribute("readonly", ""); await primary(page).focus();
             const from = 6, to = normal.indexOf("const end"); await select(page, from, to); await select(page, 3, 3, "secondary");
             await copyToKnownControl(page, normal.slice(from, to)); const before = await snapshot(page);
-            await primary(page).press("Control+x"); await primary(page).press("Control+v"); await primary(page).pressSequentially("q"); await waitForReview(page);
+            for (const shortcut of ["Control+x", "Control+v"]) {
+                await primary(page).press(shortcut);
+                if (editor === "candidate") {
+                    const notice = page.getByLabel("Primary source edit feedback", { exact: true });
+                    await expect(notice, shortcut).toBeVisible();
+                    await primary(page).blur(); await expect(notice).toBeHidden(); await primary(page).focus();
+                }
+            }
+            await primary(page).pressSequentially("q"); await waitForReview(page);
             const after = await snapshot(page); await exact(page, normal);
             expect(after.source.revision).toBe(before.source.revision); expect(after.source.exports).toBe(before.source.exports);
             expect(after.history).toEqual(before.history); expect(after.pendingSaves).toEqual(before.pendingSaves); expect(selections(after)).toEqual(selections(before));

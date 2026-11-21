@@ -47,7 +47,7 @@ export class HostTablePaste {
     };
     private fail(message: string): void { this.cancel(); this.cell.set({ ...this.cell.get(), status: "failed", message }); }
     private paste(session: Session, event: ClipboardEvent): void {
-        if (!this.cell.get().enabled || event.defaultPrevented) return;
+        if (!this.cell.get().enabled || event.defaultPrevented || session.editor.element.hasAttribute("data-read-only")) return;
         event.preventDefault(); this.cancel();
         if (!this.validSession(session) || session.editor.activity().composing || !event.clipboardData) { this.fail("Finish composition in an available source view before table paste."); return; }
         const plain = event.clipboardData.getData("text/plain"), html = event.clipboardData.getData("text/html");

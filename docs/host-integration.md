@@ -247,6 +247,12 @@ before removing their nodes. Keep project-level document and recovery services a
 
 ### Input conflict recovery
 
+Listen for `editRefusedEvent` on `editor.element` to explain a blocked keystroke, cut or paste.
+It bubbles within the same DOM root. Its frozen `EditRefusedDetail` contains `documentId` and
+`reason`. A read-only mount or missing human edit permission reports `"read-only"`. An edit
+lease reports `"edit-locked"` on an otherwise editable view. Input that was already pending
+when permission changed follows the recovery path below.
+
 Listen for `inputConflictEvent` (`sttropez-conflict`) on `editor.input` when the editor cannot apply
 input, history or a command. The development textarea fixture dispatches the same event on
 `editor.element`. The event bubbles within its root, cannot be cancelled and stops at a shadow

@@ -97,13 +97,24 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
     });
     test("read-only editing commands cannot change text or shared history while copying and focus navigation remain usable", async ({ page }) => {
         const original = "😀 é\r\nconst sample = 1; // TODO"; await setSource(page, original);
+        await page.getByRole("checkbox", { name: "Paste tables as CSV" }).check();
         await page.getByRole("button", { name: "Open source review", exact: true }).click(); await ready(page);
         await page.evaluate(() => window.hostFixture.setSourceReadOnly(true));
+        const notice = page.getByLabel("Primary source edit feedback", { exact: true });
         await primary(page).press("Control+Home"); await primary(page).press("Shift+ArrowRight");
         expect(await clipboard(primary(page), "copy")).toBe("😀"); const before = await snapshot(page);
+        await expect(notice).toBeHidden();
+        for (const attempt of ["type", "delete", "paste"]) {
+            if (attempt === "paste") await clipboard(primary(page), "paste", "blocked");
+            else await primary(page).press(attempt === "type" ? "x" : "Delete");
+            await expect(notice).toHaveText("This source is read-only.");
+            await expect(notice).toBeVisible(); await expect(primary(page)).toBeFocused();
+            await primary(page).blur(); await expect(notice).toBeHidden(); await primary(page).focus();
+        }
         for (const key of ["Backspace", "Delete", "Tab", "Shift+Tab", "Control+z", "Control+Shift+z"]) await primary(page).press(key);
         await primary(page).pressSequentially("(human)"); await clipboard(primary(page), "cut"); await clipboard(primary(page), "paste", "rejected\r\ntext"); await ready(page);
         const after = await snapshot(page); expect(after.source.revision).toBe(before.source.revision); expect(after.history).toEqual(before.history); expect(await source(page)).toBe(original);
+        expect(after.inputRecovery).toEqual(before.inputRecovery);
         await primary(page).press("Escape"); await primary(page).press("Tab"); await expect(page.getByRole("textbox", { name: "Configuration path", exact: true })).toBeFocused();
         await page.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await primary(page).press("Control+End"); await primary(page).pressSequentially("!");
         expect(await source(page)).toBe(original + "!"); await primary(page).press("Control+z"); expect(await source(page)).toBe(original);

@@ -4,6 +4,10 @@ import type { TextEdit } from "../core/changes.ts";
 /** Dispatched on the editor's input. Bubbles within its root; does not cross shadow boundaries. */
 export const inputConflictEvent = "sttropez-conflict";
 
+/** Bubbles from the editor root when read-only authority prevents an input gesture. */
+export const editRefusedEvent = "sttropez-edit-refused";
+export type EditRefusedDetail = Readonly<{ documentId: DocumentId; reason: "read-only" | "edit-locked" }>;
+
 /** A recovery notification, not permission to apply an edit. Validate external event details. */
 export type InputConflictDetail = Readonly<{
     documentId: DocumentId;

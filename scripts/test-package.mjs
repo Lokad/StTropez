@@ -408,6 +408,7 @@ try {
     const readonlyIndent = [];
     for (const outdent of [false, true]) {
         const result = await page.evaluate(outdent => window.consumer.readonlyIndent(outdent), outdent);
+        assert.deepEqual(result.refusals, ["read-only", "edit-locked"]);
         assert.equal(result.lockedAtHandler, true); assert.equal(result.revision, 0); assert.equal(result.sameText, true);
         assert.equal(result.undoAfter, result.undoBefore); assert.equal(result.exports, 0); readonlyIndent.push(result);
     }

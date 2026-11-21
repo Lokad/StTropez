@@ -1,11 +1,11 @@
 import { Workspace, TextBuffer, TextDiff, WordCursor, importText, exportText, anchoredRange, composePositionMaps, createGraphemeCursor } from "sttropez";
-import { inputConflictEvent, createFontAssetController, createFindController, createRegexFindBackend, mountTextComparison, mountTextViewport, mountTextEditor } from "sttropez/browser";
+import { editRefusedEvent, inputConflictEvent, createFontAssetController, createFindController, createRegexFindBackend, mountTextComparison, mountTextViewport, mountTextEditor } from "sttropez/browser";
 import * as browserApi from "sttropez/browser";
 import { fontFixture } from "./font-fixture.js";
 import { WorkspaceCommands } from "sttropez";
 import { createSelectionSet, planSelectionEdits } from "sttropez";
 import type { ResourceVisibility, SaveReview } from "sttropez";
-import type { FindDiagnostics, FindReason, TextComparisonDiagnostics, InputConflictDetail, LinePrompt, PresentedLine, TextComparisonOptions, TextComparisonSnapshot, TextViewportOptions } from "sttropez/browser";
+import type { EditRefusedDetail, FindDiagnostics, FindReason, TextComparisonDiagnostics, InputConflictDetail, LinePrompt, PresentedLine, TextComparisonOptions, TextComparisonSnapshot, TextViewportOptions } from "sttropez/browser";
 import { JsonRpcConnection } from "sttropez/protocol";
 import { openWebSocketTransport } from "sttropez/browser";
 const workspace = new Workspace();
@@ -293,14 +293,26 @@ const fixture = { text: () => workspace.document(documentId).text(),
         const tab = model.tabs.open({ kind: "text", documentId: source.documentId }, "locked-command"), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
         const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored locked command" });
         try {
+            const refusals: EditRefusedDetail["reason"][] = [];
+            host.addEventListener(editRefusedEvent, event => {
+                const detail = (event as CustomEvent<EditRefusedDetail>).detail;
+                if (detail.documentId !== source.documentId || !Object.isFrozen(detail) || detail.reason !== editor.element.dataset.readOnly)
+                    throw new Error("Refusal did not identify the mounted document and its current authority.");
+                refusals.push(detail.reason);
+            }, { signal: editor.signal });
             editor.view.setSelection(0, { anchor: 0, head: text.length }); model.setCapabilities(source.id, { edit: ["host"], save: true, run: true });
+            editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: "x", bubbles: true, cancelable: true }));
             const before = model.observeHistory(source.documentId).getSnapshot(); let lockedAtHandler = false;
             editor.input.addEventListener("keydown", () => { lockedAtHandler = editor.input.readOnly;
                 queueMicrotask(() => model.setCapabilities(source.id, { edit: ["human", "host"], save: true, run: true })); }, { once: true });
             editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: outdent, bubbles: true, cancelable: true }));
             await new Promise<void>(resolve => { let turns = 16; const step = () => { if (--turns) setTimeout(step, 0); else resolve(); }; setTimeout(step, 0); });
+            const lease = model.acquireEditLease(source.id, "consumer", "host");
+            try { editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })); }
+            finally { lease.release(); }
+            if (editor.element.hasAttribute("data-read-only") || editor.input.readOnly) throw new Error("Editor remained locked after lease release.");
             const current = model.document(source.documentId);
-            return { outdent, lockedAtHandler, revision: current.revision, sameText: current.buffer.slice(0, text.length) === text,
+            return { outdent, lockedAtHandler, refusals, revision: current.revision, sameText: current.buffer.slice(0, text.length) === text,
                 undoBefore: before.undoDepth, undoAfter: model.observeHistory(source.documentId).getSnapshot().undoDepth, exports: current.buffer.readMetrics().textExports };
         } finally { editor.dispose(); host.remove(); model.tabs.close(tab); model.releaseResource(source.id, true); }
     },

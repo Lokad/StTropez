@@ -11,7 +11,9 @@ function fixture() {
     const timers = new Map<number, () => void>(); let serial = 0, composing = false;
     const owner = { defaultView: { performance, setTimeout: (work: () => void) => { timers.set(++serial, work); return serial; }, clearTimeout: (id: number) => timers.delete(id) }, activeElement: null };
     const input = Object.assign(new EventTarget(), { ownerDocument: owner });
-    const editor = { view, input, element: { ownerDocument: owner, isConnected: true }, activity: () => ({ composing, disposed: false }), captureView: () => {},
+    const editor = { view, input, element: { ownerDocument: owner, isConnected: true, hasAttribute: (name: string) =>
+        name === "data-read-only" && (!source.metadata.getSnapshot().capabilities.edit.includes("human") || source.metadata.getSnapshot().editLock !== null) },
+        activity: () => ({ composing, disposed: false }), captureView: () => {},
         captureInsertion: () => captureInsertion(workspace, workspace.tabs.capture(tab), view, () => !composing,
             (plan, revision) => workspace.edit({ documentId: source.documentId, expectedRevision: revision, edits: plan.edits, selectionSet: plan.selectionSet, origin: "human", view, history: { kind: "paste" } }).applied, () => {}),
         focus: () => { throw new Error("Table paste must not focus a later editor."); } } as unknown as TextEditor;

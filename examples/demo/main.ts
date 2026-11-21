@@ -1,5 +1,5 @@
-import { mountTextEditor, mountTextComparison, createFindController, createRegexFindBackend, createFoldingController } from "../../src/browser/index.ts";
-import type { TextEditor, FindController, TextComparison, FoldingController, DecorationLayer, DecorationProvider } from "../../src/browser/index.ts";
+import { mountTextEditor, mountTextComparison, createFindController, createRegexFindBackend, createFoldingController, editRefusedEvent } from "../../src/browser/index.ts";
+import type { EditRefusedDetail, TextEditor, FindController, TextComparison, FoldingController, DecorationLayer, DecorationProvider } from "../../src/browser/index.ts";
 import { discoverIndentationFolds } from "../../src/index.ts";
 import { DemoProject } from "./project.ts";
 import { linePrompt } from "../shared/line-prompt.ts";
@@ -320,6 +320,14 @@ function mountFile(file: DemoFile, focus = false): void {
     folding = mountDemoFolding(project, editor, () => editingConfiguration().tabSize!);
     stopFolding = foldMenu.bind(editor, folding, comparison ? "Your changes" : "Source");
     viewListeners = new AbortController();
+    surface.addEventListener(editRefusedEvent, event => {
+        if (!project) return;
+        const { reason } = (event as CustomEvent<EditRefusedDetail>).detail;
+        project.message = reason === "edit-locked" ? "This file is locked for editing."
+            : event.target === comparison?.panes.reference.element ? "The saved copy is read-only. Edit your working copy."
+            : file.name + " is read-only.";
+        element("status").textContent = project.message;
+    }, { signal: viewListeners.signal });
     editor.input.addEventListener("compositionstart", renderMetadata, { signal: viewListeners.signal });
     editor.input.addEventListener("compositionend", renderMetadata, { signal: viewListeners.signal });
     editor.element.addEventListener("keydown", event => {
@@ -448,6 +456,11 @@ function openFind(replace = false): void {
 }
 function closeFind(): void { element("find-bar").hidden = true; find?.cancel(); editor?.focus(); }
 const on = (id: string, action: () => void) => element(id).addEventListener("click", action, { signal: listeners.signal });
+element("panel-content").addEventListener(editRefusedEvent, () => {
+    if (!project || panel !== "javascript") return;
+    project.message = "Generated JavaScript is read-only. Edit the TypeScript source.";
+    element("status").textContent = project.message;
+}, { signal: listeners.signal });
 on("find-toggle", () => openFind()); on("find-close", closeFind);
 on("find-regex", () => {
     const toggle = button("find-regex"), enabled = toggle.getAttribute("aria-pressed") !== "true";
