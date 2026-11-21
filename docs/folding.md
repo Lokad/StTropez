@@ -68,6 +68,12 @@ unavailable targets. Invalid public ranges throw before publication. `createFold
 validates a complete set against a buffer and optional prior regions without publishing it.
 A range ending at the next row's start leaves that row visible.
 
+`setCollapsed` accepts one region ID or an array of IDs. An empty array or an unknown ID
+returns `false` and leaves every region as it was. By default, selections keep their source
+offsets. Pass `{ moveHiddenCarets: true }` to move insertion carets hidden by the collapse to
+the end of the visible header. Carets that land together merge. Nonempty selections keep both
+endpoints. Subscribers see the new folds and selections together.
+
 Fold anchors follow edits, undo and redo. Deleting a boundary expands its region. Degenerate, merged
 or crossing ranges lose their definitions. Undo restores the text. To restore an invalidated fold,
 publish fresh ranges. Folding leaves history and dirty state untouched.
@@ -147,11 +153,11 @@ and collapse policy.
 
 `FoldCommand` accepts `collapse`, `expand`, `collapse-all` or `expand-all`, optionally filtered by
 group. Enable controls with `canRunCommand(command, group)`. `runCommand` rechecks the caret, group,
-collapse state and availability. Ctrl/Cmd+Shift+[ and Ctrl/Cmd+Shift+] act at the caret. Collapsing
-shows the header and preserves hidden selection endpoints. Busy or unavailable views reject the
-command.
+collapse state and availability. Ctrl/Cmd+Shift+[ and Ctrl/Cmd+Shift+] act at the caret.
+Collapsing with a command or gutter button moves each newly hidden insertion caret to the end
+of its header. Typing there edits the header. Busy or unavailable views reject the command.
 
-A collapsed logical caret paints at its header. Arrow/Page traversal skips hidden rows.
+A caret left inside a fold by a host paints at its header. Arrow/Page traversal skips hidden rows.
 Explicit selection, typing, Find and reveal expand hidden targets. Fold buttons stay outside the Tab order. A focused button toggles
 with Enter or Space and keeps keyboard focus. Clicking a disclosure returns focus to the editor input,
 as does pressing Escape on the button. Buttons capture tab, revision and fold

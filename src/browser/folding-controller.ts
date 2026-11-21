@@ -1,5 +1,5 @@
 import { Store } from "../core/observable.ts";
-import { createFoldRegions } from "../core/folding.ts";
+import { lineContentEnd } from "../core/language-edits.ts";
 import { reconcileFoldRanges } from "../core/fold-discovery.ts";
 import type { DiscoveredFold } from "../core/fold-discovery.ts";
 import { ownsTextSurface } from "../core/workspace.ts";
@@ -114,16 +114,11 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
             const chosen = collapse ? candidates.at(-1) : candidates[0]; candidates = chosen ? [chosen] : [];
         }
         if (!candidates.length) return false;
-        const ids = new Set(candidates.map(range => range.id));
-        const ranges = createFoldRegions(document.buffer, before.regions.map(range => ids.has(range.id) ? { ...range, collapsed: collapse } : range), before.regions);
-        const latest = view.folding.getSnapshot();
-        if (!available() || latest.revision !== document.revision || latest.regions !== before.regions) return false;
-        const applied = view.folding.setRanges(latest, ranges);
+        const applied = view.folding.setCollapsed(before, candidates.map(range => range.id), collapse, { moveHiddenCarets: true });
         if (applied) {
-            // Collapse changes projection, not the logical selection. Reveal the visible header
-            // edge instead of the hidden head, since revealOffset would otherwise reopen it.
+            // A nonempty selection can intentionally end in the hidden body.
             const hidden = view.folding.getSnapshot().index.hiddenBy(line);
-            editor.viewport.revealOffset(hidden ? document.buffer.offsetAt(hidden.lineFrom + 1) - 1 : state.selection.head);
+            editor.viewport.revealOffset(hidden ? lineContentEnd(document.buffer, hidden.lineFrom) : view.getSnapshot().selection.head);
             editor.focus();
         }
         return applied;

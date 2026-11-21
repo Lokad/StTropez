@@ -94,6 +94,10 @@ const fixture = { text: () => workspace.document(documentId).text(),
             editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })); await wait();
             if (view.getSnapshot().selection.head !== footer || view.getSnapshot().selectionSet.ranges.length !== 2) throw new Error("Compiled folded navigation lost a target or secondary caret.");
             const at = Math.floor(footer / 2);
+            view.setSelections(0, [{ anchor: at, head: at }, { anchor: original.length, head: original.length }]);
+            if (!view.folding.setCollapsed(view.folding.getSnapshot(), ["body"], true, { moveHiddenCarets: true })
+                || view.getSnapshot().selection.head !== "header".length || view.getSnapshot().selectionSet.ranges[1]?.head !== original.length)
+                throw new Error("Compiled collapse did not keep insertion carets on visible rows.");
             let forwarded = false;
             const stop = model.onDocumentChange(source.documentId, (change, afterDelivery) => {
                 afterDelivery(() => {

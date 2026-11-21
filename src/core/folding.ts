@@ -13,7 +13,7 @@ export type FoldVersion = Readonly<{ revision: number; generation: number }>;
 export type FoldingSnapshot = FoldVersion & Readonly<{ regions: readonly FoldRegion[]; index: FoldIndex }>;
 export type DocumentFolding = Observable<FoldingSnapshot> & Readonly<{
     setRanges: (expected: FoldVersion, ranges: readonly FoldRange[]) => boolean;
-    setCollapsed: (expected: FoldVersion, id: string, collapsed: boolean) => boolean;
+    setCollapsed: (expected: FoldVersion, ids: string | readonly string[], collapsed: boolean, options?: Readonly<{ moveHiddenCarets?: boolean }>) => boolean;
     reveal: (expected: FoldVersion, from: number, to?: number) => boolean;
     revealSelection: (expected: FoldVersion) => boolean;
 }>;
@@ -106,8 +106,17 @@ export function mapFoldRegions(buffer: TextBuffer, mapping: PositionMapping, reg
     return sameFoldRegions(regions, mapped) ? regions : mapped.length ? retain(mapped) : empty;
 }
 /** Internal state-only change; geometry was validated when the regions were installed. */
-export function collapseFoldRegion(regions: readonly FoldRegion[], id: string, collapsed: boolean): readonly FoldRegion[] {
-    return retain(regions.map(r => r.id === id ? Object.freeze({ ...r, collapsed }) : r));
+export function collapseFoldRegions(regions: readonly FoldRegion[], ids: string | readonly string[], collapsed: boolean): readonly FoldRegion[] | undefined {
+    if ((typeof ids !== "string" && !Array.isArray(ids)) || typeof collapsed !== "boolean") return;
+    const remaining = new Set(typeof ids === "string" ? [ids] : ids);
+    if (!remaining.size) return;
+    let changed = false;
+    const next = regions.map(region => {
+        if (!remaining.delete(region.id) || region.collapsed === collapsed) return region;
+        changed = true;
+        return Object.freeze({ ...region, collapsed });
+    });
+    if (!remaining.size) return changed ? retain(next) : regions;
 }
 export function revealFoldRange(buffer: TextBuffer, regions: readonly FoldRegion[], from: number, to = from, index?: FoldIndex): readonly FoldRegion[] {
     if (!integer(from) || !integer(to) || to < from || to > buffer.length) throw new RangeError("Invalid fold reveal range.");

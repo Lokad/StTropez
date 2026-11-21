@@ -53,6 +53,31 @@ test("fold commands capture view/revision/generation and keep source, history an
     } finally { f.finish(); }
 });
 
+test("a group collapse publishes both visible carets and folds together or leaves both alone", () => {
+    const f = fixture();
+    try {
+        const folds = f.view.folding, buffer = f.model.document(f.source.documentId).buffer;
+        const second = buffer.offsetAt(2);
+        folds.setRanges(folds.getSnapshot(), [{ id: "first", from: 0, to: second }, { id: "second", from: second, to: buffer.length }]);
+        f.view.setSelections(0, [{ anchor: 9, head: 9 }, { anchor: buffer.length, head: buffer.length }], 1);
+        const before = folds.getSnapshot(), viewBefore = f.view.getSnapshot(), peerBefore = f.peer.getSnapshot();
+        const observations: { heads: number[]; count: number }[] = [];
+        const observe = () => observations.push({ heads: f.view.getSnapshot().selectionSet.ranges.map(r => r.head), count: folds.getSnapshot().index.collapsedCount });
+        const stopView = f.view.subscribe(observe), stopFolds = folds.subscribe(observe);
+        try {
+            const options = { moveHiddenCarets: true };
+            assert.equal(folds.setCollapsed(before, ["first", "unknown"], true, options), false);
+            assert.equal(folds.setCollapsed(before, [], true, options), false);
+            assert.equal(folds.getSnapshot(), before); assert.equal(f.view.getSnapshot(), viewBefore);
+            assert.equal(folds.setCollapsed(before, ["second", "first"], true, options), true);
+            assert.deepEqual(observations, [{ heads: [6, second + "body two".length], count: 2 }]);
+            assert.equal(f.view.getSnapshot().selectionSet.primary, 1);
+            assert.equal(folds.setCollapsed(before, ["first", "second"], false), false);
+            assert.equal(f.peer.getSnapshot(), peerBefore);
+        } finally { stopView(); stopFolds(); }
+    } finally { f.finish(); }
+});
+
 test("fold anchors map through interior edits, shared undo/redo and no-op selection requests without exporting text", () => {
     const f = fixture(); try {
         const folds = f.view.folding, before = f.model.document(f.source.documentId).buffer;

@@ -16,7 +16,8 @@ import { createSelectionSet, mapSelectionSet, sameSelectionSet } from "./selecti
 import type { SelectionSet } from "./selections.ts";
 import { NotificationScope, Store } from "./observable.ts";
 import type { Observable } from "./observable.ts";
-import { collapseFoldRegion, createFoldRegions, foldingSnapshot, mapFoldRegions, revealFoldRange, revealSelectionFolds } from "./folding.ts";
+import { collapseFoldRegions, createFoldRegions, foldingSnapshot, mapFoldRegions, revealFoldRange, revealSelectionFolds } from "./folding.ts";
+import { lineContentEnd } from "./language-edits.ts";
 import type { DocumentFolding, FoldingSnapshot, FoldVersion } from "./folding.ts";
 import { equalValue, snapshotValue } from "./values.ts";
 import type { Immutable, SnapshotValue } from "./values.ts";
@@ -330,19 +331,36 @@ export class Workspace {
         const lease = Object.freeze({ resourceId: record.handle.id, active: () => record.leases.has(retention), release: () => { record.leases.delete(retention); this.scheduleRelease(record.handle.id); } });
         const foldTarget = (expected: FoldVersion) => record.views.has(viewId) && record.state.get().state === "ready" && expected !== null && typeof expected === "object"
             && record.state.get().revision === expected.revision && folds.get().generation === expected.generation;
-        const setFoldRegions = (regions: FoldingSnapshot["regions"]): boolean => {
+        const setFoldRegions = (regions: FoldingSnapshot["regions"], moveHiddenCarets = false): boolean => {
             const previous = folds.get(); if (regions === previous.regions) return true;
             this.scope.assertWritable();
             const next = foldingSnapshot(record.buffer!, previous.revision, previous.generation + 1, regions, previous);
-            if (!previous.index.sameProjection(next.index)) this.history.seal(id);
-            this.scope.publish(folds, next); return true;
+            const projectionChanged = !previous.index.sameProjection(next.index);
+            const changed = new Set<Store<unknown>>();
+            if (moveHiddenCarets && projectionChanged) {
+                const selected = state.get().selectionSet, buffer = record.buffer!;
+                let moved = false;
+                const ranges = selected.ranges.map(range => {
+                    if (range.anchor !== range.head) return range;
+                    const line = buffer.lineAt(range.head), hidden = next.index.hiddenBy(line);
+                    if (!hidden || previous.index.hiddenBy(line)?.id === hidden.id) return range;
+                    const head = lineContentEnd(buffer, hidden.lineFrom);
+                    moved = true;
+                    return { anchor: head, head, anchorAffinity: "before" as const, headAffinity: "before" as const };
+                });
+                if (moved) state.set(viewSnapshot(id, previous.revision, createSelectionSet(buffer.length, ranges, selected.primary)), changed);
+            }
+            if (projectionChanged) this.history.seal(id);
+            folds.set(next, changed);
+            this.scope.deliver([...changed]);
+            return true;
         };
         const folding: DocumentFolding = Object.freeze({ ...folds.observable,
             setRanges: (expected, ranges) => foldTarget(expected) && setFoldRegions(createFoldRegions(record.buffer!, ranges, folds.get().regions)),
-            setCollapsed: (expected, id, collapsed) => {
+            setCollapsed: (expected, ids, collapsed, options) => {
                 if (!foldTarget(expected)) return false;
-                const previous = folds.get().regions, region = previous.find(r => r.id === id); if (!region) return false; if (region.collapsed === collapsed) return true;
-                return setFoldRegions(collapseFoldRegion(previous, id, collapsed));
+                const regions = collapseFoldRegions(folds.get().regions, ids, collapsed);
+                return !!regions && setFoldRegions(regions, collapsed && options?.moveHiddenCarets === true);
             },
             reveal: (expected, from, to) => foldTarget(expected) && setFoldRegions(revealFoldRange(record.buffer!, folds.get().regions, from, to, folds.get().index)),
             revealSelection: expected => foldTarget(expected) && setFoldRegions(revealSelectionFolds(record.buffer!, folds.get().regions, state.get().selectionSet, folds.get().index)) });

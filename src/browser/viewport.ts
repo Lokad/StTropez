@@ -738,7 +738,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const button = foldButton(event.target); if (!button) return; event.stopPropagation();
         if (disposed || !live() || inputOwner?.composing) return;
         const binding = inputOwner;
-        const changed = view.folding.setCollapsed({ revision: Number(button.dataset.revision), generation: Number(button.dataset.generation) }, button.dataset.fold!, button.getAttribute("aria-expanded") === "true");
+        const changed = view.folding.setCollapsed({ revision: Number(button.dataset.revision), generation: Number(button.dataset.generation) }, button.dataset.fold!,
+            button.getAttribute("aria-expanded") === "true", { moveHiddenCarets: true });
         // The second click can arrive before the next frame. Publish the new disclosure
         // generation before another activation reads the old button.
         if (changed) flush();

@@ -2,6 +2,28 @@ import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 
+test("collapsing from a body caret moves it to the header for navigation and typing", async ({ page }) => {
+    await page.goto("/editing/");
+    await page.evaluate(() => {
+        const f = window.editingFixture; f.setText("head\r\nbody\r\nlast\r\ntail");
+        f.discoverFolds(() => [{ from: 0, to: 18, group: "block" }]);
+        f.select("primary", { anchor: 8, head: 8 }); f.select("secondary", { anchor: 13, head: 13 });
+    });
+    const source = input(page), fold = page.locator("#primary .st-fold-button");
+    await expect(fold).toHaveAttribute("aria-expanded", "true"); await source.press("Control+Shift+BracketLeft");
+    await expect(fold).toHaveAttribute("aria-expanded", "false");
+    const current = () => page.evaluate(() => window.editingFixture.selectionSet().ranges[0]);
+    expect(await current()).toMatchObject({ anchor: 4, head: 4 });
+    await source.press("ArrowDown"); await ready(page); expect(await current()).toMatchObject({ anchor: 22, head: 22 });
+    await expect(fold).toHaveAttribute("aria-expanded", "false");
+    expect((await page.evaluate(() => window.editingFixture.snapshot())).secondary.selection).toMatchObject({ anchor: 13, head: 13 });
+    await fold.click(); await page.evaluate(() => window.editingFixture.selections([{ anchor: 7, head: 7 }, { anchor: 14, head: 14 }], 1));
+    await fold.click(); await expect(source).toBeFocused();
+    expect(await page.evaluate(() => window.editingFixture.selectionSet().ranges.length)).toBe(1);
+    await page.keyboard.type("X"); await expect(page.locator("#primary .st-viewport-row").first()).toHaveText("headX");
+    expect(await page.evaluate(() => window.editingFixture.range(0, 23))).toBe("headX\r\nbody\r\nlast\r\ntail");
+});
+
 test("a pointer fold returns to typing while keyboard activation keeps the disclosure focused", async ({ page }) => {
     await page.goto("/editing/");
     await page.evaluate(() => {
@@ -94,7 +116,7 @@ test("group folding preserves every selection and typing replaces the retained h
     expect((await page.evaluate(() => window.editingFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
 });
 
-test("nested fold shortcuts keep the logical caret and project it to the header until navigation", async ({ page }) => {
+test("nested fold shortcuts move insertion carets to each visible header and preserve child folds", async ({ page }) => {
     await page.goto("/editing/");
     const text = "outer\r\n  first\r\n    second\r\n  third\r\ntail", at = text.indexOf("second") + 3;
     await page.evaluate(({ text, at }) => {
@@ -104,23 +126,20 @@ test("nested fold shortcuts keep the logical caret and project it to the header 
     }, { text, at });
     await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready"); await ready(page);
     const before = await page.evaluate(() => window.editingFixture.snapshot());
-    const shortcut = async (key: string, collapsed: boolean[]) => {
+    const shortcut = async (key: string, collapsed: boolean[], head: number) => {
         await page.keyboard.press(key); await ready(page);
         const after = await page.evaluate(() => window.editingFixture.snapshot());
-        expect(after.primary.selection).toEqual(before.primary.selection); expect(after.history).toEqual(before.history);
+        expect(after.primary.selection).toMatchObject({ anchor: head, head }); expect(after.history).toEqual(before.history);
         expect((await page.evaluate(() => window.editingFixture.folding())).regions.map(r => r.collapsed)).toEqual(collapsed);
     };
-    await shortcut("Control+Shift+[", [false, true]);
-    await shortcut("Control+Shift+[", [true, true]);
+    await shortcut("Control+Shift+[", [false, true], text.indexOf("\r\n", text.indexOf("first")));
+    await shortcut("Control+Shift+[", [true, true], 5);
     const projected = await page.evaluate(at => { const f = window.editingFixture; return { hidden: f.coords(at), header: f.coords(5) }; }, at);
     expect(projected.hidden?.left).toBe(projected.header!.left); expect(projected.hidden?.top).toBe(projected.header!.top);
     await expect(page.locator("#primary .st-input-caret")).toBeVisible();
-    await shortcut("Control+Shift+]", [false, true]);
-    await shortcut("Control+Shift+]", [false, false]);
-    await shortcut("Control+Shift+[", [false, true]);
-    await page.keyboard.press("ArrowRight"); await ready(page);
-    expect((await page.evaluate(() => window.editingFixture.snapshot())).primary.selection).toMatchObject({ anchor: at + 1, head: at + 1 });
-    expect((await page.evaluate(() => window.editingFixture.folding())).regions.map(r => r.collapsed)).toEqual([false, false]);
+    await shortcut("Control+Shift+]", [false, true], 5);
+    await page.keyboard.press("ArrowDown"); await ready(page);
+    await shortcut("Control+Shift+]", [false, false], text.indexOf("  first") + 5);
     await page.evaluate(() => window.editingFixture.dispose());
     expect((await page.evaluate(() => window.editingFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
 });
@@ -286,8 +305,13 @@ test("a 100k-line fold keeps row work bounded, maps edits and undo, and reveals 
     await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
     expect(await page.evaluate(() => window.editingFixture.foldCommand("collapse-all", "large"))).toBe(true); await ready(page);
     state = await page.evaluate(() => window.editingFixture.snapshot());
-    expect(state.primary.selection).toMatchObject({ anchor: middle, head: middle });
+    expect(state.primary.selection).toMatchObject({ anchor: 5, head: 5 });
     expect(state.primary.viewport.rows).toBe(2); expect(state.primary.inputUnits).toBeLessThanOrEqual(2600);
+    // A host can still restore a logical caret inside a fold. Input must edit its raw offset.
+    await page.evaluate(middle => {
+        const f = window.editingFixture; f.select("primary", { anchor: middle, head: middle });
+        f.folds([{ id: "many", from: 0, to: f.snapshot().document!.length - 3, collapsed: true }]);
+    }, middle); await ready(page);
     await input(page).pressSequentially("!"); await ready(page); state = await page.evaluate(() => window.editingFixture.snapshot());
     expect(state.primary.selection.head).toBe(middle + 1); expect(state.primary.viewport.visibleLines).toBe(100002); expect(state.document!.exports).toBe(0);
     expect(await page.evaluate(at => window.editingFixture.range(at, at + 5), middle)).toBe("!" + text.slice(middle, middle + 4));
