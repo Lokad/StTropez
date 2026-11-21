@@ -60,6 +60,22 @@ test("selecting an empty line paints its ending and active caret, including in f
     await page.keyboard.type("X"); await expect(root.locator(".st-viewport-row")).toHaveText(["X"]);
 });
 
+test("idle carets blink together and stay steady during typing, selection and reduced motion", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "no-preference" }); await page.goto("/editing/");
+    await page.evaluate(() => window.editingFixture.setText("several carets")); await ready(page);
+    const input = page.getByRole("textbox", { name: "Primary source", exact: true });
+    await input.focus(); await page.evaluate(() => window.editingFixture.selections([{ anchor: 0, head: 0 }, { anchor: 8, head: 8 }]));
+    const layer = page.locator("#primary .st-caret-layer");
+    const opacity = () => layer.evaluate(node => getComputedStyle(node).opacity);
+    await expect(layer.locator(".st-input-secondary-caret")).toHaveCount(1);
+    await expect.poll(opacity, { intervals: [80] }).toBe("0");
+    await page.keyboard.type("x"); await ready(page); expect(await opacity()).toBe("1");
+    await input.press("Shift+ArrowRight"); await ready(page);
+    expect(await layer.evaluate(node => node.getAnimations().length)).toBe(0); await expect(layer).toHaveCSS("opacity", "1");
+    await page.emulateMedia({ reducedMotion: "reduce" }); await input.press("ArrowRight"); await ready(page);
+    expect(await layer.evaluate(node => node.getAnimations().length)).toBe(0);
+});
+
 test("double and triple click drags extend by whole words and lines in both directions", async ({ page }) => {
     await page.goto("/editing/");
     await page.evaluate(() => window.editingFixture.setText("one two three\r\nnext four\nlast"));

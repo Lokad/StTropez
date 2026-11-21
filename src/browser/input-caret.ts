@@ -1,6 +1,7 @@
 import { clientBox } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
 import { partitionPoint } from "../core/bound-search.ts";
+import type { SelectionSet } from "../core/selections.ts";
 import type { DocumentSnapshot, DocumentView } from "../core/workspace.ts";
 import type { TextViewport } from "./viewport.ts";
 
@@ -8,12 +9,15 @@ import type { TextViewport } from "./viewport.ts";
 export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement, view: DocumentView,
     viewport: TextViewport, readDocument: () => DocumentSnapshot | undefined, isComposing: () => boolean) {
     const owner = root.ownerDocument, win = owner.defaultView!;
-    const caret = owner.createElement("div"), secondaryCarets = owner.createElement("div");
+    const group = owner.createElement("div"), caret = owner.createElement("div"), secondaryCarets = owner.createElement("div");
     const caretNodes: HTMLDivElement[] = [];
-    caret.className = "st-input-caret"; caret.setAttribute("aria-hidden", "true");
-    secondaryCarets.setAttribute("aria-hidden", "true"); root.append(caret, secondaryCarets);
+    group.className = "st-caret-layer"; group.setAttribute("aria-hidden", "true");
+    caret.className = "st-input-caret"; group.append(caret, secondaryCarets); root.append(group);
+    const reducedMotion = win.matchMedia("(prefers-reduced-motion: reduce)");
+    let blink: Animation | undefined, blinkSelection: SelectionSet | undefined;
     let disposed = false, frame: number | undefined;
     const schedule = () => { if (!disposed && frame === undefined) frame = win.requestAnimationFrame(positionCaret); };
+    reducedMotion.addEventListener("change", schedule);
     let caretLayout: Readonly<{ state: ReturnType<TextViewport["snapshot"]>; visible: boolean; focused: boolean }> | undefined;
     function positionCaret(): void {
         frame = undefined;
@@ -51,6 +55,7 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
             return lastRow;
         };
         const points = [];
+        let ranged = selected.anchor !== selected.head;
         if (!composing && active && buffer && state.selectionSet === selectionSet && state.lastLine > state.firstLine) {
             const from = buffer.offsetAt(state.firstLine), to = state.lastLine < buffer.lineCount ? buffer.offsetAt(state.lastLine) : buffer.length;
             // Heads of normalized disjoint ranges are ordered. Measure only visible candidates,
@@ -66,6 +71,7 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
                 if (at && at.left >= rectangle.left + state.gutterWidth * rectangle.zoom && at.left < rectangle.right
                     && at.top + at.height > rectangle.top && at.top < rectangle.bottom) {
                     const row = bounds(line); points.push({ left: at.left, top: row?.top ?? at.top, height: row?.height ?? at.height });
+                    if (range.anchor !== range.head) ranged = true;
                 }
             }
         }
@@ -96,14 +102,22 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
             node.style.top = `${scrollTop + (at.top - rectangle.top) / rectangle.zoom}px`;
             node.style.height = `${at.height / rectangle.zoom}px`;
         });
+        // All visible insertion carets share one animation. Typing restarts the solid interval.
+        if ((!caret.hidden || points.length) && !ranged && !reducedMotion.matches) {
+            if (!blink) blink = group.animate([{ opacity: 1, easing: "steps(1, end)" },
+                { opacity: 0, offset: .5, easing: "steps(1, end)" }, { opacity: 1 }], { delay: 400, duration: 1000, iterations: Infinity });
+            else if (blinkSelection !== selectionSet) blink.currentTime = 0;
+            blinkSelection = selectionSet;
+        } else if (blink) { blink.cancel(); blink = undefined; blinkSelection = undefined; }
     }
     return Object.freeze({ schedule, pending: () => frame !== undefined,
         dispose: () => {
             if (disposed) return;
             disposed = true;
             if (frame !== undefined) win.cancelAnimationFrame(frame);
+            reducedMotion.removeEventListener("change", schedule); blink?.cancel(); blink = undefined; blinkSelection = undefined;
             frame = undefined; caretLayout = undefined;
             caretNodes.length = 0; secondaryCarets.replaceChildren();
-            caret.remove(); secondaryCarets.remove();
+            group.remove();
         } });
 }

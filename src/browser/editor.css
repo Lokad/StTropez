@@ -84,6 +84,7 @@
 .st-input-context { position: absolute; width: 1px; min-height: 1px; box-sizing: border-box; padding: 0; margin: 0; border: 0; resize: none; overflow: hidden;
     font: inherit; line-height: inherit; tab-size: inherit; direction: ltr; opacity: 0; }
 .st-composing .st-input-context { width: 240px; max-width: 40%; opacity: 1; color: inherit; background: var(--st-background, #131b27); }
+.st-caret-layer { position: absolute; top: 0; left: 0; pointer-events: none; }
 .st-input-caret, .st-input-secondary-caret { position: absolute; width: 2px; pointer-events: none; background: var(--st-foreground, #e1e7ef); }
 @media (forced-colors: active) {
     .st-viewport .st-viewport-selected { forced-color-adjust: none; background: Highlight; color: HighlightText; }
