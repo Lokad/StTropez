@@ -1,4 +1,49 @@
 import { expect, ready, test } from "./fixtures.ts";
+import type { Page } from "@playwright/test";
+
+async function textPoint(page: Page, offset: number) {
+    const at = await page.evaluate(offset => window.editingFixture.coords(offset), offset);
+    if (!at) throw new Error("Expected a visible text position");
+    return { x: at.left + 1, y: at.top + at.height / 2 };
+}
+
+test("three clicks select the line ending and four select the document", async ({ page }) => {
+    await page.goto("/editing/");
+    await page.evaluate(() => window.editingFixture.setText("one two\r\n\r\nlast"));
+    await ready(page);
+    const selection = () => page.evaluate(() => window.editingFixture.selectionSet().ranges[0]);
+    for (const [offset, anchor, head] of [[2, 0, 9], [9, 9, 11], [13, 11, 15]] as const) {
+        const at = await textPoint(page, offset);
+        await page.mouse.click(at.x, at.y, { clickCount: 3 });
+        expect(await selection()).toMatchObject({ anchor, head });
+    }
+    const last = await textPoint(page, 13);
+    await page.mouse.click(last.x, last.y, { clickCount: 4 });
+    expect(await selection()).toMatchObject({ anchor: 0, head: 15 });
+    await expect(page.getByRole("textbox", { name: "Primary source", exact: true })).toBeFocused();
+    await page.keyboard.type("X"); await expect(page.locator("#primary .st-viewport-row")).toHaveText(["X"]);
+});
+
+test("double and triple click drags extend by whole words and lines in both directions", async ({ page }) => {
+    await page.goto("/editing/");
+    await page.evaluate(() => window.editingFixture.setText("one two three\r\nnext four\nlast"));
+    await ready(page);
+    const start = await textPoint(page, 6), before = await textPoint(page, 1), after = await textPoint(page, 10);
+    await page.mouse.click(start.x, start.y); await page.mouse.down({ clickCount: 2 });
+    await page.mouse.move(after.x, after.y, { steps: 3 });
+    const selection = () => page.evaluate(() => window.editingFixture.selectionSet().ranges[0]);
+    expect(await selection()).toMatchObject({ anchor: 4, head: 13 });
+    await page.mouse.move(before.x, before.y, { steps: 3 }); await page.mouse.up({ clickCount: 2 });
+    expect(await selection()).toMatchObject({ anchor: 7, head: 0 });
+    const middle = await textPoint(page, 17), end = await textPoint(page, 27);
+    await page.mouse.dblclick(middle.x, middle.y); await page.mouse.down({ clickCount: 3 });
+    await page.mouse.move(end.x, end.y, { steps: 3 });
+    expect(await selection()).toMatchObject({ anchor: 15, head: 29 });
+    await page.mouse.move(before.x, before.y, { steps: 3 }); await page.mouse.up({ clickCount: 3 });
+    expect(await selection()).toMatchObject({ anchor: 25, head: 0 });
+    await expect(page.getByRole("textbox", { name: "Primary source", exact: true })).toBeFocused();
+    await page.keyboard.type("X"); await expect(page.locator("#primary .st-viewport-row")).toHaveText(["Xlast"]);
+});
 
 test("Alt-click removes a caret or selection and leaves the last caret ready to type", async ({ page }) => {
     await page.goto("/editing/"); await page.evaluate(() => {
@@ -6,9 +51,8 @@ test("Alt-click removes a caret or selection and leaves the last caret ready to 
         f.selections([{ anchor: 1, head: 1 }, { anchor: 4, head: 7 }]); f.focus("primary");
     }); await ready(page);
     const click = async (offset: number) => {
-        const at = await page.evaluate(offset => window.editingFixture.coords(offset), offset);
-        if (!at) throw new Error("Expected visible pointer target");
-        await page.mouse.click(at.left, at.top + at.height / 2);
+        const at = await textPoint(page, offset);
+        await page.mouse.click(at.x, at.y);
     };
     await page.keyboard.down("Alt");
     try { await click(5); await click(10); await click(1); await click(10); }
@@ -47,16 +91,11 @@ test("a click, modifier tap or selection change cancels Escape before Tab", asyn
 
 test("Shift-clicking on either side of a double-clicked word keeps the whole word", async ({ page }) => {
     await page.goto("/editing/"); await page.evaluate(() => window.editingFixture.setText("left center right")); await ready(page);
-    const point = async (offset: number) => {
-        const at = await page.evaluate(offset => window.editingFixture.coords(offset), offset);
-        if (!at) throw new Error("Expected a visible word");
-        return { x: at.left + 1, y: at.top + at.height / 2 };
-    };
-    const inside = await point(7); await page.mouse.dblclick(inside.x, inside.y);
+    const inside = await textPoint(page, 7); await page.mouse.dblclick(inside.x, inside.y);
     await page.keyboard.down("Shift");
     try {
         for (const [offset, anchor, head] of [[2, 11, 2], [15, 5, 15]] as const) {
-            const at = await point(offset); await page.mouse.click(at.x, at.y);
+            const at = await textPoint(page, offset); await page.mouse.click(at.x, at.y);
             expect(await page.evaluate(() => window.editingFixture.snapshot().primary.selection)).toMatchObject({ anchor, head });
         }
     } finally { await page.keyboard.up("Shift"); }

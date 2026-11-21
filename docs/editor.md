@@ -160,6 +160,9 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Click / Shift+click | One caret / extend the primary range while retaining secondary ranges |
 | Alt+click / Alt+drag / Alt+double-click | Add a caret / range / code-word selection. With several ranges, Alt+click removes the one under the pointer. |
 | Double-click | Select the code-word, symbol or whitespace run within the clicked logical line |
+| Double-click and drag | Extend the selection by whole words in either direction |
+| Triple-click / triple-click and drag | Select a line including its ending / extend by whole lines |
+| Four clicks | Select the entire document |
 
 The focused editor has a solid outline. After Escape the outline becomes dashed and the root
 has the `data-st-tab-escape` attribute. A pointer press, selection change, or intervening key

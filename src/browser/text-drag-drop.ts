@@ -159,6 +159,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
     const resource = workspace.resourceForDocument(view.documentId);
     const subscriptions = [workspace.observeDocument(view.documentId).subscribe(changed), view.subscribe(changed), resource.metadata.subscribe(changed), workspace.tabState.subscribe(changed)];
     return Object.freeze({
+        disarm: clearArm,
         arm: (event: PointerEvent): boolean => {
             clearArm(); const state = current();
             if (!state || event.button !== 0 || event.pointerType && event.pointerType !== "mouse" || event.altKey || event.shiftKey || event.target === input || !(event.target instanceof win.Element)

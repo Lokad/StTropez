@@ -12,6 +12,9 @@ test("a pointer fold returns to typing while keyboard activation keeps the discl
     });
     await ready(page);
     const button = page.locator("#primary .st-fold-button");
+    await button.dblclick();
+    await expect(button).toHaveAttribute("aria-expanded", "true");
+    expect(await page.evaluate(() => window.editingFixture.selectionSet().ranges[0])).toMatchObject({ anchor: 3, head: 3 });
     await button.click();
     await expect(button).toHaveAttribute("aria-expanded", "false");
     await expect(input(page)).toBeFocused();
