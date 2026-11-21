@@ -28,7 +28,7 @@ export type FindHost = Readonly<{
     }> | null }> }>;
     input: FindEvents & Readonly<{ readOnly: boolean }>;
     activity: () => Readonly<{ disposed: boolean; composing: boolean }>;
-    viewport: Readonly<{ revealOffset: (offset: number) => void }>;
+    viewport: Pick<TextEditor["viewport"], "revealRange">;
     focus: () => void;
 }>;
 /** Stable cause of the last published notice, independent of its display message. */
@@ -273,7 +273,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         if (!editor.view.setSelection(store.get().revision, { anchor: from, head: to })) return false;
         navigatedZero = from === to ? { index, selectionSet: editor.view.getSnapshot().selectionSet } : undefined; replacedZero = undefined;
         publish(clearNotice ? { current: index, reason: null, message: "" } : { current: index });
-        editor.viewport.revealOffset(from); return true;
+        editor.viewport.revealRange(from, to); return true;
     }
     function finishAdvance(): void {
         const selection = advanceAfterReplace;
@@ -335,7 +335,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
                 if (head !== undefined) {
                     advanceAfterReplace = editor.view.getSnapshot().selectionSet;
                     if (store.get().status === "ready") finishAdvance();
-                    else editor.viewport.revealOffset(head);
+                    else editor.viewport.revealRange(head, head);
                 }
                 if (focusEditor) editor.focus();
             }

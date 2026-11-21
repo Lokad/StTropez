@@ -8,6 +8,43 @@ test.beforeEach(async ({ page }) => {
     await page.goto("/editing/"); await ready(page);
 });
 
+test("Find keeps visible results stationary and reveals distant, folded and wrapped matches", async ({ page }) => {
+    await page.evaluate(() => {
+        const lines = Array<string>(100000).fill("text");
+        lines[50000] = "match here"; lines[50001] = "next match";
+        lines[90000] = "fold"; lines[90001] = "x".repeat(800) + "match then match";
+        const text = lines.join("\n"), f = window.editingFixture;
+        f.setText(text); f.folds([{ id: "far", from: text.indexOf("fold"), to: text.indexOf("match", text.indexOf("fold")) + 5, collapsed: true }]);
+        f.select("primary", { anchor: 250000, head: 250000 });
+    }); await ready(page);
+    const viewport = page.locator("#primary .st-viewport"), field = page.getByRole("textbox", { name: "Find", exact: true });
+    await viewport.evaluate(root => { root.scrollTop = 49996 * parseFloat(getComputedStyle(root).lineHeight); });
+    await expect(viewport.locator('[data-line="50000"]')).toBeInViewport();
+    await field.fill("match"); await found(page, 4);
+    const position = () => viewport.evaluate(root => [root.scrollTop, root.scrollLeft]);
+    const original = await position();
+    const jump = async (direction: "Next" | "Previous", line: number) => {
+        await page.getByRole("button", { name: direction + " match", exact: true }).click(); await ready(page);
+        const selected = viewport.locator(`[data-line="${line}"] .st-viewport-selected`).first();
+        await expect(selected).toHaveText("match");
+        expect(await selected.evaluate(node => {
+            const root = node.closest(".st-viewport")!, rect = node.getBoundingClientRect(), box = root.getBoundingClientRect();
+            const gutter = root.querySelector(".st-viewport-gutter")!.getBoundingClientRect();
+            return rect.left >= gutter.right - 1 && rect.right <= box.left + root.clientLeft + root.clientWidth + 1
+                && rect.top >= box.top - 1 && rect.bottom <= box.top + root.clientTop + root.clientHeight + 1;
+        })).toBe(true);
+    };
+    await jump("Next", 50000); expect(await position()).toEqual(original);
+    await jump("Next", 50001); expect(await position()).toEqual(original);
+    await jump("Previous", 50000); expect(await position()).toEqual(original);
+    await jump("Previous", 90001); expect((await position())[1]).toBeGreaterThan(0);
+    expect(await page.evaluate(() => window.editingFixture.folding().index.collapsedCount)).toBe(0);
+    const far = await position();
+    await jump("Previous", 90001); expect(await position()).toEqual(far);
+    await jump("Next", 90001); expect(await position()).toEqual(far);
+    await jump("Next", 50000);
+});
+
 test("literal find paints a zero-width space without widening the matched text", async ({ page }) => {
     await page.evaluate(() => window.editingFixture.setText("a\u200bb")); await ready(page);
     await page.addStyleTag({ content: "#primary { --st-search-current-border: rgb(255, 0, 213); }" });

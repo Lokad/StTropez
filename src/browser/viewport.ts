@@ -66,7 +66,9 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     invalidate: () => void;
     /** Immutable painted identities and scheduled-work state; reused while unchanged. Does not flush or measure layout. */
     activity: () => ViewportActivity;
-    revealOffset: (offset: number, options?: RevealOptions) => void; snapshot: () => ViewportSnapshot; dispose: () => void }>;
+    revealOffset: (offset: number, options?: RevealOptions) => void;
+    revealRange: (from: number, to: number) => void;
+    snapshot: () => ViewportSnapshot; dispose: () => void }>;
 type Row = Readonly<{ line: number; start: number; end: number; breakEnd: number; from: number; to: number; text: string; left: number; complete: boolean; endsLine: boolean }>;
 /** CRLF has two raw positions at one painted line edge. Keep the requested model offset. */
 function rowCaretOffset(buffer: TextBuffer, end: number, offset: number): number | undefined {
@@ -203,7 +205,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     let preparedRows: Readonly<{ revision: number; selectionSet: SelectionSet; element: HTMLDivElement; rows: Map<number, CommandRow> }> | undefined;
     const clearPreparedRows = () => { if (preparedRows) { preparedRows.element.remove(); preparedRows.element.replaceChildren(); preparedRows.rows.clear(); preparedRows = undefined; } };
     let anchor: Readonly<{ revision: number; offset: number; topRemainder: number; leftRemainder: number; aligned?: true }> | undefined;
-    let reveal: Readonly<{ revision: number; foldGeneration: number; offset: number; horizontal: "center" | "nearest"; vertical: "center" | "nearest"; affinity: Affinity }> | undefined;
+    let reveal: Readonly<{ revision: number; foldGeneration: number; offset: number; end?: number; horizontal: "center" | "nearest"; vertical: "center" | "nearest"; affinity: Affinity }> | undefined;
     let horizontalAnchor: ViewState["horizontalAnchor"];
     let fragmentPlacement: Readonly<{ revision: number; line: number; from: number; to: number; left: number; shift: number }> | undefined;
     let measuredWidth = 0, measuredFont = "", measuredRevision: number | null = null, spacerWidth = -1;
@@ -347,7 +349,11 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             }
             anchor = current.change?.previousRevision === anchor.revision
                 ? { ...anchor, revision: current.revision, offset: current.change.mapping.map(anchor.offset, "before").offset } : undefined;
-            if (reveal && current.change?.previousRevision === reveal.revision) reveal = { ...reveal, revision: current.revision, offset: current.change.mapping.map(reveal.offset, reveal.affinity).offset };
+            if (reveal && current.change?.previousRevision === reveal.revision) {
+                const offset = current.change.mapping.map(reveal.offset, reveal.affinity).offset;
+                reveal = { ...reveal, revision: current.revision, offset,
+                    ...(reveal.end !== undefined && { end: Math.max(offset, current.change.mapping.map(reveal.end, "before").offset) }) };
+            }
             if (horizontalAnchor) horizontalAnchor = current.change?.previousRevision === horizontalAnchor.revision
                 ? { ...horizontalAnchor, revision: current.revision, offset: current.change.mapping.map(horizontalAnchor.offset, horizontalAnchor.affinity).offset } : undefined;
             fragmentPlacement = undefined;
@@ -374,6 +380,18 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         return start < scroll + margin ? Math.max(0, start - margin) : start + size > scroll + visible - margin ? Math.max(0, start + size - visible + margin) : scroll;
     };
     const horizontalPosition = (value: number): number => { const margin = Math.min(padding, width / 4); return Math.max(margin, Math.min(width - margin, value)); };
+    // Keep a visible interval still on this axis. For an oversized interval, show its start.
+    const rangeScroll = (start: number, end: number, scroll: number, visible: number): number => {
+        if (Math.abs(end - start) > visible) end = start;
+        if (Math.min(start, end) >= scroll && Math.max(start, end) <= scroll + visible) return scroll;
+        return Math.max(0, (start + end - visible) / 2);
+    };
+    const measuredRangeLeft = (from: number, to: number): number | undefined => {
+        const start = coordinates(from), end = from === to ? start : coordinates(to, "before");
+        if (!start || !end || start.top !== end.top) return;
+        const box = clientBox(root, false, gutterWidth);
+        return rangeScroll(left + (start.left - box.left) / box.zoom, left + (end.left - box.left) / box.zoom, left, width);
+    };
     const row = (buffer: TextBuffer, line: number, scrollLeft = left, navigation = false): Row => {
         const readRow = navigation ? (buffer: TextBuffer, from: number, to: number) => { navigationReadUnits += to - from; return buffer.slice(from, to); } : read;
         const start = buffer.offsetAt(line), end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) - 1 : buffer.length;
@@ -538,11 +556,20 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             const line = document.buffer.lineAt(anchor.offset);
             top = index.rowAt(line) * lineHeight + anchor.topRemainder; left = (anchor.offset - document.buffer.offsetAt(line)) * columnWidth + anchor.leftRemainder;
         } else if (previous && previous.revision !== document.revision && document.change === null) { top = 0; left = 0; }
+        let horizontalEnd: number | undefined;
         if (reveal?.revision === document.revision && reveal.foldGeneration === folds.generation) {
             const line = document.buffer.lineAt(reveal.offset);
-            top = reveal.vertical === "nearest" ? expose(padding + index.rowAt(line) * lineHeight, lineHeight, top, height) : Math.max(0, index.rowAt(line) * lineHeight - height / 2);
             const estimated = padding + (reveal.offset - document.buffer.offsetAt(line)) * columnWidth;
-            left = reveal.horizontal === "nearest" ? expose(estimated, 1, left, width) : Math.max(0, estimated - width / 2);
+            if (reveal.end !== undefined) {
+                const lastLine = document.buffer.lineAt(Math.max(reveal.offset, reveal.end - 1));
+                top = rangeScroll(padding + index.rowAt(line) * lineHeight, padding + (index.rowAt(lastLine) + 1) * lineHeight, top, height);
+                horizontalEnd = document.buffer.lineAt(reveal.end) === line ? reveal.end : reveal.offset;
+                left = measuredRangeLeft(reveal.offset, horizontalEnd)
+                    ?? rangeScroll(estimated, estimated + (horizontalEnd - reveal.offset) * columnWidth, left, width);
+            } else {
+                top = reveal.vertical === "nearest" ? expose(padding + index.rowAt(line) * lineHeight, lineHeight, top, height) : Math.max(0, index.rowAt(line) * lineHeight - height / 2);
+                left = reveal.horizontal === "nearest" ? expose(estimated, 1, left, width) : Math.max(0, estimated - width / 2);
+            }
         }
         const requested = reveal; if (!deferAnchor || requested) anchor = undefined; reveal = undefined;
         x = scrollAxis(Math.max(document.buffer.longestLineLength * columnWidth, measuredWidth) + padding * 2, width);
@@ -693,10 +720,13 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         }));
         if (measured > measuredWidth + .01) { measuredWidth = measured; if (measuredWidth + padding * 2 > x.extent + .01) schedule(); }
         const requestedRow = requested?.revision === document.revision ? rows.get(document.buffer.lineAt(requested.offset)) : undefined;
+        const rangeLeft = requested && horizontalEnd !== undefined ? measuredRangeLeft(requested.offset, horizontalEnd) : undefined;
         if (requestedRow?.dataset.complete === "false") {
             const caret = coordinates(requested!.offset, requested!.affinity), rectangle = clientBox(root, false, gutterWidth);
             if (caret) {
-                const actual = (caret.left - rectangle.left) / rectangle.zoom, desired = requested!.horizontal === "center" ? width / 2 : horizontalPosition(actual);
+                const actual = (caret.left - rectangle.left) / rectangle.zoom;
+                const desired = rangeLeft !== undefined ? actual + left - rangeLeft
+                    : requested!.horizontal === "center" ? width / 2 : horizontalPosition(actual);
                 if (Math.abs(desired - actual) > 1) horizontalAnchor = { revision: document.revision, offset: requested!.offset, affinity: requested!.affinity, left: desired };
             }
         }
@@ -720,7 +750,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             const caret = coordinates(requested.offset, requested.affinity), rectangle = clientBox(root, false, gutterWidth);
             if (caret) {
                 const actual = (caret.left - rectangle.left) / rectangle.zoom + left;
-                const desired = requested.horizontal === "nearest" ? expose(actual, 1, left, width) : Math.max(0, actual - width / 2);
+                const desired = rangeLeft ?? (requested.horizontal === "nearest" ? expose(actual, 1, left, width) : Math.max(0, actual - width / 2));
                 const maximum = Math.max(0, Math.max(document.buffer.longestLineLength * columnWidth, measuredWidth) + padding * 2 - width);
                 if (Math.abs(Math.min(maximum, desired) - left) > 1) { left = Math.min(maximum, desired); schedule(); }
             }
@@ -929,6 +959,15 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             view.folding.reveal(view.folding.getSnapshot(), offset);
             anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             reveal = { revision: document.revision, foldGeneration: view.folding.getSnapshot().generation, offset, horizontal, vertical, affinity }; schedule();
+        },
+        revealRange: (from, to) => {
+            if (disposed || !live()) return;
+            const document = workspace.document(documentId);
+            view.folding.reveal(view.folding.getSnapshot(), from, to);
+            anchor = undefined; horizontalAnchor = undefined;
+            reveal = { revision: document.revision, foldGeneration: view.folding.getSnapshot().generation, offset: from, end: to,
+                horizontal: "nearest", vertical: "nearest", affinity: "after" };
+            schedule();
         },
         snapshot: () => Object.freeze({ ...activity(), selection: renderedSelection, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, visibleLines: previous ? view.folding.getSnapshot().index.visibleLineCount : 0, collapsedFolds: previous ? renderedIndex.collapsedCount : 0, visualRows: previous ? renderedIndex.visibleLineCount : 0, paddingRows: paddingRows.size, naturalLineHeight, navigationReadUnits, navigationRows, navigationBatches, navigationPreparedRows: preparedRows?.rows.size ?? 0, maxNavigationBatchRows, lastRenderMs,
             scrollTop: top, scrollLeft: left, width, height, gutterWidth, lineHeight, columnWidth, verticalExtent: y.extent, horizontalExtent: x.extent,

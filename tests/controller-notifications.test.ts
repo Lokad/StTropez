@@ -10,7 +10,7 @@ for (const kind of ["folding", "highlights"] as const) test(`${kind} commands re
     const tasks = new Map<number, () => void>(); let serial = 0;
     const owner = { defaultView: { performance, setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } };
     const editor = { signal: new AbortController().signal, workspace: f.workspace, tab: f.workspace.tabs.capture(tab), view, element: Object.assign(new EventTarget(), { ownerDocument: owner }), input: Object.assign(new EventTarget(), { getRootNode: () => owner }),
-        activity: () => ({ disposed: false, composing: false }), viewport: { revealOffset: () => {} }, focus: () => {} } as unknown as TextEditor;
+        activity: () => ({ disposed: false, composing: false }), viewport: { revealRange: () => {} }, focus: () => {} } as unknown as TextEditor;
     const controller = kind === "folding" ? createFoldingController(editor, () => [])
         : createLspHighlightController(editor, { provider: f.provider });
     const commands = [controller.refresh, controller.dispose];

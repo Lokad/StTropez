@@ -10,7 +10,7 @@ for (const change of ["permission", "lease", "read-only"] as const) test(`queued
     let serial = 0; const tasks = new Map<number, () => void>();
     const owner = Object.assign(new EventTarget(), { defaultView: { performance, setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, input: Object.assign(new EventTarget(), { readOnly: false }), activity: () => ({ disposed: false, composing: false }),
-        viewport: { revealOffset: () => {} }, focus: () => {} } satisfies FindHost;
+        viewport: { revealRange: () => {} }, focus: () => {} } satisfies FindHost;
     const find = findForView(workspace, workspace.tabs.capture(tab), editor), drain = () => { while (tasks.size) { const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); } };
     try {
         find.setQuery("cat"); drain(); view.setSelections(0, [{ anchor: 0, head: 3 }, { anchor: 7, head: 7 }]);

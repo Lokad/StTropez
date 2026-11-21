@@ -14,7 +14,7 @@ test(`unchanged regex transfer steps preserve snapshot identity and accumulated 
     let serial = 0, now = 0, calls = 0, disposed = false, late: ((step: SearchStep) => void) | undefined;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance: { now: () => now },
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
-    const editor = { view, element: { ownerDocument: owner }, input: Object.assign(new EventTarget(), { readOnly: false }), activity: () => ({ composing: false, disposed: false }), viewport: { revealOffset: () => {} }, focus: () => {} } satisfies FindHost;
+    const editor = { view, element: { ownerDocument: owner }, input: Object.assign(new EventTarget(), { readOnly: false }), activity: () => ({ composing: false, disposed: false }), viewport: { revealRange: () => {} }, focus: () => {} } satisfies FindHost;
     const backend: FindBackend = { dispose: () => { disposed = true; }, replace: () => { throw new Error("Unexpected replacement."); }, search: () => ({
         dispose: () => {}, next: () => {
             calls++; now += calls === 52 ? 80 : calls;
@@ -59,7 +59,7 @@ function fixture(text: string, supplied = true) {
     const tasks = new Map<number, () => void>(), held: (() => void)[] = [], plans: { disposed: boolean; capture: FindQueryCapture }[] = [];
     const owner = Object.assign(new EventTarget(), { defaultView: { performance, setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, input: Object.assign(new EventTarget(), { readOnly: false }), activity: () => ({ disposed: false, composing }),
-        viewport: { revealOffset: () => {} }, focus: () => { focused++; } } satisfies FindHost;
+        viewport: { revealRange: () => {} }, focus: () => { focused++; } } satisfies FindHost;
     const backend: FindBackend = {
         dispose: () => { backendDisposed = true; },
         search: capture => {

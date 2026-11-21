@@ -170,6 +170,12 @@ const fixture = { text: () => workspace.document(documentId).text(),
         let measurements: FindDiagnostics;
         try {
             find.setQuery("(?<value>foo|foobar|k|𐐨)"); await wait("ready"); if (workers || find.getSnapshot().count) throw new Error("Literal mode started a regex worker.");
+            const buffer = model.document(source.documentId).buffer, beforeReveal = editor.view.getSnapshot();
+            editor.viewport.revealRange(buffer.offsetAt(50000), buffer.offsetAt(50003)); editor.viewport.flush();
+            const scrolled = editor.viewport.snapshot().scrollTop;
+            editor.viewport.revealRange(buffer.offsetAt(50001), buffer.offsetAt(50002)); editor.viewport.flush();
+            if (!scrolled || editor.viewport.snapshot().scrollTop !== scrolled || editor.view.getSnapshot() !== beforeReveal)
+                throw new Error("Restored range reveal moved a visible result or changed the selection.");
             find.setFlags({ regularExpression: true, matchCase: false, wholeWord: true }); await wait("ready");
             if (find.getSnapshot().count !== 6 || workers < 1) throw new Error("Compiled regex worker was not used.");
             editor.view.setSelections(0, [{ anchor: 0, head: 6 }, { anchor: original.length, head: original.length }], 1);

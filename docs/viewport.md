@@ -119,6 +119,11 @@ clamp to zero and nonfinite values throw. Large logical extents fit bounded phys
 accepts `"center"` (default) or `"nearest"`. Nearest keeps a visible caret in place. `affinity` takes
 `"before"` or `"after"` (default). Ctrl/Meta-wheel passes through to browser zoom.
 
+`revealRange(from, to)` reveals a half-open UTF-16 range and opens folds that cover it.
+It preserves the scroll position on each axis where the range is visible. Otherwise it centers the range on that
+axis. If the range exceeds the viewport, it exposes the start. For multiline ranges it uses
+the starting column and the full span of rows. The selection stays in place.
+
 Save `captureView()` by document and view ID to restore selections, scroll and folds. `restoreView()`
 checks scroll and anchor values before changing anything. On the same revision, its anchors keep the
 same text in place on both axes. A new, empty view of that document and revision can take the captured
