@@ -1,21 +1,32 @@
 /** Read compatibility only; commands remain explicit and synchronous. */
 export type Observable<T> = Readonly<{ getSnapshot: () => T; subscribe: (listener: () => void) => () => void }>;
 type Deliveries = Map<() => void, (error: unknown) => void>;
+type AfterDelivery = (work: () => void) => void;
+const queueFollowUp = Symbol("subscription follow-up");
+
+function deliver(work: () => void, report: (error: unknown) => void): void {
+    try { work(); } catch (error) {
+        try { report(error); } catch { /* Error reporters cannot interrupt delivery. */ }
+    }
+}
 
 /** All stores publish before delivery. Each callback runs once per publication; reentrant writes are rejected. */
 export class NotificationScope {
-    private readonly delivery: { depth: number; batches: number; pending: Deliveries };
+    private readonly delivery: { depth: number; batches: number; pending: Deliveries; following: (() => void)[]; draining: boolean };
     private subscriptions = 0;
     private readonly onListenerError: (error: unknown) => void;
     constructor(onListenerError?: (error: unknown) => void, parent?: NotificationScope) {
         this.onListenerError = onListenerError ?? parent?.onListenerError ?? (() => {});
-        this.delivery = parent?.delivery ?? { depth: 0, batches: 0, pending: new Map() };
+        this.delivery = parent?.delivery ?? { depth: 0, batches: 0, pending: new Map(), following: [], draining: false };
     }
     assertWritable(): void {
         if (this.delivery.depth) throw new Error("Reentrant mutation during notification; queue the command in the host.");
     }
     subscriptionChanged(delta: number): void { this.subscriptions += delta; }
     subscriptionCount(): number { return this.subscriptions; }
+    [queueFollowUp](work: () => void): void {
+        this.delivery.following.push(() => deliver(work, this.onListenerError));
+    }
     /** Defers shared-scope notifications until this synchronous action ends; committed writes are not rolled back. */
     batch<T>(action: () => T): T {
         this.assertWritable(); this.delivery.batches++;
@@ -34,26 +45,26 @@ export class NotificationScope {
     deliver(stores: readonly Store<unknown>[]): void {
         // Capture all callbacks before delivery: subscription changes affect later publications.
         const listeners: Deliveries = this.delivery.batches ? this.delivery.pending : new Map();
-        for (const store of stores) for (const listener of store.listeners()) {
-            if (!listeners.has(listener)) listeners.set(listener, this.onListenerError);
-        }
+        for (const store of stores) store.collect(listeners, this.onListenerError);
         if (!this.delivery.batches) this.notify(listeners);
     }
     private notify(listeners: Deliveries): void {
         this.delivery.depth++;
         try {
-            for (const [listener, report] of listeners) {
-                try { listener(); } catch (error) {
-                    try { report(error); } catch { /* Error reporters cannot interrupt delivery. */ }
-                }
-            }
+            for (const [listener, report] of listeners) deliver(listener, report);
         } finally { this.delivery.depth--; }
+        const state = this.delivery;
+        if (state.depth || state.draining || !state.following.length) return;
+        state.draining = true;
+        try { for (const work of state.following) work(); }
+        finally { state.following.length = 0; state.draining = false; }
     }
 }
 
 /** Internal publication primitive, not a host reactive library. */
 export class Store<T> {
     private readonly subscriptions = new Map<object, () => void>();
+    private changes?: Set<() => () => void>;
     private value: T;
     private readonly scope: NotificationScope | undefined;
     readonly observable: Observable<T>;
@@ -73,5 +84,27 @@ export class Store<T> {
         this.value = value;
         changed.add(this);
     }
-    listeners(): Iterable<() => void> { return this.subscriptions.values(); }
+    subscribeChanges(listener: (value: T, afterDelivery: AfterDelivery) => void): () => void {
+        const scope = this.scope;
+        if (!scope) throw new Error("Change listeners require a notification scope.");
+        const registrations = this.changes ??= new Set();
+        const capture = () => {
+            const value = this.value;
+            return () => {
+                if (!registrations.has(capture)) return;
+                let delivering = true;
+                try { listener(value, work => {
+                    if (!delivering) throw new Error("A follow-up must be requested by the active listener.");
+                    scope[queueFollowUp](() => { if (registrations.has(capture)) work(); });
+                }); } finally { delivering = false; }
+            };
+        };
+        registrations.add(capture); scope.subscriptionChanged(1);
+        return () => { if (registrations.delete(capture)) scope.subscriptionChanged(-1); };
+    }
+    collect(listeners: Deliveries, report: (error: unknown) => void): void {
+        for (const listener of this.subscriptions.values()) if (!listeners.has(listener)) listeners.set(listener, report);
+        // A batch can coalesce snapshot reads but each change keeps its own payload.
+        if (this.changes) for (const capture of this.changes) listeners.set(capture(), report);
+    }
 }

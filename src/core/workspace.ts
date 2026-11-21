@@ -1,5 +1,6 @@
 import type { TextEdit } from "./changes.ts";
 import { compactDocumentEdit, textDifference } from "./changes.ts";
+import { documentChange } from "./document-change.ts";
 import { TextBuffer } from "./text-buffer.ts";
 import type { PositionMapping } from "./positions.ts";
 import { TextHistory, validateHistoryGroup } from "./history.ts";
@@ -44,8 +45,8 @@ export type DocumentSnapshot = Readonly<{
     id: DocumentId; resourceId: ResourceId; key: ResourceKey; title: string; buffer: TextBuffer; text: () => string; revision: number;
     change: DocumentChange | null;
 }>;
-export type DocumentChange = Readonly<{ previousRevision: number; transactionId: number; origin: EditOrigin;
-    kind: EditKind | "undo" | "redo"; mapping: PositionMapping }>;
+export type DocumentChange = Readonly<{ previousRevision: number; revision: number; transactionId: number; origin: EditOrigin;
+    source?: string; kind: EditKind | "undo" | "redo"; mapping: PositionMapping; edits: readonly TextEdit[] }>;
 export type DocumentViewSnapshot = Readonly<{ documentId: DocumentId; revision: number; selection: Selection; selectionSet: SelectionSet }>;
 export type DocumentView = Observable<DocumentViewSnapshot> & Readonly<{ id: ViewId; documentId: DocumentId;
     folding: DocumentFolding;
@@ -84,7 +85,7 @@ export type SaveTicket<T, S extends SaveSubmission<T> = SaveSubmission<T>, R ext
     start: () => S; accept: (response: Readonly<{ serverVersion: string; canonical?: T }>, options?: Readonly<{ applyCanonical?: boolean }>) => R;
     conflict: () => void; fail: () => void; finish: () => void }>;
 export type EditRequest = Readonly<{
-    documentId: DocumentId; expectedRevision: number; edits: readonly TextEdit[]; origin: EditOrigin; lease?: EditLease;
+    documentId: DocumentId; expectedRevision: number; edits: readonly TextEdit[]; origin: EditOrigin; source?: string; lease?: EditLease;
     history?: Readonly<{ kind: EditKind; group?: string; reset?: boolean }>; view?: DocumentView; selection?: Selection; selectionSet?: SelectionSet;
 }>;
 export type ChangeResult = Readonly<{ applied: true; revision: number } | { applied: false;
@@ -92,7 +93,7 @@ export type ChangeResult = Readonly<{ applied: true; revision: number } | { appl
 export type EditResult = ChangeResult;
 export type BatchEditResult = Readonly<{ applied: true; revisions: readonly Readonly<{ documentId: DocumentId; revision: number }>[] }
     | { applied: false; reason: Extract<ChangeResult, { applied: false }>["reason"] }>;
-export type HistoryRequest = Readonly<{ documentId: DocumentId; expectedRevision: number; origin?: EditOrigin; lease?: EditLease }>;
+export type HistoryRequest = Readonly<{ documentId: DocumentId; expectedRevision: number; origin?: EditOrigin; source?: string; lease?: EditLease }>;
 export type WorkspaceOptions = Readonly<{ onListenerError?: (error: unknown) => void; history?: HistoryOptions }>;
 
 type ViewRecord = { handle: DocumentView; state: Store<DocumentViewSnapshot>; folds: Store<FoldingSnapshot>; lease: ResourceLease };
@@ -263,6 +264,13 @@ export class Workspace {
         if (!record) throw new Error("Unknown document.");
         return record.document.observable;
     }
+    onDocumentChange(id: DocumentId, listener: (change: DocumentChange, afterDelivery: (work: () => void) => void) => void): () => void {
+        const record = this.documents.get(id);
+        if (!record) throw new Error("Unknown document.");
+        return record.document.subscribeChanges((document, afterDelivery) => {
+            if (document?.change) listener(document.change, afterDelivery);
+        });
+    }
     observeHistory(id: DocumentId): Observable<HistorySnapshot> { return this.requireResource(this.resourceForDocument(id).id).history.observable; }
     ownsDocumentView(view: DocumentView): boolean { return this.documents.get(view.documentId)?.views.get(view.id)?.handle === view; }
     createDocumentView(id: DocumentId, initial: Selection | SelectionSet = { anchor: 0, head: 0 }): DocumentView {
@@ -338,6 +346,7 @@ export class Workspace {
         if (reset && group !== undefined) throw new Error("A history reset cannot join an undo group.");
         const prepared = [];
         for (const request of requests) {
+            if (request.source !== undefined && typeof request.source !== "string") throw new TypeError("Edit source must be a string.");
             if (ids.has(request.documentId)) throw new Error("A document may appear only once in a transaction."); ids.add(request.documentId);
             const policy = request.history;
             if (request.origin !== first.origin || (policy?.kind ?? "replace") !== kind || policy?.group !== group
@@ -369,15 +378,16 @@ export class Workspace {
         }
         const changed = new Set<Store<unknown>>(), transactionId = actual.length ? ++this.nextTransaction : 0;
         for (const change of prepared) {
-            if (change.text) this.commitText(change.text, first.origin, kind, transactionId, changed);
+            if (change.text) this.commitText(change.text, first.origin, kind, transactionId, changed, change.request.source);
             if (change.selection) {
                 const { view, state, folds } = change.selection;
                 if (state !== view.state.get() || folds !== view.folds.get()) this.history.seal(change.request.documentId);
                 this.commitView(change.selection, changed);
             }
         }
+        const revisions = Object.freeze(prepared.map(change => Object.freeze({ documentId: change.request.documentId, revision: change.record.state.get().revision })));
         this.syncHistory(changed); if (changed.size) { if (actual.length) this.publish(changed); else this.scope.deliver([...changed]); }
-        return Object.freeze({ applied: true, revisions: Object.freeze(prepared.map(change => Object.freeze({ documentId: change.request.documentId, revision: change.record.state.get().revision }))) });
+        return Object.freeze({ applied: true, revisions });
     }
     /** End grouping without creating an undo entry or changing the document revision. */
     sealHistory(id: DocumentId): void { this.scope.assertWritable(); this.document(id); this.history.seal(id); }
@@ -385,6 +395,7 @@ export class Workspace {
     redo(request: HistoryRequest): BatchEditResult { return this.moveHistory(request, "redo"); }
     private moveHistory(request: HistoryRequest, direction: "undo" | "redo"): BatchEditResult {
         this.scope.assertWritable();
+        if (request.source !== undefined && typeof request.source !== "string") throw new TypeError("Edit source must be a string.");
         const record = this.documents.get(request.documentId), origin = request.origin ?? "human";
         if (!record) return { applied: false, reason: "missing-document" };
         const refusal = this.validateEdit(record, request.expectedRevision, origin, request.lease); if (refusal) return refusal;
@@ -405,7 +416,7 @@ export class Workspace {
         this.history.move(entry, direction);
         const changed = new Set<Store<unknown>>(), transactionId = ++this.nextTransaction, revisions = [];
         for (const text of prepared) {
-            this.commitText(text, origin, direction, transactionId, changed);
+            this.commitText(text, origin, direction, transactionId, changed, request.source);
             revisions.push(Object.freeze({ documentId: text.record.documentId!, revision: text.state.revision }));
         }
         this.syncHistory(changed); this.publish(changed); return Object.freeze({ applied: true, revisions: Object.freeze(revisions) });
@@ -434,9 +445,10 @@ export class Workspace {
     private commitView(prepared: PreparedView, changed: Set<Store<unknown>>): void {
         prepared.view.folds.set(prepared.folds, changed); prepared.view.state.set(prepared.state, changed);
     }
-    private commitText(prepared: PreparedText, origin: EditOrigin, kind: DocumentChange["kind"], transactionId: number, changed: Set<Store<unknown>>): void {
+    private commitText(prepared: PreparedText, origin: EditOrigin, kind: DocumentChange["kind"], transactionId: number, changed: Set<Store<unknown>>, source?: string): void {
         const { record, buffer, mapping, state, views } = prepared;
-        record.change = Object.freeze({ previousRevision: record.state.get().revision, mapping, transactionId, origin, kind });
+        record.change = documentChange({ previousRevision: record.state.get().revision, revision: state.revision, mapping,
+            transactionId, origin, kind, ...(source === undefined ? {} : { source }) }, buffer);
         record.buffer = buffer; this.setRecord(record, state, changed);
         for (const view of views) this.commitView(view, changed);
     }

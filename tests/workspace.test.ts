@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Workspace, applyTextEdits } from "../src/index.ts";
+import type { DocumentChange } from "../src/index.ts";
 
 function fixture() {
     const workspace = new Workspace();
@@ -8,6 +9,49 @@ function fixture() {
     const tabId = workspace.open({ kind: "text", documentId }, "left");
     return { workspace, documentId, tabId };
 }
+
+test("edits, grouped history and batches publish immutable changes in previous coordinates", () => {
+    const { workspace, documentId } = fixture(), changes: DocumentChange[] = [];
+    const stop = workspace.onDocumentChange(documentId, change => changes.push(change));
+    const base = workspace.document(documentId), edits = [{ from: 0, to: 1, insert: "AA" }, { from: 3, to: 3, insert: "!" }];
+    const write = (revision: number, batch: typeof edits) => workspace.edit({ documentId, expectedRevision: revision,
+        origin: "host", source: "peer", edits: batch, history: { kind: "replace", group: "batch" } });
+    workspace.createNotificationScope().batch(() => {
+        write(0, edits); edits[0]!.insert = "XXX"; write(1, [{ from: 1, to: 3, insert: "b" }]);
+        assert.equal(changes.length, 0);
+    });
+    workspace.undo({ documentId, expectedRevision: 2, source: "undo-button" });
+    workspace.redo({ documentId, expectedRevision: 3 });
+    assert.deepEqual(changes.map(c => [c.previousRevision, c.revision, c.source, c.kind]),
+        [[0, 1, "peer", "replace"], [1, 2, "peer", "replace"], [2, 3, "undo-button", "undo"], [3, 4, undefined, "redo"]]);
+    assert.deepEqual(changes[0]!.edits, [{ from: 0, to: 1, insert: "AA" }, { from: 3, to: 3, insert: "!" }]);
+    let text = base.text();
+    assert.deepEqual(changes.map(c => {
+        assert.equal(c.edits, c.edits); assert.ok(Object.isFrozen(c.edits) && c.edits.every(Object.isFrozen));
+        return text = applyTextEdits(text, c.edits);
+    }), ["AAbc!", "Abc!", "abc", "Abc!"]);
+    assert.equal(changes[3], workspace.document(documentId).change);
+    stop();
+});
+
+test("follow-up writes run after listeners in order and expire with their subscription", () => {
+    const { workspace, documentId } = fixture(), order: string[] = [];
+    const append = (source: string, revision: number) => workspace.edit({ documentId, expectedRevision: revision, origin: "host",
+        source, edits: [{ from: 0, to: 0, insert: source }] });
+    const first = workspace.onDocumentChange(documentId, (change, after) => {
+        order.push("first " + change.source);
+        if (change.source === "start") after(() => { append("next", change.revision); });
+    });
+    const cancelled = workspace.onDocumentChange(documentId, (_change, after) => after(() => { order.push("cancelled"); }));
+    const last = workspace.onDocumentChange(documentId, (change, after) => {
+        order.push("last " + change.source); cancelled();
+        if (change.source === "start") after(() => { order.push("last follow-up"); });
+    });
+    assert.deepEqual(append("start", 0), { applied: true, revision: 1 });
+    assert.deepEqual(order, ["first start", "last start", "first next", "last next", "last follow-up"]);
+    assert.equal(workspace.document(documentId).revision, 2);
+    first(); last(); assert.equal(workspace.diagnostics().subscriptions, 0);
+});
 
 test("delayed actions follow a moved tab and expire after replacement or close", async () => {
     const { workspace, documentId, tabId } = fixture();

@@ -174,11 +174,30 @@ export function undoFrom(workspace: Workspace, documentId: DocumentId) {
 }
 ```
 
-Every text change, including undo and redo, advances the revision. Read `DocumentChange` for the
-preceding revision, transaction ID, origin, kind and position map. Documents edited together share the
-transaction ID. An edit that produces the same text keeps the buffer, revision and (by default)
+Every text change, including undo and redo, advances the revision. `onDocumentChange` delivers
+each committed change, including each revision inside a notification batch. Its `edits` use
+previous-revision offsets and reproduce the new text. A grouped undo or redo can describe several
+steps with one replacement. `mapping` retains the position and selection semantics of every step.
+Documents edited together share a transaction ID. An edit that produces the same text keeps the buffer, revision and (by default)
 history, though it can change the initiating view’s selection. A no-op `updateResource` also
 keeps the revision of a typed resource. Typed panels have no text undo stack.
+
+Pass a `source` string to identify writes from a host feature or peer. Edit permissions use
+`origin`. In a change listener, request a follow-up with its second argument. Follow-ups run
+synchronously in request order after listeners finish. Unsubscribing drops that listener’s queued
+work. Use the change’s revision when a follow-up depends on the exact text.
+
+```ts
+import type { DocumentId, TextEdit, Workspace } from "sttropez";
+
+export function forwardEdits(workspace: Workspace, id: DocumentId,
+    send: (revision: number, edits: readonly TextEdit[]) => void) {
+    return workspace.onDocumentChange(id, (change, afterDelivery) => {
+        if (change.source === "peer") return;
+        afterDelivery(() => send(change.previousRevision, change.edits));
+    });
+}
+```
 
 History follows the document across tabs and views. `undo` and `redo` check every participant’s
 history boundary and permissions. If later work in another file blocks a shared undo, the result is

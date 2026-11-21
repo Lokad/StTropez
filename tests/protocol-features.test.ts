@@ -259,8 +259,9 @@ test("adjusted completion resolution, prefix rebasing and commit characters alwa
     const resolved = decodeLspResolvedCompletion(reply, original, capture), expected = "begin\r\n\t\t\tname\r\n\t\tname\r\n\t\t";
     assert.equal(resolved.replace.edits[1]!.insert, expected); assert.equal(resolved.insertion, original.insertion);
     assert.throws(() => decodeLspResolvedCompletion({ ...reply, insertTextMode: 1 }, original, capture), /immutable/);
-    const applied = capture.document.buffer.apply([{ from: 4, to: 4, insert: "m" }]), next = Object.freeze({ ...capture.document, revision: 71, buffer: applied.buffer });
-    const change = Object.freeze({ previousRevision: 70, transactionId: 1, origin: "human" as const, kind: "typing" as const, mapping: applied.mapping });
+    const edits = [{ from: 4, to: 4, insert: "m" }];
+    const applied = capture.document.buffer.apply(edits), next = Object.freeze({ ...capture.document, revision: 71, buffer: applied.buffer });
+    const change = Object.freeze({ previousRevision: 70, revision: 71, transactionId: 1, origin: "human" as const, kind: "typing" as const, mapping: applied.mapping, edits });
     const rebased = rebaseLspCompletion(resolved, next, change, 4)!;
     assert.equal(rebased.replace.edits[1]!.insert, expected); assert.equal(rebased.insertion, original.insertion);
     assert.equal(rebased.primary.text, "begin\n\tname\nname\n");
@@ -434,8 +435,9 @@ test("completion resolution permits captured display/additional edits but refuse
 test("compatible prefix rebasing uses exact commit metadata and resolves additions against the newly synchronized snapshot", async () => {
     const { capture } = await captured("const saMORE"), item = decodeLspCompletions([{ label: "sample", data: { token: 1 }, textEdit: { newText: "sample", insert: range(0, 6, 8), replace: range(0, 6, 12) },
         additionalTextEdits: [{ range: range(0, 0, 0), newText: "// import\r\n" }] }], capture, 8, undefined, { resolve: true }).items[0]!;
-    const applied = capture.document.buffer.apply([{ from: 8, to: 8, insert: "m" }]), next = Object.freeze({ ...capture.document, revision: 71, buffer: applied.buffer });
-    const change = Object.freeze({ previousRevision: 70, transactionId: 1, origin: "human" as const, kind: "typing" as const, mapping: applied.mapping });
+    const edits = [{ from: 8, to: 8, insert: "m" }];
+    const applied = capture.document.buffer.apply(edits), next = Object.freeze({ ...capture.document, revision: 71, buffer: applied.buffer });
+    const change = Object.freeze({ previousRevision: 70, revision: 71, transactionId: 1, origin: "human" as const, kind: "typing" as const, mapping: applied.mapping, edits });
     const rebased = rebaseLspCompletion(item, next, change, 8)!; assert.ok(rebased); assert.equal(rebased.source, next); assert.equal(rebased.primary.insertTo, 9); assert.equal(rebased.primary.replaceTo, 13);
     const after = next.buffer.apply(rebased.replace.edits).buffer; assert.equal(after.slice(0, after.length), "// import\r\nconst sample");
     const currentCapture = { ...capture, document: next, version: 4, index: await LspLineIndex.create(next.buffer, async () => {}) };
