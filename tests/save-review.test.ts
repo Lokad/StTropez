@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer, Workspace, WorkspaceCommands } from "../src/index.ts";
-import type { SaveResponse, SaveSubmission } from "../src/index.ts";
+import type { SaveResponse, SaveSubmission, TextTransaction } from "../src/index.ts";
 
 function fixture() {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "review", resource: "source", variant: "working" }, "Source", { value: "base", serverVersion: "v0" });
@@ -9,6 +9,73 @@ function fixture() {
         origin: "human", edits: [{ from: 0, to: current.buffer.length, insert: text }] }); };
     return { workspace, source, edit, commands: new WorkspaceCommands(workspace) };
 }
+
+test("successive edits publish one revision, map other views and undo together", () => {
+    const { workspace, source } = fixture(), id = source.documentId;
+    const view = workspace.createDocumentView(id, { anchor: 4, head: 4 });
+    const options = { origin: "host", source: "peer", history: "record" } as const;
+    const changes: number[] = [];
+    const stop = workspace.onDocumentChange(id, change => changes.push(change.revision));
+    let captured: TextTransaction | undefined;
+    const result = workspace.transact(id, 0, tx => {
+        captured = tx;
+        tx.edit([{ from: 0, to: 0, insert: "!" }]);
+        assert.equal(tx.buffer.slice(0, 2), "!b");
+        tx.edit([{ from: 2, to: 4, insert: "XY" }]);
+        assert.equal(workspace.document(id).text(), "base");
+    }, options);
+    assert.deepEqual(result, { applied: true, revision: 1 });
+    assert.deepEqual(changes, [1]);
+    const change = workspace.document(id).change!;
+    assert.equal(change.source, "peer"); assert.equal(workspace.document(id).text(), "!bXYe");
+    assert.equal(TextBuffer.from("base").apply(change.edits).buffer.text(), "!bXYe");
+    assert.equal(view.getSnapshot().selection.head, 5);
+    assert.throws(() => captured!.edit([]), /no longer open/);
+    assert.equal(workspace.observeHistory(id).getSnapshot().undoDepth, 1);
+    assert.equal(workspace.undo({ documentId: id, expectedRevision: 1 }).applied, true);
+    assert.equal(workspace.document(id).text(), "base"); assert.equal(view.getSnapshot().selection.head, 4);
+    assert.equal(workspace.redo({ documentId: id, expectedRevision: 2 }).applied, true);
+    assert.equal(workspace.document(id).text(), "!bXYe");
+    assert.deepEqual(workspace.transact(id, 0, () => assert.fail("stale callback ran"), options), { applied: false, reason: "stale-revision" });
+    stop(); view.dispose();
+});
+
+test("an invalid second step, async callback or reentrant write cannot partially commit a transaction", async () => {
+    const { workspace, source, edit } = fixture(), id = source.documentId, before = workspace.document(id);
+    const options = { origin: "host", history: "reset" } as const;
+    const insert = [{ from: 0, to: 0, insert: "first" }];
+    let notifications = 0;
+    const stop = workspace.subscribe(() => { notifications++; });
+    assert.throws(() => workspace.transact(id, 0, tx => {
+        tx.edit(insert);
+        assert.throws(() => tx.edit([{ from: 1000, to: 1000, insert: "x" }]), RangeError);
+    }, options), /failed text transaction/);
+    assert.throws(() => workspace.transact(id, 0, tx => { tx.edit(insert); edit("outside"); }, options), /Reentrant/);
+    assert.throws(() => workspace.transact(id, 0, async tx => { tx.edit(insert); await Promise.resolve(); tx.edit(insert); }, options), /synchronous/);
+    await Promise.resolve();
+    assert.equal(workspace.document(id), before); assert.equal(notifications, 0);
+    assert.deepEqual(workspace.observeHistory(id).getSnapshot(), { undoDepth: 0, redoDepth: 0 }); stop();
+});
+
+test("whole-text writes retain unchanged ranges, report no-ops and guard the captured revision", () => {
+    const { workspace, source } = fixture();
+    const id = source.documentId, options = { origin: "host", history: "record", source: "draft" } as const;
+    const view = workspace.createDocumentView(id, { anchor: 4, head: 4 });
+    const changed = workspace.replaceText(id, "new base", options);
+    assert.deepEqual(changed, { applied: true, changed: true, revision: 1 });
+    assert.equal(view.getSnapshot().selection.head, 8);
+    const current = workspace.document(id);
+    assert.deepEqual(current.change?.edits, [{ from: 0, to: 0, insert: "new " }]);
+    assert.equal(current.change?.source, "draft");
+    assert.deepEqual(workspace.replaceText(id, TextBuffer.from("new base"), options), { applied: true, changed: false, revision: 1 });
+    assert.equal(workspace.document(id), current);
+    assert.deepEqual(workspace.replaceText(id, "stale", { ...options, expectedRevision: 0 }), { applied: false, reason: "stale-revision" });
+    assert.equal(workspace.undo({ documentId: id, expectedRevision: 1 }).applied, true);
+    assert.equal(workspace.document(id).text(), "base"); assert.equal(view.getSnapshot().selection.head, 4);
+    workspace.replaceText(id, "base", { ...options, history: "reset" });
+    assert.equal(workspace.observeHistory(id).getSnapshot().redoDepth, 0);
+    view.dispose();
+});
 
 test("adopting a saved buffer publishes the revision, authority and mapped view together", () => {
     const { workspace, source, edit } = fixture();

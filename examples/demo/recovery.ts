@@ -212,7 +212,7 @@ export class DemoRecovery {
                 this.publish("offer", "Your files changed while restoring. They were left intact; download the draft or keep current files."); return;
             }
             const result = this.workspace.editDocuments(offer.capture.map(item => ({ documentId: item.document.id, expectedRevision: item.document.revision,
-                origin: "host", history: { kind: "replace" }, edits: [{ from: 0, to: item.document.buffer.length, insert: offer.draft.files[item.file.name]! }] })));
+                origin: "host", history: { kind: "replace" }, text: offer.draft.files[item.file.name]! })));
             if (!result.applied) { this.publish("offer", "Restore is unavailable. Your current files are intact."); return; }
             this.offer = undefined; this.checkpointed = this.capture(); this.publish("protected", "Draft restored. Undo returns to your previous files; Save locally commits these changes.");
         });

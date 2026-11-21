@@ -5,6 +5,8 @@ import type { WorkspaceTabs } from "./workspace-tabs.ts";
 import type { TextEdit } from "./changes.ts";
 import { compactDocumentEdit, replacementSpan, textDifference } from "./changes.ts";
 import { documentChange } from "./document-change.ts";
+import { stageTextTransaction } from "./text-transaction.ts";
+import type { TextTransaction } from "./text-transaction.ts";
 import { TextBuffer } from "./text-buffer.ts";
 import type { PositionMapping } from "./positions.ts";
 import { replacementMap } from "./positions.ts";
@@ -112,6 +114,12 @@ export type EditRequest = Readonly<{
     documentId: DocumentId; expectedRevision: number; edits: readonly TextEdit[]; origin: EditOrigin; source?: string; lease?: EditLease;
     history?: Readonly<{ kind: EditKind; group?: string; reset?: boolean }>; view?: DocumentView; selection?: Selection; selectionSet?: SelectionSet;
 }>;
+export type DocumentEditRequest = EditRequest | (Omit<EditRequest, "edits"> & Readonly<{ text: string | TextBuffer; edits?: never }>);
+export type TextTransactionOptions = Readonly<{
+    origin: EditOrigin; source?: string; lease?: EditLease; view?: DocumentView;
+    history: "record" | "reset"; kind?: EditKind;
+}>;
+export type TextWriteResult = Readonly<{ applied: true; changed: boolean; revision: number }> | Extract<ChangeResult, { applied: false }>;
 export type ChangeResult = Readonly<{ applied: true; revision: number } | { applied: false;
     reason: "missing-resource" | "missing-document" | "stale-revision" | "not-ready" | "read-only" | "edit-locked" | "history-empty" | "history-blocked" }>;
 export type EditResult = ChangeResult;
@@ -119,6 +127,19 @@ export type BatchEditResult = Readonly<{ applied: true; revisions: readonly Read
     | { applied: false; reason: Extract<ChangeResult, { applied: false }>["reason"] }>;
 export type HistoryRequest = Readonly<{ documentId: DocumentId; expectedRevision: number; origin?: EditOrigin; source?: string; lease?: EditLease }>;
 export type WorkspaceOptions = Readonly<{ onListenerError?: (error: unknown) => void; history?: HistoryOptions }>;
+
+function textWriteRequest(documentId: DocumentId, expectedRevision: number, options: TextTransactionOptions): Omit<EditRequest, "edits"> {
+    const { history, kind = "replace", origin, source, lease, view } = options;
+    if (history !== "record" && history !== "reset") throw new TypeError("Invalid text history policy.");
+    return { documentId, expectedRevision, origin, history: { kind, reset: history === "reset" },
+        ...(source !== undefined && { source }), ...(lease && { lease }), ...(view && { view }) };
+}
+function replaceDocumentBuffer(before: TextBuffer, text: string | TextBuffer) {
+    if (typeof text === "string") return before.apply(compactDocumentEdit(before, [{ from: 0, to: before.length, insert: text }]));
+    if (!(text instanceof TextBuffer)) throw new TypeError("Expected text or a text buffer.");
+    const span = replacementSpan(before, text), changedUnits = span.to - span.from + span.insertedLength;
+    return { buffer: changedUnits ? text : before, mapping: replacementMap(before.length, span), changedUnits };
+}
 
 type ViewRecord = { handle: DocumentView; state: Store<DocumentViewSnapshot>; folds: Store<FoldingSnapshot>; lease: ResourceLease };
 type PreparedView = Readonly<{ view: ViewRecord; state: DocumentViewSnapshot; folds: FoldingSnapshot }>;
@@ -361,8 +382,25 @@ export class Workspace {
         const result = this.editDocuments([request]);
         return result.applied ? { applied: true, revision: result.revisions[0]!.revision } : result;
     }
+    replaceText(id: DocumentId, text: string | TextBuffer, options: TextTransactionOptions & Readonly<{ expectedRevision?: number }>): TextWriteResult {
+        const expectedRevision = options.expectedRevision ?? this.documents.get(id)?.state.get().revision;
+        if (expectedRevision === undefined) return { applied: false, reason: "missing-document" };
+        const result = this.editDocuments([{ ...textWriteRequest(id, expectedRevision, options), text }]);
+        if (!result.applied) return result;
+        const revision = result.revisions[0]!.revision;
+        return { applied: true, changed: revision !== expectedRevision, revision };
+    }
+    transact(id: DocumentId, expectedRevision: number, action: (tx: TextTransaction) => void, options: TextTransactionOptions): EditResult {
+        if (typeof action !== "function") throw new TypeError("Expected a synchronous text transaction callback.");
+        const request = textWriteRequest(id, expectedRevision, options);
+        const result = this.applyDocuments([{ ...request, edits: [] }], action);
+        return result.applied ? { applied: true, revision: result.revisions[0]!.revision } : result;
+    }
     /** Validate every document, permission, view and range before changing any observable. */
-    editDocuments(requests: readonly EditRequest[]): BatchEditResult {
+    editDocuments(requests: readonly DocumentEditRequest[]): BatchEditResult {
+        return this.applyDocuments(requests);
+    }
+    private applyDocuments(requests: readonly DocumentEditRequest[], action?: (tx: TextTransaction) => void): BatchEditResult {
         this.scope.assertWritable();
         if (!requests.length) throw new RangeError("A text transaction needs at least one document.");
         const ids = new Set<DocumentId>(), first = requests[0]!;
@@ -383,7 +421,10 @@ export class Workspace {
             const view = request.view === undefined ? undefined : record.views.get(request.view.id);
             if ((request.view && view?.handle !== request.view) || ((request.selection || request.selectionSet) && !view)) throw new Error("Selection target must be a live view of this document.");
             if (request.selection && request.selectionSet) throw new Error("Choose a single selection or a selection set.");
-            const before = record.buffer!, result = before.apply(compactDocumentEdit(before, request.edits));
+            if ("text" in request && "edits" in request) throw new TypeError("Supply replacement text or range edits.");
+            const before = record.buffer!;
+            const result = action ? this.scope.read(() => stageTextTransaction(before, action))
+                : "text" in request ? replaceDocumentBuffer(before, request.text) : before.apply(compactDocumentEdit(before, request.edits));
             const afterSelections = request.selectionSet ? createSelectionSet(result.buffer.length, request.selectionSet.ranges, request.selectionSet.primary)
                 : request.selection ? createSelectionSet(result.buffer.length, [request.selection]) : view ? mapSelectionSet(result.mapping, view.state.get().selectionSet) : undefined;
             const text = result.buffer !== before ? this.prepareText(record, result.buffer, result.mapping,
@@ -592,15 +633,12 @@ export class Workspace {
         if (!record.buffer || state.state !== "ready" || record.saveReservations || record.reloadReservations) return { applied: false, reason: "not-ready" };
         if (record.editLease) return { applied: false, reason: "edit-locked" };
         if (state.metadata.dirty && !state.metadata.capabilities.edit.includes("host")) return { applied: false, reason: "read-only" };
-        if (typeof version.text !== "string" && !(version.text instanceof TextBuffer)) throw new TypeError("Expected saved text or a text buffer.");
         if (version.serverVersion !== null && typeof version.serverVersion !== "string"
             || version.source !== undefined && typeof version.source !== "string"
             || version.history !== "record" && version.history !== "reset") throw new TypeError("Invalid saved text version.");
-        const before = record.buffer, span = replacementSpan(before, version.text), mapping = replacementMap(before.length, span);
-        const units = span.to - span.from + span.insertedLength;
-        // Existing undo entries retain their exact after-buffer. An equal adoption can keep it.
-        const after = !units && (version.history === "record" || typeof version.text === "string") ? before
-            : typeof version.text === "string" ? TextBuffer.from(version.text) : version.text;
+        const before = record.buffer, { buffer, mapping, changedUnits: units } = replaceDocumentBuffer(before, version.text);
+        // Reset may install a caller's equal buffer. Recorded undo entries need their exact after-buffer.
+        const after = version.history === "reset" && typeof version.text !== "string" ? version.text : buffer;
         const text = this.prepareText(record, after, mapping, undefined, { ...state.metadata, serverVersion: version.serverVersion,
             dirty: false, saveStatus: "idle", failure: null });
         if (version.history === "reset") this.history.forget(record.documentId);

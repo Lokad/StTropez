@@ -48,7 +48,7 @@ export class HostController {
     readonly saveConflict = this.sourceReview.saveConflict;
     readonly saveConflictPresentation = this.sourceReview.saveConflictPresentation;
     readonly variants = this.sourceReview.variants;
-    private proposal: Readonly<{ documentId: DocumentId; revision: number; original: ComparisonBaseline; preview: ComparisonBaseline; text: string }> | undefined;
+    private proposal: Readonly<{ documentId: DocumentId; revision: number; original: ComparisonBaseline; preview: ComparisonBaseline }> | undefined;
     private readonly operations = new Set<Promise<unknown>>();
     private disposal: Promise<void> | undefined;
     private proposalTransactionMs = 0;
@@ -125,7 +125,7 @@ export class HostController {
         if (!this.sourceInputReady()) return;
         const doc = this.workspace.document(this.source.documentId);
         const preview = { buffer: TextBuffer.from(text), version: `proposal-for-r${doc.revision}` };
-        this.proposal = { documentId: doc.id, revision: doc.revision, original: { buffer: doc.buffer, version: `source-r${doc.revision}` }, preview, text };
+        this.proposal = { documentId: doc.id, revision: doc.revision, original: { buffer: doc.buffer, version: `source-r${doc.revision}` }, preview };
         this.sourceReview.showComparison(preview);
     });
     readonly applyProposal = (): void => this.safe(() => {
@@ -135,8 +135,8 @@ export class HostController {
             this.proposal = undefined; this.presentation.error("The comparison changed. Preview the proposal again."); return;
         }
         const start = performance.now();
-        const result = this.workspace.edit({ documentId: proposal.documentId, expectedRevision: proposal.revision, origin: "agent",
-            history: { kind: "proposal" }, edits: [{ from: 0, to: proposal.original.buffer.length, insert: proposal.text }] });
+        const result = this.workspace.replaceText(proposal.documentId, proposal.preview.buffer,
+            { expectedRevision: proposal.revision, origin: "agent", history: "record", kind: "proposal" });
         this.proposalTransactionMs = performance.now() - start;
         this.proposal = undefined;
         if (!result.applied) throw new Error("Source changed or became unavailable. Review the proposal again.");

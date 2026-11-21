@@ -201,11 +201,12 @@ export class DemoProject {
     }
     reset(): void {
         this.prepareEditable();
-        this.workspace.editDocuments(this.editable.map(file => {
+        const result = this.workspace.editDocuments(this.editable.map(file => {
             const document = this.workspace.document(file.resource.documentId);
             return { documentId: document.id, expectedRevision: document.revision, origin: "host" as const,
-                edits: [{ from: 0, to: document.buffer.length, insert: this.sample.files[file.name]! }] };
+                text: this.sample.files[file.name]! };
         }));
+        if (!result.applied) { this.message = "The sample could not be reset. Your edits are intact."; return; }
         for (const [file, model] of this.noteModels) { model.clear(); this.seedNotes(file, model); }
         this.message = "Sample restored. Undo restores your edits; Save locally replaces the saved copy.";
     }

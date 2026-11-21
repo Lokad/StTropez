@@ -224,6 +224,9 @@ export class PositionMap extends ChangePositionMap {
 
 /** Known maps compile sequential semantics; opaque host mappings retain their own ordered pipeline. */
 export function composePositionMaps(...input: readonly PositionMapping[]): PositionMapping {
+    return composePositionMapList(input);
+}
+export function composePositionMapList(input: readonly PositionMapping[]): PositionMapping {
     if (!input.length) throw new Error("At least one position map is required.");
     const maps = Object.freeze([...input]);
     for (let index = 1; index < maps.length; index++) if (maps[index - 1]!.newLength !== maps[index]!.oldLength) throw new RangeError("Position map dimensions do not join.");

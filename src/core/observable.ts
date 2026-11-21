@@ -20,7 +20,11 @@ export class NotificationScope {
         this.delivery = parent?.delivery ?? { depth: 0, batches: 0, pending: new Map(), following: [], draining: false };
     }
     assertWritable(): void {
-        if (this.delivery.depth) throw new Error("Reentrant mutation during notification; queue the command in the host.");
+        if (this.delivery.depth) throw new Error("Reentrant mutation during a read-only callback.");
+    }
+    read<T>(action: () => T): T {
+        this.delivery.depth++;
+        try { return action(); } finally { this.delivery.depth--; }
     }
     subscriptionChanged(delta: number): void { this.subscriptions += delta; }
     subscriptionCount(): number { return this.subscriptions; }

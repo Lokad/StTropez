@@ -221,8 +221,8 @@ export class HostDraftRecovery {
                     this.protectedLoaded = { resource, buffer: c.workspace.document(resource.documentId).buffer };
                     this.publish("Loaded-source draft restored. Reopen loaded source to inspect; undo returns to its current base."); return;
                 }
-                const result = capture.kind === "source" ? c.workspace.edit({ documentId: c.source.documentId, expectedRevision: capture.sourceRevision, origin: "human",
-                    edits: [{ from: 0, to: document.buffer.length, insert: draft.source.text }], history: { kind: "replace" }, ...(capture.view ? { view: capture.view } : {}) })
+                const result = capture.kind === "source" ? c.workspace.replaceText(c.source.documentId, draft.source.text,
+                    { expectedRevision: capture.sourceRevision, origin: "human", history: "record", ...(capture.view ? { view: capture.view } : {}) })
                     : capture.kind === "configuration" ? c.workspace.updateResource(c.connection, { expectedRevision: capture.configurationRevision, origin: "human", value: draft.configuration.value })
                     : c.workspace.updateResource(c.transfer.resource, { expectedRevision: capture.transferRevision, origin: "human", value: draft.transfer.value });
                 if (!result.applied) throw new Error("Restore unavailable.");

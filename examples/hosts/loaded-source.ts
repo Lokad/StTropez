@@ -53,9 +53,8 @@ export class HostLoadedSource {
         if (this.disposed || !this.ports.canCaptureRecovery() || this.pending || generation !== this.cell.get().generation) return;
         const previous = this.loaded, resource = previous ?? this.createResource(true), state = resource.getSnapshot();
         if (state.state !== "ready") return;
-        const document = this.workspace.document(resource.documentId);
-        const result = this.workspace.edit({ documentId: document.id, expectedRevision: document.revision, origin: "human",
-            edits: [{ from: 0, to: document.buffer.length, insert: text }], history: { kind: "replace" }, ...(view ? { view } : {}) });
+        const result = this.workspace.replaceText(resource.documentId, text,
+            { expectedRevision: state.revision, origin: "human", history: "record", ...(view ? { view } : {}) });
         if (!result.applied) { if (!previous) this.workspace.releaseResource(resource.id, true); return; }
         this.setLoaded(resource); return resource;
     }

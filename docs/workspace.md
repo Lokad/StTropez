@@ -150,6 +150,32 @@ non-overlapping UTF-16 ranges in original coordinates. The workspace checks iden
 revision, permissions, edit lease, view ownership and ranges. Inspect `applied` and the rejection
 reason. Malformed arguments can throw.
 
+Use `replaceText(documentId, text, options)` for a whole document. Pass `origin` and a `history`
+policy of `"record"` or `"reset"`. Supply `expectedRevision` for a delayed command. A successful
+result reports `changed` and `revision`. Equal text keeps the revision. A reset also clears undo and
+redo. For a linked multi-file replacement, give each `editDocuments` request its replacement `text`
+and captured revision. Both forms accept a string or an immutable `TextBuffer`.
+
+Use `transact(documentId, expectedRevision, callback, options)` when later edits depend on earlier
+ones. Inside the synchronous callback, `tx.buffer` holds the staged text and `tx.edit(ranges)` uses
+that buffer’s coordinates. A refused target skips the callback. An exception or invalid step
+discards the staged edits. A successful change publishes once and, with `history: "record"`, undoes
+in one step. Ranges within a step use its starting coordinates.
+
+For example, a host can replay successive batches from a peer as one undoable edit.
+
+```ts
+import type { DocumentId, TextEdit, Workspace } from "sttropez";
+
+export function applyPeerBatches(
+    workspace: Workspace, documentId: DocumentId, revision: number, batches: readonly (readonly TextEdit[])[]
+) {
+    return workspace.transact(documentId, revision, tx => {
+        for (const batch of batches) tx.edit(batch);
+    }, { origin: "host", source: "peer", history: "record" });
+}
+```
+
 Before commit, the workspace maps selections and folds in every retained view, including fold
 reveals for selection-only changes. Undo, redo and canonical saves follow the same rule. Listeners
 see the completed document, views and history together.
@@ -177,8 +203,8 @@ export function undoFrom(workspace: Workspace, documentId: DocumentId) {
 
 Every text change, including undo and redo, advances the revision. `onDocumentChange` delivers
 each committed change, including each revision inside a notification batch. Its `edits` use
-previous-revision offsets and reproduce the new text. A grouped undo or redo can describe several
-steps with one replacement. `mapping` retains the position and selection semantics of every step.
+previous-revision offsets and reproduce the new text. A transaction, grouped undo or redo can describe several
+successive steps with one replacement. `mapping` retains the position and selection semantics of every step.
 Documents edited together share a transaction ID. An edit that produces the same text keeps the buffer, revision and (by default)
 history, though it can change the initiating view’s selection. A no-op `updateResource` also
 keeps the revision of a typed resource. Typed panels have no text undo stack.

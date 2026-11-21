@@ -103,7 +103,10 @@ const fixture = { text: () => workspace.document(documentId).text(),
                 });
             });
             try {
-                model.edit({ documentId: source.documentId, expectedRevision: 0, origin: "host", source: "fold-pilot", edits: [{ from: at, to: at, insert: "x\r\n" }] });
+                model.transact(source.documentId, 0, tx => {
+                    tx.edit([{ from: at, to: at, insert: "x" }]);
+                    tx.edit([{ from: at + 1, to: at + 1, insert: "\r\n" }]);
+                }, { origin: "host", source: "fold-pilot", history: "record" });
                 await wait();
                 if (!forwarded) throw new Error("Restored change subscription lost the edit or its provenance.");
             } finally { stop(); }
@@ -286,8 +289,8 @@ const fixture = { text: () => workspace.document(documentId).text(),
     saveReview: async () => {
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "retry", variant: "working" }, "Retry", { value: "base", serverVersion: "v0" });
         const doc = model.document(source.documentId);
-        model.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "agent", history: { kind: "proposal" },
-            edits: [{ from: 0, to: doc.buffer.length, insert: "merged" }] });
+        const proposal = model.replaceText(doc.id, "merged", { expectedRevision: doc.revision, origin: "agent", history: "record", kind: "proposal" });
+        if (!proposal.applied || !proposal.changed) throw new Error("Restored proposal did not replace the text.");
         const commands = new WorkspaceCommands(model);
         await commands.save(model.captureSave(source), { save: async () => ({ kind: "conflict", serverVersion: "v1" }) });
         const baselineBefore = source.metadata.getSnapshot().serverVersion;
