@@ -1,3 +1,5 @@
+import { createClosingBracketCursor } from "./bracket-matching.ts";
+import type { EditingPair, PairingContext, ResolvedLanguageConfiguration } from "./language-configuration.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import type { TextEdit } from "./changes.ts";
 import type { Selection } from "./history.ts";
@@ -23,35 +25,9 @@ function checkpoint(state: MutablePlanning): boolean {
 }
 
 export type EditingCommand = "indent" | "outdent" | "line-comment" | "block-comment" | "newline";
-export type EditingPair = Readonly<{ open: string; close: string }>;
+export { resolveLanguageConfiguration } from "./language-configuration.ts";
+export type { EditingPair, LanguageEditContext, PairingContext, EnterIndent, LanguageConfiguration, ResolvedLanguageConfiguration } from "./language-configuration.ts";
 type TypedCharacter = Readonly<{ character: string; canOvertype?: (offset: number) => boolean }>;
-export type LanguageEditContext = Readonly<{ buffer: TextBuffer; from: number; to: number }>;
-export type PairingContext = LanguageEditContext & Readonly<{ pair: EditingPair; operation: "open" | "close" | "surround" }>;
-export type EnterIndent = Readonly<{ indent: -1 | 0 | 1; split?: boolean }>;
-/** Callbacks inspect this exact immutable buffer; language analysis and its cost belong to the host. */
-export type LanguageConfiguration = Readonly<{
-    tabSize?: number; insertSpaces?: boolean;
-    lineComment?: string; blockComment?: EditingPair;
-    pairs?: readonly EditingPair[];
-    allowPair?: (context: PairingContext) => boolean;
-    enter?: "keep" | ((context: LanguageEditContext) => EnterIndent);
-}>;
-export type ResolvedLanguageConfiguration = LanguageConfiguration & Readonly<{ tabSize: number; insertSpaces: boolean; pairs: readonly EditingPair[] }>;
-const defaultPairs: readonly EditingPair[] = [{ open: "(", close: ")" }, { open: "[", close: "]" }, { open: "{", close: "}" }];
-
-export function resolveLanguageConfiguration(value: LanguageConfiguration = {}): ResolvedLanguageConfiguration {
-    const tabSize = value.tabSize ?? 4;
-    if (!Number.isSafeInteger(tabSize) || tabSize < 1 || tabSize > 256) throw new RangeError("tabSize must be an integer from 1 to 256.");
-    const pair = (value: EditingPair, single: boolean): EditingPair => {
-        if (!value.open || !value.close || /[\r\n]/.test(value.open + value.close) || single && (value.open.length !== 1 || value.close.length !== 1)) throw new RangeError("Invalid editing delimiter.");
-        return Object.freeze({ open: value.open, close: value.close });
-    };
-    if (value.lineComment !== undefined && (!value.lineComment || /[\r\n]/.test(value.lineComment))) throw new RangeError("Invalid line comment delimiter.");
-    const pairs = Object.freeze((value.pairs ?? defaultPairs).map(value => pair(value, true)));
-    if (new Set(pairs.map(pair => pair.open)).size !== pairs.length) throw new RangeError("Duplicate opening delimiter.");
-    return Object.freeze({ ...value, tabSize, insertSpaces: value.insertSpaces ?? true, pairs,
-        ...(value.blockComment ? { blockComment: pair(value.blockComment, false) } : {}) });
-}
 
 function* whitespace(read: (from: number, to: number) => string, state: MutablePlanning, from: number, to: number): Generator<void, number> {
     while (from < to) {
@@ -61,6 +37,28 @@ function* whitespace(read: (from: number, to: number) => string, state: MutableP
         if (length < text.length) break;
     }
     return from;
+}
+
+function* closerIndent(buffer: TextBuffer, at: number, key: string, config: ResolvedLanguageConfiguration,
+    previousEnd: number, read: (from: number, to: number) => string, state: MutablePlanning): Generator<void, TextEdit | undefined> {
+    const line = buffer.lineAt(at), start = buffer.offsetAt(line);
+    if (!line || start < previousEnd || (yield* whitespace(read, state, start, at)) !== at) return;
+    const cursor = createClosingBracketCursor(config, buffer, at, key);
+    let work = 0, reads = 0;
+    try {
+        for (;;) {
+            const next = cursor.next(256);
+            state.workUnits += next.workUnits - work; state.readUnits += next.readUnits - reads;
+            work = next.workUnits; reads = next.readUnits;
+            if (next.status === "running") { yield; continue; }
+            if (next.result?.kind !== "matched" || next.result.match === null || next.result.direction !== -1) return;
+            const openLine = buffer.lineAt(next.result.match), openStart = buffer.offsetAt(openLine);
+            const openIndent = yield* whitespace(read, state, openStart, next.result.match);
+            const indent = read(openStart, openIndent);
+            if (indent === read(start, at)) return;
+            return { from: start, to: at, insert: indent };
+        }
+    } finally { cursor.dispose(); }
 }
 /** At most tabSize characters; removing a complete tab stop preserves later tab alignment. */
 function outdentLength(prefix: string, tabSize: number): number {
@@ -271,6 +269,10 @@ function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCom
             bulk(state, config.pairs.length * 2);
             const closing = config.pairs.find(pair => pair.close === key), opening = config.pairs.find(pair => pair.open === key);
             const allowed = (pair: EditingPair, operation: PairingContext["operation"]) => { state.workUnits++; return config.allowPair?.({ ...context, pair, operation }) ?? true; };
+            if (from === to && closing && closing.open !== key) {
+                const indent = yield* closerIndent(buffer, from, key, config, edits.at(-1)?.to ?? 0, read, state);
+                if (indent) { edits.push(indent); delta += indent.insert.length - (indent.to - indent.from); }
+            }
             const atCloser = from === to && closing !== undefined && next === key;
             if (atCloser && allowed(closing, "close") && command.canOvertype?.(from)) { anchor = head = from + delta + 1; }
             else if (opening && from !== to && allowed(opening, "surround")) {

@@ -232,6 +232,8 @@ Line comments toggle nonblank lines. Block comments wrap or unwrap selections. T
 can insert its closer or surround a selection. Typing the closer steps over it once if this view
 inserted it. Backspace or word Backspace between the two untouched delimiters deletes both.
 The view tracks its pairs across edits and undo/redo until disposal or a change of delimiters.
+A closing bracket typed after only spaces or tabs takes its matching opener’s indentation.
+An unmatched or ambiguous closer, a lexical veto or the bracket search limit leaves the indentation in place.
 
 Enter chooses the current row's LF/CRLF terminator, falling back to the preceding terminator
 at EOF and LF when absent. Callback indentation removes/keeps/adds one unit and can split the

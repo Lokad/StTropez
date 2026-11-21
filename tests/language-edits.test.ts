@@ -99,6 +99,20 @@ test("newline commands inherit the current or preceding LF/CRLF terminator witho
     assert.equal(multiple.text, "a\r\n\r\nb\n\nc\n"); assert.deepEqual(multiple.ranges, [[3, 3], [7, 7], [10, 10]]);
 });
 
+test("a first-on-line closer copies its matching opener's indentation in the same edit", () => {
+    const source = "\tif (ok) {\r\n\t  [\r\n\t      ";
+    const config: LanguageConfiguration = { allowPair: ({ buffer, from, to }) => {
+        assert.equal(buffer.length, source.length); assert.ok(from <= to && to <= buffer.length); return true;
+    } };
+    const close = plan(source, selection(source.length), { character: "]" }, config);
+    assert.equal(close.text, "\tif (ok) {\r\n\t  [\r\n\t  ]");
+    assert.deepEqual(close.ranges, [[close.text.length, close.text.length]]);
+    assert.equal(plan(source, selection(source.length), { character: "}" }, config).text, source + "}");
+    assert.equal(plan(source, selection(source.length), { character: "]" }, { allowPair: () => false }).text, source + "]");
+    const tracked = plan("  {\n      }", selection(10), { character: "}", canOvertype: () => true }, {});
+    assert.equal(tracked.text, "  {\n  }"); assert.deepEqual(tracked.ranges, [[7, 7]]);
+});
+
 test("outdent removes one visual indentation unit even when spaces precede tabs", () => {
     for (const insertSpaces of [true, false]) for (const [prefix, expected] of [
         ["  \t", ""], [" \t\t", "\t"], ["\t  \t", "  \t"], ["     \t", " \t"], ["  ", ""], ["      ", "  "], ["", ""],

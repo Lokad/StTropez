@@ -429,6 +429,17 @@ test("line indentation/outdent, CRLF Enter, paired brackets and vertical navigat
     expect((await state(page)).primary.selection.head).toBe(5);
 });
 
+test("typing a closing brace realigns the line and Undo restores its indentation", async ({ page }) => {
+    await page.evaluate(() => { const f = window.editingFixture, text = "  if (ok) {\n      ";
+        f.setText(text); f.selections([{ anchor: text.length, head: text.length }]); f.focus("primary");
+    });
+    await page.keyboard.type("}");
+    const row = page.locator("#primary .st-viewport-row").nth(1);
+    await expect(row).toHaveJSProperty("textContent", "  }");
+    await page.keyboard.press("Control+z"); await expect(row).toHaveJSProperty("textContent", "      ");
+    await page.keyboard.type("x}"); await expect(row).toHaveJSProperty("textContent", "      x}");
+});
+
 test("very long graphemes delete whole and stale yielding indentation cannot retarget later input", async ({ page }) => {
     await page.evaluate(() => { window.editingFixture.setText("x" + "\u0301".repeat(5000)); window.editingFixture.select("primary", { anchor: 5001, head: 5001 }); window.editingFixture.focus("primary"); });
     await page.keyboard.press("Backspace"); await expect.poll(async () => (await state(page)).document!.length).toBe(0);
