@@ -4,7 +4,10 @@ import { partitionPoint } from "../core/bound-search.ts";
 import type { Observable } from "../core/observable.ts";
 import { compareText } from "../core/comparison.ts";
 import type { ComparisonBaseline, ComparisonController, ComparisonHunk, ComparisonSnapshot } from "../core/comparison.ts";
-import type { DiffRange } from "../core/diff.ts";
+import { lineContentEnd } from "../core/language-edits.ts";
+import { splitsSurrogatePair } from "../core/utf16.ts";
+import type { DiffHunk } from "../core/diff.ts";
+import type { TextBuffer } from "../core/text-buffer.ts";
 import type { DocumentId, DocumentView, TabId, TextResourceHandle, Workspace } from "../core/workspace.ts";
 import { mountEditor } from "./text-editor.ts";
 import type { EditorSettings, MountedTextEditor, TextEditor, TextEditorOptions } from "./text-editor.ts";
@@ -37,6 +40,28 @@ export type TextComparison = Observable<TextComparisonSnapshot> & Readonly<{
     revertSelectedHunk: (shown?: TextComparisonSnapshot) => boolean;
     hunkAt: (index: number) => TextComparisonHunk | undefined; dispose: () => void;
 }>;
+
+/** Refine only painted rows. A long or unpaired replacement keeps its line tint. */
+function inlineChange(line: number, side: "working" | "baseline", hunk: DiffHunk, buffer: TextBuffer, other: TextBuffer) {
+    const range = hunk[side], peer = side === "working" ? hunk.baseline : hunk.working;
+    const rows = range.lineTo - range.lineFrom, otherRows = peer.lineTo - peer.lineFrom;
+    if (range.from === range.to || peer.from === peer.to || rows <= 1 && otherRows <= 1) return range;
+    if (rows !== otherRows) return;
+    const otherLine = peer.lineFrom + line - range.lineFrom;
+    const start = buffer.offsetAt(line), end = lineContentEnd(buffer, line);
+    const otherStart = other.offsetAt(otherLine), otherEnd = lineContentEnd(other, otherLine);
+    if (end - start > 4096 || otherEnd - otherStart > 4096) return;
+    const text = buffer.slice(start, end), otherText = other.slice(otherStart, otherEnd);
+    if (text === otherText) return;
+    const limit = Math.min(text.length, otherText.length);
+    let prefix = 0, suffix = 0;
+    while (prefix < limit && text.charCodeAt(prefix) === otherText.charCodeAt(prefix)) prefix++;
+    while (suffix < limit - prefix && text.charCodeAt(text.length - suffix - 1) === otherText.charCodeAt(otherText.length - suffix - 1)) suffix++;
+    if (splitsSurrogatePair(text, prefix) || splitsSurrogatePair(otherText, prefix)) prefix--;
+    if (splitsSurrogatePair(text, text.length - suffix) || splitsSurrogatePair(otherText, otherText.length - suffix)) suffix--;
+    return { from: start + prefix, to: end - suffix };
+}
+
 /** Two independently virtualized panes. Hosts own reference retrieval, acceptance, saving and execution. */
 export function mountTextComparison(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId, baseline: ComparisonBaseline | DocumentId,
     options: TextComparisonOptions = {}): TextComparison {
@@ -62,18 +87,20 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     let epoch = -1, scheduled = false, disposed = false;
     let measuredGeneration = -1, steps = 0, advances = 0, maxStepMs = 0, totalStepMs = 0;
     let decoratedGeneration = -1, decoratedStatus: string | undefined;
-    function rangeAt(side: "baseline" | "working", line: number): DiffRange | undefined {
+    function hunkAtLine(side: "baseline" | "working", line: number): DiffHunk | undefined {
         if (state.status !== "ready" && state.status !== "running") return;
         const low = partitionPoint(state.hunks.length, index => { const range = state.hunks[index]![side]; return Math.max(range.lineFrom + 1, range.lineTo) <= line; });
-        const range = state.hunks[low]?.[side]; return range && range.lineFrom <= line ? range : undefined;
+        const hunk = state.hunks[low]; return hunk && hunk[side].lineFrom <= line ? hunk : undefined;
     }
     const decorate = (side: "baseline" | "working") => (line: PresentedLine): readonly InlineDecoration[] => {
         if (side === "working" && line.revision !== state.working?.revision) return [];
-        const range = rangeAt(side, line.line);
+        const hunk = hunkAtLine(side, line.line);
+        if (!hunk) return [];
+        const buffer = state[side]!.buffer;
+        const range = inlineChange(line.line, side, hunk, buffer, state[side === "working" ? "baseline" : "working"]!.buffer);
         if (!range) return [];
         if (range.from === range.to) {
             let at = range.from;
-            const buffer = state[side]!.buffer;
             // A position between CR and LF shares the painted end of the line.
             if (at === line.to + 1 && at < buffer.length && buffer.slice(line.to, at + 1) === "\r\n") at = line.to;
             return at >= line.from && at <= line.to ? [{ from: at, to: at, className: "st-comparison-anchor" }] : [];
@@ -83,7 +110,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     };
     const lineClass = (side: "baseline" | "working") => (line: PresentedLine) => {
         if (side === "working" && line.revision !== state.working?.revision) return;
-        const range = rangeAt(side, line.line);
+        const range = hunkAtLine(side, line.line)?.[side];
         return range && range.from < range.to ? `st-comparison-line-${side}` : undefined;
     };
     const paneOptions = { ...(options.settings ? { settings: options.settings } : {}), ...(options.requestLine ? { requestLine: options.requestLine } : {}) };

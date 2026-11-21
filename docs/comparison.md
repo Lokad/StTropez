@@ -106,6 +106,10 @@ and working `DiffRange` values with exclusive text and line ends. `whitespaceOnl
 change without suppressing it. A hunk with only LF/CRLF substitutions has `lineEndingOnly: true`.
 The controls label it “line endings only”. Pass `settings` once to configure both panes, including the working pane’s `pasteLineEndings` policy.
 Both panes use the host’s `requestLine` prompt for Go to Line.
+When a replacement spans the same number of rows on both sides, the panes trim the common
+prefix and suffix on each paired row. A point marks an insertion or deletion within a row.
+Uneven multi-row replacements and paired rows over 4,096 UTF-16 units use the line tint alone.
+**Use baseline** restores the whole hunk as one undoable edit.
 Alignment minimizes line insertions/deletions; it does not
 provide a globally minimal character diff or moved-block detection.
 

@@ -42,6 +42,26 @@ for (const custom of [false, true]) test(`${custom ? "host" : "built-in"} review
     expect(await page.evaluate(n => window.comparisonFixture.range(0, n), work.length)).toBe(work);
 });
 
+test("paired rows highlight their own changed text and restore together", async ({ page }) => {
+    const long = "wide ".repeat(1800);
+    const base = ["price 12, qty 2", "read 😀 now", "name=end", long + "A", "end"].join("\r\n");
+    const work = base.replace("12", "15").replace("😀", "😁").replace("name=", "name=x").replace("A\r", "B\r");
+    await page.evaluate(({ base, work }) => {
+        const f = window.comparisonFixture; f.setText(base); f.begin("accept"); f.finish("accept"); f.setText(work);
+    }, { base, work }); await ready(page);
+    const sections = page.locator(".st-comparison-panes > section"), baseline = sections.first(), working = sections.last();
+    await expect(baseline.locator(".st-comparison-removed")).toHaveText(["2", "😀"]);
+    await expect(working.locator(".st-comparison-added")).toHaveText(["5", "😁", "x"]);
+    await expect(baseline.locator('[data-line="2"] .st-comparison-anchor')).toHaveCount(1);
+    await expect(working.locator('.st-comparison-line-working[data-line="3"]')).toBeVisible();
+    await page.getByRole("button", { name: "Next change" }).click();
+    await expect(page.locator(".st-comparison-controls output")).toHaveText("Change 1 of 1");
+    await page.getByRole("button", { name: "Use baseline" }).click(); await ready(page);
+    expect(await page.evaluate(n => window.comparisonFixture.range(0, n), base.length)).toBe(base);
+    await working.getByRole("textbox").press("ControlOrMeta+z"); await ready(page);
+    expect(await page.evaluate(n => window.comparisonFixture.range(0, n), work.length)).toBe(work);
+});
+
 test("a one-sided change marks the empty range without tinting its unchanged neighbour", async ({ page }) => {
     const original = "first\nmiddle\nlast\n";
     await page.evaluate(text => {
