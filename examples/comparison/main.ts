@@ -58,7 +58,6 @@ function snapshot() {
 const fixture = Object.freeze({ snapshot, setText, begin, finish, dispose, review: comparison, focus: () => comparison.panes.working.focus(),
     get settled() { return !disposed && comparisonSettled(comparison); },
     select: (selection: Selection) => comparison.controller.view.setSelection(workspace.document(resource.documentId).revision, selection),
-    selectHunk: (generation: number, index: number) => comparison.selectHunk(generation, index), revert: (generation: number, index: number) => comparison.revertHunk(generation, index),
     range: (from: number, to: number) => workspace.document(resource.documentId).buffer.slice(from, to),
     baselineRange: (from: number, to: number) => comparison.controller.getSnapshot().baseline?.buffer.slice(from, to),
     readOnly: (value: boolean) => workspace.setCapabilities(resource.id, { edit: value ? [] : ["human", "agent", "host"], save: true, run: true }),

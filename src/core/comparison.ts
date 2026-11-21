@@ -28,9 +28,11 @@ export type ComparisonReversion = Readonly<{
     kind: "revert"; capture: ComparisonCapture & Readonly<{ generation: number; tab?: TabTarget; selectionSet: SelectionSet }>;
     isCurrent: () => boolean; complete: () => boolean; cancel: () => void; finish: () => void;
 }>;
+/** Exact hunk from one comparison run. Its action expires when either side changes. */
+export type ComparisonHunk = DiffHunk & Readonly<{ revert: () => boolean }>;
 export type ComparisonController = Observable<ComparisonSnapshot> & Readonly<{
     view: DocumentView; advance: (workBudget?: number) => ComparisonSnapshot;
-    revert: (generation: number, hunk: number) => boolean;
+    hunkAt: (index: number) => ComparisonHunk | undefined;
     beginRefresh: () => ComparisonTicket; beginAcceptance: () => ComparisonTicket; beginReversion: () => ComparisonReversion;
     dispose: () => void;
 }>;
@@ -166,14 +168,17 @@ export function compareText(workspace: Workspace, identity: DocumentId | TabId, 
             }
         }
         return state.get();
-    }, revert: (generation: number, index: number) => {
-        scope.assertWritable(); const current = state.get();
-        if (!canAccept() || current.status !== "ready" || generation !== current.generation || !Number.isSafeInteger(index)) return false;
-        const hunk = current.hunks[index]; if (!hunk || !current.working || !current.baseline) return false;
-        const insert = current.baseline.buffer.slice(hunk.baseline.from, hunk.baseline.to);
-        return workspace.edit({ documentId, expectedRevision: current.working.revision, origin: "human", view,
-            history: { kind: "replace" }, edits: [{ from: hunk.working.from, to: hunk.working.to, insert }],
-            selection: { anchor: hunk.working.from, head: hunk.working.from + insert.length } }).applied;
+    }, hunkAt: (index: number) => {
+        const { status, generation, hunks } = state.get(), hunk = hunks[index];
+        if (status !== "ready" || !Number.isSafeInteger(index) || !hunk) return;
+        return Object.freeze({ ...hunk, revert: () => {
+            scope.assertWritable(); const current = state.get();
+            if (!canAccept() || generation !== current.generation || current.status !== "ready" || !current.working || !current.baseline) return false;
+            const insert = current.baseline.buffer.slice(hunk.baseline.from, hunk.baseline.to);
+            return workspace.edit({ documentId, expectedRevision: current.working.revision, origin: "human", view,
+                history: { kind: "replace" }, edits: [{ from: hunk.working.from, to: hunk.working.to, insert }],
+                selection: { anchor: hunk.working.from, head: hunk.working.from + insert.length } }).applied;
+        } });
     }, beginRefresh: () => begin("refresh"), beginAcceptance: () => begin("accept"), beginReversion, dispose: () => {
         scope.assertWritable(); if (disposed) return;
         retention.release();

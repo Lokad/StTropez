@@ -90,9 +90,9 @@ test("out-of-order refresh rejects old results and never replaces the mounted wo
 });
 
 test("a stale selected hunk cannot retarget after typing, and permissions gate revert", async ({ page }) => {
-    const captured = await page.evaluate(() => { const s = window.comparisonFixture.snapshot(); window.comparisonFixture.selectHunk(s.generation, 0); window.comparisonFixture.focus(); return s; });
+    const captured = await page.evaluateHandle(() => { const f = window.comparisonFixture, hunk = f.review.hunkAt(0)!; hunk.select(); f.focus(); return hunk; });
     await page.keyboard.type("new"); await ready(page);
-    expect(await page.evaluate(g => window.comparisonFixture.revert(g, 0), captured.generation)).toBe(false);
+    expect(await captured.evaluate(hunk => hunk.revert())).toBe(false);
     await expect(page.getByRole("button", { name: "Use baseline", exact: true })).toBeDisabled();
     await page.getByRole("button", { name: "Next change", exact: true }).click();
     await page.evaluate(() => window.comparisonFixture.readOnly(true));
@@ -107,9 +107,10 @@ test("custom host controls observe captured selection, alignment, authority and 
     const later = controls.getByRole("button", { name: "Later change", exact: true });
     const restore = controls.getByRole("button", { name: "Restore selected change", exact: true });
     await expect(restore).toBeDisabled(); await later.click(); await expect(restore).toBeEnabled();
+    const selected = await page.evaluateHandle(() => window.comparisonFixture.review.hunkAt(0)!);
     const capture = await page.evaluate(() => {
         const f = window.comparisonFixture, state = f.review.getSnapshot(); let rejected = false, calls = 0;
-        const stop = f.review.subscribe(() => { calls++; try { f.selectHunk(f.review.getSnapshot().comparison.generation, 0); } catch { rejected = true; } });
+        const stop = f.review.subscribe(() => { calls++; try { f.review.hunkAt(0)!.select(); } catch { rejected = true; } });
         f.readOnly(true); const locked = !f.review.getSnapshot().canRevert; f.readOnly(false); stop();
         return { generation: state.comparison.generation, selected: state.selectedHunk, locked, rejected, calls,
             frozen: Object.isFrozen(state) && Object.isFrozen(state.alignment), retained: state.canRevert,
@@ -126,24 +127,24 @@ test("custom host controls observe captured selection, alignment, authority and 
     await input.focus();
     await input.dispatchEvent("compositionstart", { data: "" });
     await expect(later).toBeDisabled(); await expect(restore).toBeDisabled();
-    expect(await page.evaluate(g => window.comparisonFixture.revert(g, 0), capture.generation)).toBe(false);
+    expect(await selected.evaluate(hunk => hunk.revert())).toBe(false);
     await input.dispatchEvent("compositionend", { data: "" }); await ready(page);
     await page.evaluate(() => window.comparisonFixture.focus());
     await page.keyboard.type("replacement"); await ready(page);
-    expect(await page.evaluate(g => window.comparisonFixture.revert(g, 0), capture.generation)).toBe(false);
+    expect(await selected.evaluate(hunk => hunk.revert())).toBe(false);
     expect(await page.evaluate(() => window.comparisonFixture.review.getSnapshot().selectedHunk)).toBeNull();
     await expect(restore).toBeDisabled();
     await later.click();
-    const beforeRefresh = await page.evaluate(() => {
-        const f = window.comparisonFixture, state = f.review.getSnapshot(); f.begin("refresh"); f.finish("refresh");
-        return { generation: state.comparison.generation, cleared: f.review.getSnapshot().selectedHunk === null };
-    });
-    expect(beforeRefresh.cleared).toBe(true); await ready(page);
-    expect(await page.evaluate(g => window.comparisonFixture.selectHunk(g, 0), beforeRefresh.generation)).toBe(false);
+    const beforeRefresh = await page.evaluateHandle(() => window.comparisonFixture.review.hunkAt(0)!);
+    expect(await page.evaluate(() => {
+        const f = window.comparisonFixture; f.begin("refresh"); f.finish("refresh");
+        return f.review.getSnapshot().selectedHunk === null;
+    })).toBe(true); await ready(page);
+    expect(await beforeRefresh.evaluate(hunk => hunk.select())).toBe(false);
     await later.click();
     expect(await input.evaluate(element => {
         const f = window.comparisonFixture, state = f.review.getSnapshot(), input = element as HTMLTextAreaElement;
-        input.readOnly = true; const applied = f.revert(state.comparison.generation, state.selectedHunk!); input.readOnly = false; return applied;
+        input.readOnly = true; const applied = f.review.hunkAt(state.selectedHunk!)!.revert(); input.readOnly = false; return applied;
     })).toBe(false);
     await restore.click(); await ready(page);
     await page.getByRole("button", { name: "Undo working edit", exact: true }).click(); await ready(page);
@@ -152,7 +153,7 @@ test("custom host controls observe captured selection, alignment, authority and 
         const stop = f.review.subscribe(() => { if (f.review.getSnapshot().disposed) notified = true; });
         f.dispose(); stop(); const state = f.review.getSnapshot();
         return { notified, disposed: state.disposed, status: state.comparison.status, selected: state.selectedHunk,
-            navigate: state.canNavigate, revert: state.canRevert, rejected: !f.revert(state.comparison.generation, 0), diagnostics: f.snapshot().diagnostics };
+            navigate: state.canNavigate, revert: state.canRevert, rejected: f.review.hunkAt(0) === undefined, diagnostics: f.snapshot().diagnostics };
     });
     expect(terminal).toMatchObject({ notified: true, disposed: true, status: "disposed", selected: null, navigate: false, revert: false, rejected: true,
         diagnostics: { resources: 1, tabs: 1, views: 0, leases: 0, subscriptions: 0 } });

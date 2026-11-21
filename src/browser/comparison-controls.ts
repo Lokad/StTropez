@@ -2,7 +2,7 @@ import type { TextComparison, TextComparisonSnapshot } from "./comparison.ts";
 
 /** Optional presentation. Pane ownership and command validation stay with the comparison. */
 export function mountComparisonControls(
-    comparison: Pick<TextComparison, "element" | "panes" | "getSnapshot" | "subscribe" | "selectHunk" | "revertHunk" | "setScrollLinked" | "setRowsAligned">,
+    comparison: Pick<TextComparison, "element" | "panes" | "getSnapshot" | "subscribe" | "hunkAt" | "setScrollLinked" | "setRowsAligned">,
     referencePane: HTMLElement, workingPane: HTMLElement
 ): () => void {
     const owner = comparison.element.ownerDocument, controls = owner.createElement("div"), listeners = new AbortController();
@@ -52,7 +52,7 @@ export function mountComparisonControls(
     function navigate(direction: -1 | 1): void {
         const state = comparison.getSnapshot(), count = state.comparison.hunks.length;
         const index = state.selectedHunk ?? (direction === 1 ? -1 : 0);
-        if (state.canNavigate) comparison.selectHunk(state.comparison.generation, (index + direction + count) % count);
+        if (state.canNavigate) comparison.hunkAt((index + direction + count) % count)?.select();
     }
     previous.addEventListener("click", () => navigate(-1), { signal: listeners.signal });
     next.addEventListener("click", () => navigate(1), { signal: listeners.signal });
@@ -60,7 +60,7 @@ export function mountComparisonControls(
         const state = comparison.getSnapshot();
         if (state.canRevert && state.selectedHunk !== null) {
             comparison.panes.working.focus();
-            comparison.revertHunk(state.comparison.generation, state.selectedHunk);
+            comparison.hunkAt(state.selectedHunk)?.revert();
         }
     }, { signal: listeners.signal });
     link.addEventListener("change", () => comparison.setScrollLinked(link.checked), { signal: listeners.signal });

@@ -3,7 +3,7 @@ import { validateWorkBudget } from "../core/kernel-cursor.ts";
 import { partitionPoint } from "../core/bound-search.ts";
 import type { Observable } from "../core/observable.ts";
 import { compareText } from "../core/comparison.ts";
-import type { ComparisonBaseline, ComparisonController, ComparisonSnapshot } from "../core/comparison.ts";
+import type { ComparisonBaseline, ComparisonController, ComparisonHunk, ComparisonSnapshot } from "../core/comparison.ts";
 import type { DiffRange } from "../core/diff.ts";
 import type { DocumentId, DocumentView, TabId, TextResourceHandle, Workspace } from "../core/workspace.ts";
 import { mountEditor } from "./text-editor.ts";
@@ -26,14 +26,14 @@ export type TextComparisonSnapshot = Readonly<{
     scrollLinked: boolean; alignment: ComparisonAlignmentSnapshot; disposed: boolean;
 }>;
 export type TextComparisonDiagnostics = Readonly<{ generation: number; steps: number; advances: number; maxStepMs: number; totalStepMs: number; scrollLinked: boolean; pendingScroll: boolean; rowsAligned: boolean; alignment: ComparisonAlignmentSnapshot; disposed: boolean }>;
+export type TextComparisonHunk = ComparisonHunk & Readonly<{ select: () => boolean }>;
 export type TextComparison = Observable<TextComparisonSnapshot> & Readonly<{
     element: HTMLDivElement; controller: ComparisonController;
     panes: Readonly<{ working: TextEditor; reference: TextEditor }>; activePane: () => TextEditor;
     getDiagnostics: () => TextComparisonDiagnostics;
     setScrollLinked: (linked: boolean) => void;
     setRowsAligned: (aligned: boolean) => void;
-    selectHunk: (generation: number, index: number) => boolean;
-    revertHunk: (generation: number, index: number) => boolean; dispose: () => void;
+    hunkAt: (index: number) => TextComparisonHunk | undefined; dispose: () => void;
 }>;
 /** Two independently virtualized panes. Hosts own reference retrieval, acceptance, saving and execution. */
 export function mountTextComparison(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId, baseline: ComparisonBaseline | DocumentId,
@@ -168,10 +168,14 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         working.view.folding.reveal(working.view.folding.getSnapshot(), hunk.working.from, hunk.working.to);
         reference.revealOffset(hunk.baseline.from); working.viewport.revealOffset(hunk.working.from); render(); return true;
     }
-    function revertHunk(generation: number, index: number): boolean {
-        stateScope.assertWritable();
-        if (disposed || composing() || working.input.readOnly || working.input.disabled) return false;
-        return controller.revert(generation, index);
+    function hunkAt(index: number): TextComparisonHunk | undefined {
+        const hunk = controller.hunkAt(index);
+        if (!hunk) return;
+        const generation = controller.getSnapshot().generation;
+        return Object.freeze({ ...hunk, select: () => selectHunk(generation, index), revert: () => {
+            stateScope.assertWritable();
+            return !disposed && !composing() && !working.input.readOnly && !working.input.disabled && hunk.revert();
+        } });
     }
     // A document notification can paint the working viewport before the scheduled controls.
     // Decoration queries must already see the mapped capture for that same revision.
@@ -194,7 +198,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         let active = working;
         for (const editor of Object.values(editors))
             editor.element.addEventListener("focusin", () => { active = editor; }, { signal: editor.signal });
-        const review: TextComparison = Object.freeze({ element: root, controller, panes: editors, activePane: () => active, ...stateStore.observable, selectHunk, revertHunk, setScrollLinked, setRowsAligned,
+        const review: TextComparison = Object.freeze({ element: root, controller, panes: editors, activePane: () => active, ...stateStore.observable, hunkAt, setScrollLinked, setRowsAligned,
             getDiagnostics: () => Object.freeze({ generation: measuredGeneration, steps, advances, maxStepMs, totalStepMs, scrollLinked: scroll.snapshot().linked, pendingScroll: scroll.snapshot().pending, rowsAligned: alignment.snapshot().enabled, alignment: alignment.snapshot(), disposed }), dispose });
         if (options.controls !== false) stopControls = mountComparisonControls(review, referencePane.section, workingPane.section);
         schedule();

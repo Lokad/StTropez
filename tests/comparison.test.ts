@@ -54,7 +54,7 @@ test("invalid comparison budgets preserve live work and the shared minimum can f
         assert.ok(state.progress!.work - work <= 1024, "one checkpoint may overshoot the requested work budget");
     }
     assert.equal(state.status, "ready"); assert.equal(state.hunks.length, 1); rejectInvalid();
-    assert.equal(comparison.revert(state.generation, 0), true);
+    assert.equal(comparison.hunkAt(0)!.revert(), true);
     assert.equal(workspace.document(resource.documentId).buffer.equals(reference), true);
     unsubscribe(); comparison.dispose(); assert.equal(workspace.diagnostics().leases, 0);
 });
@@ -119,15 +119,15 @@ test("cancelled and empty whole-review reversions are inert and release explicit
 
 test("comparison hunk reversion is revision-guarded, undoable and shared across views", () => {
     const { workspace, resource, reference, comparison, edit } = fixture(), sibling = workspace.createDocumentView(resource.documentId);
-    const state = ready(comparison); assert.equal(state.hunks.length, 1);
+    const state = ready(comparison); assert.equal(state.hunks.length, 1); const hunk = comparison.hunkAt(0)!;
     comparison.view.setSelection(0, { anchor: 2, head: 4 });
-    assert.equal(comparison.revert(state.generation, 0), true);
+    assert.equal(hunk.revert(), true);
     assert.equal(workspace.document(resource.documentId).buffer.equals(reference.buffer), true);
     assert.equal(sibling.getSnapshot().revision, 1);
-    assert.equal(comparison.revert(state.generation, 0), false);
+    assert.equal(hunk.revert(), false);
     assert.equal(workspace.undo({ documentId: resource.documentId, expectedRevision: 1 }).applied, true);
     assert.deepEqual(comparison.view.getSnapshot().selection, { anchor: 2, head: 4, anchorAffinity: "after", headAffinity: "before" });
-    const stale = ready(comparison); edit("later"); assert.equal(comparison.revert(stale.generation, 0), false);
+    ready(comparison); const stale = comparison.hunkAt(0)!; edit("later"); assert.equal(stale.revert(), false);
     assert.equal(reference.buffer.slice(0, reference.buffer.length), "first\nbaseline\nlast\n");
     sibling.dispose(); comparison.dispose(); assert.equal(workspace.diagnostics().leases, 0);
 });
@@ -135,7 +135,7 @@ test("comparison hunk reversion is revision-guarded, undoable and shared across 
 test("running comparisons map retained review hunks through consecutive edits without enabling stale actions", () => {
     const f = fixture("common tail\n".repeat(64));
     try {
-        const exact = ready(f.comparison), original = exact.hunks, originalJson = JSON.stringify(original);
+        const exact = ready(f.comparison), hunk = f.comparison.hunkAt(0)!, original = exact.hunks, originalJson = JSON.stringify(original);
         let before = f.workspace.document(f.resource.documentId), prior = original;
         for (const edit of [{ from: 0, to: 0, insert: "prefix\n" }, { from: 14, to: 14, insert: "x" }, { from: 2, to: 7, insert: "\n" }]) {
             f.workspace.edit({ documentId: before.id, expectedRevision: before.revision, origin: "host", edits: [edit] });
@@ -144,7 +144,7 @@ test("running comparisons map retained review hunks through consecutive edits wi
             const from = map.map(prior[0]!.working.from, "before").offset, to = map.map(prior[0]!.working.to, "after").offset;
             assert.deepEqual(running.hunks[0]!.working, { from, to, lineFrom: after.buffer.lineAt(from), lineTo: from === to ? after.buffer.lineAt(from) : after.buffer.lineAt(to - 1) + 1 });
             assert.equal(running.hunks[0]!.baseline, original[0]!.baseline);
-            assert.equal(f.comparison.revert(exact.generation, 0), false); assert.equal(f.comparison.revert(running.generation, 0), false);
+            assert.equal(hunk.revert(), false); assert.equal(f.comparison.hunkAt(0), undefined);
             assert.throws(() => f.comparison.beginReversion(), /unavailable/);
             assert.ok(Object.isFrozen(running.hunks)); assert.ok(Object.isFrozen(running.hunks[0]!.working));
             prior = running.hunks; before = after;
@@ -196,10 +196,10 @@ test("comparison observes its document, policy and tab rather than unrelated wor
     const other = workspace.createDocument({ scope: "review", resource: "other", variant: "source" }, "Other", "other");
     const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "main"), controller = createComparisonController(workspace, tab, { buffer: TextBuffer.from("base"), version: "one" });
     try {
-        const captured = ready(controller); workspace.reads = 0;
+        const captured = ready(controller), hunk = controller.hunkAt(0)!; workspace.reads = 0;
         workspace.edit({ documentId: other, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 0, insert: "x" }] });
         assert.equal(workspace.reads, 0); assert.equal(controller.getSnapshot(), captured);
-        workspace.setCapabilities(source.id, { edit: [], save: true, run: false }); assert.equal(controller.revert(captured.generation, 0), false);
+        workspace.setCapabilities(source.id, { edit: [], save: true, run: false }); assert.equal(hunk.revert(), false);
         workspace.tabs.close(tab); assert.equal(controller.getSnapshot().status, "expired");
     } finally { controller.dispose(); assert.equal(workspace.diagnostics().subscriptions, 0); }
 });

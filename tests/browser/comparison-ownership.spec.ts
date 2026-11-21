@@ -50,7 +50,7 @@ test("independent comparison modules share workspace identity and release retain
         await wait(() => folds.getSnapshot().status === "ready" && find.getSnapshot().count === 1 && one.getSnapshot().canNavigate);
         const defaultWorking = one.activePane() === one.panes.working;
         const folded = folds.runCommand("collapse-all"), activeReference = one.activePane() === editor && document.activeElement === editor.input;
-        const generation = one.controller.getSnapshot().generation, next = initial.buffer.replace(initial.buffer.length, initial.buffer.length, "\nneedle");
+        const retired = one.hunkAt(0)!, next = initial.buffer.replace(initial.buffer.length, initial.buffer.length, "\nneedle");
         const refresh = (version: string) => one.controller.beginRefresh().complete({ buffer: next, version });
         if (!refresh("two")) throw new Error("Reference refresh failed.");
         // A second authority revision can share the same buffer while discovery for the first is pending.
@@ -58,7 +58,7 @@ test("independent comparison modules share workspace identity and release retain
         const revision = workspace.document(editor.view.documentId).revision;
         await wait(() => one.getSnapshot().canNavigate && find.getSnapshot().count === 2 && folds.getSnapshot().status === "ready" && folds.getSnapshot().revision === revision);
         const afterRefresh = { stable: one.panes.reference === editor, oldText: initial.text(), text: workspace.document(editor.view.documentId).text(),
-            retiredRejected: !one.selectHunk(generation, 0), rulers: editor.settings().columnRulers, query: find.getSnapshot().query,
+            retiredRejected: !retired.select(), rulers: editor.settings().columnRulers, query: find.getSnapshot().query,
             folded, collapsed: folds.getSnapshot().collapsed, defaultWorking, activeReference };
         const current = workspace.resourceForDocument(one.panes.reference.view.documentId), currentLease = workspace.acquire(current.id);
         one.dispose(); one.dispose(); two.dispose(); stopInventory();
@@ -183,7 +183,7 @@ test("review highlights survive every typing paint while exact comparison work i
         host.id = "held-comparison"; document.body.append(host);
         const mounted = mountTextComparison(host, workspace, tab, { buffer: TextBuffer.from("new\n" + "unchanged\n".repeat(4000)), version: "one" });
         await new Promise<void>(resolve => { const stop = mounted.controller.subscribe(() => { if (mounted.controller.getSnapshot().status === "ready") { stop(); resolve(); } }); });
-        const exact = mounted.controller.getSnapshot(); mounted.selectHunk(exact.generation, 0);
+        const exact = mounted.hunkAt(0)!; exact.select();
         mounted.panes.working.view.setSelection(0, { anchor: 1, head: 1 }); mounted.panes.working.focus();
         const next = TextDiff.prototype.next;
         TextDiff.prototype.next = function() { return Object.freeze({ status: "running", work: 0, readUnits: 0, lineEdits: 0, hunks: Object.freeze([]), failure: null }); };
@@ -195,7 +195,7 @@ test("review highlights survive every typing paint while exact comparison work i
         });
         window.comparisonPresentation = {
             capture: () => { const s = mounted.controller.getSnapshot(); return { status: s.status, revision: s.working!.revision, hunks: s.hunks.length, paints,
-                staleRevert: mounted.controller.revert(exact.generation, 0), currentRevert: mounted.controller.revert(s.generation, 0) }; },
+                staleRevert: exact.revert(), currentRevert: mounted.controller.hunkAt(0)?.revert() ?? false }; },
             release: () => { TextDiff.prototype.next = next; },
             dispose: () => { TextDiff.prototype.next = next; mounted.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); },
         };

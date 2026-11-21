@@ -332,6 +332,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             && reference.tab === undefined,
         selectedHunk: review.selectedHunk, canNavigate: review.canNavigate, canRevert: review.canRevert,
         viewId: comparisonView.id, selection: comparisonView.getSnapshot().selection, reference: comparison.panes.reference.viewport.snapshot(), working: comparison.panes.working.viewport.snapshot() }; },
+    hunkAt: (index: number) => comparison.hunkAt(index),
     remountComparison: () => {
         const baseline = comparison.controller.getSnapshot().baseline!, state = comparison.panes.working.captureView();
         comparison.dispose(); const retained = workspace.ownsDocumentView(comparisonView);

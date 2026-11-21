@@ -41,7 +41,7 @@ export function bindRestoreButton(button: HTMLButtonElement, review: TextCompari
     const render = () => { button.disabled = !review.getSnapshot().canRevert; };
     const restore = () => {
         const state = review.getSnapshot();
-        if (state.selectedHunk !== null) review.revertHunk(state.comparison.generation, state.selectedHunk);
+        if (state.selectedHunk !== null) review.hunkAt(state.selectedHunk)?.revert();
     };
     const stop = review.subscribe(render);
     button.addEventListener("click", restore); render();
@@ -140,11 +140,12 @@ validate the budget and return the current progress.
 
 ### Reverting a change or accepting a version
 
-`selectHunk(generation, index)` reveals and selects both ranges, unfolding them if needed. It
-returns `false` for a stale, unavailable or composing target. In browser UI, use
-`revertHunk(generation, index)`. It also checks disabled and read-only inputs before calling
-`controller.revert(generation, index)`. The controller checks readiness, generation, revision and
-edit permission, then restores the baseline range in one human history transaction. Undo restores
+Call `review.hunkAt(index)` when presenting a change. It returns a handle for that exact change,
+or `undefined` while the diff is pending or the index is out of range. Keep the handle through a
+confirmation dialog. Its `select()` reveals and selects both ranges, unfolding them if needed.
+Its `revert()` restores the baseline range in one undoable edit. Both return `false` after either
+side changes or the review closes. Browser actions also guard composition, and revert checks
+write access. Headless consumers use `controller.hunkAt(index)?.revert()`. Undo restores
 the text and selection. The built-in **Use baseline** button focuses the working editor so you can
 undo or type there immediately. A working edit clears the hunk selection.
 

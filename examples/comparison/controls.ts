@@ -17,13 +17,13 @@ export function mountReviewControls(host: HTMLElement, comparison: TextCompariso
     }
     function navigate(direction: -1 | 1): void {
         const state = comparison.getSnapshot(), count = state.comparison.hunks.length, current = state.selectedHunk ?? (direction === 1 ? -1 : 0);
-        if (state.canNavigate) comparison.selectHunk(state.comparison.generation, (current + direction + count) % count);
+        if (state.canNavigate) comparison.hunkAt((current + direction + count) % count)?.select();
     }
     previous.addEventListener("click", () => navigate(-1), { signal: listeners.signal });
     next.addEventListener("click", () => navigate(1), { signal: listeners.signal });
     revert.addEventListener("click", () => {
         const state = comparison.getSnapshot();
-        if (state.canRevert && state.selectedHunk !== null) comparison.revertHunk(state.comparison.generation, state.selectedHunk);
+        if (state.canRevert && state.selectedHunk !== null) comparison.hunkAt(state.selectedHunk)?.revert();
     }, { signal: listeners.signal });
     alignment.addEventListener("click", () => comparison.setRowsAligned(!comparison.getSnapshot().alignment.enabled), { signal: listeners.signal });
     linking.addEventListener("click", () => comparison.setScrollLinked(!comparison.getSnapshot().scrollLinked), { signal: listeners.signal });

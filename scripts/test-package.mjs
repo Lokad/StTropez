@@ -422,7 +422,12 @@ try {
     assert.equal(await page.locator("#comparison .consumer-review-token.st-comparison-added").textContent(), "working");
     assert.equal(await page.locator("#comparison .consumer-review-token.st-comparison-removed").textContent(), "baseline");
     assert.deepEqual(await page.evaluate(() => window.consumer.diff()), { status: "ready", whitespaceOnly: true });
-    await page.getByRole("button", { name: "Next change", exact: true }).click();
+    const oldHunk = await page.evaluateHandle(() => {
+        const hunk = window.consumer.hunkAt(0);
+        if (!hunk) throw new Error("Expected an exact comparison hunk.");
+        return hunk;
+    });
+    assert.equal(await oldHunk.evaluate(hunk => hunk.select()), true);
     const selectedComparison = await page.evaluate(() => window.consumer.comparison());
     assert.equal(selectedComparison.selectedHunk, 0); assert.equal(selectedComparison.canNavigate, true); assert.equal(selectedComparison.canRevert, true);
     await page.getByRole("button", { name: "Use baseline", exact: true }).click();
@@ -434,6 +439,8 @@ try {
     await page.waitForFunction(() => { const s = window.consumer.comparison(); return s.status === "ready" && !s.working.pending
         && JSON.stringify(s.working.selection) === JSON.stringify(s.selection); });
     const remountedComparison = await page.evaluate(() => window.consumer.comparison());
+    assert.deepEqual(await oldHunk.evaluate(hunk => [hunk.select(), hunk.revert()]), [false, false]);
+    await oldHunk.dispose();
     assert.equal(remountedComparison.internalBaseline, true);
     assert.equal(remountedComparison.viewId, retainedComparison.viewId); assert.deepEqual(remountedComparison.selection, retainedComparison.selection);
     const saveReview = await page.evaluate(() => window.consumer.saveReview());
