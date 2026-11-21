@@ -1,7 +1,7 @@
 import { Workspace } from "../../src/index.ts";
-import type { EditingCommand, LanguageConfiguration, FoldRange, Selection, TextEdit } from "../../src/index.ts";
+import type { LanguageConfiguration, FoldRange, Selection, TextEdit } from "../../src/index.ts";
 import { inputConflictEvent, mountTextEditor, createFoldingController } from "../../src/browser/index.ts";
-import type { TextEditorEditTransform, FoldDiscovery, FoldCommand, FoldingController, InputConflictDetail } from "../../src/browser/index.ts";
+import type { TextEditorCommand, TextEditorEditTransform, FoldDiscovery, FoldCommand, FoldingController, InputConflictDetail } from "../../src/browser/index.ts";
 import { corpus, corpusIds } from "../../fixtures/workloads.ts";
 import { EditingPresentation } from "../shared/language/presentation.ts";
 import { editorSettled } from "../shared/readiness.ts";
@@ -49,7 +49,8 @@ const fixture = { ready: true, setText, edit, select, history,
     foldCommand: (command: FoldCommand, group?: string) => foldingController?.runCommand(command, group),
     refreshFolds: () => foldingController?.refresh(), foldStatus: () => foldingController?.getSnapshot(),
     configureLanguage: (value: LanguageConfiguration) => editors.primary.configureLanguage(value),
-    command: (command: EditingCommand) => editors.primary.runCommand(command),
+    command: (command: TextEditorCommand) => editors.primary.runCommand(command),
+    selectionSet: () => editors.primary.view.getSnapshot().selectionSet,
     selections: (ranges: readonly Selection[], primary = 0) => editors.primary.view.setSelections(workspace.document(source.documentId).revision, ranges, primary),
     folds: (ranges: readonly FoldRange[], which: "primary" | "secondary" = "primary") => { const f = editors[which].view.folding; return f.setRanges(f.getSnapshot(), ranges); },
     folding: (which: "primary" | "secondary" = "primary") => editors[which].view.folding.getSnapshot(),

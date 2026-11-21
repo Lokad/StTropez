@@ -141,6 +141,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     let visualMoves = 0;
     let group: Readonly<{ type: string; revision: number; selectionSet: SelectionSet; tail: ReturnType<typeof typingRun> | "spaces" | undefined; key: string }> | undefined;
     let drag: Readonly<{ pointer: number; anchor: number; anchorAffinity: Affinity; revision: number; x: number; y: number; selectionSet: SelectionSet; baseRanges: readonly Selection[]; padding: boolean }> | undefined;
+    let dragCaretRecorded = false;
     let dragScrollFrames = 0, maxDragScrollStepMs = 0;
     const commandRunner = createCooperativeRunner(win);
     let wordJob: Readonly<{ cursor: Pick<WordCursor, "next" | "dispose">; revision: number }> | undefined, cancelWordTask: (() => void) | undefined;
@@ -420,9 +421,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         if (!validCommand(capture)) { cancelWord(); return false; }
         return inputQueue.complete(capture, work);
     }
-    function finishRanges(capture: CommandCapture, ranges: readonly Selection[], type?: string): SelectionSet | undefined {
+    function finishRanges(capture: CommandCapture, ranges: readonly Selection[], type?: string, primary = capture.selectionSet.primary): SelectionSet | undefined {
         if (!validCommand(capture)) return;
-        const selections = createSelectionSet(capture.buffer.length, ranges, capture.selectionSet.primary);
+        const selections = createSelectionSet(capture.buffer.length, ranges, primary);
         completeCaptured(capture, () => {
         if (capture.deleting) { const plan = planSelectionEdits(capture.buffer.length, selections, "");
             return apply(plan.edits, plan.selectionSet, "delete", type, capture.revision); }
@@ -658,7 +659,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             } } : {}) });
         }, shortHorizontal);
     }
-    function vertical(direction: -1 | 1, page: boolean, extend: boolean): void {
+    function vertical(direction: -1 | 1, page: boolean, extend: boolean, add = false): void {
         beginNavigation((capture, style, inline) => {
         const began = win.performance.now(); viewport.flush();
         const buffer = capture.buffer, selected = capture.selection;
@@ -672,13 +673,15 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         eachRange(capture, "grapheme", (range, done) => {
             const at = index++, line = buffer.lineAt(range.head), row = navigation.visualRowAt(line), next = navigation.navigationLine(line, direction, count, page);
             if (at === capture.selectionSet.primary) pageDelta = (navigation.visualRowAt(next) - row) * state.lineHeight;
-            if (next === line) { columns.push(undefined); done(moved(range, direction < 0 ? 0 : buffer.length, extend)); return; }
+            if (next === line) { columns.push(prior?.[at]); done(add ? range : moved(range, direction < 0 ? 0 : buffer.length, extend)); return; }
             const column = prior?.[at] ?? navigation.columnAt(range.head, range.headAffinity);
             const hit = column === undefined ? undefined : navigation.caretAtColumn(next, column);
             columns.push(column); done(hit ? moved(range, hit.offset, extend, hit.affinity) : range);
-        }, ranges => {
+        }, destinations => {
             if (page) viewport.scrollTo({ top: state.scrollTop + pageDelta });
-            const selections = finishRanges(capture, ranges); if (!selections) return;
+            const ranges = add ? [...capture.selectionSet.ranges, ...destinations] : destinations;
+            const primary = capture.selectionSet.primary + (add ? destinations.length : 0);
+            const selections = finishRanges(capture, ranges, undefined, primary); if (!selections) return;
             // Normalization may reorder/coalesce targets. Carry the owning range's column,
             // using the same primary/first-supplied ownership as the public selection model.
             const ordered = ranges.map((range, at) => ({ from: Math.min(range.anchor, range.head), to: Math.max(range.anchor, range.head), at }))
@@ -688,9 +691,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
                 const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head); let ownerIndex = Infinity;
                 while (cursor < ordered.length && ordered[cursor]!.from >= from && ordered[cursor]!.to <= to) {
                     const at = ordered[cursor++]!.at;
-                    if (at === capture.selectionSet.primary || ownerIndex !== capture.selectionSet.primary && at < ownerIndex) ownerIndex = at;
+                    if (at === primary || ownerIndex !== primary && at < ownerIndex) ownerIndex = at;
                 }
-                return columns[ownerIndex];
+                return columns[ownerIndex % columns.length];
             });
             preferred = { selections, revision: capture.revision, layout, columns: nextColumns };
         }, { validLayout: () => navigationLayout() === layout, navigation: true, inline, ...(capture.selectionSet.ranges.length > 1 ? {
@@ -747,6 +750,18 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     function runCommand(command: TextEditorCommand): boolean {
         if (disposed || composing || input.disabled || !workspace.resolveTab(target)) return false;
         switch (command) {
+            case "add-caret-above": case "add-caret-below":
+                syncSelection(); group = undefined; vertical(command === "add-caret-above" ? -1 : 1, false, false, true); return true;
+            case "undo-caret": {
+                cancelWord(); syncSelection(); group = undefined; preferred = undefined;
+                const previous = caretHistory.pop();
+                if (previous) {
+                    restoringCaret = true;
+                    try { view.setSelections(revision, previous.ranges, previous.primary); revealCaret(); }
+                    finally { restoringCaret = false; }
+                }
+                return true;
+            }
             case "jump-to-bracket": {
                 cancelWord(); syncSelection(); group = undefined; preferred = undefined;
                 const capture = commandCapture(false);
@@ -1049,6 +1064,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         const anchor = extending ? state.selection.anchor : point.offset, anchorAffinity = extending ? state.selection.anchorAffinity ?? "after" : point.affinity;
         const baseRanges = event.altKey ? state.selectionSet.ranges : extending ? state.selectionSet.ranges.filter((_, index) => index !== state.selectionSet.primary) : [];
         view.setSelections(revision, [...baseRanges, { anchor, head: point.offset, anchorAffinity, headAffinity: point.affinity }], baseRanges.length); refresh();
+        dragCaretRecorded = state.selectionSet !== view.getSnapshot().selectionSet;
         if (point.padding) viewport.revealOffset(point.offset, { horizontal: "nearest", vertical: "nearest", affinity: point.affinity });
         drag = { pointer: event.pointerId, anchor, anchorAffinity, revision, x: event.clientX, y: event.clientY, selectionSet: view.getSnapshot().selectionSet, baseRanges, padding: point.padding === true }; root.setPointerCapture(event.pointerId);
     }, { signal: listeners.signal });
@@ -1120,7 +1136,19 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         }
     }, { signal: listeners.signal });
     let observedFoldRevision = view.folding.getSnapshot().revision;
-    const subscriptions = [viewport.onRender(scheduleCaret), workspace.observeDocument(documentId).subscribe(refresh), view.subscribe(refresh),
+    const caretHistory: SelectionSet[] = [];
+    let lastCaret = view.getSnapshot(), restoringCaret = false;
+    const observeCaret = () => {
+        const next = view.getSnapshot();
+        if (next.revision !== lastCaret.revision) caretHistory.length = 0;
+        else if (!restoringCaret && (!drag || !dragCaretRecorded) && next.selectionSet !== lastCaret.selectionSet) {
+            if (caretHistory.length === 50) caretHistory.shift();
+            caretHistory.push(lastCaret.selectionSet);
+            if (drag) dragCaretRecorded = true;
+        }
+        lastCaret = next; refresh();
+    };
+    const subscriptions = [viewport.onRender(scheduleCaret), workspace.observeDocument(documentId).subscribe(refresh), view.subscribe(observeCaret),
         view.folding.subscribe(() => { const revision = view.folding.getSnapshot().revision;
             if (revision === observedFoldRevision) { cancelWord(); stopDrag(); preferred = undefined; group = undefined; }
             observedFoldRevision = revision; refresh(); }), resource.metadata.subscribe(refresh), workspace.tabState.subscribe(refresh)];
@@ -1175,6 +1203,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         dispose: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; editTransform = undefined;
             brackets!.dispose(); paired.clear(); automaticIndent.clear(); commentPrefix = undefined;
+            caretHistory.length = 0;
             warnings!.dispose();
             hostInsertion?.cancel();
             if (inputQueue.executing) inputQueue.recover(inputQueue.executing, "pending-input-detached");

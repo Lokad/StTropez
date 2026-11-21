@@ -7,6 +7,21 @@ async function setup(page: Page, text: string, head = 0) {
 }
 test.beforeEach(async ({ page }) => {  await page.goto("/editing/"); await ready(page); });
 
+test("adding carets carries the visual column across short lines and cursor undo restores the primary range", async ({ page }) => {
+    await setup(page, "abcd\nx\nlast", 3);
+    const heads = () => page.evaluate(() => window.editingFixture.selectionSet().ranges.map(range => range.head));
+    await page.keyboard.press("Control+Alt+ArrowDown"); await ready(page); expect(await heads()).toEqual([3, 6]);
+    await page.keyboard.press("Control+Alt+ArrowDown"); await ready(page); expect(await heads()).toEqual([3, 6, 10]);
+    expect((await snapshot(page)).primary.selection.head).toBe(10);
+    await page.keyboard.press("Control+u"); expect(await heads()).toEqual([3, 6]);
+    expect((await snapshot(page)).primary.selection.head).toBe(6);
+    await page.keyboard.type("A"); await page.keyboard.press("Control+u");
+    expect(await heads()).toEqual([4, 8]);
+    await expect(page.locator("#primary .st-viewport-row")).toHaveText(["abcAd", "xA", "last"]);
+    await page.keyboard.press("Control+z"); await page.keyboard.press("Control+Alt+ArrowUp"); await ready(page);
+    expect(await heads()).toContain(1);
+});
+
 test("line selection grows on repeat and scrolling leaves its text and keyboard focus in place", async ({ page }) => {
     const source = "one\r\ntwo\nthree\n" + "row\n".repeat(200);
     await setup(page, source, 2);

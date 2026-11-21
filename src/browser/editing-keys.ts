@@ -1,7 +1,8 @@
 import type { EditingCommand } from "../core/language-edits.ts";
 
 export type KeyStroke = Readonly<Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">>;
-export type ViewCommand = "select-line" | "jump-to-bracket" | "scroll-line-up" | "scroll-line-down" | "scroll-page-up" | "scroll-page-down";
+export type ViewCommand = "select-line" | "jump-to-bracket" | "add-caret-above" | "add-caret-below" | "undo-caret"
+    | "scroll-line-up" | "scroll-line-down" | "scroll-page-up" | "scroll-page-down";
 type KeyCommand = Readonly<{ kind: "history"; direction: "undo" | "redo" }>
     | Readonly<{ kind: "select-all" }>
     | Readonly<{ kind: "view"; command: ViewCommand }>
@@ -22,6 +23,9 @@ export function classifyEditingKey(event: KeyStroke, apple: boolean, escaped: bo
     if (command && !extend && commentChord && (key === "c" || key === "u"))
         return bind({ kind: "language", command: key === "c" ? "add-line-comment" : "remove-line-comment" }, true);
     if (command && !extend && key === "k") return "comment-prefix";
+    if (command && !extend && key === "u") return bind({ kind: "view", command: "undo-caret" });
+    if ((event.ctrlKey || event.metaKey) && event.altKey && !extend && (event.key === "ArrowUp" || event.key === "ArrowDown"))
+        return bind({ kind: "view", command: event.key === "ArrowUp" ? "add-caret-above" : "add-caret-below" });
     if (command && extend && key === "k") return bind({ kind: "language", command: "delete-lines" }, true);
     if (command && event.key === "Enter") return bind({ kind: "language", command: extend ? "insert-line-above" : "insert-line-below" }, true);
     if (command && !extend && (key === "]" || key === "[")) return bind({ kind: "language", command: key === "]" ? "indent-lines" : "outdent" }, true);
