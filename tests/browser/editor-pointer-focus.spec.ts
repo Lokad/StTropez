@@ -1,5 +1,32 @@
 import { expect, ready, test } from "./fixtures.ts";
 
+test("a click, modifier tap or selection change cancels Escape before Tab", async ({ page }) => {
+    await page.goto("/editing/");
+    await page.evaluate(() => window.editingFixture.setText("first\nsecond"));
+    await ready(page);
+    const input = page.getByRole("textbox", { name: "Primary source", exact: true });
+    const editor = page.locator("#primary .st-editor");
+    await input.focus();
+    for (const gesture of ["Shift tap", "selection", "click"]) {
+        await page.keyboard.press("Escape");
+        await expect(editor).toHaveAttribute("data-st-tab-escape", "");
+        await expect(editor).toHaveCSS("outline-style", "dashed");
+        if (gesture === "Shift tap") await page.keyboard.press("Shift");
+        else if (gesture === "selection") {
+            await page.evaluate(() => window.editingFixture.select("primary", { anchor: 2, head: 2 }));
+        } else {
+            const point = await page.evaluate(() => window.editingFixture.coords(6));
+            if (!point) throw new Error("Second line is outside the viewport");
+            await page.mouse.click(point.left, point.top + point.height / 2);
+        }
+        await expect(editor).not.toHaveAttribute("data-st-tab-escape", "");
+    }
+    await page.keyboard.press("Tab");
+    await page.keyboard.type("x y");
+    await expect(input).toBeFocused();
+    await expect(editor.locator(".st-viewport-row").nth(1)).toHaveJSProperty("textContent", "    x ysecond");
+});
+
 test("right-click targets the word under the pointer and preserves a selection clicked inside", async ({ page }) => {
     await page.goto("/editing/");
     await page.evaluate(() => window.editingFixture.setText("first line\nsecond line"));

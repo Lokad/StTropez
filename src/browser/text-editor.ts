@@ -110,12 +110,15 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     root.append(input);
     let contextBuffer: TextBuffer | undefined = workspace.document(documentId).buffer, contextSelection = view.getSnapshot().selection;
     let revision = workspace.document(documentId).revision, context: InputContext = inputContext(contextBuffer, contextSelection);
-    let disposed = false, composing = false, selecting = false, committing = false, escaped = false;
+    let disposed = false, composing = false, selecting = false, committing = false;
+    let escapeSelection: SelectionSet | undefined;
     let editTransform: TextEditorEditTransform | undefined;
     let hostInsertion: CapturedInsertion | undefined;
     const escapeState = (value: boolean) => {
-        if (escaped === value) return;
-        escaped = value; inputBinding.setTabEscape(value);
+        if (!!escapeSelection === value) return;
+        escapeSelection = value ? view.getSnapshot().selectionSet : undefined;
+        root.toggleAttribute("data-st-tab-escape", value);
+        inputBinding.setTabEscape(value);
     };
     let commits = 0, conflicts = 0, serial = 0, inputEvents = 0, lastInputMs = 0;
     let beforeInputEvents = 0, lastBeforeInputMs = 0, maxQueuedInputTurnMs = 0;
@@ -172,6 +175,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         () => workspace.observeDocument(documentId).getSnapshot(), () => composing);
     const scheduleCaret = caretLayer.schedule;
     function refresh(): void {
+        if (escapeSelection && escapeSelection !== view.getSnapshot().selectionSet) escapeState(false);
         if (disposed || selecting || committing) return;
         const state = resource.getSnapshot(); input.disabled = !workspace.resolveTab(target) || state.state !== "ready";
         if (input.disabled) contextBuffer = undefined;
@@ -710,7 +714,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             stroke = { key: backward ? "Backspace" : "Delete", ctrlKey: word, metaKey: false, altKey: false, shiftKey: false };
         else if (type === "historyUndo" || type === "historyRedo") stroke = { key: "z", ctrlKey: true, metaKey: false, altKey: false, shiftKey: type === "historyRedo" };
         else return;
-        const binding = classifyEditingKey(stroke, apple, escaped, pairKey); return typeof binding === "object" ? captureKey(stroke, binding) : undefined;
+        const binding = classifyEditingKey(stroke, apple, !!escapeSelection, pairKey); return typeof binding === "object" ? captureKey(stroke, binding) : undefined;
     }
     function captureOrderedInput(event: InputEvent): boolean {
         if (composing || event.isComposing || input.disabled || input.readOnly || !inputQueue.pending && !rangeCommand) return false;
@@ -788,6 +792,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         lastInputMs = win.performance.now() - start; inputEvents++;
     }, { signal: listeners.signal });
     function startComposition(): void {
+        escapeState(false);
         hostInsertion?.cancel();
         cancelWord();
         commandRunner.cancel();
@@ -812,21 +817,25 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     input.addEventListener("compositionend", endComposition, { signal: listeners.signal });
     input.addEventListener("select", syncSelection, { signal: listeners.signal });
     // Tab can reset the browser range after focus dispatch. It changes focus, not model selection.
-    input.addEventListener("keyup", event => { if (event.key === "Tab") refresh(); else syncSelection(); }, { signal: listeners.signal });
+    input.addEventListener("keyup", event => {
+        // A held Shift qualifies the next Tab. Releasing Shift alone consumes the escape.
+        if (event.key === "Shift") escapeState(false);
+        if (event.key === "Tab") refresh(); else syncSelection();
+    }, { signal: listeners.signal });
     input.addEventListener("focus", scheduleCaret, { signal: listeners.signal });
     input.addEventListener("blur", () => { syncSelection(); group = undefined; scheduleCaret();
         // Restore disclosure tab stops after the browser has completed focus traversal.
-        if (escaped) queueMicrotask(() => { if (!disposed) escapeState(false); }); }, { signal: listeners.signal });
+        if (escapeSelection) queueMicrotask(() => { if (!disposed) escapeState(false); }); }, { signal: listeners.signal });
     function keydown(event: KeyboardEvent, captured?: KeyBinding): void {
+        if (escapeSelection && event.key !== "Tab" && event.key !== "Shift") escapeState(false);
         if (event.defaultPrevented || composing || event.isComposing || event.keyCode === 229) return;
         if (["Shift", "Control", "Meta", "Alt"].includes(event.key)) return;
         if (hostInsertion) { hostInsertion.cancel(); if (event.key === "Escape") { event.preventDefault(); return; } }
-        const binding = captured ?? classifyEditingKey(event, apple, escaped, pairKey);
+        const binding = captured ?? classifyEditingKey(event, apple, !!escapeSelection, pairKey);
         if (!inputQueue.draining && (inputQueue.pending || rangeCommand) && event.key !== "Escape") {
             if (typeof binding === "object" && (!binding.edit || !input.readOnly)) { event.preventDefault(); appendInput(captureKey(event, binding)); return; }
             if (!(event.ctrlKey || event.metaKey || event.altKey)) return;
         }
-        if (escaped && event.key !== "Escape" && event.key !== "Tab") escapeState(false);
         view.folding.revealSelection(view.folding.getSnapshot());
         const command = typeof binding === "object" ? binding.command : undefined;
         if (command?.kind === "history") { event.preventDefault(); history(command.direction); return; }
@@ -881,6 +890,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         beforeStart: () => { stopDrag(); cancelWord(); commandRunner.cancel(); preferred = undefined; group = undefined; },
         afterDrop: () => { commits++; revealCaret(); focus(); refresh(); },
         rejected: reason => { conflict(reason); refresh(); } });
+    root.addEventListener("pointerdown", () => escapeState(false), { capture: true, signal: listeners.signal });
     root.addEventListener("pointerdown", event => {
         if (event.button < 0 || event.button > 2 || disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
         if (event.button === 0 && textDrag.arm(event)) return;

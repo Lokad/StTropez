@@ -145,6 +145,10 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Alt+click / Alt+drag / Alt+double-click | Add a caret / range / code-word selection |
 | Double-click | Select the code-word, symbol or whitespace run within the clicked logical line |
 
+The focused editor has a solid outline. After Escape the outline becomes dashed and the root
+has the `data-st-tab-escape` attribute. A pointer press, selection change, or intervening key
+cancels the exit. Holding Shift for the next Tab moves focus backward.
+
 Host tools get first chance at shortcuts. Cancelled events and composition events (including keyCode
 229) bypass editor commands. [Example bindings](examples.md)
 

@@ -24,6 +24,8 @@
     overflow-anchor: none;
 }
 .st-viewport-spacer { pointer-events: none; }
+.st-editor:has(> .st-input-context:focus-visible) { outline: 1px solid var(--st-focus-ring, Highlight); }
+.st-editor[data-st-tab-escape]:has(> .st-input-context:focus-visible) { outline-style: dashed; }
 .st-minimap-anchor { position: sticky; top: 0; left: 0; height: 0; z-index: 3; }
 .st-minimap { position: absolute; right: 0; top: 0; overflow: hidden; user-select: none; touch-action: none; cursor: default; }
 .st-minimap-scrollable { cursor: pointer; }
