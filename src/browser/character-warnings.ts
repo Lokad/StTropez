@@ -1,7 +1,8 @@
 import { CharacterWarnings } from "../core/character-warnings.ts";
 import { graphemeBoundaries } from "../core/graphemes.ts";
 import type { CharacterWarningBatch, CharacterWarningConfiguration, CharacterWarningLimits, CharacterWarningOptions } from "../core/character-warnings.ts";
-import type { DocumentId, DocumentView, TabId, Workspace } from "../core/workspace.ts";
+import { ownsTextSurface } from "../core/workspace.ts";
+import type { DocumentId, DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
 import type { InlineDecoration, PresentedLine, TextViewport } from "./viewport.ts";
 
 export type CharacterWarningCapture = CharacterWarningBatch & Readonly<{ documentId: DocumentId; revision: number; isCurrent: () => boolean }>;
@@ -14,12 +15,12 @@ export type CharacterWarningHighlights = Readonly<{
 const empty: readonly InlineDecoration[] = Object.freeze([]);
 
 /** Internal view owner: no document scans, subscriptions or asynchronous work. */
-export function mountCharacterWarnings(workspace: Workspace, tabId: TabId, view: DocumentView, viewport: TextViewport, initial?: CharacterWarnings) {
-    const target = workspace.captureTab(tabId), documentId = view.documentId, resource = workspace.resourceForDocument(documentId);
+export function mountCharacterWarnings(workspace: Workspace, target: TabTarget | undefined, view: DocumentView, viewport: TextViewport, initial?: CharacterWarnings) {
+    const documentId = view.documentId, resource = workspace.resourceForDocument(documentId);
     const notifications = workspace.createNotificationScope();
     let classifier = initial, disposed = false;
     const rows = new Map<number, Readonly<{ from: number; text: string; decorations: readonly InlineDecoration[] }>>();
-    const available = () => !disposed && workspace.ownsDocumentView(view) && !!workspace.resolveTab(target) && resource.getSnapshot().state === "ready";
+    const available = () => !disposed && ownsTextSurface(workspace, view, target) && resource.getSnapshot().state === "ready";
     const handle: CharacterWarningHighlights = Object.freeze({
         configuration: () => classifier?.configuration ?? null,
         configure: options => {

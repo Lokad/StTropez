@@ -6,21 +6,21 @@ decorations and local text geometry. Use it for a read-only view.
 ## Use
 
 Give the container a width and height, load the [packaged CSS](getting-started.md), then pass an
-open text tab from the same workspace.
+existing document or text tab from the same workspace.
 
 ```ts
-import type { TabId, Workspace } from "sttropez";
+import type { DocumentId, Workspace } from "sttropez";
 import { mountTextViewport } from "sttropez/browser";
 import type { TextViewportOptions } from "sttropez/browser";
 
-export function showPreview(host: HTMLElement, workspace: Workspace, tab: TabId) {
+export function showPreview(host: HTMLElement, workspace: Workspace, documentId: DocumentId) {
     const options: TextViewportOptions = {
         ariaLabel: "Source preview",
         columnRulers: [80, 120],
         minimap: true,
         highlightCurrentLine: true
     };
-    const viewport = mountTextViewport(host, workspace, tab, options);
+    const viewport = mountTextViewport(host, workspace, documentId, options);
     viewport.revealOffset(0, { horizontal: "nearest", vertical: "nearest" });
     return viewport; // Call dispose() when the host detaches this projection.
 }
@@ -33,9 +33,9 @@ viewport disposes views it creates.
 
 ### Mounting and presentation
 
-Pass a text tab to `mountTextViewport` and set its `TextViewportOptions`. If you supply a view, use
-one from the same workspace and document. Replacing the tab clears the old viewport. Mount a new
-viewport for the replacement.
+`mountTextViewport` accepts a document or a tab. A document mount works without an open tab. A tab mount clears its viewport when the tab is
+replaced. Mount a new viewport for the replacement. Any supplied view must belong to the same
+workspace and document.
 
 | Option | Default and validation |
 | --- | --- |

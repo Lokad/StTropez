@@ -9,7 +9,8 @@ import { createGraphemeCursor } from "../core/graphemes.ts";
 import { createSelectionSet, planSelectionEdits } from "../core/selections.ts";
 import { selectionOccurrences } from "../core/selection-occurrences.ts";
 import type { Affinity } from "../core/positions.ts";
-import type { DocumentView, TabId, Workspace } from "../core/workspace.ts";
+import { captureTextSurface, ownsTextSurface } from "../core/workspace.ts";
+import type { DocumentId, DocumentView, TabId, TabTarget, Workspace } from "../core/workspace.ts";
 import type { EditKind, Selection } from "../core/history.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
@@ -60,7 +61,7 @@ export type TextEditorOptions = Readonly<{ ariaLabel?: string; view?: DocumentVi
         pasteLineEndings?: "local" | "preserve"; requestLine?: LinePrompt;
         bracketMatching?: boolean | BracketMatchOptions; characterWarnings?: boolean | CharacterWarningOptions;
         columnRulers?: readonly number[]; highlightCurrentLine?: boolean; fontLigatures?: boolean; scrollBeyondLastLine?: boolean; minimap?: boolean }>;
-export type TextEditor = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
+export type TextEditor = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; workspace: Workspace; tab: TabTarget | undefined; signal: AbortSignal; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
     /** One pending host insertion, invalidated by later editing/selection/authority/lifecycle changes. */
     captureInsertion: (kind?: "paste" | "replace") => CapturedInsertion | undefined;
     /** One synchronous edit planner per view. Its result still passes Workspace validation/history. */
@@ -79,13 +80,13 @@ export type TextEditor = Readonly<{ element: HTMLDivElement; input: HTMLTextArea
 export type MountedTextEditor = Readonly<{ editor: TextEditor; setComparisonRows: ReturnType<typeof mountViewport>["setComparisonRows"] }>;
 
 /** Text editor with bounded native input and virtualized rendering. Native IME qualification is separate. */
-export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: TabId,
+export function mountTextEditor(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId,
     options: TextEditorOptions = {}): TextEditor {
-    return mountEditor(host, workspace, tabId, options).editor;
+    return mountEditor(host, workspace, identity, options).editor;
 }
 
 /** Private pane mount; the comparison capability belongs to this exact editor lifetime. */
-export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabId,
+export function mountEditor(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId,
     options: TextEditorOptions = {}): MountedTextEditor {
     let language = resolveLanguageConfiguration(options.language);
     const paired = autoClosedPairs();
@@ -95,13 +96,12 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     const warningOptions = options.characterWarnings === undefined || options.characterWarnings === false ? undefined
         : new CharacterWarnings(options.characterWarnings === true ? {} : options.characterWarnings);
     const readOnly = options.readOnly === true;
-    const target = workspace.captureTab(tabId), tab = workspace.resolveTab(target);
-    if (!tab || tab.surface.kind !== "text") throw new Error("Expected a text surface.");
-    const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId);
+    const surface = captureTextSurface(workspace, identity), { documentId, resource, tab: target } = surface;
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
     const view = options.view ?? workspace.createDocumentView(documentId);
+    const live = () => ownsTextSurface(workspace, view, target);
     let setComparisonRows: MountedTextEditor["setComparisonRows"], viewport: TextViewport, navigation: ReturnType<typeof mountViewport>["navigation"], brackets: ReturnType<typeof mountBracketHighlights> | undefined, warnings: ReturnType<typeof mountCharacterWarnings> | undefined;
-    try { const mounted = mountViewport(host, workspace, tabId, { ...options, view });
+    try { const mounted = mountViewport(host, workspace, surface, { ...options, view });
         viewport = mounted.viewport; navigation = mounted.navigation; setComparisonRows = mounted.setComparisonRows; }
     catch (error) { if (!options.view) view.dispose(); throw error; }
     const root = viewport.element;
@@ -195,7 +195,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     function refresh(): void {
         if (escapeSelection && escapeSelection !== view.getSnapshot().selectionSet) escapeState(false);
         if (disposed || selecting || committing) return;
-        const state = resource.getSnapshot(); input.disabled = !workspace.resolveTab(target) || state.state !== "ready";
+        const state = resource.getSnapshot(); input.disabled = !live() || state.state !== "ready";
         if (lineRequest && !validCommand(lineRequest.capture)) cancelLineRequest();
         if (input.disabled) contextBuffer = undefined;
         input.readOnly = readOnly || !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null;
@@ -268,7 +268,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         hostInsertion?.cancel();
         if (readOnly) { conflict("read-only", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
         cancelWord(); preferred = undefined;
-        if (!workspace.resolveTab(target)) { conflict("expired-view", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
+        if (!live()) { conflict("expired-view", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
         let key: string | undefined;
         const before = view.getSnapshot().selectionSet, typed = type === "insertText" ? edits[0]?.insert : undefined;
         let tail: NonNullable<typeof group>["tail"] = typed === undefined ? undefined : typingRun(typed);
@@ -347,7 +347,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     function history(direction: "undo" | "redo"): void {
         if (disposed) return; hostInsertion?.cancel(); cancelWord(); group = undefined; syncSelection();
         if (readOnly) { refresh(); return; }
-        if (!workspace.resolveTab(target)) { conflict("expired-view"); refresh(); return; }
+        if (!live()) { conflict("expired-view"); refresh(); return; }
         const result = workspace[direction]({ documentId, expectedRevision: revision });
         if (!result.applied && result.reason !== "history-empty") conflict(result.reason);
         else if (result.applied) revealCaret();
@@ -366,7 +366,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     // Delayed commands belong to this captured tab, revision and complete selection set.
     // cancelWord releases scans, row preparation and ordered input; no focused-view lookup occurs later.
     const validCommand = (capture: CommandCapture) => !disposed && !composing && !input.disabled
-        && !(capture.deleting && input.readOnly) && !!workspace.resolveTab(target)
+        && !(capture.deleting && input.readOnly) && live()
         && workspace.observeDocument(documentId).getSnapshot()?.revision === capture.revision
         && view.getSnapshot().selectionSet === capture.selectionSet;
     function withGraphemes(capture: CommandCapture, offset: number, side: -1 | 1, purpose: "word" | "word-selection" | "grapheme", done: (point: GraphemePoint) => void,
@@ -533,7 +533,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         });
     }
     function selectWord(offset: number, add = false): void {
-        cancelWord(); if (disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
+        cancelWord(); if (disposed || composing || input.disabled || !live()) return;
         stopDrag(); group = undefined; preferred = undefined; focus(); syncSelection();
         const capture = commandCapture(false);
         rangeCommand = { capture, purpose: "word", release: () => {} };
@@ -791,7 +791,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         group = undefined; step(); return true;
     }
     function runCommand(command: TextEditorCommand): boolean {
-        if (disposed || composing || input.disabled || !workspace.resolveTab(target)) return false;
+        if (disposed || composing || input.disabled || !live()) return false;
         switch (command) {
             case "go-to-line": {
                 const prompt = options.requestLine;
@@ -985,7 +985,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         if (commitOrderedInput(event as InputEvent)) { lastInputMs = win.performance.now() - start; inputEvents++; return; }
         if (!composing && ["deleteWordBackward", "deleteWordForward", "deleteContentBackward", "deleteContentForward"].includes(type)) {
             const captured = wordInput; wordInput = undefined;
-            if (!captured || input.disabled || input.readOnly || !workspace.resolveTab(target) || captured.direction !== (type.endsWith("Backward") ? -1 : 1)
+            if (!captured || input.disabled || input.readOnly || !live() || captured.direction !== (type.endsWith("Backward") ? -1 : 1)
                 || captured.revision !== revision || captured.selectionSet !== view.getSnapshot().selectionSet) { conflict(type.startsWith("deleteWord") ? "stale-word-input" : "stale-delete-input"); refresh(); }
             else { refresh(); (captured.word ? word : grapheme)(captured.direction, true); }
         } else commit(type);
@@ -1101,7 +1101,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         const began = win.performance.now();
         try {
         wordSelectionEvents++;
-        if (event.button !== 0 || disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
+        if (event.button !== 0 || disposed || composing || input.disabled || !live()) return;
         const point = pointerHit(event); if (!point) return;
         event.preventDefault(); if (!draggedWord) selectWord(point.offset, event.altKey);
         } finally { lastWordSelectionMs = win.performance.now() - began; maxWordSelectionTurnMs = Math.max(maxWordSelectionTurnMs, lastWordSelectionMs); }
@@ -1114,7 +1114,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     let mousePress: { event: PointerEvent; armed: boolean; revision: number; selectionSet: SelectionSet } | undefined;
     root.addEventListener("pointerdown", () => { mousePress = undefined; draggedWord = false; commentPrefix = undefined; escapeState(false); }, { capture: true, signal: listeners.signal });
     root.addEventListener("pointerdown", event => {
-        if (event.button < 0 || event.button > 2 || disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
+        if (event.button < 0 || event.button > 2 || disposed || composing || input.disabled || !live()) return;
         const armed = event.button === 0 && textDrag.arm(event);
         // All engines supply the native multi-click count on mousedown. Pointerdown also
         // supplies the pointer id used for capture and arms native drag before default handling.
@@ -1137,7 +1137,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         return { anchor: buffer.offsetAt(line), head: line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length };
     }
     function beginPointer(event: PointerEvent, clicks: number, native: MouseEvent): void {
-        if (disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
+        if (disposed || composing || input.disabled || !live()) return;
         // The transparent native context can overlap source text; its default hit test uses context coordinates.
         const point = pointerHit(event); if (!point) return;
         native.preventDefault(); stopDrag(); cancelWord(); preferred = undefined; focus(); group = undefined;
@@ -1195,7 +1195,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     }, { signal: listeners.signal });
     function validDrag(): boolean {
         return !!drag && !disposed && !composing && !input.disabled && root.isConnected && root.clientWidth > 0 && root.clientHeight > 0
-            && drag.revision === revision && drag.selectionSet === view.getSnapshot().selectionSet && !!workspace.resolveTab(target) && root.hasPointerCapture(drag.pointer);
+            && drag.revision === revision && drag.selectionSet === view.getSnapshot().selectionSet && live() && root.hasPointerCapture(drag.pointer);
     }
     function dragBounds() {
         return clientBox(root, viewport.minimap());
@@ -1248,7 +1248,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         dragScrolling.stop();
         const pointer = drag?.pointer, padding = drag?.padding; drag = undefined;
         if (pointer !== undefined && root.hasPointerCapture(pointer)) root.releasePointerCapture(pointer);
-        if (event?.type === "pointerup" && padding && !disposed && workspace.resolveTab(target)) {
+        if (event?.type === "pointerup" && padding && !disposed && live()) {
             const selected = view.getSnapshot().selection;
             viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" });
         }
@@ -1302,7 +1302,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     const subscriptions = [viewport.onRender(scheduleCaret), workspace.observeDocument(documentId).subscribe(refresh), view.subscribe(observeCaret),
         view.folding.subscribe(() => { const revision = view.folding.getSnapshot().revision;
             if (revision === observedFoldRevision) { cancelWord(); stopDrag(); preferred = undefined; group = undefined; }
-            observedFoldRevision = revision; refresh(); }), resource.metadata.subscribe(refresh), workspace.tabState.subscribe(refresh)];
+            observedFoldRevision = revision; refresh(); }), resource.metadata.subscribe(refresh)];
+    if (target) subscriptions.push(workspace.tabState.subscribe(refresh));
     let activitySnapshot: TextEditorActivity | undefined;
     function activity(): TextEditorActivity {
         const pendingInput = hostInsertion !== undefined || inputQueue.pending !== undefined || inputQueue.executing !== undefined || rangeCommand?.capture.deleting === true;
@@ -1317,10 +1318,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         return activitySnapshot = Object.freeze({ disposed, composing, pendingInput, pendingCommand, pendingCaret, pendingDragScroll, pendingWord, pendingGrapheme });
     }
     refresh();
-    brackets = mountBracketHighlights(workspace, tabId, view, viewport, input, () => language,
+    brackets = mountBracketHighlights(workspace, target, view, viewport, input, () => language,
         () => { const state = activity(); return !state.disposed && !state.composing && !state.pendingInput && !state.pendingCommand; }, bracketOptions);
-    warnings = mountCharacterWarnings(workspace, tabId, view, viewport, warningOptions);
-    const editor: TextEditor = Object.freeze({ element: root, input, view, viewport, decorations: viewport.decorations, focus, activity, bracketMatching: brackets.handle, characterWarnings: warnings.handle,
+    warnings = mountCharacterWarnings(workspace, target, view, viewport, warningOptions);
+    const editor: TextEditor = Object.freeze({ element: root, input, workspace, tab: target, signal: listeners.signal, view, viewport, decorations: viewport.decorations, focus, activity, bracketMatching: brackets.handle, characterWarnings: warnings.handle,
         captureInsertion: (kind = "paste") => {
             hostInsertion?.cancel();
             const available = () => !disposed && root.isConnected && !readOnly && !input.disabled && !input.readOnly && !composing

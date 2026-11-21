@@ -317,7 +317,7 @@ function mountFile(file: DemoFile, focus = false): void {
             reference.editor.characterWarnings.configure(field("character-warnings").checked);
             configurePresentation(reference.editor);
             syntax?.update(project!.workspace.document(reference.editor.view.documentId));
-            referenceFolding = createFoldingController(project!.workspace, reference.target.id, reference.editor,
+            referenceFolding = createFoldingController(reference.editor,
                 (capture, signal) => plain
                     ? discoverIndentationFolds(capture.buffer, outlineFolds(editingConfiguration().tabSize!)) : syntax!.discoverFolds(capture, signal));
             stopReferenceFolding = foldMenu.bind(reference.editor, referenceFolding, "Saved copy", false);
@@ -341,7 +341,7 @@ function mountFile(file: DemoFile, focus = false): void {
     configurePresentation(editor);
     if (savedViews.has(file.view)) editor.restoreView({ ...savedViews.get(file.view)!, ...file.view.getSnapshot().selection,
         selectionSet: file.view.getSnapshot().selectionSet });
-    folding = mountDemoFolding(project, file, editor, () => editingConfiguration().tabSize!);
+    folding = mountDemoFolding(project, editor, () => editingConfiguration().tabSize!);
     stopFolding = foldMenu.bind(editor, folding, comparison ? "Your changes" : "Source", true);
     viewListeners = new AbortController();
     stopRender = editor.viewport.onRender(renderGutter);
@@ -355,7 +355,7 @@ function mountFile(file: DemoFile, focus = false): void {
             if (key === "f" || key === "h") { event.preventDefault(); openFind(key === "h"); }
         } else if (event.key === "F3") { event.preventDefault(); find?.next(event.shiftKey ? -1 : 1); }
     }, { signal: viewListeners.signal });
-    find = createFindController(project.workspace, file.tab, editor, { regularExpressionBackend: createRegexFindBackend({
+    find = createFindController(editor, { regularExpressionBackend: createRegexFindBackend({
         clock: window, createWorker: () => new Worker(new URL("regex-worker.js", document.baseURI), { type: "module" }),
     }) });
     find.setFlags({ matchCase: false, regularExpression: button("find-regex").getAttribute("aria-pressed") === "true" });

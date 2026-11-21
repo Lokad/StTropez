@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createComparisonController, TextBuffer, Workspace } from "../src/index.ts";
-import { createFindController } from "../src/browser/find.ts";
-import type { FindHost } from "../src/browser/index.ts";
+import { findForView } from "../src/browser/find.ts";
+import type { FindHost } from "../src/browser/find.ts";
 
 test("controller and workspace notifications reject cross-owner writes through nested delivery", () => {
     const errors: unknown[] = [], workspace = new Workspace({ onListenerError: error => errors.push(error) });
@@ -13,7 +13,7 @@ test("controller and workspace notifications reject cross-owner writes through n
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, input: Object.assign(new EventTarget(), { readOnly: false }), activity: () => ({ composing: false, disposed: false }),
         viewport: { revealOffset: () => {} }, focus: () => {} } satisfies FindHost;
-    const find = createFindController(workspace, tab, editor), comparison = createComparisonController(workspace, tab, { buffer: TextBuffer.from("cat"), version: "one" });
+    const find = findForView(workspace, workspace.captureTab(tab), editor), comparison = createComparisonController(workspace, tab, { buffer: TextBuffer.from("cat"), version: "one" });
     const other = new Workspace(), independent = other.createDocument({ scope: "find", resource: "other", variant: "working" }, "Other", "a");
     const write = () => workspace.edit({ documentId, expectedRevision: workspace.document(documentId).revision, origin: "human", edits: [{ from: 0, to: 0, insert: "x" }] });
     const rejected: string[] = [], attempt = (name: string, command: () => unknown) => { try { command(); } catch (error) { if (error instanceof Error && /Reentrant mutation/.test(error.message)) rejected.push(name); else errors.push(error); } };
@@ -49,7 +49,7 @@ test("changing whole-word mode cancels captured replacement and excludes selecte
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, input: Object.assign(new EventTarget(), { readOnly: false }), activity: () => ({ composing: false, disposed: false }),
         viewport: { revealOffset: () => {} }, focus: () => { focused++; } } satisfies FindHost;
-    const find = createFindController(workspace, tab, editor);
+    const find = findForView(workspace, workspace.captureTab(tab), editor);
     const drain = () => { for (let turns = 0; tasks.size; turns++) { assert.ok(turns < 100); const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); } };
     try {
         find.setQuery("cat"); drain(); assert.equal(find.getSnapshot().count, 4);
@@ -82,7 +82,7 @@ for (const lifetime of ["destroyed", "expired", "view-disposed"] as const) for (
         const editor = { view, element: { ownerDocument: owner }, input: Object.assign(new EventTarget(), { readOnly: true }), activity: () => ({ composing: inactive && composing, disposed: false }),
             viewport: { revealOffset: () => { assert.equal(inactive, false, "Inactive view must not be revealed."); } },
             focus: () => { assert.equal(inactive, false, "Inactive editor must not receive focus."); } } satisfies FindHost;
-        const find = createFindController(workspace, tab, editor); let stop = () => {};
+        const find = findForView(workspace, workspace.captureTab(tab), editor); let stop = () => {};
         try {
             find.setQuery("sample");
             for (let turns = 0; find.getSnapshot().status !== "ready"; turns++) { assert.ok(turns < 100); await new Promise(resolve => setTimeout(resolve, 1)); }
@@ -113,7 +113,7 @@ test("case options retain raw Unicode matches, cancel captured plans and preserv
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, input: Object.assign(new EventTarget(), { readOnly: false }), activity: () => ({ composing: false, disposed: false }),
         viewport: { revealOffset: () => {} }, focus: () => {} } satisfies FindHost;
-    const find = createFindController(workspace, tab, editor), text = () => { const buffer = workspace.document(documentId).buffer; return buffer.slice(0, buffer.length); };
+    const find = findForView(workspace, workspace.captureTab(tab), editor), text = () => { const buffer = workspace.document(documentId).buffer; return buffer.slice(0, buffer.length); };
     const runOne = () => { const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); };
     const drain = () => { for (let turns = 0; tasks.size; turns++) { assert.ok(turns < 100); runOne(); } };
     try {

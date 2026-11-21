@@ -19,7 +19,7 @@ const candidate = mountTextEditor(document.getElementById("candidate")!, workspa
 candidate.decorations.addProvider({ name: "tokens", order: 0, provide: line => {
     const from = line.text.indexOf("restored"); return from < 0 ? [] : [{ from: line.from + from, to: line.from + from + 8, className: "consumer-token" }];
 } });
-const find = createFindController(workspace, tabId, candidate);
+const find = createFindController(candidate);
 const comparisonResource = workspace.createTextResourceFromBuffer({ scope: "consumer", resource: "review", variant: "working" }, "Review", { buffer: TextBuffer.from("working\r\n"), serverVersion: "saved-1" });
 const comparisonTab = workspace.open({ kind: "text", documentId: comparisonResource.documentId }, "review");
 const comparisonView = workspace.createDocumentView(comparisonResource.documentId);
@@ -143,7 +143,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "regex", variant: "working" }, "Regex", { value: original });
         const tab = model.open({ kind: "text", documentId: source.documentId }, "regex"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
         let workers = 0;
-        const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored regex" }), find = createFindController(model, tab, editor, {
+        const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored regex" }), find = createFindController(editor, {
             regularExpressionBackend: createRegexFindBackend({ clock: window, createWorker: () => { workers++; return new Worker("/regex-worker.js", { type: "module" }); } }) });
         const wait = async (status: "ready" | "failed") => {
             const deadline = performance.now() + 30000;
@@ -187,7 +187,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
         for (const change of ["permission", "lease"] as const) {
             const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "find-authority", variant: "working" }, "Captured find", { value: "cat cat" });
             const tab = model.open({ kind: "text", documentId: source.documentId }, "find"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
-            const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored captured find" }), find = createFindController(model, tab, editor);
+            const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored captured find" }), find = createFindController(editor);
             const ready = async () => { for (let turn = 0; find.getSnapshot().status !== "ready"; turn++) {
                 if (turn >= 1000) throw new Error("Compiled find did not settle."); await new Promise<void>(resolve => setTimeout(resolve, 1)); } };
             try {
@@ -364,8 +364,8 @@ const fixture = { text: () => workspace.document(documentId).text(),
         model.undo({ documentId: source.documentId, expectedRevision: 1 });
         const restored = model.document(source.documentId).buffer.slice(0, 4), restoredSet = view.getSnapshot().selectionSet;
         const alias = view.getSnapshot().selection === restoredSet.ranges[restoredSet.primary];
-        const tab = model.open({ kind: "text", documentId: source.documentId }, "sets"), container = document.createElement("div"); document.body.append(container);
-        const mounts = [mountTextEditor(container, model, tab, { view }), mountTextViewport(container, model, tab, { view })];
+        const container = document.createElement("div"); document.body.append(container);
+        const mounts = [mountTextEditor(container, model, source.documentId, { view }), mountTextViewport(container, model, source.documentId, { view })];
         const states = mounts.map(editor => editor.captureView());
         const browserSelections = mounts.map((editor, index) => {
             const state = states[index]!; view.setSelection(2, { anchor: 0, head: 0 });
@@ -373,7 +373,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             const { selectionSet: _, ...legacy } = state; editor.restoreView({ ...legacy, anchor: 2, head: 2 });
             return { captured: state.selectionSet, fullSet, legacy: view.getSnapshot().selectionSet };
         });
-        mounts.forEach(editor => editor.dispose()); container.remove(); model.close(tab);
+        mounts.forEach(editor => editor.dispose()); container.remove();
         view.dispose(); model.releaseResource(source.id, true);
         return { before, after, restoredSet, changed, restored, alias, browserSelections, views: model.diagnostics().views, leases: model.diagnostics().leases };
     },

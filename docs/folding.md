@@ -10,14 +10,11 @@ Attach indentation and marker discovery to an existing editor:
 
 ```ts
 import { discoverIndentationFolds } from "sttropez";
-import type { TabId, Workspace } from "sttropez";
 import { createFoldingController } from "sttropez/browser";
 import type { TextEditor } from "sttropez/browser";
 
-export function attachFolding(
-    workspace: Workspace, tab: TabId, editor: TextEditor
-) {
-    return createFoldingController(workspace, tab, editor, document =>
+export function attachFolding(editor: TextEditor) {
+    return createFoldingController(editor, document =>
         discoverIndentationFolds(document.buffer, {
             tabSize: 2,
             group: "blocks",
@@ -27,8 +24,8 @@ export function attachFolding(
 ```
 
 Build controls from `FoldingController.getSnapshot()` and `subscribe()`. To collapse a group, call
-`runCommand("collapse-all", "regions")`. Call `refresh()` after a rule change and `dispose()` before
-disposing the editor.
+`runCommand("collapse-all", "regions")`. Call `refresh()` after a rule change. Disposing the editor cancels pending discovery
+and disposes this controller.
 
 If you already have an outline, pass its ranges to `DocumentView.folding`.
 
@@ -112,7 +109,7 @@ and reuses IDs for matching mapped headers and groups. Combine your sources befo
 reconciliation and installation in measurements of time to visible folds. Both run synchronously after
 discovery.
 
-`createFoldingController` captures the tab and retained editor view. Set `delayMs` to a finite,
+`createFoldingController` captures the editor view and its optional tab generation. Set `delayMs` to a finite,
 nonnegative delay (default 100). Its `FoldDiscovery` callback takes an immutable document and
 `AbortSignal`. Return a `FoldDiscoveryResult` directly or in a promise: ranges, a
 `FoldDiscoveryCursor`, or a `FoldDiscoveryBatch` with `ranges` and an optional `isCurrent` guard.

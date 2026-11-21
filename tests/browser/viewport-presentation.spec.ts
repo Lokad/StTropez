@@ -25,6 +25,51 @@ test.beforeEach(async ({ page }) => {
     await page.addStyleTag({ content: css });
 });
 
+test("document mounts own Find, fold discovery and pending insertions across a remount", async ({ page }) => {
+    const fixture = await page.evaluateHandle(async () => {
+        const path = "/presentation-fixture/";
+        const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { mountTextEditor, createFindController, createFoldingController } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const workspace = new Workspace();
+        const source = workspace.createTextResource({ scope: "test", resource: "document", variant: "working" }, "Source", { value: "one\n  two\nend" });
+        const view = workspace.createDocumentView(source.documentId);
+        const host = document.createElement("main");
+        host.style.height = "240px"; document.body.append(host);
+        const mount = () => mountTextEditor(host, workspace, source.documentId, { view });
+        const editor = mount(), find = createFindController(editor);
+        let reply: (() => void) | undefined, discoverySignal: AbortSignal | undefined;
+        const folds = createFoldingController(editor, (_document, signal) => {
+            discoverySignal = signal;
+            return new Promise(resolve => { reply = () => resolve([{ from: 0, to: 9 }]); });
+        }, { delayMs: 0 });
+        find.setQuery("two");
+        let replacement: typeof editor;
+        return {
+            ready: () => !!reply && find.getSnapshot().status === "ready",
+            replace: () => {
+                if (!find.next()) throw new Error("Could not select the match.");
+                const insertion = editor.captureInsertion();
+                if (!insertion) throw new Error("Could not capture the selected text.");
+                editor.dispose();
+                replacement = mount(); replacement.focus(); reply!();
+                return { tabs: workspace.diagnostics().tabs, expired: insertion.signal.aborted && !insertion.insert("stale"),
+                    cancelled: discoverySignal?.aborted, find: find.getSnapshot().status, folds: folds.getSnapshot().status };
+            },
+            finish: () => {
+                const text = workspace.document(source.documentId).buffer.text(), ranges = view.folding.getSnapshot().regions.length;
+                replacement.dispose(); view.dispose(); workspace.releaseResource(source.id, true);
+                return { text, ranges, ...workspace.diagnostics() };
+            }
+        };
+    });
+    await expect.poll(() => fixture.evaluate(f => f.ready())).toBe(true);
+    expect(await fixture.evaluate(f => f.replace())).toEqual({ tabs: 0, expired: true, cancelled: true, find: "disposed", folds: "disposed" });
+    await expect(page.getByRole("textbox", { name: "Source" })).toBeFocused();
+    await page.keyboard.type("ok");
+    await expect(page.locator(".st-viewport")).toContainText("ok");
+    expect(await fixture.evaluate(f => f.finish())).toMatchObject({ text: "one\n  ok\nend", ranges: 0, tabs: 0, views: 0, leases: 0, subscriptions: 0 });
+});
+
 test("minimap gestures preserve focus and multiple selections as the document projection changes", async ({ page }) => {
     const selection = await page.evaluate(async () => {
         const path = "/presentation-fixture/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");

@@ -1,6 +1,6 @@
 # Editor
 
-Mount an editor for a text tab to type, select and undo. Two editors on the same document share text
+Mount an editor for a document to type, select and undo. Two editors on the same document share text
 and history. Each view keeps its own selection. Your application supplies the tabs, layout and
 language rules.
 
@@ -10,15 +10,15 @@ Load the [stylesheet](getting-started.md) and give the container a height. This 
 scroll on remount and keeps the view’s current selections, including changes made while detached.
 
 ```ts
-import type { DocumentView, TabId, Workspace } from "sttropez";
+import type { DocumentId, DocumentView, Workspace } from "sttropez";
 import { mountTextEditor } from "sttropez/browser";
 import type { ViewState } from "sttropez/browser";
 
 export function attachSource(
-    host: HTMLElement, workspace: Workspace, tab: TabId,
+    host: HTMLElement, workspace: Workspace, documentId: DocumentId,
     view: DocumentView, saved?: ViewState
 ) {
-    const editor = mountTextEditor(host, workspace, tab, {
+    const editor = mountTextEditor(host, workspace, documentId, {
         view, ariaLabel: "Source",
         language: {
             tabSize: 4, insertSpaces: true, lineComment: "//",
@@ -47,10 +47,11 @@ a supplied view when its owner closes.
 
 ### Mounting and presentation
 
-`mountTextEditor(host, workspace, tabId, options)` takes `TextEditorOptions` and returns a
-`TextEditor`. Pass a live text tab and, optionally, a view of that document in the same workspace.
-The mount creates its own view if needed. Replacing the tab invalidates input captured against its
-old generation.
+Pass a `DocumentId` or `TabId` from the workspace to `mountTextEditor`. A document mount works without an open tab.
+A tab mount also captures the tab generation, so replacing or closing that tab expires pending input.
+Supply a view to keep its selections and folds across mounts. Otherwise the editor owns its view.
+`editor.workspace` and `editor.view.documentId` identify the document. `editor.tab` holds the optional
+tab capture. `editor.signal` aborts when the mount is disposed.
 
 | Option | Behavior |
 | --- | --- |
@@ -94,7 +95,7 @@ and the text goes at its destination. The editor replays queued input in order, 
 key meaning and event-time undo groups. It checks permission again. Paste and structural commands keep
 separate undo steps. Short moves can finish synchronously. A command can return before paint.
 
-Pending input belongs to the captured revision, selections, view and tab generation. Escape,
+Pending input belongs to the captured revision, selections, view and, for a tab mount, its generation. Escape,
 composition, copy/cut, host-handled paste, detach or a change in that capture or permission cancels
 replay. Only unapplied text goes to [input recovery](host-integration.md#input-conflict-recovery). On
 failure the editor releases scans, rows and timers and reports `command-failed` with its cause.

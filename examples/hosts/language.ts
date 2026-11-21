@@ -70,9 +70,9 @@ export class HostLanguageTools {
     }
     clearRetainedView(): void { this.cancelFindCommand(); this.detachedOwner = undefined; }
     private attachProvider(session: Session): void {
-        const { tab, editor } = session;
+        const { editor } = session;
         let provider: ProviderController;
-        try { provider = this.providerFactory(this.workspace, tab, editor, { autoConnect: false, canCapture: () => this.canCapture(editor.view.documentId) }); }
+        try { provider = this.providerFactory(editor, { autoConnect: false, canCapture: () => this.canCapture(editor.view.documentId) }); }
         catch (error) {
             // Provider construction owns its partial cleanup. Local editing and Find keep their view.
             session.providerError = error instanceof Error ? error.message : String(error);
@@ -228,7 +228,7 @@ export class HostLanguageTools {
         const session = this.active; if (!session) return;
         if (!session.find) {
             const clock = session.editor.element.ownerDocument.defaultView!;
-            session.find = createFindController(this.workspace, session.tab, session.editor, { regularExpressionBackend: createRegexFindBackend({ clock,
+            session.find = createFindController(session.editor, { regularExpressionBackend: createRegexFindBackend({ clock,
                 createWorker: () => new Worker("/regex-worker.js", { type: "module" }) }) });
             session.stopFind = session.find.subscribe(() => { if (this.active === session) this.publish(); });
         }

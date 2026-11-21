@@ -23,7 +23,7 @@ const primarySyntax = editors.primary.decorations.addProvider({ name: "syntax", 
     return presentation.primary.decorate(slice);
 } });
 editors.secondary.decorations.addProvider({ name: "syntax", order: 0, provide: presentation.secondary.decorate });
-const findUI = mountFindUI(workspace, primaryTab, editors.primary);
+const findUI = mountFindUI(editors.primary);
 const listeners = new AbortController(); let disposed = false;
 let foldingController: FoldingController | undefined;
 const conflicts: InputConflictDetail[] = [];
@@ -47,7 +47,7 @@ const fixture = { ready: true, setText, edit, select, history,
     failNextDecoration: () => { failDecoration = true; primarySyntax.invalidate(); },
     captureInsertion: () => editors.primary.captureInsertion(),
     registerEditTransform: (transform: TextEditorEditTransform) => editors.primary.registerEditTransform(transform),
-    discoverFolds: (discover: FoldDiscovery) => { foldingController?.dispose(); foldingController = createFoldingController(workspace, primaryTab, editors.primary, discover, { delayMs: 0 }); },
+    discoverFolds: (discover: FoldDiscovery) => { foldingController?.dispose(); foldingController = createFoldingController(editors.primary, discover, { delayMs: 0 }); },
     foldCommand: (command: FoldCommand, group?: string) => foldingController?.runCommand(command, group),
     refreshFolds: () => foldingController?.refresh(), foldStatus: () => foldingController?.getSnapshot(),
     configureLanguage: (value: LanguageConfiguration) => editors.primary.configureLanguage(value),

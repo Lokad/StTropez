@@ -158,7 +158,7 @@ export async function completionLabels(
 }
 ```
 
-`createLspEditor(workspace, tab, editor, options)` attaches completion and diagnostics to one view.
+`createLspEditor(editor, options)` attaches completion and diagnostics to one view.
 The controller handles input, selection checks and acceptance. The host renders choices and status.
 `request()` invokes completion. Set `automatic: false` to require explicit requests. Supply
 `canCapture` for additional readiness checks.
@@ -522,7 +522,7 @@ whose result includes `items`, `isCurrent` and indexed `intersect(from, to)`. Th
 means text. It retains all results within input limits, including overlapping ranges. Visible-row
 queries skip unrelated intervals and omit zero-width markers without changing the stored items.
 
-Attach `createLspHighlightController(workspace, tab, editor, { provider, delayMs? })` to request
+Attach `createLspHighlightController(editor, { provider, delayMs? })` to request
 occurrences when the caret settles and queued input or composition finishes. It clears stale results
 on document, selection, focus, tab or provider changes. Subscribe to invalidate your decorations, then
 call `intersect` for each visible line and style by occurrence kind. Highlighting preserves text and

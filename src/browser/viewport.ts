@@ -1,5 +1,6 @@
 import { clientBox, cssZoom, minimapWidth } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
+import { captureTextSurface, ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentSnapshot, DocumentView, TabId, Workspace } from "../core/workspace.ts";
 import type { Selection } from "../core/history.ts";
 import type { SelectionSet } from "../core/selections.ts";
@@ -112,25 +113,24 @@ export type TextViewportOptions = Readonly<{ ariaLabel?: string; view?: Document
     columnRulers?: readonly number[]; highlightCurrentLine?: boolean; fontLigatures?: boolean; scrollBeyondLastLine?: boolean; minimap?: boolean }>;
 
 /** Bounded DOM view layer with local native text geometry. Native-device qualification remains separate. */
-export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId: TabId,
+export function mountTextViewport(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId,
     options: TextViewportOptions = {}): TextViewport {
-    return mountViewport(host, workspace, tabId, options).viewport;
+    return mountViewport(host, workspace, identity, options).viewport;
 }
 
 /** Internal mount: navigation and comparison publication share the viewport lifetime. */
-export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: TabId,
+export function mountViewport(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId | ReturnType<typeof captureTextSurface>,
     options: TextViewportOptions = {}): Readonly<{ viewport: TextViewport; navigation: ViewportNavigation; setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean }> {
     let columns = resolveColumnRulers(options.columnRulers);
     let highlightCurrentLine = options.highlightCurrentLine === undefined ? false : options.highlightCurrentLine;
     let fontLigatures = options.fontLigatures === undefined ? false : options.fontLigatures;
     let scrollBeyondLastLine = options.scrollBeyondLastLine === undefined ? false : options.scrollBeyondLastLine;
-    const target = workspace.captureTab(tabId), tab = workspace.resolveTab(target);
-    if (!tab || tab.surface.kind !== "text") throw new Error("Expected a text surface.");
-    const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId);
+    const { documentId, resource, tab } = typeof identity === "string" ? captureTextSurface(workspace, identity) : identity;
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
     const view = options.view ?? workspace.createDocumentView(documentId), owner = host.ownerDocument, browserWindow = owner.defaultView;
     if (!browserWindow) { if (!options.view) view.dispose(); throw new Error("Viewport requires an attached browser document."); }
     const win = browserWindow;
+    const live = () => ownsTextSurface(workspace, view, tab);
     const root = owner.createElement("div"), spacer = owner.createElement("div"), layer = owner.createElement("div"), probeHost = owner.createElement("div"), probe = owner.createElement("span"), foldLayer = owner.createElement("div");
     root.className = "st-viewport"; root.tabIndex = 0; root.setAttribute("role", "region"); root.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
     root.style.fontVariantLigatures = fontLigatures ? "normal" : "none";
@@ -145,8 +145,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
     const events = new win.EventTarget(), observationStops = new Set<() => void>();
     let inputOwner: { composing: boolean; tabEscaped: boolean; detach: () => void } | undefined;
     const observe = (type: "render" | "focus", listener: () => void): (() => void) => {
-        if (disposed || !workspace.resolveTab(target)) return () => {};
-        const invoke = () => { if (!disposed && workspace.resolveTab(target)) listener(); };
+        if (disposed || !live()) return () => {};
+        const invoke = () => { if (!disposed && live()) listener(); };
         const stop = () => { events.removeEventListener(type, invoke); observationStops.delete(stop); };
         events.addEventListener(type, invoke); observationStops.add(stop);
         return stop;
@@ -209,7 +209,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         return entry.value;
     };
     const coordinates = (offset: number, affinity: Affinity = "after"): CaretRectangle | undefined => {
-        if (disposed || !workspace.resolveTab(target)) return undefined;
+        if (disposed || !live()) return undefined;
         const document = workspace.observeDocument(documentId).getSnapshot();
         if (document?.revision !== renderedRevision || view.folding.getSnapshot().generation !== renderedFoldGeneration
             || !Number.isSafeInteger(offset) || offset < 0 || offset > document.buffer.length) return undefined;
@@ -227,13 +227,13 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
     let visibleItems: readonly Row[] = [], overviewEpoch = 0;
     const dirtyRows = new Set<number>();
     const decorations = createDecorationLayers(
-        () => !disposed && workspace.resolveTab(target) ? workspace.observeDocument(documentId).getSnapshot() : undefined,
+        () => !disposed && live() ? workspace.observeDocument(documentId).getSnapshot() : undefined,
         (dirty, overview) => {
             for (const row of visibleItems) if (dirty(row)) dirtyRows.add(row.line);
             commandGeometry = undefined; clearPreparedRows();
             if (overview) overviewEpoch++;
             if (dirtyRows.size || overview && minimap) schedule();
-        }, () => !!workspace.resolveTab(target));
+        }, () => live());
     // Host invalidation and font loading can change inline layout without changing text/classes.
     const invalidate = () => { paintEpoch++; geometries.clear(); commandGeometry = undefined; clearPreparedRows(); schedule(); };
     const flush = () => { if (disposed) return; const scheduled = frame !== undefined; if (scheduled) win.cancelAnimationFrame(frame!); render(scheduled); };
@@ -249,7 +249,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
             ...(renderedAlignmentId !== null ? { aligned: true } : {}) };
     }
     function setComparisonRows(value: ViewportComparisonRows | undefined): boolean {
-        if (disposed || !workspace.resolveTab(target)) return false;
+        if (disposed || !live()) return false;
         const document = workspace.observeDocument(documentId).getSnapshot(), folds = view.folding.getSnapshot();
         if (value && (!document || value.documentId !== documentId || value.revision !== document.revision || value.foldGeneration !== folds.generation || !value.index.matches(document.buffer, folds.index))) return false;
         if (value && (!Number.isSafeInteger(value.id) || value.id < 1 || !Number.isFinite(value.lineHeight) || value.lineHeight <= 0)) throw new RangeError("Invalid comparison row capture.");
@@ -270,7 +270,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         schedule();
     };
     const createMinimap = () => mountMinimap(root, top => {
-        if (!workspace.resolveTab(target)) return;
+        if (!live()) return;
         setScroll({ top });
         // A native scroll notification from the preceding drag step can arrive before
         // the next render. Make it observe the current destination, as a real thumb does.
@@ -407,7 +407,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
     }
     function prepareNavigationRows(lines: readonly number[]): () => void {
         clearPreparedRows(); const document = workspace.observeDocument(documentId).getSnapshot();
-        if (disposed || !workspace.resolveTab(target) || document?.revision !== renderedRevision) return () => {};
+        if (disposed || !live() || document?.revision !== renderedRevision) return () => {};
         if (lines.length > 64 || lines.some(line => !Number.isSafeInteger(line) || line < 0 || line >= document.buffer.lineCount)) throw new RangeError("Invalid navigation row batch.");
         const element = owner.createElement("div"), batchRows = new Map<number, CommandRow>(), selectionSet = view.getSnapshot().selectionSet;
         element.className = "st-viewport-command-measure"; element.setAttribute("aria-hidden", "true");
@@ -436,7 +436,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
     }
     function withRow<T>(line: number, scrollLeft: number, offset: number | undefined, complete: boolean, work: (row: MeasuredRow) => T): T | undefined {
         const document = workspace.observeDocument(documentId).getSnapshot();
-        if (disposed || !workspace.resolveTab(target) || document?.revision !== renderedRevision) return;
+        if (disposed || !live() || document?.revision !== renderedRevision) return;
         const existing = rows.get(line), rectangle = clientBox(root);
         if (existing && (existing.dataset.complete === "true" || !complete && scrollLeft === left
             && (offset === undefined || offset >= Number(existing.dataset.from) && offset <= Number(existing.dataset.to)))) {
@@ -458,9 +458,9 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         } finally { commandMeasure.remove(); }
     }
     const rowForOffset = <T>(offset: number, work: (row: MeasuredRow) => T): T | undefined => {
-        if (disposed || !workspace.resolveTab(target)) return;
+        if (disposed || !live()) return;
         const document = workspace.observeDocument(documentId).getSnapshot();
-        if (disposed || !workspace.resolveTab(target) || document?.revision !== renderedRevision) return;
+        if (disposed || !live() || document?.revision !== renderedRevision) return;
         const line = document.buffer.lineAt(offset);
         return withRow(line, left, offset, true, work);
     };
@@ -477,7 +477,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
             style.tabSize, style.fontVariant, style.fontVariantLigatures, style.fontKerning,
             style.fontFeatureSettings, style.fontVariationSettings, style.textAlign, style.textTransform, style.textIndent].join("|");
         if (font !== measuredFont) { measuredWidth = 0; measuredFont = font; }
-        const document = workspace.resolveTab(target) ? workspace.observeDocument(documentId).getSnapshot() : undefined;
+        const document = live() ? workspace.observeDocument(documentId).getSnapshot() : undefined;
         if (!document) {
             dirtyRows.clear(); visibleItems = [];
             minimap?.dispose(); minimap = undefined;
@@ -631,7 +631,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         for (const [id, button] of foldButtons) if (!visibleFolds.has(id)) {
             const focused = isFocused(button); button.remove(); foldButtons.delete(id);
             if (focused) notify("focus");
-            if (disposed || !workspace.resolveTab(target)) return;
+            if (disposed || !live()) return;
         }
         orderedButtons.forEach((button, index) => { if (foldLayer.children.item(index) !== button) foldLayer.insertBefore(button, foldLayer.children.item(index)); });
         // A bounded batch of native shaping measurements follows the row writes. Extent corrections
@@ -688,7 +688,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
     foldLayer.addEventListener("dblclick", event => { if (foldButton(event.target)) event.stopPropagation(); }, { signal: listeners.signal });
     foldLayer.addEventListener("click", event => {
         const button = foldButton(event.target); if (!button) return; event.stopPropagation();
-        if (disposed || !workspace.resolveTab(target) || inputOwner?.composing) return;
+        if (disposed || !live() || inputOwner?.composing) return;
         const binding = inputOwner;
         const changed = view.folding.setCollapsed({ revision: Number(button.dataset.revision), generation: Number(button.dataset.generation) }, button.dataset.fold!, button.getAttribute("aria-expanded") === "true");
         // The second click can arrive before the next frame. Publish the new disclosure
@@ -697,7 +697,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         if (binding && inputOwner === binding && event.detail > 0) notify("focus");
     }, { signal: listeners.signal });
     foldLayer.addEventListener("keydown", event => { if (event.key === "Escape" && foldButton(event.target)) {
-        event.preventDefault(); if (!disposed && workspace.resolveTab(target)) notify("focus");
+        event.preventDefault(); if (!disposed && live()) notify("focus");
     } }, { signal: listeners.signal });
     // A native scrollbar press can focus the scroll container despite its negative tab index.
     // Moving focus during a native selection drag cancels dragstart in Chromium.
@@ -742,7 +742,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
             for (const item of visibleItems) dirtyRows.add(item.line);
             overviewEpoch++; schedule();
         }
-    }), workspace.observeDocument(documentId).subscribe(documentChanged), view.subscribe(schedule), view.folding.subscribe(foldsChanged), resource.metadata.subscribe(schedule), workspace.tabState.subscribe(schedule)];
+    }), workspace.observeDocument(documentId).subscribe(documentChanged), view.subscribe(schedule), view.folding.subscribe(foldsChanged), resource.metadata.subscribe(schedule)];
+    if (tab) subscriptions.push(workspace.tabState.subscribe(schedule));
     let activitySnapshot: ViewportActivity | undefined;
     function activity(): ViewportActivity {
         const pending = frame !== undefined;
@@ -760,11 +761,11 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         activity,
         onRender: listener => observe("render", listener),
         bindInput: focus => {
-            if (disposed || !workspace.resolveTab(target) || inputOwner) throw new Error("Viewport requires one current input owner.");
+            if (disposed || !live() || inputOwner) throw new Error("Viewport requires one current input owner.");
             const binding = { composing: false, tabEscaped: false, detach: observe("focus", focus) };
             inputOwner = binding; root.tabIndex = -1; layer.setAttribute("aria-hidden", "true");
             const update = (key: "composing" | "tabEscaped", value: boolean): boolean => {
-                if (disposed || inputOwner !== binding || !workspace.resolveTab(target) || binding[key] === value) return false;
+                if (disposed || inputOwner !== binding || !live() || binding[key] === value) return false;
                 binding[key] = value;
                 if (key === "composing") { root.classList.toggle("st-composing", value); invalidate(); }
                 for (const button of foldButtons.values()) { button.disabled = binding.composing; button.tabIndex = binding.tabEscaped ? -1 : 0; }
@@ -800,7 +801,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         scrollBeyondLastLine: () => scrollBeyondLastLine,
         minimap: () => !!minimap,
         configureMinimap: enabled => {
-            notifications.assertWritable(); if (disposed || !workspace.resolveTab(target)) return false;
+            notifications.assertWritable(); if (disposed || !live()) return false;
             if (enabled === !!minimap) return true;
             if (enabled) minimap = createMinimap();
             else { minimap?.dispose(); minimap = undefined; }
@@ -815,13 +816,13 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         coordsAt: coordinates,
         rowBounds: (line: number) => {
             const current = workspace.observeDocument(documentId).getSnapshot(), folding = view.folding.getSnapshot();
-            if (disposed || frame !== undefined || !workspace.resolveTab(target) || current?.revision !== renderedRevision || folding.generation !== renderedFoldGeneration
+            if (disposed || frame !== undefined || !live() || current?.revision !== renderedRevision || folding.generation !== renderedFoldGeneration
                 || !Number.isSafeInteger(line) || line < 0 || line >= current.buffer.lineCount || renderedIndex.hiddenBy(line)) return undefined;
             const row = rows.get(line); if (!row) return undefined; const rectangle = row.getBoundingClientRect();
             return Object.freeze({ revision: current.revision, foldGeneration: folding.generation, line, top: rectangle.top, height: rectangle.height });
         },
         hitTest: (clientX: number, clientY: number) => {
-            if (!Number.isFinite(clientX) || !Number.isFinite(clientY) || disposed || !workspace.resolveTab(target)
+            if (!Number.isFinite(clientX) || !Number.isFinite(clientY) || disposed || !live()
                 || workspace.observeDocument(documentId).getSnapshot()?.revision !== renderedRevision) return undefined;
             const rectangle = clientBox(root, !!minimap);
             if (minimap && clientX >= rectangle.right) return undefined;
@@ -847,7 +848,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
                 folding: Object.freeze({ documentId, viewId: view.id, revision: folds.revision, generation: folds.generation, regions: folds.regions }),
                 ...(horizontalAnchor ? { horizontalAnchor: Object.freeze({ ...horizontalAnchor }) } : {}) }); },
         restoreView: (state: ViewState) => {
-            if (disposed || !workspace.resolveTab(target)) return; const document = workspace.document(documentId), value = state.horizontalAnchor, vertical = state.verticalAnchor;
+            if (disposed || !live()) return; const document = workspace.document(documentId), value = state.horizontalAnchor, vertical = state.verticalAnchor;
             validateScroll({ top: state.scrollTop, left: state.scrollLeft });
             if (value && (!Number.isSafeInteger(value.revision) || value.revision < 0 || !Number.isSafeInteger(value.offset) || value.offset < 0
                 || !Number.isFinite(value.left) || value.left < 0 || value.affinity !== "before" && value.affinity !== "after")) throw new RangeError("Invalid horizontal view anchor.");
@@ -866,7 +867,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
             if (vertical?.revision === document.revision) anchor = { ...vertical, leftRemainder: left - (vertical.offset - document.buffer.offsetAt(document.buffer.lineAt(vertical.offset))) * columnWidth };
         },
         revealOffset: (offset: number, options: RevealOptions = {}) => {
-            if (disposed || !workspace.resolveTab(target)) return; const document = workspace.document(documentId); document.buffer.lineAt(offset);
+            if (disposed || !live()) return; const document = workspace.document(documentId); document.buffer.lineAt(offset);
             const horizontal = options.horizontal ?? "center", vertical = options.vertical ?? "center", affinity = options.affinity ?? "after";
             if (![horizontal, vertical].every(value => value === "center" || value === "nearest") || affinity !== "after" && affinity !== "before") throw new RangeError("Invalid reveal options.");
             view.folding.reveal(view.folding.getSnapshot(), offset);
@@ -909,7 +910,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         collapseVisual: (from: number, to: number, direction: -1 | 1) => rowForOffset(from, first => direction < 0
             ? first.edge(direction, from, to) : rowForOffset(to, last => last.edge(direction, from, to))),
         columnAt: (offset: number, affinity: Affinity = "after") => {
-            if (disposed || !workspace.resolveTab(target)) return;
+            if (disposed || !live()) return;
             const document = workspace.observeDocument(documentId).getSnapshot();
             if (document?.revision !== renderedRevision || view.folding.getSnapshot().generation !== renderedFoldGeneration) return;
             const visible = coordinates(offset, affinity), rectangle = clientBox(root);
@@ -919,7 +920,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
             return withRow(line, scroll, projected, false, measured => { const point = measured.point(projected, affinity); return point && (point.left - rectangle.left) / rectangle.zoom + left; });
         },
         caretAtColumn: (line: number, column: number) => {
-            if (disposed || !workspace.resolveTab(target)) return;
+            if (disposed || !live()) return;
             const document = workspace.observeDocument(documentId).getSnapshot();
             if (document?.revision !== renderedRevision || view.folding.getSnapshot().generation !== renderedFoldGeneration) return;
             if (!Number.isSafeInteger(line) || line < 0 || line >= document.buffer.lineCount || !Number.isFinite(column)) throw new RangeError("Invalid navigation column.");

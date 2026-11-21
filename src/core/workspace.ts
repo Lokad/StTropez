@@ -19,6 +19,25 @@ export type DocumentId = string & { readonly documentId: unique symbol };
 export type TabId = string & { readonly tabId: unique symbol };
 export type ViewId = string & { readonly viewId: unique symbol };
 export type PaneId = string;
+const documentIdPrefix = "document-";
+
+/** Resolve a mount once. Only a real tab contributes presentation-generation authority. */
+export function captureTextSurface(workspace: Workspace, identity: DocumentId | TabId) {
+    if (identity.startsWith(documentIdPrefix)) {
+        const resource = workspace.resourceForDocument(identity as DocumentId);
+        return { documentId: resource.documentId, resource, tab: undefined };
+    }
+    const tab = workspace.captureTab(identity as TabId), surface = workspace.resolveTab(tab)?.surface;
+    if (surface?.kind !== "text") throw new Error("Expected a text surface.");
+    return { documentId: surface.documentId, resource: workspace.resourceForDocument(surface.documentId), tab };
+}
+
+export function ownsTextSurface(workspace: Workspace, view: DocumentView, target: TabTarget | undefined): boolean {
+    if (!workspace.ownsDocumentView(view)) return false;
+    if (!target) return true;
+    const surface = workspace.resolveTab(target)?.surface;
+    return surface?.kind === "text" && surface.documentId === view.documentId;
+}
 export type ResourceKey = Readonly<{ scope: string; resource: string; variant: string }>;
 export type EditOrigin = "human" | "agent" | "host";
 export type Capabilities = Readonly<{ edit: readonly EditOrigin[]; save: boolean; run: boolean }>;
@@ -222,7 +241,7 @@ export class Workspace {
         if (kind === "text" && value !== undefined && typeof value !== "string") throw new TypeError("Text resource requires a string.");
         const buffer = loaded && "buffer" in loaded ? loaded.buffer : kind === "text" && typeof value === "string" ? TextBuffer.from(value) : null;
         const id = `resource-${++this.nextId}` as ResourceId;
-        const documentId = kind === "text" ? `document-${++this.nextId}` as DocumentId : null;
+        const documentId = kind === "text" ? `${documentIdPrefix}${++this.nextId}` as DocumentId : null;
         const metadata = Object.freeze({ id, key, title, kind, visibility,
             state: loaded === undefined ? "loading" as const : "ready" as const, dirty: false,
             serverVersion: loaded?.serverVersion ?? null, capabilities: capabilities(permissions), saveStatus: "idle" as const, failure: null, editLock: null });

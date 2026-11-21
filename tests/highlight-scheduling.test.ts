@@ -14,13 +14,13 @@ test("occurrences coalesce refreshes and bound busy retries from the actual debo
             setTimeout: (run: () => void, delay: number) => { tasks.set(++serial, { run, delay }); return serial; },
             clearTimeout: (id: number) => { tasks.delete(id); } } };
         Object.assign(input, { getRootNode: () => owner });
-        const editor = { view, input, element: Object.assign(new EventTarget(), { ownerDocument: owner }),
+        const editor = { signal: new AbortController().signal, workspace: f.workspace, tab: f.workspace.captureTab(tab), view, input, element: Object.assign(new EventTarget(), { ownerDocument: owner }),
             activity: () => ({ disposed: false, composing: false, pendingCommand: busy }) } as unknown as TextEditor;
         const fire = (delay: number, elapsed = delay) => {
             assert.equal(tasks.size, 1); const [id, task] = tasks.entries().next().value!;
             assert.equal(task.delay, delay); assert.ok(elapsed >= delay); tasks.delete(id); time += elapsed; task.run();
         };
-        const controller = createLspHighlightController(f.workspace, tab, editor, { provider: f.provider, ...(delay === undefined ? {} : { delayMs: delay }) });
+        const controller = createLspHighlightController(editor, { provider: f.provider, ...(delay === undefined ? {} : { delayMs: delay }) });
         let stopReady = () => {};
         try {
             controller.refresh(); controller.refresh(); assert.equal(tasks.size, 1);

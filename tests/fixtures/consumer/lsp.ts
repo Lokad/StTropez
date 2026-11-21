@@ -7,8 +7,7 @@ import type { LspWorkspaceEdit } from "sttropez/protocol";
 const workspace = new Workspace();
 const source = workspace.createTextResource({ scope: "consumer", resource: "source", variant: "working" }, "Source", { value: 'const saMORE = 1; // TODO\r\ncatalogue;\r\nlookup("a", );\r\nimport "sample-utils";\r\nconst color = "#abc";' });
 const companion = workspace.createTextResource({ scope: "consumer", resource: "companion", variant: "working" }, "Companion", { value: "const catalogue = 1;\r\ncatalogue;\r\n" });
-const tab = workspace.open({ kind: "text", documentId: source.documentId }, "source");
-const editor = mountTextEditor(document.getElementById("editor")!, workspace, tab, { ariaLabel: "Public LSP source" });
+const editor = mountTextEditor(document.getElementById("editor")!, workspace, source.documentId, { ariaLabel: "Public LSP source" });
 const endpoint = new URL("/lsp-fixture", location.href); endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";
 const provider = new LspWorkspace(workspace, {
     initializationOptions: { fixtureModuleUris: [{ module: "sample-utils", uri: `consumer+opaque:project/${encodeURIComponent(companion.id)}` }] },
@@ -20,7 +19,7 @@ const provider = new LspWorkspace(workspace, {
     diagnostics: true, workspaceEdits: true, applyEdit: true,
 });
 const errors: string[] = [];
-const controller = createLspEditor(workspace, tab, editor, { provider, autoConnect: false, onError: error => errors.push(String(error)) });
+const controller = createLspEditor(editor, { provider, autoConnect: false, onError: error => errors.push(String(error)) });
 const hover = createLspHoverClient(provider), navigation = createLspNavigationClient(provider), rename = createLspRenameClient(provider), actions = createLspActionClient(provider);
 const signature = createLspSignatureClient(provider), links = createLspLinkClient(provider), colors = createLspColorClient(provider);
 const project = () => [workspace.document(source.documentId), workspace.document(companion.documentId)];

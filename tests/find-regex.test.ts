@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Workspace } from "../src/index.ts";
-import { createFindController } from "../src/browser/find.ts";
+import { findForView } from "../src/browser/find.ts";
 import type { FindBackend, FindQueryCapture, FindPlanStep, FindSnapshot } from "../src/browser/index.ts";
 import type { SearchStep } from "../src/core/search.ts";
-import type { FindHost } from "../src/browser/index.ts";
+import type { FindHost } from "../src/browser/find.ts";
 import { regexMatches, regexReplacement } from "../src/core/regex-search.ts";
 
 for (const terminal of ["ready", "failed", "cancelled"] as const)
@@ -23,7 +23,7 @@ test(`unchanged regex transfer steps preserve snapshot identity and accumulated 
             return Promise.resolve({ done: calls === 53, scanned: calls === 53 ? 6 : calls > 50 ? 3 : 0,
                 readUnits: 1, matches: calls === 51 ? [{ from: 0, to: 3 }] : [] });
         } }) };
-    const find = createFindController(workspace, tab, editor, { regularExpressionBackend: backend, regularExpressionDelayMs: 0 });
+    const find = findForView(workspace, workspace.captureTab(tab), editor, { regularExpressionBackend: backend, regularExpressionDelayMs: 0 });
     find.setFlags({ regularExpression: true }); const states: FindSnapshot[] = [], stop = find.subscribe(() => states.push(find.getSnapshot()));
     const tick = async () => { const next = tasks.entries().next().value; if (next) { tasks.delete(next[0]); next[1](); } await Promise.resolve(); await Promise.resolve(); };
     try {
@@ -79,7 +79,7 @@ function fixture(text: string, supplied = true) {
             }, dispose: () => { job.disposed = true; } };
         },
     };
-    const find = createFindController(workspace, tab, editor, supplied ? { regularExpressionBackend: backend, regularExpressionDelayMs: 0 } : {});
+    const find = findForView(workspace, workspace.captureTab(tab), editor, supplied ? { regularExpressionBackend: backend, regularExpressionDelayMs: 0 } : {});
     const tick = async () => { if (tasks.size) { const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); } await Promise.resolve(); await Promise.resolve(); };
     const drain = async () => { for (let turns = 0; turns < 100; turns++) { await tick(); if (!tasks.size) return; } throw new Error("Find did not yield."); };
     return { workspace, source, tab, view, peer, owner, editor, find, plans, tick, drain,
@@ -169,7 +169,7 @@ test("a held replacement reply cannot edit a replacement document in the same ta
         f.hold(); f.find.replaceAll("dog"); await f.tick(); await f.tick();
         assert.equal(f.find.getSnapshot().status, "replacing");
         f.workspace.replace(f.tab, { kind: "text", documentId: replacement.documentId });
-        const next = createFindController(f.workspace, f.tab, { ...f.editor, view });
+        const next = findForView(f.workspace, f.workspace.captureTab(f.tab), { ...f.editor, view });
         try {
             next.setQuery("cat"); await f.drain();
             const ready = next.getSnapshot(), selected = view.getSnapshot(), original = f.workspace.document(replacement.documentId);

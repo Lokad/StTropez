@@ -1,10 +1,9 @@
 import { createFindController, createRegexFindBackend } from "../../src/browser/index.ts";
 import type { TextEditor } from "../../src/browser/index.ts";
-import type { TabId, Workspace } from "../../src/index.ts";
 
-export function mountFindUI(workspace: Workspace, tab: TabId, editor: TextEditor) {
+export function mountFindUI(editor: TextEditor) {
     const owner = editor.element.ownerDocument;
-    const find = createFindController(workspace, tab, editor, { regularExpressionBackend: createRegexFindBackend({ clock: owner.defaultView!,
+    const find = createFindController(editor, { regularExpressionBackend: createRegexFindBackend({ clock: owner.defaultView!,
         createWorker: () => new Worker("/regex-worker.js", { type: "module" }) }) }), listeners = new AbortController();
     const query = owner.getElementById("find-query") as HTMLInputElement, replacement = owner.getElementById("replacement") as HTMLInputElement;
     const wholeWord = owner.getElementById("find-whole-word") as HTMLInputElement;

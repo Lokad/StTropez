@@ -7,7 +7,7 @@ export type CapturedInsertion = Readonly<{ documentId: DocumentId; revision: num
     signal: AbortSignal; isCurrent: () => boolean; insert: (text: string) => boolean; cancel: () => void }>;
 
 /** Internal capture shared by the browser input owner and host-controller contract tests. */
-export function captureInsertion(workspace: Workspace, target: TabTarget, view: DocumentView, available: () => boolean,
+export function captureInsertion(workspace: Workspace, target: TabTarget | undefined, view: DocumentView, available: () => boolean,
     commit: (plan: SelectionEditPlan, revision: number) => boolean, ended: () => void): CapturedInsertion | undefined {
     const capture = captureViewRequest(workspace, target, view, { editOrigin: "human", available }); if (!capture) return;
     const { document, selectionSet } = capture;

@@ -6,8 +6,7 @@ export function mountDemoOutput(host: HTMLElement, text: string, settings: Reado
     const workspace = new Workspace();
     const resource = workspace.createTextResource({ scope: "demo-output", resource: "javascript", variant: "generated" }, "JavaScript output",
         { value: text }, { edit: [], save: false, run: false });
-    const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "output");
-    const viewport = mountTextViewport(host, workspace, tab, { ariaLabel: "JavaScript output", ...settings });
+    const viewport = mountTextViewport(host, workspace, resource.documentId, { ariaLabel: "JavaScript output", ...settings });
     viewport.element.classList.add("demo-output");
     let disposed = false;
     return Object.freeze({ snapshot: viewport.snapshot, configureMinimap: viewport.configureMinimap,
@@ -22,6 +21,6 @@ export function mountDemoOutput(host: HTMLElement, text: string, settings: Reado
                 offset: current.buffer.offsetAt(Math.min(line, current.buffer.lineCount - 1)), topRemainder: anchor.topRemainder } } : {}) });
     }, dispose: () => {
         if (disposed) return;
-        disposed = true; viewport.dispose(); workspace.close(tab); workspace.releaseResource(resource.id);
+        disposed = true; viewport.dispose(); workspace.releaseResource(resource.id);
     } });
 }

@@ -23,7 +23,7 @@ export function createActivationSession(original: string, selection: Selection, 
             editor = mountTextEditor(host, workspace, tab, { ariaLabel: shared?.label ?? "Activated source", view, readOnly }); mounts++;
             if (viewState) editor.restoreView({ ...viewState, ...view.getSnapshot().selection, selectionSet: view.getSnapshot().selectionSet });
             if (changed || !viewState) editor.viewport.revealOffset(view.getSnapshot().selection.head);
-            find = createFindController(workspace, tab, editor, { regularExpressionBackend: createRegexFindBackend({ clock: host.ownerDocument.defaultView!,
+            find = createFindController(editor, { regularExpressionBackend: createRegexFindBackend({ clock: host.ownerDocument.defaultView!,
                 createWorker: () => { workers++; return new Worker(new URL("./regex-worker.js", import.meta.url), { type: "module" }); } }) });
             stopFind = find.subscribe(() => { const s = find!.getSnapshot(); update(s.message || `${s.status}: ${s.count} matches`); });
             if (shared?.focus !== false) editor.input.focus({ preventScroll: true });

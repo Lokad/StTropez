@@ -1,7 +1,8 @@
 import { ProtocolDecodeError, rpcCodes, staleRequest } from "../protocol/wire.ts";
 import { isFocused } from "./dom-focus.ts";
 import { codeWordConstituentPattern } from "../core/words.ts";
-import type { ResourceLease, ResourceMetadata, TabId, Workspace } from "../core/workspace.ts";
+import { ownsTextSurface } from "../core/workspace.ts";
+import type { ResourceLease, ResourceMetadata } from "../core/workspace.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import { planSnippetEdit, planSnippetChoice, snippetChoiceText } from "../core/snippets.ts";
 import type { SnippetStop } from "../core/snippets.ts";
@@ -40,9 +41,9 @@ const word = new RegExp(`^(?:${codeWordConstituentPattern})$`, "u");
 // IDs also distinguish retained host controls from lists belonging to another mounted view.
 
 /** Captured editor coordination; hosts render controls and supply provider/custom-message policy. */
-export function createLspEditor(workspace: Workspace, tabId: TabId, editor: TextEditor, options: LspEditorOptions): LspEditorController {
-    const target = workspace.captureTab(tabId), documentId = editor.view.documentId, resource = workspace.resourceForDocument(documentId), tab = workspace.resolveTab(target);
-    if (tab?.surface.kind !== "text" || tab.surface.documentId !== documentId || !workspace.ownsDocumentView(editor.view)) throw new Error("LSP provider requires the captured document view.");
+export function createLspEditor(editor: TextEditor, options: LspEditorOptions): LspEditorController {
+    const { workspace, tab: target, view } = editor, documentId = view.documentId, resource = workspace.resourceForDocument(documentId);
+    if (editor.signal.aborted || !ownsTextSurface(workspace, view, target)) throw new Error("LSP provider requires the captured document view.");
     const listeners = new AbortController(), scope = options.provider.createScope();
     let binding: LspDocument, completion: ReturnType<typeof createLspCompletionClient>;
     try { binding = scope.attachDocument(documentId); completion = createLspCompletionClient(options.provider); }
@@ -65,8 +66,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Text
         notifications.assertWritable(); if (disposed) throw new Error("LSP editor is disposed."); const stop = cell.observable.subscribe(listener);
         const release = () => { stop(); observers.delete(release); }; observers.add(release); return release;
     } });
-    const available = () => { const tab = workspace.resolveTab(target); return !disposed && editor.element.isConnected && !editor.activity().disposed && workspace.ownsDocumentView(editor.view)
-        && tab?.surface.kind === "text" && tab.surface.documentId === documentId && !!workspace.observeDocument(documentId).getSnapshot(); };
+    const available = () => !disposed && editor.element.isConnected && !editor.signal.aborted && ownsTextSurface(workspace, view, target);
     const idle = () => { const m = editor.activity(); return !m.composing && !m.pendingInput && !m.pendingCommand && !m.pendingWord && !m.pendingGrapheme && !m.disposed && !editor.input.disabled && (options.canCapture?.() ?? true); };
     const authority = resource.metadata.getSnapshot;
     const authorityCurrent = (before: ResourceMetadata) => {
@@ -390,8 +390,8 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Text
         if (job.foldIndex.sameProjection(folds.index)) { job.folds = folds.generation; job.foldIndex = folds.index; }
         else expire("LSP completion expired after visible folds changed.");
     }),
-    resource.metadata.subscribe(() => { if (snippet && !authorityCurrent(snippet.authority)) { snippet = undefined; publish("Snippet ended after authority changed."); } if (job && !authorityCurrent(job.authority)) expire("LSP completion expired after authority changed."); }),
-    workspace.tabState.subscribe(() => { if (!available()) { snippet = undefined; clearDiagnostics(); expire("Captured LSP view is unavailable."); } })];
+    resource.metadata.subscribe(() => { if (snippet && !authorityCurrent(snippet.authority)) { snippet = undefined; publish("Snippet ended after authority changed."); } if (job && !authorityCurrent(job.authority)) expire("LSP completion expired after authority changed."); })];
+    if (target) stops.push(workspace.tabState.subscribe(() => { if (!available()) { snippet = undefined; clearDiagnostics(); expire("Captured LSP view is unavailable."); } }));
     editor.input.addEventListener("blur", () => { if (job) job.acceptance = undefined; if (snippet && !editor.activity().composing) { snippet = undefined; publish("Snippet ended after focus changed."); } }, { signal: listeners.signal });
     editor.input.addEventListener("compositionstart", () => { cancelAuto(); expire("Finish composition before completion."); }, { signal: listeners.signal });
     editor.input.addEventListener("beforeinput", event => { const started = clock.performance.now();
@@ -429,6 +429,14 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Text
     editor.input.addEventListener("keydown", event => { const started = clock.performance.now();
         try { keydown(event); } finally { counters.completionKeydownEvents++; counters.lastCompletionKeydownMs = clock.performance.now() - started; }
     }, { capture: true, signal: listeners.signal });
+    const dispose = () => {
+        if (disposed) return;
+        notifications.assertWritable(); disposed = true; snippet = undefined;
+        stopTransform(); cancelAuto(); for (const stop of stops) stop();
+        listeners.abort(); release(); completion.dispose(); binding.dispose(); scope.dispose();
+        clearDiagnostics(); publish("LSP editor disposed."); for (const stop of [...observers]) stop();
+    };
+    editor.signal.addEventListener("abort", dispose, { once: true, signal: listeners.signal });
     updateDiagnostics(); if (options.autoConnect !== false) connect();
     return Object.freeze({ ...state, request: () => { notifications.assertWritable(); if (!disposed) request(); },
         moveSnippet: (direction, id) => { notifications.assertWritable(); return !disposed && moveSnippet(direction, id); },
@@ -440,5 +448,5 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Text
         selectDiagnostic: index => { notifications.assertWritable(); return !disposed && selectDiagnostic(index); },
         customRequest: (method, params) => { notifications.assertWritable(); return scope.request(method, params).result; },
         snapshot: () => Object.freeze({ ...counters, received: completion.snapshot().received, connected: scope.getSnapshot().phase === "ready", pending: cell.get().pending, offer: !!job?.visible.length, diagnostics: diagnostics.length, diagnosticRevision, diagnosticsPending, transport: "lsp3.17", protocol: scope.snapshotOwnership() }),
-        dispose: () => { if (disposed) return; notifications.assertWritable(); disposed = true; snippet = undefined; stopTransform(); cancelAuto(); for (const stop of stops) stop(); listeners.abort(); release(); completion.dispose(); binding.dispose(); scope.dispose(); clearDiagnostics(); publish("LSP editor disposed."); for (const stop of [...observers]) stop(); } });
+        dispose });
 }

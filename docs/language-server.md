@@ -67,18 +67,15 @@ Markdown separately.
 Attach completion and diagnostics to an existing mounted editor:
 
 ```ts
-import type { TabId, Workspace } from "sttropez";
 import { createLspEditor, type TextEditor } from "sttropez/browser";
 import type { LspWorkspace } from "sttropez/protocol";
 
 export function attachLanguage(
-    workspace: Workspace,
-    tab: TabId,
     editor: TextEditor,
     provider: LspWorkspace,
     onError: (error: unknown) => void
 ) {
-    const language = createLspEditor(workspace, tab, editor, {
+    const language = createLspEditor(editor, {
         provider, autoConnect: false, onError
     });
     language.connect();

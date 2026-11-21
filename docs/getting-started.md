@@ -229,7 +229,7 @@ import { tokens } from "./checklist.js";
 const second = document.createElement("section");
 second.id = "split";
 document.getElementById("panes")?.after(second);
-const split = mountTextEditor(second, workspace, tab, {
+const split = mountTextEditor(second, workspace, file.documentId, {
     ariaLabel: "Checklist split", minimap: true,
     language: { tabSize: 2, insertSpaces: true, blockComment: { open: "<!--", close: "-->" } }
 });
@@ -374,7 +374,7 @@ Attach the provider to the first pane. Use **Connect**, then Ctrl+Space in the e
 completion. Arrow keys choose a suggestion and Enter accepts it.
 
 ```js
-const language = createLspEditor(workspace, tab, editor, { provider, autoConnect: false });
+const language = createLspEditor(editor, { provider, autoConnect: false });
 const stopLanguage = language.subscribe(() => {
     const state = language.getSnapshot();
     output.textContent = state.offerText ?? state.diagnostics[0]?.message ?? state.message;

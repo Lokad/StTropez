@@ -49,8 +49,8 @@ async function mount(page: Page, language: boolean) {
                     return openWebSocketTransport(endpoint.href, { signal: abort.signal }).finally(stop); },
                 schedule: (ms, work) => { const timer = setTimeout(work, ms); return () => clearTimeout(timer); },
                 features: ["textDocument/completion", "textDocument/documentHighlight"], onError: report });
-            f.completion = createLspEditor(workspace, tab, editor, { provider: f.provider, onError: report });
-            f.highlights = createLspHighlightController(workspace, tab, editor, { provider: f.provider, delayMs: 0 });
+            f.completion = createLspEditor(editor, { provider: f.provider, onError: report });
+            f.highlights = createLspHighlightController(editor, { provider: f.provider, delayMs: 0 });
         }
     }, { css, language });
     return page.evaluateHandle(() => window.shadowFocus.editor.input);
@@ -74,7 +74,7 @@ test("completion distinguishes host preparation failures from malformed provider
             await page.evaluate(async failure => {
                 const path = "/shadow-focus/", { createLspEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
                 const f = window.shadowFocus; f.completion!.dispose();
-                f.completion = createLspEditor(f.workspace, f.tab, f.editor, { provider: f.provider!, autoConnect: false, automatic: false,
+                f.completion = createLspEditor(f.editor, { provider: f.provider!, autoConnect: false, automatic: false,
                     prepareCompletion: async () => {
                         if (failure === "type") throw new TypeError("Host preparation failed.");
                         if (failure === "range") throw new RangeError("Host preparation failed.");

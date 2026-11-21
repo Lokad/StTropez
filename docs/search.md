@@ -9,16 +9,15 @@ planning.
 To enable both modes, attach one controller per editor.
 
 ```ts
-import type { TabId, Workspace } from "sttropez";
 import { createFindController, createRegexFindBackend } from "sttropez/browser";
 import type { TextEditor } from "sttropez/browser";
 
 export function attachFind(
-    workspace: Workspace, tab: TabId, editor: TextEditor, workerUrl: URL
+    editor: TextEditor, workerUrl: URL
 ) {
     const clock = editor.element.ownerDocument.defaultView;
     if (!clock) throw new Error("The editor needs an attached browser window.");
-    return createFindController(workspace, tab, editor, {
+    return createFindController(editor, {
         regularExpressionBackend: createRegexFindBackend({
             clock,
             createWorker: () => new Worker(workerUrl, { type: "module" })
@@ -32,16 +31,14 @@ from the same package version as the client. Literal search starts no worker. Se
 [packaging](packaging.md).
 
 Subscribe to progress, counts and errors. Set the query and flags from your controls, call `next()`
-to navigate and wait for `ready` before calling `replaceAll(replacement)`. Dispose the controller
-before its editor.
+to navigate and wait for `ready` before calling `replaceAll(replacement)`. Disposing the editor also disposes its Find controller.
 
 ## Contract
 
 ### Options, matches and commands
 
-Pass the workspace, tab and editor for one live view to `createFindController`. Its lease and captured
-tab generation keep commands on that target after focus moves. `TextEditor` implements `FindHost`,
-including document events, clock, composition, read-only and disposal state, reveal and focus.
+Pass the mounted editor to `createFindController`. Its lease keeps the document available. Commands stay with the
+original view after focus moves. When mounted by tab, closing or replacing that tab expires Find.
 
 Pass the backend and delay in `FindControllerOptions`. Change `FindFlags` with `setFlags(flags)`.
 `getSnapshot()` and `subscribe()` expose an immutable `FindSnapshot` with the query, flags,
@@ -182,7 +179,7 @@ leaves the text unchanged, repair continues. For a replacement plan, the planner
 index, copies each edit and checks its range against the indexed match. You get the immutable edit
 list only when the backend has supplied every match.
 
-Replace All captures the document revision, all selections and the tab generation. Planning yields
+Replace All captures the document revision, all selections and any tab generation. Planning yields
 every 1,024 edits and checks read-only and composition state at each step. Changing the selection or
 query, starting composition, replacing the tab or disposing the editor cancels the plan. Editing
 restarts the search. Losing edit permission or acquiring an edit lease cancels the command even if

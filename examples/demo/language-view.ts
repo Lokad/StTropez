@@ -76,9 +76,9 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         void language.connect().then(provider => {
             if (!valid()) return;
             try {
-                controller = createLspEditor(workspace, file.tab, editor, { provider, autoConnect: false, filterManualCompletions: true, canCapture: valid });
+                controller = createLspEditor(editor, { provider, autoConnect: false, filterManualCompletions: true, canCapture: valid });
                 scope.defer(() => controller!.dispose());
-                highlights = createLspHighlightController(workspace, file.tab, editor, { provider });
+                highlights = createLspHighlightController(editor, { provider });
                 scope.defer(() => highlights!.dispose());
                 const occurrences = editor.decorations.add({ name: "occurrences", order: 20, minimap: false });
                 scope.defer(occurrences.dispose);

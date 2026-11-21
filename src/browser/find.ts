@@ -1,5 +1,7 @@
 import { LiteralSearch } from "../core/search.ts";
-import type { DocumentSnapshot, DocumentView, EditResult, TabId, Workspace } from "../core/workspace.ts";
+import { ownsTextSurface } from "../core/workspace.ts";
+import type { TextEditor } from "./text-editor.ts";
+import type { DocumentSnapshot, DocumentView, EditResult, TabTarget, Workspace } from "../core/workspace.ts";
 import { unchangedPositionEdges } from "../core/positions.ts";
 import { FindIndex } from "../core/find-index.ts";
 import { LiteralFindRepair } from "./find-index.ts";
@@ -18,6 +20,7 @@ type FindEvents = Pick<EventTarget, "addEventListener" | "removeEventListener">;
 /** View operations consumed by find. A mounted TextEditor satisfies this contract directly. */
 export type FindHost = Readonly<{
     view: DocumentView;
+    signal?: AbortSignal;
     decorations?: DecorationLayers;
     element: Readonly<{ ownerDocument: FindEvents & Readonly<{ defaultView: Readonly<{
         performance: Pick<Performance, "now">;
@@ -49,12 +52,15 @@ function isAsync<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
 }
 
 /** Host-rendered find UI; scanning/planning yield, while replacement uses one captured transaction. */
-export function createFindController(workspace: Workspace, tabId: TabId, editor: FindHost, options: FindControllerOptions = {}): FindController {
+export function createFindController(editor: TextEditor, options: FindControllerOptions = {}): FindController {
+    return findForView(editor.workspace, editor.tab, editor, options);
+}
+
+export function findForView(workspace: Workspace, target: TabTarget | undefined, editor: FindHost, options: FindControllerOptions = {}): FindController {
     const backend = options.regularExpressionBackend, regexDelay = options.regularExpressionDelayMs ?? 80;
     if (!Number.isFinite(regexDelay) || regexDelay < 0 || regexDelay > 1000) throw new RangeError("Invalid regular-expression query delay.");
-    const target = workspace.captureTab(tabId), tab = workspace.resolveTab(target);
-    if (!tab || tab.surface.kind !== "text" || tab.surface.documentId !== editor.view.documentId || !workspace.ownsDocumentView(editor.view)) throw new Error("Find requires the captured document view.");
-    const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId), lease = workspace.acquire(resource.id), owner = editor.element.ownerDocument, win = owner.defaultView!;
+    if (editor.activity().disposed || !ownsTextSurface(workspace, editor.view, target)) throw new Error("Find requires the captured document view.");
+    const documentId = editor.view.documentId, resource = workspace.resourceForDocument(documentId), lease = workspace.acquire(resource.id), owner = editor.element.ownerDocument, win = owner.defaultView!;
     const scope = workspace.createNotificationScope(), initial = workspace.document(documentId);
     const store = new Store<FindSnapshot>(Object.freeze({ query: "", wholeWord: false, matchCase: true, regularExpression: false, revision: initial.revision, status: "idle", count: 0, scanned: 0, length: initial.buffer.length,
         retained: false, current: null, matchesVersion: 0, reason: null, message: "" }), scope);
@@ -72,7 +78,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     const disposeBackends = () => { literalBackend.dispose(); backend?.dispose(); };
     let scanMaximum = 0, replaceTransactionMs = 0;
     const sameOwner = (a: DocumentSnapshot, b: DocumentSnapshot) => a.id === b.id && a.resourceId === b.resourceId && a.key === b.key;
-    const valid = () => !disposed && lease.active() && workspace.resolveTab(target) !== undefined && workspace.ownsDocumentView(editor.view)
+    const valid = () => !disposed && lease.active() && ownsTextSurface(workspace, editor.view, target)
         && workspace.observeDocument(documentId).getSnapshot() !== undefined && !editor.activity().disposed;
     const publish = (patch: FindPatch) => {
         const previous = store.get(), next = Object.freeze({ ...previous, ...patch });
@@ -370,7 +376,18 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         if (current && sameOwner(observed, current) && current.revision === observed.revision && current.buffer === observed.buffer) return;
         if (store.get().status === "cancelled" && valid()) { observed = workspace.document(documentId); publish({ revision: observed.revision, length: observed.buffer.length }); }
         else { const state = store.get(); restart(state.query, state.wholeWord, state.matchCase, state.regularExpression, true); }
-    }), workspace.tabState.subscribe(() => { if (!valid()) { stop(); disposeBackends(); reset({ status: "expired", reason: "view-unavailable", message: "View is unavailable." }); } })];
+    })];
+    if (target) subscriptions.push(workspace.tabState.subscribe(() => { if (!valid()) { stop(); disposeBackends(); reset({ status: "expired", reason: "view-unavailable", message: "View is unavailable." }); } }));
+    const dispose = () => {
+        if (disposed) return;
+        scope.assertWritable();
+        disposed = true;
+        editor.signal?.removeEventListener("abort", dispose);
+        stop(); disposeBackends(); subscriptions.forEach(unsubscribe => unsubscribe());
+        layer?.dispose(); lease.release();
+        reset({ status: "disposed", query: "", length: 0, reason: null, message: "" });
+    };
+    editor.signal?.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ ...store.observable, getDiagnostics: () => Object.freeze({ maxScanStepMs: scanMaximum, replaceTransactionMs }), matchesIn, setQuery: (query: string) => { scope.assertWritable(); if (!disposed) restart(query); },
         setFlags: (flags: FindFlags) => {
             scope.assertWritable();
@@ -378,5 +395,5 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
             if (!disposed && (wholeWord !== store.get().wholeWord || matchCase !== store.get().matchCase || regularExpression !== store.get().regularExpression)) restart(store.get().query, wholeWord, matchCase, regularExpression);
         },
         next, replaceCurrent, replaceAll, cancel: () => { scope.assertWritable(); if (!disposed) { stop(); reset({ status: "cancelled", reason: "cancelled", message: "Search cancelled." }); } },
-        dispose: () => { if (disposed) return; scope.assertWritable(); disposed = true; stop(); disposeBackends(); subscriptions.forEach(unsubscribe => unsubscribe()); layer?.dispose(); lease.release(); reset({ status: "disposed", query: "", length: 0, reason: null, message: "" }); } });
+        dispose });
 }

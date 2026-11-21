@@ -1,25 +1,25 @@
 import { createSelectionSet, planSelectionEdits } from "../core/selections.ts";
 import { PositionMap } from "../core/positions.ts";
+import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 
 /** Internal transfer ticket. Identity/revision/set belong to the captured source, never focus. */
-export type TextTransferCapture = Readonly<{ workspace: Workspace; tab: TabTarget; documentId: DocumentId;
+export type TextTransferCapture = Readonly<{ workspace: Workspace; tab: TabTarget | undefined; documentId: DocumentId;
     view: DocumentView; revision: number; buffer: TextBuffer; selectionSet: SelectionSet; text: string; moveAllowed: boolean }>;
-export type TextDropRequest = Readonly<{ workspace: Workspace; tab: TabTarget; view: DocumentView;
+export type TextDropRequest = Readonly<{ workspace: Workspace; tab: TabTarget | undefined; view: DocumentView;
     expectedRevision: number; offset: number; source?: TextTransferCapture; text?: string; copy?: boolean }>;
 export type TextDropResult = Readonly<{ applied: false; reason: string } | {
     applied: true; operation: "move" | "copy" | "noop"; revision: number; offset: number | null }>;
 
-function resolve(workspace: Workspace, tab: TabTarget, view: DocumentView) {
-    const live = workspace.resolveTab(tab);
-    if (live?.surface.kind !== "text" || live.surface.documentId !== view.documentId || !workspace.ownsDocumentView(view)) return;
+function resolve(workspace: Workspace, tab: TabTarget | undefined, view: DocumentView) {
+    if (!ownsTextSurface(workspace, view, tab)) return;
     const document = workspace.observeDocument(view.documentId).getSnapshot(), metadata = workspace.resourceForDocument(view.documentId).metadata.getSnapshot();
     if (!document || metadata.state !== "ready" || view.getSnapshot().revision !== document.revision) return;
     return { document, metadata };
 }
-export function captureTextTransfer(workspace: Workspace, tab: TabTarget, view: DocumentView): TextTransferCapture | undefined {
+export function captureTextTransfer(workspace: Workspace, tab: TabTarget | undefined, view: DocumentView): TextTransferCapture | undefined {
     const current = resolve(workspace, tab, view); if (!current) return;
     const { selectionSet } = view.getSnapshot(), fragments: string[] = [];
     for (const range of selectionSet.ranges) if (range.anchor !== range.head) fragments.push(current.document.buffer.slice(Math.min(range.anchor, range.head), Math.max(range.anchor, range.head)));
@@ -65,6 +65,6 @@ export function applyTextDrop(request: TextDropRequest): TextDropResult {
     const revision = result.revisions.find(item => item.documentId === view.documentId)!.revision;
     // Same-document history restores the drag-initiating view; other retained views map normally.
     // The drop view selects the inserted text, independently of whichever view has focus.
-    if (initiator !== view && workspace.resolveTab(tab) && workspace.ownsDocumentView(view)) view.setSelections(revision, after.ranges, after.primary);
+    if (initiator !== view && ownsTextSurface(workspace, view, tab)) view.setSelections(revision, after.ranges, after.primary);
     return Object.freeze({ applied: true, operation: move ? "move" : "copy", revision, offset: head });
 }

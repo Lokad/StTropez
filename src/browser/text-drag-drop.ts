@@ -1,3 +1,4 @@
+import { ownsTextSurface } from "../core/workspace.ts";
 import { clientBox } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
 import type { Affinity } from "../core/positions.ts";
@@ -13,7 +14,7 @@ type ActiveDrag = { token: string; owner: symbol; source?: TextTransferCapture }
 const activeDrags = new WeakMap<Document, ActiveDrag>();
 
 /** Native data-store bridge. Payloads are read at drop, never during protected dragover. */
-export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab: TabTarget; view: DocumentView; viewport: TextViewport;
+export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab: TabTarget | undefined; view: DocumentView; viewport: TextViewport;
     input: HTMLTextAreaElement; available: () => boolean; beforeStart: () => void;
     afterDrop: (offset: number) => void; rejected: (reason: string) => void }>) {
     const { workspace, tab, view, viewport, input } = options, root = viewport.element;
@@ -27,7 +28,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
     let armed: Arm | undefined, aim: Aim | undefined, previewFrame: number | undefined;
     let disposed = false, expired = false;
     function current() {
-        if (disposed || !options.available() || !root.isConnected || !workspace.resolveTab(tab) || !workspace.ownsDocumentView(view)) return;
+        if (disposed || !options.available() || !root.isConnected || !ownsTextSurface(workspace, view, tab)) return;
         return workspace.observeDocument(view.documentId).getSnapshot();
     }
     function clearAim(): void {
@@ -157,7 +158,8 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
     document.addEventListener("keydown", event => { if (event.key === "Escape") finish(); }, { signal: listeners.signal });
     win.addEventListener("pagehide", finish, { signal: listeners.signal });
     const resource = workspace.resourceForDocument(view.documentId);
-    const subscriptions = [workspace.observeDocument(view.documentId).subscribe(changed), view.subscribe(changed), resource.metadata.subscribe(changed), workspace.tabState.subscribe(changed)];
+    const subscriptions = [workspace.observeDocument(view.documentId).subscribe(changed), view.subscribe(changed), resource.metadata.subscribe(changed)];
+    if (tab) subscriptions.push(workspace.tabState.subscribe(changed));
     return Object.freeze({
         disarm: clearArm,
         arm: (event: PointerEvent): boolean => {

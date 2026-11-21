@@ -44,7 +44,7 @@ export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspa
             discovery: input => session => connection.prepareRequest(session, "textDocument/documentColor", { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) }),
             presentation: input => session => connection.prepareRequest(session, "textDocument/colorPresentation", { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) }),
         }),
-        provider: (workspace, tab, editor, options) => createLspProviderController(workspace, tab, editor, { ...options, provider: connection,
+        provider: (editor, options) => createLspProviderController(editor, { ...options, provider: connection,
             beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/completion", configuration, { replacePending: true }) }),
         hover: (workspace, tab, editor, canCapture) => createHoverController(workspace, tab, editor, { canCapture,
             backend: createLspHoverClient({ provider: connection,

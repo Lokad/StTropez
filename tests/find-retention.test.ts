@@ -6,8 +6,8 @@ import { LiteralSearch } from "../src/core/search.ts";
 import { unchangedPositionEdges } from "../src/core/positions.ts";
 import { FindIndex } from "../src/core/find-index.ts";
 import { LiteralFindRepair } from "../src/browser/find-index.ts";
-import { createFindController } from "../src/browser/find.ts";
-import type { FindHost } from "../src/browser/index.ts";
+import { findForView } from "../src/browser/find.ts";
+import type { FindHost } from "../src/browser/find.ts";
 
 const options = { matchCase: true, wholeWord: false };
 function scan(buffer: TextBuffer, query: string, settings = options) {
@@ -109,7 +109,7 @@ function fixture(text: string, clock: Pick<Performance, "now"> = performance) {
     const owner = Object.assign(new EventTarget(), { defaultView: { performance: clock,
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, input: Object.assign(new EventTarget(), { readOnly: false }), activity: () => ({ composing: false, disposed: false }), viewport: { revealOffset: () => {} }, focus: () => {} } satisfies FindHost;
-    const find = createFindController(workspace, tab, editor), document = () => workspace.document(documentId);
+    const find = findForView(workspace, workspace.captureTab(tab), editor), document = () => workspace.document(documentId);
     const step = () => { const entry = tasks.entries().next().value; assert.ok(entry); tasks.delete(entry[0]); entry[1](); };
     const drain = () => { for (let turns = 0; tasks.size; turns++) { assert.ok(turns < 1000); step(); } assert.deepEqual(errors, []); };
     const edit = (from: number, to: number, insert: string) => { assert.equal(workspace.edit({ documentId, expectedRevision: document().revision, origin: "human", edits: [{ from, to, insert }], history: { kind: "replace" } }).applied, true); };

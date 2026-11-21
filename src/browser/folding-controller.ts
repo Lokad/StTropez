@@ -2,7 +2,8 @@ import { Store } from "../core/observable.ts";
 import { createFoldRegions } from "../core/folding.ts";
 import { reconcileFoldRanges } from "../core/fold-discovery.ts";
 import type { DiscoveredFold } from "../core/fold-discovery.ts";
-import type { DocumentSnapshot, TabId, Workspace } from "../core/workspace.ts";
+import { ownsTextSurface } from "../core/workspace.ts";
+import type { DocumentSnapshot } from "../core/workspace.ts";
 import type { TextEditor } from "./text-editor.ts";
 import type { FoldRegion } from "../core/folding.ts";
 import { commandBudget, createCooperativeRunner } from "./cooperative-runner.ts";
@@ -17,11 +18,10 @@ export type FoldingStatus = Readonly<{ status: "pending" | "ready" | "failed" | 
     groups: readonly string[]; message: string }>;
 
 /** One discovery policy for one retained view. Providers own syntax; the editor owns fold projection. */
-export function createFoldingController(workspace: Workspace, tabId: TabId, editor: TextEditor, discover: FoldDiscovery,
+export function createFoldingController(editor: TextEditor, discover: FoldDiscovery,
     options: Readonly<{ delayMs?: number }> = {}) {
-    const target = workspace.captureTab(tabId), view = editor.view, win = editor.element.ownerDocument.defaultView!;
-    const tab = workspace.resolveTab(target);
-    if (tab?.surface.kind !== "text" || tab.surface.documentId !== view.documentId || !workspace.ownsDocumentView(view)) throw new Error("Invalid fold discovery view.");
+    const { workspace, tab: target, view } = editor, win = editor.element.ownerDocument.defaultView!;
+    if (editor.signal.aborted || !ownsTextSurface(workspace, view, target)) throw new Error("Invalid fold discovery view.");
     const delay = options.delayMs ?? 100;
     if (!Number.isFinite(delay) || delay < 0) throw new RangeError("Invalid fold discovery delay.");
     const notifications = workspace.createNotificationScope();
@@ -29,7 +29,7 @@ export function createFoldingController(workspace: Workspace, tabId: TabId, edit
         regions: 0, collapsed: 0, groups: Object.freeze([]), message: "Discovering folds…" }), notifications);
     const listeners = new AbortController(), runner = createCooperativeRunner(win); let disposed = false, generation = 0;
     let job: { generation: number; document: DocumentSnapshot; abort: AbortController; pumping?: boolean; cursor?: FoldDiscoveryCursor } | undefined;
-    const available = () => !disposed && !editor.activity().disposed && workspace.ownsDocumentView(view) && !!workspace.resolveTab(target);
+    const available = () => !disposed && !editor.activity().disposed && ownsTextSurface(workspace, view, target);
     const busy = () => { const state = editor.activity(); return state.composing || state.pendingInput || state.pendingCommand; };
     let groupRegions: readonly FoldRegion[] | undefined, groups: readonly string[] = Object.freeze([]);
     const publish = (status: FoldingStatus["status"], message = "") => {
@@ -93,7 +93,7 @@ export function createFoldingController(workspace: Workspace, tabId: TabId, edit
         if (!next) { cancel(); return; }
         if (next.buffer !== observed) { observed = next.buffer; refresh(); }
     });
-    const stopTab = workspace.tabState.subscribe(() => { if (!available()) cancel(); });
+    const stopTab = target && workspace.tabState.subscribe(() => { if (!available()) cancel(); });
     const stopFolds = view.folding.subscribe(() => { if (!disposed) publish(cell.get().status, cell.get().message); });
     const commandFilter = (command: FoldCommand, group?: string) => {
         const collapse = command === "collapse" || command === "collapse-all";
@@ -134,9 +134,14 @@ export function createFoldingController(workspace: Workspace, tabId: TabId, edit
         const command = event.code === "BracketLeft" ? "collapse" : event.code === "BracketRight" ? "expand" : undefined;
         if (command && runCommand(command)) event.preventDefault();
     }, { capture: true, signal: listeners.signal });
+    const dispose = () => {
+        if (disposed) return;
+        notifications.assertWritable();
+        disposed = true;
+        cancel(); listeners.abort(); stopDocument(); stopTab?.(); stopFolds(); publish("disposed");
+    };
+    editor.signal.addEventListener("abort", dispose, { once: true, signal: listeners.signal });
     refresh();
-    return Object.freeze({ ...cell.observable, refresh: () => { notifications.assertWritable(); refresh(); }, canRunCommand, runCommand, dispose: () => {
-        if (disposed) return; notifications.assertWritable(); disposed = true; cancel(); listeners.abort(); stopDocument(); stopTab(); stopFolds(); publish("disposed");
-    } });
+    return Object.freeze({ ...cell.observable, refresh: () => { notifications.assertWritable(); refresh(); }, canRunCommand, runCommand, dispose });
 }
 export type FoldingController = ReturnType<typeof createFoldingController>;

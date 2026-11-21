@@ -11,9 +11,9 @@ export function initializeDemoFolds(project: DemoProject, file: DemoFile): void 
     const ranges = project.sample.initialFolds?.[file.name], state = file.view.folding.getSnapshot();
     if (ranges && state.revision === 0 && state.generation === 0 && project.baseline(file).version === "sample") file.view.folding.setRanges(state, ranges);
 }
-export function mountDemoFolding(project: DemoProject, file: DemoFile, editor: TextEditor, tabSize: () => number) {
+export function mountDemoFolding(project: DemoProject, editor: TextEditor, tabSize: () => number) {
     let owner: LspWorkspace | undefined, client: ReturnType<typeof createLspFoldingClient> | undefined, disposed = false;
-    const controller = createFoldingController(project.workspace, file.tab, editor, async (document, signal) => {
+    const controller = createFoldingController(editor, async (document, signal) => {
         if (project.sample.id === "outline" || project.sample.id === "host") return discoverIndentationFolds(document.buffer, outlineFolds(tabSize()));
         if (project.language.state.getSnapshot().status === "failed") throw new Error("Folding is unavailable until the language service is retried.");
         const next = await project.language.connect();
