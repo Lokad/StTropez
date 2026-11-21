@@ -36,13 +36,13 @@ test("late occurrences cannot follow a changed caret or disposed file view", asy
     });
     await page.goto("/"); const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+a"); await page.keyboard.insertText("let value = 1;\nvalue += 1;\n");
-    await source.press("Control+Home"); await source.press("Control+ArrowRight");
+    await source.press("Control+Home"); await source.press("Control+ArrowRight"); await source.press("ArrowRight");
     await expect.poll(() => replies.length).toBeGreaterThan(0);
     await source.press("Control+End"); await expect.poll(() => cancellations).toBeGreaterThan(0);
     for (const reply of replies.splice(0)) reply();
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     await expect(page.locator('#editor [class*="demo-occurrence-"]')).toHaveCount(0);
-    await source.press("Control+Home"); await source.press("Control+ArrowRight");
+    await source.press("Control+Home"); await source.press("Control+ArrowRight"); await source.press("ArrowRight");
     await expect.poll(() => replies.length).toBeGreaterThan(0);
     await page.getByRole("button", { name: "pricing.ts", exact: true }).click();
     for (const reply of replies.splice(0)) reply();

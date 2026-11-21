@@ -121,8 +121,8 @@ tab generation, composition and edit permission.
 `WordCursor(buffer, offset, direction, options)` supplies code-word endpoints in either direction.
 `WordOptions` can bound the source range and disable whitespace skipping. Unicode letters,
 numbers and connector punctuation form words; other symbols form runs, and whitespace is
-separate. Marks and join controls attach to their preceding base. Forward movement consumes
-the current run and following whitespace; backward movement skips preceding whitespace and
+separate. Marks and join controls attach to their preceding base. The default forward scan consumes
+the current run and following whitespace; the backward scan skips preceding whitespace and
 consumes the preceding run. `skipWhitespace: false` finds run edges for pointer selection.
 This is a code-oriented policy, not dictionary segmentation or Unicode word-boundary conformance.
 

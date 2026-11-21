@@ -47,7 +47,7 @@ test("empty or nontext clipboard payloads cannot turn a selected range into a de
     });
     expect(result.text).toBe("before\r\nend"); expect(result.revisionAfter).toBe(result.revisionBefore); expect(result.after).toEqual(result.before); expect(result.exports).toBe(0);
     const delayed = await page.evaluate(() => {
-        const f = window.editingFixture, text = "a" + " ".repeat(1000000) + "next";
+        const f = window.editingFixture, text = "a".repeat(1000001) + ";end";
         f.setText(text); f.select("primary", { anchor: 0, head: 0 }); f.focus("primary");
         const input = document.querySelector('textarea[aria-label="Primary source"]')!;
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true, bubbles: true, cancelable: true }));

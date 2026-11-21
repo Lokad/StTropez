@@ -9,7 +9,7 @@ const insert=(text:string,heads:readonly number[],data:string):string=>{const pa
 test("queued Apple caret chords and native history keep their captured selection and command order", async ({ page }) => {
     await page.addInitScript(() => Object.defineProperty(navigator, "platform", { value: "MacIntel" }));
     await page.goto("/hosts/plain/?editor=candidate");
-    const prefix = "a" + " ".repeat(1000000) + "next\r\n", original = prefix + "last";
+    const prefix = "a".repeat(1000001) + ";end\r\n", original = prefix + "last";
     await page.evaluate(text => { const f = window.hostFixture;
         f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]);
         f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: 0 }]);
@@ -34,7 +34,7 @@ test("queued Apple caret chords and native history keep their captured selection
 
 for(const host of ["plain","react"])for(const kind of ["many-carets","long-word"])test(`${host} ${kind} preserves typing behind captured navigation and shared history`,async({page})=>{
     test.setTimeout(180000);
-    const original=kind==="many-carets"?Array<string>(100000).fill("0123456789").join("\r\n"):"a"+" ".repeat(1000000)+"next";
+    const original=kind==="many-carets"?Array<string>(100000).fill("0123456789").join("\r\n"):"a".repeat(1000001)+";end";
     const heads=kind==="many-carets"?Array.from({length:1024},(_,i)=>i*80*12+4):[0],destinations=kind==="many-carets"?heads.map(head=>head+12):[1000001];
     for(const mode of ["cancelled","native","input-only","paste-primary","paste-comparison"] as const){
         const paste=mode.startsWith("paste"),view=mode==="native"||mode==="paste-comparison"?"comparison" as const:"primary" as const;
@@ -64,7 +64,7 @@ for(const host of ["plain","react"])for(const kind of ["many-carets","long-word"
 });
 
 for(const host of ["plain","react"])test(`${host} interrupted pending typing retains exact bytes without retargeting`,async({page})=>{
-    test.setTimeout(180000);const original="a"+" ".repeat(1000000)+"next",text="lost😀é\r\n";
+    test.setTimeout(180000);const original="a".repeat(1000001)+";end",text="lost😀é\r\n";
     for(const interruption of ["escape","selection","revision","permission","remount","composition","overflow","veto","late-native","paste-selection","paste-overflow","paste-veto"]){
         await page.goto(`/hosts/${host}/?editor=candidate`);await page.evaluate(original=>{const f=window.hostFixture;f.editSource(f.snapshot().source.revision,[{from:0,to:f.snapshot().source.length,insert:original}]);f.selectSourceSet("primary",f.snapshot().source.revision,[{anchor:0,head:0}]);},original);await ready(page);
         const input=page.getByRole("textbox",{name:"Primary source",exact:true});await input.focus();
@@ -90,13 +90,13 @@ for(const host of ["plain","react"])test(`${host} interrupted pending typing ret
 });
 
 for(const host of ["plain","react"])test(`${host} queued editing, brackets, history and bulk indentation keep command order`,async({page})=>{
-    test.setTimeout(120000);await page.goto(`/hosts/${host}/?editor=candidate`);const original="a"+" ".repeat(1000000)+"next";
+    test.setTimeout(120000);await page.goto(`/hosts/${host}/?editor=candidate`);const original="a".repeat(1000001)+";end";
     await page.evaluate(original=>{const f=window.hostFixture;f.editSource(f.snapshot().source.revision,[{from:0,to:f.snapshot().source.length,insert:original}]);f.selectSourceSet("primary",f.snapshot().source.revision,[{anchor:0,head:0}]);},original);await ready(page);
     const input=page.getByRole("textbox",{name:"Primary source",exact:true});await input.focus();
     await input.evaluate(node=>{const input=node as HTMLTextAreaElement,key=(key:string,ctrlKey=false)=>input.dispatchEvent(new KeyboardEvent("keydown",{key,ctrlKey,bubbles:true,cancelable:true})),type=(data:string)=>{
         if(input.dispatchEvent(new InputEvent("beforeinput",{inputType:"insertText",data,bubbles:true,cancelable:true}))){input.setRangeText(data,input.selectionStart,input.selectionEnd,"end");input.dispatchEvent(new InputEvent("input",{inputType:"insertText",data,bubbles:true}));}};
         key("ArrowRight",true);type("ab");key("Backspace");key("(");key(")");key("Tab");type("z");key("z",true);type("Q");
-    });await ready(page);await exact(page,original.slice(0,1000001)+"a()    Qnext");expect((await snapshot(page)).inputRecovery).toHaveLength(0);
+    });await ready(page);await exact(page,original.slice(0,1000001)+"a()    Q;end");expect((await snapshot(page)).inputRecovery).toHaveLength(0);
     // Span more than one command turn by work count, without relying on a slow machine.
     const lines=Array<string>(4096).fill("row").join("\r\n");await page.evaluate(lines=>{const f=window.hostFixture;f.editSource(f.snapshot().source.revision,[{from:0,to:f.snapshot().source.length,insert:lines}]);f.selectSourceSet("primary",f.snapshot().source.revision,[{anchor:0,head:lines.length}]);},lines);await ready(page);
     const before=await snapshot(page);expect(await input.evaluate(node=>{const input=node as HTMLTextAreaElement;input.dispatchEvent(new KeyboardEvent("keydown",{key:"Tab",bubbles:true,cancelable:true}));return !input.dispatchEvent(new InputEvent("beforeinput",{inputType:"insertText",data:"done",bubbles:true,cancelable:true}));})).toBe(true);await ready(page);
@@ -105,7 +105,7 @@ for(const host of ["plain","react"])test(`${host} queued editing, brackets, hist
 });
 
 for(const host of ["plain","react"])test(`${host} Save and Run require settled typing and retain captured revisions`,async({page})=>{
-    test.setTimeout(120000);await page.goto(`/hosts/${host}/?editor=candidate`);const original="a"+" ".repeat(1000000)+"next",expected=original.slice(0,1000001)+"typednext";
+    test.setTimeout(120000);await page.goto(`/hosts/${host}/?editor=candidate`);const original="a".repeat(1000001)+";end",expected=original.slice(0,1000001)+"typed;end";
     await page.evaluate(original=>{const f=window.hostFixture;f.editSource(f.snapshot().source.revision,[{from:0,to:f.snapshot().source.length,insert:original}]);f.selectSourceSet("primary",f.snapshot().source.revision,[{anchor:0,head:0}]);},original);await ready(page);
     const input=page.getByRole("textbox",{name:"Primary source",exact:true});await input.focus();
     const blocked=await input.evaluate(node=>{const input=node as HTMLTextAreaElement;input.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",ctrlKey:true,bubbles:true,cancelable:true}));input.dispatchEvent(new InputEvent("beforeinput",{inputType:"insertText",data:"typed",bubbles:true,cancelable:true}));for(const name of ["Save source","Run captured inputs"])([...document.querySelectorAll("button")].find(button=>button.textContent===name) as HTMLButtonElement).click();const s=window.hostFixture.snapshot();return{saves:s.pendingSaves.length,runs:s.pendingRuns.length,modal:s.layout.modal};});

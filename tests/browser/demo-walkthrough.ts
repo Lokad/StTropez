@@ -154,7 +154,7 @@ export async function runDemoHighlights(page: Page, url = "/", distinctWrites = 
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     const replace = async (text: string) => { await source.press("Control+a"); await page.keyboard.insertText(text); };
     await replace("let value = 1;\nvalue = value + 1;\n");
-    await source.press("Control+Home"); await source.press("Control+ArrowRight");
+    await source.press("Control+Home"); await source.press("Control+ArrowRight"); await source.press("ArrowRight");
     const writes = page.locator("#editor .demo-occurrence-write"), reads = page.locator("#editor .demo-occurrence-read");
     const occurrences = page.locator("#editor .demo-occurrence-write, #editor .demo-occurrence-read");
     await expect(occurrences).toHaveText(["value", "value", "value"], { timeout: 30000 });
@@ -171,7 +171,7 @@ export async function runDemoHighlights(page: Page, url = "/", distinctWrites = 
     await page.getByRole("button", { name: "pricing.ts", exact: true }).click(); await expect(occurrences).toHaveCount(0);
     await page.locator("#files").getByRole("button", { name: /^main\.ts/ }).click();
     await replace("let value = 1;\n" + "value += 1;\n".repeat(10000));
-    await source.press("Control+Home"); await source.press("Control+ArrowRight"); await expect(occurrences.first()).toHaveText("value", { timeout: 30000 });
+    await source.press("Control+Home"); await source.press("Control+ArrowRight"); await source.press("ArrowRight"); await expect(occurrences.first()).toHaveText("value", { timeout: 30000 });
     const viewport = page.locator("#editor .st-viewport");
     await viewport.evaluate(node => { node.scrollTop = node.scrollHeight / 2; });
     await expect.poll(async () => Number(await page.locator("#editor .st-viewport-row").first().getAttribute("data-line"))).toBeGreaterThan(4000);

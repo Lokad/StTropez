@@ -191,7 +191,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
     orderedInput: async () => {
         const results = [];
         for (const kind of ["many-carets", "long-word", "pointer-word", "paste-word"]) {
-            const original = kind === "many-carets" ? Array<string>(100000).fill("0123456789").join("\r\n") : kind === "pointer-word" ? "x".repeat(2400000) : "a" + " ".repeat(1000000) + "next";
+            const original = kind === "many-carets" ? Array<string>(100000).fill("0123456789").join("\r\n") : kind === "pointer-word" ? "x".repeat(2400000) : "a".repeat(1000001) + ";end";
             const heads = kind === "many-carets" ? Array.from({ length: 1024 }, (_, i) => i * 80 * 12 + 4) : [0];
             const destinations = kind === "many-carets" ? heads.map(head => head + 12) : [1000001], text = kind === "paste-word" ? "😀é\r\n" : "😀é";
             const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: kind, variant: "working" }, kind, { value: original });
@@ -216,7 +216,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
                 editor.focus(); editor.view.setSelections(0, heads.map(head => ({ anchor: head, head })), heads.length - 1); await ready(); command(); type();
                 if (!editor.snapshot().pendingInput || model.document(source.documentId).revision !== 0) throw new Error("Compiled command failed to yield/capture input.");
                 await ready(); const changed = model.document(source.documentId), parts: string[] = []; let from = 0;
-                for (const head of destinations) { parts.push(original.slice(from, head), text); from = head; } parts.push(original.slice(from)); const expected = kind === "pointer-word" ? text : parts.join("");
+                for (const head of destinations) { parts.push(original.slice(from, head), kind === "paste-word" ? text.replace("\r\n", "\n") : text); from = head; } parts.push(original.slice(from)); const expected = kind === "pointer-word" ? text : parts.join("");
                 if (changed.buffer.length !== expected.length) throw new Error("Compiled ordered input length changed.");
                 for (let at = 0; at < expected.length; at += 32768) if (changed.buffer.slice(at, Math.min(expected.length, at + 32768)) !== expected.slice(at, at + 32768)) throw new Error("Compiled input used the wrong destination.");
                 if (model.observeHistory(source.documentId).getSnapshot().undoDepth !== 1 || changed.buffer.readMetrics().textExports !== 0 || recovered.length) throw new Error("Compiled input lost history/bounds.");

@@ -28,7 +28,7 @@ test("Home toggles between the first nonblank and the start of its own line", as
 
 test("word keys navigate full model ranges, extend selections and delete one undoable code word", async ({ page }) => {
     const text = "alpha_beta  gamma.delta 😀 café"; await setup(page, text);
-    for (const head of [12, 17, 18, 24, 27, 31]) { await page.keyboard.press("Control+ArrowRight"); await ready(page); expect((await snapshot(page)).primary.selection.head).toBe(head); }
+    for (const head of [10, 17, 23, 26, 31]) { await page.keyboard.press("Control+ArrowRight"); await ready(page); expect((await snapshot(page)).primary.selection.head).toBe(head); }
     await page.keyboard.press("Control+Shift+ArrowLeft"); await ready(page); expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 31, head: 27 });
     const before = (await snapshot(page)).history!.undoDepth;
     await page.keyboard.press("Control+Backspace"); await ready(page);
@@ -37,17 +37,41 @@ test("word keys navigate full model ranges, extend selections and delete one und
     await page.keyboard.press("Control+z"); await ready(page); expect(await page.evaluate(() => window.editingFixture.range(0, 31))).toBe(text);
     expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 31, head: 27 });
     await setup(page, "👩‍💻  αβ"); await page.keyboard.press("Control+Delete"); await ready(page);
-    expect(await page.evaluate(() => window.editingFixture.range(0, 2))).toBe("αβ"); expect((await snapshot(page)).document!.exports).toBe(0);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 4))).toBe("  αβ"); expect((await snapshot(page)).document!.exports).toBe(0);
 });
 
 test("a million-unit word yields, deletes beyond native context and restores through shared history", async ({ page }) => {
     await setup(page, "x".repeat(1_000_000) + "  tail"); const before = await snapshot(page);
     await page.keyboard.press("Control+Delete"); await ready(page); const after = await snapshot(page);
-    expect(after.document).toMatchObject({ length: 4, revision: before.document!.revision + 1, exports: 0 });
-    expect(await page.evaluate(() => window.editingFixture.range(0, 4))).toBe("tail"); expect(after.history!.undoDepth).toBe(before.history!.undoDepth + 1);
+    expect(after.document).toMatchObject({ length: 6, revision: before.document!.revision + 1, exports: 0 });
+    expect(await page.evaluate(() => window.editingFixture.range(0, 6))).toBe("  tail"); expect(after.history!.undoDepth).toBe(before.history!.undoDepth + 1);
     await page.keyboard.press("Control+z"); await ready(page); expect((await snapshot(page)).document!.length).toBe(1_000_006);
-    await page.keyboard.press("Control+ArrowRight"); await ready(page); expect((await snapshot(page)).primary.selection.head).toBe(1_000_002);
+    await page.keyboard.press("Control+ArrowRight"); await ready(page); expect((await snapshot(page)).primary.selection.head).toBe(1_000_000);
     expect((await snapshot(page)).primary.inputUnits).toBeLessThan(2600);
+});
+
+test("word movement stops at line boundaries and word deletion treats indentation separately", async ({ page }) => {
+    const text = "a.b   \r\n    next word";
+    await setup(page, text, 1);
+    for (const head of [3, 6, 16]) {
+        await page.keyboard.press("Control+ArrowRight"); await ready(page);
+        expect((await snapshot(page)).primary.selection.head).toBe(head);
+    }
+    for (const head of [12, 8, 2]) {
+        await page.keyboard.press("Control+ArrowLeft"); await ready(page);
+        expect((await snapshot(page)).primary.selection.head).toBe(head);
+    }
+    await setup(page, text, 12);
+    await page.keyboard.press("Control+Backspace"); await ready(page);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 12))).toBe("a.b   \r\nnext");
+    await page.keyboard.press("Control+Backspace"); await ready(page);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 10))).toBe("a.b   next");
+    await page.keyboard.press("Control+z"); await page.keyboard.press("Control+z"); await ready(page);
+    await page.evaluate(() => window.editingFixture.select("primary", { anchor: 6, head: 6 }));
+    await page.keyboard.press("Control+Delete"); await ready(page);
+    const input = page.getByRole("textbox", { name: "Primary source", exact: true });
+    await expect(input).toBeFocused();
+    await expect(page.locator("#primary .st-viewport-row").first()).toHaveJSProperty("textContent", "a.b   next word");
 });
 
 test("pending word deletion expires after revision, selection or tab-generation changes", async ({ page }) => {

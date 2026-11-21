@@ -126,7 +126,7 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Input | Command |
 | --- | --- |
 | Left / Right | Logical grapheme movement; see [Unicode navigation](unicode.md#graphemes-and-word-movement) |
-| Word modifier + Left / Right | Code-word movement from the active head |
+| Word modifier + Left / Right | Previous word start or next word end. Shift selects to that boundary. |
 | Up / Down | Previous/next visible line at the retained horizontal column |
 | PageUp / PageDown | Move by the viewport's visible page, retaining the column |
 | Home / Shift+Home | Move to the first nonblank character, then to the line start on the next press. Shift extends the selection. On a blank line, move to the start. |
@@ -134,7 +134,7 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Ctrl/Cmd + Home / End | Document start/end |
 | Apple Cmd + Left / Right, Up / Down | Line endpoints, document endpoints respectively |
 | Backspace / Delete | Delete selections or the adjacent grapheme |
-| Word modifier + Backspace / Delete | Delete selections or a code word |
+| Word modifier + Backspace / Delete | Delete the selection, an adjacent run of two or more whitespace characters, or one word toward the key. |
 | Ctrl/Cmd + A | One whole-document selection |
 | Ctrl/Cmd + Z, Ctrl/Cmd + Shift+Z, Ctrl+Y | Undo, redo, redo |
 | Tab / Shift+Tab | Indent/outdent; read-only views use normal focus traversal |
@@ -154,7 +154,11 @@ Host tools get first chance at shortcuts. Cancelled events and composition event
 229) bypass editor commands. [Example bindings](examples.md)
 
 Double-click selects a run up to a grapheme boundary and excludes the line ending. Keyboard word
-movement follows the [code-word rules](unicode.md#graphemes-and-word-movement). PageUp and PageDown
+movement follows the [code-word rules](unicode.md#graphemes-and-word-movement). A single separator
+next to an identifier is skipped when moving toward that identifier. Beyond the last word, movement
+stops at the line boundary. Press again to enter the adjacent line. Word Backspace at column one
+deletes the line break. Word Delete at the end of a line also removes the next line’s indentation.
+PageUp and PageDown
 move `max(1, floor(viewportHeight / lineHeight) - 1)` visible rows, accounting for folds and
 [aligned comparison rows](comparison.md).
 

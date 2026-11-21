@@ -1,7 +1,7 @@
 import { mountInputCaret } from "./input-caret.ts";
 import { clientBox, cssZoom } from "./dom-coordinates.ts";
 import { textDifference } from "../core/changes.ts";
-import { WordCursor } from "../core/words.ts";
+import { createWordCommandCursor, WordCursor } from "../core/words.ts";
 import { createGraphemeCursor } from "../core/graphemes.ts";
 import { createSelectionSet, planSelectionEdits } from "../core/selections.ts";
 import type { Affinity } from "../core/positions.ts";
@@ -23,7 +23,7 @@ import type { InputConflictDetail } from "./input-conflict.ts";
 import { mountViewport } from "./viewport.ts";
 import type { LineClass, LineDecorator, TextViewport } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
-import { lineEnding, planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
+import { lineContentEnd, lineEnding, planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
 import { exportText } from "../core/newlines.ts";
 import type { EditingCommand, LanguageConfiguration, ResolvedLanguageConfiguration } from "../core/language-edits.ts";
 import { captureInsertion } from "./captured-insertion.ts";
@@ -135,7 +135,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     let drag: Readonly<{ pointer: number; anchor: number; anchorAffinity: Affinity; revision: number; x: number; y: number; selectionSet: SelectionSet; baseRanges: readonly Selection[]; padding: boolean }> | undefined;
     let dragScrollFrames = 0, maxDragScrollStepMs = 0;
     const commandRunner = createCooperativeRunner(win);
-    let wordJob: Readonly<{ cursor: WordCursor; revision: number }> | undefined, cancelWordTask: (() => void) | undefined;
+    let wordJob: Readonly<{ cursor: Pick<WordCursor, "next" | "dispose">; revision: number }> | undefined, cancelWordTask: (() => void) | undefined;
     type CommandCapture = Readonly<{ buffer: TextBuffer; revision: number; selection: Selection; selectionSet: SelectionSet; deleting: boolean }>;
     let graphemeJob: Readonly<{ cursor: GraphemeCursor; capture: CommandCapture; purpose: "word" | "word-selection" | "grapheme" }> | undefined, cancelGraphemeTask: (() => void) | undefined;
     let graphemeCache: Readonly<{ buffer: TextBuffer; from: number; to: number; index: GraphemeIndex }> | undefined;
@@ -448,7 +448,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         if (deleting && selected.anchor !== selected.head) { done(selected); return; }
         withGraphemes(capture, selected.head, deleting ? direction < 0 ? 1 : -1 : direction, "word", point => {
         const start = (deleting ? -direction : direction) < 0 ? point.floor : point.ceil;
-        const job = { cursor: new WordCursor(capture.buffer, start, direction), revision: capture.revision }; wordJob = job;
+        const job = { cursor: createWordCommandCursor(capture.buffer, start, direction, deleting), revision: capture.revision }; wordJob = job;
         const step = () => commandTurn(() => {
             if (wordJob !== job) return;
             const current = workspace.observeDocument(documentId).getSnapshot();
@@ -574,9 +574,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             lines.add(line); lines.add(folds.lineAt(Math.max(0, Math.min(folds.visibleLineCount - 1, row + direction * count))));
         }
         return shortRows(buffer, lines);
-    }
-    function lineContentEnd(buffer: TextBuffer, line: number): number {
-        return line + 1 === buffer.lineCount ? buffer.length : buffer.offsetAt(line + 1) - lineEnding(buffer, line).length;
     }
     function moveToBoundary(key: "Home" | "End", extend: boolean, documentBoundary: boolean): void {
         cancelWord();

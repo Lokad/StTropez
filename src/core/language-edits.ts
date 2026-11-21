@@ -78,6 +78,9 @@ export function lineEnding(buffer: Pick<TextBuffer, "lineCount" | "offsetAt" | "
     const end = buffer.offsetAt(line + 1 < buffer.lineCount ? line + 1 : line);
     return end >= 2 && buffer.slice(end - 2, end) === "\r\n" ? "\r\n" : "\n";
 }
+export function lineContentEnd(buffer: TextBuffer, line: number): number {
+    return line + 1 === buffer.lineCount ? buffer.length : buffer.offsetAt(line + 1) - lineEnding(buffer, line).length;
+}
 function* mapped(buffer: TextBuffer, selections: SelectionSet, edits: TextEdit[], state: MutablePlanning): Generator<void, SelectionEditPlan> {
     state.phase = "map";
     bulk(state, edits.length);

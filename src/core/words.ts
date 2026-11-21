@@ -1,4 +1,5 @@
 import type { TextBuffer } from "./text-buffer.ts";
+import { lineContentEnd } from "./language-edits.ts";
 import { readUtf16Window } from "./utf16.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
 import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
@@ -61,6 +62,48 @@ function* scan(buffer: TextBuffer, start: number, direction: -1 | 1, counters: C
     return direction < 0 ? pending !== undefined && current === "word" ? pending : bounds.from : bounds.to;
 }
 
+function* commandOffset(buffer: TextBuffer, offset: number, direction: -1 | 1, deleting: boolean, counters: Counters): Generator<void, number> {
+    let line = buffer.lineAt(offset), from = buffer.offsetAt(line), to = lineContentEnd(buffer, line);
+    let start = Math.min(offset, to);
+    const crossing = direction > 0 ? start === to : start === from;
+    if (crossing) {
+        line += direction;
+        if (line < 0 || line >= buffer.lineCount) return start;
+        from = buffer.offsetAt(line); to = lineContentEnd(buffer, line); start = direction < 0 ? to : from;
+        if (deleting && direction < 0) return to;
+    }
+    const bound = direction < 0 ? from : to;
+    const adjacentKind = (at: number): Kind | undefined => {
+        if (at === bound) return;
+        const text = direction < 0 ? buffer.slice(Math.max(from, at - 2), at) : buffer.slice(at, Math.min(to, at + 2));
+        counters.reads += text.length;
+        return kind(direction < 0 ? Array.from(text).at(-1)! : String.fromCodePoint(text.codePointAt(0)!));
+    };
+    const run = (at: number) => scan(buffer, at, direction, counters, { from, to }, false);
+    let type = adjacentKind(start);
+    if (type === "space") {
+        const end = yield* run(start);
+        if (deleting && (crossing || Math.abs(start - end) >= 2)) return end;
+        start = end; type = adjacentKind(start);
+    }
+    if (!type || deleting && crossing) return start;
+    const end = yield* run(start);
+    // In member access, one press from a separator reaches the adjoining identifier.
+    if (!deleting && type === "symbol" && Math.abs(end - start) === 1 && adjacentKind(end) === "word") return yield* run(end);
+    return end;
+}
+
+function wordDriver(work: Generator<void, number>, counters: Counters): KernelCursor<WordStep> {
+    return kernelCursor(work, () => counters.work, (status, offset, failure): WordStep =>
+        Object.freeze({ status, offset, failure, workUnits: counters.work, readUnits: counters.reads }), "Word");
+}
+
+/** Keyboard commands stop at logical line boundaries. The editor snaps both ends to graphemes. */
+export function createWordCommandCursor(buffer: TextBuffer, offset: number, direction: -1 | 1, deleting: boolean): KernelCursor<WordStep> {
+    const counters: Counters = { work: 0, yielded: 0, reads: 0 };
+    return wordDriver(commandOffset(buffer, offset, direction, deleting, counters), counters);
+}
+
 /** Code-oriented word starts. Set skipWhitespace:false for run edges within captured bounds.
  * Endpoints are raw UTF-16; a view supplies grapheme snapping and its logical-line bounds.
  */
@@ -70,8 +113,7 @@ export class WordCursor {
         const from = options.from ?? 0, to = options.to ?? buffer.length;
         if (![offset, from, to].every(Number.isSafeInteger) || from < 0 || from > offset || offset > to || to > buffer.length) throw new RangeError("Invalid word command target.");
         const counters: Counters = { work: 0, yielded: 0, reads: 0 };
-        this.driver = kernelCursor(scan(buffer, offset, direction, counters, { from, to }, options.skipWhitespace !== false),
-            () => counters.work, (status, offset, failure): WordStep => Object.freeze({ status, offset, failure, workUnits: counters.work, readUnits: counters.reads }), "Word");
+        this.driver = wordDriver(scan(buffer, offset, direction, counters, { from, to }, options.skipWhitespace !== false), counters);
     }
     next(maxWork = 4096): WordStep { return this.driver.next(maxWork); }
     snapshot(): WordStep { return this.driver.snapshot(); }
