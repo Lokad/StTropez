@@ -15,24 +15,31 @@ test("demo edits real files, preserves selection/history, finds text and reviews
     await expect(page.getByRole("textbox", { name: "pricing.ts", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "main.ts ●", exact: true }).click();
     await expect(page.locator("#cursor")).toHaveText("Ln 1, Col 11");
-    await source.press("Control+z"); await expect(page.locator("#files")).not.toContainText("●");
-    await source.press("Control+y"); await expect(page.locator("#files")).toContainText("●");
+    for (const prefix of ["/* Mine", "/*", ""]) {
+        await source.press("Control+z"); await expect(page.locator("#editor .st-viewport-row").first()).toHaveText(prefix + 'import { calculateTotal } from "./pricing";');
+    }
+    await expect(page.locator("#files")).not.toContainText("●");
+    for (const prefix of ["/*", "/* Mine", "/* Mine */"]) {
+        await source.press("Control+y"); await expect(page.locator("#editor .st-viewport-row").first()).toHaveText(prefix + 'import { calculateTotal } from "./pricing";');
+    }
+    await expect(page.locator("#files")).toContainText("●");
     await source.press("Control+h");
     await page.getByRole("textbox", { name: "Find text", exact: true }).fill("Notebook");
-    await expect(page.locator("#find-status")).toHaveText("1 matches");
+    await expect(page.locator("#find-status")).toHaveText("1 of 1");
     await page.getByRole("textbox", { name: "Replacement text", exact: true }).fill("Sketchbook");
     await page.getByRole("button", { name: "Replace all", exact: true }).click();
     await page.getByRole("button", { name: "Close", exact: true }).click();
     await page.getByRole("button", { name: "Compare", exact: true }).click();
     await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toBeFocused();
     await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
-    await expect(page.locator(".st-comparison-controls output")).not.toContainText("0 changes");
+    const working = page.locator(".st-comparison-panes > section").last(), restore = page.getByRole("button", { name: "Use baseline", exact: true });
+    await expect(working).toContainText("Sketchbook");
     await page.getByRole("button", { name: "Next change", exact: true }).click();
-    await page.getByRole("button", { name: "Use baseline", exact: true }).click();
+    await expect(restore).toHaveAttribute("title", "Restore change 2 of 2 from the baseline"); await restore.click();
     await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
-    await expect(page.locator(".st-comparison-panes > section").last()).not.toContainText("/* Mine */");
+    await expect(working).toContainText("Notebook"); await expect(working).toContainText("/* Mine */");
     await page.getByRole("textbox", { name: "Comparison working source", exact: true }).press("Control+z");
-    await expect(page.locator(".st-comparison-panes > section").last()).toContainText("/* Mine */");
+    await expect(working).toContainText("Sketchbook"); await expect(working).toContainText("/* Mine */");
     await page.getByRole("button", { name: "JavaScript", exact: true }).click();
     await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
 

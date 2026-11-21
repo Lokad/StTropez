@@ -12,6 +12,8 @@ import type { SearchMatch, SearchStep } from "../core/search.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import { Store } from "../core/observable.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
+import { visibleFindMatch } from "./find-preview.ts";
+import type { TextViewport } from "./viewport.ts";
 import type { DecorationLayers } from "./decoration-layers.ts";
 const literalBudget = Object.freeze({ units: 4096, matches: 1024, calls: 32 });
 export type FindFlags = Readonly<{ wholeWord?: boolean; matchCase?: boolean; regularExpression?: boolean }>;
@@ -35,12 +37,12 @@ export type FindHost = Readonly<{
 export type FindReason = "editing-unavailable" | "composition-active" | "backend-unavailable" | "search-failed"
     | "replacement-failed" | "view-unavailable" | "cancelled" | "replaced" | Extract<EditResult, { applied: false }>["reason"];
 export type FindSnapshot = Readonly<{ query: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean; revision: number; status: "idle" | "searching" | "ready" | "replacing" | "failed" | "cancelled" | "expired" | "disposed";
-    count: number; scanned: number; length: number; retained: boolean; current: number | null; matchesVersion: number; reason: FindReason | null; message: string }>;
+    count: number; scanned: number; length: number; retained: boolean; current: number | null; wrappedTo: "start" | "end" | null; matchesVersion: number; reason: FindReason | null; message: string }>;
 export type FindDiagnostics = Readonly<{ maxScanStepMs: number; replaceTransactionMs: number }>;
 export type FindController = Observable<FindSnapshot> & Readonly<{
     getDiagnostics: () => FindDiagnostics;
     matchesIn: (from: number, to: number, capture?: FindSnapshot) => readonly SearchMatch[];
-    setQuery: (query: string) => void;
+    setQuery: (query: string, options?: Readonly<{ preview?: boolean }>) => void;
     setFlags: (flags: FindFlags) => void;
     next: (direction?: 1 | -1) => boolean;
     replaceCurrent: (replacement: string) => boolean; replaceAll: (replacement: string, options?: Readonly<{ focusEditor?: boolean }>) => void; cancel: () => void; dispose: () => void }>;
@@ -53,22 +55,25 @@ function isAsync<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
 
 /** Host-rendered find UI; scanning/planning yield, while replacement uses one captured transaction. */
 export function createFindController(editor: TextEditor, options: FindControllerOptions = {}): FindController {
-    return findForView(editor.workspace, editor.tab, editor, options);
+    return findForView(editor.workspace, editor.tab, editor, options, editor.viewport);
 }
 
-export function findForView(workspace: Workspace, target: TabTarget | undefined, editor: FindHost, options: FindControllerOptions = {}): FindController {
+export function findForView(workspace: Workspace, target: TabTarget | undefined, editor: FindHost, options: FindControllerOptions = {}, viewport?: TextViewport): FindController {
     const backend = options.regularExpressionBackend, regexDelay = options.regularExpressionDelayMs ?? 80;
     if (!Number.isFinite(regexDelay) || regexDelay < 0 || regexDelay > 1000) throw new RangeError("Invalid regular-expression query delay.");
     if (editor.activity().disposed || !ownsTextSurface(workspace, editor.view, target)) throw new Error("Find requires the captured document view.");
     const documentId = editor.view.documentId, resource = workspace.resourceForDocument(documentId), lease = workspace.acquire(resource.id), owner = editor.element.ownerDocument, win = owner.defaultView!;
     const scope = workspace.createNotificationScope(), initial = workspace.document(documentId);
     const store = new Store<FindSnapshot>(Object.freeze({ query: "", wholeWord: false, matchCase: true, regularExpression: false, revision: initial.revision, status: "idle", count: 0, scanned: 0, length: initial.buffer.length,
-        retained: false, current: null, matchesVersion: 0, reason: null, message: "" }), scope);
+        retained: false, current: null, wrappedTo: null, matchesVersion: 0, reason: null, message: "" }), scope);
     const runner = createCooperativeRunner(win);
     let disposed = false, cursor: FindSearchCursor | undefined, planCursor: FindPlanCursor | undefined, generation = 0, focusGeneration = 0;
     let navigatedZero: Readonly<{ index: number; selectionSet: SelectionSet }> | undefined;
     let replacedZero: Readonly<{ revision: number; head: number; selectionSet: SelectionSet }> | undefined;
     let advanceAfterReplace: SelectionSet | undefined;
+    let pendingPreview: { selection: SelectionSet; scrollUnchanged: () => boolean; listeners: AbortController } | undefined;
+    let previewed: { index: number; selection: SelectionSet } | undefined;
+    const cancelPreview = () => { pendingPreview?.listeners.abort(); pendingPreview = undefined; };
     let stopPlanAuthority: (() => void) | undefined;
     let matches = new FindIndex(), count = 0, navigationTo = 0, observed = initial;
     let literal: { document: DocumentSnapshot; index: FindIndex; query: string; wholeWord: boolean; matchCase: boolean } | undefined;
@@ -94,10 +99,11 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     const stop = () => { generation++; runner.cancel();
         const active = cursor, plan = planCursor, authority = stopPlanAuthority; cursor = undefined; planCursor = undefined; stopPlanAuthority = undefined;
         navigatedZero = undefined; replacedZero = undefined; advanceAfterReplace = undefined;
+        cancelPreview(); previewed = undefined;
         active?.dispose(); plan?.dispose(); authority?.(); };
     const reset = (patch: FindPatch) => {
         matches = new FindIndex(); count = 0; literal = undefined; edges = undefined; navigationTo = 0;
-        publish({ ...patch, retained: false, count: 0, scanned: 0, current: null, matchesVersion: store.get().matchesVersion + 1 });
+        publish({ ...patch, retained: false, count: 0, scanned: 0, current: null, wrappedTo: null, matchesVersion: store.get().matchesVersion + 1 });
     };
     const later = (work: () => void, delay = 0) => { runner.schedule(work, delay); };
     const offsetAt = (index: number) => matches.at(index).from;
@@ -154,7 +160,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
                 if (document.buffer === literal.document.buffer) {
                     matches = literal.index; count = matches.count; literal.document = document; edges = undefined; observed = document; navigationTo = document.buffer.length;
                     publish({ revision: document.revision, length: document.buffer.length, retained: false, status: "ready", count, scanned: document.buffer.length,
-                        matchesVersion: store.get().matchesVersion + 1, current: null, reason: null, message: "" }); return;
+                        matchesVersion: store.get().matchesVersion + 1, current: null, wrappedTo: null, reason: null, message: "" }); return;
                 }
                 const prefix = Math.min(edges?.prefix ?? proof.prefix, proof.prefix, literal.document.buffer.length, document.buffer.length);
                 edges = { prefix, suffix: Math.min(edges?.suffix ?? proof.suffix, proof.suffix, literal.document.buffer.length - prefix, document.buffer.length - prefix) };
@@ -165,7 +171,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const patch = { query, wholeWord, matchCase, regularExpression, revision: document.revision, length: document.buffer.length, reason: null, message: "" };
         if (repair) {
             matches = repair.index; count = matches.count; navigationTo = repair.start;
-            publish({ ...patch, status: "searching", retained: true, count, scanned: repair.start, current: null, matchesVersion: store.get().matchesVersion + 1 });
+            publish({ ...patch, status: "searching", retained: true, count, scanned: repair.start, current: null, wrappedTo: null, matchesVersion: store.get().matchesVersion + 1 });
         } else reset({ ...patch, status: query ? "searching" : "idle" });
         if (!query) return;
         let nextLiteral: (() => SearchStep) | undefined;
@@ -212,7 +218,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
                 const state = store.get();
                 if (result.done || count !== state.count || result.scanned !== state.scanned)
                     publish({ count, matchesVersion: state.matchesVersion + (count !== state.count ? 1 : 0), scanned: result.scanned, status: result.done ? "ready" : "searching", retained: !!repair && !result.done });
-                if (result.done && token === generation) finishAdvance();
+                if (result.done && token === generation) { finishPreview(); finishAdvance(); }
                 if (!result.done && token === generation && regularExpression) later(step);
             };
             const receive = (result: SearchStep, asynchronous: boolean, dispatchMs: number) => {
@@ -258,37 +264,57 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         try { const match = selectedSearch.next(high - low + 1, 1).matches[0]; return match?.from === low && match.to === high ? match : undefined; }
         finally { selectedSearch.dispose(); }
     };
-    function nextIndex(direction: 1 | -1): number | undefined {
+    function nextMatch(direction: 1 | -1): { index: number; wrappedTo: FindSnapshot["wrappedTo"] } | undefined {
         const state = store.get();
         if (state.status !== "ready" && !(state.status === "searching" && state.retained) || !count) return;
         const selection = editor.view.getSnapshot(), selected = selection.selection, bound = direction === 1 ? Math.max(selected.anchor, selected.head) : Math.min(selected.anchor, selected.head);
         let low = indexAt(bound);
-        if (state.status !== "ready" && (direction === 1 ? low === count : low === 0 || bound > navigationTo)) return;
-        if (direction === 1 && low < count && offsetAt(low) === bound && endAt(low) === bound
+        if (previewed?.selection === selection.selectionSet) low = previewed.index;
+        else if (state.status !== "ready" && direction === -1 && bound > navigationTo) return;
+        else if (direction === 1 && low < count && offsetAt(low) === bound && endAt(low) === bound
             && (navigatedZero?.index === low && navigatedZero.selectionSet === selection.selectionSet || replacedHere())) low++;
-        return direction === 1 ? low % count : (low + count - 1) % count;
+        const raw = direction === 1 ? low : low - 1;
+        if (state.status !== "ready" && (raw < 0 || raw >= count)) return;
+        return { index: (raw + count) % count, wrappedTo: raw < 0 ? "end" : raw >= count ? "start" : null };
     }
-    function selectMatch(index: number, clearNotice: boolean): boolean {
+    function selectMatch(index: number, clearNotice: boolean, wrappedTo: FindSnapshot["wrappedTo"] = null): boolean {
         const { from, to } = matches.at(index);
         if (!editor.view.setSelection(store.get().revision, { anchor: from, head: to })) return false;
+        previewed = undefined;
         navigatedZero = from === to ? { index, selectionSet: editor.view.getSnapshot().selectionSet } : undefined; replacedZero = undefined;
-        publish(clearNotice ? { current: index, reason: null, message: "" } : { current: index });
+        publish(clearNotice ? { current: index, wrappedTo, reason: null, message: "" } : { current: index, wrappedTo });
         editor.viewport.revealRange(from, to); return true;
+    }
+    function finishPreview(): void {
+        const preview = pendingPreview;
+        if (!preview) return;
+        const current = () => valid() && preview.scrollUnchanged() && !editor.activity().composing && editor.view.getSnapshot().selectionSet === preview.selection;
+        if (!count || !current()) { cancelPreview(); return; }
+        const selected = preview.selection.ranges[preview.selection.primary]!;
+        const preferred = indexAt(Math.min(selected.anchor, selected.head)) % count;
+        const visible = viewport && visibleFindMatch(viewport, matches, preferred), index = visible ?? preferred;
+        // Flushing painted fragments can notify a host, which may replace the search or the view.
+        if (pendingPreview !== preview) return;
+        cancelPreview();
+        if (!current()) return;
+        previewed = { index, selection: preview.selection }; publish({ current: index });
+        if (visible === undefined) { const match = matches.at(index); editor.viewport.revealRange(match.from, match.to); }
     }
     function finishAdvance(): void {
         const selection = advanceAfterReplace;
         advanceAfterReplace = undefined;
         if (!selection || !valid() || selection !== editor.view.getSnapshot().selectionSet || editor.activity().composing) return;
-        const index = nextIndex(1);
-        if (index !== undefined) selectMatch(index, false);
+        const next = nextMatch(1);
+        if (next) selectMatch(next.index, false);
     }
     const next = (direction: 1 | -1 = 1): boolean => {
         scope.assertWritable();
+        cancelPreview();
         if (!valid()) return false;
-        const index = nextIndex(direction); if (index === undefined) return false;
+        const match = nextMatch(direction); if (!match) return false;
         if (editor.activity().composing) { publish({ reason: "composition-active", message: "Finish composition before navigating." }); return false; }
         advanceAfterReplace = undefined;
-        return selectMatch(index, true);
+        return selectMatch(match.index, true, match.wrappedTo);
     };
     function planReplacement(state: FindSnapshot, replacement: string, range?: SearchMatch, focusEditor = false): boolean {
         const selectedBackend = backendFor(state.regularExpression), immediate = !!range && !state.regularExpression;
@@ -355,10 +381,10 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         if (!valid()) return false;
         if (!canEdit()) { publish({ reason: "editing-unavailable", message: "read-only" }); return false; }
         if (editor.activity().composing) { publish({ reason: "composition-active", message: "Finish composition before replacing." }); return false; }
-        const match = currentRange();
+        const match = previewed?.selection === editor.view.getSnapshot().selectionSet ? matches.at(previewed.index) : currentRange();
         if (match) return planReplacement(store.get(), replacement, match);
-        const index = nextIndex(1);
-        return index !== undefined && planReplacement(store.get(), replacement, matches.at(index));
+        const next = nextMatch(1);
+        return !!next && planReplacement(store.get(), replacement, matches.at(next.index));
     };
     const replaceAll: FindController["replaceAll"] = (replacement, options) => {
         scope.assertWritable();
@@ -391,7 +417,22 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         reset({ status: "disposed", query: "", length: 0, reason: null, message: "" });
     };
     editor.signal?.addEventListener("abort", dispose, { once: true });
-    return Object.freeze({ ...store.observable, getDiagnostics: () => Object.freeze({ maxScanStepMs: scanMaximum, replaceTransactionMs }), matchesIn, setQuery: (query: string) => { scope.assertWritable(); if (!disposed) restart(query); },
+    return Object.freeze({ ...store.observable, getDiagnostics: () => Object.freeze({ maxScanStepMs: scanMaximum, replaceTransactionMs }), matchesIn,
+        setQuery: (query, options) => {
+            scope.assertWritable(); if (disposed) return;
+            restart(query);
+            if (!options?.preview || store.get().status !== "searching") return;
+            const listeners = new AbortController(), events = { signal: listeners.signal, passive: true };
+            const root = viewport?.element, top = root?.scrollTop, left = root?.scrollLeft;
+            const scrollUnchanged = () => root?.scrollTop === top && root?.scrollLeft === left;
+            pendingPreview = { selection: editor.view.getSnapshot().selectionSet, scrollUnchanged, listeners };
+            owner.addEventListener("focusout", cancelPreview, events);
+            if (root) {
+                root.addEventListener("wheel", cancelPreview, events);
+                root.addEventListener("scroll", () => { if (!scrollUnchanged()) cancelPreview(); }, events);
+                root.ownerDocument.defaultView!.addEventListener("blur", cancelPreview, events);
+            }
+        },
         setFlags: (flags: FindFlags) => {
             scope.assertWritable();
             const state = store.get(), wholeWord = flags.wholeWord ?? state.wholeWord, matchCase = flags.matchCase ?? state.matchCase, regularExpression = flags.regularExpression ?? state.regularExpression;

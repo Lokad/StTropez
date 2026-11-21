@@ -42,7 +42,7 @@ original view after focus moves. When mounted by tab, closing or replacing that 
 
 Pass the backend and delay in `FindControllerOptions`. Change `FindFlags` with `setFlags(flags)`.
 `getSnapshot()` and `subscribe()` expose an immutable `FindSnapshot` with the query, flags,
-revision, status, count, scan frontier, source length, current match index, match version and
+revision, status, count, scan frontier, source length, current match index, navigation wrap, match version and
 notice.
 
 | Option or command | Behavior |
@@ -51,6 +51,7 @@ notice.
 | `matchCase` | Defaults to `true`; locale-independent simple folding when disabled in literal mode |
 | `regularExpression` | Defaults to `false`; requires a configured `FindBackend` when enabled |
 | `setQuery(query)` | Cancels obsolete work and starts a search; an empty query is idle |
+| `setQuery(query, { preview: true })` | Once the search finishes, marks a visible match or reveals the next one from the source selection. Preserves focus and the selection. |
 | `setFlags(flags)` | Patches supplied flags and restarts only when a value changes |
 | `next(direction?)` | Selects a match in the captured view; direction is `1` by default or `-1` |
 | `replaceCurrent(text)` | Replaces the selected match, or the next match if none is selected, then selects the following match |
@@ -63,6 +64,11 @@ Find paints matches on its editor and outlines the current match. Style them wit
 has a short mark at its offset. A matched character with no visible width has a vertical edge.
 Next and Previous leave a visible match in place. An offscreen match scrolls into view and a
 match inside a fold opens that fold.
+Preview prefers a painted match at or after the start of the selection, then any other painted
+match. If all matches are offscreen, it reveals the next one and wraps at the end of the file.
+The next forward navigation selects the preview. Losing focus, scrolling, starting a new query
+or changing the selection or document abandons a pending preview. After explicit navigation,
+`wrappedTo` reports `"start"`, `"end"` or `null`. The `current` index starts at zero.
 A match inside a line ending appears at the end of the row and keeps its original UTF-16 offsets.
 `matchesIn(from, to, capture?)` returns frozen, unclipped UTF-16 ranges intersecting `[from, to)`.
 Point matches count at `from` and are excluded at `to`. An empty interval returns a point match at

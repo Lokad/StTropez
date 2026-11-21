@@ -10,7 +10,7 @@ async function openDemo(page: Page) {
 async function typo(page: Page) {
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+f"); await page.getByRole("textbox", { name: "Find text", exact: true }).fill("calculateTotal(cart");
-    await expect(page.locator("#find-status")).toHaveText("1 matches"); await page.locator("#find-next").click();
+    await expect(page.locator("#find-status")).toHaveText("1 of 1"); await page.locator("#find-next").click();
     await page.getByRole("button", { name: "Close", exact: true }).click(); await source.pressSequentially("calculateTotl(cart");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await page.locator('[data-panel="problems"]').click(); await page.getByRole("button", { name: /main.ts · TS2552:/ }).click(); return source;

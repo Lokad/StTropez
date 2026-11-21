@@ -118,6 +118,25 @@ function fixture(text: string, clock: Pick<Performance, "now"> = performance) {
     return { workspace, documentId, view, find, document, tasks, step, drain, edit, select, dispose };
 }
 
+test("preview keeps the selection, replacement advances, and edits cancel a pending preview", () => {
+    const f = fixture("a cat, a cat, a cat");
+    try {
+        f.select(8);
+        const selected = f.view.getSnapshot().selectionSet;
+        f.find.setQuery("cat", { preview: true }); f.drain();
+        assert.equal(f.find.getSnapshot().current, 1); assert.equal(f.view.getSnapshot().selectionSet, selected);
+        assert.equal(f.find.replaceCurrent("dog"), true); f.drain();
+        assert.equal(f.document().text(), "a cat, a dog, a cat");
+        assert.equal(f.find.getSnapshot().current, 1); assert.equal(f.find.getSnapshot().wrappedTo, null);
+        assert.equal(f.find.next(), true); assert.equal(f.find.getSnapshot().wrappedTo, "start");
+        assert.equal(f.find.next(-1), true); assert.equal(f.find.getSnapshot().wrappedTo, "end");
+        f.find.setQuery("dog", { preview: true }); f.edit(0, 0, "a "); f.drain();
+        assert.equal(f.find.getSnapshot().count, 1); assert.equal(f.find.getSnapshot().current, null);
+        f.find.setQuery("cat", { preview: true }); f.select(0); f.drain();
+        assert.equal(f.find.getSnapshot().current, null); assert.equal(f.find.getSnapshot().wrappedTo, null);
+    } finally { f.dispose(); }
+});
+
 test("literal tasks bound advances and elapsed work, publish once and preserve repair and cancellation", () => {
     const original = LiteralSearch.prototype.next;
     for (const cost of [0, 1]) {

@@ -7,7 +7,7 @@ test("documentation and diagnostic details preserve metadata and open permitted 
 async function select(page: Page, query: string) {
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+f"); await page.getByRole("textbox", { name: "Find text", exact: true }).fill(query);
-    await expect(page.locator("#find-status")).toHaveText("1 matches"); await page.locator("#find-next").click();
+    await expect(page.locator("#find-status")).toHaveText("1 of 1"); await page.locator("#find-next").click();
     await page.getByRole("button", { name: "Close", exact: true }).click(); return source;
 }
 const hover = (page: Page) => page.locator(".demo-language-popups .host-symbol-info:not(.host-signature)");

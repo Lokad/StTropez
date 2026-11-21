@@ -69,6 +69,8 @@ Under **Replace…**, use `quantity: $1 + 1` and choose **Replace all**. Open Ch
 edits. One undo restores both quantities. The query and mode follow the active file while Find is open.
 Opening Find picks up a short, single-line source selection and escapes it in regex mode.
 With an empty, multiline or oversized selection, the previous query stays in the field.
+Typing a query previews a match while focus stays in Find. Enter selects it. The counter shows
+the active match and total, and reports when navigation wraps.
 
 ### Language tools and samples
 

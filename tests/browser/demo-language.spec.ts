@@ -149,7 +149,7 @@ test("late real diagnostic responses cannot annotate a newer project or follow l
     await expect.poll(() => held).toBe(true);
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+f"); await page.getByRole("textbox", { name: "Find text", exact: true }).fill('"10%"');
-    await expect(page.locator("#find-status")).toHaveText("1 matches");
+    await expect(page.locator("#find-status")).toHaveText("1 of 1");
     await page.locator("#find-next").click();
     await page.getByRole("button", { name: "Close", exact: true }).click(); await source.pressSequentially("0.1");
     await page.getByRole("button", { name: "pricing.ts", exact: true }).click();

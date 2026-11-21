@@ -205,7 +205,7 @@ export async function runDemoHighlights(page: Page, url = "/", distinctWrites = 
     // provider distinguishes writes. Preserve provider semantics instead of inventing kinds.
     await expect(writes).toHaveCount(distinctWrites ? 2 : 0); await expect(reads).toHaveCount(distinctWrites ? 1 : 3);
     await page.locator("#find-toggle").click(); await page.locator("#find-query").fill("value");
-    await expect(page.locator("#find-status")).toHaveText("3 matches");
+    await expect(page.locator("#find-status")).toHaveText(/^[1-3] of 3$/);
     await page.locator("#find-next").click(); await source.focus();
     await expect(occurrences).toHaveCount(3);
     const matches = page.locator("#editor .st-search-match");
@@ -261,7 +261,7 @@ export async function runDemoFolding(page: Page, url = "/") {
     expect((await page.locator("#editor .st-line-numbers span").allTextContents()).map(Number).sort((a, b) => a - b))
         .toEqual(await page.locator("#editor .st-viewport-row").evaluateAll(rows => rows.map(row => Number((row as HTMLElement).dataset.line) + 1).sort((a, b) => a - b)));
     await page.locator("#find-toggle").click(); await page.locator("#find-query").fill("validate");
-    await expect(page.locator("#find-status")).toHaveText("1 matches"); await page.locator("#find-next").click(); await page.locator("#find-close").click();
+    await expect(page.locator("#find-status")).toHaveText("1 of 1"); await page.locator("#find-next").click(); await page.locator("#find-close").click();
     await expect(page.locator('#editor .st-viewport-row[data-line="8"]')).toContainText("validate");
     await page.keyboard.insertText("checked");
     await expect.poll(() => outline.inputValue()).toContain("checked");
@@ -534,7 +534,7 @@ export async function runDemoCompletionCatalogue(page: Page, url = "/") {
 
 async function select(page: Page, source: Locator, text: string) {
     await source.press("Control+f"); await page.getByRole("textbox", { name: "Find text", exact: true }).fill(text);
-    await expect(page.locator("#find-status")).toHaveText("1 matches"); await page.locator("#find-next").click();
+    await expect(page.locator("#find-status")).toHaveText("1 of 1"); await page.locator("#find-next").click();
     await page.getByRole("button", { name: "Close", exact: true }).click();
 }
 

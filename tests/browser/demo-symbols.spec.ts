@@ -5,7 +5,7 @@ import { holdDemoFolds } from "./demo-folding-gate.ts";
 async function symbol(page: Page) {
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+f"); await page.getByRole("textbox", { name: "Find text", exact: true }).fill("calculateTotal(cart");
-    await expect(page.locator("#find-status")).toHaveText("1 matches"); await page.locator("#find-next").click();
+    await expect(page.locator("#find-status")).toHaveText("1 of 1"); await page.locator("#find-next").click();
     await page.getByRole("button", { name: "Close", exact: true }).click(); await source.press("ArrowLeft"); await source.press("ArrowRight"); return source;
 }
 async function openDemo(page: Page) {

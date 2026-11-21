@@ -1,5 +1,5 @@
 import { mountTextEditor, mountTextComparison, createFindController, createRegexFindBackend, createFoldingController, editRefusedEvent } from "../../src/browser/index.ts";
-import type { EditRefusedDetail, TextEditor, FindController, TextComparison, FoldingController, DecorationLayer, DecorationProvider } from "../../src/browser/index.ts";
+import type { EditRefusedDetail, TextEditor, FindController, FindSnapshot, TextComparison, FoldingController, DecorationLayer, DecorationProvider } from "../../src/browser/index.ts";
 import { discoverIndentationFolds } from "../../src/index.ts";
 import { DemoProject } from "./project.ts";
 import { linePrompt } from "../shared/line-prompt.ts";
@@ -353,7 +353,7 @@ function mountFile(file: DemoFile, focus = false): void {
     const capturedFind = find;
     const renderFind = () => {
         const snapshot = capturedFind.getSnapshot();
-        element("find-status").textContent = snapshot.message || `${snapshot.status === "searching" ? "Searching… " : ""}${snapshot.count} matches`;
+        element("find-status").textContent = findStatus(snapshot);
         const hasMatches = !file.readOnly && snapshot.count > 0;
         button("replace-all").disabled = !(hasMatches && snapshot.status === "ready");
         button("replace-current").disabled = !(hasMatches && (snapshot.status === "ready" || snapshot.status === "searching" && snapshot.retained));
@@ -463,6 +463,16 @@ function setPanel(next: typeof panel): void {
     presentation.setEmit(panel === "javascript");
     for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.setAttribute("aria-pressed", String(tab.dataset.panel === panel));
     mountFile(active, true);
+}
+function findStatus(state: FindSnapshot): string {
+    if (!state.query) return "";
+    if (state.message && state.reason !== "replaced") return state.message;
+    const count = state.current !== null ? `${state.current + 1} of ${state.count}`
+        : state.count ? `${state.count} ${state.count === 1 ? "match" : "matches"}` : "";
+    if (state.status === "searching") return count ? `Searching… ${count}` : "Searching…";
+    const result = count || "No matches";
+    if (state.reason === "replaced") return `${state.message} ${result}`;
+    return state.wrappedTo ? `${result} · Wrapped to ${state.wrappedTo}` : result;
 }
 function selectedFindQuery(source: TextEditor, regex: boolean): string | undefined {
     const { anchor, head } = source.view.getSnapshot().selection, length = Math.abs(head - anchor);
@@ -587,7 +597,7 @@ on("download", () => {
     download(project.download(), `${project.sample.id}-changes.json`);
 });
 for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.addEventListener("click", () => setPanel(tab.dataset.panel as typeof panel), { signal: listeners.signal });
-field("find-query").addEventListener("input", () => find?.setQuery(field("find-query").value), { signal: listeners.signal });
+field("find-query").addEventListener("input", () => find?.setQuery(field("find-query").value, { preview: true }), { signal: listeners.signal });
 element("find-bar").addEventListener("keydown", event => {
     if (event.key === "Escape") { event.preventDefault(); closeFind(); }
     else if (event.key === "Enter" && event.target === field("find-query")) { event.preventDefault(); find?.next(event.shiftKey ? -1 : 1); }

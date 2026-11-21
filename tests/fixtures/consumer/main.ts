@@ -176,7 +176,12 @@ const fixture = { text: () => workspace.document(documentId).text(),
             editor.viewport.revealRange(buffer.offsetAt(50001), buffer.offsetAt(50002)); editor.viewport.flush();
             if (!scrolled || editor.viewport.snapshot().scrollTop !== scrolled || editor.view.getSnapshot() !== beforeReveal)
                 throw new Error("Restored range reveal moved a visible result or changed the selection.");
-            find.setFlags({ regularExpression: true, matchCase: false, wholeWord: true }); await wait("ready");
+            find.setQuery("foobar", { preview: true }); await wait("ready"); editor.viewport.flush();
+            if (find.getSnapshot().current !== 0 || editor.viewport.snapshot().scrollTop > editor.viewport.snapshot().lineHeight || editor.view.getSnapshot() !== beforeReveal)
+                throw new Error("Restored Find did not preview the offscreen match independently of selection.");
+            if (!find.next() || find.getSnapshot().wrappedTo !== null || !find.next() || find.getSnapshot().wrappedTo !== "start")
+                throw new Error("Restored Find did not select the preview and then wrap.");
+            find.setFlags({ regularExpression: true, matchCase: false, wholeWord: true }); find.setQuery("(?<value>foo|foobar|k|𐐨)"); await wait("ready");
             if (find.getSnapshot().count !== 6 || workers < 1) throw new Error("Compiled regex worker was not used.");
             editor.view.setSelections(0, [{ anchor: 0, head: 6 }, { anchor: original.length, head: original.length }], 1);
             const selected = editor.view.getSnapshot().selectionSet;
