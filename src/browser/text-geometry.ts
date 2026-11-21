@@ -67,7 +67,11 @@ export function rowGeometry(element: HTMLElement, from: number, revision: number
             const inside = (rect: DOMRect | undefined) => rect && rect.left >= left - 1.5 && rect.left <= right + 1.5;
             // Native caret interiors preserve ligature subdivisions when both endpoints agree with the run direction.
             const consistent = inside(a) && inside(b) && a!.left < b!.left;
-            const nativeStart = !!a && (!!consistent || Math.abs(a.left - left) <= 1.5), nativeEnd = !!b && (!!consistent || Math.abs(b.left - right) <= 1.5);
+            // WebKit rounds a collapsed range at a span boundary to an integer pixel. A
+            // color-only span around a bidi control must not change which cluster wins a hit.
+            // Keep measured glyph edges there, and use native interior stops for ligatures.
+            const nativeStart = !!consistent && Math.abs(a!.left - left) > 1.5;
+            const nativeEnd = !!consistent && Math.abs(b!.left - right) > 1.5;
             value = { start: make(start, "after", nativeStart ? a!.left : left, top, bottom - top), end: make(end, "before", nativeEnd ? b!.left : right, top, bottom - top), nativeStart, nativeEnd };
         } else {
             let before = index - 1, after = index + 1;
