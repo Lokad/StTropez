@@ -95,7 +95,9 @@ a snapshot.
 `TextDiff` compares LF-inclusive lines, then trims equal UTF-16 boundaries within changed blocks.
 CRLF, LF, tabs, spaces and final newlines participate in equality. `DiffHunk` contains baseline
 and working `DiffRange` values with exclusive text and line ends. `whitespaceOnly` describes a
-change without suppressing it. Alignment minimizes line insertions/deletions; it does not
+change without suppressing it. A hunk with only LF/CRLF substitutions has `lineEndingOnly: true`.
+The controls label it “line endings only”. The working pane accepts the same `pasteLineEndings`
+option as the editor. Alignment minimizes line insertions/deletions; it does not
 provide a globally minimal character diff or moved-block detection.
 
 If you use `TextDiff` directly, your caller decides when to take the next step.

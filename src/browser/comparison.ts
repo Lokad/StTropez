@@ -7,7 +7,7 @@ import type { ComparisonBaseline, ComparisonController, ComparisonSnapshot } fro
 import type { DiffRange } from "../core/diff.ts";
 import type { DocumentView, TabId, TabTarget, TextResourceHandle, Workspace } from "../core/workspace.ts";
 import { mountEditor } from "./text-editor.ts";
-import type { MountedTextEditor, TextEditor } from "./text-editor.ts";
+import type { MountedTextEditor, TextEditor, TextEditorOptions } from "./text-editor.ts";
 import type { InlineDecoration, PresentedLine, TextViewport } from "./viewport.ts";
 import { createComparisonScroll } from "./comparison-scroll.ts";
 import { createComparisonAlignment } from "./comparison-alignment.ts";
@@ -18,7 +18,7 @@ import { createCooperativeRunner } from "./cooperative-runner.ts";
 
 export type ComparisonReferenceView = Readonly<{ editor: TextEditor; target: TabTarget; epoch: number; version: string }>;
 export type TextComparisonOptions = Readonly<{ ariaLabel?: string; workBudget?: number; view?: DocumentView; controls?: boolean; scrollLinked?: boolean; rowsAligned?: boolean; minimap?: boolean;
-    workingDecorate?: (line: PresentedLine) => readonly InlineDecoration[]; baselineDecorate?: (line: PresentedLine) => readonly InlineDecoration[] }>;
+    pasteLineEndings?: NonNullable<TextEditorOptions["pasteLineEndings"]>; workingDecorate?: (line: PresentedLine) => readonly InlineDecoration[]; baselineDecorate?: (line: PresentedLine) => readonly InlineDecoration[] }>;
 export type TextComparisonSnapshot = Readonly<{
     comparison: ComparisonSnapshot;
     /** Index in comparison.hunks; cleared when the comparison generation changes. */
@@ -78,7 +78,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     };
     const lineClass = (side: "baseline" | "working") => (line: PresentedLine) => (side !== "working" || line.revision === state.working?.revision) && rangeAt(side, line.line) ? `st-comparison-line-${side}` : undefined;
     let workingMount: MountedTextEditor;
-    try { workingMount = mountEditor(workingPane.content, workspace, workingTab, { view: controller.view, minimap, ariaLabel: "Comparison working source", decorate: decorate("working"), lineClass: lineClass("working") }); }
+    try { workingMount = mountEditor(workingPane.content, workspace, workingTab, { view: controller.view, minimap, pasteLineEndings: options.pasteLineEndings ?? "local", ariaLabel: "Comparison working source", decorate: decorate("working"), lineClass: lineClass("working") }); }
     catch (error) { root.remove(); controller.dispose(); throw error; }
     const working = workingMount.editor, pair = createComparisonPanes(workingMount, changed), referenceEditor = () => pair.reference()?.editor, referenceViewport = () => referenceEditor()?.viewport;
     const busy = (editor: TextEditor | undefined) => { const input = editor?.activity(); return !!input && (input.composing || input.pendingInput || input.pendingCommand); };

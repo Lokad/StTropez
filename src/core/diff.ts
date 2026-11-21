@@ -3,7 +3,7 @@ import { kernelCursor } from "./kernel-cursor.ts";
 import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
 
 export type DiffRange = Readonly<{ from: number; to: number; lineFrom: number; lineTo: number }>;
-export type DiffHunk = Readonly<{ baseline: DiffRange; working: DiffRange; whitespaceOnly: boolean }>;
+export type DiffHunk = Readonly<{ baseline: DiffRange; working: DiffRange; whitespaceOnly: boolean; lineEndingOnly?: true }>;
 export type DiffProgress = Readonly<{ status: KernelStatus; work: number; readUnits: number; lineEdits: number; hunks: readonly DiffHunk[]; failure: string | null }>;
 
 type Stats = { work: number; yielded: number; readUnits: number; lineEdits: number };
@@ -172,6 +172,22 @@ function* whitespace(buffer: TextBuffer, from: number, to: number, stats: Stats)
     return true;
 }
 
+/** The trimmed hunk can end just before the LF shared by both files. */
+function* onlyLineEndings(a: TextBuffer, b: TextBuffer, x: number, xEnd: number, y: number, yEnd: number, stats: Stats): Generator<void, boolean> {
+    if (x === xEnd && y === yEnd) return false;
+    while (x < xEnd || y < yEnd) {
+        const left = a.slice(x, Math.min(x + 2, a.length)), right = b.slice(y, Math.min(y + 2, b.length));
+        stats.readUnits += left.length + right.length;
+        if (charge(stats, left.length + right.length)) yield;
+        if (x < xEnd && left === "\r\n" && right.startsWith("\n")) x++;
+        else if (y < yEnd && right === "\r\n" && left.startsWith("\n")) y++;
+        else return false;
+        const equal = yield* commonText(a, b, x, xEnd, y, yEnd, true, stats);
+        x += equal; y += equal;
+    }
+    return true;
+}
+
 function* compare(a: TextBuffer, b: TextBuffer, stats: Stats): Generator<void, readonly DiffHunk[]> {
     const hunks: DiffHunk[] = [];
     if (a === b) return Object.freeze(hunks);
@@ -203,7 +219,8 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats): Generator<void, r
         const after = yield* commonText(a, b, x0, x1, y0, y1, false, stats);
         x1 -= after; y1 -= after;
         const whitespaceOnly = (yield* whitespace(a, x0, x1, stats)) && (yield* whitespace(b, y0, y1, stats));
-        hunks.push(Object.freeze({ baseline: range(a, x0, x1), working: range(b, y0, y1), whitespaceOnly }));
+        const lineEndingOnly = yield* onlyLineEndings(a, b, x0, x1, y0, y1, stats);
+        hunks.push(Object.freeze({ baseline: range(a, x0, x1), working: range(b, y0, y1), whitespaceOnly, ...(lineEndingOnly ? { lineEndingOnly: true as const } : {}) }));
     }
     return Object.freeze(hunks);
 }

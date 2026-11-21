@@ -136,8 +136,9 @@ for (const host of ["plain", "react"] as const) for (const editor of ["native", 
                 expect(events.map(event => event.type)).toEqual(["copy", "paste", "cut", "paste"]);
                 expect(paste).toMatchObject({ trusted: true, label: "Primary source", prevented: editor === "candidate" });
                 expect(normalized(paste.text)).toBe(normalized(original.slice(from, to)));
-                // The native baseline commits textarea.value; the candidate handles the raw event payload itself.
-                const inserted = editor === "native" ? normalized(paste.text) : paste.text, pasted = cut.slice(0, from) + inserted + cut.slice(from), afterPaste = await snapshot(page);
+                // Cutting the sole CRLF in the normal sample leaves a single line, whose default is LF.
+                const lf = normalized(paste.text), inserted = editor === "candidate" && corpus !== "normal" ? lf.replace(/\n/g, "\r\n") : lf;
+                const pasted = cut.slice(0, from) + inserted + cut.slice(from), afterPaste = await snapshot(page);
                 await exact(page, pasted); expect(afterPaste.source.revision).toBe(beforePaste.source.revision + 1);
                 expect(afterPaste.history.undoDepth).toBe(cutState.history.undoDepth + 1);
                 expect(sourceSelection(afterPaste, "primary")).toMatchObject({ anchor: from + inserted.length, head: from + inserted.length });

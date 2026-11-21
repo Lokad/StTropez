@@ -14,7 +14,9 @@ const primaryTab = workspace.open({ kind: "text", documentId: source.documentId 
 const pane = (id: string) => document.getElementById(id)!;
 const presentation = { primary: new EditingPresentation(), secondary: new EditingPresentation() };
 let failDecoration = false;
-const editors = { primary: mountTextEditor(pane("primary"), workspace, primaryTab, { ariaLabel: "Primary source", readOnly: new URLSearchParams(location.search).has("readonly"), decorate: slice => {
+const params = new URLSearchParams(location.search);
+const editors = { primary: mountTextEditor(pane("primary"), workspace, primaryTab, { ariaLabel: "Primary source", readOnly: params.has("readonly"),
+    pasteLineEndings: params.get("pasteLineEndings") === "preserve" ? "preserve" : "local", decorate: slice => {
     if (failDecoration) { failDecoration = false; throw new Error("Fixture decoration failure"); }
     return presentation.primary.decorate(slice);
 } }),

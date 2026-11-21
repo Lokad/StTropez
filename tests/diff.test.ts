@@ -19,6 +19,10 @@ test("comparison preserves exact whitespace, endings, empty text and UTF-16", ()
     for (const a of ["", "\n", "abc", "a\r\nb\n", "👩‍💻é\n", " \t\n", "a\na\nb\n"])
         for (const b of ["", "\n", "abc", "a\nb\r\n", "👨‍💻é\n", "\t \n", "b\na\nb\n"]) diff(a, b);
     assert.equal(diff("a\r\n", "a\n").hunks[0]!.whitespaceOnly, true);
+    for (const [before, after] of [["a\r\nb\nc\r\n", "a\nb\r\nc\n"], ["x\ny", "x\r\ny"]] as const)
+        assert.ok(diff(before, after).hunks.every(hunk => hunk.lineEndingOnly));
+    for (const [before, after] of [["a\nb\n", "a\r\nb \r\n"], ["a\rb", "ab"], ["a\n", "a\n\n"]] as const)
+        assert.ok(diff(before, after).hunks.every(hunk => !hunk.lineEndingOnly));
     assert.equal(diff("a\n", "b\n").hunks[0]!.whitespaceOnly, false);
     assert.equal(diff("same\n", "same\n").hunks.length, 0);
 });

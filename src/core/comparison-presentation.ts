@@ -9,7 +9,7 @@ export function mapComparisonHunks(baseline: TextBuffer, before: TextBuffer, aft
     const edges = unchangedPositionEdges(mapping), suffix = before.length - (edges?.suffix ?? 0);
     const units = after.length - before.length, lines = after.lineCount - before.lineCount, result: DiffHunk[] = [];
     for (const hunk of hunks) {
-        const r = hunk.working; let working: DiffRange, whitespaceOnly = hunk.whitespaceOnly;
+        const r = hunk.working; let working: DiffRange, whitespaceOnly = hunk.whitespaceOnly, lineEndingOnly = hunk.lineEndingOnly;
         // Strict boundaries include new typing at either edge of an existing change.
         if (edges && r.to < edges.prefix) working = r;
         else if (edges && r.from > suffix) working = units === 0 && lines === 0 ? r
@@ -18,6 +18,7 @@ export function mapComparisonHunks(baseline: TextBuffer, before: TextBuffer, aft
             const from = mapping.map(r.from, "before").offset, to = Math.max(from, mapping.map(r.to, "after").offset), lineFrom = after.lineAt(from);
             working = Object.freeze({ from, to, lineFrom, lineTo: from === to ? lineFrom : after.lineAt(to - 1) + 1 });
             whitespaceOnly = false; // Text inside this provisional range has not been classified.
+            lineEndingOnly = undefined;
         }
         const previous = result.at(-1);
         if (previous && (previous.working.to >= working.from || Math.max(previous.working.lineFrom + 1, previous.working.lineTo) > working.lineFrom)) {
@@ -28,7 +29,8 @@ export function mapComparisonHunks(baseline: TextBuffer, before: TextBuffer, aft
                 lineFrom: first.lineFrom, lineTo: first.from === last.to ? first.lineFrom : buffer.lineAt(last.to - 1) + 1 });
             result[result.length - 1] = Object.freeze({ baseline: merge(baseline, previous.baseline, hunk.baseline),
                 working: merge(after, previous.working, working), whitespaceOnly: false });
-        } else result.push(working === r && whitespaceOnly === hunk.whitespaceOnly ? hunk : Object.freeze({ ...hunk, working, whitespaceOnly }));
+        } else result.push(working === r && whitespaceOnly === hunk.whitespaceOnly && lineEndingOnly === hunk.lineEndingOnly ? hunk
+            : Object.freeze({ baseline: hunk.baseline, working, whitespaceOnly, ...(lineEndingOnly ? { lineEndingOnly } : {}) }));
     }
     return Object.freeze(result);
 }

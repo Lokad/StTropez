@@ -23,7 +23,8 @@ import type { InputConflictDetail } from "./input-conflict.ts";
 import { mountViewport } from "./viewport.ts";
 import type { LineClass, LineDecorator, TextViewport } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
-import { planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
+import { lineEnding, planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
+import { exportText } from "../core/newlines.ts";
 import type { EditingCommand, LanguageConfiguration, ResolvedLanguageConfiguration } from "../core/language-edits.ts";
 import { captureInsertion } from "./captured-insertion.ts";
 import type { CapturedInsertion } from "./captured-insertion.ts";
@@ -49,6 +50,7 @@ export type TextEditorEditTransform = (edit: TextEditorEdit) => Readonly<{ edits
 export type TextEditorActivity = Readonly<{ disposed: boolean; composing: boolean; pendingInput: boolean; pendingCommand: boolean;
     pendingCaret: boolean; pendingDragScroll: boolean; pendingWord: boolean; pendingGrapheme: boolean }>;
 export type TextEditorOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; decorate?: LineDecorator; lineClass?: LineClass; language?: LanguageConfiguration;
+        pasteLineEndings?: "local" | "preserve";
         bracketMatching?: boolean | BracketMatchOptions; characterWarnings?: boolean | CharacterWarningOptions;
         columnRulers?: readonly number[]; highlightCurrentLine?: boolean; fontLigatures?: boolean; scrollBeyondLastLine?: boolean; minimap?: boolean }>;
 export type TextEditor = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; view: DocumentView; viewport: TextViewport;
@@ -292,7 +294,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         const selected = captured.selectionSet.ranges[captured.selectionSet.primary]!;
         const exactTarget = native && edit.from === Math.min(projection.nativeAnchor, projection.nativeHead) && edit.to === Math.max(projection.nativeAnchor, projection.nativeHead);
         const from = exactTarget ? Math.min(selected.anchor, selected.head) : projection.toModel(edit.from);
-        const to = exactTarget ? Math.max(selected.anchor, selected.head) : edit.from === edit.to ? from : projection.toModel(edit.to), delta = edit.insert.length - (to - from);
+        const to = exactTarget ? Math.max(selected.anchor, selected.head) : edit.from === edit.to ? from : projection.toModel(edit.to);
         const typing = type === "insertText" && !edit.insert.includes("\n"), deleting = type === "deleteContentBackward" || type === "deleteContentForward";
         const kind = typing ? "typing" : deleting ? "delete" : type === "insertCompositionText" ? "composition" : type === "insertFromPaste" ? "paste" : "replace";
         if (captured.selectionSet.ranges.length > 1) {
@@ -301,14 +303,19 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             if (from !== Math.min(selected.anchor, selected.head) || to !== Math.max(selected.anchor, selected.head)) {
                 conflict("unsupported-multiple-input-target", { from, to, insert: edit.insert }, captured.revision, projection.from); refresh(); return;
             }
-            const plan = planSelectionEdits(workspace.document(documentId).buffer.length, captured.selectionSet, edit.insert);
+            const plan = planInput(workspace.document(documentId).buffer, captured.selectionSet, edit.insert, kind);
             apply(plan.edits, plan.selectionSet, kind, typing || deleting ? type : undefined, captured.revision); return;
         }
+        const buffer = workspace.document(documentId).buffer;
+        const converted = kind === "paste" && options.pasteLineEndings !== "preserve" && /[\r\n]/.test(edit.insert)
+            ? exportText(edit.insert, lineEnding(buffer, buffer.lineAt(from)) === "\n" ? "lf" : "crlf") : undefined;
+        const insert = converted?.text ?? edit.insert, delta = insert.length - (to - from);
         const map = (offset: number) => offset <= edit.from ? projection.toModel(offset)
-            : offset >= edit.from + edit.insert.length ? projection.toModel(offset - edit.insert.length + edit.to - edit.from) + delta : from + offset - edit.from;
-        const backward = input.selectionDirection === "backward", selection = exactTarget ? { anchor: from + edit.insert.length, head: from + edit.insert.length }
+            : offset >= edit.from + edit.insert.length ? projection.toModel(offset - edit.insert.length + edit.to - edit.from) + delta
+            : from + (converted?.mapping.map(offset - edit.from).offset ?? offset - edit.from);
+        const backward = input.selectionDirection === "backward", selection = exactTarget ? { anchor: from + insert.length, head: from + insert.length }
             : { anchor: map(backward ? input.selectionEnd : input.selectionStart), head: map(backward ? input.selectionStart : input.selectionEnd) };
-        apply([{ from, to, insert: edit.insert }], selection, kind, typing || deleting ? type : undefined, captured.revision);
+        apply([{ from, to, insert }], selection, kind, typing || deleting ? type : undefined, captured.revision);
     }
     function history(direction: "undo" | "redo"): void {
         if (disposed) return; hostInsertion?.cancel(); cancelWord(); group = undefined; syncSelection();
@@ -321,9 +328,21 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     }
     const focus = () => { if (!disposed) { input.focus({ preventScroll: true }); scheduleCaret(); } };
     const inputBinding = viewport.bindInput(focus);
-    function replaceSelection(insert: string, kind: EditKind, type?: string): void {
-        const document = workspace.document(documentId), plan = planSelectionEdits(document.buffer.length, view.getSnapshot().selectionSet, insert);
-        apply(plan.edits, plan.selectionSet, kind, type, document.revision);
+    function planInput(buffer: TextBuffer, selections: SelectionSet, text: string, kind: EditKind) {
+        if (kind !== "paste" || options.pasteLineEndings === "preserve" || !/[\r\n]/.test(text))
+            return planSelectionEdits(buffer.length, selections, text);
+        const lf = text.replace(/\r\n?/g, "\n");
+        let crlf: string | undefined;
+        const inserts = selections.ranges.map(range => {
+            const line = buffer.lineAt(Math.min(range.anchor, range.head));
+            if (lineEnding(buffer, line) === "\n") return lf;
+            return crlf ??= lf.replace(/\n/g, "\r\n");
+        });
+        return planSelectionEdits(buffer.length, selections, inserts);
+    }
+    function replaceSelection(insert: string, kind: EditKind, type?: string, recoveryText?: string): boolean {
+        const document = workspace.document(documentId), plan = planInput(document.buffer, view.getSnapshot().selectionSet, insert, kind);
+        return apply(plan.edits, plan.selectionSet, kind, type, document.revision, recoveryText);
     }
     // Delayed commands belong to this captured tab, revision and complete selection set.
     // cancelWord releases scans, row preparation and ordered input; no focused-view lookup occurs later.
@@ -693,9 +712,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         if (action.kind === "text" && !action.literal && configuredInput(action.type, action.text)) {
             // The same captured command path serves keyboard and cancellable native input.
         } else if (action.kind === "text") {
-            const document = workspace.document(documentId), plan = planSelectionEdits(document.buffer.length, view.getSnapshot().selectionSet, action.text);
             const typing = action.type === "insertText" && !action.text.includes("\n");
-            if (!apply(plan.edits, plan.selectionSet, typing ? "typing" : action.type === "insertFromPaste" ? "paste" : "replace", typing ? "insertText" : undefined, document.revision, action.text)) {
+            if (!replaceSelection(action.text, typing ? "typing" : action.type === "insertFromPaste" ? "paste" : "replace", typing ? "insertText" : undefined, action.text)) {
                 return "reported";
             }
         } else {
@@ -718,10 +736,11 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     }
     function captureOrderedInput(event: InputEvent): boolean {
         if (composing || event.isComposing || input.disabled || input.readOnly || !inputQueue.pending && !rangeCommand) return false;
-        const text = event.inputType === "insertText" || event.inputType === "insertLineBreak", action = nativeIntent(event.inputType);
+        const text = event.inputType === "insertText" || event.inputType === "insertLineBreak" || event.inputType === "insertFromPaste", action = nativeIntent(event.inputType);
         if (!text && !action) return false;
         const pending = inputQueue.ensure(); if (!pending) return false;
-        const data = event.inputType === "insertLineBreak" ? "\n" : event.data;
+        const data = event.inputType === "insertLineBreak" ? "\n" : event.data ?? event.dataTransfer?.getData("text/plain") ?? null;
+        if (event.inputType === "insertFromPaste" && event.cancelable && data === "") { event.preventDefault(); return true; }
         if (event.cancelable && (action || data !== null)) { event.preventDefault(); appendInput(action ?? { kind: "text", text: data!, type: event.inputType }); return true; }
         inputQueue.waitNative(pending);
         nativeOrder = { order: pending, capture: captureInput(event.inputType, event.data), type: event.inputType, data, ...(action ? { action } : {}), invalid: false, reported: false };
@@ -763,6 +782,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         } else if (!composing && event.cancelable && (event.inputType === "historyUndo" || event.inputType === "historyRedo")) { event.preventDefault(); history(event.inputType === "historyUndo" ? "undo" : "redo"); }
         else syncSelection();
         if (!composing && !event.isComposing && !input.disabled && !input.readOnly && input.value === context.text) {
+            if (event.inputType === "insertFromPaste" && event.cancelable) {
+                const pasted = event.data ?? event.dataTransfer?.getData("text/plain");
+                if (pasted != null) { event.preventDefault(); if (pasted.length) replaceSelection(pasted, "paste", undefined, pasted); return; }
+            }
             if (event.cancelable && configuredInput(event.inputType, event.data)) { event.preventDefault(); return; }
             // Keep the native projection bounded during insertion, not just after input. Browsers
             // may expand a multiline insertText into thousands of native edits before notifying us.

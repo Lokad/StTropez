@@ -39,10 +39,22 @@ test("paired navigation exposes exact whitespace and reverts one hunk through sh
     await page.keyboard.press("Control+z"); await ready(page);
     await expect(page.locator(".st-comparison-panes section").last().locator(".st-viewport-row").first()).toContainText("Working");
     expect(await page.evaluate(() => window.comparisonFixture.range(0, 24))).toContain("Working");
-    await page.evaluate(() => window.comparisonFixture.setText("a\n")); await ready(page);
-    await page.evaluate(() => { window.comparisonFixture.begin("accept"); window.comparisonFixture.finish("accept"); window.comparisonFixture.setText("a\r\n"); }); await ready(page);
+    await page.evaluate(() => window.comparisonFixture.setText("a\nb\n")); await ready(page);
+    const revision = await page.evaluate(() => {
+        const f = window.comparisonFixture; f.begin("accept"); f.finish("accept"); f.select({ anchor: 4, head: 0 }); f.focus();
+        return f.snapshot().working.revision;
+    });
+    await page.getByRole("textbox", { name: "Comparison working source" }).evaluate(input => {
+        const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
+        event.clipboardData!.setData("text/plain", "a\r\nb\r\n"); input.dispatchEvent(event);
+    });
+    await ready(page);
+    await expect(page.locator(".st-comparison-controls output")).toHaveText("No changes");
+    expect(await page.evaluate(() => window.comparisonFixture.snapshot().working.revision)).toBe(revision);
+    await page.evaluate(() => window.comparisonFixture.setText("a\r\nb\r\n")); await ready(page);
+    await expect(page.locator(".st-comparison-controls output")).toContainText("line endings only");
     await page.getByRole("button", { name: "Next change", exact: true }).click();
-    await expect(page.locator(".st-comparison-controls output")).toContainText("whitespace only");
+    await expect(page.locator(".st-comparison-controls output")).toContainText("line endings only");
     await expect(page.locator(".st-comparison-preview")).toContainText("␍");
     expect(await page.locator(".st-comparison-line-working").count()).toBeGreaterThan(0);
     expect(await page.evaluate(() => window.comparisonFixture.snapshot().working.exports)).toBe(0);

@@ -38,7 +38,8 @@ for(const host of ["plain","react"])for(const kind of ["many-carets","long-word"
     const heads=kind==="many-carets"?Array.from({length:1024},(_,i)=>i*80*12+4):[0],destinations=kind==="many-carets"?heads.map(head=>head+12):[1000001];
     for(const mode of ["cancelled","native","input-only","paste-primary","paste-comparison"] as const){
         const paste=mode.startsWith("paste"),view=mode==="native"||mode==="paste-comparison"?"comparison" as const:"primary" as const;
-        const data=paste?"xy😀é\r\n":"xy😀é",expected=insert(original,destinations,data);
+        const data=paste?"xy😀é\r\n":"xy😀é";
+        const expected=insert(original,destinations,kind==="long-word"?data.replace("\r\n","\n"):data);
         // Bulk1024-range navigation/input has a correctness deadline, not a point-latency pass.
         const inputReady=kind==="many-carets"?30000:5000;
         await page.goto(`/hosts/${host}/?editor=candidate`);await page.evaluate(text=>{const f=window.hostFixture;f.editSource(f.snapshot().source.revision,[{from:0,to:f.snapshot().source.length,insert:text}]);},original);

@@ -36,7 +36,9 @@ export function mountComparisonControls(
         previous.disabled = next.disabled = !canNavigate; revert.disabled = !canRevert;
         setText(referenceHeading, state.baseline ? `Baseline · ${state.baseline.version}` : "Baseline unavailable");
         setText(workingHeading, state.working ? `Working · revision ${state.working.revision}` : "Working unavailable");
-        const message = state.status === "ready" ? count ? `${hunk ? `Change ${selected! + 1} of ${count}` : `${count} changes`}${hunk?.whitespaceOnly ? " · whitespace only" : ""}` : "No changes" : state.failure ?? `Comparison ${state.status}`;
+        const described = hunk ?? (count === 1 ? state.hunks[0] : undefined);
+        const detail = described?.lineEndingOnly ? " · line endings only" : described?.whitespaceOnly ? " · whitespace only" : "";
+        const message = state.status === "ready" ? count ? (hunk ? `Change ${selected! + 1} of ${count}` : count === 1 ? "1 change" : `${count} changes`) + detail : "No changes" : state.failure ?? `Comparison ${state.status}`;
         setText(status, message + (layout.pending ? " · preparing aligned rows" : layout.status === "failed" ? " · row alignment unavailable" : ""));
         preview.hidden = !hunk;
         if (hunk && state.baseline && state.working) {

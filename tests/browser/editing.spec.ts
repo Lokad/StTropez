@@ -294,7 +294,7 @@ test("measured tab/CJK/cluster coordinates drive pointer selection and whole-gra
     await page.keyboard.press("Backspace"); expect(await page.evaluate(() => window.editingFixture.range(0, 10))).toBe("a\t界zsecond");
 });
 
-test("synthetic clipboard events replace a large backward selection and preserve raw newlines", async ({ page }) => {
+test("plain-text paste uses local line endings across a large backward selection", async ({ page }) => {
     await page.evaluate(() => { window.editingFixture.select("primary", { anchor: 2_300_000, head: 100_000 }); window.editingFixture.focus("primary"); });
     expect((await state(page)).primary.inputUnits).toBe(513);
     await page.getByRole("textbox", { name: "Primary source" }).evaluate(input => {
@@ -303,9 +303,26 @@ test("synthetic clipboard events replace a large backward selection and preserve
         if (event.clipboardData!.getData("text/plain") !== "A\r\nB") throw new Error("Synthetic clipboard fixture lost its data.");
         input.dispatchEvent(event);
     }); await ready(page);
-    expect(await page.evaluate(() => window.editingFixture.range(100_000, 100_004))).toBe("A\r\nB");
-    expect((await state(page))).toMatchObject({ document: { length: 200_004, exports: 0 }, primary: { selection: { anchor: 100_004, head: 100_004 } } });
+    expect(await page.evaluate(() => window.editingFixture.range(100_000, 100_003))).toBe("A\nB");
+    expect((await state(page))).toMatchObject({ document: { length: 200_003, exports: 0 }, primary: { selection: { anchor: 100_003, head: 100_003 } } });
     await page.keyboard.press("ControlOrMeta+z"); await ready(page); expect((await state(page)).document!.length).toBe(2_400_000);
+});
+
+test("pasting at mixed line endings respects each caret and the host's literal option", async ({ page }) => {
+    for (const mode of ["local", "preserve"]) {
+        if (mode === "preserve") await page.goto("/editing/?pasteLineEndings=preserve");
+        await page.evaluate(() => {
+            const f = window.editingFixture; f.setText("a\r\nb\nc"); f.focus("primary");
+            f.selections([{ anchor: 0, head: 0 }, { anchor: 3, head: 3 }]);
+        });
+        await ready(page);
+        await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(input => {
+            const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
+            event.clipboardData!.setData("text/plain", "1\r2\n"); input.dispatchEvent(event);
+        });
+        const text = await page.evaluate(() => { const f = window.editingFixture; return f.range(0, f.snapshot().document!.length); });
+        expect(text).toBe(mode === "local" ? "1\r\n2\r\na\r\n1\n2\nb\nc" : "1\r2\na\r\n1\r2\nb\nc");
+    }
 });
 
 test("synthetic composition commits once and rejects stale, readonly and expired captured targets", async ({ page }) => {
