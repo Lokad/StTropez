@@ -67,6 +67,8 @@ In Shopping cart, open **Find** and enter `quantity:\s*(\d+)`. Choose **Use regu
 (`.*`) to highlight both quantities in `main.ts`. Enter and Shift+Enter navigate the matches.
 Under **Replace…**, use `quantity: $1 + 1` and choose **Replace all**. Open Changes to see both
 edits. One undo restores both quantities. The query and mode follow the active file while Find is open.
+Opening Find picks up a short, single-line source selection and escapes it in regex mode.
+With an empty, multiline or oversized selection, the previous query stays in the field.
 
 ### Language tools and samples
 

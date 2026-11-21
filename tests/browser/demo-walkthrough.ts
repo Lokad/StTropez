@@ -94,6 +94,9 @@ export async function runDemoUnopenedNavigation(page: Page, url = "/") {
     await select(page, main, "const record: RecordId"); await main.press("ArrowRight"); await main.press("ArrowLeft"); await main.press("F12");
     const declaration = page.getByRole("textbox", { name: "contracts.d.ts", exact: true }); await expect(declaration).toBeVisible();
     await expect(page.locator("#files")).toContainText("contracts.d.ts (read-only)");
+    await declaration.press("Control+Home"); await declaration.press("Shift+End"); await declaration.press("Control+f");
+    const declarationQuery = page.getByRole("textbox", { name: "Find text" });
+    await expect(declarationQuery).toHaveValue(/An identifier supplied by a host contract/); await declarationQuery.press("Escape");
     const before = await declaration.inputValue(); await declaration.press("Control+End"); await declaration.press("x"); await expect(declaration).toHaveValue(before);
     await declaration.press("Alt+ArrowLeft"); await expect(main).toBeFocused();
     await page.locator("#save").click(); await expect(page.locator("#status")).toContainText("Saved in this browser");

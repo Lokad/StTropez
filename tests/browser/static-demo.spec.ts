@@ -113,6 +113,16 @@ test("Find toggles regex on the existing query and replaces captured groups in o
     await working.getByRole("textbox").press("Control+z");
     await expect(working).not.toContainText(" + 1"); await expect(working).toContainText("quantity: 2"); await expect(working).toContainText("quantity: 4");
     await mode.click(); await expect(status).toHaveText("0 matches");
+    await query.press("Escape");
+    const input = working.getByRole("textbox");
+    await input.press("Control+Home"); await input.press("Shift+End"); await input.press("Control+f");
+    const firstLine = 'import { calculateTotal } from "./pricing";';
+    await expect(query).toHaveValue(firstLine); await expect(query).toBeFocused();
+    await mode.click(); await query.press("Escape"); await input.press("Control+f");
+    await expect(query).toHaveValue('import \\{ calculateTotal \\} from "\\./pricing";');
+    await expect(status).toHaveText("1 matches"); await query.press("Escape");
+    await input.press("Control+Home"); await input.press("Control+f");
+    await expect(query).toHaveValue('import \\{ calculateTotal \\} from "\\./pricing";');
 });
 
 test("a pending regex search allows large-file scrolling and typing and expires on file change", async ({ page, baseURL }) => {

@@ -464,9 +464,21 @@ function setPanel(next: typeof panel): void {
     for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.setAttribute("aria-pressed", String(tab.dataset.panel === panel));
     mountFile(active, true);
 }
+function selectedFindQuery(source: TextEditor, regex: boolean): string | undefined {
+    const { anchor, head } = source.view.getSnapshot().selection, length = Math.abs(head - anchor);
+    // The single-line Find field accepts a short selection even in a multi-megabyte document.
+    const limit = 4096;
+    if (!length || length > limit) return;
+    const text = source.workspace.document(source.view.documentId).buffer.slice(Math.min(anchor, head), Math.max(anchor, head));
+    if (/[\r\n]/.test(text)) return;
+    const query = regex ? text.replace(/[.*+?^$(){}|[\]\\]/g, "\\$&") : text;
+    return query.length <= limit ? query : undefined;
+}
 function openFind(replace = false): void {
-    element("find-bar").hidden = false; element("replace-controls").hidden = !replace;
-    find?.setQuery(field("find-query").value); const target = field(replace ? "replacement" : "find-query"); target.focus(); target.select();
+    const bar = element("find-bar"), query = field("find-query");
+    if (bar.hidden && editor && find) query.value = selectedFindQuery(editor, find.getSnapshot().regularExpression) ?? query.value;
+    bar.hidden = false; element("replace-controls").hidden = !replace;
+    find?.setQuery(query.value); const target = replace ? field("replacement") : query; target.focus(); target.select();
 }
 function closeFind(): void { element("find-bar").hidden = true; find?.cancel(); editor?.focus(); }
 const on = (id: string, action: () => void) => element(id).addEventListener("click", action, { signal: listeners.signal });
