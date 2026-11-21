@@ -10,11 +10,16 @@ import type { InlineDecoration } from "../src/browser/viewport.ts";
 function oracle(text: string, from: number, to: number, length: number, decorations: readonly InlineDecoration[], selections: readonly { from: number; to: number }[]): RowPart[] {
     const valid = decorations.filter(r => Number.isSafeInteger(r.from) && Number.isSafeInteger(r.to) && r.from >= 0 && r.to <= length && r.from < r.to
         && r.from < to && r.to > from && /^[a-zA-Z][\w-]{0,63}$/.test(r.className));
-    const parts: { text: string; className: string }[] = [];
-    for (let at = from; at < to; at++) {
+    const points = decorations.filter(r => Number.isSafeInteger(r.from) && r.from === r.to && r.from >= from && r.from <= to
+        && /^[a-zA-Z][\w-]{0,63}$/.test(r.className));
+    const parts: { text: string; className: string; ornament?: "point"; properties?: InlineDecoration["properties"] }[] = [];
+    for (let at = from; at <= to; at++) {
+        const here = points.filter(r => r.from === at);
+        for (const range of here) parts.push({ text: "", className: range.className, ornament: "point", properties: undefined });
+        if (at === to) break;
         const names = valid.filter(r => r.from <= at && at < r.to).map(r => r.className);
         if (selections.some(r => r.from <= at && at < r.to)) names.push("st-viewport-selected");
-        if (at === from || valid.some(r => r.from === at || r.to === at) || selections.some(r => r.from === at || r.to === at)) parts.push({ text: "", className: names.join(" ") });
+        if (at === from || here.length || valid.some(r => r.from === at || r.to === at) || selections.some(r => r.from === at || r.to === at)) parts.push({ text: "", className: names.join(" ") });
         parts.at(-1)!.text += text[at - from]!;
     }
     return parts;

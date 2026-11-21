@@ -15,7 +15,8 @@ const host = document.getElementById("editor");
 if (!host) throw new Error("Missing editor host.");
 const sourceEditor = mountTextEditor(host, workspace, tabId);
 const viewport = mountTextViewport(document.getElementById("viewport")!, workspace, tabId, { ariaLabel: "Restored viewport", minimap: true } satisfies TextViewportOptions);
-const candidate = mountTextEditor(document.getElementById("candidate")!, workspace, tabId, { ariaLabel: "Restored candidate", decorate: line => {
+const candidate = mountTextEditor(document.getElementById("candidate")!, workspace, tabId, { ariaLabel: "Restored candidate" });
+candidate.decorations.addProvider({ name: "tokens", order: 0, provide: line => {
     const from = line.text.indexOf("restored"); return from < 0 ? [] : [{ from: line.from + from, to: line.from + from + 8, className: "consumer-token" }];
 } });
 const find = createFindController(workspace, tabId, candidate);
@@ -23,8 +24,16 @@ const comparisonResource = workspace.createTextResourceFromBuffer({ scope: "cons
 const comparisonTab = workspace.open({ kind: "text", documentId: comparisonResource.documentId }, "review");
 const comparisonView = workspace.createDocumentView(comparisonResource.documentId);
 const reviewDecorate = (line: PresentedLine) => [{ from: line.from, to: line.to, className: "consumer-review-token" }];
-const reviewOptions: TextComparisonOptions = { view: comparisonView, workingDecorate: reviewDecorate, baselineDecorate: reviewDecorate };
-let comparison = mountTextComparison(document.getElementById("comparison")!, workspace, comparisonTab, { buffer: TextBuffer.from("baseline\r\n"), version: "reference-1" }, reviewOptions);
+const reviewOptions: TextComparisonOptions = { view: comparisonView };
+function mountReview(baseline: Parameters<typeof mountTextComparison>[3]) {
+    const review = mountTextComparison(document.getElementById("comparison")!, workspace, comparisonTab, baseline, reviewOptions);
+    const tokens = { name: "review tokens", order: 0, provide: reviewDecorate };
+    review.working.decorations.addProvider(tokens);
+    const attach = () => review.referenceEditor()?.decorations.addProvider(tokens);
+    const stop = review.reference.subscribe(attach); attach();
+    return { ...review, dispose() { stop(); review.dispose(); } };
+}
+let comparison = mountReview({ buffer: TextBuffer.from("baseline\r\n"), version: "reference-1" });
 function mountMultipleInput() {
     const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "multiple-input", variant: "working" }, "Multiple input", { value: "abcd" });
     const tab = model.open({ kind: "text", documentId: source.documentId }, "multiple-input"), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
@@ -325,7 +334,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
     remountComparison: () => {
         const baseline = comparison.controller.getSnapshot().baseline!, state = comparison.working.captureView();
         comparison.dispose(); const retained = workspace.ownsDocumentView(comparisonView);
-        comparison = mountTextComparison(document.getElementById("comparison")!, workspace, comparisonTab, baseline, reviewOptions);
+        comparison = mountReview(baseline);
         comparison.working.restoreView({ ...state, ...comparisonView.getSnapshot().selection }); return retained;
     },
     acceptComparison: () => { const t = comparison.controller.beginAcceptance(); return t.complete({ buffer: t.capture.working.buffer, version: "accepted-2" }); },

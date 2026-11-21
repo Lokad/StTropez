@@ -111,28 +111,6 @@ export function validateDomainResult(value: unknown, input: DomainInput): Domain
     return Object.freeze({ id: input.id, revision: input.revision, folds: Object.freeze(folds), annotations: Object.freeze(annotations), edits: Object.freeze(edits) });
 }
 
-/** Host-owned interval index; render callbacks visit only intersecting branches, capped output. */
-export class DomainAnnotationIndex {
-    private readonly nodes: { value: DomainAnnotation; left: number; right: number; max: number }[] = [];
-    private readonly root: number;
-    readonly values: readonly DomainAnnotation[];
-    constructor(values: readonly DomainAnnotation[]) {
-        this.values = values;
-        const sorted = values.slice().sort((a, b) => a.from - b.from || a.to - b.to);
-        const build = (from: number, to: number): number => {
-            if (from === to) return -1; const middle = (from + to) >>> 1, at = this.nodes.length, node = { value: sorted[middle]!, left: -1, right: -1, max: sorted[middle]!.to }; this.nodes.push(node);
-            node.left = build(from, middle); node.right = build(middle + 1, to); node.max = Math.max(node.max, this.nodes[node.left]?.max ?? 0, this.nodes[node.right]?.max ?? 0); return at;
-        }; this.root = build(0, sorted.length);
-    }
-    query(from: number, to: number, limit = 64): readonly DomainAnnotation[] {
-        const result: DomainAnnotation[] = [], visit = (at: number): void => {
-            const node = this.nodes[at]; if (!node || node.max <= from || result.length >= limit) return;
-            visit(node.left); if (node.value.from < to && node.value.to > from && result.length < limit) result.push(node.value);
-            if (node.value.from < to) visit(node.right);
-        }; visit(this.root); return result;
-    }
-}
-
 export class FixtureDomainProvider implements DomainProvider {
     delay = 25;
     fault: "malformed" | "failure" | "late" | undefined;

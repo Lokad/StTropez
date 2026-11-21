@@ -25,7 +25,7 @@ export function mountCharacterWarnings(workspace: Workspace, tabId: TabId, view:
         configure: options => {
             notifications.assertWritable(); if (disposed) return false;
             const next = options === false ? undefined : new CharacterWarnings(options === true ? {} : options);
-            classifier = next; rows.clear(); viewport.invalidate(); return true;
+            classifier = next; rows.clear(); layer.invalidate(); return true;
         },
         query: (from, to, limits) => {
             if (!classifier || !available()) return null;
@@ -35,9 +35,8 @@ export function mountCharacterWarnings(workspace: Workspace, tabId: TabId, view:
                     && workspace.document(documentId).revision === document.revision });
         },
     });
-    if (initial) viewport.invalidate();
-    return Object.freeze({ handle,
-        decorate: (line: PresentedLine): readonly InlineDecoration[] => {
+    const layer = viewport.decorations.addProvider({ name: "character warnings", order: 110, minimap: false,
+        provide: (line: PresentedLine): readonly InlineDecoration[] => {
             if (!classifier || disposed || line.documentId !== documentId) return empty;
             const before = rows.get(line.line);
             if (before?.from === line.from && before.text === line.text) return before.decorations;
@@ -57,7 +56,7 @@ export function mountCharacterWarnings(workspace: Workspace, tabId: TabId, view:
             const decorations = marked.length ? Object.freeze(marked) : empty;
             if (rows.size >= 128 && !rows.has(line.line)) rows.delete(rows.keys().next().value!);
             rows.set(line.line, { from: line.from, text: line.text, decorations }); return decorations;
-        },
-        dispose: () => { disposed = true; classifier = undefined; rows.clear(); },
+        }
     });
+    return Object.freeze({ handle, dispose: () => { disposed = true; classifier = undefined; rows.clear(); layer.dispose(); } });
 }

@@ -152,6 +152,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await expect(button(page, "Next document colors")).toBeDisabled(); await colors.getByRole("button").last().click();
         await expect(button(page, "Preview color presentations")).toBeEnabled();
         expect(await page.locator(".st-document-color").count()).toBeGreaterThan(0); expect(await page.locator(".st-document-color").count()).toBeLessThan(150);
+        await expect(page.locator('.host-inline-swatch[data-ornament="before"]').first()).toHaveCSS("background-color", "rgb(170, 187, 204)");
         const previews = (await snapshot(page)).bindings.colors.previews, presentations = methods.filter(method => method === "textDocument/colorPresentation").length;
         await field(page, "Proposed color").fill('url("https://invalid.example/")'); await expect(button(page, "Preview color presentations")).toBeDisabled(); await expect(button(page, "Apply captured color")).toBeDisabled();
         await page.evaluate(() => window.hostFixture.previewColor()); await page.evaluate(() => window.hostFixture.providerCustom("fixture/state", {}));

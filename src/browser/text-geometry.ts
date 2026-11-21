@@ -26,15 +26,29 @@ export function rowGeometry(element: HTMLElement, from: number, revision: number
         styleKey = key;
         bounds = next; glyphs = new Map(); boxes = new Map(); raw = new Map(); prepared = false; corrected.clear();
     };
-    const locate = (offset: number): Readonly<{ node: Text; offset: number }> | undefined => {
-        for (const node of nodes) { if (offset <= node.length) return { node, offset }; offset -= node.length; } return undefined;
+    const hasMarkers = element.querySelector('[data-ornament="before"]') !== null;
+    const locate = (offset: number, after = false): Readonly<{ node: Text; offset: number }> | undefined => {
+        for (let i = 0; i < nodes.length; i++) {
+            const node = nodes[i]!;
+            if (offset < node.length || offset === node.length && (!after || i === nodes.length - 1)) return { node, offset };
+            offset -= node.length;
+        }
+        return undefined;
     };
-    const range = (start: number, end: number): Range | undefined => {
-        const a = locate(start), b = locate(end); if (!a || !b) return;
+    const range = (start: number, end: number, after = false): Range | undefined => {
+        // A swatch between text nodes takes up space but owns no source offsets. Measure
+        // a glyph from its own text node and retain both caret edges around the swatch.
+        const a = locate(start, hasMarkers && (start < end || after)), b = start === end ? a : locate(end); if (!a || !b) return;
         const value = nativeRange ??= owner.createRange(); value.setStart(a.node, a.offset); value.setEnd(b.node, b.offset); return value;
     };
     const collapsed = (offset: number): readonly DOMRect[] => {
-        let result = raw.get(offset); if (!result) { result = [...range(offset, offset)?.getClientRects() ?? []]; raw.set(offset, result); } return result;
+        let result = raw.get(offset);
+        if (!result) {
+            result = [...range(offset, offset)?.getClientRects() ?? []];
+            if (hasMarkers) result = [...result, ...range(offset, offset, true)?.getClientRects() ?? []];
+            raw.set(offset, result);
+        }
+        return result;
     };
     const measured = (index: number): readonly DOMRect[] => {
         let result = boxes.get(index); if (result) return result;

@@ -1,9 +1,8 @@
 import { createFindController, createRegexFindBackend } from "../../src/browser/index.ts";
 import type { TextEditor } from "../../src/browser/index.ts";
 import type { TabId, Workspace } from "../../src/index.ts";
-import type { EditingPresentation } from "../shared/language/presentation.ts";
 
-export function mountFindUI(workspace: Workspace, tab: TabId, editor: TextEditor, presentation: EditingPresentation) {
+export function mountFindUI(workspace: Workspace, tab: TabId, editor: TextEditor) {
     const owner = editor.element.ownerDocument;
     const find = createFindController(workspace, tab, editor, { regularExpressionBackend: createRegexFindBackend({ clock: owner.defaultView!,
         createWorker: () => new Worker("/regex-worker.js", { type: "module" }) }) }), listeners = new AbortController();
@@ -13,12 +12,10 @@ export function mountFindUI(workspace: Workspace, tab: TabId, editor: TextEditor
     const regularExpression = owner.getElementById("find-regex") as HTMLInputElement;
     const controls = ["find-next", "find-previous", "replace-current", "replace-all"].map(id => owner.getElementById(id) as HTMLButtonElement);
     const render = () => {
-        const state = find.getSnapshot(), changed = presentation.search?.revision !== state.revision || presentation.search.version !== state.matchesVersion;
-        presentation.search = { revision: state.revision, version: state.matchesVersion, matchesIn: (from, to) => find.matchesIn(from, to, state) };
+        const state = find.getSnapshot();
         owner.getElementById("find-status")!.textContent = state.message || (state.status === "searching" ? `Searching… ${state.count} matches` : `${state.count} matches · ${state.status}`);
         for (const control of controls) control.disabled = !state.count || !(state.status === "ready" || control.id !== "replace-all" && state.status === "searching" && state.retained);
         wholeWord.checked = state.wholeWord; matchCase.checked = state.matchCase; regularExpression.checked = state.regularExpression;
-        if (changed) editor.viewport.invalidate();
     };
     query.addEventListener("input", () => find.setQuery(query.value), { signal: listeners.signal });
     const optionsChanged = () => find.setFlags({ wholeWord: wholeWord.checked, matchCase: matchCase.checked, regularExpression: regularExpression.checked });
@@ -41,5 +38,5 @@ export function mountFindUI(workspace: Workspace, tab: TabId, editor: TextEditor
         } else if (event.key === "F3") { event.preventDefault(); find.next(event.shiftKey ? -1 : 1); }
     }, { signal: listeners.signal });
     const unsubscribe = find.subscribe(render); render();
-    return { find, dispose: () => { listeners.abort(); unsubscribe(); find.dispose(); presentation.search = undefined; } };
+    return { find, dispose: () => { listeners.abort(); unsubscribe(); find.dispose(); } };
 }

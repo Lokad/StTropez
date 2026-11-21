@@ -21,8 +21,6 @@ export class DemoPresentation {
     private readonly colors = new DemoSyntaxColors();
     readonly editing = new DemoEditingRules();
     private disposed = false;
-    search: Readonly<{ revision: number; version: number; matchesIn: (from: number, to: number) => readonly Readonly<{ from: number; to: number }>[] }> | undefined;
-    diagnostics: Readonly<{ documentId: string; revision: number; ranges: readonly Readonly<{ from: number; to: number }>[] }> | undefined;
     javascript = "";
     status: "starting" | "pending" | "ready" | "failed" = "starting";
     private readonly changed: () => void;
@@ -143,16 +141,7 @@ export class DemoPresentation {
             this.timer = window.setTimeout(() => { this.timer = undefined; this.upload(capture, job, to, end); }, 0);
         } catch { this.fail(); }
     }
-    readonly decorate = (line: PresentedLine): readonly InlineDecoration[] => {
-        const result = this.colors.decorate(line);
-        if (this.search?.revision === line.revision) for (const range of this.search.matchesIn(line.from, line.to)) {
-            if (range.from < line.to && range.to > line.from) result.push({ ...range, className: "demo-search" });
-        }
-        if (this.diagnostics?.documentId === line.documentId && this.diagnostics.revision === line.revision) for (const range of this.diagnostics.ranges) {
-            if (range.from < line.to && range.to > line.from) result.push({ ...range, className: "demo-diagnostic" });
-        }
-        return result;
-    };
+    readonly decorate = (line: PresentedLine): readonly InlineDecoration[] => this.colors.decorate(line);
     retry(): void {
         if (this.disposed || this.plain) return;
         this.cancelWork(); this.synchronized = undefined;
@@ -161,7 +150,7 @@ export class DemoPresentation {
     }
     dispose(): void {
         this.disposed = true; this.job++; this.cancelWork(); this.synchronized = undefined;
-        this.worker?.terminate(); this.worker = undefined; this.capture = undefined; this.colors.clear(); this.editing.clear(); this.search = undefined; this.diagnostics = undefined;
+        this.worker?.terminate(); this.worker = undefined; this.capture = undefined; this.colors.clear(); this.editing.clear();
         this.foldRanges = undefined; this.notify();
     }
 }

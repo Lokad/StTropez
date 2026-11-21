@@ -10,6 +10,7 @@ import type { SearchMatch, SearchStep } from "../core/search.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import { Store } from "../core/observable.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
+import type { DecorationLayers } from "./decoration-layers.ts";
 const literalBudget = Object.freeze({ units: 4096, matches: 1024, calls: 32 });
 export type FindFlags = Readonly<{ wholeWord?: boolean; matchCase?: boolean; regularExpression?: boolean }>;
 export type FindControllerOptions = Readonly<{ regularExpressionBackend?: FindBackend; regularExpressionDelayMs?: number }>;
@@ -17,6 +18,7 @@ type FindEvents = Pick<EventTarget, "addEventListener" | "removeEventListener">;
 /** View operations consumed by find. A mounted TextEditor satisfies this contract directly. */
 export type FindHost = Readonly<{
     view: DocumentView;
+    decorations?: DecorationLayers;
     element: Readonly<{ ownerDocument: FindEvents & Readonly<{ defaultView: Readonly<{
         performance: Pick<Performance, "now">;
         setTimeout: (work: () => void, delay: number) => number; clearTimeout: (timer: number) => void;
@@ -73,7 +75,15 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     const valid = () => !disposed && lease.active() && workspace.resolveTab(target) !== undefined && workspace.ownsDocumentView(editor.view)
         && workspace.observeDocument(documentId).getSnapshot() !== undefined && !editor.activity().disposed;
     const publish = (patch: FindPatch) => {
-        scope.publish(store, Object.freeze({ ...store.get(), ...patch }));
+        const previous = store.get(), next = Object.freeze({ ...previous, ...patch });
+        scope.publish(store, next);
+        if (next.matchesVersion !== previous.matchesVersion || next.revision !== previous.revision) layer?.invalidate();
+        else if (layer && next.current !== previous.current && valid()) {
+            const buffer = workspace.document(documentId).buffer;
+            for (const ordinal of [previous.current, next.current]) if (ordinal !== null && ordinal < matches.count) {
+                const range = matches.at(ordinal); layer.invalidate(buffer.lineAt(range.from), buffer.lineAt(range.to) + 1);
+            }
+        }
     };
     const stop = () => { generation++; runner.cancel();
         const active = cursor, plan = planCursor, authority = stopPlanAuthority; cursor = undefined; planCursor = undefined; stopPlanAuthority = undefined;
@@ -96,6 +106,16 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         if (to > state.length) throw new RangeError("Match range exceeds document length.");
         return matches.matchesIn(from, to);
     };
+    const layer = editor.decorations?.addProvider({ name: "find matches", order: 60, minimap: false, provide: line => {
+        const state = store.get();
+        if (!state.count || state.revision !== line.revision) return [];
+        const ranges = matchesIn(line.from, line.to);
+        // The half-open text query excludes a zero-width match at the last caret stop.
+        const end = line.from === line.to ? [] : matchesIn(line.to, line.to);
+        const selected = state.current === null ? undefined : matches.at(state.current);
+        return [...ranges, ...end].map(range => ({ ...range, className: "st-search-match",
+            ...(selected?.from === range.from && selected.to === range.to && { properties: { "--st-search-border": "var(--st-search-current-border, #ffe494)" } }) }));
+    } });
     const canEdit = () => { const state = resource.getSnapshot(); return !editor.input.readOnly && state.state === "ready" && state.metadata.capabilities.edit.includes("human") && state.metadata.editLock === null; };
     const observePlanAuthority = (token: number) => { stopPlanAuthority = resource.metadata.subscribe(() => {
         if (token !== generation || canEdit()) return;
@@ -358,5 +378,5 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
             if (!disposed && (wholeWord !== store.get().wholeWord || matchCase !== store.get().matchCase || regularExpression !== store.get().regularExpression)) restart(store.get().query, wholeWord, matchCase, regularExpression);
         },
         next, replaceCurrent, replaceAll, cancel: () => { scope.assertWritable(); if (!disposed) { stop(); reset({ status: "cancelled", reason: "cancelled", message: "Search cancelled." }); } },
-        dispose: () => { if (disposed) return; scope.assertWritable(); disposed = true; stop(); disposeBackends(); subscriptions.forEach(unsubscribe => unsubscribe()); lease.release(); reset({ status: "disposed", query: "", length: 0, reason: null, message: "" }); } });
+        dispose: () => { if (disposed) return; scope.assertWritable(); disposed = true; stop(); disposeBackends(); subscriptions.forEach(unsubscribe => unsubscribe()); layer?.dispose(); lease.release(); reset({ status: "disposed", query: "", length: 0, reason: null, message: "" }); } });
 }

@@ -16,12 +16,14 @@ const presentation = { primary: new EditingPresentation(), secondary: new Editin
 let failDecoration = false;
 const params = new URLSearchParams(location.search);
 const editors = { primary: mountTextEditor(pane("primary"), workspace, primaryTab, { ariaLabel: "Primary source", readOnly: params.has("readonly"),
-    pasteLineEndings: params.get("pasteLineEndings") === "preserve" ? "preserve" : "local", decorate: slice => {
+    pasteLineEndings: params.get("pasteLineEndings") === "preserve" ? "preserve" : "local" }),
+    secondary: mountTextEditor(pane("secondary"), workspace, secondaryTab, { ariaLabel: "Secondary source" }) };
+const primarySyntax = editors.primary.decorations.addProvider({ name: "syntax", order: 0, provide: slice => {
     if (failDecoration) { failDecoration = false; throw new Error("Fixture decoration failure"); }
     return presentation.primary.decorate(slice);
-} }),
-    secondary: mountTextEditor(pane("secondary"), workspace, secondaryTab, { ariaLabel: "Secondary source", decorate: presentation.secondary.decorate }) };
-const findUI = mountFindUI(workspace, primaryTab, editors.primary, presentation.primary);
+} });
+editors.secondary.decorations.addProvider({ name: "syntax", order: 0, provide: presentation.secondary.decorate });
+const findUI = mountFindUI(workspace, primaryTab, editors.primary);
 const listeners = new AbortController(); let disposed = false;
 let foldingController: FoldingController | undefined;
 const conflicts: InputConflictDetail[] = [];
@@ -42,7 +44,7 @@ const status = () => { const current = workspace.document(source.documentId); pa
 const unsubscribe = workspace.observeDocument(source.documentId).subscribe(status); status();
 const fixture = { ready: true, setText, edit, select, history,
     get settled() { return !disposed && editorSettled(editors.primary) && editorSettled(editors.secondary); },
-    failNextDecoration: () => { failDecoration = true; editors.primary.viewport.invalidate(); },
+    failNextDecoration: () => { failDecoration = true; primarySyntax.invalidate(); },
     captureInsertion: () => editors.primary.captureInsertion(),
     registerEditTransform: (transform: TextEditorEditTransform) => editors.primary.registerEditTransform(transform),
     discoverFolds: (discover: FoldDiscovery) => { foldingController?.dispose(); foldingController = createFoldingController(workspace, primaryTab, editors.primary, discover, { delayMs: 0 }); },

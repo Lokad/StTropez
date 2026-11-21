@@ -96,7 +96,7 @@ export class ViewBindings {
             const view = this.retainedView("comparison", this.controller.source.documentId);
             const presentation = new EditingPresentation(), referencePresentation = new EditingPresentation();
             const review = mountTextComparison(host, this.controller.workspace, this.controller.viewTab("primary"),
-                baseline, { ariaLabel: "Source review", view, requestLine: linePrompt(host.ownerDocument), scrollLinked: this.reviewScrollLinked, rowsAligned: this.reviewRowsAligned, workingDecorate: presentation.decorate, baselineDecorate: referencePresentation.decorate });
+                baseline, { ariaLabel: "Source review", view, requestLine: linePrompt(host.ownerDocument), scrollLinked: this.reviewScrollLinked, rowsAligned: this.reviewRowsAligned });
             this.review = review;
             scope.defer(() => { if (this.review === review) this.review = undefined; review.dispose(); });
             const saveTarget = this.controller.workspace.captureTab(this.controller.viewTab("primary"));
@@ -111,6 +111,7 @@ export class ViewBindings {
                 detachReferenceFind?.(); detachReferenceFind = undefined; referencePresentation.clear();
                 const value = reviewReference.getSnapshot();
                 if (value) {
+                    value.editor.decorations.addProvider({ name: "syntax", order: 0, provide: referencePresentation.decorate });
                     const reference = review.controller.getSnapshot().baseline!;
                     detachReferenceFind = this.language.attachReferenceFind("reference", value.target, value.editor, referencePresentation, reference, saveTarget, resumeReferenceFind);
                     resumeReferenceFind = false;
@@ -313,7 +314,7 @@ export class ViewBindings {
                 const presentation = new EditingPresentation();
                 const surface = id === "primary" && this.editor === "candidate" ? host.ownerDocument.createElement("div") : host;
                 if (surface !== host) { surface.className = "host-instruction-source"; host.append(surface); scope.defer(() => surface.remove()); }
-                const candidate = this.editor === "candidate" ? mountTextEditor(surface, workspace, tabId, { ariaLabel, view, decorate: presentation.decorate, requestLine: linePrompt(surface.ownerDocument) }) : undefined;
+                const candidate = this.editor === "candidate" ? mountTextEditor(surface, workspace, tabId, { ariaLabel, view, requestLine: linePrompt(surface.ownerDocument) }) : undefined;
                 const mounted: BoundEditor = candidate ? { element: candidate.input, view, captureView: candidate.captureView,
                     restoreView: candidate.restoreView, dispose: candidate.dispose,
                     metrics: () => ({ ...candidate.snapshot(), viewport: candidate.viewport.snapshot() }) }
@@ -336,6 +337,7 @@ export class ViewBindings {
         };
     }
     private attachTools(scope: CleanupScope, id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): void {
+        editor.decorations.addProvider({ name: "syntax", order: 0, provide: presentation.decorate });
         for (const tool of this.tools) scope.defer(tool.attach(id, tab, editor, presentation));
     }
     private detach(id: string): void {

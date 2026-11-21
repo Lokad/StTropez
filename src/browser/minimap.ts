@@ -1,8 +1,8 @@
 import type { ComparisonRowIndex } from "../core/comparison-rows.ts";
 import type { FoldIndex } from "../core/folding.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
-import { decorationParts, validDecorationClass } from "./decoration-parts.ts";
-import type { LineClass, LineDecorator, PresentedLine } from "./viewport.ts";
+import { applyDecorationProperties, decorationParts } from "./decoration-parts.ts";
+import type { InlineDecoration, LineClass, LineDecorator, PresentedLine } from "./viewport.ts";
 
 type Overview = Readonly<{ document: DocumentSnapshot; index: FoldIndex | ComparisonRowIndex;
     width: number; height: number; scale: number; lineHeight: number; padding: number; pixelRatio: number; tabSize: number; color: string }>;
@@ -29,13 +29,15 @@ function paintThumbnail(canvas: HTMLCanvasElement, probe: HTMLElement, view: Ove
     const advance = ink.measureText("M").width, sx = cellWidth / advance, sy = pitch / 11;
     ink.setTransform(view.pixelRatio * sx, 0, 0, view.pixelRatio * sy, 0, 0);
     const palette = new Map<string, { color: string; background: string }>();
-    function style(name: string) {
-        let result = palette.get(name);
+    function style(name: string, properties?: InlineDecoration["properties"]) {
+        const key = properties ? JSON.stringify([name, properties]) : name;
+        let result = palette.get(key);
         if (!result) {
             probe.className = name;
+            if (properties) applyDecorationProperties(probe, properties);
             const css = win.getComputedStyle(probe);
             result = { color: css.color, background: css.backgroundColor };
-            probe.removeAttribute("class"); palette.set(name, result);
+            probe.removeAttribute("class"); if (properties) probe.removeAttribute("style"); palette.set(key, result);
         }
         return result;
     }
@@ -48,13 +50,14 @@ function paintThumbnail(canvas: HTMLCanvasElement, probe: HTMLElement, view: Ove
             sample++;
             const line = excerpt(view, row); if (!line) continue;
             const label = lineClass?.(line);
-            if (label && validDecorationClass(label)) {
+            if (label) {
                 ink.fillStyle = style(label).background; ink.fillRect(0, y, view.width / sx, pitch / sy);
             }
             const parts = decorationParts(line.text, line.from, line.to, view.document.buffer.length, decorate?.(line), []);
             let column = 0;
             for (const part of parts) {
-                ink.fillStyle = part.className ? style(part.className).color : view.color;
+                if (part.ornament) continue;
+                ink.fillStyle = part.className ? style(part.className, part.properties).color : view.color;
                 const runs = part.text.split("\t");
                 for (let i = 0; i < runs.length; i++) {
                     if (i) column += view.tabSize - column % view.tabSize;

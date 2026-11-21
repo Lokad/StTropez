@@ -32,7 +32,7 @@ test("Find toggles regex on the existing query and replaces captured groups in o
     await expect(mode).toHaveAttribute("aria-pressed", "false"); await expect(status).toHaveText("0 matches");
     await mode.press("Enter"); await expect(mode).toHaveAttribute("aria-pressed", "true"); await expect(query).toBeFocused();
     await expect(status).toHaveText("2 matches");
-    await expect(page.locator("#editor .st-viewport-row").filter({ has: page.locator(".demo-search") })).toHaveCount(2);
+    await expect(page.locator("#editor .st-viewport-row").filter({ has: page.locator(".st-search-match") })).toHaveCount(2);
     const selected = () => source.evaluate(node => { const input = node as HTMLTextAreaElement; return input.value.slice(input.selectionStart, input.selectionEnd); });
     await page.keyboard.press("Enter"); await expect.poll(selected).toBe("quantity: 2"); await expect(query).toBeFocused();
     await page.keyboard.press("Shift+Enter"); await expect.poll(selected).toBe("quantity: 4"); await expect(query).toBeFocused();
@@ -90,7 +90,7 @@ test("a pending regex search allows large-file scrolling and typing and expires 
         await new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done())));
     });
     await expect(page.locator("#find-status")).toHaveText("2 matches");
-    await expect(page.locator("#editor .demo-search")).toHaveText(["row", "row"]);
+    await expect(page.locator("#editor .st-search-match")).toHaveText(["row", "row"]);
 });
 
 test("minimap shows compact colored code and previews the destination before a jump", async ({ page, baseURL }, info) => {
@@ -429,9 +429,9 @@ test("large browser-only sample keeps scroll content, editing/history and langua
     expect(await viewport.evaluate(root => root.scrollTop)).toBe(sourceTop);
     await page.locator("#find-toggle").click(); await page.locator("#find-query").fill("Row");
     await expect(page.locator("#find-status")).toHaveText("100000 matches");
-    await expect.poll(() => page.locator("#editor .demo-search").count()).toBeGreaterThan(0);
+    await expect.poll(() => page.locator("#editor .st-search-match").count()).toBeGreaterThan(0);
     expect(await viewport.evaluate(root => root.scrollTop)).toBe(sourceTop);
-    await page.locator("#find-close").click(); await expect(page.locator("#editor .demo-search")).toHaveCount(0);
+    await page.locator("#find-close").click(); await expect(page.locator("#editor .st-search-match")).toHaveCount(0);
     await source.press("Control+End"); await source.pressSequentially("\nMath.ma");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await source.press("Escape"); await source.press("Control+Space"); await expect(page.getByRole("option", { name: "max", exact: true })).toBeVisible();

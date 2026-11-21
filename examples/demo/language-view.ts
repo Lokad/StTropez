@@ -1,5 +1,5 @@
 import { createLspEditor, createLspHighlightController } from "../../src/browser/index.ts";
-import type { TextEditor, InlineDecoration, PresentedLine, LspEditorController, LspHighlightController } from "../../src/browser/index.ts";
+import type { TextEditor, LspEditorController, LspHighlightController } from "../../src/browser/index.ts";
 import type { Workspace } from "../../src/index.ts";
 import type { DemoFile } from "./project.ts";
 import type { DemoLanguage } from "./language.ts";
@@ -80,7 +80,15 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
                 scope.defer(() => controller!.dispose());
                 highlights = createLspHighlightController(workspace, file.tab, editor, { provider });
                 scope.defer(() => highlights!.dispose());
-                scope.defer(highlights.subscribe(() => editor.viewport.invalidate()));
+                const occurrences = editor.decorations.add({ name: "occurrences", order: 20, minimap: false });
+                scope.defer(occurrences.dispose);
+                scope.defer(highlights.subscribe(() => {
+                    const state = highlights!.getSnapshot();
+                    if (valid() && state.items.length) occurrences.set(state.revision, state.items.map(item => ({
+                        from: item.from, to: item.to, className: `demo-occurrence-${item.kind}`
+                    })));
+                    else occurrences.clear();
+                }));
                 inspection = mountDemoInspection(scope, workspace, file, editor, provider, valid, () => !!controller?.getSnapshot().choices.length || !!symbols?.isOpen() || !!actions?.isOpen(),
                     () => controller?.cancel(), () => { symbols?.dismiss(); actions?.dismiss(); });
                 symbols = mountDemoSymbols(scope, workspace, files, file, editor, provider, valid, () => { controller?.cancel(); inspection?.dismiss(); actions?.dismiss(); }, open);
@@ -94,11 +102,6 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         return Object.freeze({ complete: () => { actions?.dismiss(); symbols?.dismiss(); inspection?.dismiss(); editor.focus(); controller?.request(); }, inspect: () => inspection?.inspect(), signature: () => inspection?.signature(),
             definition: () => symbols?.definition(), references: () => symbols?.references(), rename: () => symbols?.rename(),
             quickfix: () => actions?.request(),
-            decorate: (line: PresentedLine): readonly InlineDecoration[] => {
-                const state = highlights?.getSnapshot();
-                if (!valid() || state?.documentId !== line.documentId || state.revision !== line.revision) return [];
-                return highlights!.intersect(line.from, line.to).map(item => ({ from: item.from, to: item.to, className: `demo-occurrence-${item.kind}` }));
-            },
             dispose });
     } catch (error) { disposed = true; return scope.rollback(error); }
 }

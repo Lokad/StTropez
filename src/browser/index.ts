@@ -2,6 +2,7 @@ export type { ViewState } from "./view-state.ts";
 export { inputConflictEvent } from "./input-conflict.ts";
 export type { InputConflictDetail } from "./input-conflict.ts";
 export { mountTextViewport } from "./viewport.ts";
+export type { DecorationLayer, DecorationLayerOptions, DecorationLayers, DecorationProvider } from "./decoration-layers.ts";
 export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RenderedRowBounds, RevealOptions, TextViewport, TextViewportOptions, ViewportActivity, ViewportSnapshot, ViewportInputBinding } from "./viewport.ts";
 export { mountTextEditor } from "./text-editor.ts";
 export type { BracketHighlights, BracketHighlightSnapshot } from "./bracket-highlights.ts";

@@ -7,7 +7,7 @@ import { createCooperativeRunner } from "./cooperative-runner.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DocumentId, DocumentView, TabId, Workspace } from "../core/workspace.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
-import type { InlineDecoration, PresentedLine, TextViewport } from "./viewport.ts";
+import type { InlineDecoration, TextViewport } from "./viewport.ts";
 
 export type BracketHighlightSnapshot = Readonly<{ status: "disabled" | "idle" | "pending" | "ready" | "failed" | "disposed";
     documentId: DocumentId; revision: number; caret: number | null; result: BracketMatchResult | null; failure: string | null;
@@ -27,7 +27,8 @@ export function mountBracketHighlights(workspace: Workspace, tabId: TabId, view:
     let events: AbortController | undefined;
     const stops: (() => void)[] = [];
     type Job = { cursor: BracketMatchCursor; current: () => boolean; revision: number; caret: number; running: boolean };
-    let job: Job | undefined, current: (() => boolean) | undefined, decorations = empty, first = empty, second = empty;
+    let job: Job | undefined, current: (() => boolean) | undefined, decorations = empty;
+    const layer = viewport.decorations.add({ name: "matching brackets", order: 100, minimap: false });
     const focused = () => isFocused(input);
     const available = () => !disposed && !!limits && !input.disabled && workspace.ownsDocumentView(view) && !!workspace.resolveTab(target) && focused();
     function cursor(buffer: TextBuffer, at: number): BracketMatchCursor {
@@ -40,8 +41,8 @@ export function mountBracketHighlights(workspace: Workspace, tabId: TabId, view:
         const next = result?.kind === "matched" ? [result.at!, result.match!].sort((a, b) => a - b)
             .map(from => Object.freeze({ from, to: from + 1, className: "st-matching-bracket" })) : empty;
         if (next.length !== decorations.length || next.some((range, index) => range.from !== decorations[index]!.from)) {
-            decorations = Object.freeze(next); first = decorations.length ? Object.freeze([decorations[0]!]) : empty;
-            second = decorations.length ? Object.freeze([decorations[1]!]) : empty; viewport.invalidate();
+            decorations = Object.freeze(next);
+            if (decorations.length) layer.set(revision, decorations); else layer.clear();
         }
         const before = cell.get(), failure = progress?.failure ?? null;
         if (before.status === status && before.revision === revision && before.caret === caret && before.result === result && before.failure === failure) return;
@@ -103,10 +104,5 @@ export function mountBracketHighlights(workspace: Workspace, tabId: TabId, view:
         refresh: () => { notifications.assertWritable(); refresh(true); } });
     configure(initial);
     return Object.freeze({ handle, cursor, refresh: observed,
-        decorate: (line: PresentedLine): readonly InlineDecoration[] => {
-            if (line.documentId !== documentId || line.revision !== cell.get().revision || !decorations.length) return empty;
-            const left = decorations[0]!.from >= line.from && decorations[0]!.to <= line.to, right = decorations[1]!.from >= line.from && decorations[1]!.to <= line.to;
-            return left ? right ? decorations : first : right ? second : empty;
-        },
-        dispose: () => { if (disposed) return; disposed = true; current = undefined; cancel(); events?.abort(); stops.splice(0).forEach(stop => stop()); matcher = undefined; language = undefined; publish("disposed"); } });
+        dispose: () => { if (disposed) return; disposed = true; current = undefined; cancel(); events?.abort(); stops.splice(0).forEach(stop => stop()); matcher = undefined; language = undefined; publish("disposed"); layer.dispose(); } });
 }

@@ -61,7 +61,9 @@ notice.
 | `cancel()` | Clears the index; later typing does not resume the cancelled search |
 | `dispose()` | Releases work, subscriptions, focus tracking, backend and resource lease |
 
-`matchesIn(from, to, capture?)` returns frozen, unclipped UTF-16 ranges intersecting `[from, to)`.
+Find paints matches on its editor and outlines the current match. Style them with
+`--st-search-match`, `--st-search-border` and `--st-search-current-border`. A zero-width match
+has a short mark at its offset. `matchesIn(from, to, capture?)` returns frozen, unclipped UTF-16 ranges intersecting `[from, to)`.
 Point matches count at `from` and are excluded at `to`. An empty interval returns a point match at
 that offset, including EOF. Use ordered, nonnegative safe integers within the document.
 

@@ -1,15 +1,14 @@
 import { createFoldRegions, createSelectionSet, FoldIndex } from "../../src/index.ts";
 import type { DocumentId, DocumentView, FoldRange, FoldingSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, TextEditor } from "../../src/browser/index.ts";
-import { DomainAnnotationIndex, FixtureDomainProvider, validateDomainResult } from "../../fixtures/language/domain.ts";
+import type { CapturedViewRequest, DecorationLayer, TextEditor } from "../../src/browser/index.ts";
+import { FixtureDomainProvider, validateDomainResult } from "../../fixtures/language/domain.ts";
 import type { DomainAnnotation, DomainInput, DomainProvider } from "../../fixtures/language/domain.ts";
-import type { EditingPresentation } from "../shared/language/presentation.ts";
 import { HostCell } from "../shared/observable.ts";
 
 type OwnedFold = { id: string; from: number; to: number };
-type ViewData = { revision: number; owned: Map<string, OwnedFold>; annotations: readonly DomainAnnotation[]; index: DomainAnnotationIndex };
-type Session = { token: string; id: string; editor: TextEditor; target: TabTarget; presentation: EditingPresentation; data: ViewData };
+type ViewData = { revision: number; owned: Map<string, OwnedFold>; annotations: readonly DomainAnnotation[] };
+type Session = { token: string; id: string; editor: TextEditor; target: TabTarget; layer: DecorationLayer; data: ViewData };
 type Job = { session: Session; input: DomainInput; folds: FoldingSnapshot; capture: CapturedViewRequest | undefined; authority: string; lease: ResourceLease | undefined; abort: AbortController; timeout: number; invalid: boolean };
 export type DomainSnapshot = Readonly<{ available: boolean; editable: boolean; view: string | null; token: string | null; revision: number | null;
     status: "idle" | "running" | "ready" | "applied" | "cancelled" | "failed"; message: string; work: number; total: number; pendingView: string | null;
@@ -63,24 +62,28 @@ export class HostDomainTools {
             if (!current || !changed && (current.from !== owned.from || current.to !== owned.to)) session.data.owned.delete(key);
             else { owned.from = current.from; owned.to = current.to; }
         }
-        if (changed) { session.data.revision = revision; session.data.annotations = noAnnotations; session.data.index = new DomainAnnotationIndex(noAnnotations); }
-        session.presentation.domain = { revision, index: session.data.index };
-        if (changed) session.editor.viewport.invalidate();
+        if (changed) { session.data.revision = revision; session.data.annotations = noAnnotations; session.layer.clear(); }
         if (this.active === session) this.publish();
     }
-    attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void {
+    attach(id: string, tab: TabId, editor: TextEditor): () => void {
         const token = `domain-session-${this.workspace.allocateIdentity()}`, revision = this.workspace.document(editor.view.documentId).revision;
-        const data = this.data.get(editor.view) ?? { revision, owned: new Map<string, OwnedFold>(), annotations: noAnnotations, index: new DomainAnnotationIndex(noAnnotations) };
-        this.data.set(editor.view, data); const session = { token, id, editor, presentation, data, target: this.workspace.captureTab(tab) }, listeners = new AbortController(); this.sessions.set(token, session);
+        const data = this.data.get(editor.view) ?? { revision, owned: new Map<string, OwnedFold>(), annotations: noAnnotations };
+        const layer = editor.decorations.add({ name: "domain annotations", order: 30 });
+        this.data.set(editor.view, data); const session = { token, id, editor, layer, data, target: this.workspace.captureTab(tab) }, listeners = new AbortController(); this.sessions.set(token, session);
         const changed = () => { this.sync(session); if (this.job?.session === session && !this.current(this.job)) this.invalidate(this.job); };
         const stops = [this.workspace.observeDocument(editor.view.documentId).subscribe(changed), editor.view.folding.subscribe(changed), this.workspace.tabState.subscribe(changed), this.workspace.resourceForDocument(editor.view.documentId).metadata.subscribe(changed)];
         editor.input.addEventListener("focus", () => { this.active = session; this.sync(session); }, { signal: listeners.signal });
         for (const event of ["compositionstart", "beforeinput", "paste", "cut"] as const) editor.input.addEventListener(event, () => {
             if (this.job?.session.editor.view.documentId === editor.view.documentId) this.cancel();
         }, { signal: listeners.signal });
-        this.sync(session); if (data.annotations.length) editor.viewport.invalidate(); let detached = false;
+        this.sync(session); this.showAnnotations(session); let detached = false;
         return () => { if (detached) return; detached = true; if (this.job?.session === session) this.cancel(); listeners.abort(); stops.forEach(stop => stop()); this.sessions.delete(token);
-            presentation.domain = undefined; if (this.active === session) { this.active = undefined; this.publish(); } };
+            layer.dispose(); if (this.active === session) { this.active = undefined; this.publish(); } };
+    }
+    private showAnnotations(session: Session): void {
+        session.layer.set(session.data.revision, session.data.annotations.map(note => ({
+            from: note.from, to: note.to, className: "st-domain-note", afterLine: note.label
+        })));
     }
     private guard(session: Session | undefined): session is Session {
         if (!session || !this.available(session)) { this.publish({ message: "Focus an available candidate source view." }); return false; }
@@ -150,11 +153,11 @@ export class HostDomainTools {
                     let id = session.data.owned.get(fold.id)?.id; if (!id) { do { id = `host-domain-${++this.foldSerial}`; } while (ids.has(id)); ids.add(id); }
                     next.set(fold.id, { id, from: fold.from, to: fold.to }); ranges.push({ ...fold, id });
                 }
-                const normalized = createFoldRegions(document.buffer, ranges, job.folds.regions), index = new DomainAnnotationIndex(result.annotations);
+                const normalized = createFoldRegions(document.buffer, ranges, job.folds.regions);
                 if (!session.editor.view.folding.setRanges(job.folds, normalized)) throw new Error("Domain fold capture expired.");
                 if (!this.available(session)) return;
-                session.data.owned = next; session.data.annotations = result.annotations; session.data.index = index; session.presentation.domain = { revision: document.revision, index };
-                session.editor.viewport.invalidate(); this.metrics.applied++; this.release(job); this.publish({ status: "ready", message: `Discovered ${result.folds.length} domain regions in ${session.id}.` });
+                session.data.owned = next; session.data.annotations = result.annotations; this.showAnnotations(session);
+                this.metrics.applied++; this.release(job); this.publish({ status: "ready", message: `Discovered ${result.folds.length} domain regions in ${session.id}.` });
             }
         }).catch(error => {
             if (this.job !== job) return; this.metrics.invalid++; this.release(job);

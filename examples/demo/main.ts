@@ -1,5 +1,5 @@
 import { mountTextEditor, mountTextComparison, createFindController, createRegexFindBackend, createFoldingController } from "../../src/browser/index.ts";
-import type { TextEditor, FindController, TextComparison, FoldingController, PresentedLine } from "../../src/browser/index.ts";
+import type { TextEditor, FindController, TextComparison, FoldingController, DecorationLayer, DecorationProvider } from "../../src/browser/index.ts";
 import { discoverIndentationFolds } from "../../src/index.ts";
 import { DemoProject } from "./project.ts";
 import { linePrompt } from "../shared/line-prompt.ts";
@@ -54,16 +54,14 @@ function configurePresentation(view: TextEditor | undefined): void {
     view.viewport.configureMinimap(field("view-minimap").checked);
 }
 let referencePresentation: DemoPresentation | undefined;
+let syntaxLayer: DecorationProvider | undefined, diagnosticsLayer: DecorationLayer | undefined;
+let paintedDiagnostics: unknown;
 let problemPage = 0, problemBatch: unknown;
 function refreshBrackets(captured: TextEditor | undefined) {
     // Plain-source notifications may run inside a Workspace publication; retain the owning view.
     if (captured) queueMicrotask(() => { if (!captured.activity().disposed) captured.bracketMatching.refresh(); });
 }
-const presentation = new DemoPresentation(() => { editor?.viewport.invalidate(); if (presentation.status === "ready") refreshBrackets(editor); renderOutput(); renderMetadata(); });
-function decorateWorking(line: PresentedLine) {
-    const decorations = presentation.decorate(line);
-    return [...(project?.sample.id === "host" ? hostDecorations(line) : []), ...decorations, ...(languageView?.decorate(line) ?? [])];
-}
+const presentation = new DemoPresentation(() => { syntaxLayer?.invalidate(); if (presentation.status === "ready") refreshBrackets(editor); renderOutput(); renderMetadata(); });
 const indentation = element("indentation") as HTMLSelectElement;
 function editingConfiguration(rules = presentation.editing) {
     const config = rules.configuration(indentation.value === "2" ? 2 : 4, indentation.value !== "tabs");
@@ -183,7 +181,7 @@ function renderLanguage(): void {
     if (plain) {
         element("language-status").textContent = project.sample.id === "host" ? "Host language · no language server" : "Host outline · no language server"; element("language-retry").hidden = true;
         document.querySelector<HTMLButtonElement>('[data-panel="problems"]')!.textContent = "Problems";
-        presentation.diagnostics = undefined; renderProblems(); return;
+        diagnosticsLayer?.clear(); renderProblems(); return;
     }
     const state = project.language.state.getSnapshot();
     element("language-status").textContent = languageViewFailure ? "Language controls unavailable" : state.status === "failed" ? "Language service unavailable" : state.status === "starting" ? "Starting language service…"
@@ -193,11 +191,11 @@ function renderLanguage(): void {
     element("language-status").title = languageViewFailure ? "The language controls could not open. Your files are retained." : state.message;
     const problems = document.querySelector<HTMLButtonElement>('[data-panel="problems"]')!;
     problems.textContent = state.diagnostics.length ? `Problems (${state.diagnostics.length})` : "Problems";
-    if (active) {
+    if (active && diagnosticsLayer && paintedDiagnostics !== state.diagnostics) {
         const revision = project.workspace.document(active.resource.documentId).revision;
-        presentation.diagnostics = { documentId: active.resource.documentId, revision,
-            ranges: state.diagnostics.filter(problem => problem.documentId === active!.resource.documentId && problem.revision === revision) };
-        editor?.viewport.invalidate();
+        const ranges = state.diagnostics.filter(problem => problem.documentId === active!.resource.documentId && problem.revision === revision);
+        diagnosticsLayer.set(revision, ranges.map(({ from, to }) => ({ from, to, className: "demo-diagnostic" })));
+        paintedDiagnostics = state.diagnostics;
     }
     renderProblems();
 }
@@ -249,7 +247,7 @@ function detachView(): void {
     stopView?.(); stopView = undefined; stopFind?.(); stopFind = undefined;
     viewListeners?.abort(); viewListeners = undefined;
     stopRender?.(); stopRender = undefined;
-    find?.dispose(); find = undefined; presentation.search = undefined;
+    find?.dispose(); find = undefined; syntaxLayer = undefined; diagnosticsLayer = undefined; paintedDiagnostics = undefined;
     if (comparison) comparison.dispose(); else editor?.dispose();
     comparison = undefined; editor = undefined; reviewLabel = undefined;
     element("editor").replaceChildren(); element("panel-content").replaceChildren();
@@ -294,8 +292,7 @@ function mountFile(file: DemoFile, focus = false): void {
     const surface = demoSurface(element(panel === "changes" ? "panel-content" : "editor"), project.sample.id === "host");
     if (panel === "changes") {
         comparison = mountTextComparison(surface, project.workspace, file.tab, project.baseline(file),
-            { view: file.view, workingDecorate: decorateWorking,
-                baselineDecorate: line => project?.sample.id === "host" ? hostDecorations(line) : referencePresentation?.decorate(line) ?? [], requestLine: linePrompt(document), scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
+            { view: file.view, requestLine: linePrompt(document), scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
         const labels = document.createElement("div"); labels.className = "demo-review-labels";
         const savedLabel = document.createElement("span"), workingLabel = document.createElement("span");
         reviewLabel = savedLabel;
@@ -310,10 +307,12 @@ function mountFile(file: DemoFile, focus = false): void {
             referencePresentation?.dispose(); referencePresentation = undefined;
             const reference = comparison?.reference.getSnapshot(); if (!reference) return;
             const plain = hostLanguage();
+            let tokens: DecorationProvider | undefined;
             const syntax: DemoPresentation | undefined = plain ? undefined : new DemoPresentation(() => {
-                reference.editor.viewport.invalidate(); if (syntax?.status === "ready") refreshBrackets(reference.editor); renderMetadata();
+                tokens?.invalidate(); if (syntax?.status === "ready") refreshBrackets(reference.editor); renderMetadata();
             }, { emit: false, folds: true });
             referencePresentation = syntax;
+            if (syntax || project?.sample.id === "host") tokens = reference.editor.decorations.addProvider({ name: "syntax", order: 0, provide: syntax?.decorate ?? hostDecorations });
             reference.editor.configureLanguage(editingConfiguration(syntax?.editing)); reference.editor.bracketMatching.configure(true);
             reference.editor.characterWarnings.configure(field("character-warnings").checked);
             configurePresentation(reference.editor);
@@ -331,9 +330,11 @@ function mountFile(file: DemoFile, focus = false): void {
         stopReference = () => { referenceSyncActive = false; unsubscribeReference(); }; configureReference();
     } else {
         editor = mountTextEditor(surface, project.workspace, file.tab,
-            { view: file.view, ariaLabel: file.name, decorate: decorateWorking, requestLine: linePrompt(document) });
+            { view: file.view, ariaLabel: file.name, requestLine: linePrompt(document) });
         renderProblems();
     }
+    syntaxLayer = editor.decorations.addProvider({ name: "syntax", order: 0, provide: project.sample.id === "host" ? hostDecorations : presentation.decorate });
+    diagnosticsLayer = editor.decorations.add({ name: "diagnostics", order: 40 });
     editor.configureLanguage(editingConfiguration());
     editor.bracketMatching.configure(true);
     editor.characterWarnings.configure(field("character-warnings").checked); element("character-warning-details").replaceChildren();
@@ -360,13 +361,11 @@ function mountFile(file: DemoFile, focus = false): void {
     find.setFlags({ matchCase: false, regularExpression: button("find-regex").getAttribute("aria-pressed") === "true" });
     const capturedFind = find;
     const renderFind = () => {
-        const snapshot = capturedFind.getSnapshot(), previous = presentation.search;
-        presentation.search = { revision: snapshot.revision, version: snapshot.matchesVersion, matchesIn: (from, to) => capturedFind.matchesIn(from, to, snapshot) };
+        const snapshot = capturedFind.getSnapshot();
         element("find-status").textContent = snapshot.message || `${snapshot.status === "searching" ? "Searching… " : ""}${snapshot.count} matches`;
         const hasMatches = !file.readOnly && snapshot.count > 0;
         button("replace-all").disabled = !(hasMatches && snapshot.status === "ready");
         button("replace-current").disabled = !(hasMatches && (snapshot.status === "ready" || snapshot.status === "searching" && snapshot.retained));
-        if (previous?.revision !== snapshot.revision || previous.version !== snapshot.matchesVersion) editor?.viewport.invalidate();
     };
     stopFind = find.subscribe(renderFind); renderFind();
     if (!element("find-bar").hidden) find.setQuery(field("find-query").value);

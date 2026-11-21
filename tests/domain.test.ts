@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer, createFoldRegions } from "../src/index.ts";
-import { DomainCursor, DomainAnnotationIndex, FixtureDomainProvider, domainLimits, validateDomainResult } from "../fixtures/language/domain.ts";
+import { DomainCursor, FixtureDomainProvider, domainLimits, validateDomainResult } from "../fixtures/language/domain.ts";
 import type { DomainInput, DomainResult } from "../fixtures/language/domain.ts";
 
 const input = (text: string, kind: DomainInput["kind"] = "analyze"): DomainInput => ({ id: 7, revision: 3, buffer: TextBuffer.from(text), kind, module: "catalogue" });
@@ -36,8 +36,6 @@ test("captured import policy preserves BOM and first line ending, is idempotent 
 test("whole domain reply validation rejects stale captures, malformed final annotations and edits", () => {
     const capture = input("// #region a A\nx\n// #endregion a"), good = run(capture);
     for (const value of [{ ...good, revision: 4 }, { ...good, folds: [...good.folds, good.folds[0]] }, { ...good, annotations: [...good.annotations, { id: "bad", from: 0, to: 999, label: "bad" }] }, { ...good, edits: [{ from: 0, to: 0, insert: "x" }] }, { ...good, edits: [{ from: NaN, to: 0, insert: "x" }] }, { ...good, edits: [{ from: 0, to: 0, insert: "x".repeat(domainLimits.resultTextUnits + 1) }] }]) assert.throws(() => validateDomainResult(value, capture));
-    const index = new DomainAnnotationIndex(Array.from({ length: 100 }, (_, i) => ({ id: String(i), from: i, to: 150 - i, label: String(i) })));
-    assert.equal(index.query(60, 61).length, 61); assert.equal(index.query(0, 150, 7).length, 7); assert.equal(index.query(150, 200).length, 0);
 });
 test("actual deferred provider cancels cooperatively and explicitly permits a late reply for rejection tests", async () => {
     const provider = new FixtureDomainProvider(); provider.delay = 0; const abort = new AbortController();

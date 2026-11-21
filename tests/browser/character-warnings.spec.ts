@@ -32,8 +32,8 @@ async function fixture(page: Page, text = "a\u00a0b\u200bc", enabled = false) {
         try { mountTextEditor(host, workspace, tab, { characterWarnings: { allow: ["two"] } }); throw new Error("Invalid allow-list accepted."); }
         catch (error) { if (!(error instanceof TypeError)) throw error; }
         if (workspace.diagnostics().views !== before.views || host.childNodes.length) throw new Error("Invalid mount leaked a view or DOM.");
-        const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Warning source", characterWarnings: enabled,
-            decorate: line => [{ from: line.from, to: line.to, className: "fixture-color" }] });
+        const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Warning source", characterWarnings: enabled });
+        editor.decorations.addProvider({ name: "syntax", order: 0, provide: line => [{ from: line.from, to: line.to, className: "fixture-color" }] });
         window.warningFixture = { workspace, editor, tab, resource: resource.id, host,
             set: (text, caret = 0) => { const document = workspace.document(resource.documentId);
                 const result = workspace.edit({ documentId: resource.documentId, expectedRevision: document.revision, origin: "host", view: editor.view,

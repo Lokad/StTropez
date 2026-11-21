@@ -20,7 +20,8 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
         const tab = workspace.open({ kind: "text", documentId: source.documentId }, "paint"), host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
         let calls = 0, notices = 0, shade = "paint-a";
-        const { viewport, setComparisonRows } = mountViewport(host, workspace, tab, { decorate: line => { calls++; return [{ from: line.from, to: line.to, className: shade }]; } });
+        const { viewport, setComparisonRows } = mountViewport(host, workspace, tab);
+        viewport.decorations.addProvider({ name: "syntax", order: 0, provide: line => { calls++; return [{ from: line.from, to: line.to, className: shade }]; } });
         viewport.onRender(() => notices++);
         const input = viewport.bindInput(() => {});
         const observer = new MutationObserver(() => {}); observer.observe(viewport.element, { subtree: true, childList: true, attributes: true, characterData: true });

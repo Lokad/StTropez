@@ -29,7 +29,6 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .st-token-keyword { color: #a9c5ff; }
 .st-token-number { color: #b9e29e; }
 .st-token-comment { color: #b5bbc7; }
-.st-search-match { background: #5c4719; outline: 1px solid #a88c40; }
 .st-diagnostic { text-decoration: underline wavy #efaa6c; text-underline-offset: 3px; }
 .st-domain-note { text-decoration: underline dotted #88c9df; text-underline-offset: 3px; }
 
@@ -39,5 +38,6 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .host-signature mark { color: #182334; background: #f0d78c; padding: 1px 2px; }
 .host-signature p { margin: 6px 0 0; }
 
+.host-inline-swatch { width: .8em; height: .8em; margin-inline-end: .2em; background: var(--swatch-color); outline: 1px solid currentColor; }
 .st-document-color { text-decoration: underline dotted; text-decoration-thickness: 2px; }
 .host-color-swatch { display: inline-block; width: 1.2em; height: 1.2em; border: 1px solid currentColor; margin: 0 .4em; vertical-align: middle; }

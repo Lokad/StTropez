@@ -22,8 +22,9 @@ test("viewport maps retained source rows through newline edits without stale con
         host.style.cssText = "height:260px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
         let shade = "row-token", early = false;
         const stopEarly = workspace.observeDocument(source.documentId).subscribe(() => { if (early) viewport.flush(); });
-        const { viewport, setComparisonRows } = mountViewport(host, workspace, tab, {
-            decorate: row => [{ from: row.from, to: Math.min(row.to, row.from + 5), className: shade }], lineClass: row => row.line % 2 ? "row-odd" : "row-even" });
+        const { viewport, setComparisonRows } = mountViewport(host, workspace, tab);
+        viewport.decorations.addProvider({ name: "syntax", order: 0,
+            provide: row => [{ from: row.from, to: Math.min(row.to, row.from + 5), className: shade }], lineClass: row => row.line % 2 ? "row-odd" : "row-even" });
         const doc = () => workspace.document(source.documentId), row = (line: number) => host.querySelector<HTMLElement>(`.st-viewport-row[data-line="${line}"]`)!;
         const mounted = () => [...host.querySelectorAll<HTMLElement>(".st-viewport-row")];
         const settle = () => { for (let i = 0; i < 8; i++) { viewport.flush(); if (!viewport.activity().pending) return; } throw new Error("Viewport did not settle"); };

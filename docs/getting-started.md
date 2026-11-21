@@ -219,7 +219,7 @@ export function tokens(prefix) {
 }
 ```
 
-Back in `app.js`, pass a `decorate` callback to the second mount. The host loads the
+Back in `app.js`, attach a token provider to the second editor. The host loads the
 tokenizer or grammar parser and maps its output to document offsets and CSS classes. The stylesheet gives
 `open-task` and `done-task` different colors. Change a space to `x` to see the marker change.
 
@@ -231,8 +231,11 @@ second.id = "split";
 document.getElementById("panes")?.after(second);
 const split = mountTextEditor(second, workspace, tab, {
     ariaLabel: "Checklist split", minimap: true,
-    language: { tabSize: 2, insertSpaces: true, blockComment: { open: "<!--", close: "-->" } },
-    decorate(line) {
+    language: { tabSize: 2, insertSpaces: true, blockComment: { open: "<!--", close: "-->" } }
+});
+const checklist = split.decorations.addProvider({
+    name: "checklist", order: 0,
+    provide(line) {
         if (line.from >= line.lineStart + 5) return [];
         const buffer = workspace.document(line.documentId).buffer;
         const prefix = buffer.slice(line.lineStart, Math.min(line.lineStart + 5, buffer.length));
@@ -247,9 +250,9 @@ For a multiline token, pass the previous line’s ending state into the next cal
 Cache results by document and revision. After an edit, tokenize from the first changed line until the
 unchanged suffix has its original incoming state. Paint spans that intersect the visible fragment.
 
-`decorate` runs synchronously during paint. For an expensive grammar, run its tokenizer in a
+`provide` runs synchronously during paint. For an expensive grammar, run its tokenizer in a
 host worker. Check the document ID and revision when the result arrives, cache the spans, then
-call `split.viewport.invalidate()` so the decorator reads the cache on the next paint. Comment
+call `checklist.invalidate(firstLine, endLine)` to repaint the affected lines. Comment
 and indentation rules use `language`. Completion and diagnostics use a separate provider.
 [Host tokenization](host-integration.md#tokenization-annotations-and-forms)
 

@@ -19,7 +19,7 @@ import { createCooperativeRunner } from "./cooperative-runner.ts";
 export type ComparisonReferenceView = Readonly<{ editor: TextEditor; target: TabTarget; epoch: number; version: string }>;
 export type TextComparisonOptions = Readonly<{ ariaLabel?: string; workBudget?: number; view?: DocumentView; controls?: boolean; scrollLinked?: boolean; rowsAligned?: boolean; minimap?: boolean;
     requestLine?: NonNullable<TextEditorOptions["requestLine"]>;
-    pasteLineEndings?: NonNullable<TextEditorOptions["pasteLineEndings"]>; workingDecorate?: (line: PresentedLine) => readonly InlineDecoration[]; baselineDecorate?: (line: PresentedLine) => readonly InlineDecoration[] }>;
+    pasteLineEndings?: NonNullable<TextEditorOptions["pasteLineEndings"]> }>;
 export type TextComparisonSnapshot = Readonly<{
     comparison: ComparisonSnapshot;
     /** Index in comparison.hunks; cleared when the comparison generation changes. */
@@ -71,18 +71,22 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
         const range = state.hunks[low]?.[side]; return range && range.lineFrom <= line ? range : undefined;
     }
     const decorate = (side: "baseline" | "working") => (line: PresentedLine): readonly InlineDecoration[] => {
-        const decorations = (side === "working" ? options.workingDecorate : options.baselineDecorate)?.(line) ?? [];
-        if (side === "working" && line.revision !== state.working?.revision) return decorations;
+        if (side === "working" && line.revision !== state.working?.revision) return [];
         const range = rangeAt(side, line.line);
-        if (!range || range.from === range.to || range.from >= line.to || range.to <= line.from) return decorations;
-        return [...decorations, { from: range.from, to: range.to, className: side === "baseline" ? "st-comparison-removed" : "st-comparison-added" }];
+        if (!range || range.from === range.to || range.from >= line.to || range.to <= line.from) return [];
+        return [{ from: range.from, to: range.to, className: side === "baseline" ? "st-comparison-removed" : "st-comparison-added" }];
     };
     const lineClass = (side: "baseline" | "working") => (line: PresentedLine) => (side !== "working" || line.revision === state.working?.revision) && rangeAt(side, line.line) ? `st-comparison-line-${side}` : undefined;
     const navigation = options.requestLine ? { requestLine: options.requestLine } : {};
     let workingMount: MountedTextEditor;
-    try { workingMount = mountEditor(workingPane.content, workspace, workingTab, { view: controller.view, minimap, ...navigation, pasteLineEndings: options.pasteLineEndings ?? "local", ariaLabel: "Comparison working source", decorate: decorate("working"), lineClass: lineClass("working") }); }
+    try { workingMount = mountEditor(workingPane.content, workspace, workingTab, { view: controller.view, minimap, ...navigation, pasteLineEndings: options.pasteLineEndings ?? "local", ariaLabel: "Comparison working source" }); }
     catch (error) { root.remove(); controller.dispose(); throw error; }
     const working = workingMount.editor, pair = createComparisonPanes(workingMount, changed), referenceEditor = () => pair.reference()?.editor, referenceViewport = () => referenceEditor()?.viewport;
+    const differences = (editor: TextEditor, side: "working" | "baseline") => editor.decorations.addProvider({
+        name: "comparison", order: 10, provide: decorate(side), lineClass: lineClass(side)
+    });
+    const workingDiff = differences(working, "working");
+    let referenceDiff: ReturnType<typeof differences> | undefined;
     const busy = (editor: TextEditor | undefined) => { const input = editor?.activity(); return !!input && (input.composing || input.pendingInput || input.pendingCommand); };
     const composing = () => working.activity().composing || referenceEditor()?.activity().composing === true;
     const alignment = createComparisonAlignment(win, pair, controller.getSnapshot, changed,
@@ -116,6 +120,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
         alignment.setEnabled(value); publishState();
     };
     function clearReference(): void {
+        referenceDiff?.dispose(); referenceDiff = undefined;
         publishReference(undefined);
         const retiredEditor = referenceEditor(); try { pair.setReference(undefined); } finally { retiredEditor?.dispose(); }
         if (displayTarget && workspace.resolveTab(displayTarget)) workspace.close(displayTarget.id);
@@ -130,8 +135,9 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
                 { buffer: state.baseline.buffer, serverVersion: state.baseline.version }, { edit: [], save: false, run: false }, { visibility: "internal" });
             displayTab = workspace.open({ kind: "text", documentId: display.documentId }, display.id);
             displayTarget = workspace.captureTab(displayTab);
-            const mounted = mountEditor(referencePane.content, workspace, displayTab, { ariaLabel: "Comparison baseline source", minimap, ...navigation, decorate: decorate("baseline"), lineClass: lineClass("baseline") });
+            const mounted = mountEditor(referencePane.content, workspace, displayTab, { ariaLabel: "Comparison baseline source", minimap, ...navigation });
             const editor = mounted.editor;
+            referenceDiff = differences(editor, "baseline");
             try { pair.setReference(mounted); } catch (error) { editor.dispose(); throw error; }
             publishReference(Object.freeze({ editor, target: displayTarget, epoch, version: state.baseline.version }));
         } else if (!state.baseline && referenceViewport()) clearReference();
@@ -143,7 +149,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
         // their own viewports; redraw hunks once on restart, completion or expiration.
         if (state.generation !== decoratedGeneration || state.status !== decoratedStatus) {
             decoratedGeneration = state.generation; decoratedStatus = state.status;
-            referenceViewport()?.invalidate(); working.viewport.invalidate();
+            referenceDiff?.invalidate(); workingDiff.invalidate();
         }
     }
     function schedule(): void { if (!disposed && !scheduled) { runner.schedule(step); scheduled = true; } }

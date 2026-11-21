@@ -70,7 +70,7 @@ export class HostLanguageTools {
     }
     clearRetainedView(): void { this.cancelFindCommand(); this.detachedOwner = undefined; }
     private attachProvider(session: Session): void {
-        const { tab, editor, presentation } = session;
+        const { tab, editor } = session;
         let provider: ProviderController;
         try { provider = this.providerFactory(this.workspace, tab, editor, { autoConnect: false, canCapture: () => this.canCapture(editor.view.documentId) }); }
         catch (error) {
@@ -80,13 +80,17 @@ export class HostLanguageTools {
             return;
         }
         session.provider = provider; delete session.providerError;
+        const layer = editor.decorations.add({ name: "diagnostics", order: 40 });
+        let last: ProviderSnapshot | undefined;
         const update = () => {
-            const state = provider.getSnapshot(), previous = presentation.diagnostics;
-            presentation.diagnostics = { revision: state.diagnosticRevision, ranges: state.diagnostics };
-            if (previous?.revision !== state.diagnosticRevision || previous.ranges !== state.diagnostics) editor.viewport.invalidate();
+            const state = provider.getSnapshot();
+            if (last?.diagnosticRevision !== state.diagnosticRevision || last.diagnostics !== state.diagnostics)
+                layer.set(state.diagnosticRevision, state.diagnostics.map(range => ({ ...range, className: "st-diagnostic" })));
+            last = state;
             if (this.active === session) this.publish();
         };
-        session.stopProvider = provider.subscribe(update); update();
+        const stop = provider.subscribe(update);
+        session.stopProvider = () => { stop(); layer.dispose(); }; update();
     }
     attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void {
         if (this.sessions.has(id)) throw new Error("Language view already mounted.");
@@ -226,12 +230,7 @@ export class HostLanguageTools {
             const clock = session.editor.element.ownerDocument.defaultView!;
             session.find = createFindController(this.workspace, session.tab, session.editor, { regularExpressionBackend: createRegexFindBackend({ clock,
                 createWorker: () => new Worker("/regex-worker.js", { type: "module" }) }) });
-            const find = session.find;
-            const update = () => { const state = find.getSnapshot(), previous = session.presentation.search;
-                session.presentation.search = { revision: state.revision, version: state.matchesVersion, matchesIn: (from, to) => find.matchesIn(from, to, state) };
-                if (previous?.revision !== state.revision || previous.version !== state.matchesVersion) session.editor.viewport.invalidate();
-                if (this.active === session) this.publish(); };
-            session.stopFind = session.find.subscribe(update);
+            session.stopFind = session.find.subscribe(() => { if (this.active === session) this.publish(); });
         }
         const state = session.find.getSnapshot(), { query, wholeWord, matchCase, regularExpression } = this.cell.get();
         if (state.wholeWord !== wholeWord || state.matchCase !== matchCase || state.regularExpression !== regularExpression) session.find.setFlags({ wholeWord, matchCase, regularExpression });

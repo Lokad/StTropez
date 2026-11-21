@@ -209,8 +209,8 @@ Keep the same resource limits when retrying. Editing, review and Find stay avail
 attachment on detach.
 
 A visible fragment might start inside a string or block comment. Cache lexical state by document and
-revision, limit source reads, and call `invalidate()` when new tokens are ready. Use absolute source
-offsets for [viewport decorations](viewport.md#mounting-and-presentation). Tokenize the saved side of
+revision, limit source reads, and invalidate the token provider when new tokens are ready. Use absolute source
+offsets for [decoration layers](viewport.md#decoration-layers). Tokenize the saved side of
 a comparison against its own immutable text. Configure [editing rules](editor.md),
 [fold discovery](folding.md) and [character warnings](unicode.md#character-warnings) separately.
 
@@ -219,7 +219,7 @@ Map source-linked metadata through
 `previousRevision` and clear or recompute on a gap. Undo and redo map surviving ranges. To restore
 deleted metadata on undo, retain it in the host.
 
-Put annotations and forms beside the editor in an overlay or reserved lane. Read
+Use a decoration's `afterLine` for a text annotation. Put interactive links and forms in host UI. Read
 [viewport geometry](viewport.md#geometry-and-readiness) after render, folding, scrolling or resize.
 A folded position may project to its header, and `rowBounds` may find no rendered row. Hide or label
 controls in those cases.

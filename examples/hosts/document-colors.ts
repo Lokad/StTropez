@@ -1,10 +1,8 @@
 import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget, TextBuffer, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, TextEditor } from "../../src/browser/index.ts";
-import type { EditingPresentation } from "../shared/language/presentation.ts";
+import type { CapturedViewRequest, DecorationLayer, TextEditor } from "../../src/browser/index.ts";
 import { colorLimits, parseColor, rgbaColor, sameColor, validateColorsInput } from "../../fixtures/language/colors.ts";
 import type { ColorFault, ColorsInput, ColorsResult, ColorReference, ColorPresentationInput, ColorPresentationsResult } from "../../fixtures/language/colors.ts";
-import { DomainAnnotationIndex } from "../../fixtures/language/domain.ts";
 import { renameSelections } from "../../fixtures/language/rename.ts";
 import { HostCell } from "../shared/observable.ts";
 type HostColorPresentations = Omit<ColorPresentationsResult, "presentations"> & Readonly<{ presentations: readonly (Omit<ColorPresentationsResult["presentations"][number], "id"> & Readonly<{ id: string }>)[] }>;
@@ -12,10 +10,10 @@ export type ColorBackend = Readonly<{ colors: (input: ColorsInput, buffer: TextB
     colorPresentations: (input: ColorPresentationInput, buffer: TextBuffer) => Promise<HostColorPresentations>; isCurrent?: () => boolean; faultIdle?: () => boolean;
     snapshot: () => Readonly<{ connected: boolean; busy: boolean; transport?: string }>; dispose: () => void }>;
 export type ColorBackendFactory = (clock: Window, changed: () => void) => ColorBackend;
-type Session = { token: number; id: string; target: TabTarget; editor: TextEditor; presentation: EditingPresentation };
+type Session = { token: number; id: string; target: TabTarget; editor: TextEditor; layer: DecorationLayer; colors?: readonly ColorReference[] };
 type Preview = { input: ColorPresentationInput; capture: CapturedViewRequest; timer: number; invalid: boolean; result: HostColorPresentations | undefined; choice: string };
 type Job = { origin: Session; input: ColorsInput; document: DocumentSnapshot; capture: CapturedViewRequest; authority: string; lease: ResourceLease | undefined; stops: (() => void)[]; timer: number; invalid: boolean;
-    colors: readonly ColorReference[] | undefined; index: DomainAnnotationIndex | undefined; selected: number; preview: Preview | undefined };
+    colors: readonly ColorReference[] | undefined; selected: number; preview: Preview | undefined };
 export type ColorNote = ColorReference & Readonly<{ ordinal: number; line: number; column: number; css: string }>;
 export type ColorEditNote = Readonly<{ document: string; resource: string; title: string; revision: number; from: number; to: number; insert: string; context: string }>;
 export type DocumentColorsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; token: number | null; previewToken: number | null; view: string | null;
@@ -67,8 +65,16 @@ export class HostDocumentColors {
             canPreview: !!job?.colors?.[job.selected] && !!proposed && this.current(job) && (!preview || !!preview.result),
             canApply: !!job && !!choice && !!preview && this.currentPreview(job, preview) && this.editable(job.document.id) });
     }
-    private sync(s: Session): void { const job = this.job, colors = job?.index && job.document.id === s.editor.view.documentId && this.workspace.observeDocument(job.document.id).getSnapshot()?.revision === job.document.revision ? { revision: job.document.revision, index: job.index } : undefined;
-        if (!colors && !s.presentation.colors) return; s.presentation.colors = colors; s.editor.viewport.invalidate(); }
+    private sync(s: Session): void {
+        const job = this.job;
+        if (job?.colors && job.document.id === s.editor.view.documentId
+            && this.workspace.observeDocument(job.document.id).getSnapshot()?.revision === job.document.revision) {
+            if (s.colors === job.colors) return;
+            s.layer.set(job.document.revision, job.colors.map(color => ({ from: color.from, to: color.to,
+                className: "st-document-color", before: "host-inline-swatch", properties: { "--swatch-color": rgbaColor(color.color) } })));
+            s.colors = job.colors;
+        } else if (s.colors) { delete s.colors; s.layer.clear(); }
+    }
     private syncAll(): void { for (const s of this.sessions.values()) this.sync(s); }
     private drop(): void { const client = this.client; this.client = undefined; this.dropping = true; try { client?.dispose(); } finally { this.dropping = false; } }
     private clearPreview(job: Job): void { const preview = job.preview; job.preview = undefined; if (!preview) return; preview.invalid = true; job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(preview.timer);
@@ -100,12 +106,12 @@ export class HostDocumentColors {
         input.addEventListener("keydown", event => { if (event.defaultPrevented || event.isComposing) return; if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); const origin = this.job?.origin ?? this.active; this.cancel(); if (origin && this.available(origin)) origin.editor.focus(); }
             else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) { event.preventDefault(); this.preview(); } }, { signal: events.signal }); };
     setValue(value: string): void { if (value === this.cell.get().value) return; if (this.job) this.clearPreview(this.job); this.publish({ value: value.slice(0, colorLimits.literal + 1), status: this.job?.colors ? "colors" : "idle", message: this.job ? "Proposed color changed; preview before confirming." : "Proposed color changed; discover colors before previewing." }); }
-    attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void {
-        const s = { token: this.workspace.allocateIdentity(), id, target: this.workspace.captureTab(tab), editor, presentation }, events = new AbortController(); this.sessions.set(s.token, s); this.sync(s);
+    attach(id: string, tab: TabId, editor: TextEditor): () => void {
+        const s = { token: this.workspace.allocateIdentity(), id, target: this.workspace.captureTab(tab), editor, layer: editor.decorations.add({ name: "document colors", order: 35 }) }, events = new AbortController(); this.sessions.set(s.token, s); this.sync(s);
         editor.input.addEventListener("focus", () => { this.active = s; this.publish(); }, { signal: events.signal });
         editor.input.addEventListener("keydown", event => { if (event.defaultPrevented || event.isComposing || editor.activity().composing || event.key !== "F6" || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return; event.preventDefault(); event.stopImmediatePropagation(); this.active = s; this.start(true); }, { capture: true, signal: events.signal });
         for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.job?.document.id === editor.view.documentId) this.cancel(); }, { signal: events.signal });
-        let detached = false; return () => { if (detached) return; detached = true; if (this.job?.origin === s) this.cancel(); events.abort(); this.sessions.delete(s.token); presentation.colors = undefined; if (this.active === s) this.active = undefined; if (!this.sessions.size) this.drop(); this.publish(); };
+        let detached = false; return () => { if (detached) return; detached = true; if (this.job?.origin === s) this.cancel(); events.abort(); this.sessions.delete(s.token); s.layer.dispose(); if (this.active === s) this.active = undefined; if (!this.sessions.size) this.drop(); this.publish(); };
     }
     readonly discover = (): void => this.start(false);
     private start(keyboard: boolean): void {
@@ -116,7 +122,7 @@ export class HostDocumentColors {
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid color capture." }); return; }
         this.fault = undefined; const capture = this.capture(origin);
         if (!capture) { this.publish({ message: "The source changed before capture; discover fresh colors." }); return; }
-        const win = origin.editor.element.ownerDocument.defaultView!, job: Job = { origin, input, document: doc, capture, authority: this.authority(doc.id), lease: undefined, stops: [], timer: 0, invalid: false, colors: undefined, index: undefined, selected: -1, preview: undefined };
+        const win = origin.editor.element.ownerDocument.defaultView!, job: Job = { origin, input, document: doc, capture, authority: this.authority(doc.id), lease: undefined, stops: [], timer: 0, invalid: false, colors: undefined, selected: -1, preview: undefined };
         this.job = job; this.metrics.requested++;
         try {
             const changed = () => this.changed(job); capture.signal.addEventListener("abort", changed, { once: true });
@@ -127,7 +133,7 @@ export class HostDocumentColors {
                 // Ready references outlive view movement. Retain their resource before ending discovery capture.
                 job.lease = this.workspace.acquire(doc.resourceId);
                 job.stops.push(this.workspace.observeDocument(doc.id).subscribe(changed), this.workspace.resourceForDocument(doc.id).metadata.subscribe(changed), this.workspace.tabState.subscribe(changed));
-                job.colors = result.colors; job.index = new DomainAnnotationIndex(result.colors.map((color, i) => ({ id: `color-${i}`, from: color.from, to: color.to, label: color.label }))); win.clearTimeout(job.timer); capture.cancel();
+                job.colors = result.colors; win.clearTimeout(job.timer); capture.cancel();
                 const at = result.colors.findIndex(c => c.from <= selected.selection.head && selected.selection.head <= c.to); job.selected = result.colors.length ? Math.max(0, at) : -1; this.syncAll();
                 const color = result.colors[job.selected]; this.publish({ status: "colors", message: `${result.colors.length} color literals. Inspect one, preview presentations and confirm explicitly.`, work: (0), page: job.selected < 0 ? 0 : Math.floor(job.selected / colorLimits.page), value: color ? rgbaColor(color.color) : "" });
                 if (keyboard && this.job === job && this.current(job) && this.list?.isConnected && win.document.activeElement === origin.editor.input) this.list.focus();
@@ -171,6 +177,6 @@ export class HostDocumentColors {
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid color delay."); this.delay = value; }
     faultNext(value: ColorFault): void { this.fault = value; }
     faultIdle(): boolean { return this.client?.faultIdle?.() ?? false; }
-    debug() { const job = this.job; return { ...this.metrics, state: this.cell.get(), capture: job ? { input: job.input, view: job.origin.id, selections: (job.preview?.capture ?? job.capture).selectionSet } : null, transport: this.client?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), decoratedViews: [...this.sessions.values()].filter(s => !!s.presentation.colors).length, disposed: this.disposed }; }
+    debug() { const job = this.job; return { ...this.metrics, state: this.cell.get(), capture: job ? { input: job.input, view: job.origin.id, selections: (job.preview?.capture ?? job.capture).selectionSet } : null, transport: this.client?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), decoratedViews: [...this.sessions.values()].filter(s => !!s.colors).length, disposed: this.disposed }; }
     dispose(): void { if (this.disposed) return; this.cancel(); this.drop(); this.bindList(null); this.bindValue(null); this.disposed = true; this.active = undefined; this.publish({ changed: null }); }
 }

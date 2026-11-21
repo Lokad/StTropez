@@ -14,8 +14,10 @@ import { unchangedPositionEdges } from "../core/positions.ts";
 import { createFoldRegions, FoldIndex } from "../core/folding.ts";
 import { sameSelectionSet } from "../core/selections.ts";
 import { partitionPoint } from "../core/bound-search.ts";
-import { decorationParts, validDecorationClass } from "./decoration-parts.ts";
+import { applyDecorationProperties, decorationParts } from "./decoration-parts.ts";
 import type { RowPart } from "./decoration-parts.ts";
+import { createDecorationLayers } from "./decoration-layers.ts";
+import type { DecorationLayers } from "./decoration-layers.ts";
 import type { ComparisonRowIndex } from "../core/comparison-rows.ts";
 import { mountColumnRulers, resolveColumnRulers } from "./column-rulers.ts";
 import { mountMinimap } from "./minimap.ts";
@@ -46,7 +48,7 @@ type ViewportNavigation = Readonly<{
     caretAtColumn: (line: number, column: number) => Readonly<Pick<CaretRectangle, "offset" | "affinity" | "revision">> | undefined;
     prepareNavigationRows: (lines: readonly number[]) => () => void;
 }>;
-export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentView;
+export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentView; decorations: DecorationLayers;
     /** Observe completed paints and consumed scheduled renders, including unchanged paints. */
     onRender: (listener: () => void) => () => void;
     /** One input owner controls composition, fold tab stops and source-focus recovery. */
@@ -80,22 +82,33 @@ function rowCaretOffset(buffer: TextBuffer, end: number, offset: number): number
 function renderRowChildren(element: HTMLElement, parts: readonly RowPart[]): boolean {
     if (element.childNodes.length === parts.length && parts.every((part, index) => {
         const node = element.childNodes.item(index); if (!node || node.textContent !== part.text) return false;
-        return part.className ? node.nodeName === "SPAN" && (node as HTMLSpanElement).className === part.className
-            && node.childNodes.length === 1 && node.firstChild?.nodeType === Node.TEXT_NODE : node.nodeType === Node.TEXT_NODE;
+        if (!part.className) return node.nodeType === Node.TEXT_NODE;
+        const span = node as HTMLSpanElement;
+        if (node.nodeName !== "SPAN" || span.className !== part.className || span.dataset.ornament !== part.ornament || span.dataset.label !== part.label) return false;
+        if (part.properties || span.style.length) {
+            const valid = Object.entries(part.properties ?? {}).filter(([name, value]) => /^--[\w-]+$/.test(name) && typeof value === "string" && value.length);
+            if (valid.length !== span.style.length || valid.some(([name, value]) => span.style.getPropertyValue(name) !== value)) return false;
+        }
+        return part.ornament ? !span.childNodes.length : span.childNodes.length === 1 && span.firstChild?.nodeType === Node.TEXT_NODE;
     })) return false;
     const owner = element.ownerDocument;
     element.replaceChildren(...parts.map(part => {
         if (!part.className) return owner.createTextNode(part.text);
-        const span = owner.createElement("span"); span.className = part.className; span.textContent = part.text; return span;
+        const span = owner.createElement("span"); span.className = part.className; span.textContent = part.text;
+        if (part.properties) applyDecorationProperties(span, part.properties);
+        if (part.ornament) { span.dataset.ornament = part.ornament; span.setAttribute("aria-hidden", "true"); }
+        if (part.label !== undefined) span.dataset.label = part.label;
+        return span;
     }));
     return true;
 }
-export type InlineDecoration = Readonly<{ from: number; to: number; className: string }>;
+export type InlineDecoration = Readonly<{ from: number; to: number; className: string;
+    properties?: Readonly<Record<`--${string}`, string>>; before?: string; afterLine?: string }>;
 export type PresentedLine = Readonly<{ documentId: DocumentId; revision: number; line: number; lineStart: number; from: number; to: number; text: string }>;
 export type LineDecorator = (line: PresentedLine) => readonly InlineDecoration[];
 export type LineClass = (line: PresentedLine) => string | undefined;
 export type RevealOptions = Readonly<{ horizontal?: "center" | "nearest"; vertical?: "center" | "nearest"; affinity?: Affinity }>;
-export type TextViewportOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; decorate?: LineDecorator; lineClass?: LineClass;
+export type TextViewportOptions = Readonly<{ ariaLabel?: string; view?: DocumentView;
     columnRulers?: readonly number[]; highlightCurrentLine?: boolean; fontLigatures?: boolean; scrollBeyondLastLine?: boolean; minimap?: boolean }>;
 
 /** Bounded DOM view layer with local native text geometry. Native-device qualification remains separate. */
@@ -106,7 +119,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
 
 /** Internal mount: navigation and comparison publication share the viewport lifetime. */
 export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: TabId,
-    options: TextViewportOptions = {}, overview: Pick<TextViewportOptions, "decorate" | "lineClass"> = options): Readonly<{ viewport: TextViewport; navigation: ViewportNavigation; setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean }> {
+    options: TextViewportOptions = {}): Readonly<{ viewport: TextViewport; navigation: ViewportNavigation; setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean }> {
     let columns = resolveColumnRulers(options.columnRulers);
     let highlightCurrentLine = options.highlightCurrentLine === undefined ? false : options.highlightCurrentLine;
     let fontLigatures = options.fontLigatures === undefined ? false : options.fontLigatures;
@@ -177,7 +190,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
     let reveal: Readonly<{ revision: number; foldGeneration: number; offset: number; horizontal: "center" | "nearest"; vertical: "center" | "nearest"; affinity: Affinity }> | undefined;
     let horizontalAnchor: ViewState["horizontalAnchor"];
     let fragmentPlacement: Readonly<{ revision: number; line: number; from: number; to: number; left: number; shift: number }> | undefined;
-    let measuredWidth = 0, measuredFont = "", measuredRevision: number | null = null;
+    let measuredWidth = 0, measuredFont = "", measuredRevision: number | null = null, spacerWidth = -1;
     let paintEpoch = 0;
     let painted: Readonly<{ key: readonly unknown[]; horizontalAnchor: typeof horizontalAnchor; placement: typeof fragmentPlacement }> | undefined;
     const rows = new Map<number, HTMLDivElement>();
@@ -211,6 +224,16 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         return undefined;
     };
     const schedule = () => { if (!disposed && frame === undefined) frame = win.requestAnimationFrame(() => render(true)); };
+    let visibleItems: readonly Row[] = [], overviewEpoch = 0;
+    const dirtyRows = new Set<number>();
+    const decorations = createDecorationLayers(
+        () => !disposed && workspace.resolveTab(target) ? workspace.observeDocument(documentId).getSnapshot() : undefined,
+        (dirty, overview) => {
+            for (const row of visibleItems) if (dirty(row)) dirtyRows.add(row.line);
+            commandGeometry = undefined; clearPreparedRows();
+            if (overview) overviewEpoch++;
+            if (dirtyRows.size || overview && minimap) schedule();
+        }, () => !!workspace.resolveTab(target));
     // Host invalidation and font loading can change inline layout without changing text/classes.
     const invalidate = () => { paintEpoch++; geometries.clear(); commandGeometry = undefined; clearPreparedRows(); schedule(); };
     const flush = () => { if (disposed) return; const scheduled = frame !== undefined; if (scheduled) win.cancelAnimationFrame(frame!); render(scheduled); };
@@ -252,7 +275,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         // A native scroll notification from the preceding drag step can arrive before
         // the next render. Make it observe the current destination, as a real thumb does.
         root.scrollTop = y.toPhysical(top);
-    }, overview.decorate, overview.lineClass);
+    }, line => decorations.present(line, true), line => decorations.lineClasses(line, true));
     let minimap = options.minimap ? createMinimap() : undefined;
     function mapRowSources(current: DocumentSnapshot | undefined): void {
         if (current?.revision === rowSourceRevision) return;
@@ -358,11 +381,11 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
             if (from >= item.to) break; if (from < to) selections.push({ from, to });
         }
         const presented = { documentId, revision: document.revision, line: item.line, lineStart: item.start, from: item.from, to: item.to, text: item.text };
-        const lineClass = options.lineClass?.(presented), className = "st-viewport-row" + (lineClass && validDecorationClass(lineClass) ? ` ${lineClass}` : "")
+        const lineClass = decorations.lineClasses(presented), className = "st-viewport-row" + (lineClass ? ` ${lineClass}` : "")
             + (highlightedLine === item.line ? " st-current-line" : "");
         const changed = element.className !== className; element.className = className;
-        const decorations = options.decorate?.(presented);
-        return renderRowChildren(element, decorationParts(item.text, item.from, item.to, document.buffer.length, decorations, selections)) || changed;
+        return renderRowChildren(element, decorationParts(item.text, item.from, item.to, document.buffer.length, decorations.present(presented, false, item.endsLine), selections,
+            item.endsLine ? item.start : undefined)) || changed;
     };
     type MeasuredRow = Readonly<{ complete: boolean; point: (offset: number, affinity?: Affinity) => CaretRectangle | undefined;
         visual: (offset: number, direction: -1 | 1) => CaretRectangle | undefined;
@@ -456,11 +479,12 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         if (font !== measuredFont) { measuredWidth = 0; measuredFont = font; }
         const document = workspace.resolveTab(target) ? workspace.observeDocument(documentId).getSnapshot() : undefined;
         if (!document) {
+            dirtyRows.clear(); visibleItems = [];
             minimap?.dispose(); minimap = undefined;
             rulers.clear();
             clearCurrentLine();
             painted = undefined; commandGeometry = undefined;
-            layer.replaceChildren(); rows.clear(); rowSources.clear(); rowSourceRevision = null; geometries.clear(); measuredWidth = 0; measuredRevision = null; spacer.style.width = "0px"; spacer.style.height = "0px";
+            layer.replaceChildren(); rows.clear(); rowSources.clear(); rowSourceRevision = null; geometries.clear(); measuredWidth = 0; measuredRevision = null; spacerWidth = 0; spacer.style.width = "0px"; spacer.style.height = "0px";
             layer.style.transform = "none"; layer.style.width = "0px"; layer.style.height = "0px";
             root.setAttribute("aria-disabled", "true");
             previous = undefined; anchor = undefined; renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; firstLine = 0; lastLine = 0;
@@ -473,6 +497,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         if (measuredRevision !== document.revision) { measuredWidth = 0; measuredRevision = document.revision; }
         // A ref replay can paint source-only rows before cooperative alignment is ready.
         // Retain the captured aligned source anchor until its intended grid exists.
+        if (document.change && renderedRevision !== document.revision) decorations.advance(document.change);
         const deferAnchor = anchor?.revision === document.revision && anchor.aligned === true && !comparisonRows;
         if (anchor?.revision === document.revision && !deferAnchor) {
             const line = document.buffer.lineAt(anchor.offset);
@@ -490,18 +515,40 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         // fractional fitting viewports would acquire mutually triggering classic scrollbars.
         const trailingSpace = scrollBeyondLastLine && index.visibleLineCount > 1 ? Math.max(0, height - lineHeight - padding * 2) : 0;
         y = scrollAxis(index.visibleLineCount * lineHeight + padding * 2 + trailingSpace, height);
+        // A measured label can widen the spacer without introducing a scrollbar. Only a
+        // change in scroll range or viewport size affects which source fragments to paint.
+        const nextWidth = Math.min(x.extent, x.physicalExtent) + mapWidth;
+        if (nextWidth !== spacerWidth) { spacerWidth = nextWidth; spacer.style.width = `${spacerWidth}px`; }
         top = position(y, top); left = position(x, left);
         minimap?.paint(document, index, mapWidth, height, top, y.extent, lineHeight, padding, style.color,
-            Math.max(1, parseFloat(style.tabSize) || 4), Math.max(2, Math.min(3, win.devicePixelRatio * zoom)), paintEpoch);
+            Math.max(1, parseFloat(style.tabSize) || 4), Math.max(2, Math.min(3, win.devicePixelRatio * zoom)), paintEpoch + overviewEpoch);
         // Presentation-only configuration can repaint guides without reading or rebuilding rows.
         rulers.paint(columns, columnWidth, left, width);
         const { selection: selected, selectionSet } = view.getSnapshot();
         const key = [document.revision, selectionSet, folds.generation, rowGeneration, comparisonRows?.id,
-            top, left, width, height, zoom, columnWidth, naturalLineHeight, lineHeight, font, x.extent, y.extent, paintEpoch, highlightCurrentLine,
+            top, left, width, height, zoom, columnWidth, naturalLineHeight, lineHeight, font, x.maximum, y.extent, paintEpoch, highlightCurrentLine,
             inputOwner?.composing ?? false, inputOwner?.tabEscaped ?? false];
         if (!requested && painted && painted.horizontalAnchor === horizontalAnchor && painted.placement === fragmentPlacement
             && key.every((value, index) => value === painted!.key[index])
             && Math.abs(root.scrollTop - y.toPhysical(top)) <= 1 && Math.abs(root.scrollLeft - x.toPhysical(left)) <= 1) {
+            if (dirtyRows.size) {
+                const highlighted = currentLine(document, selectionSet, index), extent = owner.createRange();
+                const changed: HTMLDivElement[] = [];
+                for (const item of visibleItems) if (dirtyRows.has(item.line)) {
+                    const element = rows.get(item.line)!;
+                    if (paintRow(element, item, document, selectionSet, highlighted)) {
+                        geometries.delete(item.line);
+                        if (item.complete) changed.push(element);
+                    }
+                }
+                dirtyRows.clear();
+                for (const element of changed) {
+                    extent.selectNodeContents(element);
+                    measuredWidth = Math.max(measuredWidth, extent.getBoundingClientRect().width / zoom);
+                }
+                if (measuredWidth + padding * 2 > x.extent + .01) schedule();
+                renders++; lastRenderMs = win.performance.now() - started;
+            }
             // Consuming scheduled work still releases caret/alignment/linked-scroll listeners.
             // An idle synchronous flush needs neither row work nor a new caret frame.
             if (scheduled) notify("render");
@@ -514,11 +561,12 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         firstLine = index.lineAt(firstRow); lastLine = index.lineAt(lastRow - 1) + 1;
         const next: Row[] = [], blanks: number[] = [];
         for (let visible = firstRow; visible < lastRow; visible++) { if (gapAt(index, visible)) blanks.push(visible); else next.push(row(document.buffer, index.lineAt(visible))); }
+        visibleItems = next; dirtyRows.clear();
         retainRows(document, next);
         partialRows = next.filter(row => !row.complete).length;
         // A fitting document must not fill rounded client metrics: a fractional viewport can be
         // slightly smaller, making classic scrollbars repeatedly add/remove each other.
-        spacer.style.width = `${Math.min(x.extent, x.physicalExtent) + mapWidth}px`; spacer.style.height = `${Math.min(y.extent, y.physicalExtent)}px`;
+        spacer.style.height = `${Math.min(y.extent, y.physicalExtent)}px`;
         const physicalLeft = x.toPhysical(left), physicalTop = y.toPhysical(top);
         if (requested && scrollbarPressed) settleScrollbarReveal();
         root.scrollLeft = physicalLeft; root.scrollTop = physicalTop;
@@ -688,7 +736,13 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
     const observer = new ResizeObserver(schedule); observer.observe(root); observer.observe(probe);
     owner.fonts.addEventListener("loadingdone", invalidate, { signal: listeners.signal });
     owner.fonts.addEventListener("loadingerror", invalidate, { signal: listeners.signal });
-    const subscriptions = [workspace.observeDocument(documentId).subscribe(documentChanged), view.subscribe(schedule), view.folding.subscribe(foldsChanged), resource.metadata.subscribe(schedule), workspace.tabState.subscribe(schedule)];
+    const subscriptions = [workspace.onDocumentChange(documentId, change => {
+        // A host can flush inside an earlier listener, even before a batch has delivered all its maps.
+        if (decorations.advance(change) && renderedRevision === change.revision) {
+            for (const item of visibleItems) dirtyRows.add(item.line);
+            overviewEpoch++; schedule();
+        }
+    }), workspace.observeDocument(documentId).subscribe(documentChanged), view.subscribe(schedule), view.folding.subscribe(foldsChanged), resource.metadata.subscribe(schedule), workspace.tabState.subscribe(schedule)];
     let activitySnapshot: ViewportActivity | undefined;
     function activity(): ViewportActivity {
         const pending = frame !== undefined;
@@ -700,6 +754,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
     }
     schedule();
     const viewport: TextViewport = Object.freeze({
+        decorations: decorations.handle,
         element: root,
         view,
         activity,
@@ -824,6 +879,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         dispose: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
             releaseScrollbar();
+            decorations.dispose(); visibleItems = []; dirtyRows.clear();
             inputOwner?.detach(); inputOwner = undefined;
             for (const stop of observationStops) stop();
             rulers.clear(); columns = resolveColumnRulers();

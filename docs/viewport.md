@@ -41,18 +41,44 @@ viewport for the replacement.
 | --- | --- |
 | `ariaLabel` | Document title when omitted |
 | `view` | A new independent document view when omitted |
-| `decorate`, `lineClass` | No host decoration or row class when omitted |
 | `columnRulers` | Empty; at most 128 positive safe integers, copied, sorted and deduplicated |
 | `highlightCurrentLine` | `false`; boolean |
 | `fontLigatures` | `false`; boolean |
 | `minimap` | `false`; boolean |
 | `scrollBeyondLastLine` | `false`; boolean |
 
-Use `LineDecorator` to style part of a line. Its `PresentedLine` gives you the document, revision,
-source line number, line start, and the range and text of the visible fragment. Return
-`InlineDecoration` ranges with CSS classes and absolute UTF-16 offsets. Use `LineClass` to style the
-whole row. Keep both callbacks bounded. If your colors change between edits, call `invalidate()` to
-repaint.
+### Decoration layers
+
+Editors and viewports expose the same `decorations` handle. Use a retained layer for diagnostics,
+color swatches or annotations. Publish absolute UTF-16 offsets against the revision that supplied them.
+
+```ts
+import type { TextEditor } from "sttropez/browser";
+
+export function markColor(editor: TextEditor, revision: number, from: number, to: number) {
+    const layer = editor.decorations.add({ name: "colors", order: 30 });
+    layer.set(revision, [{ from, to, className: "color-literal", before: "color-swatch",
+        properties: { "--swatch-color": "#7494ad" }, afterLine: "Accent color" }]);
+    return layer;
+}
+```
+
+Style the marker with a host CSS class. For example, give `.color-swatch` a width, height and
+`background: var(--swatch-color)`. Labels render as plain text after the line. Markers and labels
+contribute no characters to selections or copied source. A point range paints a short mark at the caret stop.
+
+`set(revision, ranges)` copies its input and returns `false` for a stale revision or a retired view.
+Offsets outside the revision throw. Edits move surviving ranges until the layer receives a replacement.
+`clear()` removes its marks. `dispose()` retires the layer. The view disposes all its layers on teardown.
+
+For syntax, call `decorations.addProvider({ name, order, provide, lineClass })`.
+`provide(line)` receives a bounded `PresentedLine` fragment with absolute offsets.
+The optional `lineClass(line)` styles the whole row. To repaint changed lines, call the provider's
+`invalidate(fromLine, toLine)` with zero-based lines and an exclusive end. Omit the bounds for a new
+token stream. Layers apply in ascending order, with registration order breaking ties. A later layer
+can override an earlier CSS custom property. The stylesheet controls precedence between classes.
+
+### Viewport settings
 
 Each presentation option has a getter and a live setter:
 
@@ -73,10 +99,10 @@ highlight. Each view has its own settings. Set `--st-column-ruler`, `--st-curren
 individual ligatures.
 
 The minimap draws short files at their miniature height. For long files, it samples line prefixes
-across the folded or aligned document to fit the track. `decorate` supplies foreground classes and
-`lineClass` supplies row backgrounds, including in read-only views. Folded lines disappear and
-alignment gaps stay blank. Call `invalidate()` when colors or decorations change. The previous image
-stays visible until its replacement is complete.
+across the folded or aligned document to fit the track. Decoration layers supply glyph colors and
+row backgrounds, including in read-only views. Pass `minimap: false` when adding a transient layer
+to leave it out of the overview. Folded lines disappear and alignment gaps stay blank. The previous
+image stays visible until its replacement is complete. Call `viewport.invalidate()` after changing the theme or layout.
 
 Hover for a line number and text. Click outside the marker to center that location, or drag the
 marker to scroll. Both preserve focus, horizontal position and all selections. The marker covers a

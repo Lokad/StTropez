@@ -427,8 +427,9 @@ test("current-line presentation follows the primary caret through input, folding
         host.style.cssText = "height:400px;width:800px;--st-current-line:#ffffff18";
         style.textContent = ".host-row { background: rgb(30, 45, 65) } .host-color { color: rgb(180, 60, 160) }"; document.body.append(style, host);
 
-        const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Line source", lineClass: () => "host-row",
-            decorate: line => [{ from: line.from, to: line.to, className: "host-color" }] }), viewport = editor.viewport;
+        const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Line source" }), viewport = editor.viewport;
+        editor.decorations.addProvider({ name: "syntax", order: 0, lineClass: () => "host-row",
+            provide: line => [{ from: line.from, to: line.to, className: "host-color" }] });
         window.presentationFixture = { workspace, editor, tab, resource: resource.id, host };
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush();
         const defaults = viewport.currentLineHighlight(), point = viewport.coordsAt(1), row = host.querySelector('.st-viewport-row[data-line="0"]')!, child = row.firstChild;

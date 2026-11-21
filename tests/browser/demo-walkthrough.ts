@@ -161,6 +161,18 @@ export async function runDemoHighlights(page: Page, url = "/", distinctWrites = 
     // The pinned Node server reports all these spans as reads; the compiler-backed static
     // provider distinguishes writes. Preserve provider semantics instead of inventing kinds.
     await expect(writes).toHaveCount(distinctWrites ? 2 : 0); await expect(reads).toHaveCount(distinctWrites ? 1 : 3);
+    await page.locator("#find-toggle").click(); await page.locator("#find-query").fill("value");
+    await expect(page.locator("#find-status")).toHaveText("3 matches");
+    await page.locator("#find-next").click(); await source.focus();
+    await expect(occurrences).toHaveCount(3);
+    const matches = page.locator("#editor .st-search-match");
+    await expect(matches).toHaveCount(3);
+    const outlines = await matches.evaluateAll(nodes => nodes.map(node => getComputedStyle(node).outlineColor));
+    expect(outlines.filter(color => color === "rgb(255, 228, 148)")).toHaveLength(1);
+    expect(new Set(outlines).size).toBe(2);
+    await page.locator("#find-close").click();
+    await source.press("Control+Home"); await source.press("Control+ArrowRight"); await source.press("ArrowRight");
+    await expect(occurrences).toHaveCount(3);
     await source.dispatchEvent("compositionstart", { data: "" }); await expect(occurrences).toHaveCount(0);
     await source.dispatchEvent("compositionend", { data: "" }); await expect(occurrences).toHaveCount(3);
     await source.press("Control+End"); await expect(occurrences).toHaveCount(0);

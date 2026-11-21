@@ -33,7 +33,8 @@ async function fixture(page: Page, shadow = false) {
         try { mountTextEditor(host, workspace, tab, { bracketMatching: { maxWorkUnits: 0 } }); throw new Error("Invalid matching limits accepted."); }
         catch (error) { if (!(error instanceof RangeError)) throw error; }
         if (workspace.diagnostics().views !== before.views || host.childNodes.length) throw new Error("Invalid mount leaked a view or DOM.");
-        const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Bracket source", decorate: line => [{ from: line.from, to: line.to, className: "fixture-color" }] });
+        const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Bracket source" });
+        editor.decorations.addProvider({ name: "syntax", order: 0, provide: line => [{ from: line.from, to: line.to, className: "fixture-color" }] });
         const f: Fixture = { workspace, editor, tab, resource: resource.id, host, calls: 0, allowed: false, states: [],
             set: (text, caret) => { const document = workspace.document(resource.documentId);
                 const result = workspace.edit({ documentId: resource.documentId, expectedRevision: document.revision, origin: "host", view: editor.view,

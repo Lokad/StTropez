@@ -212,9 +212,9 @@ accepts `TextComparisonOptions`. It does not forward arbitrary source-editor con
 
 Keep saved reference view state with its immutable buffer/version; working view state belongs
 to the working document/view. [Viewport](viewport.md#scrolling-and-saved-views) describes captures.
-`workingDecorate` and `baselineDecorate` receive bounded `PresentedLine` fragments and compose
-with change colors. The host owns syntax/search state and calls the appropriate viewport's
-`invalidate()` when it changes. Reference decorations must use the captured reference text.
+Each pane owns its change colors. Add [decoration layers](viewport.md#decoration-layers) to
+`working.decorations` and to the editor in the current `reference` snapshot. Attach fresh layers
+when the reference changes and publish ranges against that reference document's revision.
 
 ### Linked scrolling and aligned rows
 

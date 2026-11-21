@@ -25,7 +25,7 @@ import type { InputContext } from "./input-context.ts";
 import { inputConflictEvent } from "./input-conflict.ts";
 import type { InputConflictDetail } from "./input-conflict.ts";
 import { mountViewport } from "./viewport.ts";
-import type { LineClass, LineDecorator, TextViewport } from "./viewport.ts";
+import type { TextViewport } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
 import { lineColumnScanner, lineContentEnd, lineEnding, planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
 import { exportText } from "../core/newlines.ts";
@@ -56,11 +56,11 @@ export type TextEditorActivity = Readonly<{ disposed: boolean; composing: boolea
 export type TextEditorCommand = EditingCommand | ViewCommand;
 export type LinePrompt = (request: Readonly<{ currentLine: number; lineCount: number; signal: AbortSignal }>) =>
     number | undefined | PromiseLike<number | undefined>;
-export type TextEditorOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; decorate?: LineDecorator; lineClass?: LineClass; language?: LanguageConfiguration;
+export type TextEditorOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; language?: LanguageConfiguration;
         pasteLineEndings?: "local" | "preserve"; requestLine?: LinePrompt;
         bracketMatching?: boolean | BracketMatchOptions; characterWarnings?: boolean | CharacterWarningOptions;
         columnRulers?: readonly number[]; highlightCurrentLine?: boolean; fontLigatures?: boolean; scrollBeyondLastLine?: boolean; minimap?: boolean }>;
-export type TextEditor = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; view: DocumentView; viewport: TextViewport;
+export type TextEditor = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
     /** One pending host insertion, invalidated by later editing/selection/authority/lifecycle changes. */
     captureInsertion: (kind?: "paste" | "replace") => CapturedInsertion | undefined;
     /** One synchronous edit planner per view. Its result still passes Workspace validation/history. */
@@ -77,8 +77,6 @@ export type TextEditor = Readonly<{ element: HTMLDivElement; input: HTMLTextArea
     snapshot: () => TextEditorActivity & Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number; maxQueuedInputTurnMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number; navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number; lastWordSelectionMs: number; maxWordSelectionTurnMs: number; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; queuedInputUnits: number; wordScanSteps: number; maxWordScanStepMs: number; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number }>;
     dispose: () => void }>;
 export type MountedTextEditor = Readonly<{ editor: TextEditor; setComparisonRows: ReturnType<typeof mountViewport>["setComparisonRows"] }>;
-
-const emptyDecorations = Object.freeze([]);
 
 /** Text editor with bounded native input and virtualized rendering. Native IME qualification is separate. */
 export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: TabId,
@@ -103,10 +101,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
     const view = options.view ?? workspace.createDocumentView(documentId);
     let setComparisonRows: MountedTextEditor["setComparisonRows"], viewport: TextViewport, navigation: ReturnType<typeof mountViewport>["navigation"], brackets: ReturnType<typeof mountBracketHighlights> | undefined, warnings: ReturnType<typeof mountCharacterWarnings> | undefined;
-    try { const mounted = mountViewport(host, workspace, tabId, { ...options, view, decorate: line => {
-        const own = brackets?.decorate(line), flagged = warnings?.decorate(line), host = options.decorate?.(line);
-        return own?.length || flagged?.length ? [...(host ?? emptyDecorations), ...(own ?? emptyDecorations), ...(flagged ?? emptyDecorations)] : host ?? emptyDecorations;
-    } }, options); viewport = mounted.viewport; navigation = mounted.navigation; setComparisonRows = mounted.setComparisonRows; }
+    try { const mounted = mountViewport(host, workspace, tabId, { ...options, view });
+        viewport = mounted.viewport; navigation = mounted.navigation; setComparisonRows = mounted.setComparisonRows; }
     catch (error) { if (!options.view) view.dispose(); throw error; }
     const root = viewport.element;
     root.style.tabSize = String(language.tabSize);
@@ -1324,7 +1320,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     brackets = mountBracketHighlights(workspace, tabId, view, viewport, input, () => language,
         () => { const state = activity(); return !state.disposed && !state.composing && !state.pendingInput && !state.pendingCommand; }, bracketOptions);
     warnings = mountCharacterWarnings(workspace, tabId, view, viewport, warningOptions);
-    const editor: TextEditor = Object.freeze({ element: root, input, view, viewport, focus, activity, bracketMatching: brackets.handle, characterWarnings: warnings.handle,
+    const editor: TextEditor = Object.freeze({ element: root, input, view, viewport, decorations: viewport.decorations, focus, activity, bracketMatching: brackets.handle, characterWarnings: warnings.handle,
         captureInsertion: (kind = "paste") => {
             hostInsertion?.cancel();
             const available = () => !disposed && root.isConnected && !readOnly && !input.disabled && !input.readOnly && !composing
