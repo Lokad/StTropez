@@ -222,8 +222,9 @@ async function workflow(page, original, activeCase, screenshot) {
     assert.ok(peerBeforeHunk);
     assert.equal(review(beforeHunk).hunks, 2);
     await comparison.getByRole("textbox", { name: "Comparison working source", exact: true }).press("Control+Home"); await ready();
-    await comparison.getByRole("button", { name: "Next change", exact: true }).click(); await ready();
-    await comparison.getByRole("button", { name: "Use baseline", exact: true }).click();
+    const restoreFirst = comparison.getByRole("button", { name: "Use baseline", exact: true });
+    assert.equal(await restoreFirst.getAttribute("title"), "Restore change 1 of 2 from the baseline");
+    await restoreFirst.click();
     expected = "remote " + captured;
     const reverted = await ready(); await exact(); await exact(remote, true);
     assert.equal(reverted.history.undoDepth, beforeHunk.history.undoDepth + 1);
