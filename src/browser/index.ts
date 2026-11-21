@@ -16,6 +16,8 @@ export { openWebSocketTransport } from "./lsp-websocket.ts";
 export type { WebSocketTransportOptions } from "./lsp-websocket.ts";
 export { createDiagnosticController } from "./diagnostic-controller.ts";
 export { createCodeActionController } from "./code-action-controller.ts";
+export { createHoverController } from "./hover-controller.ts";
+export type { HoverController, HoverControllerOptions, HoverDiagnostics, HoverSnapshot } from "./hover-controller.ts";
 export type { CodeActionController, CodeActionControllerOptions, CodeActionSnapshot, CodeActionChoice, CodeActionPreview, CodeActionCommand, CodeActionExecution } from "./code-action-controller.ts";
 export type { DiagnosticController, DiagnosticControllerOptions, DiagnosticSnapshot, EditorDiagnostic } from "./diagnostic-controller.ts";
 export { createCompletionController } from "./completion-controller.ts";

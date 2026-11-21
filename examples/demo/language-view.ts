@@ -85,7 +85,7 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
                     })));
                     else occurrences.clear();
                 }));
-                inspection = mountDemoInspection(scope, workspace, file, editor, provider, valid, () => !!controller?.getSnapshot().choices.length || !!symbols?.isOpen() || !!actions?.isOpen(),
+                inspection = mountDemoInspection(scope, workspace, file, editor, provider, language, valid, () => !!controller?.getSnapshot().choices.length || !!symbols?.isOpen() || !!actions?.isOpen(),
                     () => controller?.cancel(), () => { symbols?.dismiss(); actions?.dismiss(); });
                 symbols = mountDemoSymbols(scope, workspace, files, file, editor, provider, valid, () => { controller?.cancel(); inspection?.dismiss(); actions?.dismiss(); }, open);
                 actions = mountDemoActions(scope, workspace, file, editor, provider, language, valid, () => { controller?.cancel(); inspection?.dismiss(); symbols?.dismiss(); });

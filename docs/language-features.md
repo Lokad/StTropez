@@ -14,7 +14,7 @@ separately. Incoming edits and command execution have their own
 | --- | --- | --- |
 | Completion | `createLspCompletionClient`; browser `createCompletionController` | `textDocument/completion` |
 | Diagnostics | `createDiagnosticController` | `textDocument/publishDiagnostics` |
-| Hover | `createLspHoverClient` | `textDocument/hover` |
+| Hover | `createHoverController`, `createLspHoverClient` | `textDocument/hover` |
 | Signature help | `createLspSignatureClient` | `textDocument/signatureHelp` |
 | Definition / references | `createLspNavigationClient` | `textDocument/definition` / `textDocument/references` |
 | Rename | `createLspRenameClient` | `textDocument/rename` |
@@ -245,6 +245,18 @@ undo or redo end the session. Undo/redo restore text/selections without recreati
 commit-character acceptance inserts expanded text plus the character without starting a session.
 
 ### Hover and documentation
+
+`createHoverController(editor, provider)` inspects the caret with `request()` or accepts a
+captured `{ revision, offset }` from the pointer. It shows diagnostics at that offset as soon as
+they are available. Symbol documentation joins them when the hover request completes. Messages
+remain plain text. A mapped diagnostic reads “Awaiting recheck” until fresh analysis arrives.
+
+Subscribe to the controller and render the ready snapshot’s `content` with `mountDocumentation`.
+The snapshot’s `range` identifies where the same information applies. A point diagnostic matches
+its exact offset. The controller preserves focus and selection. Editing, changing the selection or
+fold projection, and replacing the tab expire the result. `cancel()` dismisses it and `dispose()`
+releases the controller. For a separate analysis service, pass its observable `diagnostics` and
+`diagnosticRevision` snapshot through the `diagnostics` option. The lookup uses the painted revision.
 
 `createLspHoverClient(provider).run(document, offset, prepare?)` returns `{ result, cancel }`. A
 non-null reply has `text`, formatted `content`, optional `range` and `isCurrent`. `decodeLspHover`

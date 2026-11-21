@@ -63,6 +63,7 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
             && !Array.isArray(document) && "open" in document && document.open === 1));
         await page.evaluate(() => { window.publicLsp.stopCompletion(); window.publicLsp.diagnostics.request(); });
         await expect(marker).toHaveText("TODO");
+        await button("Hover").click(); await expect.poll(async () => (await state()).notes.hover).toContain("Resolve this placeholder.");
         assert.equal(await firstDiagnostic.evaluate(item => item.select()), false); await firstDiagnostic.dispose();
         assert.equal(await page.evaluate(() => window.publicLsp.diagnostics.getSnapshot().diagnostics[0]?.select()), true);
         await page.evaluate(() => window.publicLsp.showDiagnostic());

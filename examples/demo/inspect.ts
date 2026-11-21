@@ -1,19 +1,18 @@
 import type { Workspace } from "../../src/index.ts";
 import type { TextEditor } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
-import { createLspHoverClient } from "../shared/language/lsp-hover-client.ts";
-import { createHoverController } from "../shared/language/hover-controller.ts";
 import { lspSignatureBackend } from "../shared/language/lsp-language-clients.ts";
 import { HostHoverTools } from "../hosts/hover.ts";
 import { mountHoverPanel } from "../hosts/hover-panel.ts";
 import { HostSignatureTools } from "../hosts/signature.ts";
 import { mountSignaturePopup } from "../hosts/signature-panel.ts";
 import type { DemoFile } from "./project.ts";
+import type { DemoLanguage } from "./language.ts";
 import { canOpenDemoHelp } from "./diagnostics.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 
 /** Reuses captured popup controllers; the host owns explicit external-help opening. */
-export function mountDemoInspection(scope: CleanupScope, workspace: Workspace, file: DemoFile, editor: TextEditor, provider: LspWorkspace,
+export function mountDemoInspection(scope: CleanupScope, workspace: Workspace, file: DemoFile, editor: TextEditor, provider: LspWorkspace, language: DemoLanguage,
     valid: () => boolean, completionOpen: () => boolean, cancelCompletion: () => void, beforeInspect: () => void = () => {}) {
     const host = document.createElement("div"); scope.defer(() => host.remove());
     host.className = "demo-language-popups"; document.body.append(host);
@@ -22,8 +21,11 @@ export function mountDemoInspection(scope: CleanupScope, workspace: Workspace, f
     const hover = new HostHoverTools(workspace, kind => {
         if (kind === "pointer") return canCapture() && !completionOpen() && !signature.state.getSnapshot().visible;
         signature.dismiss(); cancelCompletion(); beforeInspect(); return canCapture();
-    }, { canCapture, createController: (workspace, tab, editor, canCapture) => createHoverController(workspace, tab, editor,
-        { canCapture, backend: createLspHoverClient({ provider }) }) });
+    }, { canCapture, provider, diagnostics: { subscribe: language.state.subscribe, getSnapshot() {
+        const state = language.state.getSnapshot(), doc = workspace.document(file.resource.documentId);
+        return { diagnosticRevision: doc.revision, diagnosticsPending: state.checking,
+            diagnostics: state.diagnostics.filter(item => item.documentId === doc.id && item.revision === doc.revision) };
+    } } });
     const signature = new HostSignatureTools(workspace, canCapture, () => { hover.dismiss(); beforeInspect(); },
         (_clock, changed) => lspSignatureBackend(workspace, provider, changed), completionOpen);
     scope.defer(() => signature.dispose());

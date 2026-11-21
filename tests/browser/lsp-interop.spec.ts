@@ -64,6 +64,8 @@ test("pending LSP diagnostics remain painted and navigable while server analysis
     const diagnostic = page.getByLabel("Source diagnostics", { exact: true }).getByRole("button"), status = page.getByLabel("Diagnostic status", { exact: true });
     await expect(diagnostic).toHaveText("21: Resolve this placeholder.");
     await expect(page.locator('[aria-label="Left host pane"] .st-diagnostic')).toHaveText("TODO");
+    await page.locator('[aria-label="Left host pane"] .st-diagnostic').hover();
+    await expect(page.getByRole("tooltip")).toContainText("Resolve this placeholder.");
     const observation = await page.evaluateHandle(() => {
         const samples: { text: string; pending: boolean | undefined; revision: number; source: number }[] = []; let frame = 0;
         const sample = () => {
