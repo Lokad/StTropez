@@ -40,6 +40,36 @@ test("dragging across emitted JavaScript copies both lines and preserves the sel
     await oldInput!.dispose();
 });
 
+test("resizing Changes keeps both editors and the selected change preview within the panel", async ({ page, baseURL }) => {
+    await page.goto(baseURL!);
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    await source.press("Control+Home"); await page.keyboard.insertText("// Review this change\n");
+    await page.getByRole("button", { name: "Changes", exact: true }).click();
+    await page.getByRole("button", { name: "Next change", exact: true }).click();
+    const panel = page.locator("#panel-content");
+    await expect(panel.locator(".st-comparison-preview")).toBeVisible();
+    for (const [width, height] of [[1920, 1080], [1280, 600], [680, 900]] as const) {
+        await page.setViewportSize({ width, height });
+        await expect.poll(() => panel.evaluate(root => {
+            const comparison = root.querySelector(".st-comparison")!;
+            const preview = comparison.querySelector(".st-comparison-preview")!, box = preview.getBoundingClientRect();
+            const panes = [...comparison.querySelectorAll(".st-viewport")];
+            const [left, right] = panes.map(pane => pane.getBoundingClientRect());
+            const gap = parseFloat(getComputedStyle(comparison).rowGap);
+            return {
+                outerScroll: root.scrollHeight - root.clientHeight,
+                fillsHeight: Math.abs(box.top - right!.bottom - gap) < 1,
+                stacked: right!.top >= left!.bottom,
+                previewHit: preview.contains(document.elementFromPoint(box.left + box.width / 4, box.top + box.height / 2)),
+                panesHit: panes.map(pane => { const p = pane.getBoundingClientRect();
+                    return pane.contains(document.elementFromPoint(p.left + p.width / 2, p.bottom - 2)); })
+            };
+        }), `Changes at ${width} × ${height}`).toEqual({
+            outerScroll: 0, fillsHeight: true, stacked: width < 700, previewHit: true, panesHit: [true, true]
+        });
+    }
+});
+
 test("Go to line returns typing to the chosen large-file row and cancels when the source view closes", async ({ page, baseURL }) => {
     await page.goto(baseURL!); await page.locator("#sample").selectOption("large");
     const source = page.getByRole("textbox", { name: "large.ts", exact: true });

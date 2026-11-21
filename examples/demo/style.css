@@ -70,9 +70,9 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 3
 main.reviewing { grid-template-columns: minmax(0, 1fr); } main.reviewing #source-column { display: none; }
 main.collapsed { grid-template-columns: minmax(0, 1fr) auto; } main.collapsed #panel-content, main.collapsed [data-panel] { display: none; }
 .demo-review-labels { height: 60px; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 30px 22px; align-items: center; padding: 0 14px; color: #afc2d9; font-size: 13px; border-bottom: 1px solid #29384e; }
-.st-comparison { height: calc(100% - 60px); display: flex; flex-direction: column; } .st-comparison-panes { flex: 1; min-height: 0; }
+:where(#panel-content, .demo-shadow-content):has(> .demo-review-labels) { display: grid; grid-template-rows: auto minmax(0, 1fr); }
 .st-comparison-panes > section > h3, .st-comparison-controls > label { display: none; }
-.st-comparison-controls { flex-wrap: wrap; font-size: 12px; } .st-comparison-preview { max-height: 100px; }
+.st-comparison-controls { font-size: 12px; }
 .demo-review-hint { grid-column: 1 / -1; font-size: 12px; }
 footer { display: flex; gap: 20px; align-items: center; min-height: 38px; padding: 8px 20px; border-top: 1px solid #29384e; font-size: 12px; color: #a6b9d0; }
 #status { flex: 1; } #cursor, #analysis-status { white-space: nowrap; }

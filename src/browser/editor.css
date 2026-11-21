@@ -96,18 +96,18 @@
 .st-text-drop-caret { position: absolute; width: 2px; pointer-events: none; background: var(--st-foreground, #e1e7ef); }
 .st-text-drag-preview { position: fixed; left: 8px; top: 8px; max-width: 320px; max-height: 80px; overflow: hidden; white-space: pre-wrap;
     padding: 4px 8px; pointer-events: none; color: var(--st-foreground, #e1e7ef); background: var(--st-background, #131b27); border: 1px solid currentColor; }
-.st-comparison { display: flex; flex-direction: column; gap: .5rem; color: #d7deea; background: #161b25; }
-.st-comparison-controls { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; padding: .5rem; }
+.st-comparison { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: .5rem; color: #d7deea; background: #161b25; }
+.st-comparison-controls { display: flex; flex: none; align-items: center; flex-wrap: wrap; gap: .5rem; padding: .5rem; }
 .st-comparison-controls button { font: inherit; }
-.st-comparison-panes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .5rem; }
-.st-comparison-panes section { min-width: 0; }
+.st-comparison-panes { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-auto-rows: minmax(0, 1fr); gap: .5rem; }
+.st-comparison-panes > section { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .st-comparison-panes h3 { font: inherit; margin: 0; padding: .5rem; }
-.st-comparison-editor { height: 440px; min-height: 120px; }
+.st-comparison-editor { flex: 1 1 auto; height: 440px; min-height: 0; }
 .st-comparison-line-baseline { background: #4d252c; min-width: 100%; box-shadow: inset 3px 0 #d07886; }
 .st-comparison-line-working { background: #183d30; min-width: 100%; box-shadow: inset 3px 0 #64be8d; }
 .st-comparison-removed { background: #873e4e; }
 .st-comparison-added { background: #246246; }
-.st-comparison-preview { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .5rem; padding: .5rem; }
+.st-comparison-preview { display: grid; flex: none; max-height: min(8rem, 30%); overflow: auto; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .5rem; padding: .5rem; }
 .st-comparison-preview[hidden] { display: none; }
 .st-comparison-preview pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 700px) { .st-comparison-panes, .st-comparison-preview { grid-template-columns: minmax(0, 1fr); } }

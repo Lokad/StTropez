@@ -10,6 +10,10 @@ chooses which changes to accept and saves the result.
 Pass the working document and its `ComparisonBaseline`. Give the container a height and load the
 editor stylesheet. [Page setup](getting-started.md#open-the-first-editor)
 
+The panes fill the space between the controls and the selected-change preview. At window widths
+of 700 CSS pixels or less they stack and share the available height. Each pane scrolls independently
+of the preview.
+
 ```ts
 import type { ComparisonBaseline, DocumentId, Workspace } from "sttropez";
 import { mountTextComparison } from "sttropez/browser";
