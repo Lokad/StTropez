@@ -129,6 +129,24 @@ test("Find toggles regex on the existing query and replaces captured groups in o
     await expect(query).toHaveValue('import \\{ calculateTotal \\} from "\\./pricing";');
 });
 
+test("Find combines case and word boundaries and keeps the options across files", async ({ page, baseURL }) => {
+    await page.goto(baseURL!);
+    const query = page.getByRole("textbox", { name: "Find text" }), status = page.locator("#find-status");
+    const caseButton = page.getByRole("button", { name: "Match case", exact: true });
+    const word = page.getByRole("button", { name: "Match whole word" }), regex = page.getByRole("button", { name: "Use regular expression" });
+    await page.getByRole("textbox", { name: "main.ts", exact: true }).press("Control+f");
+    await query.fill("Cart"); await expect(status).toHaveText("1 of 5");
+    await caseButton.press("Space"); await expect(query).toBeFocused(); await expect(status).toHaveText("2 matches");
+    await word.click(); await expect(status).toHaveText("No matches");
+    await caseButton.click(); await expect(status).toHaveText("3 matches");
+    await regex.click(); await query.fill("car[t]"); await expect(status).toHaveText("1 of 3");
+    await page.locator("#files button").filter({ hasText: "pricing.ts" }).click();
+    await expect(query).toHaveValue("car[t]"); await expect(status).toHaveText("No matches");
+    await expect(word).toHaveAttribute("aria-pressed", "true"); await expect(regex).toHaveAttribute("aria-pressed", "true");
+    await word.click(); await expect(status).toHaveText("2 matches");
+    await caseButton.click(); await expect(status).toHaveText("No matches");
+});
+
 test("a pending regex search allows large-file scrolling and typing and expires on file change", async ({ page, baseURL }) => {
     // Hold the first actual match page for each large-file revision, then deliver both after switching documents.
     type Probe = { pending: (() => void)[]; holding: boolean };

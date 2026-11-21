@@ -349,7 +349,7 @@ function mountFile(file: DemoFile, focus = false): void {
     find = createFindController(editor, { regularExpressionBackend: createRegexFindBackend({
         clock: window, createWorker: () => new Worker(new URL("regex-worker.js", document.baseURI), { type: "module" }),
     }) });
-    find.setFlags({ matchCase: false, regularExpression: button("find-regex").getAttribute("aria-pressed") === "true" });
+    find.setFlags(findFlags());
     const capturedFind = find;
     const renderFind = () => {
         const snapshot = capturedFind.getSnapshot();
@@ -464,6 +464,10 @@ function setPanel(next: typeof panel): void {
     for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.setAttribute("aria-pressed", String(tab.dataset.panel === panel));
     mountFile(active, true);
 }
+function findFlags() {
+    const pressed = (id: string) => button(id).getAttribute("aria-pressed") === "true";
+    return { matchCase: pressed("find-case"), wholeWord: pressed("find-word"), regularExpression: pressed("find-regex") };
+}
 function findStatus(state: FindSnapshot): string {
     if (!state.query) return "";
     if (state.message && state.reason !== "replaced") return state.message;
@@ -498,11 +502,13 @@ element("panel-content").addEventListener(editRefusedEvent, () => {
     element("status").textContent = project.message;
 }, { signal: listeners.signal });
 on("find-toggle", () => openFind()); on("find-close", closeFind);
-on("find-regex", () => {
-    const toggle = button("find-regex"), enabled = toggle.getAttribute("aria-pressed") !== "true";
-    toggle.setAttribute("aria-pressed", String(enabled)); find?.setFlags({ regularExpression: enabled });
-    field("find-query").focus();
-});
+for (const toggle of element("find-options").querySelectorAll("button")) {
+    on(toggle.id, () => {
+        toggle.setAttribute("aria-pressed", String(toggle.getAttribute("aria-pressed") !== "true"));
+        find?.setFlags(findFlags());
+        field("find-query").focus();
+    });
+}
 on("replace-toggle", () => { element("replace-controls").hidden = !element("replace-controls").hidden; });
 on("find-next", () => { find?.next(); }); on("find-previous", () => { find?.next(-1); });
 on("replace-current", () => { find?.replaceCurrent(field("replacement").value); });
