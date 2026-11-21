@@ -181,8 +181,10 @@ project releases it and, for a local server, stops its process and deletes its t
 Idle local allocations expire after two minutes.
 
 The demo saves files and drafts in IndexedDB. **Reset sample** restores the open sample’s original
-text in one undoable edit. Recovery names the draft’s files. Restore applies it, Download exports it
-and **Keep current files** discards that draft. Reopening clears drafts identical to saved data.
+text in one undoable edit. You can keep typing while a recovery offer is open. The demo checkpoints
+your edits alongside the offered draft. After reload, choose a version to restore or download.
+Restoring one keeps the other versions available. **Keep current files** discards the offered
+versions and checkpoints any unsaved current files in the same write. Reopening clears drafts identical to saved data.
 Storage tokens guard against overwriting a peer’s changes. Notifications name the affected sample.
 
 If a saved copy is unreadable, the demo leaves it in storage and opens the sample. Save checks the

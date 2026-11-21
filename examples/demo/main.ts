@@ -213,6 +213,13 @@ function paintMetadata(): void {
     const recovery = project.recovery.state.getSnapshot();
     element("recovery-offer").hidden = !recovery.present;
     element("recovery-message").textContent = recovery.message;
+    const versions = element("recovery-version") as HTMLSelectElement;
+    versions.hidden = recovery.versions < 2; versions.disabled = recovery.busy;
+    if (versions.options.length !== recovery.versions) {
+        versions.replaceChildren(...Array.from({ length: recovery.versions }, (_, index) =>
+            new Option(index === 0 ? "Most recent draft" : index === 1 ? "Previous draft" : `${index} drafts earlier`, String(index))));
+    }
+    versions.selectedIndex = recovery.selected;
     element("recovery-status").textContent = recovery.present ? "Recovery draft available" : recovery.message;
     element("recovery-retry").hidden = recovery.status !== "failed";
     button("recovery-restore").disabled = !project.recovery.canRestore();
@@ -538,6 +545,9 @@ on("save", () => { void save(); });
 on("conflict-review", () => { if (project?.reviewConflict()) { setPanel("changes"); renderMetadata(); } });
 on("conflict-save", () => { void save(true); });
 on("recovery-restore", () => { void project?.recovery.restore(); });
+element("recovery-version").addEventListener("change", event => {
+    project?.recovery.selectVersion((event.currentTarget as HTMLSelectElement).selectedIndex);
+}, { signal: listeners.signal });
 on("recovery-keep", () => { void project?.recovery.keepCurrent(); });
 on("recovery-retry", () => { void project?.recovery.refresh(); });
 function download(text: string, name: string): void {

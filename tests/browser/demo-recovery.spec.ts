@@ -1,5 +1,29 @@
 import { test, expect } from "./fixtures.ts";
 
+test("editing with an unanswered draft keeps both versions available after reload", async ({ page }) => {
+    page.on("dialog", dialog => dialog.accept()); await page.goto("/");
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true }), status = page.locator("#recovery-status");
+    const version = page.getByRole("combobox", { name: "Recovery version" });
+    const restore = page.getByRole("button", { name: "Restore draft", exact: true });
+    await source.press("Control+Home"); await page.keyboard.insertText("// Earlier work\n");
+    await expect(status).toHaveText("Recovery draft captured in this browser.");
+    await page.reload(); await expect(restore).toBeEnabled();
+    await source.press("Control+Home"); await page.keyboard.insertText("// Later work\n");
+    await expect(page.locator("#recovery-message")).toContainText("Your current edits have a recovery copy.");
+    await page.reload(); await expect(version).toBeVisible();
+    await expect(version.locator("option")).toHaveCount(2);
+    await version.selectOption("1"); await restore.click();
+    await expect(page.locator("#editor")).toContainText("Earlier work");
+    await expect(page.locator("#editor")).not.toContainText("Later work");
+    await expect(restore).toBeEnabled(); await restore.click();
+    await expect(page.locator("#editor")).toContainText("Later work");
+    await expect(page.locator("#editor")).not.toContainText("Earlier work");
+    await page.getByRole("button", { name: "Keep current files", exact: true }).click();
+    await expect(status).toHaveText("Recovery draft captured in this browser."); await page.reload();
+    await expect(restore).toBeEnabled(); await expect(version).toBeHidden(); await restore.click();
+    await expect(page.locator("#editor")).toContainText("Later work");
+});
+
 test("demo captures both files and explicitly restores a draft after real reload with linked undo", async ({ page }) => {
       page.on("dialog", dialog => dialog.accept());
     await page.goto("/");
@@ -53,7 +77,8 @@ test("typing while a committed restore awaits completion preserves current text 
     await expect(page.locator("#recovery-message")).toContainText("Your files changed while restoring");
     await expect(page.locator("#editor")).toContainText("// Typed while restoring");
     await expect(page.locator("#editor")).not.toContainText("// Older draft");
-    await expect(page.getByRole("button", { name: "Restore draft", exact: true })).toBeDisabled();
+    await expect(page.locator("#recovery-message")).toContainText("Your edits have a recovery copy");
+    await expect(page.getByRole("button", { name: "Restore draft", exact: true })).toBeEnabled();
     const download = page.waitForEvent("download"); await page.getByRole("button", { name: "Download draft", exact: true }).click();
     expect((await download).suggestedFilename()).toBe("pricing-recovery.json");
     await page.getByRole("button", { name: "Keep current files", exact: true }).click();

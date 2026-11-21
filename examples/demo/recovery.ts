@@ -8,19 +8,31 @@ import { CleanupScope } from "../shared/cleanup-scope.ts";
 
 type Draft = Readonly<{ version: 1; sample: string; baseVersion: string | null; files: Readonly<Record<string, string>> }>;
 type Capture = readonly Readonly<{ file: DemoFile; document: DocumentSnapshot; metadata: ResourceMetadata; target: ResourceTarget; tab: TabTarget }>[];
-type Offer = Readonly<{ envelope: StoredDraft; draft: Draft; capture: Capture }>;
+type Offer = Readonly<{ drafts: readonly Draft[]; selected: number; capture: Capture; working?: Draft; restoreInterrupted?: boolean }>;
 type RecoveryState = Readonly<{ status: "checking" | "idle" | "pending" | "writing" | "protected" | "offer" | "failed";
-    busy: boolean; present: boolean; message: string }>;
+    busy: boolean; present: boolean; versions: number; selected: number; message: string }>;
 type Inventory = Readonly<{ names: readonly string[]; unloaded: () => Readonly<Record<string, string>>; prepare: () => void }>;
 
-function decode(envelope: StoredDraft, sample: string, names: readonly string[]): Draft {
-    const value = envelope.value as Partial<Draft> | null;
-    if (envelope.token === "invalid" || !value || value.version !== 1 || value.sample !== sample || value.baseVersion !== null && typeof value.baseVersion !== "string"
+function decodeDraft(raw: unknown, sample: string, names: readonly string[]): Draft {
+    const value = raw as Partial<Draft> | null;
+    if (!value || value.version !== 1 || value.sample !== sample || value.baseVersion !== null && typeof value.baseVersion !== "string"
         || !value.files || typeof value.files !== "object" || Array.isArray(value.files) || Object.keys(value.files).length !== names.length
         || names.some(name => !Object.hasOwn(value.files!, name) || typeof value.files![name] !== "string" || value.files![name]!.length > 8_000_000)) {
         throw new Error("The recovery draft cannot be read. It has been left untouched.");
     }
     return value as Draft;
+}
+
+function decode(envelope: StoredDraft, sample: string, names: readonly string[]): readonly Draft[] {
+    const value = envelope.value as { version?: number; drafts?: unknown } | null;
+    if (envelope.token === "invalid" || value?.version === 2 && (!Array.isArray(value.drafts) || !value.drafts.length))
+        throw new Error("The recovery draft cannot be read. It has been left untouched.");
+    return value?.version === 2 && Array.isArray(value.drafts)
+        ? Array.from(value.drafts, draft => decodeDraft(draft, sample, names)) : [decodeDraft(value, sample, names)];
+}
+
+function encode(drafts: readonly Draft[]) {
+    return drafts.length === 1 ? drafts[0]! : { version: 2, drafts };
 }
 
 function matches(capture: Capture, draft: Draft): boolean {
@@ -46,7 +58,7 @@ export class DemoRecovery {
     private readonly baseVersion: () => string | null;
     private readonly inputIdle: () => boolean;
     private readonly store: DraftStore;
-    private readonly cell = new HostCell<RecoveryState>({ status: "checking", busy: false, present: false, message: "Checking recovery…" });
+    private readonly cell = new HostCell<RecoveryState>({ status: "checking", busy: false, present: false, versions: 0, selected: 0, message: "Checking recovery…" });
     readonly state: Observable<RecoveryState> = this.cell.observable;
     private token: string | null = null;
     private checkpointed: Capture | undefined;
@@ -91,19 +103,32 @@ export class DemoRecovery {
             && item.metadata.saveStatus !== "saving" && item.metadata.capabilities.edit.includes("human"));
     }
     private publish(status: RecoveryState["status"], message: string): void {
-        if (!this.disposed) this.cell.set({ status, busy: this.running !== undefined, present: this.offer !== undefined, message });
+        if (!this.disposed) this.cell.set({ status, busy: this.running !== undefined, present: this.offer !== undefined,
+            versions: this.offer?.drafts.length ?? 0, selected: this.offer?.selected ?? 0, message });
     }
     private offerMessage(): string {
+        const currentCopy = this.offer?.working && this.targetsCurrent(this.offer.capture);
+        if (this.offer?.restoreInterrupted) return currentCopy
+            ? "Your files changed while restoring. Your edits have a recovery copy and the offered draft is still available."
+            : "Your files changed while restoring. Your edits are intact and the offered draft is still available.";
+        if (currentCopy) return "Your current edits have a recovery copy. Restore another draft, download it, or discard the offered versions with Keep current files.";
+        if (this.offer && this.dirty()) return "Your files changed. Updating their recovery copy…";
+        if (this.offer && this.offer.drafts.length > 1) return "Choose a recovery version to restore or download. Keep current files discards the offered versions.";
         return `This browser has an unsaved draft for ${this.files.map(file => file.name).join(", ")}. Restore it, download it, or keep your current files.`;
     }
     private cancelTimer(): void { if (this.timer !== undefined) clearTimeout(this.timer); this.timer = undefined; }
     private schedule(): void {
         this.cancelTimer();
-        if (this.disposed || !this.loaded || this.running || this.offer || this.cell.get().status === "failed") return;
+        if (this.disposed || !this.loaded || this.running || this.cell.get().status === "failed") return;
+        if (this.offer && !this.dirty() && !this.offer.working && this.targetsCurrent(this.offer.capture)) return;
         if (!this.dirty() && this.token === null) return;
         if (this.checkpointed && this.observed.length === this.checkpointed.length && this.observed.every((item, index) => item.document.id === this.checkpointed![index]!.document.id && item.document.buffer === this.checkpointed![index]!.document.buffer
-            && item.metadata.dirty === this.checkpointed![index]!.metadata.dirty && item.metadata.serverVersion === this.checkpointed![index]!.metadata.serverVersion)) return;
-        this.publish("pending", "Updating recovery…");
+            && item.metadata.dirty === this.checkpointed![index]!.metadata.dirty && item.metadata.serverVersion === this.checkpointed![index]!.metadata.serverVersion)) {
+            if (this.offer) { this.offer = { ...this.offer, capture: this.observed }; this.publish("offer", this.offerMessage()); }
+            return;
+        }
+        this.publish("pending", this.offer?.restoreInterrupted ? this.offerMessage()
+            : this.offer ? "Your files changed. Keeping a recovery copy before you can restore another draft…" : "Updating recovery…");
         // The input/notification path compares immutable handles; text export happens only here.
         this.timer = setTimeout(() => { this.timer = undefined; void this.checkpoint(); }, 300);
     }
@@ -131,6 +156,7 @@ export class DemoRecovery {
             this.publish("checking", "Checking recovery…");
             const envelope = await this.store.read(); if (this.disposed) return;
             this.loaded = true;
+            if (this.offer && envelope?.token === this.token) { this.publish("offer", this.offerMessage()); return; }
             if (envelope?.token === this.token && !this.offer) {
                 if (envelope && !this.dirty() && this.targetsCurrent(capture)) {
                     await this.store.remove(envelope.token);
@@ -143,7 +169,7 @@ export class DemoRecovery {
             this.offer = undefined;
             this.checkpointed = undefined;
             if (envelope) {
-                const draft = decode(envelope, this.sample, this.inventory?.names ?? this.files.map(file => file.name));
+                const drafts = decode(envelope, this.sample, this.inventory?.names ?? this.files.map(file => file.name));
                 // A complete draft may name a file that has no editor resource yet. Materialize
                 // the saved/default inventory before offering an atomic restore, retaining any
                 // stale original capture so loading can never silently authorize later edits.
@@ -154,8 +180,15 @@ export class DemoRecovery {
                 // A save may finish just before the page closes, ahead of deferred draft cleanup.
                 // Compare content during this asynchronous read, never on an edit notification.
                 // Only the exact redundant token can be removed; distinct peer work stays offered.
-                if (this.targetsCurrent(capture) && matches(capture, draft)) {
-                    if (capture.some(item => item.metadata.dirty)) {
+                const current = this.targetsCurrent(capture);
+                const dirty = capture.some(item => item.metadata.dirty);
+                const alternatives: Draft[] = []; let working: Draft | undefined;
+                for (const draft of drafts) {
+                    if (current && matches(capture, draft)) { if (dirty) working = draft; }
+                    else alternatives.push(draft);
+                }
+                if (!alternatives.length) {
+                    if (dirty) {
                         this.token = envelope.token; this.checkpointed = capture;
                         this.publish("protected", "Recovery draft captured in this browser.");
                     } else {
@@ -164,10 +197,11 @@ export class DemoRecovery {
                     }
                     return;
                 }
-                this.offer = { envelope, draft, capture }; this.token = envelope.token;
+                this.offer = { drafts: alternatives, selected: 0, capture, ...(working && { working }) }; this.token = envelope.token;
+                if (working) this.checkpointed = capture;
                 this.publish("offer", this.offerMessage());
             } else { this.token = null; this.publish("idle", "Recovery is ready."); }
-        }).then(() => { if (!this.disposed && !this.offer && this.dirty() && !this.running) this.schedule(); });
+        }).then(() => { if (!this.disposed && this.dirty() && !this.running) this.schedule(); });
     }
     private dirty(): boolean { return this.files.some(file => file.resource.metadata.getSnapshot().dirty); }
     /** Save completion must not leave this page's older draft behind a deferred cleanup timer. */
@@ -178,54 +212,69 @@ export class DemoRecovery {
         if (this.disposed) return;
         if (this.dirty()) { this.schedule(); return; }
         // An offered draft belongs to another page/session until explicitly claimed or discarded.
-        if (this.loaded && !this.offer) await this.checkpoint();
+        if (this.loaded && (!this.offer || this.offer.working)) await this.checkpoint();
     }
-    private checkpoint(): Promise<void> {
-        if (this.disposed || this.offer || !this.loaded) return Promise.resolve();
+    private checkpoint(keepCurrent = false): Promise<void> {
+        if (this.disposed || !this.loaded) return Promise.resolve();
         const capture = this.capture(), dirty = this.dirty(), expected = this.token, baseVersion = this.baseVersion(), unloaded = { ...this.inventory?.unloaded() };
+        const offer = keepCurrent ? undefined : this.offer;
         return this.run(async () => {
             this.publish("writing", "Updating recovery…");
-            if (!dirty) {
+            const working: Draft | undefined = dirty ? { version: 1, sample: this.sample, baseVersion,
+                files: { ...unloaded, ...Object.fromEntries(capture.map(item => [item.file.name, item.document.text()])) } } : undefined;
+            const alternatives = offer?.drafts.filter(draft => !matches(capture, draft)) ?? [];
+            const drafts = working ? [working, ...alternatives] : alternatives;
+            if (!drafts.length) {
                 if (expected) await this.store.remove(expected);
-                if (!this.disposed) { this.token = null; this.checkpointed = undefined; this.publish("idle", "All changes are saved."); }
+                if (!this.disposed) { this.token = null; this.offer = undefined; this.checkpointed = undefined;
+                    this.publish("idle", keepCurrent ? "Kept your current files." : "All changes are saved."); }
                 return;
             }
             const token = crypto.randomUUID();
-            const draft: Draft = { version: 1, sample: this.sample, baseVersion,
-                files: { ...unloaded, ...Object.fromEntries(capture.map(item => [item.file.name, item.document.text()])) } };
-            await this.store.write({ token, value: draft }, expected);
-            if (!this.disposed) { this.token = token; this.checkpointed = capture; this.publish("protected", "Recovery draft captured in this browser."); }
+            await this.store.write({ token, value: encode(drafts) }, expected);
+            if (this.disposed) return;
+            this.token = token; this.checkpointed = capture;
+            if (offer && alternatives.length) {
+                const selected = Math.max(0, alternatives.indexOf(offer.drafts[offer.selected]!));
+                this.offer = { drafts: alternatives, selected, capture, ...(working && { working }), restoreInterrupted: offer.restoreInterrupted === true };
+                this.publish("offer", this.offerMessage());
+            } else { this.offer = undefined; this.publish("protected", "Recovery draft captured in this browser."); }
         });
     }
-    canRestore(): boolean { return !this.running && !!this.offer && this.targetsCurrent(this.offer.capture); }
-    download(): string | undefined { return this.offer ? JSON.stringify(this.offer.draft, null, 2) : undefined; }
+    canRestore(): boolean {
+        return !this.running && !!this.offer && (!this.dirty() || !!this.offer.working) && this.targetsCurrent(this.offer.capture);
+    }
+    selectVersion(selected: number): void {
+        if (!this.offer || this.running || !Number.isSafeInteger(selected) || !this.offer.drafts[selected]) return;
+        this.offer = { ...this.offer, selected }; this.publish("offer", this.offerMessage());
+    }
+    download(): string | undefined { return this.offer && JSON.stringify(this.offer.drafts[this.offer.selected], null, 2); }
     restore(): Promise<void> {
         if (!this.canRestore()) return Promise.resolve();
-        const offer = this.offer!, token = crypto.randomUUID();
+        const offer = this.offer!, token = crypto.randomUUID(), expected = this.token;
+        const draft = offer.drafts[offer.selected]!, remaining = offer.drafts.filter((_, index) => index !== offer.selected);
+        if (offer.working) remaining.unshift(offer.working);
         return this.run(async () => {
             this.publish("offer", "Restoring the captured draft…");
             // Claim the exact offered token in a write transaction before applying any editor edits.
-            await this.store.write({ token, value: offer.draft }, offer.envelope.token);
+            await this.store.write({ token, value: encode([draft, ...remaining]) }, expected);
             if (this.disposed) return;
-            this.token = token; this.offer = { ...offer, envelope: { token, value: offer.draft } };
+            this.token = token;
             if (!this.targetsCurrent(offer.capture)) {
-                this.publish("offer", "Your files changed while restoring. They were left intact; download the draft or keep current files."); return;
+                this.offer = { ...offer, restoreInterrupted: true };
+                this.publish("offer", this.offerMessage()); return;
             }
             const result = this.workspace.editDocuments(offer.capture.map(item => ({ documentId: item.document.id, expectedRevision: item.document.revision,
-                origin: "host", history: { kind: "replace" }, text: offer.draft.files[item.file.name]! })));
+                origin: "host", history: { kind: "replace" }, text: draft.files[item.file.name]! })));
             if (!result.applied) { this.publish("offer", "Restore is unavailable. Your current files are intact."); return; }
-            this.offer = undefined; this.checkpointed = this.capture(); this.publish("protected", "Draft restored. Undo returns to your previous files; Save locally commits these changes.");
+            this.checkpointed = this.capture();
+            this.offer = remaining.length ? { drafts: remaining, selected: 0, capture: this.checkpointed, working: draft } : undefined;
+            if (this.offer) this.publish("offer", "Draft restored. Other recovery versions are still available.");
+            else this.publish("protected", "Draft restored. Undo returns to your previous files; Save locally commits these changes.");
         });
     }
     keepCurrent(): Promise<void> {
-        if (!this.offer) return Promise.resolve();
-        const expected = this.offer.envelope.token;
-        return this.run(async () => {
-            this.publish("offer", "Discarding the offered draft…");
-            await this.store.remove(expected);
-            if (this.disposed) return;
-            this.token = null; this.offer = undefined; this.checkpointed = undefined; this.publish("idle", "Kept your current files."); this.generation++;
-        });
+        return this.offer ? this.checkpoint(true) : Promise.resolve();
     }
     dispose(): Promise<void> {
         if (this.disposal) return this.disposal;

@@ -143,6 +143,36 @@ test("edits or composition during a delayed recovery claim prevent any restored 
     }
 });
 
+test("keeping dirty files before the timer replaces the offered draft in one guarded write", async t => {
+    const store = new MemoryDraftStore(), f = fixture(store); t.after(() => f.recovery.dispose()); await ready(f.recovery);
+    store.beforeRemove = async () => { throw new Error("Removing first would leave edits unprotected."); };
+    f.edit(); await f.recovery.keepCurrent();
+    assert.equal(store.writes, 1); assert.equal(f.recovery.state.getSnapshot().present, false);
+    assert.deepEqual((store.row!.value as { files: unknown }).files, { "a.ts": "newer original a.ts", "b.ts": "original b.ts" });
+});
+
+test("two pages editing beside an offer retain each version without rewriting each other's checkpoints", async t => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const store = new MemoryDraftStore(), first = fixture(store), second = fixture(store);
+    t.after(() => Promise.all([first.recovery.dispose(), second.recovery.dispose()]));
+    await Promise.all([ready(first.recovery), ready(second.recovery)]);
+    first.edit(); t.mock.timers.tick(300); await setImmediate();
+    await second.recovery.refresh();
+    const doc = second.files[1]!.resource.documentId;
+    second.workspace.edit({ documentId: doc, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "second " }] });
+    t.mock.timers.tick(300); await setImmediate();
+    const latest = store.row;
+    await first.recovery.keepCurrent(); assert.equal(store.row, latest); // Its offer predates the second page's edit.
+    await first.recovery.refresh(); t.mock.timers.tick(300); await setImmediate();
+    assert.equal(store.row, latest); assert.equal(store.writes, 2);
+    const reopened = fixture(store); t.after(() => reopened.recovery.dispose()); await ready(reopened.recovery);
+    assert.equal(reopened.recovery.state.getSnapshot().versions, 3);
+    for (const [index, expected] of [[0, "second original b.ts"], [1, "newer original a.ts"], [2, "draft A"]] as const) {
+        reopened.recovery.selectVersion(index);
+        assert.ok(Object.values(JSON.parse(reopened.recovery.download()!).files).includes(expected));
+    }
+});
+
 test("stale restore and discard cannot replace or delete another page's newer draft", async t => {
     const f = fixture(); t.after(() => f.recovery.dispose()); await ready(f.recovery);
     const newer = { token: "newer", value: { version: 1, sample: "sample", baseVersion: null, files: { "a.ts": "peer A", "b.ts": "peer B" } } };
