@@ -395,7 +395,9 @@ including while a link resolves. If you Tab away, the resolved link stays in the
 open it. If the destination pane is busy with a paste, the panel explains the delay.
 Click the link again after the paste finishes. Shift+F4 restores the original document, selections and scroll position.
 Changing result pages during a press requires a fresh click to open a link on the new page.
-In the F2 name field, Enter previews the rename. A second press applies the reviewed edits.
+Press F2 on the symbol to rename. Enter and **Prepare rename preview** both use that pane,
+even if you focus another pane before requesting the preview. Press Enter in the name field
+again to apply the reviewed edits.
 In the F6 colour picker, Enter previews the proposed value. **Apply captured color** applies the
 reviewed format. Changing formats during a press requires a fresh click.
 

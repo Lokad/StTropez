@@ -32,7 +32,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP renam
         await name(page).evaluate(node => { node.dataset.retained = "rename-name"; });
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(v => v.id === "primary")!.selectionSet);
         await input(page).press("F2"); await input(page, "Secondary source").focus();
-        await name(page).fill("discarded"); await name(page).press("Enter"); await waitForRename(page);
+        await name(page).fill("discarded"); await button(page, "Prepare rename preview").click(); await waitForRename(page);
         expect((await snapshot(page)).bindings.rename.capture?.view).toBe("primary");
         await expect(targets(page)).toHaveCount(5); await exact(page, raw);
         const apply = button(page, "Apply captured rename");

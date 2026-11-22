@@ -123,7 +123,7 @@ export class HostRenameTools {
         this.publish({ name: hint ?? "", message: "Enter a name, then preview its changes." });
         this.nameField.element?.focus(); this.nameField.element?.select();
     }
-    readonly prepare = () => this.prepareIn(this.active);
+    readonly prepare = () => this.prepareIn(this.owner ?? this.active);
     private prepareIn(s: Session | undefined) {
         const name = this.cell.get().name;
         if (!s || this.disconnected || !this.host.canCapture(s.editor.view.documentId)) return;
