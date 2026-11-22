@@ -3,6 +3,7 @@ import { captureViewRequest, createNavigationController, mountAnchoredOverlay } 
 import type { CapturedViewRequest, NavigationChoice, NavigationPage, TextEditor } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import { HostRenameTools } from "../hosts/rename.ts";
+import { renderPanelButton } from "../hosts/panel-actions.ts";
 import type { DemoFile } from "./project.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 import { bindPopupCommands } from "./language-commands.ts";
@@ -107,8 +108,9 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     scope.defer(() => rename.dispose());
     const heading = document.createElement("h2"), status = document.createElement("p"), label = document.createElement("label"), name = document.createElement("input");
     heading.textContent = `Rename in ${file.name}`; status.setAttribute("aria-label", "Rename status"); name.maxLength = 256; label.append("New name ", name);
-    const preview = document.createElement("button"), apply = document.createElement("button"), cancel = document.createElement("button"), targets = document.createElement("ol"), pages = document.createElement("div");
-    preview.textContent = "Preview rename"; apply.textContent = "Apply rename"; cancel.textContent = "Cancel rename"; targets.setAttribute("aria-label", "Rename edits");
+    const preview = document.createElement("button"), cancel = document.createElement("button"), targets = document.createElement("ol"), pages = document.createElement("div");
+    let apply = renderPanelButton(document.createElement("button"), { label: "Apply rename", disabled: true, invoke: null });
+    preview.textContent = "Preview rename"; cancel.textContent = "Cancel rename"; targets.setAttribute("aria-label", "Rename edits");
     const previous = document.createElement("button"), next = document.createElement("button"); previous.textContent = "Previous edits"; next.textContent = "Next edits"; pages.append(previous, next);
     renamePopup.append(heading, label, status, preview, apply, cancel, targets, pages);
     let renameSource: CapturedViewRequest | undefined;
@@ -139,7 +141,8 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         status.textContent = state.status === "pending" ? "Preparing rename preview…" : state.status === "ready" ? state.message
             : state.status === "expired" ? "The code or selection changed. Preview again." : state.status === "failed" ? state.message : "Enter a name, then preview its changes.";
         if (name.value !== state.name) name.value = state.name;
-        apply.disabled = !state.canApply; apply.onclick = state.preview?.confirm ?? null; preview.disabled = state.pending || !state.name.trim();
+        apply = renderPanelButton(apply, { label: "Apply rename", reviewKey: state.reviewKey, disabled: !state.canApply, invoke: state.preview?.confirm ?? null });
+        preview.disabled = state.pending || !state.name.trim();
         targets.replaceChildren(...state.locations.map(at => { const item = document.createElement("li"), before = document.createElement("del"), after = document.createElement("ins"), code = document.createElement("code");
             before.textContent = at.before ?? state.symbol; after.textContent = at.after ?? state.name; code.append(before, " → ", after); item.append(`${at.title} · ${at.line + 1}:${at.column + 1} `, code); return item; }));
         pages.hidden = state.count <= 64; previous.disabled = state.page === 0; next.disabled = (state.page + 1) * 64 >= state.count;

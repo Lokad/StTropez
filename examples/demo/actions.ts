@@ -3,6 +3,7 @@ import { createCodeActionController } from "../../src/browser/index.ts";
 import type { CodeActionPreview, TextEditor } from "../../src/browser/index.ts";
 import type { LspCodeAction, LspWorkspace } from "../../src/protocol/index.ts";
 import { HostProjectTools } from "../hosts/project.ts";
+import { createReviewKey, renderPanelButton } from "../hosts/panel-actions.ts";
 import { demoCommandPolicy } from "./action-commands.ts";
 import { projectReviewNote } from "./action-fixture.ts";
 import type { DemoFile } from "./project.ts";
@@ -17,7 +18,9 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     scope.defer(() => { disposed = true; events.abort(); });
     const popup = document.createElement("section"); scope.defer(() => popup.remove());
     popup.className = "demo-actions"; popup.hidden = true; popup.setAttribute("aria-label", "Quick fixes");
-    const heading = document.createElement("h2"), status = document.createElement("p"), choices = document.createElement("div"), edits = document.createElement("ol"), apply = document.createElement("button"), close = document.createElement("button");
+    const heading = document.createElement("h2"), status = document.createElement("p"), choices = document.createElement("div"), edits = document.createElement("ol"), close = document.createElement("button");
+    const reviewKey = createReviewKey(workspace);
+    let apply = document.createElement("button");
     heading.textContent = `Quick fixes in ${file.name}`; status.setAttribute("aria-label", "Quick-fix status"); edits.setAttribute("aria-label", "Quick-fix edits");
     apply.textContent = "Apply fix"; close.textContent = "Cancel fix"; apply.disabled = true;
     const previous = document.createElement("button"), next = document.createElement("button"), pages = document.createElement("div"); previous.textContent = "Previous edits"; next.textContent = "Next edits"; pages.append(previous, next);
@@ -86,8 +89,8 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
             before.textContent = at.before ?? at.context; after.textContent = at.insert + ((at.insertUnits ?? at.insert.length) > at.insert.length ? "…" : "");
             item.append(`${at.title} `, before, " → ", after); return item;
         }));
-        const applyLabel = preview?.command ? "Run action" : "Apply fix"; if (apply.textContent !== applyLabel) apply.textContent = applyLabel;
-        apply.disabled = !canApply(preview); apply.onclick = preview?.confirm ?? null;
+        apply = renderPanelButton(apply, { label: preview?.command ? "Run action" : "Apply fix", reviewKey: reviewKey(preview),
+            disabled: !canApply(preview), invoke: preview?.confirm ?? null });
         const count = page?.count ?? 0;
         pages.hidden = count <= 64; previous.disabled = editPage === 0; next.disabled = (editPage + 1) * 64 >= count;
         if (state.status === "applied" && !commandAction) queueMicrotask(() => { if (!disposed && tools.getSnapshot() === state) { dismiss(); editor.focus(); } });
@@ -95,7 +98,7 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     scope.defer(tools.subscribe(render));
     scope.defer(commands.state.subscribe(() => { if (shown?.command) render(); }));
     scope.defer(editor.viewport.onRender(() => { if (!popup.hidden) position(); }));
-    apply.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });
+    popup.addEventListener("pointerdown", event => { if (event.target === apply) event.preventDefault(); }, { signal: events.signal });
     choices.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });
     close.addEventListener("click", () => { dismiss(); editor.focus(); }, { signal: events.signal });
     previous.addEventListener("click", () => { editPage--; render(); }, { signal: events.signal }); next.addEventListener("click", () => { editPage++; render(); }, { signal: events.signal });

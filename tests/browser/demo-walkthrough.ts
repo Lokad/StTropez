@@ -35,17 +35,20 @@ export async function runDemoActions(page: Page, url = "/") {
     const choice = actions.getByRole("button", { name: "Demo refactor: rename exampleRate across files", exact: true });
     await choice.click(); await expect(actions.getByLabel("Quick-fix edits").locator("li")).toHaveCount(3);
     await expect(actions.getByLabel("Quick-fix edits")).toContainText("rate.ts");
-    const retiredApply = await actions.getByRole("button", { name: "Apply fix", exact: true }).evaluateHandle(node => {
+    const apply = actions.getByRole("button", { name: "Apply fix", exact: true });
+    const retiredApply = await apply.evaluateHandle(node => {
         const button = node as HTMLButtonElement, confirm = button.onclick!;
         return () => { confirm.call(button, new PointerEvent("click")); };
     });
+    await apply.hover(); await page.mouse.down();
     await actions.getByRole("button", { name: "Demo host: refactor, then check", exact: true }).press("ArrowUp");
     await expect(actions.getByRole("button", { name: "Demo host: add review note", exact: true })).toHaveAttribute("data-chosen", "true");
     await expect(source).toBeFocused();
     const run = actions.getByRole("button", { name: "Run action", exact: true });
     await expect(run).toBeEnabled(); await retiredApply.evaluate(confirm => confirm()); await expect(run).toBeEnabled();
-    await choice.click(); await retiredApply.evaluate(confirm => confirm()); await retiredApply.dispose();
-    await expect(actions.getByRole("button", { name: "Apply fix", exact: true })).toBeEnabled();
+    await choice.evaluate(node => (node as HTMLButtonElement).click()); await expect(apply).toBeEnabled();
+    await apply.hover(); await page.mouse.up(); await retiredApply.evaluate(confirm => confirm()); await retiredApply.dispose();
+    await expect(apply).toBeEnabled();
     await expect(page.locator("#editor")).toContainText("import { exampleRate }");
     await source.press("Control+End"); await page.keyboard.insertText("// Keep this later edit");
     await expect(actions.getByRole("button", { name: "Apply fix", exact: true })).toBeDisabled();
@@ -147,8 +150,13 @@ export async function runDemoUnopenedNavigation(page: Page, url = "/") {
     await select(page, main, "export interface LabelOptions"); await main.press("ArrowRight"); await main.press("ArrowLeft"); await main.press("F2");
     const rename = page.getByRole("dialog", { name: "Rename symbol", exact: true });
     const nameField = rename.getByRole("textbox", { name: "New name", exact: true });
+    await nameField.fill("DraftOptions"); await nameField.press("Enter");
+    const applyRename = rename.getByRole("button", { name: "Apply rename", exact: true });
+    await expect(applyRename).toBeEnabled(); await applyRename.hover(); await page.mouse.down();
     await nameField.fill("DisplayOptions"); await nameField.press("Enter");
     await expect(rename.getByLabel("Rename status")).toContainText("Review 3 changes");
+    await applyRename.hover(); await page.mouse.up();
+    await expect(page.locator("#editor")).toContainText("export interface LabelOptions");
     await expect(nameField).toBeFocused(); await page.keyboard.press("Enter"); await expect(rename).toBeHidden(); await expect(main).toBeFocused();
     await expect(page.locator("#editor")).toContainText("export interface DisplayOptions");
     await page.locator('#files [data-file="labels.ts"]').click(); await expect(page.locator("#editor")).toContainText("options: DisplayOptions");
