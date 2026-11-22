@@ -20,7 +20,7 @@ const errors: string[] = [];
 const controller = createCompletionController(editor, provider, { autoConnect: false, onError: error => errors.push(String(error)) });
 const diagnostics = createDiagnosticController(editor, provider, { autoConnect: false });
 const diagnosticHint = document.createElement("aside"); diagnosticHint.id = "diagnostic-hint"; document.body.append(diagnosticHint);
-const hint = mountAnchoredOverlay(editor, diagnosticHint);
+const hint = mountAnchoredOverlay(editor, diagnosticHint, { dismissOn: ["outside-pointerdown"] });
 const hover = createHoverController(editor, provider, { diagnostics });
 const signature = createSignatureController(editor, provider), colors = createDocumentColorController(editor, provider);
 const project = () => [workspace.document(source.documentId), workspace.document(companion.documentId)];
@@ -139,7 +139,7 @@ const bridge = { text, probeTypedHover, select: (at: number) => editor.view.setS
     state: () => ({ provider: provider.snapshot(), editor: controller.getDiagnostics(), completion: controller.getSnapshot(), history: workspace.observeHistory(source.documentId).getSnapshot(), diagnostics: workspace.diagnostics(), notes, companion: companion.documentId, metrics: editor.snapshot(), errors }),
     showDiagnostic: () => {
         const state = diagnostics.getSnapshot(), first = state.diagnostics[0];
-        if (first) { diagnosticHint.textContent = first.message; hint.show({ revision: state.diagnosticRevision, offset: first.from }); }
+        if (first) { diagnosticHint.textContent = first.message; hint.show({ revision: state.diagnosticRevision, from: first.from, to: first.to }); }
     }, diagnostics, stopCompletion: controller.dispose, custom: controller.customRequest, dispose };
 Object.assign(window, { publicLsp: bridge });
 declare global { interface Window { publicLsp: typeof bridge } }

@@ -36,7 +36,7 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     renamePopup.className = "demo-rename"; renamePopup.hidden = true;
     renamePopup.setAttribute("role", "dialog"); renamePopup.setAttribute("aria-label", "Rename symbol");
     document.body.append(popup, renamePopup);
-    const locationsOverlay = mountAnchoredOverlay(editor, popup);
+    const locationsOverlay = mountAnchoredOverlay(editor, popup, { dismissOn: ["focus-leave"], onDismiss: () => cancelNavigation() });
     const renameOverlay = mountAnchoredOverlay(editor, renamePopup, { onFocusedAnchorHidden: editor.focus });
     scope.defer(locationsOverlay.dispose); scope.defer(renameOverlay.dispose);
     type Query = { message: string; offset: number; revision: number; page: NavigationPage | undefined };
@@ -173,11 +173,6 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         const status = navigation.getSnapshot().status;
         if (query && (status === "expired" || status === "idle")) { query = undefined; locationsOverlay.hide(); }
     }));
-    const dismissOnBlur = () => queueMicrotask(() => {
-        if (!disposed && query && !editor.getSnapshot().focused && !popup.contains(document.activeElement)) cancelNavigation();
-    });
-    editor.input.addEventListener("blur", dismissOnBlur, { signal: events.signal });
-    popup.addEventListener("focusout", dismissOnBlur, { signal: events.signal });
     return Object.freeze({ definition: () => request("definition"), references: () => request("references"), rename: () => editor.commands.run("rename.start"),
         dismiss: () => { cancelNavigation(); closeRename(false); }, isOpen: () => !!query || !!renameSource });
 }

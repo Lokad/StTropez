@@ -120,6 +120,8 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         const marked = await marker.boundingBox(), popup = await hint.boundingBox();
         assert.ok(marked && popup && popup.y >= marked.y + marked.height, "A first-line diagnostic opens below its source");
         await expect(input).toBeFocused();
+        await page.locator("#result").dispatchEvent("pointerdown"); await expect(hint).toBeHidden(); await expect(input).toBeFocused();
+        await page.evaluate(() => window.publicLsp.showDiagnostic()); await expect(hint).toBeVisible();
         await input.pressSequentially("ok"); await expect(hint).toBeHidden();
         await page.evaluate(() => window.publicLsp.dispose()); const final = await state(); assert.equal(final.provider.scopes, 0); assert.equal(final.provider.created, final.provider.terminated);
         assert.deepEqual([final.diagnostics.leases, final.diagnostics.views, final.diagnostics.subscriptions], [0, 0, 0]); assert.deepEqual(final.errors, []); assert.deepEqual(errors, []);

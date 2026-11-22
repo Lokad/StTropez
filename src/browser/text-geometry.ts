@@ -4,28 +4,12 @@ import type { Affinity } from "../core/positions.ts";
 
 export type CaretRectangle = Readonly<{ offset: number; affinity: Affinity; left: number; top: number; height: number; revision: number; padding?: true }>;
 export { graphemeBoundaries };
-/** Native range geometry for grapheme clusters on a left-to-right row. */
-export function rowGeometry(element: HTMLElement, from: number, revision: number, lineHeight: number) {
-    const text = element.textContent ?? "", boundaries = graphemeBoundaries(text), nodes: Text[] = [], owner = element.ownerDocument;
+/** Resolve source offsets within a painted row, skipping ornaments without source text. */
+export function rowTextRanges(element: HTMLElement) {
+    const nodes: Text[] = [], owner = element.ownerDocument;
     const iterator = owner.createTreeWalker(element, NodeFilter.SHOW_TEXT);
     for (let node = iterator.nextNode(); node; node = iterator.nextNode()) nodes.push(node as Text);
-    const styled = [element, ...new Set(nodes.map(node => node.parentElement!).filter(parent => parent !== element))];
     let nativeRange: Range | undefined;
-    type Glyph = Readonly<{ start: CaretRectangle; end: CaretRectangle; nativeStart: boolean; nativeEnd: boolean }>;
-    let bounds: DOMRect | undefined, glyphs = new Map<number, Glyph>(), boxes = new Map<number, readonly DOMRect[]>(), raw = new Map<number, readonly DOMRect[]>(), styleKey = "", prepared = false;
-    const corrected = new Set<number>();
-    const ensure = () => {
-        const next = element.getBoundingClientRect(), style = owner.defaultView!.getComputedStyle(element);
-        // Inline typography can change while the row's outer dimensions stay identical.
-        const key = styled.map(node => {
-            const value = node === element ? style : owner.defaultView!.getComputedStyle(node);
-            return [value.font, value.letterSpacing, value.wordSpacing, value.fontVariantLigatures, value.fontKerning,
-                value.fontFeatureSettings, value.fontVariationSettings, value.tabSize, value.textAlign, value.textTransform, value.verticalAlign].join("|");
-        }).join("\n");
-        if (bounds && key === styleKey && next.left === bounds.left && next.top === bounds.top && next.width === bounds.width && next.height === bounds.height) return;
-        styleKey = key;
-        bounds = next; glyphs = new Map(); boxes = new Map(); raw = new Map(); prepared = false; corrected.clear();
-    };
     const hasMarkers = element.querySelector('[data-ornament="before"]') !== null;
     const locate = (offset: number, after = false): Readonly<{ node: Text; offset: number }> | undefined => {
         for (let i = 0; i < nodes.length; i++) {
@@ -40,6 +24,28 @@ export function rowGeometry(element: HTMLElement, from: number, revision: number
         // a glyph from its own text node and retain both caret edges around the swatch.
         const a = locate(start, hasMarkers && (start < end || after)), b = start === end ? a : locate(end); if (!a || !b) return;
         const value = nativeRange ??= owner.createRange(); value.setStart(a.node, a.offset); value.setEnd(b.node, b.offset); return value;
+    };
+    return { nodes, hasMarkers, range };
+}
+/** Native range geometry for grapheme clusters on a left-to-right row. */
+export function rowGeometry(element: HTMLElement, from: number, revision: number, lineHeight: number) {
+    const text = element.textContent ?? "", boundaries = graphemeBoundaries(text), owner = element.ownerDocument;
+    const { nodes, hasMarkers, range } = rowTextRanges(element);
+    const styled = [element, ...new Set(nodes.map(node => node.parentElement!).filter(parent => parent !== element))];
+    type Glyph = Readonly<{ start: CaretRectangle; end: CaretRectangle; nativeStart: boolean; nativeEnd: boolean }>;
+    let bounds: DOMRect | undefined, glyphs = new Map<number, Glyph>(), boxes = new Map<number, readonly DOMRect[]>(), raw = new Map<number, readonly DOMRect[]>(), styleKey = "", prepared = false;
+    const corrected = new Set<number>();
+    const ensure = () => {
+        const next = element.getBoundingClientRect(), style = owner.defaultView!.getComputedStyle(element);
+        // Inline typography can change while the row's outer dimensions stay identical.
+        const key = styled.map(node => {
+            const value = node === element ? style : owner.defaultView!.getComputedStyle(node);
+            return [value.font, value.letterSpacing, value.wordSpacing, value.fontVariantLigatures, value.fontKerning,
+                value.fontFeatureSettings, value.fontVariationSettings, value.tabSize, value.textAlign, value.textTransform, value.verticalAlign].join("|");
+        }).join("\n");
+        if (bounds && key === styleKey && next.left === bounds.left && next.top === bounds.top && next.width === bounds.width && next.height === bounds.height) return;
+        styleKey = key;
+        bounds = next; glyphs = new Map(); boxes = new Map(); raw = new Map(); prepared = false; corrected.clear();
     };
     const collapsed = (offset: number): readonly DOMRect[] => {
         let result = raw.get(offset);

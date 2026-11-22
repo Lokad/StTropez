@@ -6,7 +6,7 @@ import type { FoldIndex } from "../core/folding.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import { createLspHoverClient } from "../protocol/index.ts";
 import type { LspDiagnostic, LspPrepare, LspWorkspace } from "../protocol/index.ts";
-import type { OverlayAnchor } from "./anchored-overlay.ts";
+import type { OverlayPosition } from "./anchored-overlay.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 type Range = Readonly<{ from: number; to: number }>;
@@ -96,7 +96,7 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
         else if (current.failure) publish({ ...idle, status: "failed", message: current.failure });
         else { release(); publish({ ...idle, status: "empty", message: "No information at this position." }); }
     }
-    function request(anchor?: OverlayAnchor): boolean {
+    function request(anchor?: OverlayPosition): boolean {
         notifications.assertWritable();
         if (!available()) return false;
         const selected = view.getSnapshot(), offset = anchor?.offset ?? selected.selection.head;

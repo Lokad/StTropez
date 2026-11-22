@@ -22,6 +22,12 @@ for (const host of ["plain", "react"]) {
         // A delayed pointer move over blank space must not cancel keyboard inspection.
         await primary(page).locator("..").dispatchEvent("pointermove", { clientX: -100, clientY: -100, buttons: 0 });
         await expect(tooltip(page)).toContainText("Declares a constant binding."); expect(await primary(page).evaluate(node => node.ownerDocument.activeElement === node)).toBe(true);
+        // Keyboard inspection anchors to the returned word, even with the caret inside it.
+        const wordStart = await page.locator('.st-editor:has(> textarea[aria-label="Primary source"]) .st-viewport-row').first().evaluate(row => {
+            const node = document.createTreeWalker(row, NodeFilter.SHOW_TEXT).nextNode()!;
+            const range = document.createRange(); range.setStart(node, 0); range.setEnd(node, 1); return range.getBoundingClientRect().left;
+        });
+        await expect.poll(async () => Math.abs((await tooltip(page).boundingBox())!.x - wordStart)).toBeLessThan(2);
         await page.evaluate(() => window.hostFixture.externalWrite("remote")); await primary(page).press("Control+s");
         await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1); await page.evaluate(() => window.hostFixture.finishSave());
         await expect(page.getByRole("region", { name: "Save conflict", exact: true })).toBeVisible();

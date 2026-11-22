@@ -172,9 +172,11 @@ Disposal removes all listeners.
 ### Anchored popups
 
 Append your popup to the document body and pass it to `mountAnchoredOverlay(editor, element)`.
-Call `show({ revision, offset, affinity? })` with a position from that editor. The popup follows
-the text through scrolling and resizing. It hides while its anchor is folded or offscreen and
-reappears when that position is visible again. A new document revision expires the anchor.
+Use `show({ revision, offset })` for a caret, with optional `affinity`. Use
+`show({ revision, from, to })` for a half-open UTF-16 range. A range anchors to the left edge of its
+first visible text row, even when both endpoints are offscreen. An empty range uses the caret.
+Scrolling, resizing and folding update the placement. The popup hides while its anchor is outside
+the text viewport and reappears when the source is visible again. A new revision expires the anchor.
 If the popup contains a focused control, `onFocusedAnchorHidden` lets the host return focus
 before an offscreen or folded anchor hides that control.
 
@@ -183,7 +185,12 @@ If it cannot fit there, it uses the side with more room and limits its height. T
 content and styling. Set a numeric `priority` when several popups share an editor. Each leaves
 room for visible popups with a higher priority. The default is zero.
 
-`hide()` releases the scroll and resize listeners. Call `dispose()` when
+Pass `dismissOn: ["focus-leave"]` to close when focus leaves both the editor and the popup.
+`"outside-pointerdown"` closes on a pointer press outside both. `onDismiss(reason)` runs once
+after the popup closes. The host can cancel a pending request there. Neither event moves focus.
+Without `dismissOn`, the host controls dismissal.
+
+`hide()` releases the placement and dismissal listeners. Call `dispose()` when
 removing the popup. Disposing the editor also releases the attachment.
 
 ### Input adapter ownership

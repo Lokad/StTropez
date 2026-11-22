@@ -11,8 +11,8 @@ export function bindPopup(element: HTMLElement, prefer: "above" | "below") {
         if (editor !== target.editor) {
             dispose(); editor = target.editor; overlay = mountAnchoredOverlay(editor, element, { prefer });
         }
-        const { revision, offset, affinity } = target;
-        overlay!.show({ revision, offset, ...(affinity ? { affinity } : {}) });
+        const { editor: _editor, ...anchor } = target;
+        overlay!.show(anchor);
     }
     return { update, dispose };
 }

@@ -1,7 +1,7 @@
 import { Workspace } from "../../src/index.ts";
 import type { FoldRange, Selection, TextEdit } from "../../src/index.ts";
-import { inputConflictEvent, mountTextEditor, createFoldingController } from "../../src/browser/index.ts";
-import type { TextEditorCommand, TextEditorEditTransform, FoldDiscovery, FoldingController, InputConflictDetail } from "../../src/browser/index.ts";
+import { inputConflictEvent, mountAnchoredOverlay, mountTextEditor, createFoldingController } from "../../src/browser/index.ts";
+import type { TextEditorCommand, TextEditorEditTransform, FoldDiscovery, FoldingController, InputConflictDetail, AnchoredOverlayOptions } from "../../src/browser/index.ts";
 import { corpus, corpusIds } from "../../fixtures/workloads.ts";
 import { EditingPresentation } from "../shared/language/presentation.ts";
 import { editorSettled } from "../shared/readiness.ts";
@@ -50,6 +50,7 @@ const fixture = { ready: true, setText, edit, select, history,
     discoverFolds: (discover: FoldDiscovery) => { foldingController?.dispose(); foldingController = createFoldingController(editors.primary, discover, { delayMs: 0 }); },
     stopFoldDiscovery: () => { foldingController?.dispose(); foldingController = undefined; },
     refreshFolds: () => foldingController?.refresh(), foldStatus: () => foldingController?.getSnapshot(),
+    overlay: (element: HTMLElement, options?: AnchoredOverlayOptions) => mountAnchoredOverlay(editors.primary, element, options),
     configure: editors.primary.configure,
     commands: editors.primary.commands, keymap: editors.primary.keymap,
     command: (command: TextEditorCommand) => editors.primary.commands.run(command),

@@ -34,6 +34,8 @@ export class HostHoverTools {
     popupAnchor() {
         const session = this.current;
         if (!session || !this.cell.get().visible) return;
+        const range = session.controller.getSnapshot().range;
+        if (this.kind === "keyboard" && range) return { editor: session.editor, revision: session.revision, ...range };
         return { editor: session.editor, revision: session.revision, offset: session.offset, affinity: session.affinity };
     }
     private publish(): void {

@@ -1,20 +1,68 @@
 import type { Affinity } from "../core/positions.ts";
 import { ownsTextSurface } from "../core/workspace.ts";
+import type { TextBuffer } from "../core/text-buffer.ts";
+import { rowTextRanges } from "./text-geometry.ts";
 import { clientBox, cssZoom } from "./dom-coordinates.ts";
 import type { TextEditor } from "./text-editor.ts";
 
-export type OverlayAnchor = Readonly<{ revision: number; offset: number; affinity?: Affinity }>;
+export type OverlayPosition = Readonly<{ revision: number; offset: number; affinity?: Affinity }>;
+export type OverlayAnchor = OverlayPosition | Readonly<{ revision: number; from: number; to: number }>;
+export type OverlayDismissEvent = "focus-leave" | "outside-pointerdown";
 export type AnchoredOverlayOptions = Readonly<{ prefer?: "above" | "below"; priority?: number;
+    dismissOn?: readonly OverlayDismissEvent[]; onDismiss?: (event: OverlayDismissEvent) => void;
     /** Called before an offscreen popup hides if one of its controls has focus. */
     onFocusedAnchorHidden?: () => void }>;
 type Placement = { priority: number; rectangle: DOMRect | undefined; schedule: () => void };
 const activeOverlays = new WeakMap<TextEditor, Set<Placement>>();
 
+type Clip = Readonly<{ left: number; top: number; right: number; bottom: number }>;
+type Point = Readonly<{ left: number; top: number; height: number }>;
+
+function visibleAnchor(editor: TextEditor, anchor: OverlayAnchor, buffer: TextBuffer, clip: Clip): Point | undefined {
+    const { viewport, view } = editor, folds = view.folding.getSnapshot();
+    if (clip.left >= clip.right || clip.top >= clip.bottom) return;
+    const caret = (offset: number, affinity?: Affinity) => {
+        if (offset > buffer.length || folds.index.hiddenBy(buffer.lineAt(offset))) return;
+        const point = viewport.coordsAt(offset, affinity);
+        if (point && point.left >= clip.left && point.left < clip.right && point.top + point.height > clip.top && point.top < clip.bottom) return point;
+    };
+    if ("offset" in anchor) return caret(anchor.offset, anchor.affinity);
+    if (anchor.from === anchor.to) return caret(anchor.from);
+    const paint = viewport.activity();
+    if (anchor.to > buffer.length || paint.revision !== anchor.revision || paint.foldGeneration !== folds.generation) return;
+    let first: Point | undefined;
+    function consider(rect: Point): void {
+        if (!first || rect.top < first.top || rect.top === first.top && rect.left < first.left) first = rect;
+    }
+    // Mounted rows include overscan and may be out of DOM order after scrolling.
+    for (const row of viewport.element.querySelectorAll<HTMLElement>(".st-viewport-row")) {
+        const start = Number(row.dataset.from), end = Number(row.dataset.to);
+        const from = Math.max(anchor.from, start), to = Math.min(anchor.to, end);
+        if (from < to) {
+            const bounds = row.getBoundingClientRect();
+            if (bounds.bottom <= clip.top || bounds.top >= clip.bottom) continue;
+            const range = rowTextRanges(row).range(from - start, to - start);
+            for (const rect of range?.getClientRects() ?? []) {
+                const left = Math.max(rect.left, clip.left), top = Math.max(rect.top, clip.top);
+                const height = Math.min(rect.bottom, clip.bottom) - top;
+                if (left < Math.min(rect.right, clip.right) && height > 0) consider({ left, top, height });
+            }
+        } else if (anchor.from <= end + 1 && end < anchor.to && end < buffer.length) {
+            // CRLF has two source units at one painted edge. A clipped row is not a line ending.
+            const line = Number(row.dataset.line);
+            if (line + 1 < buffer.lineCount && end === buffer.line(line).to && anchor.from < buffer.offsetAt(line + 1)) {
+                const point = caret(end, "before"); if (point) consider(point);
+            }
+        }
+    }
+    return first;
+}
+
 /** Positions a host popup against a painted source position without scrolling or focusing the editor. */
 export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, options: AnchoredOverlayOptions = {}) {
     const { viewport, view, workspace } = editor, owner = editor.element.ownerDocument, win = owner.defaultView!;
     if (element.ownerDocument !== owner || editor.signal.aborted) throw new Error("An overlay needs a live editor in the same document.");
-    const priority = options.priority ?? 0;
+    const priority = options.priority ?? 0, dismissOn = new Set(options.dismissOn);
     if (!Number.isFinite(priority)) throw new RangeError("Overlay priority must be finite.");
     const peers = activeOverlays.get(editor) ?? new Set<Placement>();
     activeOverlays.set(editor, peers);
@@ -40,16 +88,14 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
         if (!anchor) return;
         const document = workspace.observeDocument(view.documentId).getSnapshot();
         if (!document || document.revision !== anchor.revision || !ownsTextSurface(workspace, view, editor.tab)) { hide(); return; }
-        const point = viewport.coordsAt(anchor.offset, anchor.affinity);
-        if (!point || !element.isConnected || view.folding.getSnapshot().index.hiddenBy(document.buffer.lineAt(anchor.offset))) {
-            conceal(); return;
-        }
+        if (!element.isConnected) { conceal(); return; }
         const box = clientBox(viewport.element, viewport.settings().minimap, viewport.snapshot().gutterWidth);
         const visual = win.visualViewport, left = visual?.offsetLeft ?? 0, top = visual?.offsetTop ?? 0;
         const right = left + (visual?.width ?? owner.documentElement.clientWidth), bottom = top + (visual?.height ?? owner.documentElement.clientHeight);
+        const point = visibleAnchor(editor, anchor, document.buffer, { left: Math.max(left, box.left), right: Math.min(right, box.right),
+            top: Math.max(top, box.top), bottom: Math.min(bottom, box.bottom) });
+        if (!point) { conceal(); return; }
         const lineEnd = point.top + point.height;
-        if (point.left < Math.max(left, box.left) || point.left >= Math.min(right, box.right)
-            || lineEnd <= Math.max(top, box.top) || point.top >= Math.min(bottom, box.bottom)) { conceal(); return; }
 
         element.hidden = false;
         // Measure at the host's preferred size before choosing a side. A prior short window may have constrained it.
@@ -88,12 +134,30 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
     }
     function show(next: OverlayAnchor): void {
         if (disposed) return;
-        if (!Number.isSafeInteger(next.offset) || next.offset < 0) throw new RangeError("Invalid overlay offset.");
+        const from = "offset" in next ? next.offset : next.from, to = "offset" in next ? next.offset : next.to;
+        if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from) throw new RangeError("Invalid overlay anchor.");
         anchor = Object.freeze({ ...next });
         if (!events) {
             peers.add(placement);
             events = new AbortController();
             const signal = events.signal;
+            const dismiss = (reason: OverlayDismissEvent) => { hide(); options.onDismiss?.(reason); };
+            if (dismissOn.has("focus-leave")) {
+                const left = (event: FocusEvent) => {
+                    // WebKit can run a microtask between focusout and focusin, with body temporarily active.
+                    const next = event.relatedTarget;
+                    if (next instanceof win.Node && (editor.element.contains(next) || element.contains(next))) return;
+                    queueMicrotask(() => {
+                        if (!signal.aborted && !editor.element.matches(":focus-within") && !element.matches(":focus-within")) dismiss("focus-leave");
+                    });
+                };
+                editor.element.addEventListener("focusout", left, { signal });
+                element.addEventListener("focusout", left, { signal });
+            }
+            if (dismissOn.has("outside-pointerdown")) owner.addEventListener("pointerdown", event => {
+                const path = event.composedPath();
+                if (!path.includes(element) && !path.includes(editor.element)) dismiss("outside-pointerdown");
+            }, { capture: true, signal });
             stopRender = viewport.onRender(schedule); resize.observe(element);
             if (editor.tab) signal.addEventListener("abort", workspace.tabs.subscribe(schedule), { once: true });
             win.addEventListener("scroll", schedule, { capture: true, passive: true, signal });
