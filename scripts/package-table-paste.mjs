@@ -54,7 +54,8 @@ export async function runPackagedTablePaste(browser, origin, options) {
         assert.equal(selected?.anchor, 1); assert.equal(selected?.head, expected.length);
         const start = expected.indexOf("unchanged", Math.floor(expected.length / 2)), end = start + "unchanged".length;
         assert.ok(start >= 0);
-        await page.evaluate(head => { const f = window.hostFixture; f.selectSourceSet("secondary", f.snapshot().source.revision, [{ anchor: head, head }]); }, end);
+        await page.evaluate(head => { const f = window.hostFixture; f.selectSourceSet("secondary", f.snapshot().source.revision, [{ anchor: head, head }]); }, end - 1);
+        await runCommand("move-right"); await ready();
         await runCommand("delete-word-backward"); await ready(); assert.equal(await exact(expected.slice(0, start) + expected.slice(end)), true);
         await runCommand("undo"); await ready(); assert.equal(await exact(expected), true);
         await runCommand("undo"); await ready(); assert.equal(await exact(original), true);

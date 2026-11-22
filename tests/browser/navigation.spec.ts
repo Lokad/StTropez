@@ -191,7 +191,13 @@ test("page and line movement retain a measured column across short lines and ext
     await page.keyboard.press("ArrowDown"); await ready(page); expect((await snapshot(page)).primary.selection.head).toBe(starts[7]! + 2);
     await page.keyboard.press("ArrowDown"); await ready(page); expect((await snapshot(page)).primary.selection.head).toBe(starts[8]! + 8);
     const s = await snapshot(page), pageLines = Math.max(1, Math.floor(s.primary.viewport.height / s.primary.viewport.lineHeight) - 1);
+    await page.evaluate(() => {
+        const keys = window.editingFixture.keymap;
+        keys.unbind("PageDown"); keys.bind("F8", "move-page-down");
+    });
     await page.keyboard.press("PageDown"); await ready(page);
+    expect((await snapshot(page)).primary.selection.head).toBe(starts[8]! + 8);
+    await page.keyboard.press("F8"); await ready(page);
     expect((await snapshot(page)).primary.selection.head).toBe(starts[8 + pageLines]! + 8);
     await page.keyboard.press("Shift+PageUp"); await ready(page);
     expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: starts[8 + pageLines]! + 8, head: starts[8]! + 8 });
@@ -205,6 +211,17 @@ test("non-cancellable word input uses its captured revision and preserves reject
         input.dispatchEvent(new InputEvent("beforeinput", { inputType: "deleteWordBackward", bubbles: true, cancelable: false }));
         input.value = "alpha "; input.dispatchEvent(new InputEvent("input", { inputType: "deleteWordBackward", bubbles: true }));
     }); await ready(page); expect(await page.evaluate(() => window.editingFixture.range(0, 6))).toBe("alpha ");
+    await setup(page, "alpha beta", 10);
+    const beforeMismatch = await snapshot(page);
+    await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(node => {
+        const input = node as HTMLTextAreaElement;
+        input.dispatchEvent(new InputEvent("beforeinput", { inputType: "deleteWordBackward", bubbles: true, cancelable: false }));
+        input.value = "alpha bet"; input.dispatchEvent(new InputEvent("input", { inputType: "deleteContentBackward", bubbles: true }));
+    });
+    await ready(page);
+    expect(await page.evaluate(() => { const f = window.editingFixture; return f.range(0, f.snapshot().document!.length); })).toBe("alpha beta");
+    expect((await snapshot(page)).history).toEqual(beforeMismatch.history);
+    expect((await snapshot(page)).conflicts.at(-1)).toMatchObject({ reason: "stale-delete-input", attemptedUnits: 9 });
     await setup(page, "alpha beta", 10); const before = (await snapshot(page)).primary.commits;
     await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(node => {
         const input = node as HTMLTextAreaElement;
@@ -271,9 +288,9 @@ test("pending word deletion orders native deletion and typing and respects permi
     await page.keyboard.press("Control+ArrowRight"); await ready(page); expect((await snapshot(page)).primary.selection.head).toBe(1_000_000);
     const readOnly = await page.evaluate(() => {
         const f = window.editingFixture;
-        return [f.command("delete-word-backward"), f.command("select-word-backward")];
+        return [f.command("delete-backward"), f.command("delete-word-backward"), f.command("select-word-backward")];
     });
-    expect(readOnly).toEqual([false, true]); await ready(page);
+    expect(readOnly).toEqual([false, false, true]); await ready(page);
     expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 1_000_000, head: 0 });
 });
 

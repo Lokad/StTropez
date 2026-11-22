@@ -429,11 +429,16 @@ test("measured tab/CJK/cluster coordinates drive pointer selection and whole-gra
     for (const point of points) expect(await page.evaluate(p => window.editingFixture.hit(p.left, p.top + p.height / 2)?.offset, point)).toBe(point.offset);
     const point = points[4]!; await page.mouse.click(point.left, point.top + point.height / 2);
     expect((await state(page)).primary.selection.head).toBe(5);
-    await page.keyboard.press("Backspace"); expect(await page.evaluate(() => window.editingFixture.range(0, 17))).toBe("a\t界👩‍💻z\r\nsecond");
+    await page.evaluate(() => {
+        const keys = window.editingFixture.keymap;
+        keys.unbind("Backspace"); keys.bind("F8", "delete-backward");
+    });
+    await page.keyboard.press("Backspace"); expect((await state(page)).primary.selection.head).toBe(5);
+    await page.keyboard.press("F8"); expect(await page.evaluate(() => window.editingFixture.range(0, 17))).toBe("a\t界👩‍💻z\r\nsecond");
     await page.keyboard.press("Delete"); expect(await page.evaluate(() => window.editingFixture.range(0, 12))).toBe("a\t界z\r\nsecond");
     await page.keyboard.press("End"); await page.keyboard.press("ArrowRight");
     expect((await state(page)).primary.selection.head).toBe(6); // CRLF moves as one grapheme.
-    await page.keyboard.press("Backspace"); expect(await page.evaluate(() => window.editingFixture.range(0, 10))).toBe("a\t界zsecond");
+    await page.keyboard.press("F8"); expect(await page.evaluate(() => window.editingFixture.range(0, 10))).toBe("a\t界zsecond");
 });
 
 test("plain-text paste uses local line endings across a large backward selection", async ({ page }) => {
@@ -622,6 +627,7 @@ test("rebound history and Select All use the pane's document and leave native ed
     const field = page.getByRole("textbox", { name: "Host text" });
     await page.evaluate(() => window.editingFixture.keymap.bind("F10", "delete-word-forward"));
     await field.press("Home"); await field.press("F10"); await expect(field).toHaveValue("host field");
+    await field.press("ArrowRight"); await field.press("Backspace"); await expect(field).toHaveValue("ost field");
     await field.press("Control+a"); await page.keyboard.type("local"); await field.press("F9");
     await expect(field).toHaveValue("local");
     const result = await page.evaluate(() => {

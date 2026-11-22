@@ -47,8 +47,8 @@ import { mountCharacterWarnings } from "./character-warnings.ts";
 import type { CharacterWarningHighlights } from "./character-warnings.ts";
 import { createCommandRegistry, type EditorCommands, type EditorKeymap } from "./command-registry.ts";
 import { bindEditorDefaults, editCommand, editorCommandLabels, editorKeyCommand } from "./editor-commands.ts";
-import { classifyEditingKey, commandKey, deleteKey, deletesWord, historyKey } from "./editing-keys.ts";
-import type { KeyBinding, KeyStroke, ViewCommand, WordDeletion } from "./editing-keys.ts";
+import { classifyEditingKey, commandKey, historyKey, isDeletionCommand, nativeDeletion } from "./editing-keys.ts";
+import type { DeletionCommand, KeyBinding, KeyStroke, ViewCommand } from "./editing-keys.ts";
 import { commandBudget, createCooperativeRunner } from "./cooperative-runner.ts";
 import { createEdgeAutoscroll, edgeVelocity } from "./edge-autoscroll.ts";
 import { createOrderedInputQueue, typingRun } from "./ordered-input.ts";
@@ -70,7 +70,7 @@ export type TextEditorDiagnostics = TextEditorActivity & Readonly<{
 }>;
 export type TextEditorSnapshot = Readonly<{ focused: boolean; disabled: boolean; composing: boolean;
     readOnlyReason: EditRefusedDetail["reason"] | null }>;
-export type TextEditorCommand = EditingCommand | ViewCommand | WordDeletion | "undo" | "redo";
+export type TextEditorCommand = EditingCommand | ViewCommand | DeletionCommand | "undo" | "redo";
 export type LinePrompt = (request: Readonly<{ currentLine: number; lineCount: number; signal: AbortSignal }>) =>
     number | undefined | PromiseLike<number | undefined>;
 export type EditorSettings = Partial<ViewportSettings> & Readonly<{ language?: LanguageConfiguration;
@@ -200,7 +200,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     const lineCopyFormat = "application/x-sttropez-lines";
     const copiedLines = (data: DataTransfer | null) => data?.getData(lineCopyFormat) === "1";
     type InputCapture = Readonly<{ revision: number; selectionSet: SelectionSet; context: InputContext; target?: NativeInsertionTarget; wholeLines?: boolean }>;
-    let wordInput: Readonly<{ revision: number; selectionSet: SelectionSet; direction: -1 | 1; word: boolean }> | undefined;
+    let pendingDeletion: Readonly<{ revision: number; selectionSet: SelectionSet; command: DeletionCommand }> | undefined;
     let insertion: InputCapture | undefined, composition: InputCapture | undefined;
     let projectedSet = view.getSnapshot().selectionSet;
     let rangeCommand: Readonly<{ capture: CommandCapture; purpose: "word" | "grapheme"; release: () => void }> | undefined, cancelRangeTask: (() => void) | undefined;
@@ -231,7 +231,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 return !input.readOnly && (id === "undo" ? depth.undoDepth : depth.redoDepth) > 0;
             }
             if (id === "go-to-line") return !!options.requestLine;
-            if (deletesWord(id)) return !input.readOnly;
+            if (isDeletionCommand(id)) return !input.readOnly;
             if (!editCommand(id)) return true;
             if (input.readOnly) return false;
             if (id === "block-comment") return !!language.blockComment;
@@ -567,22 +567,22 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     function moved(range: Selection, offset: number, extend: boolean, affinity: Affinity = "after"): Selection {
         return { anchor: extend ? range.anchor : offset, head: offset, anchorAffinity: extend ? range.anchorAffinity ?? "after" : affinity, headAffinity: affinity };
     }
-    function grapheme(direction: -1 | 1, deleting: boolean, extend = false): void {
-        cancelWord(); if (disposed || composing || input.disabled || deleting && input.readOnly) return; syncSelection();
-        const capture = commandCapture(deleting); graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
+    function deleteGrapheme(direction: -1 | 1): boolean {
+        if (disposed || composing || input.disabled || input.readOnly) return false;
+        hostInsertion?.cancel(); view.folding.revealSelection(view.folding.getSnapshot()); cancelWord();
+        syncSelection(); preferred = undefined;
+        const capture = commandCapture(true); graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
         const scanColumns = lineColumnScanner((from, to) => capture.buffer.slice(from, to), language.tabSize);
         eachRange(capture, "grapheme", (range, done) => {
-            if (range.anchor !== range.head && (deleting || !extend)) {
-                done(deleting ? range : moved(range, direction < 0 ? Math.min(range.anchor, range.head) : Math.max(range.anchor, range.head), false)); return;
-            }
+            if (range.anchor !== range.head) { done(range); return; }
             const offset = range.head;
-            if (deleting && direction < 0 && paired.emptyAt(offset)) { done({ anchor: offset - 1, head: offset + 1 }); return; }
+            if (direction < 0 && paired.emptyAt(offset)) { done({ anchor: offset - 1, head: offset + 1 }); return; }
             const adjacent = () => withGraphemes(capture, offset, direction, "grapheme", point => {
-                if (deleting) { const from = direction < 0 && point.floor === offset ? point.preceding ?? offset : point.floor, to = direction > 0 ? point.following ?? offset : point.ceil;
-                    done({ anchor: from, head: to }); }
-                else done(moved(range, direction < 0 ? point.preceding ?? offset : point.following ?? offset, extend));
+                const from = direction < 0 && point.floor === offset ? point.preceding ?? offset : point.floor;
+                const to = direction > 0 ? point.following ?? offset : point.ceil;
+                done({ anchor: from, head: to });
             });
-            if (!deleting || direction > 0 || !offset || !/[ \t]/.test(capture.buffer.slice(offset - 1, offset))) { adjacent(); return; }
+            if (direction > 0 || !offset || !/[ \t]/.test(capture.buffer.slice(offset - 1, offset))) { adjacent(); return; }
             const start = capture.buffer.offsetAt(capture.buffer.lineAt(offset));
             const columns = scanColumns(start, offset, true);
             const step = () => commandTurn(() => {
@@ -592,7 +592,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 if (result.value.indentation) done({ anchor: result.value.previousStop, head: offset }); else adjacent();
             });
             step();
-        }, ranges => finishRanges(capture, ranges, deleting ? direction < 0 ? "deleteContentBackward" : "deleteContentForward" : undefined));
+        }, ranges => finishRanges(capture, ranges, direction < 0 ? "deleteContentBackward" : "deleteContentForward"));
+        return true;
     }
     function word(direction: -1 | 1, deleting: boolean, extend = false): boolean {
         if (disposed || composing || input.disabled || deleting && input.readOnly) return false;
@@ -770,9 +771,12 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         }
         return shortRows(buffer, lines);
     }
-    function moveToBoundary(key: "Home" | "End", extend: boolean, documentBoundary = false): boolean {
+    function prepareMovement(): void {
         hostInsertion?.cancel(); view.folding.revealSelection(view.folding.getSnapshot());
-        syncSelection(); group = undefined; preferred = undefined; cancelWord();
+        syncSelection(); group = undefined;
+    }
+    function moveToBoundary(key: "Home" | "End", extend: boolean, documentBoundary = false): boolean {
+        prepareMovement(); preferred = undefined; cancelWord();
         graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
         navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
         const capture = commandCapture(false), buffer = capture.buffer, firstNonblank = new Map<number, number>();
@@ -802,8 +806,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         }, ranges => finishRanges(capture, ranges), { navigation: true, inline: capture.selectionSet.ranges.length <= commandBudget.inlineRanges });
         return true;
     }
-    function horizontal(key: "ArrowLeft" | "ArrowRight", extend: boolean): void {
-        preferred = undefined;
+    function horizontal(key: "ArrowLeft" | "ArrowRight", extend: boolean): boolean {
+        prepareMovement(); preferred = undefined;
         graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
         beginNavigation((capture, style, inline) => {
         const began = win.performance.now(); viewport.flush();
@@ -829,8 +833,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 return navigation.prepareNavigationRows([...lines]);
             } } : {}) });
         }, shortHorizontal);
+        return true;
     }
-    function vertical(direction: -1 | 1, page: boolean, extend: boolean, add = false): void {
+    function vertical(direction: -1 | 1, page: boolean, extend: boolean, add = false): boolean {
+        prepareMovement();
         beginNavigation((capture, style, inline) => {
         const began = win.performance.now(); viewport.flush();
         const buffer = capture.buffer, selected = capture.selection;
@@ -873,6 +879,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 const line = buffer.lineAt(range.head); return [line, navigation.navigationLine(line, direction, count, page)];
             }))]) } : {}) });
         }, capture => shortVertical(capture, direction, page));
+        return true;
     }
     function languageCommand(command: EditingCommand | Readonly<{ character: string }>): boolean {
         if (disposed || composing || input.disabled || input.readOnly) return false;
@@ -926,6 +933,14 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (disposed || composing || input.disabled || !live()) return false;
         switch (command) {
             case "undo": case "redo": return history(command);
+            case "move-left": case "select-left": return horizontal("ArrowLeft", command === "select-left");
+            case "move-right": case "select-right": return horizontal("ArrowRight", command === "select-right");
+            case "move-up": case "select-up": return vertical(-1, false, command === "select-up");
+            case "move-down": case "select-down": return vertical(1, false, command === "select-down");
+            case "move-page-up": case "select-page-up": return vertical(-1, true, command === "select-page-up");
+            case "move-page-down": case "select-page-down": return vertical(1, true, command === "select-page-down");
+            case "delete-backward": return deleteGrapheme(-1);
+            case "delete-forward": return deleteGrapheme(1);
             case "move-word-backward": return word(-1, false);
             case "move-word-forward": return word(1, false);
             case "select-word-backward": return word(-1, false, true);
@@ -967,7 +982,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             case "select-next-occurrence": case "select-all-occurrences":
                 selectOccurrences(command === "select-all-occurrences"); return true;
             case "add-caret-above": case "add-caret-below":
-                syncSelection(); group = undefined; vertical(command === "add-caret-above" ? -1 : 1, false, false, true); return true;
+                return vertical(command === "add-caret-above" ? -1 : 1, false, false, true);
             case "undo-caret": {
                 cancelWord(); syncSelection(); group = undefined; preferred = undefined;
                 const previous = caretHistory.pop();
@@ -1053,15 +1068,14 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         return { kind: "key", key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey, shiftKey: event.shiftKey, ...binding };
     }
     function nativeIntent(type: string): InputKey | undefined {
-        const word = type.startsWith("deleteWord"), backward = type.endsWith("Backward");
         if (type === "historyUndo" || type === "historyRedo") {
             const stroke = { key: "z", ctrlKey: true, metaKey: false, altKey: false, shiftKey: type === "historyRedo" };
             return captureKey(stroke, historyKey(type === "historyUndo" ? "undo" : "redo"));
         }
-        if (["deleteWordBackward", "deleteWordForward", "deleteContentBackward", "deleteContentForward"].includes(type)) {
-            const stroke = { key: backward ? "Backspace" : "Delete", ctrlKey: word, metaKey: false, altKey: false, shiftKey: false };
-            const binding = word ? commandKey(backward ? "delete-word-backward" : "delete-word-forward") : deleteKey(backward ? -1 : 1);
-            return captureKey(stroke, binding);
+        const deletion = nativeDeletion(type);
+        if (deletion) {
+            const stroke = { key: type.endsWith("Backward") ? "Backspace" : "Delete", ctrlKey: type.startsWith("deleteWord"), metaKey: false, altKey: false, shiftKey: false };
+            return captureKey(stroke, commandKey(deletion));
         }
     }
     function captureOrderedInput(event: InputEvent): boolean {
@@ -1100,17 +1114,20 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     }
     function beforeInput(event: InputEvent): void {
         hostInsertion?.cancel();
-        wordInput = undefined; insertion = undefined;
+        pendingDeletion = undefined; insertion = undefined;
         if (nativeOrder) { if (!nativeOrder.invalid) cancelWord(); nativeOrder = undefined; }
         if (event.defaultPrevented) return;
         if (input.readOnly) { refuseEdit(event); return; }
         if (captureOrderedInput(event)) return;
+        const deletion = nativeDeletion(event.inputType);
+        if (!composing && deletion && event.cancelable) { event.preventDefault(); runCommand(deletion); return; }
         if (!composing) view.folding.revealSelection(view.folding.getSnapshot());
-        if (!composing && ["deleteWordBackward", "deleteWordForward", "deleteContentBackward", "deleteContentForward"].includes(event.inputType)) {
-            syncSelection(); const direction = event.inputType.endsWith("Backward") ? -1 : 1, wholeWord = event.inputType.startsWith("deleteWord");
-            if (event.cancelable) { event.preventDefault(); (wholeWord ? word : grapheme)(direction, true); }
-            else wordInput = { revision, selectionSet: view.getSnapshot().selectionSet, direction, word: wholeWord };
-        } else if (!composing && event.cancelable && (event.inputType === "historyUndo" || event.inputType === "historyRedo")) { event.preventDefault(); history(event.inputType === "historyUndo" ? "undo" : "redo"); }
+        if (!composing && deletion) {
+            syncSelection();
+            pendingDeletion = { revision, selectionSet: view.getSnapshot().selectionSet, command: deletion };
+            return;
+        }
+        if (!composing && event.cancelable && (event.inputType === "historyUndo" || event.inputType === "historyRedo")) { event.preventDefault(); history(event.inputType === "historyUndo" ? "undo" : "redo"); }
         else syncSelection();
         if (!composing && !event.isComposing && !input.disabled && !input.readOnly && input.value === context.text) {
             if (event.inputType === "insertFromPaste" && event.cancelable) {
@@ -1136,12 +1153,16 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     }, { signal: listeners.signal });
     input.addEventListener("input", event => {
         const start = win.performance.now(), type = (event as InputEvent).inputType;
+        const captured = pendingDeletion; pendingDeletion = undefined;
         if (commitOrderedInput(event as InputEvent)) { lastInputMs = win.performance.now() - start; inputEvents++; return; }
-        if (!composing && ["deleteWordBackward", "deleteWordForward", "deleteContentBackward", "deleteContentForward"].includes(type)) {
-            const captured = wordInput; wordInput = undefined;
-            if (!captured || input.disabled || input.readOnly || !live() || captured.direction !== (type.endsWith("Backward") ? -1 : 1)
-                || captured.revision !== revision || captured.selectionSet !== view.getSnapshot().selectionSet) { conflict(type.startsWith("deleteWord") ? "stale-word-input" : "stale-delete-input"); refresh(); }
-            else { refresh(); (captured.word ? word : grapheme)(captured.direction, true); }
+        const deletion = nativeDeletion(type);
+        if (!composing && deletion) {
+            if (!captured || captured.command !== deletion || input.disabled || input.readOnly || !live()
+                || captured.revision !== revision || captured.selectionSet !== view.getSnapshot().selectionSet) {
+                conflict(type.startsWith("deleteWord") ? "stale-word-input" : "stale-delete-input", undefined, captured?.revision);
+                refresh();
+            }
+            else { refresh(); runCommand(deletion); }
         } else commit(type);
         lastInputMs = win.performance.now() - start; inputEvents++;
     }, { signal: listeners.signal });
@@ -1152,7 +1173,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         hostInsertion?.cancel();
         cancelWord();
         commandRunner.cancel();
-        wordInput = undefined;
+        pendingDeletion = undefined;
         insertion = undefined;
         syncSelection();
         view.folding.revealSelection(view.folding.getSnapshot());
@@ -1218,7 +1239,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const command = typeof binding === "object" ? binding.command : undefined;
         if (command?.kind === "command") { if (runCommand(command.command)) event.preventDefault(); return; }
         view.folding.revealSelection(view.folding.getSnapshot());
-        if (command && command.kind !== "delete" || binding === "escape" || binding === "prevent-navigation") group = undefined;
+        if (command || binding === "escape" || binding === "prevent-navigation") group = undefined;
         if (command?.kind === "history") { event.preventDefault(); history(command.direction); return; }
         if (binding === "escape") {
             cancelWord(); commandRunner.cancel(); preferred = undefined;
@@ -1228,15 +1249,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         }
         if (binding === "tab-escape") return;
         escapeState(false); syncSelection();
-        if (command?.kind === "vertical") {
-            event.preventDefault(); vertical(command.direction, command.page, command.extend); return;
-        }
-        if (command?.kind === "horizontal") {
-            event.preventDefault(); horizontal(command.key, command.extend); return;
-        }
         preferred = undefined;
-        if (command?.kind === "delete") { event.preventDefault(); grapheme(command.direction, true); }
-        else if (command?.kind === "language" && languageCommand(command.command)) event.preventDefault();
+        if (command?.kind === "language" && languageCommand(command.command)) event.preventDefault();
         // Unhandled command-navigation must not move inside the bounded textarea context.
         else if (binding === "prevent-navigation") event.preventDefault();
     }
@@ -1613,7 +1627,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             pasteOwner = undefined;
             if (inputQueue.executing) inputQueue.recover(inputQueue.executing, "pending-input-detached");
             cancelWord();
-            nativeOrder = undefined; wordInput = undefined;
+            nativeOrder = undefined; pendingDeletion = undefined;
             insertion = undefined; composition = undefined;
             graphemeCache = undefined; preferred = undefined; contextBuffer = undefined;
             if (composing && input.value !== context.text) conflict("composition-detached");

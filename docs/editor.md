@@ -344,14 +344,20 @@ and frozen; callbacks receive the exact immutable buffer and source endpoints.
 or a registered host command ID to `editor.commands.run(id)`.
 `undo` and `redo` use the document’s shared history. Their entries are disabled in a read-only
 pane or when the corresponding history stack is empty.
+The arrow keys run `move-left`, `move-right`, `move-up` and `move-down`.
+`move-page-up` and `move-page-down` move the caret by a visible page.
+Their `select-` variants extend from each anchor. These commands also work in saved comparisons.
 Use `move-to-line-start`, `move-to-line-end`, `move-to-document-start` and
 `move-to-document-end` in any text pane. Their `select-to-` variants extend each
 selection from its anchor. Line start moves to the first nonblank character, then to
 column one on a second press.
 Use `move-word-backward` and `move-word-forward` to navigate by word, or
 `select-word-backward` and `select-word-forward` to extend each selection.
-`delete-word-backward` and `delete-word-forward` require an editable pane.
-Rebinding a keyboard shortcut leaves native word-deletion input available.
+`delete-backward` and `delete-forward` follow the Backspace and Delete rules above.
+These and `delete-word-backward` and `delete-word-forward` require an editable pane.
+Rebinding a shortcut leaves native deletion input available.
+For a non-cancellable native deletion, the input event must match the captured deletion
+unit, direction, revision and selections. A mismatch preserves the document and reports a conflict.
 The view commands `select-all`, `select-line`, `select-next-occurrence`, `select-all-occurrences`, `add-caret-above`, `add-caret-below`, `undo-caret`,
 `jump-to-bracket`, `scroll-line-up`, `scroll-line-down`, `scroll-page-up` and
 `scroll-page-down` also work in read-only editors. The text-editing commands are

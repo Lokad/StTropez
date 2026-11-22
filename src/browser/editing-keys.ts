@@ -2,17 +2,26 @@ import type { EditingCommand } from "../core/language-edits.ts";
 
 export type KeyStroke = Readonly<Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">>;
 type Boundary = "line-start" | "line-end" | "document-start" | "document-end";
+export type CaretDirection = "left" | "right" | "up" | "down" | "page-up" | "page-down";
 export type ViewCommand = "select-all" | "select-line" | "jump-to-bracket" | "add-caret-above" | "add-caret-below" | "undo-caret"
+    | `move-${CaretDirection}` | `select-${CaretDirection}`
     | `move-to-${Boundary}` | `select-to-${Boundary}`
     | "move-word-backward" | "move-word-forward" | "select-word-backward" | "select-word-forward"
     | "select-next-occurrence" | "select-all-occurrences" | "go-to-line" | "scroll-line-up" | "scroll-line-down" | "scroll-page-up" | "scroll-page-down";
-export type WordDeletion = "delete-word-backward" | "delete-word-forward";
-export function deletesWord(id: string): id is WordDeletion { return id === "delete-word-backward" || id === "delete-word-forward"; }
+export type DeletionCommand = "delete-backward" | "delete-forward" | "delete-word-backward" | "delete-word-forward";
+export function isDeletionCommand(id: string): id is DeletionCommand {
+    return id === "delete-backward" || id === "delete-forward" || id === "delete-word-backward" || id === "delete-word-forward";
+}
+export function nativeDeletion(type: string): DeletionCommand | undefined {
+    switch (type) {
+        case "deleteContentBackward": return "delete-backward";
+        case "deleteContentForward": return "delete-forward";
+        case "deleteWordBackward": return "delete-word-backward";
+        case "deleteWordForward": return "delete-word-forward";
+    }
+}
 type KeyCommand = Readonly<{ kind: "history"; direction: "undo" | "redo" }>
-    | Readonly<{ kind: "command"; command: ViewCommand | WordDeletion }>
-    | Readonly<{ kind: "horizontal"; key: "ArrowLeft" | "ArrowRight"; extend: boolean }>
-    | Readonly<{ kind: "vertical"; direction: -1 | 1; page: boolean; extend: boolean }>
-    | Readonly<{ kind: "delete"; direction: -1 | 1 }>
+    | Readonly<{ kind: "command"; command: ViewCommand | DeletionCommand }>
     | Readonly<{ kind: "language"; command: EditingCommand | Readonly<{ character: string }> }>;
 export type KeyBinding = Readonly<{ command: KeyCommand; text: string; edit: boolean; fallback: boolean }>;
 type EditingKey = KeyBinding | "escape" | "tab-escape" | "prevent-navigation" | undefined;
@@ -20,8 +29,7 @@ const navigationKeys = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown
 const bind = (command: KeyCommand, edit = false, text = "", fallback = false): KeyBinding => ({ command, edit, text, fallback });
 
 export const historyKey = (direction: "undo" | "redo"): KeyBinding => bind({ kind: "history", direction }, true);
-export const commandKey = (command: ViewCommand | WordDeletion): KeyBinding => bind({ kind: "command", command }, deletesWord(command));
-export const deleteKey = (direction: -1 | 1): KeyBinding => bind({ kind: "delete", direction }, true);
+export const commandKey = (command: ViewCommand | DeletionCommand): KeyBinding => bind({ kind: "command", command }, isDeletionCommand(command));
 
 /** Shared interpretation for immediate execution and captured queued intent; no view/lifecycle authority. */
 export function classifyEditingKey(event: KeyStroke, apple: boolean, escaped: boolean, paired: (key: string) => boolean): EditingKey {
@@ -33,10 +41,10 @@ export function classifyEditingKey(event: KeyStroke, apple: boolean, escaped: bo
     if (word && ["ArrowLeft", "ArrowRight", "Backspace", "Delete"].includes(event.key)) return "prevent-navigation";
     if (!command && !event.altKey) {
         switch (event.key) {
-            case "ArrowLeft": case "ArrowRight": return bind({ kind: "horizontal", key: event.key, extend });
+            // A removed movement or deletion binding must not retarget the bounded native input.
+            case "ArrowLeft": case "ArrowRight":
             case "ArrowUp": case "ArrowDown": case "PageUp": case "PageDown":
-                return bind({ kind: "vertical", direction: event.key === "ArrowUp" || event.key === "PageUp" ? -1 : 1, page: event.key.startsWith("Page"), extend });
-            case "Backspace": case "Delete": return deleteKey(event.key === "Backspace" ? -1 : 1);
+            case "Backspace": case "Delete": return "prevent-navigation";
             case "Tab": return bind({ kind: "language", command: extend ? "outdent" : "indent" }, true, "\t");
             case "Enter": return bind({ kind: "language", command: "newline" }, true, "\n", true);
         }

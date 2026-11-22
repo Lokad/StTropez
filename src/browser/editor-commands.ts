@@ -1,6 +1,6 @@
 import type { EditingCommand } from "../core/language-edits.ts";
 import type { EditorKeymap } from "./command-registry.ts";
-import { commandKey, historyKey, type KeyBinding, type ViewCommand, type WordDeletion } from "./editing-keys.ts";
+import { commandKey, historyKey, type CaretDirection, type DeletionCommand, type KeyBinding, type ViewCommand } from "./editing-keys.ts";
 
 const paneCommands = {
     "select-all": "Select all", "go-to-line": "Go to line", "select-line": "Select line", "jump-to-bracket": "Go to matching bracket",
@@ -14,7 +14,12 @@ const paneCommands = {
     "move-word-backward": "Move to previous word", "move-word-forward": "Move to next word",
     "select-word-backward": "Select to previous word", "select-word-forward": "Select to next word",
     "delete-word-backward": "Delete previous word", "delete-word-forward": "Delete next word",
-} satisfies Record<ViewCommand | WordDeletion, string>;
+    "move-left": "Move left", "move-right": "Move right", "move-up": "Move up", "move-down": "Move down",
+    "select-left": "Select left", "select-right": "Select right", "select-up": "Select up", "select-down": "Select down",
+    "move-page-up": "Move up a page", "move-page-down": "Move down a page",
+    "select-page-up": "Select up a page", "select-page-down": "Select down a page",
+    "delete-backward": "Delete backward", "delete-forward": "Delete forward",
+} satisfies Record<ViewCommand | DeletionCommand, string>;
 const edits = {
     "move-line-up": "Move line up", "move-line-down": "Move line down", "copy-line-up": "Copy line up", "copy-line-down": "Copy line down",
     "insert-line-above": "Insert line above", "insert-line-below": "Insert line below", "delete-lines": "Delete lines",
@@ -42,6 +47,13 @@ const defaults: readonly (readonly [string, keyof typeof editorCommandLabels])[]
     ["Mod+/", "line-comment"], ["Mod+Shift+/", "line-comment"], ["Alt+Shift+a", "block-comment"],
 ];
 export function bindEditorDefaults(keymap: EditorKeymap, apple: boolean): void {
+    const caretKeys = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down", PageUp: "page-up", PageDown: "page-down" } satisfies Record<string, CaretDirection>;
+    for (const [key, direction] of Object.entries(caretKeys)) {
+        keymap.bind(key, `move-${direction}`); keymap.bind("Shift+" + key, `select-${direction}`);
+    }
+    for (const modifier of ["", "Shift+"]) {
+        keymap.bind(modifier + "Backspace", "delete-backward"); keymap.bind(modifier + "Delete", "delete-forward");
+    }
     function boundary(modifiers: string, key: string, to: "line-start" | "line-end" | "document-start" | "document-end") {
         keymap.bind(modifiers + key, `move-to-${to}`);
         keymap.bind(modifiers + "Shift+" + key, `select-to-${to}`);
