@@ -767,11 +767,13 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         }
         return shortRows(buffer, lines);
     }
-    function moveToBoundary(key: "Home" | "End", extend: boolean, documentBoundary: boolean): void {
-        cancelWord();
+    function moveToBoundary(key: "Home" | "End", extend: boolean, documentBoundary = false): boolean {
+        hostInsertion?.cancel(); view.folding.revealSelection(view.folding.getSnapshot());
+        syncSelection(); group = undefined; preferred = undefined; cancelWord();
+        graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
         navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
         const capture = commandCapture(false), buffer = capture.buffer, firstNonblank = new Map<number, number>();
-        if (!validCommand(capture)) return;
+        if (!validCommand(capture)) return false;
         eachRange(capture, "grapheme", (range, done) => {
             const move = (offset: number) => done(moved(range, offset, extend));
             if (documentBoundary) { move(key === "Home" ? 0 : buffer.length); return; }
@@ -795,11 +797,11 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             });
             scan();
         }, ranges => finishRanges(capture, ranges), { navigation: true, inline: capture.selectionSet.ranges.length <= commandBudget.inlineRanges });
+        return true;
     }
-    function horizontal(key: string, extend: boolean, documentBoundary = false): void {
+    function horizontal(key: "ArrowLeft" | "ArrowRight", extend: boolean): void {
         preferred = undefined;
         graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
-        if (key === "Home" || key === "End") { moveToBoundary(key, extend, documentBoundary); return; }
         beginNavigation((capture, style, inline) => {
         const began = win.performance.now(); viewport.flush();
         if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
@@ -921,6 +923,14 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (disposed || composing || input.disabled || !live()) return false;
         switch (command) {
             case "undo": case "redo": return history(command);
+            case "move-to-line-start": return moveToBoundary("Home", false);
+            case "move-to-line-end": return moveToBoundary("End", false);
+            case "select-to-line-start": return moveToBoundary("Home", true);
+            case "select-to-line-end": return moveToBoundary("End", true);
+            case "move-to-document-start": return moveToBoundary("Home", false, true);
+            case "move-to-document-end": return moveToBoundary("End", false, true);
+            case "select-to-document-start": return moveToBoundary("Home", true, true);
+            case "select-to-document-end": return moveToBoundary("End", true, true);
             case "select-all":
                 hostInsertion?.cancel(); cancelWord(); group = undefined; preferred = undefined;
                 view.folding.revealSelection(view.folding.getSnapshot());
@@ -1216,7 +1226,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             event.preventDefault(); vertical(command.direction, command.page, command.extend); return;
         }
         if (command?.kind === "horizontal") {
-            event.preventDefault(); horizontal(command.key, command.extend, command.document); return;
+            event.preventDefault(); horizontal(command.key, command.extend); return;
         }
         preferred = undefined;
         if (command?.kind === "delete") { event.preventDefault(); grapheme(command.direction, true); }

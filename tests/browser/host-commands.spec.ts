@@ -63,6 +63,7 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
         await expect(dialog.getByRole("option")).toBeDisabled();
         await filter.fill("undo"); await expect(dialog.locator('option[value="undo"]')).toBeDisabled();
         await filter.fill("select all"); await expect(dialog.locator('option[value="select-all"]')).toBeEnabled();
+        await filter.fill("select to end of document"); await expect(dialog.locator('option[value="select-to-document-end"]')).toBeEnabled();
         await filter.press("Escape");
         await expect(dialog).toHaveCount(0); await expect(reference).toBeFocused();
 

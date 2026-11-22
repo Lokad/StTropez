@@ -344,6 +344,10 @@ and frozen; callbacks receive the exact immutable buffer and source endpoints.
 or a registered host command ID to `editor.commands.run(id)`.
 `undo` and `redo` use the document’s shared history. Their entries are disabled in a read-only
 pane or when the corresponding history stack is empty.
+Use `move-to-line-start`, `move-to-line-end`, `move-to-document-start` and
+`move-to-document-end` in any text pane. Their `select-to-` variants extend each
+selection from its anchor. Line start moves to the first nonblank character, then to
+column one on a second press.
 The view commands `select-all`, `select-line`, `select-next-occurrence`, `select-all-occurrences`, `add-caret-above`, `add-caret-below`, `undo-caret`,
 `jump-to-bracket`, `scroll-line-up`, `scroll-line-down`, `scroll-page-up` and
 `scroll-page-down` also work in read-only editors. The text-editing commands are

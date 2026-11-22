@@ -7,6 +7,10 @@ const views = {
     "add-caret-above": "Add caret above", "add-caret-below": "Add caret below", "undo-caret": "Undo caret change",
     "select-next-occurrence": "Select next occurrence", "select-all-occurrences": "Select all occurrences",
     "scroll-line-up": "Scroll line up", "scroll-line-down": "Scroll line down", "scroll-page-up": "Scroll page up", "scroll-page-down": "Scroll page down",
+    "move-to-line-start": "Move to start of line", "move-to-line-end": "Move to end of line",
+    "select-to-line-start": "Select to start of line", "select-to-line-end": "Select to end of line",
+    "move-to-document-start": "Move to start of document", "move-to-document-end": "Move to end of document",
+    "select-to-document-start": "Select to start of document", "select-to-document-end": "Select to end of document",
 } satisfies Record<ViewCommand, string>;
 const edits = {
     "move-line-up": "Move line up", "move-line-down": "Move line down", "copy-line-up": "Copy line up", "copy-line-down": "Copy line down",
@@ -35,6 +39,18 @@ const defaults: readonly (readonly [string, keyof typeof editorCommandLabels])[]
     ["Mod+/", "line-comment"], ["Mod+Shift+/", "line-comment"], ["Alt+Shift+a", "block-comment"],
 ];
 export function bindEditorDefaults(keymap: EditorKeymap, apple: boolean): void {
+    function boundary(modifiers: string, key: string, to: "line-start" | "line-end" | "document-start" | "document-end") {
+        keymap.bind(modifiers + key, `move-to-${to}`);
+        keymap.bind(modifiers + "Shift+" + key, `select-to-${to}`);
+    }
+    boundary("", "Home", "line-start"); boundary("", "End", "line-end");
+    for (const modifiers of ["Ctrl+", "Meta+", "Ctrl+Meta+"]) {
+        boundary(modifiers, "Home", "document-start"); boundary(modifiers, "End", "document-end");
+    }
+    if (apple) {
+        boundary("Meta+", "ArrowLeft", "line-start"); boundary("Meta+", "ArrowRight", "line-end");
+        boundary("Meta+", "ArrowUp", "document-start"); boundary("Meta+", "ArrowDown", "document-end");
+    }
     for (const [keys, command] of defaults) {
         if (keys.includes("Mod+")) {
             for (const modifier of ["Ctrl+", "Meta+"]) keymap.bind(keys.replaceAll("Mod+", modifier), command);

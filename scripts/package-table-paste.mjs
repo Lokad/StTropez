@@ -48,6 +48,10 @@ export async function runPackagedTablePaste(browser, origin, options) {
         const pasted = await page.evaluate(() => window.hostFixture.snapshot()); assert.equal(pasted.bindings.tablePaste.status, "applied"); assert.equal(pasted.history.undoDepth, before.history.undoDepth + 1); assert.equal(pasted.source.exports, 0);
         assert.equal(primary(pasted).selectionSet.ranges.length, 2);
         await page.getByRole("textbox", { name: "Secondary source", exact: true }).focus();
+        await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("secondary", f.snapshot().source.revision, [{ anchor: 1, head: 1 }]); });
+        await runCommand("select-to-document-end"); await ready();
+        const selected = await page.evaluate(() => window.hostFixture.snapshot().bindings.views.find(view => view.id === "secondary")?.selection);
+        assert.equal(selected?.anchor, 1); assert.equal(selected?.head, expected.length);
         await runCommand("undo"); await ready(); assert.equal(await exact(original), true);
         assert.deepEqual(primary(await page.evaluate(() => window.hostFixture.snapshot())).selectionSet, primary(before).selectionSet);
         await input.press("Control+Shift+z"); await ready(); assert.equal(await exact(expected), true);

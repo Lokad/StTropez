@@ -1,11 +1,13 @@
 import type { EditingCommand } from "../core/language-edits.ts";
 
 export type KeyStroke = Readonly<Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">>;
+type Boundary = "line-start" | "line-end" | "document-start" | "document-end";
 export type ViewCommand = "select-all" | "select-line" | "jump-to-bracket" | "add-caret-above" | "add-caret-below" | "undo-caret"
+    | `move-to-${Boundary}` | `select-to-${Boundary}`
     | "select-next-occurrence" | "select-all-occurrences" | "go-to-line" | "scroll-line-up" | "scroll-line-down" | "scroll-page-up" | "scroll-page-down";
 type KeyCommand = Readonly<{ kind: "history"; direction: "undo" | "redo" }>
     | Readonly<{ kind: "view"; command: ViewCommand }>
-    | Readonly<{ kind: "horizontal"; key: "ArrowLeft" | "ArrowRight" | "Home" | "End"; extend: boolean; document: boolean }>
+    | Readonly<{ kind: "horizontal"; key: "ArrowLeft" | "ArrowRight"; extend: boolean }>
     | Readonly<{ kind: "vertical"; direction: -1 | 1; page: boolean; extend: boolean }>
     | Readonly<{ kind: "word"; direction: -1 | 1; deleting: boolean; extend: boolean }>
     | Readonly<{ kind: "delete"; direction: -1 | 1 }>
@@ -20,12 +22,6 @@ export const historyKey = (direction: "undo" | "redo"): KeyBinding => bind({ kin
 /** Shared interpretation for immediate execution and captured queued intent; no view/lifecycle authority. */
 export function classifyEditingKey(event: KeyStroke, apple: boolean, escaped: boolean, paired: (key: string) => boolean): EditingKey {
     const command = (event.ctrlKey || event.metaKey) && !event.altKey, extend = event.shiftKey;
-    const horizontal = (key: "ArrowLeft" | "ArrowRight" | "Home" | "End", document = false) => bind({ kind: "horizontal", key, extend, document });
-    if (command && (event.key === "Home" || event.key === "End")) return horizontal(event.key, true);
-    if (apple && event.metaKey && !event.ctrlKey && !event.altKey) {
-        if (event.key === "ArrowLeft" || event.key === "ArrowRight") return horizontal(event.key === "ArrowLeft" ? "Home" : "End");
-        if (event.key === "ArrowUp" || event.key === "ArrowDown") return horizontal(event.key === "ArrowUp" ? "Home" : "End", true);
-    }
     if (event.key === "Escape") return "escape";
     if (event.key === "Tab" && escaped) return "tab-escape";
     const word = !event.metaKey && (event.ctrlKey && !event.altKey || apple && event.altKey && !event.ctrlKey);
@@ -35,7 +31,7 @@ export function classifyEditingKey(event: KeyStroke, apple: boolean, escaped: bo
     }
     if (!command && !event.altKey) {
         switch (event.key) {
-            case "ArrowLeft": case "ArrowRight": case "Home": case "End": return horizontal(event.key);
+            case "ArrowLeft": case "ArrowRight": return bind({ kind: "horizontal", key: event.key, extend });
             case "ArrowUp": case "ArrowDown": case "PageUp": case "PageDown":
                 return bind({ kind: "vertical", direction: event.key === "ArrowUp" || event.key === "PageUp" ? -1 : 1, page: event.key.startsWith("Page"), extend });
             case "Backspace": case "Delete": return bind({ kind: "delete", direction: event.key === "Backspace" ? -1 : 1 }, true);

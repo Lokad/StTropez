@@ -84,6 +84,26 @@ test("Home toggles between the first nonblank and the start of its own line", as
     await expect(page.locator("#primary .st-viewport-row").nth(1)).toHaveJSProperty("textContent", "\t  Xsecond");
     await page.keyboard.press("Control+Home");
     expect((await snapshot(page)).primary.selection.head).toBe(0);
+    const boundary = await page.evaluate(() => {
+        const f = window.editingFixture;
+        f.keymap.unbind("Shift+Home"); f.keymap.bind("F8", "select-to-line-start");
+        f.commands.run("move-to-document-end");
+        const end = f.selectionSet().ranges[0]!.head;
+        f.select("primary", { anchor: 13, head: 13 });
+        const input = document.querySelector<HTMLTextAreaElement>("#primary textarea")!;
+        const unbound = input.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", shiftKey: true, bubbles: true, cancelable: true }));
+        return { end, length: f.snapshot().document!.length, unbound };
+    });
+    expect(boundary.end).toBe(boundary.length); expect(boundary.unbound).toBe(true);
+    await page.keyboard.press("F8");
+    expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 13, head: 8 });
+    const hostField = await page.evaluate(() => {
+        const field = document.createElement("input"); field.value = "host"; document.body.append(field);
+        field.addEventListener("keydown", window.editingFixture.keymap.handle); field.focus(); field.setSelectionRange(4, 4);
+        const handled = !field.dispatchEvent(new KeyboardEvent("keydown", { key: "F8", bubbles: true, cancelable: true }));
+        const result = { handled, caret: field.selectionStart }; field.remove(); return result;
+    });
+    expect(hostField).toEqual({ handled: false, caret: 4 });
     await setup(page, " ".repeat(1_000_000) + "last", 1_000_004);
     await page.keyboard.press("Home");
     await page.keyboard.type("Y");
