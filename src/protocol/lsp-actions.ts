@@ -12,11 +12,11 @@ export type LspActionOptions = Readonly<{ commandPolicy?: LspCommandPolicy }>;
 
 /** Reads share capture policy; confirmed commands retain their distinct mutation policy. */
 export function createLspActionClient(provider: LspWorkspace, options: LspActionOptions = {}) {
-    const client = createLspClient(provider), session = client.scope;
+    const client = createLspClient(provider, "textDocument/codeAction"), session = client.scope;
     let executing = false, runner: ReturnType<typeof createLspCommandRunner> | undefined;
     const commands = () => runner ??= createLspCommandRunner(session, client.notify);
     const busy = () => executing || client.isBusy();
-    return Object.freeze({ ...lspFeatureHandle(client, ["textDocument/codeAction"], { isBusy: busy,
+    return Object.freeze({ ...lspFeatureHandle(client, { isBusy: busy,
         cancel: () => { runner?.cancel(); client.cancel(); }, dispose: () => { runner?.dispose(); client.dispose(); } }),
         run: async (snapshots: readonly DocumentSnapshot[], origin: DocumentId, from: number, to: number, prepare?: LspPrepare) => {
             if (executing) throw new Error("A confirmed action command is still running.");

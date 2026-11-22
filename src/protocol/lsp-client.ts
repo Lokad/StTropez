@@ -12,7 +12,7 @@ const cancelled = () => cancelledRequest("LSP feature request cancelled.");
 const stale = () => staleRequest("Captured LSP documents changed.");
 
 /** One feature scope, one latest intent. Decoding and mutation policy remain with the caller. */
-export function createLspClient(provider: LspWorkspace) {
+export function createLspClient<Method extends LspDocumentFeature>(provider: LspWorkspace, ...methods: [Method, ...Method[]]) {
     const scope = provider.createScope(), listeners = new Set<() => void>();
     let disposed = false, generation = 0, latest: Request | undefined, notificationQueued = false;
     let documents: ReadonlyMap<string, LspDocument> = new Map();
@@ -30,6 +30,7 @@ export function createLspClient(provider: LspWorkspace) {
         void Promise.resolve().then(() => { if (!disposed && notificationQueued) notify(); });
     };
     const stop = scope.subscribe(notify);
+    const releaseFeatures = provider.retainFeatures(...methods);
     const release = () => {
         for (const document of documents.values()) document.dispose();
         documents = new Map();
@@ -150,7 +151,7 @@ export function createLspClient(provider: LspWorkspace) {
             else { op.cancelled = true; op.reject(cancelled()); }
         } });
     };
-    return Object.freeze({ scope, request, notify, getSnapshot: scope.getSnapshot,
+    return Object.freeze({ methods, scope, request, notify, getSnapshot: scope.getSnapshot,
         subscribe: (listener: () => void) => {
             if (disposed) throw new Error("LSP feature client is disposed.");
             listeners.add(listener);
@@ -170,7 +171,7 @@ export function createLspClient(provider: LspWorkspace) {
         dispose: () => {
             if (disposed) return;
             disposed = true;
-            invalidate(true);
+            releaseFeatures(); invalidate(true);
             stop();
             scope.dispose();
             listeners.clear();
@@ -178,12 +179,12 @@ export function createLspClient(provider: LspWorkspace) {
 }
 
 /** Common public controls over the existing request owner; feature state stays with its client. */
-export function lspFeatureHandle<Method extends LspDocumentFeature>(client: ReturnType<typeof createLspClient>,
-    methods: readonly [Method, ...Method[]], controls: Partial<Pick<ReturnType<typeof createLspClient>, "isBusy" | "cancel" | "dispose">> = {}) {
+export function lspFeatureHandle<Method extends LspDocumentFeature>(client: ReturnType<typeof createLspClient<Method>>,
+    controls: Partial<Pick<ReturnType<typeof createLspClient>, "isBusy" | "cancel" | "dispose">> = {}) {
     return Object.freeze({ getSnapshot: client.getSnapshot, subscribe: client.subscribe, snapshot: client.snapshot,
         isBusy: controls.isBusy ?? client.isBusy, cancel: controls.cancel ?? client.cancel, dispose: controls.dispose ?? client.dispose,
-        options: (document: DocumentSnapshot, method: Method = methods[0]) => {
-            if (!methods.includes(method)) throw new TypeError("Method is outside this LSP feature client.");
+        options: (document: DocumentSnapshot, method: Method = client.methods[0]) => {
+            if (!client.methods.includes(method)) throw new TypeError("Method is outside this LSP feature client.");
             return client.options(document, method);
         } });
 }

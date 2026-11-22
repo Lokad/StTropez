@@ -30,8 +30,6 @@ export function createLanguageProvider(
 ) {
     return new BrowserLspWorkspace(workspace, {
         documentInfo,
-        features: ["textDocument/completion", "textDocument/hover"],
-        diagnostics: true,
         onError,
         async connect(signal) {
             const connection = await settings(signal);
@@ -41,11 +39,7 @@ export function createLanguageProvider(
 }
 ```
 
-The example enables completion, hover and diagnostics. `features` starts empty.
-Opt into diagnostics, workspace edits, incoming edits and
-Markdown separately.
-
-Attach completion to an existing mounted editor.
+Mount the controllers your host uses, then connect. This example advertises completion.
 
 ```ts
 import { createCompletionController, type TextEditor } from "sttropez/browser";
@@ -106,6 +100,16 @@ scope to unregister. Lifecycle, synchronization and reserved methods cannot be o
 ## Contract
 
 ### Transport and session
+
+The session advertises its installed features when it sends `initialize`. Controllers and typed
+clients register their methods when created and release them on disposal. Two panes can share the
+same feature. The last release removes it from the next handshake. The current connection keeps
+its advertised methods in `getSnapshot().clientFeatures`. Call `reconnect()` to negotiate a change.
+
+Set `features` to a fixed method list when a host needs an exact subset. `diagnostics: true` or
+`false` overrides inference from diagnostic controllers. A host implementing its own method can
+call `retainFeatures(method)` and release it with the returned function. Command execution,
+workspace edits, incoming writes, Markdown presentation and URI access require their own host decisions.
 
 `BrowserLspWorkspace` opens a connection on demand. Each opening gets a fresh `AbortSignal`.
 Pass it to credential lookup and transport startup. Disconnect, disposal and the opening deadline

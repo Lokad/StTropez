@@ -170,6 +170,7 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
         events.abort(); stop(); leave(); clearExplicit(); layer.dispose(); editor.signal.removeEventListener("abort", dispose);
         publish("disposed"); for (const unsubscribe of subscribers) unsubscribe();
     }
+    events.signal.addEventListener("abort", provider.retainFeatures("textDocument/definition", "textDocument/references"), { once: true });
     editor.signal.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ request, cancel, dispose, getSnapshot: state.observable.getSnapshot, subscribe(listener: () => void) {
         if (events.signal.aborted) throw new Error("Navigation controller is disposed.");

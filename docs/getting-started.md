@@ -352,7 +352,6 @@ endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";
 const provider = new BrowserLspWorkspace(workspace, {
     documentInfo: doc => doc.id === file.documentId
         ? { uri: "file:///tasks.md", languageId: "markdown" } : undefined,
-    features: ["textDocument/completion"], diagnostics: true,
     connect: signal => openWebSocketTransport(endpoint.href, { signal })
 });
 ```

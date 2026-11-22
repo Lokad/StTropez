@@ -11,12 +11,23 @@ import { expect } from "@playwright/test";
 export async function runPackagedLsp(browser, url, { packageSha256 }) {
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
     /** @type {string[]} */ const errors = [];
+    /** @type {{textDocument?: Record<string, unknown>, workspace?: {executeCommand?: unknown}}[]} */ const negotiations = [];
+    page.on("websocket", socket => socket.on("framesent", ({ payload }) => {
+        if (typeof payload !== "string") return;
+        const message = JSON.parse(payload);
+        if (message.method === "initialize") negotiations.push(message.params.capabilities);
+    }));
     page.on("pageerror", error => errors.push(error.message));
     try {
         await page.goto(url); const input = page.getByRole("textbox", { name: "Public LSP source", exact: true });
         /** @param {string} name */ const button = name => page.getByRole("button", { name, exact: true });
         const state = () => page.evaluate(() => window.publicLsp.state()), text = () => page.evaluate(() => window.publicLsp.text());
         await input.waitFor(); assert.equal((await state()).provider.created, 0); await button("Connect").click(); await expect.poll(async () => (await state()).editor.connected).toBe(true);
+        assert.equal(negotiations.length, 1);
+        const advertised = negotiations[0];
+        assert.deepEqual(Object.keys(advertised?.textDocument ?? {}).sort(), ["codeAction", "colorProvider", "completion", "definition", "documentLink",
+            "hover", "publishDiagnostics", "references", "rename", "signatureHelp", "synchronization"]);
+        assert.equal(advertised?.workspace?.executeCommand, undefined);
         const marker = page.locator("#editor .st-diagnostic");
         await expect(marker).toHaveText("TODO");
         const firstDiagnostic = await page.evaluateHandle(() => {

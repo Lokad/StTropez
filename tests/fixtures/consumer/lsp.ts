@@ -11,8 +11,7 @@ const provider = new BrowserLspWorkspace(workspace, {
     initializationOptions: { fixtureModuleUris: [{ module: "sample-utils", uri: `consumer+opaque:project/${encodeURIComponent(companion.id)}` }] },
     documentInfo: snapshot => ({ uri: `consumer+opaque:project/${encodeURIComponent(snapshot.resourceId)}`, languageId: "generic" }),
     connect: signal => openWebSocketTransport(endpoint.href, { signal }),
-    features: ["textDocument/completion", "textDocument/hover", "textDocument/definition", "textDocument/references", "textDocument/rename", "textDocument/codeAction", "workspace/executeCommand", "textDocument/signatureHelp", "textDocument/documentLink", "textDocument/documentColor", "textDocument/colorPresentation"],
-    diagnostics: true, workspaceEdits: true, applyEdit: true,
+    workspaceEdits: true, applyEdit: true,
 });
 const errors: string[] = [];
 const controller = createCompletionController(editor, provider, { autoConnect: false, onError: error => errors.push(String(error)) });

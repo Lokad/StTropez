@@ -4,7 +4,7 @@ import { NotificationScope, Store } from "../core/observable.ts";
 import { anchoredRange } from "../core/positions.ts";
 import type { Observable } from "../core/observable.ts";
 import { LspSession } from "./lsp-session.ts";
-import type { LspDocument, LspDocumentCapture, LspDocumentFeature, LspDocumentSnapshot, LspRequestContext, LspSessionOptions, LspSessionSnapshot } from "./lsp-session.ts";
+import type { LspClientFeature, LspDocument, LspDocumentCapture, LspDocumentFeature, LspDocumentSnapshot, LspRequestContext, LspSessionOptions, LspSessionSnapshot } from "./lsp-session.ts";
 import type { RpcCall } from "./json-rpc.ts";
 import type { JsonValue } from "./wire.ts";
 import { decodeLspDiagnostics } from "./lsp-features.ts";
@@ -112,7 +112,8 @@ export class LspWorkspace {
             // Bind/close operations finish their ownership changes before observers can react.
             this.queueDelivery();
         });
-        this.stopDiagnostics = options.diagnostics ? this.session.onNotification("textDocument/publishDiagnostics", value => {
+        this.stopDiagnostics = options.diagnostics !== false ? this.session.onNotification("textDocument/publishDiagnostics", value => {
+            if (!this.session.getSnapshot().clientFeatures.includes("textDocument/publishDiagnostics")) return;
             const uri = value && typeof value === "object" && "uri" in value ? value.uri : undefined;
             const entry = typeof uri === "string" ? this.uris.get(uri) : undefined;
             if (!entry) { this.unknownDiagnosticUris++; return; }
@@ -227,6 +228,7 @@ export class LspWorkspace {
         // Workspace observers run inside commit delivery, where lease writes must be deferred.
         void Promise.resolve().then(() => { try { entry.lease.release(); } catch (error) { this.report(error); } });
     }
+    retainFeatures(...methods: LspClientFeature[]): () => void { return this.session.retainFeatures(...methods); }
     connect(): Promise<void> { this.writable(); for (const entry of [...this.documents.values()]) this.synchronize(entry); return this.session.connect(); }
     flush(): Promise<void> { this.writable(); for (const entry of [...this.documents.values()]) this.synchronize(entry); return this.session.flush(); }
     disconnect(): void { this.writable(); this.session.disconnect(); }

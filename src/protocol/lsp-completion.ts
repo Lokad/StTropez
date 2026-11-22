@@ -24,7 +24,7 @@ const stale = () => staleRequest("LSP completion batch expired.");
 
 /** One current choice batch and one request/resolve intent; host view and acceptance policy stay outside. */
 export function createLspCompletionClient(provider: LspWorkspace) {
-    const client = createLspClient(provider), batches = new WeakMap<LspCompletionBatch, Batch>();
+    const client = createLspClient(provider, "textDocument/completion"), batches = new WeakMap<LspCompletionBatch, Batch>();
     let active: Batch | undefined, sequence = 0, received = 0, disposed = false;
     let pending: LspCall<Response> | undefined;
     const cancelPending = () => { sequence++; const old = pending; pending = undefined; old?.cancel(); };
@@ -49,7 +49,7 @@ export function createLspCompletionClient(provider: LspWorkspace) {
         });
         return Object.freeze({ result, cancel: () => { if (!finished && serial === sequence) cancelPending(); } });
     };
-    return Object.freeze({ ...lspFeatureHandle(client, ["textDocument/completion"], {
+    return Object.freeze({ ...lspFeatureHandle(client, {
         cancel: () => { active = undefined; cancelPending(); client.cancel(); },
         dispose: () => { if (disposed) return; disposed = true; active = undefined; cancelPending(); client.dispose(); } }),
         snapshot: () => Object.freeze({ ...client.snapshot(), received }),

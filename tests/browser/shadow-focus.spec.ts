@@ -45,8 +45,7 @@ async function mount(page: Page, language: boolean) {
         if (language) {
             const endpoint = new URL("/lsp-fixture", location.href); endpoint.protocol = "ws:";
             f.provider = new BrowserLspWorkspace(workspace, { documentInfo: doc => ({ uri: `focus:${doc.resourceId}`, languageId: "generic" }),
-                connect: signal => openWebSocketTransport(endpoint.href, { signal }),
-                features: ["textDocument/completion", "textDocument/documentHighlight"], onError: report });
+                connect: signal => openWebSocketTransport(endpoint.href, { signal }), onError: report });
             f.completion = createCompletionController(editor, f.provider, { onError: report });
             f.highlights = createLspHighlightController(editor, { provider: f.provider, delayMs: 0 });
         }
@@ -55,6 +54,32 @@ async function mount(page: Page, language: boolean) {
 }
 const text = (page: Page) => page.evaluate(() => { const f = window.shadowFocus, buffer = f.workspace.document(f.source.documentId).buffer; return buffer.slice(0, buffer.length); });
 const completion = (page: Page) => page.evaluate(() => window.shadowFocus.completion!.getSnapshot());
+
+test("reconnect advertises the surviving pane's controllers before its first link request", async ({ page }) => {
+    await mount(page, true);
+    const epochs = await page.evaluate(async () => {
+        const path = "/shadow-focus/browser.js";
+        const { mountTextEditor, createCompletionController, createDocumentLinkController } = await import(path) as typeof import("../../src/browser/index.ts");
+        const { workspace, source, editor, provider, dispose } = window.shadowFocus;
+        const host = document.createElement("div"); document.body.append(host);
+        const second = mountTextEditor(host, workspace, source.documentId);
+        try {
+            await provider!.connect();
+            const advertised = () => [...provider!.getSnapshot().clientFeatures].sort();
+            const first = advertised();
+            createCompletionController(second, provider!, { autoConnect: false });
+            createDocumentLinkController(second, provider!);
+            editor.dispose();
+            const unchanged = advertised();
+            await provider!.reconnect(); const survivor = advertised();
+            second.dispose();
+            await provider!.reconnect();
+            return [first, unchanged, survivor, advertised()];
+        } finally { second.dispose(); host.remove(); await dispose(); }
+    });
+    const first = ["textDocument/completion", "textDocument/documentHighlight"];
+    expect(epochs).toEqual([first, first, ["textDocument/completion", "textDocument/documentLink"], []]);
+});
 
 test("completion distinguishes host preparation failures from malformed provider replies and keeps local typing available", async ({ page }) => {
     await page.routeWebSocket("**/lsp-fixture", client => {

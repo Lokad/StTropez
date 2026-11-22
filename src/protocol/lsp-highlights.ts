@@ -40,8 +40,8 @@ export function decodeLspDocumentHighlights(value: unknown, capture: LspDocument
 }
 
 export function createLspHighlightClient(provider: LspWorkspace) {
-    const client = createLspClient(provider);
-    return Object.freeze({ ...lspFeatureHandle(client, ["textDocument/documentHighlight"]),
+    const client = createLspClient(provider, "textDocument/documentHighlight");
+    return Object.freeze({ ...lspFeatureHandle(client),
         run: (document: DocumentSnapshot, offset: number, prepare?: LspPrepare) => {
             const call = client.request([document], document.id, "textDocument/documentHighlight", capture => ({ position: capture.index.at(offset) }), prepare);
             return Object.freeze({ cancel: call.cancel, result: call.result.then(value => value.decode(() => Object.freeze({

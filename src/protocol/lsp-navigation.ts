@@ -5,7 +5,7 @@ import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
 
 /** Captured read-only queries; the host chooses how to present each validated target. */
 export function createLspNavigationClient(provider: LspWorkspace) {
-    const client = createLspClient(provider);
+    const client = createLspClient(provider, "textDocument/definition", "textDocument/references");
     const lookup = async (snapshots: readonly DocumentSnapshot[], origin: DocumentId, offset: number, kind: "definition" | "references", includeDeclaration: boolean, prepare?: LspPrepare) => {
         const value = await client.request(snapshots, origin, kind === "definition" ? "textDocument/definition" : "textDocument/references", capture => ({
             position: capture.index.at(offset), ...(kind === "references" ? { context: { includeDeclaration } } : {}) }), prepare).result;
@@ -20,7 +20,7 @@ export function createLspNavigationClient(provider: LspWorkspace) {
             const result = await (loading ??= load()); return value.decode(() => result);
         } };
     };
-    return Object.freeze({ ...lspFeatureHandle(client, ["textDocument/definition", "textDocument/references"]),
+    return Object.freeze({ ...lspFeatureHandle(client),
         prepareDefinition: async (snapshots: readonly DocumentSnapshot[], origin: DocumentId, offset: number, prepare?: LspPrepare) => {
             const { value, uris, resolve } = await lookup(snapshots, origin, offset, "definition", true, prepare);
             return Object.freeze({ hasTargets: uris.length > 0, originRange: value.decode(() => definitionOriginRange(value.response, value.capture, offset)),

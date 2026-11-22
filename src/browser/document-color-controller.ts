@@ -171,6 +171,7 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
         scope.assertWritable(); events.abort(); stop(); release(); editor.signal.removeEventListener("abort", dispose);
         publish("disposed"); for (const unsubscribe of observers) unsubscribe();
     }
+    events.signal.addEventListener("abort", provider.retainFeatures("textDocument/documentColor", "textDocument/colorPresentation"), { once: true });
     editor.signal.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ request, dismissPreview, cancel, dispose, getSnapshot: state.observable.getSnapshot, subscribe(listener: () => void) {
         if (events.signal.aborted) throw new Error("Document color controller is disposed.");

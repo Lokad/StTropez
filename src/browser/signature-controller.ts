@@ -155,6 +155,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         notifications.assertWritable(); events.abort(); stopProvider(); cancel(); editor.signal.removeEventListener("abort", dispose);
         publish({ ...idle, status: "disposed" }); for (const stop of stops) stop();
     }
+    events.signal.addEventListener("abort", provider.retainFeatures("textDocument/signatureHelp"), { once: true });
     editor.signal.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ request: () => request(), cancel, dispose, getSnapshot: cell.observable.getSnapshot, subscribe(listener: () => void) {
         if (events.signal.aborted) throw new Error("Signature controller is disposed.");

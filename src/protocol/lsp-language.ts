@@ -8,14 +8,14 @@ import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
 
 export type LspSignatureContext = Readonly<{ triggerKind: 1 | 2 | 3; triggerCharacter?: string; isRetrigger: boolean; activeSignatureHelp?: JsonValue }>;
 export function createLspSignatureClient(provider: LspWorkspace) {
-    const lane = createLspClient(provider);
+    const lane = createLspClient(provider, "textDocument/signatureHelp");
     // Prior wire context is not fresh range/edit authority. Keep only its binding identities,
     // never the old buffer/capture, and compare them after the next request has synchronized.
     let previous: Readonly<{ document: string; resource: string; uri: string; language: string; epoch: number; generation: number; wire: JsonValue }> | undefined;
     const stop = lane.subscribe(() => { const state = lane.getSnapshot();
         if (state.phase !== "ready" || previous?.epoch !== state.epoch || previous.generation !== state.registrationGeneration) previous = undefined;
     });
-    return Object.freeze({ ...lspFeatureHandle(lane, ["textDocument/signatureHelp"], {
+    return Object.freeze({ ...lspFeatureHandle(lane, {
         cancel: () => { previous = undefined; lane.cancel(); }, dispose: () => { previous = undefined; stop(); lane.dispose(); } }),
         run: (document: DocumentSnapshot, offset: number, context: LspSignatureContext = { triggerKind: 1, isRetrigger: false }, prepare?: LspPrepare) => {
             const wireContext = jsonSnapshot(context);
@@ -48,8 +48,8 @@ export function createLspSignatureClient(provider: LspWorkspace) {
         } });
 }
 export function createLspLinkClient(provider: LspWorkspace) {
-    const lane = createLspClient(provider);
-    return Object.freeze({ ...lspFeatureHandle(lane, ["textDocument/documentLink"]),
+    const lane = createLspClient(provider, "textDocument/documentLink");
+    return Object.freeze({ ...lspFeatureHandle(lane),
         run: async (document: DocumentSnapshot, prepare?: LspPrepare) => {
             const result = await lane.request([document], document.id, "textDocument/documentLink", () => ({}), prepare).result;
             const { capture, isCurrent } = result;
@@ -62,8 +62,8 @@ export function createLspLinkClient(provider: LspWorkspace) {
         } });
 }
 export function createLspColorClient(provider: LspWorkspace) {
-    const lane = createLspClient(provider);
-    return Object.freeze({ ...lspFeatureHandle(lane, ["textDocument/documentColor", "textDocument/colorPresentation"]),
+    const lane = createLspClient(provider, "textDocument/documentColor", "textDocument/colorPresentation");
+    return Object.freeze({ ...lspFeatureHandle(lane),
         run: async (document: DocumentSnapshot, prepare?: LspPrepare) => {
             const result = await lane.request([document], document.id, "textDocument/documentColor", () => ({}), prepare).result;
             const { capture, isCurrent } = result;

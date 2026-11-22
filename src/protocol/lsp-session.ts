@@ -17,6 +17,7 @@ const providers = { "textDocument/completion": "completionProvider", "textDocume
     "textDocument/signatureHelp": "signatureHelpProvider", "textDocument/documentLink": "documentLinkProvider", "textDocument/documentColor": "colorProvider", "textDocument/colorPresentation": "colorProvider",
     "textDocument/foldingRange": "foldingRangeProvider", "textDocument/documentHighlight": "documentHighlightProvider" } as const;
 export type LspFeature = keyof typeof providers;
+export type LspClientFeature = LspFeature | "textDocument/publishDiagnostics";
 export type LspDocumentFeature = Exclude<LspFeature, "workspace/executeCommand">;
 export type LspCommandCall<T> = RpcCall<T> & Readonly<{ isCurrent: () => boolean }>;
 /** Host grant for one invocation, including opaque arguments; never inferred from a server response. */
@@ -35,7 +36,7 @@ export type LspConnectContext = Readonly<{ epoch: number; cancelled: boolean; on
 export type LspRequestContext = RpcRequestContext & Readonly<{ epoch: number; isCurrent: () => boolean }>;
 export type LspRegistration = Readonly<{ id: string; method: string; registerOptions: JsonValue }>;
 export type LspSessionSnapshot = Readonly<{ phase: "disconnected" | "connecting" | "initializing" | "ready" | "stopping" | "disposed";
-    epoch: number; capabilities: Readonly<Record<string, JsonValue>>; registrations: readonly LspRegistration[];
+    epoch: number; clientFeatures: readonly LspClientFeature[]; capabilities: Readonly<Record<string, JsonValue>>; registrations: readonly LspRegistration[];
     registrationGeneration: number; documents: number; error: string | null }>;
 export type LspSessionOptions = Readonly<{ connect: (context: LspConnectContext) => Promise<RpcTransport>; schedule: RpcScheduler;
     /** Millisecond clock for cooperative scan slices; defaults to Date.now. */
@@ -43,7 +44,7 @@ export type LspSessionOptions = Readonly<{ connect: (context: LspConnectContext)
     rootUri?: string | null; initializationOptions?: JsonValue; clientInfo?: Readonly<{ name: string; version?: string }>;
     /** Opt in when the host presents the documented Markdown subset for hover/signature help. */
     markdownDocumentation?: boolean;
-    /** Declare only features whose results the consuming host validates and presents. */
+    /** Fixed request methods. When omitted, initialize advertises the methods retained by live clients. */
     features?: readonly LspFeature[]; diagnostics?: boolean; workspaceEdits?: boolean; applyEdit?: boolean; pathForUri?: LspUriPath; maxDocuments?: number; maxDocumentUnits?: number; maxTotalUnits?: number;
     rpc?: Pick<RpcOptions, "timeoutMs" | "maxPending" | "maxMessageUnits" | "maxJsonNodes">; onError?: (error: Error) => void }>;
 type SelectorEntry = { snapshot: LspSelectorDocument; selectors?: { generation: number; values: Map<LspSelector, boolean> } };
@@ -84,8 +85,10 @@ export class LspSession {
     private readonly requestStops = new Map<string, () => void>();
     private readonly notifications = new Map<string, Set<NotificationHandler>>();
     private readonly notificationStops = new Map<string, () => void>();
-    private readonly features: ReadonlySet<LspFeature>;
-    private readonly initializeParams: JsonValue;
+    private readonly retained = new Map<LspClientFeature, number>();
+    private readonly initializeBase: Readonly<Record<string, JsonValue>>;
+    private features = new Set<LspFeature>();
+    private clientFeatures: readonly LspClientFeature[] = Object.freeze([]);
     private readonly maxDocuments: number;
     private readonly maxDocumentUnits: number;
     private readonly maxTotalUnits: number;
@@ -105,17 +108,53 @@ export class LspSession {
     private readonly documentCalls = new Set<LspCall<unknown>>();
 
     constructor(options: LspSessionOptions) {
-        this.options = Object.freeze({ ...options, ...(options.rpc ? { rpc: Object.freeze({ ...options.rpc }) } : {}) });
-        this.features = new Set(options.features ?? []);
+        this.options = Object.freeze({ ...options,
+            ...(options.features ? { features: Object.freeze([...options.features]) } : {}),
+            ...(options.rpc ? { rpc: Object.freeze({ ...options.rpc }) } : {}) });
+        this.initializeBase = jsonSnapshot({ processId: null, rootUri: options.rootUri ?? null,
+            ...(options.clientInfo ? { clientInfo: options.clientInfo } : {}), initializationOptions: options.initializationOptions ?? null }) as Readonly<Record<string, JsonValue>>;
         this.maxDocuments = options.maxDocuments ?? 100; this.maxDocumentUnits = options.maxDocumentUnits ?? 3 * 1024 * 1024; this.maxTotalUnits = options.maxTotalUnits ?? 16 * 1024 * 1024;
         if (![this.maxDocuments, this.maxDocumentUnits, this.maxTotalUnits].every(value => integer(value) && value > 0)) throw new RangeError("Invalid LSP document limits.");
+        this.scope = new NotificationScope(error => this.report(error));
+        this.store = new Store(this.snapshot("disconnected", null), this.scope);
+        this.getSnapshot = this.store.observable.getSnapshot;
+        this.subscribe = listener => {
+            this.scope.assertWritable(); if (this.store.get().phase === "disposed") throw closed();
+            const stop = this.store.observable.subscribe(listener); const release = () => { stop(); this.subscriptions.delete(release); };
+            this.subscriptions.add(release); return release;
+        };
+    }
+    /** Keep a client method installed until its owner releases it. Changes take effect at the next initialize. */
+    retainFeatures(...methods: LspClientFeature[]): () => void {
+        this.writable();
+        const unique = new Set(methods);
+        for (const method of unique) {
+            if (method !== "textDocument/publishDiagnostics" && !Object.hasOwn(providers, method)) throw new TypeError("Unknown LSP feature.");
+        }
+        for (const method of unique) this.retained.set(method, (this.retained.get(method) ?? 0) + 1);
+        let released = false;
+        return () => {
+            if (released) return;
+            released = true;
+            for (const method of unique) {
+                const count = this.retained.get(method) ?? 0;
+                if (count > 1) this.retained.set(method, count - 1);
+                else this.retained.delete(method);
+            }
+        };
+    }
+    private initializeParams(): JsonValue {
+        const options = this.options;
+        this.features = new Set(options.features ?? [...this.retained.keys()].filter(method => method !== "textDocument/publishDiagnostics"));
+        const diagnostics = options.diagnostics ?? this.retained.has("textDocument/publishDiagnostics");
+        this.clientFeatures = Object.freeze(diagnostics ? [...this.features, "textDocument/publishDiagnostics"] : [...this.features]);
         const textDocument: Record<string, JsonValue> = { synchronization: { dynamicRegistration: true, didSave: false, willSave: false, willSaveWaitUntil: false } };
         for (const method of this.features) if (method.startsWith("textDocument/")) textDocument[method.slice("textDocument/".length)] = { dynamicRegistration: true };
         if (this.features.has("textDocument/completion")) textDocument.completion = { dynamicRegistration: true, contextSupport: true,
             completionItem: { snippetSupport: true, insertReplaceSupport: true, documentationFormat: ["plaintext"], insertTextModeSupport: { valueSet: [1, 2] },
                 commitCharactersSupport: true, preselectSupport: true, resolveSupport: { properties: ["detail", "documentation", "additionalTextEdits", "insertText", "textEdit"] } },
             insertTextMode: 2, completionList: { itemDefaults: ["editRange", "insertTextFormat", "insertTextMode", "data", "commitCharacters"] } };
-        if (options.diagnostics) textDocument.publishDiagnostics = { versionSupport: true, relatedInformation: true,
+        if (diagnostics) textDocument.publishDiagnostics = { versionSupport: true, relatedInformation: true,
             tagSupport: { valueSet: [1, 2] }, codeDescriptionSupport: true, dataSupport: true };
         const documentationFormats = options.markdownDocumentation ? ["markdown", "plaintext"] : ["plaintext"];
         if (this.features.has("textDocument/hover")) textDocument.hover = { dynamicRegistration: true, contentFormat: documentationFormats };
@@ -132,26 +171,17 @@ export class LspSession {
         if (this.features.has("textDocument/codeAction")) textDocument.codeAction = { dynamicRegistration: true,
             codeActionLiteralSupport: { codeActionKind: { valueSet: ["quickfix", "refactor", "source"] } },
             disabledSupport: true, isPreferredSupport: true, dataSupport: true, resolveSupport: { properties: ["edit"] }, honorsChangeAnnotations: false };
-        this.initializeParams = jsonSnapshot({ processId: null, rootUri: options.rootUri ?? null,
-            ...(options.clientInfo ? { clientInfo: options.clientInfo } : {}), initializationOptions: options.initializationOptions ?? null,
+        return jsonSnapshot({ ...this.initializeBase,
             capabilities: { general: { positionEncodings: ["utf-16"], ...(options.markdownDocumentation ? { markdown: { parser: "sttropez-documentation-subset", version: "1", allowedTags: [] } } : {}) }, textDocument,
                 ...(options.workspaceEdits || options.applyEdit || this.features.has("workspace/executeCommand") ? { workspace: {
                     ...(options.workspaceEdits || options.applyEdit ? { workspaceEdit: { documentChanges: true, resourceOperations: [], failureHandling: "transactional", normalizesLineEndings: false } } : {}),
                     ...(options.applyEdit ? { applyEdit: true } : {}), ...(this.features.has("workspace/executeCommand") ? { executeCommand: { dynamicRegistration: true } } : {}) } } : {}) } });
-        this.scope = new NotificationScope(error => this.report(error));
-        this.store = new Store(this.snapshot("disconnected", null), this.scope);
-        this.getSnapshot = this.store.observable.getSnapshot;
-        this.subscribe = listener => {
-            this.scope.assertWritable(); if (this.store.get().phase === "disposed") throw closed();
-            const stop = this.store.observable.subscribe(listener); const release = () => { stop(); this.subscriptions.delete(release); };
-            this.subscriptions.add(release); return release;
-        };
     }
     private report(error: unknown): void { try { this.options.onError?.(error instanceof Error ? error : new Error(String(error))); } catch { /* Reporting cannot interrupt disposal. */ } }
     private release(stop: (() => void) | undefined): void { try { stop?.(); } catch (error) { this.report(error); } }
     private writable(): void { this.scope.assertWritable(); if (this.store.get().phase === "disposed") throw closed(); }
     private snapshot(phase: LspSessionSnapshot["phase"], error: string | null): LspSessionSnapshot {
-        return Object.freeze({ phase, epoch: this.epoch, capabilities: this.capabilities,
+        return Object.freeze({ phase, epoch: this.epoch, clientFeatures: this.clientFeatures, capabilities: this.capabilities,
             registrations: Object.freeze([...this.registrations.values()].map(item => item.value)), registrationGeneration: this.generation, documents: this.documents.size, error });
     }
     private publish(phase = this.store.get().phase, error: string | null = null): void {
@@ -189,8 +219,10 @@ export class LspSession {
         const rpc = new JsonRpcConnection(transport, { ...this.options.rpc, schedule: this.options.schedule, onError: error => this.report(error),
             notifyCancellation: () => this.current(epoch) && this.store.get().phase !== "stopping",
             onClose: error => { void Promise.resolve().then(() => { if (this.current(epoch)) this.drop(error); }); } });
-        this.rpc = rpc; this.install(rpc, epoch); this.publish("initializing");
-        const response = await rpc.request("initialize", this.initializeParams).result;
+        this.rpc = rpc;
+        const params = this.initializeParams();
+        this.install(rpc, epoch); this.publish("initializing");
+        const response = await rpc.request("initialize", params).result;
         if (!this.current(epoch)) throw closed();
         if (!isRecord(response) || !isRecord(response.capabilities)) throw new ProtocolDecodeError("Malformed LSP initialize result.");
         const capabilities = response.capabilities;
@@ -510,6 +542,7 @@ export class LspSession {
         this.epoch++; this.release(this.cancelOpening); this.cancelOpening = undefined; this.connectWork = undefined;
         this.release(this.scheduled); this.scheduled = undefined; for (const pause of this.pauses) { this.release(pause.stop); pause.reject(failure); } this.pauses.clear();
         const rpc = this.rpc; this.rpc = undefined; this.release(() => rpc?.dispose(failure)); this.pumping = false; this.dirty.clear(); this.settle(failure); this.documentCalls.clear();
+        this.features.clear(); this.clientFeatures = Object.freeze([]); if (dispose) this.retained.clear();
         this.remote.clear(); this.registrations.clear(); this.staticSelectors.clear(); this.requestStops.clear(); this.notificationStops.clear(); this.capabilities = empty; this.sync = { openClose: false, change: false }; this.generation++;
         for (const entry of this.documents.values()) { delete entry.failure; delete entry.change; delete entry.selectors; }
         if (dispose) { this.documents.clear(); this.totalUnits = 0; this.requests.clear(); this.notifications.clear(); }

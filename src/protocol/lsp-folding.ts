@@ -25,8 +25,8 @@ export function decodeLspFoldingRanges(value: unknown, capture: LspDocumentCaptu
 }
 
 export function createLspFoldingClient(provider: LspWorkspace) {
-    const client = createLspClient(provider);
-    return Object.freeze({ ...lspFeatureHandle(client, ["textDocument/foldingRange"]),
+    const client = createLspClient(provider, "textDocument/foldingRange");
+    return Object.freeze({ ...lspFeatureHandle(client),
         run: (document: DocumentSnapshot, prepare?: LspPrepare) => {
             const call = client.request([document], document.id, "textDocument/foldingRange", () => ({}), prepare);
             return Object.freeze({ cancel: call.cancel, result: call.result.then(value => value.decode(() =>
