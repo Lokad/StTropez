@@ -202,6 +202,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await button(page, "Apply captured color").click(); const prefix = "// color presentation\r\n", expected = prefix + raw.replace("#aabbcc", "rgba(1, 2, 3, 0.5)");
         const applied = (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet;
         expect(applied.primary).toBe(1); expect(applied.ranges.map(({ anchor, head }) => [anchor, head])).toEqual([[prefix.length + 4, prefix.length + 1], [prefix.length + 20, prefix.length + 20]]);
+        await expect(page.locator('.st-viewport:has(> textarea[aria-label="Primary source"]) .st-viewport-row').filter({ hasText: "rgba(1, 2, 3, 0.5)" })).toBeInViewport();
         expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(expected); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
         await field(page, "Secondary source").press("Control+z"); expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(raw);
         expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "primary")!.selectionSet);
@@ -496,6 +497,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await button(page, "Discover document colors").click(); await expect.poll(async () => (await snapshot(page)).bindings.colors.state.count).toBe(1);
         await page.getByRole("textbox", { name: "Proposed color", exact: true }).fill("#112233"); await button(page, "Preview color presentations").click(); await expect(button(page, "Apply captured color")).toBeEnabled();
         const depth = (await snapshot(page)).history.undoDepth; await button(page, "Apply captured color").click();
+        await expect(viewport.locator(".st-viewport-row").filter({ hasText: 'const color = "#112233";' })).toBeInViewport();
         expect(await page.evaluate(from => { const f = window.hostFixture; return f.range(from, f.snapshot().source.length); }, prefix.length)).toBe(tail.replace("#abc", "#112233"));
         const state = await snapshot(page); expect(state.history.undoDepth).toBe(depth + 1); expect(state.source.exports).toBe(0);
         for (const view of state.bindings.views) { expect(view.metrics!.inputUnits).toBeLessThanOrEqual(4096); expect(view.metrics!.viewport.rows).toBeLessThan(100); }

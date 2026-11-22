@@ -19,6 +19,12 @@ const initial: DocumentColorsSnapshot = { available: false, connected: false, di
     status: "idle", message: "Focus a source to discover colors.", count: 0, page: 0, colors: [], selected: -1, value: "", css: null,
     presentation: "", choices: [], edits: [], canPreview: false, canApply: false, apply: null, changed: null };
 
+function focusSource(editor: TextEditor) {
+    editor.viewport.revealOffset(editor.view.getSnapshot().selection.head);
+    editor.viewport.element.scrollIntoView({ block: "nearest", inline: "nearest" });
+    editor.focus();
+}
+
 /** The host owns the picker, swatches, preview list and focus after confirmation. */
 export class HostDocumentColors {
     private readonly sessions = new Set<Session>();
@@ -98,7 +104,7 @@ export class HostDocumentColors {
             presentation: review ? choices[state.presentations.indexOf(review.choice)]!.id : "", edits, canPreview: !!reference && !!proposed && !pending,
             canApply: review?.canApply ?? false, apply: review ? () => {
                 if (!review.apply()) return false;
-                if (this.sessions.has(s)) { s.editor.viewport.revealOffset(s.editor.view.getSnapshot().selection.head); s.editor.focus(); }
+                if (this.sessions.has(s)) focusSource(s.editor);
                 return true;
             } : null });
     }
@@ -112,13 +118,13 @@ export class HostDocumentColors {
         this.listEvents?.abort(); this.list = list ?? undefined; if (!list || this.disposed) return;
         const events = new AbortController(); this.listEvents = events;
         list.addEventListener("keydown", e => { if (e.defaultPrevented || e.isComposing || e.key !== "Escape") return;
-            e.preventDefault(); e.stopPropagation(); const s = this.owner; this.cancel(); s?.editor.focus(); }, { signal: events.signal });
+            e.preventDefault(); e.stopPropagation(); const s = this.owner; this.cancel(); if (s) focusSource(s.editor); }, { signal: events.signal });
     };
     readonly bindValue = (input: HTMLInputElement | null) => {
         this.fieldEvents?.abort(); this.valueInput = input ?? undefined; if (!input || this.disposed) return;
         const events = new AbortController(); this.fieldEvents = events;
         input.addEventListener("keydown", e => { if (e.defaultPrevented || e.isComposing) return;
-            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); const s = this.owner ?? this.active; this.cancel(); s?.editor.focus(); }
+            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); const s = this.owner ?? this.active; this.cancel(); if (s) focusSource(s.editor); }
             else if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) { e.preventDefault(); this.preview(); } }, { signal: events.signal });
     };
     setValue(value: string) {
@@ -170,7 +176,7 @@ export class HostDocumentColors {
     };
     readonly openChanged = (id: DocumentId) => {
         if (this.disposed || this.owner || this.cell.get().changed?.document !== id || !this.canCapture(id)) return;
-        try { ([...this.sessions].find(s => s.editor.view.documentId === id)?.editor ?? this.present(id))?.focus(); }
+        try { const editor = [...this.sessions].find(s => s.editor.view.documentId === id)?.editor ?? this.present(id); if (editor) focusSource(editor); }
         catch { this.publish({ message: "The changed color resource is no longer available." }); }
     };
     private page(delta: number) {
