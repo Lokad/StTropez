@@ -147,7 +147,7 @@ test("revealing a source range in a read-only editor aligns the painted rows and
             const centerDelta = start - centered.scrollTop;
             const center = Math.abs(centerDelta - (centered.height - centered.lineHeight) / 2) < centered.lineHeight;
             const chosen = selected?.from === row.from && selected.to === row.to && view.getSnapshot().selection.head === row.to
-                && view.getSnapshot().selection.anchor === row.from && document.activeElement === editor.input;
+                && view.getSnapshot().selection.anchor === row.from && editor.getSnapshot().focused;
             const eof = editor.reveal({ line: 999, column: 999 });
             editor.restoreView(origin); viewport.flush();
             const returned = viewport.snapshot().scrollTop === origin.scrollTop && view.getSnapshot().selection.anchor === 5 && view.getSnapshot().selection.head === 1
@@ -254,7 +254,7 @@ test("minimap projects comparison gaps and follows linked and independent scroll
         const reference = c.panes.reference, doc = window.presentationFixture.workspace.document(reference.view.documentId);
         reference.view.folding.setRanges(reference.view.folding.getSnapshot(), [{ id: "saved", from: 0, to: doc.buffer.offsetAt(39), collapsed: true }]);
         reference.viewport.flush(); c.panes.working.viewport.flush();
-        return { workingTop: c.panes.working.viewport.snapshot().scrollTop, readOnly: reference.input.readOnly, selection: reference.view.getSnapshot().selectionSet };
+        return { workingTop: c.panes.working.viewport.snapshot().scrollTop, readOnly: reference.getSnapshot().readOnlyReason === "read-only", selection: reference.view.getSnapshot().selectionSet };
     });
     expect(independent.readOnly).toBe(true);
     await saved.click({ position: { x: 5, y: 1 } });
@@ -615,7 +615,7 @@ test("current-line presentation follows the primary caret through input, folding
         const referenceClass = current(reference)!.className;
         working.view.setSelection(f.workspace.document(working.view.documentId).revision, { anchor: 6, head: 6 }); working.viewport.flush();
         const row = current(working)!, backdrop = working.element.querySelector(".st-current-line-background")!, background = backdrop.getBoundingClientRect();
-        const result = { workingClass, referenceDefault, referenceClass, referenceReadOnly: reference.input.readOnly, padding: working.viewport.snapshot().paddingRows,
+        const result = { workingClass, referenceDefault, referenceClass, referenceReadOnly: reference.getSnapshot().readOnlyReason === "read-only", padding: working.viewport.snapshot().paddingRows,
             line: row.getAttribute("data-line"), rowGap: (working.viewport.rowBounds(1)!.top - working.viewport.rowBounds(0)!.top) / working.viewport.snapshot().lineHeight, topError: Math.abs(background.top - row.getBoundingClientRect().top),
             height: background.height, lineHeight: working.viewport.snapshot().lineHeight,
             edges: getComputedStyle(backdrop).boxShadow, fill: getComputedStyle(backdrop, "::before").backgroundColor };

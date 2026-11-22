@@ -150,7 +150,8 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         const canNavigate = ready && comparison.hunks.length > 0 && !!referenceViewport() && epoch === comparison.baseline?.epoch && !composing();
         const selectedHunk = ready && epoch === comparison.baseline?.epoch && comparison.hunks.length ? caretPosition(comparison, active).selected : null;
         const metadata = comparison.working ? workspace.resource(comparison.working.resourceId).metadata.getSnapshot() : undefined;
-        const canRevert = canNavigate && selectedHunk !== null && !working.input.readOnly && !working.input.disabled
+        const access = working.getSnapshot();
+        const canRevert = canNavigate && selectedHunk !== null && access.readOnlyReason === null && !access.disabled
             && metadata?.capabilities.edit.includes("human") === true && metadata.editLock === null;
         return Object.freeze({ comparison, selectedHunk, canNavigate, canRevert, scrollLinked: scroll.snapshot().linked, alignment: alignment.snapshot(), disposed });
     }
@@ -251,7 +252,8 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         const generation = controller.getSnapshot().generation;
         return Object.freeze({ ...hunk, select: () => selectHunk(generation, index), revert: () => {
             stateScope.assertWritable();
-            return !disposed && !composing() && !working.input.readOnly && !working.input.disabled && hunk.revert();
+            const access = working.getSnapshot();
+            return !disposed && !composing() && access.readOnlyReason === null && !access.disabled && hunk.revert();
         } });
     }
     // A document notification can paint the working viewport before the scheduled controls.

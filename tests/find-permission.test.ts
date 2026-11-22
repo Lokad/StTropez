@@ -1,3 +1,4 @@
+import { editorState } from "./helpers/editor-state.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Workspace } from "../src/index.ts";
@@ -9,7 +10,7 @@ for (const change of ["permission", "lease", "read-only"] as const) test(`queued
     const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left"), view = workspace.createDocumentView(source.documentId);
     let serial = 0; const tasks = new Map<number, () => void>();
     const owner = Object.assign(new EventTarget(), { defaultView: { performance, setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
-    const editor = { view, element: { ownerDocument: owner }, input: Object.assign(new EventTarget(), { readOnly: false }), activity: () => ({ disposed: false, composing: false }),
+    const editor = { view, element: { ownerDocument: owner }, ...editorState(), activity: () => ({ disposed: false, composing: false }),
         viewport: { revealRange: () => {} }, focus: () => {} } satisfies FindHost;
     const find = findForView(workspace, workspace.tabs.capture(tab), editor), drain = () => { while (tasks.size) { const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); } };
     try {
@@ -19,13 +20,13 @@ for (const change of ["permission", "lease", "read-only"] as const) test(`queued
         if (change === "permission") {
             const original = source.metadata.getSnapshot().capabilities; workspace.setCapabilities(source.id, { ...original, edit: ["host"] }); workspace.setCapabilities(source.id, original);
         } else if (change === "lease") { const lease = workspace.acquireEditLease(source.id, "temporary", "host"); lease.release(); }
-        else editor.input.readOnly = true;
+        else editor.setReadOnly(true);
         drain(); const after = workspace.document(source.documentId);
         assert.equal(after.buffer.slice(0, after.buffer.length), "cat cat"); assert.strictEqual(after.buffer, before.buffer); assert.equal(after.revision, before.revision);
         assert.deepEqual(view.getSnapshot().selectionSet, selected); assert.deepEqual(workspace.observeHistory(source.documentId).getSnapshot(), history);
         assert.match(find.getSnapshot().message, /cancelled/i); assert.equal(workspace.diagnostics().subscriptions, idleSubscriptions);
         assert.equal(find.getSnapshot().reason, "editing-unavailable");
-        editor.input.readOnly = false;
+        editor.setReadOnly(false);
         find.replaceAll("dog"); assert.equal(find.getSnapshot().reason, null); drain(); assert.equal(workspace.document(source.documentId).buffer.slice(0, 7), "dog dog");
         assert.equal(find.getSnapshot().reason, "replaced");
         assert.equal(workspace.observeHistory(source.documentId).getSnapshot().undoDepth, history.undoDepth + 1); assert.equal(workspace.diagnostics().subscriptions, idleSubscriptions);

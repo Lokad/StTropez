@@ -44,13 +44,13 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
     let job: Job | undefined;
     function available() {
         const a = editor.activity();
-        return !events.signal.aborted && editor.element.isConnected && !editor.input.disabled && !a.composing && !a.pendingInput
+        return !events.signal.aborted && editor.element.isConnected && !editor.getSnapshot().disabled && !a.composing && !a.pendingInput
             && !a.pendingCommand && (options.canCapture?.() ?? true);
     }
     const capture = () => captureViewRequest(workspace, tab, view, { available });
     function writable() {
         const metadata = workspace.resourceForDocument(view.documentId).metadata.getSnapshot();
-        return !editor.input.readOnly && metadata.editLock === null && metadata.capabilities.edit.includes("human") && metadata.capabilities.edit.includes("host");
+        return editor.getSnapshot().readOnlyReason === null && metadata.editLock === null && metadata.capabilities.edit.includes("human") && metadata.capabilities.edit.includes("host");
     }
     function publish(status: DocumentColorSnapshot["status"], patch: Partial<Omit<DocumentColorSnapshot, "status">> = {}) {
         scope.publish(state, Object.freeze({ ...idle, status, ...patch }));

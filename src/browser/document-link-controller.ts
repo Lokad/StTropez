@@ -41,7 +41,7 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
     let job: Job | undefined;
     const available = (id: DocumentId) => {
         const activity = editor.activity();
-        return !events.signal.aborted && editor.element.isConnected && !editor.input.disabled && !activity.composing
+        return !events.signal.aborted && editor.element.isConnected && !editor.getSnapshot().disabled && !activity.composing
             && !activity.pendingInput && !activity.pendingCommand && (options.canCapture?.(id) ?? true);
     };
     const capture = () => captureViewRequest(workspace, tab, view, { available: () => available(view.documentId) });

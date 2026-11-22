@@ -38,7 +38,8 @@ export async function runEditorOperation<T>(editor: TextEditor, options: EditorO
     if (signal?.aborted || editor.signal.aborted) return stale;
     const available = () => {
         const state = editor.activity();
-        return editor.element.isConnected && !editor.input.disabled && (!write || !editor.input.readOnly)
+        const access = editor.getSnapshot();
+        return editor.element.isConnected && !access.disabled && (!write || access.readOnlyReason === null)
             && !state.disposed && !state.composing && !state.pendingInput && !state.pendingCommand;
     };
     const capture = captureViewRequest(editor.workspace, editor.tab, editor.view, { available, ...(write ? { editOrigin: "human" } : {}) });
@@ -80,7 +81,7 @@ export async function runEditorOperation<T>(editor: TextEditor, options: EditorO
         const listener = { once: true, signal: lifetime.signal };
         editor.signal.addEventListener("abort", cancel, listener);
         signal?.addEventListener("abort", cancel, listener);
-        editor.input.addEventListener("compositionstart", cancel, listener);
+        editor.onEditIntent(kind => { if (kind === "compositionstart") cancel(); }, lifetime.signal);
         if (!current()) return stale;
         const op: EditorOperation = Object.freeze({ document: capture.document, selectionSet: capture.selectionSet, signal: lifetime.signal, step,
             apply: edit => {

@@ -121,7 +121,7 @@ export function mountPackagedPilot(host: HTMLElement, original: string) {
         },
         remount: () => {
             if (!primary || !peer || !comparison || disposed) return false;
-            const active = owner.activeElement, focus = active === primary.input ? "primary" : active === peer.input ? "secondary" : active === comparison.panes.working.input ? "comparison" : null;
+            const focus = primary.getSnapshot().focused ? "primary" : peer.getSnapshot().focused ? "secondary" : comparison.panes.working.getSnapshot().focused ? "comparison" : null;
             const states = [primary.captureView(), peer.captureView(), comparison.panes.working.captureView()] as const, baseline = comparison.controller.getSnapshot().baseline!;
             unmountViews(); mountViews(baseline);
             primary!.restoreView(states[0]); peer!.restoreView(states[1]); comparison!.panes.working.restoreView(states[2]);

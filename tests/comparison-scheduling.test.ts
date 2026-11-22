@@ -37,20 +37,21 @@ function fixture(count = 5000) {
             scroll: (to: number) => { top = to; element.dispatchEvent(new Event("scroll")); } };
     }
     const working = viewport(view), reference = viewport(refView);
-    const editor = { view, viewport: working.value, input: new EventTarget(), activity: () => ({ composing, pendingInput: false, pendingCommand: false, pendingDragScroll: false }) } as unknown as TextEditor;
+    const workingInput = new EventTarget() as HTMLTextAreaElement, referenceInput = new EventTarget() as HTMLTextAreaElement;
+    const editor = { view, viewport: working.value, activity: () => ({ composing, pendingInput: false, pendingCommand: false, pendingDragScroll: false }) } as unknown as TextEditor;
     let compositions = 0, focuses = 0;
-    const baselineEditor = { view: refView, viewport: reference.value, input: new EventTarget(), focus: () => { focuses++; } } as unknown as TextEditor;
-    const baselineMount = { editor: baselineEditor, setComparisonRows: reference.setComparisonRows };
-    const panes = createComparisonPanes({ editor, setComparisonRows: working.setComparisonRows }, () => { compositions++; }); panes.setReference(baselineMount);
+    const baselineEditor = { view: refView, viewport: reference.value, focus: () => { focuses++; } } as unknown as TextEditor;
+    const baselineMount = { editor: baselineEditor, input: referenceInput, setComparisonRows: reference.setComparisonRows };
+    const panes = createComparisonPanes({ editor, input: workingInput, setComparisonRows: working.setComparisonRows }, () => { compositions++; }); panes.setReference(baselineMount);
     const alignment = createComparisonAlignment(win, panes, () => state, () => notifications++, () => false);
     const step = () => { const entry = tasks.entries().next().value; assert.ok(entry, "Expected scheduled work"); tasks.delete(entry[0]); entry[1](); };
     const drain = () => { let turns = 0; while (tasks.size) { assert.ok(++turns < 1000, "Scheduler failed to settle"); step(); } return turns; };
-    return { workspace, view, refView, win, working, reference, editor, baselineEditor, panes, alignment, tasks, step, drain, state: () => state,
+    return { workspace, view, refView, win, working, reference, editor, referenceInput, panes, alignment, tasks, step, drain, state: () => state,
         counters: () => ({ reads, notifications, compositions, focuses }), setClockStep: (value: number) => { clockStep = value; },
         setComposing: (value: boolean) => { composing = value; }, setReference: (value: TextViewport | undefined) => { panes.setReference(value ? baselineMount : undefined); },
         refresh: () => { state = Object.freeze({ ...state, generation: state.generation + 1 }); },
         dispose: () => { alignment.dispose(); panes.dispose(); view.dispose(); refView.dispose(); assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().subscriptions, 0);
-            for (const input of [editor.input, baselineEditor.input]) for (const type of ["compositionstart", "compositionend"]) assert.equal(getEventListeners(input, type).length, 0); } };
+            for (const input of [workingInput, referenceInput]) for (const type of ["compositionstart", "compositionend"]) assert.equal(getEventListeners(input, type).length, 0); } };
 }
 
 test("alignment bounds each turn by elapsed time and work, publishes once, and cancels stale captures", () => {
@@ -91,7 +92,7 @@ test("optional comparison listeners detach, rebind current references and cancel
     };
     try {
         idle();
-        f.baselineEditor.input.dispatchEvent(new Event("compositionstart")); f.reference.element.dispatchEvent(new Event("focus"));
+        f.referenceInput.dispatchEvent(new Event("compositionstart")); f.reference.element.dispatchEvent(new Event("focus"));
         // Each mounted editor routes viewport focus. A comparison must not redirect an armed native drag.
         assert.equal(f.counters().compositions, 1); assert.equal(f.counters().focuses, 0);
         for (let pass = 0; pass < 2; pass++) {
@@ -108,12 +109,12 @@ test("optional comparison listeners detach, rebind current references and cancel
         f.setReference(undefined); assert.equal(scroll.snapshot().pending, false); f.drain();
         assert.equal(f.reference.renderListeners(), 0); assert.equal(observed.size, 1);
         assert.equal(f.reference.installed(), undefined); assert.equal(f.working.installed(), undefined);
-        f.baselineEditor.input.dispatchEvent(new Event("compositionend")); f.reference.element.dispatchEvent(new Event("focus"));
+        f.referenceInput.dispatchEvent(new Event("compositionend")); f.reference.element.dispatchEvent(new Event("focus"));
         assert.equal(f.counters().compositions, 1); assert.equal(f.counters().focuses, 0);
         const before = f.counters().reads; f.reference.render(); f.reference.element.dispatchEvent(new Event("scroll"));
         assert.equal(f.counters().reads, before); assert.equal(f.tasks.size, 0);
         f.setReference(f.reference.value); f.drain();
-        f.baselineEditor.input.dispatchEvent(new Event("compositionend")); assert.equal(f.counters().compositions, 2);
+        f.referenceInput.dispatchEvent(new Event("compositionend")); assert.equal(f.counters().compositions, 2);
         f.alignment.setEnabled(false); assert.equal(f.working.renderListeners(), 1);
         assert.equal(getEventListeners(f.working.element, "compositionend").length, 0); assert.equal(f.workspace.diagnostics().subscriptions, 2);
         f.drain();

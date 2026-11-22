@@ -1,4 +1,5 @@
 import { codeWordConstituentPattern } from "../core/words.ts";
+import { editorInput } from "./editor-input.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 export type DefinitionHit = Readonly<{ revision: number; offset: number; from: number; to: number }>;
@@ -8,14 +9,14 @@ const modified = (event: MouseEvent | KeyboardEvent) => event.ctrlKey !== event.
 /** The viewport supplies the painted glyph edge, including its affinity in bidi text. */
 export function bindDefinitionPointer(editor: TextEditor, inspect: (hit: DefinitionHit) => void, leave: () => void,
     activate: (hit: DefinitionHit) => void, signal: AbortSignal) {
-    const root = editor.element, owner = root.ownerDocument, win = owner.defaultView!;
+    const root = editor.element, owner = root.ownerDocument, win = owner.defaultView!, input = editorInput(editor);
     let pointer: { x: number; y: number } | undefined, press: { hit: DefinitionHit; id: number; x: number; y: number } | undefined;
     let timer: number | undefined;
     const stopTimer = () => { win.clearTimeout(timer); timer = undefined; };
     const clear = () => { stopTimer(); press = undefined; leave(); };
     const hitAt = (x: number, y: number): DefinitionHit | undefined => {
         const over = owner.elementFromPoint(x, y);
-        const row = over === editor.input ? owner.elementsFromPoint(x, y).find(element => element.matches(".st-viewport-row")) as HTMLElement | undefined
+        const row = over === input ? owner.elementsFromPoint(x, y).find(element => element.matches(".st-viewport-row")) as HTMLElement | undefined
             : over?.closest<HTMLElement>(".st-viewport-row");
         if (!row || !editor.viewport.element.contains(row)) return;
         const point = editor.viewport.hitTest(x, y), doc = editor.workspace.observeDocument(editor.view.documentId).getSnapshot();

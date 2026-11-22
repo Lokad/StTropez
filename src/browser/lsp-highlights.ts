@@ -1,6 +1,5 @@
 import { Store } from "../core/observable.ts";
 import { codeWordConstituentPattern } from "../core/words.ts";
-import { isFocused } from "./dom-focus.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId } from "../core/workspace.ts";
@@ -28,7 +27,7 @@ export function createLspHighlightController(editor: TextEditor,
     let result: Awaited<ReturnType<typeof client.run>["result"]> | undefined;
     let occurrence: LspDocumentHighlight | undefined;
     const available = () => !disposed && !editor.activity().disposed && ownsTextSurface(workspace, view, target);
-    const focused = () => isFocused(editor.input);
+    const focused = () => editor.getSnapshot().focused;
     const busy = () => { const state = editor.activity(); return state.composing || state.pendingInput || state.pendingCommand || state.pendingWord || state.pendingGrapheme; };
     const publish = (status: LspHighlightSnapshot["status"], revision = cell.get().revision, caret: number | null = null) => {
         notifications.publish(cell, Object.freeze({ status, documentId, revision, caret, items: result?.items ?? empty }));
@@ -84,7 +83,7 @@ export function createLspHighlightController(editor: TextEditor,
             provider = next; if (changed) refresh();
         })];
     if (target) stops.push(workspace.tabs.subscribe(() => { if (!available()) refresh(); }));
-    for (const event of ["focus", "blur", "compositionstart", "compositionend"] as const) editor.input.addEventListener(event, refresh, { signal: events.signal });
+    stops.push(editor.subscribe(refresh));
     const dispose = () => {
         if (disposed) return;
         notifications.assertWritable(); disposed = true; cancel(); events.abort();

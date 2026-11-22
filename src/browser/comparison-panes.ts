@@ -35,9 +35,9 @@ export function createComparisonPanes(working: MountedTextEditor, compositionCha
         return () => events.abort();
     }
     function bind(mount: MountedTextEditor): Binding {
-        const editor = mount.editor, binding: Binding = { mount, base: new AbortController(), stops: new Map() };
+        const binding: Binding = { mount, base: new AbortController(), stops: new Map() };
         try {
-            for (const type of ["compositionstart", "compositionend"]) editor.input.addEventListener(type, compositionChanged, { signal: binding.base.signal });
+            for (const type of ["compositionstart", "compositionend"]) mount.input.addEventListener(type, compositionChanged, { signal: binding.base.signal });
             for (const [kind, observers] of listeners) if (observers.size) binding.stops.set(kind, watch(binding, kind));
             return binding;
         } catch (error) { unbind(binding); throw error; }

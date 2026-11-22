@@ -51,7 +51,7 @@ async function mount(page: Page, language: boolean) {
             f.highlights = createLspHighlightController(editor, { provider: f.provider, delayMs: 0 });
         }
     }, { css, language });
-    return page.evaluateHandle(() => window.shadowFocus.editor.input);
+    return page.evaluateHandle(() => window.shadowFocus.editor.element.querySelector("textarea")!);
 }
 const text = (page: Page) => page.evaluate(() => { const f = window.shadowFocus, buffer = f.workspace.document(f.source.documentId).buffer; return buffer.slice(0, buffer.length); });
 const completion = (page: Page) => page.evaluate(() => window.shadowFocus.completion!.getSnapshot());
@@ -139,7 +139,7 @@ test("nested shadow focus supports occurrences, automatic completion, deferred a
         await page.evaluate(() => window.shadowFocus.completion!.customRequest("fixture/completionStyle", { style: "interactive" }));
         await input.focus(); await page.evaluate(() => window.shadowFocus.editor.view.setSelection(0, { anchor: 1, head: 1 }));
         await expect.poll(() => page.evaluate(() => window.shadowFocus.highlights!.getSnapshot().items.length)).toBe(2);
-        expect(await page.evaluate(() => document.activeElement === window.shadowFocus.editor.input)).toBe(false);
+        expect(await page.evaluate(() => document.activeElement === window.shadowFocus.editor.element.querySelector("textarea")!)).toBe(false);
         await input.press("Control+End"); await input.press("a");
         await expect.poll(async () => (await completion(page)).choices).toEqual(["sample"]); await expect.poll(() => !!release).toBe(true);
         await input.press("Tab"); expect(await text(page)).toBe("sample sample\nsa"); release!(); release = undefined;
@@ -189,8 +189,9 @@ test("public input recovery reaches retained listeners inside a closed root befo
             host.addEventListener(inputConflictEvent, () => inside++, { signal: listeners.signal });
             document.addEventListener(inputConflictEvent, () => outside++, { signal: listeners.signal });
             try {
-                for (const [node, dispose] of [[f.editor.input, f.editor.dispose], [native.element, native.dispose]] as const) {
-                    node.addEventListener(inputConflictEvent, event => { const detail = (event as CustomEvent<InputConflictDetail>).detail;
+                for (const [root, node, dispose] of [[f.editor.element, f.editor.element.querySelector("textarea")!, f.editor.dispose],
+                    [native.element, native.element, native.dispose]] as const) {
+                    root.addEventListener(inputConflictEvent, event => { const detail = (event as CustomEvent<InputConflictDetail>).detail;
                         received.push({ detail, frozen: Object.isFrozen(detail), bubbles: event.bubbles, composed: event.composed }); }, { signal: listeners.signal });
                     node.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })); node.value = "uncommitted 東京";
                     dispose();

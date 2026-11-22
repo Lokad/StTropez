@@ -10,7 +10,6 @@ import { captureViewRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import type { TextEditor } from "./text-editor.ts";
 import { typedTextEvent, type TypedTextDetail } from "./input-events.ts";
-import { isFocused } from "./dom-focus.ts";
 
 export type SignatureControllerOptions = Readonly<{ canCapture?: () => boolean; beforeRequest?: () => void; prepareRequest?: LspPrepare }>;
 export type SignatureSnapshot = Readonly<{
@@ -31,7 +30,7 @@ const changed = Object.freeze({ triggerKind: 3, isRetrigger: true } as const);
 
 /** Manual and advertised signature triggers on a single mounted editing surface. */
 export function createSignatureController(editor: TextEditor, provider: LspWorkspace, options: SignatureControllerOptions = {}): SignatureController {
-    const { workspace, view, tab, input } = editor, win = input.ownerDocument.defaultView!;
+    const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
     if (editor.signal.aborted || !ownsTextSurface(workspace, view, tab)) throw new Error("Signature help requires a live document view.");
     const events = new AbortController(), notifications = workspace.createNotificationScope(), cell = new Store(idle, notifications);
     const stops = new Set<() => void>();
@@ -40,7 +39,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
     const publish = (next: SignatureSnapshot) => notifications.publish(cell, Object.freeze(next));
     const available = () => {
         const activity = editor.activity();
-        return !events.signal.aborted && editor.element.isConnected && !input.disabled && !activity.composing
+        return !events.signal.aborted && editor.element.isConnected && !editor.getSnapshot().disabled && !activity.composing
             && !activity.pendingInput && !activity.pendingCommand && ownsTextSurface(workspace, view, tab) && (options.canCapture?.() ?? true);
     };
     function stopTimer() { win.clearTimeout(queued?.timer); queued = undefined; }
@@ -59,7 +58,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         stopTimer();
         const deadline = win.performance.now() + 5000;
         const poll = () => {
-            if (!queued || !armed || !isFocused(input) || win.performance.now() >= deadline) { cancel(); return; }
+            if (!queued || !armed || !editor.getSnapshot().focused || win.performance.now() >= deadline) { cancel(); return; }
             if (!available()) { queued.timer = win.setTimeout(poll, 50); return; }
             queued = undefined;
             if (afterTyping && view.getSnapshot() !== afterTyping) {
@@ -73,7 +72,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
     function expire(current: Request) {
         if (current !== job) return;
         release(); publish({ ...idle, status: "expired", message: "Signature context changed." });
-        if (armed && provider.getSnapshot().phase === "ready" && isFocused(input)) {
+        if (armed && provider.getSnapshot().phase === "ready" && editor.getSnapshot().focused) {
             if (!queued) schedule(changed);
         } else end();
     }
@@ -92,7 +91,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         if (context === manual) {
             const caret = view.getSnapshot().selection;
             editor.viewport.revealOffset(caret.head, { horizontal: "nearest", vertical: "nearest", affinity: caret.headAffinity ?? "after" });
-            if (isFocused(input)) editor.viewport.element.scrollIntoView({ block: "nearest", inline: "nearest" });
+            if (editor.getSnapshot().focused) editor.viewport.element.scrollIntoView({ block: "nearest", inline: "nearest" });
         }
         const capture = captureViewRequest(workspace, tab, view, { available });
         if (!capture) { cancel(); return; }
@@ -152,7 +151,8 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         bind("signature.dismiss", "Dismiss signature help", ["Escape"], () => armed, () => { const visible = !!cell.get().anchor; cancel(); return visible; });
     } catch (error) { events.abort(); throw error; }
     editor.element.addEventListener(typedTextEvent, typed, { signal: events.signal });
-    for (const event of ["blur", "compositionstart", "paste", "cut"]) input.addEventListener(event, cancel, { signal: events.signal });
+    editor.element.addEventListener("focusout", cancel, { signal: events.signal });
+    editor.onEditIntent(kind => { if (kind !== "beforeinput") cancel(); }, events.signal);
     const stopProvider = provider.subscribe(() => {
         const current = job;
         if (current?.help && !current.help.isCurrent()) queueMicrotask(() => expire(current));

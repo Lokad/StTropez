@@ -28,7 +28,8 @@ export type FindHost = Readonly<{
         performance: Pick<Performance, "now">;
         setTimeout: (work: () => void, delay: number) => number; clearTimeout: (timer: number) => void;
     }> | null }> }>;
-    input: FindEvents & Readonly<{ readOnly: boolean }>;
+    getSnapshot: () => Pick<ReturnType<TextEditor["getSnapshot"]>, "readOnlyReason">;
+    onEditIntent: TextEditor["onEditIntent"];
     activity: () => Readonly<{ disposed: boolean; composing: boolean }>;
     viewport: Pick<TextEditor["viewport"], "revealRange">;
     focus: () => void;
@@ -132,7 +133,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         return [...ranges, ...end].map(range => ({ ...(ending && range.from >= line.to ? { from: line.to, to: line.to } : range), className: "st-search-match",
             ...(selected?.from === range.from && selected.to === range.to && { properties: { "--st-search-border": "var(--st-search-current-border, #ffe494)" } }) }));
     } });
-    const canEdit = () => { const state = resource.getSnapshot(); return !editor.input.readOnly && state.state === "ready" && state.metadata.capabilities.edit.includes("human") && state.metadata.editLock === null; };
+    const canEdit = () => { const state = resource.getSnapshot(); return editor.getSnapshot().readOnlyReason === null && state.state === "ready" && state.metadata.capabilities.edit.includes("human") && state.metadata.editLock === null; };
     const observePlanAuthority = (token: number) => { stopPlanAuthority = resource.metadata.subscribe(() => {
         if (token !== generation || canEdit()) return;
         stop(); publish({ status: "ready", reason: "editing-unavailable", message: "Replacement cancelled because editing became unavailable." });
@@ -414,9 +415,9 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         if (store.get().status !== "replacing") return;
         stop(); publish({ status: "ready", reason: "composition-active", message: "Replacement cancelled for composition." });
     };
-    editor.input.addEventListener("compositionstart", compositionStarted);
+    const editIntent = editor.onEditIntent(kind => { if (kind === "compositionstart") compositionStarted(); });
     const subscriptions = [() => owner.removeEventListener("focusin", focusChanged), () => window?.removeEventListener("blur", focusChanged),
-        () => editor.input.removeEventListener("compositionstart", compositionStarted), workspace.observeDocument(documentId).subscribe(() => {
+        editIntent.dispose, workspace.observeDocument(documentId).subscribe(() => {
         const current = workspace.observeDocument(documentId).getSnapshot();
         if (current && sameOwner(observed, current) && current.revision === observed.revision && current.buffer === observed.buffer) return;
         if (store.get().status === "cancelled" && valid()) { observed = workspace.document(documentId); publish({ revision: observed.revision, length: observed.buffer.length }); }

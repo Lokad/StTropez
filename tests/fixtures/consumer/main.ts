@@ -13,6 +13,7 @@ const tabId = workspace.tabs.open({ kind: "text", documentId }, "main");
 const host = document.getElementById("editor");
 if (!host) throw new Error("Missing editor host.");
 const sourceEditor = mountTextEditor(host, workspace, tabId);
+const privateInput: Exclude<"input", keyof typeof sourceEditor> = "input";
 const viewport = mountTextViewport(document.getElementById("viewport")!, workspace, tabId, { ariaLabel: "Restored viewport", settings: { minimap: true } } satisfies TextViewportOptions);
 const candidate = mountTextEditor(document.getElementById("candidate")!, workspace, tabId, { ariaLabel: "Restored candidate" });
 candidate.decorations.addProvider({ name: "tokens", order: 0, provide: line => {
@@ -42,7 +43,7 @@ let multipleInput: ReturnType<typeof mountMultipleInput> | undefined;
 const fixture = { text: () => workspace.document(documentId).text(),
     protocolExports: () => ({ connection: typeof JsonRpcConnection, websocket: typeof openWebSocketTransport }),
     editorExports: () => ({ mount: typeof browserApi.mountTextEditor,
-        root: sourceEditor.element.tagName, input: sourceEditor.input.tagName,
+        root: sourceEditor.element.tagName, exposesInput: privateInput in sourceEditor,
         removed: ["mountEditingCandidate", "mountTextareaEditor", "mountViewport"].filter(name => name in browserApi),
         privateNavigation: ["visualRowAt", "navigationLine", "moveVisual", "collapseVisual", "columnAt", "caretAtColumn", "prepareNavigationRows"]
             .filter(name => name in viewport || name in sourceEditor.viewport) }),
@@ -50,15 +51,16 @@ const fixture = { text: () => workspace.document(documentId).text(),
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "clipboard-boundary", variant: "working" }, "Source", { value: "before\r\nend" });
         const tab = model.tabs.open({ kind: "text", documentId: source.documentId }, "clipboard"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
         const editor = mountTextEditor(host, model, tab), original = "before\r\nend";
+        const input = editor.element.querySelector("textarea")!;
         try {
             editor.view.setSelections(0, [{ anchor: 3, head: 1 }, { anchor: 10, head: 8 }], 1); const selections = editor.view.getSnapshot().selectionSet;
             for (const type of ["copy", "cut", "paste"] as const) {
-                editor.input.addEventListener(type, event => { event.clipboardData!.setData("text/plain", "host-owned"); event.preventDefault(); }, { capture: true, once: true });
-                const event = new ClipboardEvent(type, { clipboardData: new DataTransfer(), bubbles: true, cancelable: true }); editor.input.dispatchEvent(event);
+                editor.element.addEventListener(type, event => { event.clipboardData!.setData("text/plain", "host-owned"); event.preventDefault(); }, { capture: true, once: true });
+                const event = new ClipboardEvent(type, { clipboardData: new DataTransfer(), bubbles: true, cancelable: true }); input.dispatchEvent(event);
                 if (event.clipboardData!.getData("text/plain") !== "host-owned") throw new Error("Compiled editor overwrote host clipboard ownership.");
             }
             for (const type of ["text/plain", "text/html"]) { const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true }); event.clipboardData!.setData(type, type === "text/html" ? "<b>no plain text</b>" : "");
-                editor.input.dispatchEvent(event); }
+                input.dispatchEvent(event); }
             const d = model.document(source.documentId);
             if (d.revision || d.buffer.slice(0, d.buffer.length) !== original || editor.view.getSnapshot().selectionSet !== selections || model.observeHistory(source.documentId).getSnapshot().undoDepth) throw new Error("Compiled canceled/empty clipboard input changed text, complete selections or history.");
             if (d.buffer.readMetrics().textExports) throw new Error("Compiled clipboard boundary exported text.");
@@ -72,8 +74,8 @@ const fixture = { text: () => workspace.document(documentId).text(),
                 const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
                 const data = event.clipboardData!; data.setData("text/plain", "X");
                 if (html) data.setData("text/html", "<b>X</b>");
-                editor.input.dispatchEvent(event); };
-            editor.input.addEventListener("paste", event => event.preventDefault(), { capture: true, once: true });
+                input.dispatchEvent(event); };
+            input.addEventListener("paste", event => event.preventDefault(), { capture: true, once: true });
             send(true);
             if (targets.length || model.document(source.documentId).revision !== d.revision) throw new Error("Claimed paste reached the converter.");
             send(false);
@@ -124,7 +126,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             if (!summary || !getComputedStyle(summary, "::after").content.includes("100000 lines hidden") || getComputedStyle(summary).pointerEvents !== "auto")
                 throw new Error("Restored assets did not present a clickable hidden-line count.");
             // This synthetic dispatch proves the shipped command route; native device qualification is separate.
-            editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })); await wait();
+            editor.element.querySelector("textarea")!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })); await wait();
             if (view.getSnapshot().selection.head !== footer || view.getSnapshot().selectionSet.ranges.length !== 2) throw new Error("Compiled folded navigation lost a target or secondary caret.");
             const at = Math.floor(footer / 2);
             view.setSelections(0, [{ anchor: at, head: at }, { anchor: original.length, head: original.length }]);
@@ -201,7 +203,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
                 other.focus();
                 if (!point.visit(() => !!editor.reveal({ from: 0, to: 0 }, { select: true })) || history.back(() => "busy") !== "busy"
                     || history.getSnapshot() !== 1 || history.back(() => editor) !== "restored" || view.getSnapshot().selection.head !== start + 1
-                    || document.activeElement !== other.input)
+                    || !other.getSnapshot().focused)
                     throw new Error("The restored consumer lost a deferred Return.");
                 const before = peer.getSnapshot().selectionSet;
                 point.visit(() => !!other.reveal({ from: 0, to: 0 }));
@@ -320,23 +322,24 @@ const fixture = { text: () => workspace.document(documentId).text(),
             const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: kind, variant: "working" }, kind, { value: original });
             const tab = model.tabs.open({ kind: "text", documentId: source.documentId }, kind), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
             const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored ordered input" }), recovered: string[] = [];
+            const input = editor.element.querySelector("textarea")!;
             const typed: TypedTextDetail[] = [];
             if (kind === "paste-word") editor.registerPasteHandler({ accepts: () => true, paste: (_data, target) => { target.insert("out of order"); } });
             host.addEventListener(typedTextEvent, event => typed.push((event as CustomEvent<TypedTextDetail>).detail));
-            editor.input.addEventListener(inputConflictEvent, event => recovered.push((event as CustomEvent<InputConflictDetail>).detail.attemptedText));
+            editor.element.addEventListener(inputConflictEvent, event => recovered.push((event as CustomEvent<InputConflictDetail>).detail.attemptedText));
             const ready = async () => { for (let turn = 0; ; turn++) { const s = editor.snapshot();
                 if (!s.pendingInput && !s.pendingWord && !s.pendingGrapheme && !s.pendingCaret && !editor.viewport.snapshot().pending) return;
                 if (turn >= 4000) throw new Error("Compiled ordered input did not settle."); await new Promise<void>(resolve => setTimeout(resolve, 1)); } };
             const command = () => {
-                if (kind !== "pointer-word") return editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: kind === "many-carets" ? "ArrowDown" : "ArrowRight", ctrlKey: kind === "long-word" || kind === "paste-word", bubbles: true, cancelable: true }));
+                if (kind !== "pointer-word") return input.dispatchEvent(new KeyboardEvent("keydown", { key: kind === "many-carets" ? "ArrowDown" : "ArrowRight", ctrlKey: kind === "long-word" || kind === "paste-word", bubbles: true, cancelable: true }));
                 const point = editor.viewport.coordsAt(8); if (!point) throw new Error("Missing compiled word point.");
                 return editor.element.dispatchEvent(new MouseEvent("dblclick", { button: 0, clientX: point.left + 1, clientY: point.top + point.height / 2, bubbles: true, cancelable: true }));
             };
             const type = () => {
                 if (kind === "paste-word") { const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
                     if (!event.clipboardData) throw new Error("Missing compiled clipboard fixture data."); event.clipboardData.setData("text/plain", text);
-                    if (editor.input.dispatchEvent(event)) throw new Error("Compiled paste was not captured."); }
-                else if (editor.input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: text, bubbles: true, cancelable: true }))) throw new Error("Compiled input was not captured.");
+                    if (input.dispatchEvent(event)) throw new Error("Compiled paste was not captured."); }
+                else if (input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: text, bubbles: true, cancelable: true }))) throw new Error("Compiled input was not captured.");
             };
             try {
                 editor.focus(); editor.view.setSelections(0, heads.map(head => ({ anchor: head, head })), heads.length - 1); await ready(); command(); type();
@@ -373,6 +376,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
         const model = new Workspace(), text = "    const sample = 1;\r\n".repeat(1024), source = model.createTextResource({ scope: "consumer", resource: "readonly-indent", variant: "working" }, "Locked command", { value: text });
         const tab = model.tabs.open({ kind: "text", documentId: source.documentId }, "locked-command"), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
         const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored locked command" });
+        const input = editor.element.querySelector("textarea")!;
         try {
             const refusals: EditRefusedDetail["reason"][] = [];
             const observed: (EditRefusedDetail["reason"] | null)[] = [];
@@ -388,14 +392,14 @@ const fixture = { text: () => workspace.document(documentId).text(),
             if (editor.getSnapshot() !== initial || !Object.isFrozen(initial) || initial.disabled || initial.readOnlyReason !== null)
                 throw new Error("A selection changed editor focus or authority.");
             model.setCapabilities(source.id, { edit: ["host"], save: true });
-            editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: "x", bubbles: true, cancelable: true }));
+            input.dispatchEvent(new KeyboardEvent("keydown", { key: "x", bubbles: true, cancelable: true }));
             const before = model.observeHistory(source.documentId).getSnapshot(); let lockedAtHandler = false;
-            editor.input.addEventListener("keydown", () => { lockedAtHandler = editor.getSnapshot().readOnlyReason === "read-only";
+            input.addEventListener("keydown", () => { lockedAtHandler = editor.getSnapshot().readOnlyReason === "read-only";
                 queueMicrotask(() => model.setCapabilities(source.id, { edit: ["human", "host"], save: true })); }, { once: true });
-            editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: outdent, bubbles: true, cancelable: true }));
+            input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: outdent, bubbles: true, cancelable: true }));
             await new Promise<void>(resolve => { let turns = 16; const step = () => { if (--turns) setTimeout(step, 0); else resolve(); }; setTimeout(step, 0); });
             const lease = model.acquireEditLease(source.id, "consumer", "host");
-            try { editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })); }
+            try { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })); }
             finally { lease.release(); }
             if (editor.element.hasAttribute("data-read-only") || editor.getSnapshot().readOnlyReason !== null
                 || JSON.stringify(observed) !== JSON.stringify(["read-only", null, "edit-locked", null]))

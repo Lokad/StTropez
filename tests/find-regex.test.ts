@@ -1,3 +1,4 @@
+import { editorState } from "./helpers/editor-state.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Workspace } from "../src/index.ts";
@@ -14,7 +15,7 @@ test(`unchanged regex transfer steps preserve snapshot identity and accumulated 
     let serial = 0, now = 0, calls = 0, disposed = false, late: ((step: SearchStep) => void) | undefined;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance: { now: () => now },
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
-    const editor = { view, element: { ownerDocument: owner }, input: Object.assign(new EventTarget(), { readOnly: false }), activity: () => ({ composing: false, disposed: false }), viewport: { revealRange: () => {} }, focus: () => {} } satisfies FindHost;
+    const editor = { view, element: { ownerDocument: owner }, ...editorState(), activity: () => ({ composing: false, disposed: false }), viewport: { revealRange: () => {} }, focus: () => {} } satisfies FindHost;
     const backend: FindBackend = { dispose: () => { disposed = true; }, replace: () => { throw new Error("Unexpected replacement."); }, search: () => ({
         dispose: () => {}, next: () => {
             calls++; now += calls === 52 ? 80 : calls;
@@ -58,7 +59,7 @@ function fixture(text: string, supplied = true) {
     let serial = 0, focused = 0, composing = false, holdSecond = false, failPlan = false, badPlan = false, backendDisposed = false;
     const tasks = new Map<number, () => void>(), held: (() => void)[] = [], plans: { disposed: boolean; capture: FindQueryCapture }[] = [];
     const owner = Object.assign(new EventTarget(), { defaultView: { performance, setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
-    const editor = { view, element: { ownerDocument: owner }, input: Object.assign(new EventTarget(), { readOnly: false }), activity: () => ({ disposed: false, composing }),
+    const editor = { view, element: { ownerDocument: owner }, ...editorState(), activity: () => ({ disposed: false, composing }),
         viewport: { revealRange: () => {} }, focus: () => { focused++; } } satisfies FindHost;
     const backend: FindBackend = {
         dispose: () => { backendDisposed = true; },
@@ -85,7 +86,7 @@ function fixture(text: string, supplied = true) {
     return { workspace, source, tab, view, peer, owner, editor, find, plans, tick, drain,
         text: () => { const b = workspace.document(source.documentId).buffer; return b.slice(0, b.length); },
         hold: () => { holdSecond = true; }, fail: () => { failPlan = true; }, tamper: () => { badPlan = true; }, focused: () => focused,
-        compose: () => { composing = true; editor.input.dispatchEvent(new Event("compositionstart")); },
+        compose: () => { composing = true; editor.startComposition(); },
         release: () => { held.splice(0).forEach(resolve => resolve()); },
         finish: () => { find.dispose(); held.splice(0).forEach(resolve => resolve()); view.dispose(); peer.dispose(); workspace.tabs.close(tab);
             assert.equal(backendDisposed, supplied);

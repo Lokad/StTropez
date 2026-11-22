@@ -1,3 +1,4 @@
+import { editorState } from "./helpers/editor-state.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createLspHighlightController } from "../src/browser/lsp-highlights.ts";
@@ -11,11 +12,10 @@ test("occurrences coalesce refreshes and bound busy retries from the actual debo
         f.peer.onRequest("textDocument/documentHighlight", () => [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } } }]);
         await f.provider.connect();
         const tasks = new Map<number, { run: () => void; delay: number }>(); let serial = 0, time = 0, busy = true;
-        const input = new EventTarget(), owner = { activeElement: input, defaultView: { performance: { now: () => time },
+        const owner = { defaultView: { performance: { now: () => time },
             setTimeout: (run: () => void, delay: number) => { tasks.set(++serial, { run, delay }); return serial; },
             clearTimeout: (id: number) => { tasks.delete(id); } } };
-        Object.assign(input, { getRootNode: () => owner });
-        const editor = { signal: new AbortController().signal, workspace: f.workspace, tab: f.workspace.tabs.capture(tab), view, input, element: Object.assign(new EventTarget(), { ownerDocument: owner }),
+        const editor = { signal: new AbortController().signal, workspace: f.workspace, tab: f.workspace.tabs.capture(tab), view, ...editorState({ focused: true }), element: Object.assign(new EventTarget(), { ownerDocument: owner }),
             activity: () => ({ disposed: false, composing: false, pendingCommand: busy }) } as unknown as TextEditor;
         const fire = (delay: number, elapsed = delay) => {
             assert.equal(tasks.size, 1); const [id, task] = tasks.entries().next().value!;

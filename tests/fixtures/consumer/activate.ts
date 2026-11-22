@@ -27,7 +27,7 @@ export function createActivationSession(original: string, selection: Selection, 
                 createWorker: () => { workers++; return new Worker(new URL("./regex-worker.js", import.meta.url), { type: "module" }); } });
             find = createFindController(editor, { regularExpressionBackend: backend });
             stopFind = find.subscribe(() => { const s = find!.getSnapshot(); update(s.message || `${s.status}: ${s.count} matches`); });
-            if (shared?.focus !== false) editor.input.focus({ preventScroll: true });
+            if (shared?.focus !== false) editor.focus();
         },
         unmount,
         canUnmount: () => !busy(),
@@ -37,7 +37,7 @@ export function createActivationSession(original: string, selection: Selection, 
         selection: () => view.getSnapshot().selection,
         text: () => { const b = workspace.document(source.documentId).buffer; return b.slice(0, b.length); },
         snapshot: () => ({ resourceId: source.id, documentId: source.documentId, viewId: view.id, revision: source.getSnapshot().revision, selections: view.getSnapshot().selectionSet,
-            tab: workspace.tabs.getSnapshot().find(tab => tab.id === (shared ? shared.tab() : ownTab)) ?? null, readOnly: editor?.input.readOnly ?? null,
+            tab: workspace.tabs.getSnapshot().find(tab => tab.id === (shared ? shared.tab() : ownTab)) ?? null, readOnly: editor ? editor.getSnapshot().readOnlyReason !== null : null,
             history: history.getSnapshot(), diagnostics: workspace.diagnostics(), mounts, workers, disposed,
             input: editor?.snapshot() ?? null, viewport: editor?.viewport.snapshot() ?? null, find: find?.getSnapshot() ?? null,
             exports: disposed ? 0 : workspace.document(source.documentId).buffer.readMetrics().textExports }),

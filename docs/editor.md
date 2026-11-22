@@ -71,9 +71,10 @@ clears focus and composition, and releases its listeners.
 | `bracketMatching` | Off by default; `true` or explicit matching limits enable it |
 | `characterWarnings` | Off by default; `true` or a [character-warning policy](unicode.md#character-warnings) enables it |
 
-`element` is the editor root. `input` is a textarea containing a bounded slice of source. To replace
-document text, use a revision-checked workspace transaction. `view` exposes selections and folds.
-`viewport` controls rendering and geometry. `focus()` focuses the input without scrolling.
+`element` is the editor root. Read focus, composition and edit permissions from `getSnapshot()`.
+Call `onEditIntent()` to observe native editing gestures and `focus()` to return typing to the pane
+without scrolling. To replace document text, use a revision-checked workspace transaction.
+`view` exposes selections and folds. `viewport` controls rendering and geometry.
 Attach syntax, diagnostics and annotations through [editor decoration layers](viewport.md#decoration-layers).
 
 A `readOnly` mount supports navigation, selection, copy, Find and dragging a copy. It refuses edits,

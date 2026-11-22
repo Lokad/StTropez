@@ -38,7 +38,7 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
     let job: Job | undefined;
     const available = (id: DocumentId) => {
         const a = editor.activity();
-        return !events.signal.aborted && editor.element.isConnected && !editor.input.disabled && !a.composing
+        return !events.signal.aborted && editor.element.isConnected && !editor.getSnapshot().disabled && !a.composing
             && !a.pendingCommand && !a.pendingInput && (options.canCapture?.(id) ?? true);
     };
     const publish = (patch: Partial<RenameSnapshot>) => scope.publish(cell, Object.freeze({ ...idle, name: cell.get().name, ...patch }));
@@ -63,7 +63,7 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
         if (!current(j)) { expire(j); return; }
         release(); publish({ status: "failed", message: error instanceof Error ? error.message : "Rename failed." });
     }
-    const writable = (edit: LspWorkspaceEdit) => writableEdit(workspace, edit) && !(editor.input.readOnly
+    const writable = (edit: LspWorkspaceEdit) => writableEdit(workspace, edit) && !(editor.getSnapshot().readOnlyReason
         && edit.documents.some(change => change.target.document.documentId === view.documentId && change.edits.length));
     function makePreview(name: string, count: number, canApply: boolean): RenamePreview {
         // A retained button keeps the identity of its preview, never the project's old buffers.

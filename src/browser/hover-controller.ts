@@ -55,7 +55,7 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
     }
     function available(): boolean {
         const activity = editor.activity();
-        return !disposed && editor.element.isConnected && !editor.input.disabled && !activity.composing && !activity.pendingInput
+        return !disposed && editor.element.isConnected && !editor.getSnapshot().disabled && !activity.composing && !activity.pendingInput
             && !activity.pendingCommand && ownsTextSurface(workspace, view, tab) && (options.canCapture?.() ?? true);
     }
     const valid = (current: Inspection) => available() && view.getSnapshot().revision === current.revision
@@ -141,11 +141,11 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
         const current = inspection;
         if (current?.symbol && !current.symbol.isCurrent()) queueMicrotask(() => expire(current));
     });
-    editor.input.addEventListener("compositionstart", cancel, { signal: editor.signal });
+    const intent = editor.onEditIntent(kind => { if (kind === "compositionstart") cancel(); });
     function dispose(): void {
         if (disposed) return;
         notifications.assertWritable(); disposed = true; release(); stopClient(); calls.dispose(); client.dispose(); providerScope?.dispose();
-        editor.input.removeEventListener("compositionstart", cancel); editor.signal.removeEventListener("abort", dispose);
+        intent.dispose(); editor.signal.removeEventListener("abort", dispose);
         publish({ ...idle, status: "disposed" }); for (const stop of subscribers) stop();
     }
     editor.signal.addEventListener("abort", dispose, { once: true });

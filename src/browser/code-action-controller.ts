@@ -58,7 +58,7 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
     const available = (id: DocumentId) => {
         const a = editor.activity();
         return !disposed && editor.element.isConnected && !a.disposed && !a.composing && !a.pendingInput && !a.pendingCommand
-            && !a.pendingGrapheme && !a.pendingWord && !editor.input.disabled && (options.canCapture?.(id) ?? true);
+            && !a.pendingGrapheme && !a.pendingWord && !editor.getSnapshot().disabled && (options.canCapture?.(id) ?? true);
     };
     const publish = (state: CodeActionSnapshot) => scope.publish(cell, Object.freeze(state));
     function current(j: Job): boolean {

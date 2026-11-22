@@ -49,7 +49,7 @@ test("independent comparison modules share workspace identity and release retain
         editor.configure({ columnRulers: [72] }); find.setQuery("needle");
         await wait(() => folds.getSnapshot().status === "ready" && find.getSnapshot().count === 1 && one.getSnapshot().canNavigate);
         const defaultWorking = one.activePane() === one.panes.working;
-        const folded = editor.commands.run("fold.collapse-all"), activeReference = one.activePane() === editor && document.activeElement === editor.input;
+        const folded = editor.commands.run("fold.collapse-all"), activeReference = one.activePane() === editor && editor.getSnapshot().focused;
         const retired = one.hunkAt(0)!, next = initial.buffer.replace(initial.buffer.length, initial.buffer.length, "\nneedle");
         const refresh = (version: string) => one.controller.beginRefresh().complete({ buffer: next, version });
         if (!refresh("two")) throw new Error("Reference refresh failed.");

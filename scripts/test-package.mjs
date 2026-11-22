@@ -279,7 +279,7 @@ try {
     page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
     await page.goto(baseUrl);
     assert.deepEqual(await page.evaluate(() => window.consumer.protocolExports()), { connection: "function", websocket: "function" });
-    assert.deepEqual(await page.evaluate(() => window.consumer.editorExports()), { mount: "function", root: "DIV", input: "TEXTAREA", removed: [], privateNavigation: [] });
+    assert.deepEqual(await page.evaluate(() => window.consumer.editorExports()), { mount: "function", root: "DIV", exposesInput: false, removed: [], privateNavigation: [] });
     const notice = await page.request.get(`${baseUrl}/UNICODE-LICENSE.txt`);
     assert.equal(notice.status(), 200); assert.equal(await notice.text(), await readFile("licenses/Unicode-3.0.txt", "utf8"));
     const license = await page.request.get(`${baseUrl}/LICENSE.txt`);

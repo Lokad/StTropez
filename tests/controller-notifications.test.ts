@@ -1,3 +1,4 @@
+import { editorState } from "./helpers/editor-state.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createFoldingController } from "../src/browser/folding-controller.ts";
@@ -16,7 +17,7 @@ for (const kind of ["folding", "highlights"] as const) test(`${kind} commands re
         f.workspace.edit({ documentId: before.id, expectedRevision: before.revision, edits: [{ from: 0, to: 0, insert: "head\nbody\n" }], origin: "host" });
         view.folding.setRanges(view.folding.getSnapshot(), [{ id: "block", from: 0, to: 10 }]);
     }
-    const editor = { commands: registry.commands, keymap: registry.keymap, signal: new AbortController().signal, workspace: f.workspace, tab: f.workspace.tabs.capture(tab), view, element: Object.assign(new EventTarget(), { ownerDocument: owner }), input: Object.assign(new EventTarget(), { getRootNode: () => owner }),
+    const editor = { commands: registry.commands, keymap: registry.keymap, signal: new AbortController().signal, workspace: f.workspace, tab: f.workspace.tabs.capture(tab), view, element: Object.assign(new EventTarget(), { ownerDocument: owner }), ...editorState(),
         activity: () => ({ disposed: false, composing: false }), viewport: { revealRange: () => {} }, focus: () => {} } as unknown as TextEditor;
     const controller = kind === "folding" ? createFoldingController(editor, () => [])
         : createLspHighlightController(editor, { provider: f.provider });

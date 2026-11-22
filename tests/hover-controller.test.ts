@@ -1,3 +1,4 @@
+import { editorState } from "./helpers/editor-state.ts";
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
@@ -15,7 +16,7 @@ async function fixture(t: TestContext, text: string) {
     const owner = { defaultView: { setTimeout: (work: () => void) => { timers.set(++serial, work); return serial; }, clearTimeout: (id: number) => timers.delete(id) } };
     const operation: TextEditor["operation"] = (options, work) => runEditorOperation(editor, options, work);
     const editor = { workspace, tab: workspace.tabs.capture(tab), view, signal: new AbortController().signal, operation,
-        latestOperation: () => createOperationLane(editor), element: { ownerDocument: owner, isConnected: true }, input: new EventTarget(),
+        latestOperation: () => createOperationLane(editor), element: { ownerDocument: owner, isConnected: true }, ...editorState(),
         activity: () => ({ composing: false, disposed: false }), focus: () => { throw new Error("Hover moved focus."); } } as unknown as TextEditor;
     const scope = provider.createScope(); scope.attachDocument(documentId); await provider.connect(); await settled();
     const hover = createHoverController(editor, provider), leases = workspace.diagnostics().leases;

@@ -77,7 +77,7 @@ export type EditorPasteHandler = Readonly<{ accepts: (data: DataTransfer) => boo
 const editIntents = ["beforeinput", "compositionstart", "paste", "cut"] as const;
 export type EditorEditIntent = typeof editIntents[number];
 type PasteOwner = { handler: EditorPasteHandler; pending?: CapturedInsertion };
-export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; workspace: Workspace; tab: TabTarget | undefined; signal: AbortSignal; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
+export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HTMLDivElement; workspace: Workspace; tab: TabTarget | undefined; signal: AbortSignal; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
     operation: <T>(options: EditorOperationOptions, work: (op: EditorOperation) => T | PromiseLike<T>) => Promise<EditorOperationOutcome<T>>;
     latestOperation: () => EditorOperationLane;
     /** One pending host insertion, invalidated by later editing/selection/authority/lifecycle changes. */
@@ -99,7 +99,7 @@ export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HT
     activity: () => TextEditorActivity;
     snapshot: () => TextEditorActivity & Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number; maxQueuedInputTurnMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number; navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number; lastWordSelectionMs: number; maxWordSelectionTurnMs: number; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; queuedInputUnits: number; wordScanSteps: number; maxWordScanStepMs: number; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number }>;
     dispose: () => void }>;
-export type MountedTextEditor = Readonly<{ editor: TextEditor; setComparisonRows: ReturnType<typeof mountViewport>["setComparisonRows"] }>;
+export type MountedTextEditor = Readonly<{ editor: TextEditor; input: HTMLTextAreaElement; setComparisonRows: ReturnType<typeof mountViewport>["setComparisonRows"] }>;
 
 /** Text editor with bounded native input and virtualized rendering. Native IME qualification is separate. */
 export function mountTextEditor(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId,
@@ -1484,7 +1484,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         return cachedSettings = Object.freeze({ ...presentation, language, pasteLineEndings, bracketMatching: bracketOptions,
             characterWarnings: warningOptions?.configuration ?? false });
     };
-    const editor: TextEditor = Object.freeze({ element: root, input, workspace, tab: target, signal: listeners.signal, view, viewport, decorations: viewport.decorations, focus, activity, bracketMatching: brackets.handle, characterWarnings: warnings.handle,
+    const editor: TextEditor = Object.freeze({ element: root, workspace, tab: target, signal: listeners.signal, view, viewport, decorations: viewport.decorations, focus, activity, bracketMatching: brackets.handle, characterWarnings: warnings.handle,
         getSnapshot: editorState.observable.getSnapshot,
         subscribe(listener: () => void) {
             if (disposed) throw new Error("Editor is disposed.");
@@ -1588,5 +1588,5 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             warningOptions = undefined; bracketOptions = false; pasteLineEndings = "local";
             if (!options.view) view.dispose();
         } });
-    return Object.freeze({ editor, setComparisonRows });
+    return Object.freeze({ editor, input, setComparisonRows });
 }

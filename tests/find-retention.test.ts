@@ -1,3 +1,4 @@
+import { editorState } from "./helpers/editor-state.ts";
 import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
@@ -108,7 +109,7 @@ function fixture(text: string, clock: Pick<Performance, "now"> = performance) {
     const tab = workspace.tabs.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>(); let serial = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance: clock,
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
-    const editor = { view, element: { ownerDocument: owner }, input: Object.assign(new EventTarget(), { readOnly: false }), activity: () => ({ composing: false, disposed: false }), viewport: { revealRange: () => {} }, focus: () => {} } satisfies FindHost;
+    const editor = { view, element: { ownerDocument: owner }, ...editorState(), activity: () => ({ composing: false, disposed: false }), viewport: { revealRange: () => {} }, focus: () => {} } satisfies FindHost;
     const find = findForView(workspace, workspace.tabs.capture(tab), editor), document = () => workspace.document(documentId);
     const step = () => { const entry = tasks.entries().next().value; assert.ok(entry); tasks.delete(entry[0]); entry[1](); };
     const drain = () => { for (let turns = 0; tasks.size; turns++) { assert.ok(turns < 1000); step(); } assert.deepEqual(errors, []); };

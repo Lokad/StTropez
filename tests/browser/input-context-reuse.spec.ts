@@ -20,7 +20,7 @@ test("input refresh reuses bounded projections while repairing native state and 
             { value: "const row = '東京 😀';\r\n".repeat(100000) });
         const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "context"), host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
-        const editor = mountTextEditor(host, workspace, tab), input = editor.input, target = workspace.tabs.capture(tab);
+        const editor = mountTextEditor(host, workspace, tab), input = editor.element.querySelector("textarea")!, target = workspace.tabs.capture(tab);
         const doc = () => workspace.document(source.documentId), refresh = () => input.dispatchEvent(new KeyboardEvent("keyup", { key: "Tab", bubbles: true }));
         const settle = async () => { for (let i = 0; i < 60; i++) {
             await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));

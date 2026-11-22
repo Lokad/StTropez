@@ -78,7 +78,7 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
     const events = new AbortController(), subscribers = new Set<() => void>();
     const available = () => {
         const activity = editor.activity();
-        return !events.signal.aborted && editor.element.isConnected && !editor.input.disabled && !activity.composing
+        return !events.signal.aborted && editor.element.isConnected && !editor.getSnapshot().disabled && !activity.composing
             && !activity.pendingCommand && !activity.pendingInput && (options.canCapture?.() ?? true);
     };
     const capture = () => captureViewRequest(workspace, tab, view, { available });
@@ -184,7 +184,7 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
             else void request("definition", hit.offset).catch(() => {});
         } finally { const unused = activation; activation = undefined; release(unused); }
     }, events.signal);
-    editor.input.addEventListener("compositionstart", cancel, { signal: events.signal });
+    editor.onEditIntent(kind => { if (kind === "compositionstart") cancel(); }, events.signal);
     const stop = provider.subscribe(() => {
         const job = hover, request = explicit;
         if (job?.result && !job.result.isCurrent()) queueMicrotask(() => { if (hover === job) leave(); });

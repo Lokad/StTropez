@@ -20,7 +20,7 @@ test("owner activity retains immutable captures without collecting metrics and f
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "activity", variant: "text" }, "Activity", { value: "const sample = 123;\n".repeat(100) });
         const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "activity"), host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
-        const { editor, setComparisonRows } = mountEditor(host, workspace, tab), viewport = editor.viewport;
+        const { editor, input, setComparisonRows } = mountEditor(host, workspace, tab), viewport = editor.viewport;
         const forbidden = () => { throw new Error("Readiness collected metrics"); };
         const readyViewport = { ...viewport, snapshot: forbidden }, readyEditor = { ...editor, viewport: readyViewport, snapshot: forbidden };
         const ready = () => editorSettled(readyEditor), frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
@@ -33,7 +33,7 @@ test("owner activity retains immutable captures without collecting metrics and f
             const descriptor = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!;
             const rectangle = Element.prototype.getBoundingClientRect, computed = window.getComputedStyle;
             let valueReads = 0, layoutReads = 0;
-            Object.defineProperty(editor.input, "value", { configurable: true, get() { valueReads++; return descriptor.get!.call(this); }, set(value: string) { descriptor.set!.call(this, value); } });
+            Object.defineProperty(input, "value", { configurable: true, get() { valueReads++; return descriptor.get!.call(this); }, set(value: string) { descriptor.set!.call(this, value); } });
             Element.prototype.getBoundingClientRect = function () { layoutReads++; return rectangle.call(this); };
             window.getComputedStyle = (...args) => { layoutReads++; return computed(...args); };
             const metricCaptures = new Set<object>(), activityCaptures = new Set<object>();
@@ -46,7 +46,7 @@ test("owner activity retains immutable captures without collecting metrics and f
                     if (!ready() || !viewportSettled(readyViewport)) throw new Error("Unchanged owner became unsettled");
                 }
             } finally {
-                Reflect.deleteProperty(editor.input, "value"); Element.prototype.getBoundingClientRect = rectangle; window.getComputedStyle = computed;
+                Reflect.deleteProperty(input, "value"); Element.prototype.getBoundingClientRect = rectangle; window.getComputedStyle = computed;
             }
             const polling = { metricCaptures: metricCaptures.size, metricValueReads, activityCaptures: activityCaptures.size, valueReads, layoutReads,
                 inputStable: editor.activity() === idleInput, viewportStable: viewport.activity() === idleViewport,
@@ -67,9 +67,9 @@ test("owner activity retains immutable captures without collecting metrics and f
             await settle(); state("alignment painted");
             setComparisonRows(undefined); await settle(); state("alignment cleared");
             const insertion = editor.captureInsertion()!; state("insertion captured"); insertion.cancel(); state("insertion cancelled");
-            editor.input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })); state("composition queued");
+            input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })); state("composition queued");
             await settle(); state("composition painted");
-            editor.input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })); await settle(); state("composition ended");
+            input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })); await settle(); state("composition ended");
             const held = editor.captureInsertion()!;
             editor.dispose(); state("disposed");
             return { comparisonSetterExposed: "setComparisonRows" in viewport, polling, states, selectionStale, foldStale, insertionAborted: held.signal.aborted,

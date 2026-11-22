@@ -56,7 +56,7 @@ for (const shadow of [false, true]) test(`${shadow ? "shadow" : "document"} brac
     await expect(marks(page)).toHaveText(["(", ")"]);
     expect(await marks(page).first().evaluate(node => getComputedStyle(node).color)).toBe("rgb(160, 30, 120)");
     const stable = await page.evaluate(() => { const f = window.bracketFixture, before = f.editor.bracketMatching.getSnapshot();
-        f.editor.input.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift" })); return before === f.editor.bracketMatching.getSnapshot(); }); expect(stable).toBe(true);
+        f.editor.element.querySelector("textarea")!.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift" })); return before === f.editor.bracketMatching.getSnapshot(); }); expect(stable).toBe(true);
     await input(page).press("End"); await settled(page); await expect(marks(page)).toHaveText(["[", "]"]);
     await input(page).press("Backspace"); await settled(page); await expect(marks(page)).toHaveCount(0);
     await input(page).press("Control+z"); await settled(page); await expect(marks(page)).toHaveText(["[", "]"]);
