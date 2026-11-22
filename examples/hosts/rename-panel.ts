@@ -1,4 +1,5 @@
 import { createToolPanel } from "./tool-panel.ts";
+import { changedFiles, createChangedFileList } from "./changed-files.ts";
 import type { HostRenameTools, RenameNote, HostRenameSnapshot } from "./rename.ts";
 type RenamePanelTools = Pick<HostRenameTools, "prepare" | "cancel" | "showPage" | "disconnect" | "reconnect" | "bindName" | "setName" | "openChanged">;
 export function renamePageActions(tools: Pick<HostRenameTools, "showPage">, s: HostRenameSnapshot, previous: string, next: string) {
@@ -30,23 +31,20 @@ export function renamePanelModel(tools: RenamePanelTools, s: HostRenameSnapshot)
         actions: renameActions(tools, s),
         targets: { label: "Captured rename targets", identity: s.locations, start: s.page * 64 + 1,
             items: () => s.locations.map(at => ({ key: at.ordinal, text: renameTarget(at) } as const)) },
-        changes: { label: "Renamed resources", identity: s.changes, disabled: s.pending || !!s.preview,
-            items: () => s.changes.map(change => ({ key: change.document, label: `Open renamed changes in ${change.title}`,
-                invoke: () => tools.openChanged(change.document) } as const)) },
+        changes: changedFiles("Renamed resources", "Open renamed changes in ", s.changes, s.pending || !!s.preview, id => tools.openChanged(id)),
     } as const;
 }
 export function mountRenamePanel(host: HTMLElement, tools: HostRenameTools): () => void {
     const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => renamePanelModel(tools, state));
-    const label = owner.createElement("label"), name = owner.createElement("input"), targets = owner.createElement("ol"), changes = owner.createElement("ul");
+    const label = owner.createElement("label"), name = owner.createElement("input"), targets = owner.createElement("ol"), changes = createChangedFileList(owner, initial.changes.label);
     name.maxLength = initial.name.maxLength; name.type = "text"; name.value = initial.name.value; name.oninput = () => initial.name.change(name.value); label.append(initial.name.label, name);
     initial.name.bind(name);
-    targets.setAttribute("aria-label", initial.targets.label); changes.setAttribute("aria-label", initial.changes.label);
-    let previousTargets: unknown, previousChanges: unknown;
-    return mount([label, controls, targets, changes], model => {
+    targets.setAttribute("aria-label", initial.targets.label);
+    let previousTargets: unknown;
+    return mount([label, controls, targets, changes.element], model => {
         if (name.value !== model.name.value) name.value = model.name.value;
         if (previousTargets !== model.targets.identity) { previousTargets = model.targets.identity; targets.start = model.targets.start;
             targets.replaceChildren(...model.targets.items().map(at => { const li = owner.createElement("li"); li.textContent = at.text; return li; })); }
-        if (previousChanges !== model.changes.identity) { previousChanges = model.changes.identity; changes.replaceChildren(...model.changes.items().map(change => { const li = owner.createElement("li"), button = owner.createElement("button"); button.textContent = change.label; button.onclick = change.invoke; li.append(button); return li; })); }
-        for (const button of changes.querySelectorAll("button")) button.disabled = model.changes.disabled;
+        changes.render(model.changes);
     }, () => initial.name.bind(null));
 }

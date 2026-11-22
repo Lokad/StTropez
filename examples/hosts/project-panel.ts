@@ -1,4 +1,5 @@
-import { renderPanelActions } from "./panel-actions.ts";
+import { changedFiles, createChangedFileList } from "./changed-files.ts";
+import { createToolPanel } from "./tool-panel.ts";
 import type { HostProjectTools, ProjectSnapshot } from "./project.ts";
 import { actionTarget } from "./actions-panel.ts";
 type ProjectPanelTools = Pick<HostProjectTools, "register" | "unregister" | "requestEdits" | "requestStatus" | "cancel" | "disconnect" | "reconnect" | "openChanged">;
@@ -21,29 +22,21 @@ export function projectPanelModel(tools: ProjectPanelTools, s: ProjectSnapshot) 
             { label: "Disconnect workspace provider", invoke: tools.disconnect, disabled: !s.connected && !s.pending },
             { label: "Reconnect workspace provider", invoke: tools.reconnect, disabled: !s.disconnected && !s.reconnectRequired && s.status !== "failed" }
         ],
-        review: { enabled: true, visible: review !== null, key: review?.key, identity: review, titleLabel: "Provider edit review", title: review?.label ?? "",
+        review: { visible: review !== null, identity: review, titleLabel: "Provider edit review", title: review?.label ?? "",
             label: "Captured provider edits", start: (review?.page ?? 0) * 64 + 1, items: () => review?.notes.map(actionTarget) ?? [] },
-        changes: { label: "Provider changed resources", description: "Last applied provider edits", visible: s.changes.length > 0, disabled: s.pending,
-            identity: s.changes, items: () => s.changes.map(change => ({ key: change.document, label: `Open provider changes in ${change.title}`,
-                invoke: () => tools.openChanged(change.document) } as const)) },
+        changes: changedFiles("Provider changed resources", "Open provider changes in ", s.changes, s.pending, id => tools.openChanged(id)),
+        changesDescription: s.changes.length ? "Last applied provider edits" : "",
     } as const;
 }
 export function mountProjectPanel(host: HTMLElement, tools: HostProjectTools): () => void {
-    const initial = projectPanelModel(tools, tools.state.getSnapshot());
-    const owner = host.ownerDocument, heading = owner.createElement("h2"), status = owner.createElement("output"), controls = owner.createElement("div"), changed = owner.createElement("ul"), description = owner.createElement("p");
-    host.setAttribute("aria-label", initial.title); heading.textContent = initial.title; status.setAttribute("aria-label", initial.status.label);
+    const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => projectPanelModel(tools, state));
+    const changed = createChangedFileList(owner, initial.changes.label), description = owner.createElement("p");
     const previewTitle = owner.createElement("p"), preview = owner.createElement("ol"); previewTitle.setAttribute("aria-label", initial.review.titleLabel); preview.setAttribute("aria-label", initial.review.label);
-    description.textContent = initial.changes.description; changed.setAttribute("aria-label", initial.changes.label);
-    host.replaceChildren(heading, status, controls, ...(initial.review.enabled ? [previewTitle, preview] : []), description, changed); let previous: ProjectSnapshot["changes"] | undefined, previousReview: unknown;
-    const render = () => {
-        const model = projectPanelModel(tools, tools.state.getSnapshot()); status.textContent = model.status.text;
-        renderPanelActions(controls, model.actions);
+    let previousReview: ProjectSnapshot["review"] | undefined;
+    return mount([controls, previewTitle, preview, description, changed.element], model => {
         previewTitle.hidden = !model.review.visible; previewTitle.textContent = model.review.title;
         if (previousReview !== model.review.identity) { previousReview = model.review.identity; preview.start = model.review.start; preview.replaceChildren(...model.review.items().map(text => { const li = owner.createElement("li"), pre = owner.createElement("pre"); pre.textContent = text; li.append(pre); return li; })); }
-        if (previous !== model.changes.identity) { previous = model.changes.identity; changed.replaceChildren(...model.changes.items().map(change => { const item = owner.createElement("li"), button = owner.createElement("button");
-            button.textContent = change.label; button.onclick = change.invoke; item.append(button); return item; })); }
-        for (const button of changed.querySelectorAll("button")) button.disabled = model.changes.disabled;
-        description.hidden = !model.changes.visible;
-    };
-    const stop = tools.state.subscribe(render); render(); return () => { stop(); host.replaceChildren(); };
+        description.hidden = !model.changesDescription; description.textContent = model.changesDescription;
+        changed.render(model.changes);
+    });
 }

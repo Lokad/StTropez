@@ -1,5 +1,5 @@
 import { onSourceFocus } from "./source-focus.ts";
-import { openChangedFile, type LanguageHost } from "./language-host.ts";
+import { openChangedFile, type ChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, CodeActionCommand, CodeActionExecution, TextEditor } from "../../src/browser/index.ts";
@@ -21,7 +21,7 @@ type Review = { key: number; request: LspApplyEdit; context: LspRequestContext; 
 export type ProjectReview = Readonly<{ key: number; apply: () => void; decline: () => void; nextPage: () => void; previousPage: () => void; label: string; count: number; page: number; notes: readonly LspWorkspaceEditNote[]; canApply: boolean }>;
 export type ProjectActionEditPolicy = (request: LspApplyEdit) => "apply" | "review" | "decline";
 export type ProjectSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; registered: boolean; pending: boolean;
-    status: "idle" | "pending" | "ready" | "rejected" | "failed" | "cancelled"; message: string; view: string | null; changes: readonly Readonly<{ document: DocumentId; title: string }>[]; review: ProjectReview | null }>;
+    status: "idle" | "pending" | "ready" | "rejected" | "failed" | "cancelled"; message: string; view: string | null; changes: readonly ChangedFile[]; review: ProjectReview | null }>;
 /** Local protocol owner. Server edits use the workspace's existing atomic shared-history transaction. */
 export class HostProjectTools {
     private readonly host: LanguageHost;

@@ -3,7 +3,7 @@ import { createActionPages } from "./action-pages.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts";
 import { onSourceFocus } from "./source-focus.ts";
-import { openChangedFile, type LanguageHost } from "./language-host.ts";
+import { openChangedFile, type ChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, TabId, TabTarget } from "../../src/index.ts";
 import { createCodeActionController } from "../../src/browser/index.ts";
 import type { CodeActionChoice, CodeActionController, CodeActionPreview, TextEditor } from "../../src/browser/index.ts";
@@ -17,10 +17,9 @@ type ActionSettings = Pick<ActionInput, "module" | "delay" | "fault">;
 export type ActionHostOptions = Readonly<{ provider: LspWorkspace; commandPolicy?: LspCommandPolicy;
     beforeRequest?: (scope: LspScopeAccess, config: ActionSettings) => Promise<unknown>;
     beforeResolve?: (scope: LspScopeAccess, config: ActionSettings) => Promise<unknown> }>;
-type ActionChange = Readonly<{ document: DocumentId; title: string }>;
 export type ActionsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; pending: boolean; canApply: boolean; confirm: CodeActionPreview["confirm"] | null; reviewKey: number | null; active: boolean; module: string;
     status: "idle" | "pending" | "ready" | "expired" | "failed" | "applied" | "executed"; message: string; title: string; disabled: string | null; command: string | null;
-    edits: readonly LspWorkspaceEditNote[]; changes: readonly ActionChange[]; choices: readonly CodeActionChoice[]; choice: number | null; choicePage: number; choicePaging: PanelPaging | null; editPaging: PanelPaging | null; resolving: boolean; page: number; editCount: number }>;
+    edits: readonly LspWorkspaceEditNote[]; changes: readonly ChangedFile[]; choices: readonly CodeActionChoice[]; choice: number | null; choicePage: number; choicePaging: PanelPaging | null; editPaging: PanelPaging | null; resolving: boolean; page: number; editCount: number }>;
 
 type Panel = { source: Session; settings: ActionSettings; stop: () => void; pages: ReturnType<typeof createActionPages> };
 /** Routes the shared host sidebar to its originating editor and supplies fixture and command policy. */

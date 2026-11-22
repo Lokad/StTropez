@@ -1,5 +1,6 @@
 import { pageActions } from "./panel-actions.ts";
 import { createToolPanel } from "./tool-panel.ts";
+import { changedFiles, createChangedFileList } from "./changed-files.ts";
 import { actionChoicePageSize, actionEditPageSize } from "./action-pages.ts";
 import type { CodeActionChoice } from "../../src/browser/index.ts";
 import type { LspWorkspaceEditNote } from "../../src/protocol/index.ts";
@@ -32,25 +33,22 @@ export function actionsPanelModel(tools: ActionsPanelTools, s: ActionsSnapshot) 
                 invoke: () => choice.select() } as const)) },
         preview: { label: "Captured action title", text: s.title },
         edits: { label: "Proposed action edits", identity: s.edits, start: s.page * actionEditPageSize + 1, items: () => s.edits.map(actionTarget) },
-        changes: { label: "Action changed resources", identity: s.changes, disabled: s.active,
-            items: () => s.changes.map(change => ({ key: change.document,
-                label: `Open action changes in ${change.title}`, invoke: () => tools.openChangedDocument(change.document) } as const)) },
+        changes: changedFiles("Action changed resources", "Open action changes in ", s.changes, s.active, id => tools.openChangedDocument(id)),
     } as const;
 }
 export function mountActionsPanel(host: HTMLElement, tools: HostActionsTools): () => void {
     const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => actionsPanelModel(tools, state));
     const label = owner.createElement("label"), module = owner.createElement("input"), title = owner.createElement("p"), edits = owner.createElement("ol");
-    const choices = owner.createElement("ol"), changes = owner.createElement("div"); choices.setAttribute("aria-label", initial.choices.label); changes.setAttribute("aria-label", initial.changes.label);
+    const choices = owner.createElement("ol"), changes = createChangedFileList(owner, initial.changes.label); choices.setAttribute("aria-label", initial.choices.label);
     module.type = "text"; module.maxLength = initial.module.maxLength; module.value = initial.module.value; module.oninput = () => initial.module.change(module.value); label.append(initial.module.label, module); initial.module.bind(module);
     title.setAttribute("aria-label", initial.preview.label); edits.setAttribute("aria-label", initial.edits.label);
-    let previous: unknown, previousChoices: unknown, previousChanges: unknown;
+    let previous: unknown, previousChoices: unknown;
     let choiceButtons: { key: number; button: HTMLButtonElement }[] = [], previousChoicePage: number | undefined;
-    return mount([label, controls, choices, title, edits, changes], model => {
+    return mount([label, controls, choices, title, edits, changes.element], model => {
         if (module.value !== model.module.value) module.value = model.module.value; title.textContent = model.preview.text;
         if (previousChoices !== model.choices.identity || previousChoicePage !== model.choices.page) { previousChoices = model.choices.identity; previousChoicePage = model.choices.page; choiceButtons = []; choices.start = model.choices.start; choices.replaceChildren(...model.choices.items().map(choice => { const li = owner.createElement("li"), button = owner.createElement("button"); button.textContent = choice.label; button.onclick = choice.invoke; choiceButtons.push({ key: choice.key, button }); li.append(button); return li; })); }
         for (const { key, button } of choiceButtons) { button.disabled = model.choices.disabled; button.setAttribute("aria-pressed", String(model.choices.isSelected(key))); }
         if (previous !== model.edits.identity) { previous = model.edits.identity; edits.start = model.edits.start; edits.replaceChildren(...model.edits.items().map(text => { const li = owner.createElement("li"), pre = owner.createElement("pre"); pre.textContent = text; li.append(pre); return li; })); }
-        if (previousChanges !== model.changes.identity) { previousChanges = model.changes.identity; changes.replaceChildren(...model.changes.items().map(change => { const button = owner.createElement("button"); button.textContent = change.label; button.onclick = change.invoke; return button; })); }
-        for (const button of changes.querySelectorAll("button")) button.disabled = model.changes.disabled;
+        changes.render(model.changes);
     }, () => initial.module.bind(null));
 }

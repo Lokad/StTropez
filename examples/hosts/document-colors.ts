@@ -2,7 +2,7 @@ import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts";
 import { onSourceFocus } from "./source-focus.ts";
-import { openChangedFile, type LanguageHost } from "./language-host.ts";
+import { openChangedFile, type ChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, TabId } from "../../src/index.ts";
 import { createDocumentColorController } from "../../src/browser/index.ts";
 import type { ColorPresentationChoice, DecorationLayer, DocumentColorChoice, DocumentColorController, ReviewEditResult, TextEditor } from "../../src/browser/index.ts";
@@ -18,7 +18,7 @@ export type ColorNote = ColorReference & Readonly<{ ordinal: number; line: numbe
 export type DocumentColorsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; view: string | null;
     status: "idle" | "scan" | "colors" | "presentations" | "applied" | "expired" | "failed"; message: string; count: number; page: number; paging: PanelPaging | null; colors: readonly ColorNote[];
     selected: number; value: string; css: string | null; presentation: string; choices: readonly ColorPresentationChoice[];
-    edits: readonly string[]; canPreview: boolean; canApply: boolean; reviewKey: number | null; apply: (() => ReviewEditResult) | null; changed: Readonly<{ document: DocumentId; title: string }> | null }>;
+    edits: readonly string[]; canPreview: boolean; canApply: boolean; reviewKey: number | null; apply: (() => ReviewEditResult) | null; changed: ChangedFile | null }>;
 const initial: DocumentColorsSnapshot = { available: false, connected: false, disconnected: false, pending: false, view: null,
     status: "idle", message: "Focus a source to discover colors.", count: 0, page: 0, paging: null, colors: [], selected: -1, value: "", css: null,
     presentation: "", choices: Object.freeze([]), edits: Object.freeze([]), canPreview: false, canApply: false, reviewKey: null, apply: null, changed: null };

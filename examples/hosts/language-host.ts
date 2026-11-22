@@ -1,6 +1,8 @@
 import type { DocumentId, Workspace } from "../../src/index.ts";
 import type { TextEditor } from "../../src/browser/index.ts";
 
+export type ChangedFile = Readonly<{ document: DocumentId; title: string }>;
+
 export type LanguageHost = Readonly<{
     workspace: Workspace;
     canCapture: (id: DocumentId) => boolean;
