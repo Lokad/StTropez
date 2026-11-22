@@ -20,8 +20,8 @@ async function exact(page: Page, text: string) { expect(await hostTextEquals(pag
 async function disposeColorsAndLinks(page: Page) {
     await page.evaluate(() => window.hostFixture.dispose()); const state = await snapshot(page);
     expect(state.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(state.hostSubscriptions).toBe(0);
-    for (const feature of [state.bindings.colors, state.bindings.links]) expect(feature).toMatchObject({ transport: null, sessions: 0, subscriptions: 0, disposed: true });
-    expect(state.bindings.colors.decoratedViews).toBe(0);
+    for (const feature of [state.bindings.colors, state.bindings.links]) expect(feature).toMatchObject({ sessions: 0, subscriptions: 0, disposed: true });
+    expect(state.bindings.colors.transport).toBeNull(); expect(state.bindings.colors.decoratedViews).toBe(0);
 }
 async function languageFailureScene(page: Page) {
     const raw = 'lookup("key", )\r\nimport "sample-utils";\r\nconst color = "#abc";';
@@ -122,7 +122,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await expect.poll(async () => (await snapshot(page)).bindings.signature.presentation.connected).toBe(false);
         await expect(popup).toBeHidden(); await settledColorsAndLinks(page);
         await expect(apply).toBeDisabled(); await expect(links.locator("li")).toHaveCount(0);
-        expect((await snapshot(page)).bindings.links.transport).toBeNull(); expect((await snapshot(page)).bindings.colors.state.choices).toHaveLength(0);
+        expect((await snapshot(page)).bindings.links.state.connected).toBe(false); expect((await snapshot(page)).bindings.colors.state.choices).toHaveLength(0);
         await expect(button(page, "Reconnect color provider")).toBeEnabled();
         await field(page).press("Control+End"); await field(page).pressSequentially("H"); await ready(page); await exact(page, raw + "H");
         expect((await snapshot(page)).bindings.lsp!.created).toBe(connected.bindings.lsp!.created);
@@ -369,8 +369,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
             const { companion, select, editTarget } = await linkCaptureScene(page, current, editedTarget);
             await select(); replies.hold(); await button(page, "Discover module links").click();
             await expect.poll(replies.waiting).toBe(true);
-            const token = (await snapshot(page)).bindings.links.state.token;
-            expect(token).not.toBeNull();
+            expect((await snapshot(page)).bindings.links.state.status).toBe("pending");
             if (mode === "selection") await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 11, head: 11 }]); });
             else if (mode === "typing") { await field(page).press("Control+End"); await field(page).pressSequentially("H"); current += "H"; }
             else if (mode === "target") await editTarget();
@@ -381,7 +380,6 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
             await expect.poll(replies.cancelled).toBe(true);
             const invalidated = await snapshot(page);
             await replies.release();
-            await page.evaluate(token => window.hostFixture.openLink(token, 0), token);
             await settledColorsAndLinks(page);
             const after = await snapshot(page);
             expect(after.bindings.links.opened).toBe(0);
@@ -392,15 +390,21 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
             expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe((editedTarget || mode === "target" ? "// target\r\n" : "") + linkCaptureTarget);
             await disposeColorsAndLinks(page);
         });
-    test("completed link discovery rejects old tokens and opens a read-only target", async ({ page }) => {
+    test("retained link actions reject source edits and remounts while a fresh link opens a read-only target", async ({ page }) => {
         test.setTimeout(60000);
+        const replies = await holdLspReplies(page, "documentLink/resolve"); await page.reload();
         const current = linkCaptureSource + "H";
         const { companion, select, discover } = await linkCaptureScene(page, current, true);
         await select(); await discover();
-        const old = (await snapshot(page)).bindings.links.state.token;
-        await button(page, "Dismiss module links").click(); await discover();
-        await page.evaluate(token => window.hostFixture.openLink(token, 0), old);
-        expect((await snapshot(page)).bindings.links.opened).toBe(0);
+        for (const interrupt of ["edit", "remount"]) {
+            const old = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.links.state.links[0]!.open);
+            replies.hold(); await page.getByLabel("Module link results", { exact: true }).getByRole("button").click();
+            await expect.poll(replies.waiting).toBe(true);
+            if (interrupt === "edit") { await field(page).press("End"); await field(page).pressSequentially("x"); await field(page).press("Control+z"); }
+            else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
+            await select(); await discover(); await replies.release(); await old.evaluate(open => open()); await old.dispose();
+            expect((await snapshot(page)).bindings.links.opened).toBe(0); await exact(page, current);
+        }
         await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion);
         await select(); await discover();
         await page.getByLabel("Module link results", { exact: true }).getByRole("button").click();

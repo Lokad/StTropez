@@ -1,38 +1,11 @@
-import { createLspColorClient, createLspLinkClient } from "../../../src/protocol/index.ts";
-import type { LspDocumentColor, LspDocumentLink, LspPrepare, LspWorkspace } from "../../../src/protocol/index.ts";
+import { createLspColorClient } from "../../../src/protocol/index.ts";
+import type { LspDocumentColor, LspPrepare, LspWorkspace } from "../../../src/protocol/index.ts";
 import type { DocumentId, Workspace } from "../../../src/index.ts";
-import type { HostModuleLink, LinkBackend } from "../../hosts/document-links.ts";
-import type { LinksInput, LinkTarget } from "../../../fixtures/language/links.ts";
 import type { ColorBackend } from "../../hosts/document-colors.ts";
 import { rgbaColor } from "../../../fixtures/language/colors.ts";
 import type { ColorPresentationInput, ColorReference, ColorsInput } from "../../../fixtures/language/colors.ts";
 
 /** Host presentation models with optional, host-owned request preparation. */
-export function lspLinkBackend(workspace: Workspace, provider: LspWorkspace, uri: (id: DocumentId) => string, changed: () => void, prepare?: (input: LinksInput) => LspPrepare): LinkBackend {
-    const client = createLspLinkClient(provider), raw = new Map<HostModuleLink, LspDocumentLink>();
-    let batch: Awaited<ReturnType<typeof client.run>> | undefined, normalize: ((item: LspDocumentLink) => HostModuleLink) | undefined, busy = false, disposed = false, serial = 0;
-    const stop = client.subscribe(() => queueMicrotask(() => { if (!disposed) changed(); }));
-    return Object.freeze({
-        links: async (input, buffer) => {
-            const token = ++serial, doc = workspace.document(input.document as DocumentId); busy = true; batch = undefined; raw.clear();
-            try {
-                if (doc.revision !== input.revision || doc.buffer !== buffer) throw new Error("Link fixture capture changed.");
-                const targets = new Map<string, LinkTarget>([[uri(doc.id), { resource: input.resource, document: input.document, revision: input.revision, length: input.length }], ...input.aliases.map(target => [uri(target.document as DocumentId), target] as const)]);
-                const result = await client.run(doc, prepare?.(input));
-                if (disposed || token !== serial || !result.isCurrent()) throw new Error("Link fixture result expired."); batch = result;
-                normalize = item => { const target = item.target ? targets.get(item.target) ?? null : null;
-                    const link = Object.freeze({ from: item.from, to: item.to, module: buffer.slice(item.from, Math.min(item.to, item.from + 128)), tooltip: item.tooltip || item.target || "Unresolved provider link", target, resolvable: !target && !!item.resolve }); raw.set(link, item); return link; };
-                return Object.freeze({ operation: "links-result", id: input.id, document: input.document, revision: input.revision, complete: true, truncated: false, links: Object.freeze(result.items.map(normalize)) });
-            } finally { if (token === serial) { busy = false; changed(); } }
-        },
-        resolve: async link => {
-            const item = raw.get(link), captured = batch, token = serial; if (!captured || !item || !normalize || !captured.isCurrent()) throw new Error("Choose a captured resolvable provider link."); busy = true;
-            try { const resolved = await captured.resolve(item); if (disposed || token !== serial || !captured.isCurrent()) throw new Error("Link resolution expired."); return normalize(resolved); }
-            finally { if (token === serial) { busy = false; changed(); } }
-        },
-        isCurrent: () => !disposed && (batch?.isCurrent() ?? true), snapshot: () => Object.freeze({ connected: client.snapshot().connected, busy, transport: "lsp3.17" }),
-        dispose: () => { if (disposed) return; disposed = true; serial++; stop(); client.dispose(); raw.clear(); batch = undefined; normalize = undefined; } });
-}
 export function lspColorBackend(workspace: Workspace, provider: LspWorkspace, changed: () => void,
     prepare?: Readonly<{ discovery: (input: ColorsInput) => LspPrepare; presentation: (input: ColorPresentationInput) => LspPrepare }>): ColorBackend {
     const client = createLspColorClient(provider), raw = new Map<ColorReference, LspDocumentColor>();

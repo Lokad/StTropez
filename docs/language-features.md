@@ -19,7 +19,7 @@ separately. Incoming edits and command execution have their own
 | Definition / references | `createLspNavigationClient` | `textDocument/definition` / `textDocument/references` |
 | Rename | `createRenameController`, `createLspRenameClient` | `textDocument/rename` |
 | Code actions | `createCodeActionController`, `createLspActionClient` | `textDocument/codeAction` |
-| Document links | `createLspLinkClient` | `textDocument/documentLink` |
+| Document links | `createDocumentLinkController`, `createLspLinkClient` | `textDocument/documentLink` |
 | Document colors | `createLspColorClient` | `textDocument/documentColor` and `textDocument/colorPresentation` |
 | Occurrences | `createLspHighlightClient`; browser `createLspHighlightController` | `textDocument/documentHighlight` |
 | Folding | [Folding client and discovery controller](folding.md#language-server-discovery) | `textDocument/foldingRange` |
@@ -570,16 +570,31 @@ after commit, report the uncertain delivery and leave the edit in history.
 
 ### Document links
 
-`createLspLinkClient(provider).run(document, prepare?)` returns `{ items, isCurrent, resolve }`.
-`decodeLspDocumentLinks` validates source ranges, optional opaque targets, literal tooltips and
-data. A missing target can be retained for explicit resolution when matching provider options
-advertise it. `resolve(item, prepare?)` requires an item from that captured list.
+`createDocumentLinkController(editor, provider, { documents })` discovers links in the mounted
+document. Include any project documents whose revision or edit permissions affect your URI mapping.
+Call `request()` and render `getSnapshot().links`. Each link carries its range, literal tooltip,
+optional target and an `open` action. Bind the button to that link.
 
-Resolving a link can change its target and tooltip. `decodeLspResolvedDocumentLink` keeps the range,
-opaque identity, capture and size limits fixed. When the user clicks, check the destination against
-your current policy and keep the source location for Return. You can display an unknown target as
-text. If the user clicks elsewhere during resolution, keep focus there. The resolved link stays
-available for a fresh click.
+```ts
+import type { DocumentLinkChoice } from "sttropez/browser";
+
+export function bindLink(button: HTMLButtonElement, link: DocumentLinkChoice, visit: (uri: string) => void) {
+    button.disabled = link.target === null && !link.canResolve;
+    button.onclick = () => link.open(visit);
+}
+```
+
+`open(visit)` resolves a missing target when the provider supports resolution. It returns true
+when it calls `visit` with a URI. The host decides which URIs to open, where to show them and
+how to return. If the user clicks elsewhere during resolution, keep focus there. Read the updated
+link from the snapshot for a fresh click.
+
+Caret movement cancels a pending lookup. After discovery, the list survives caret movement.
+An edit or authority change in a captured document, a new request, cancellation or editor
+disposal invalidates its actions. A stale action returns false. The protocol client
+`createLspLinkClient` exposes the list and its `resolve` operation. `decodeLspDocumentLinks`
+checks ranges and bounds the URI, tooltip and opaque data. `decodeLspResolvedDocumentLink` allows
+a new target and tooltip while requiring the original range and identity.
 
 ### Document colors
 

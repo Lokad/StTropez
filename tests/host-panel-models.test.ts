@@ -133,21 +133,19 @@ test("color presentation retains its confirmation tuple and resource while equiv
     assert.equal(first.results.bind, tools.bindList); assert.equal(first.value.bind, tools.bindValue);
 });
 
-test("link presentation retains captured ordinals while status updates do not replace equivalent result rows", () => {
-    const opened: [number | null, number][] = [];
+test("link rows retain their own action through repaging and resolution", () => {
+    const opened: string[] = [];
     const tools: Parameters<typeof documentLinksPanelModel>[0] = { discover: noop, returnToOrigin: noop, cancel: noop, previousPage: noop, nextPage: noop, addCompanion: noop,
-        disconnect: noop, reconnect: noop, bindList: noop, open: (token, ordinal) => { opened.push([token, ordinal]); } };
+        disconnect: noop, reconnect: noop, bindList: noop };
     let formatted = 0;
-    const state: DocumentLinksSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, pending: false, token: 7, requestView: "primary",
-        status: "ready", message: "Captured links", work: 1, total: 1, count: 1, page: 0, canReturn: false,
-        links: Object.freeze([Object.freeze({ from: 8, to: 20, module: "module", tooltip: "Resolve module", target: null, resolvable: true, ordinal: 0, line: 1, column: 9,
-            get title() { formatted++; return "First"; }, targetTitle: null })]) });
-    const first = documentLinksPanelModel(tools, state); assert.equal(formatted, 0, "formatting and retention keys are lazy");
-    const resolving = documentLinksPanelModel(tools, { ...state, status: "resolving", pending: true, links: state.links.map(link => ({ ...link })) });
-    assert.equal(first.results.retentionKey(), resolving.results.retentionKey()); assert.equal(first.results.disabled, false); assert.equal(resolving.results.disabled, true);
-    const newer = documentLinksPanelModel(tools, { ...state, token: 8, page: 1, links: [{ ...state.links[0]!, ordinal: 64 }] });
-    assert.notEqual(first.results.retentionKey(), newer.results.retentionKey());
-    newer.results.items()[0]!.invoke(); first.results.items()[0]!.invoke(); assert.deepEqual(opened, [[8, 64], [7, 0]]);
+    const state: DocumentLinksSnapshot = { available: true, connected: true, disconnected: false, pending: false, requestView: "primary",
+        status: "ready", message: "Captured links", count: 1, page: 0, canReturn: false,
+        links: [{ from: 8, to: 20, module: "module", tooltip: "Resolve module", target: null, resolvable: true, line: 1, column: 9,
+            get title() { formatted++; return "First"; }, targetTitle: null, open: () => { opened.push("first"); } }] };
+    const first = documentLinksPanelModel(tools, state); assert.equal(formatted, 0);
+    assert.equal(documentLinksPanelModel(tools, { ...state, status: "resolving" }).results.disabled, true);
+    const newer = documentLinksPanelModel(tools, { ...state, page: 1, links: [{ ...state.links[0]!, open: () => { opened.push("next"); } }] });
+    newer.results.items()[0]!.invoke(); first.results.items()[0]!.invoke(); assert.deepEqual(opened, ["next", "first"]);
     assert.equal(first.results.items()[0]!.available, true); assert.equal(first.results.bind, tools.bindList);
 });
 

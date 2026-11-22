@@ -21,6 +21,8 @@ export { createHoverController } from "./hover-controller.ts";
 export { createNavigationController } from "./navigation-controller.ts";
 export { createSignatureController } from "./signature-controller.ts";
 export { createRenameController } from "./rename-controller.ts";
+export { createDocumentLinkController } from "./document-link-controller.ts";
+export type { DocumentLinkChoice, DocumentLinkController, DocumentLinkControllerOptions, DocumentLinkSnapshot } from "./document-link-controller.ts";
 export type { RenameController, RenameControllerOptions, RenamePreview, RenameSnapshot } from "./rename-controller.ts";
 export type { SignatureController, SignatureControllerOptions, SignatureSnapshot } from "./signature-controller.ts";
 export type { NavigationController, NavigationControllerOptions, NavigationSnapshot, NavigationResult, NavigationChoice, NavigationDestination } from "./navigation-controller.ts";

@@ -72,7 +72,12 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         assert.ok((await text()).startsWith("// resolved import\r\nconst sampleValue;")); assert.equal((await state()).history.undoDepth, commitDepth + 1);
         await input.press("Control+z"); assert.equal(await text(), beforeCommit);
         await button("Signature").click(); await expect.poll(async () => (await state()).notes.signature).toBe("fallback?: string");
-        await button("Links").click(); await expect.poll(async () => (await state()).notes.linkUri).toBe(`consumer+opaque:project/${encodeURIComponent((await state()).companionResource)}`);
+        await button("Links").click(); await expect(button("Open link")).toBeEnabled();
+        const oldLink = await button("Open link").evaluateHandle(node => /** @type {HTMLButtonElement} */ (node).onclick?.bind(node));
+        await button("Edit companion").click(); await expect(button("Open link")).toBeDisabled();
+        await button("Links").click(); await expect(button("Open link")).toBeEnabled();
+        assert.equal(await oldLink.evaluate(open => open?.(new PointerEvent("click"))), false); await oldLink.dispose();
+        assert.equal((await state()).notes.linkUri, undefined); await button("Open link").click(); await expect.poll(async () => (await state()).notes.linkUri).toBe(`consumer+opaque:project/${encodeURIComponent((await state()).companionResource)}`);
         await button("Colors").click(); await expect.poll(async () => (await state()).notes.colorPresentations ?? 0).toBeGreaterThan(0);
         const beforeColor = await text(), colorDepth = (await state()).history.undoDepth; await button("Apply color").click(); await expect.poll(async () => (await state()).notes.colorApplied).toBe(true);
         assert.equal((await state()).history.undoDepth, colorDepth + 1); assert.equal(await text(), "// color presentation\r\n" + beforeColor.replace("#abc", "rgba(1, 2, 3, 0.5)")); await input.press("Control+z"); assert.equal(await text(), beforeColor);

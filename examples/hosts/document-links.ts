@@ -1,182 +1,225 @@
-import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, TabTarget, TextBuffer, Workspace } from "../../src/index.ts";
-import { captureViewRequest } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, TextEditor } from "../../src/browser/index.ts";
-import { linkLimits, validateLinksInput } from "../../fixtures/language/links.ts";
-import type { LinksInput, LinksResult, ModuleLink } from "../../fixtures/language/links.ts";
+import type { DocumentId, DocumentSnapshot, SelectionSet, TabId, Workspace } from "../../src/index.ts";
+import { createDocumentLinkController } from "../../src/browser/index.ts";
+import type { DocumentLinkChoice, DocumentLinkController, DocumentLinkSnapshot, TextEditor } from "../../src/browser/index.ts";
+import type { LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
+import { linkLimits } from "../../fixtures/language/links.ts";
+import type { LinksInput, ModuleLink } from "../../fixtures/language/links.ts";
 import { validDomainModule } from "../../fixtures/language/domain.ts";
 import { HostCell } from "../shared/observable.ts";
-type Session = { token: number; id: string; target: TabTarget; editor: TextEditor };
-type Source = { document: DocumentSnapshot; authority: string };
-export type HostModuleLink = ModuleLink & Readonly<{ resolvable?: boolean }>;
-export type LinkBackend = Readonly<{ links: (input: LinksInput, buffer: TextBuffer, progress: (work: number) => void) => Promise<Omit<LinksResult, "links"> & Readonly<{ links: readonly HostModuleLink[] }>>;
-    resolve?: (link: HostModuleLink) => Promise<HostModuleLink>; isCurrent?: () => boolean; faultIdle?: () => boolean;
-    snapshot: () => Readonly<{ connected: boolean; busy: boolean; transport?: string }>; dispose: () => void }>;
-export type LinkBackendFactory = (clock: Window, changed: () => void) => LinkBackend;
-type Job = { origin: Session; input: LinksInput; generation: number; capture: CapturedViewRequest; sources: Map<string, Source>; targets: Map<string, Session>;
-    leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; opened: boolean; links: readonly HostModuleLink[];
-    resolving?: number | undefined; resolveCapture?: CapturedViewRequest };
-export type LinkNote = HostModuleLink & Readonly<{ ordinal: number; line: number; column: number; title: string; targetTitle: string | null }>;
-export type DocumentLinksSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; token: number | null; requestView: string | null;
-    status: "idle" | "pending" | "ready" | "resolving" | "failed" | "expired"; message: string; work: number; total: number; count: number; page: number; links: readonly LinkNote[]; canReturn: boolean }>;
-/** Host-owned aliases and explicit reveal. No provider target is executed as a URL. */
+
+type Alias = Readonly<{ module: string; uri: string }>;
+export type LinkHostOptions = Readonly<{ provider: LspWorkspace; uri: (id: DocumentId) => string;
+    prepare: (aliases: readonly Alias[], delay: number, fault?: LinksInput["fault"]) => LspPrepare }>;
+type Session = { id: string; editor: TextEditor; controller: DocumentLinkController };
+type Route = { origin: Session; source: DocumentSnapshot; selections: SelectionSet; documents: Map<string, DocumentSnapshot>;
+    targets: Map<DocumentId, Session>; opened: boolean; releaseHistory?: () => void };
+export type LinkNote = ModuleLink & Readonly<{ line: number; column: number; title: string; targetTitle: string | null; resolvable: boolean; open: () => void }>;
+export type DocumentLinksSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; requestView: string | null;
+    status: DocumentLinkSnapshot["status"] | "away"; message: string; count: number; page: number; links: readonly LinkNote[]; canReturn: boolean }>;
+const initial: DocumentLinksSnapshot = { available: false, connected: false, disconnected: false, pending: false, requestView: null,
+    status: "idle", message: "Focus a source to discover module links.", count: 0, page: 0, links: [], canReturn: false };
+
+/** The sample owns module aliases, pane selection and the route back from an explicitly opened destination. */
 export class HostDocumentLinks {
-    private readonly workspace: Workspace;
-    private readonly canCapture: (id: DocumentId) => boolean;
-    private readonly present: (id: DocumentId) => TextEditor | undefined;
     private readonly aliases = new Map<string, DocumentId>();
-    private generation = 0;
-    private companion: DocumentId | undefined;
-    private readonly sessions = new Map<number, Session>();
+    private readonly sessions = new Set<Session>();
     private active: Session | undefined;
-    private job: Job | undefined;
-    private client: LinkBackend | undefined;
-    private readonly factory: LinkBackendFactory;
+    private route: Route | undefined;
+    private companion: DocumentId | undefined;
     private list: HTMLElement | undefined;
     private listEvents: AbortController | undefined;
-    private sequence = 0;
     private disposed = false;
     private disconnected = false;
     private presenting = false;
     private delay = 0;
     private fault: LinksInput["fault"];
-    private readonly metrics = { requested: 0, opened: 0, returned: 0, cancelled: 0, expired: 0, failed: 0 };
-    private readonly cell = new HostCell<DocumentLinksSnapshot>({ available: false, connected: false, disconnected: false, pending: false, token: null, requestView: null, status: "idle", message: "Focus a candidate source to discover module links.", work: 0, total: 0, count: 0, page: 0, links: [], canReturn: false });
+    private readonly metrics = { requested: 0, opened: 0, returned: 0 };
+    private readonly cell = new HostCell(initial);
     readonly state = this.cell.observable;
+    private readonly workspace: Workspace;
+    private readonly canCapture: (id: DocumentId) => boolean;
+    private readonly present: (id: DocumentId) => TextEditor | undefined;
+    private readonly options: LinkHostOptions;
     private readonly reconnectProvider: (() => void) | undefined;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined, factory: LinkBackendFactory, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.factory = factory; }
-    private available(s: Session): boolean {
-        const tab = this.workspace.tabs.resolve(s.target);
-        return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
-            && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined,
+        options: LinkHostOptions, reconnectProvider?: () => void) {
+        this.workspace = workspace; this.canCapture = canCapture; this.present = present;
+        this.options = options; this.reconnectProvider = reconnectProvider;
     }
-    private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
-    private capture(origin: Session): CapturedViewRequest | undefined { return captureViewRequest(this.workspace, origin.target, origin.editor.view,
-        { available: () => this.available(origin) && this.canCapture(origin.editor.view.documentId) }); }
-    private current(job: Job): boolean {
-        if (this.job !== job || job.invalid || this.disposed || job.generation !== this.generation || !(this.client?.isCurrent?.() ?? true)) return false;
-        try {
-            for (const { document: doc, authority } of job.sources.values()) if (this.workspace.observeDocument(doc.id).getSnapshot()?.revision !== doc.revision || this.authority(doc.id) !== authority || !this.canCapture(doc.id)) return false;
-            if (job.resolving !== undefined && !job.resolveCapture?.isCurrent()) return false;
-            return job.ready || job.capture.isCurrent();
-        } catch { return false; }
+    private publish(patch: Partial<DocumentLinksSnapshot> = {}) {
+        this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && !this.disposed && !this.active.editor.signal.aborted,
+            connected: !!this.route && !this.disconnected && this.options.provider.getSnapshot().phase === "ready",
+            disconnected: this.disconnected, requestView: this.route?.origin.id ?? null, canReturn: !!this.route?.opened });
     }
-    private changed(job: Job): void {
-        if (!this.presenting && this.job === job && !this.current(job)) {
-            job.invalid = true; queueMicrotask(() => { if (this.job === job) { this.release(); this.metrics.expired++; this.publish({ status: "expired", message: "Captured source, target, route, input or view changed; discover fresh links." }); } });
-        }
+    private release() {
+        const route = this.route; this.route = undefined;
+        route?.releaseHistory?.(); route?.origin.controller.cancel();
     }
-    private publish(patch: Partial<DocumentLinksSnapshot> = {}): void {
-        const job = this.job, state = { ...this.cell.get(), ...patch }, links = job?.ready ? job.links.slice(state.page * linkLimits.page, (state.page + 1) * linkLimits.page).map((link, i) => {
-            const doc = job.sources.get(job.input.document)!.document, line = doc.buffer.lineAt(link.from);
-            return { ...link, ordinal: state.page * linkLimits.page + i, line: line + 1, column: link.from - doc.buffer.offsetAt(line) + 1, title: doc.title.slice(0, 128), targetTitle: link.target ? job.sources.get(link.target.document)!.document.title.slice(0, 128) : null };
-        }) : [];
-        this.cell.set({ ...state, available: !!this.active && this.available(this.active), connected: this.client?.snapshot().connected ?? false, disconnected: this.disconnected,
-            pending: !!job && (!job.ready || job.resolving !== undefined), token: job?.input.id ?? null, requestView: job?.origin.id ?? null, count: job?.links.length ?? 0, links, canReturn: !!job?.opened });
-    }
-    private drop(): void { const client = this.client; this.client = undefined; client?.dispose(); }
-    private release(): void {
-        const job = this.job; this.job = undefined; if (!job) return; job.invalid = true;
-        job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.stops.splice(0).forEach(stop => stop()); job.capture.cancel(); job.resolveCapture?.cancel(); job.leases.splice(0).forEach(lease => lease.release()); if (!job.ready || job.resolving !== undefined) this.drop();
-    }
-    readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.release(); this.publish({ status: "idle", message: "Module links dismissed.", work: 0, total: 0, page: 0 }); };
-    readonly disconnect = (): void => { this.cancel(); this.drop(); this.disconnected = true; this.publish({ message: "Link provider disconnected; local editing remains available." }); };
-    readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ message: "Discover fresh links with current resources." }); };
-    readonly bindList = (list: HTMLElement | null): void => {
-        this.listEvents?.abort(); this.listEvents = undefined; this.list = list ?? undefined; if (!list || this.disposed) return;
+    readonly cancel = () => { this.release(); this.publish({ ...initial, message: "Module links dismissed." }); };
+    readonly disconnect = () => { this.disconnected = true; this.cancel(); };
+    readonly reconnect = () => { this.disconnected = false; this.cancel(); this.reconnectProvider?.(); };
+    readonly bindList = (list: HTMLElement | null) => {
+        this.listEvents?.abort(); this.list = list ?? undefined;
+        if (!list || this.disposed) return;
         const events = new AbortController(); this.listEvents = events;
-        list.addEventListener("keydown", event => { if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return; const origin = this.job?.origin; event.preventDefault(); event.stopPropagation(); this.cancel(); if (origin && this.available(origin)) origin.editor.focus(); }, { signal: events.signal });
+        list.addEventListener("keydown", event => {
+            if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+            const origin = this.route?.origin; event.preventDefault(); event.stopPropagation(); this.cancel();
+            if (origin && this.sessions.has(origin)) origin.editor.focus();
+        }, { signal: events.signal });
     };
-    attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const s = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
-        editor.input.addEventListener("focus", () => { if (this.active !== s && this.job?.resolving !== undefined) this.cancel(); this.active = s; this.publish(); }, { signal: events.signal });
-        editor.input.addEventListener("keydown", event => {
-            if (event.defaultPrevented || event.isComposing || editor.activity().composing || event.key !== "F4" || event.ctrlKey || event.metaKey || event.altKey) return;
-            if (event.shiftKey && !this.job?.opened) return; event.preventDefault(); event.stopImmediatePropagation(); this.active = s; if (event.shiftKey) this.returnToOrigin(); else this.start(true);
-        }, { capture: true, signal: events.signal });
-        for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (!this.presenting && this.job?.sources.has(editor.view.documentId)) this.cancel(); }, { signal: events.signal });
-        let detached = false; return () => { if (detached) return; detached = true; if (!this.presenting && this.job) this.cancel(); events.abort(); this.sessions.delete(s.token); if (this.active === s) this.active = undefined; if (!this.sessions.size && !this.presenting) this.drop(); this.publish(); };
+    attach(id: string, _tab: TabId, editor: TextEditor) {
+        const controller = createDocumentLinkController(editor, this.options.provider, {
+            documents: () => [...(this.route?.documents.values() ?? [])], canCapture: this.canCapture,
+            prepareRequest: () => {
+                const aliases = [...this.aliases].map(([module, id]) => ({ module, uri: this.options.uri(id) }));
+                const fault = this.fault; this.fault = undefined; return this.options.prepare(aliases, this.delay, fault);
+            },
+        });
+        const session = { id, editor, controller }, events = new AbortController();
+        this.sessions.add(session);
+        const stop = controller.subscribe(() => { if (this.route?.origin === session) this.render(this.route); });
+        const detach = () => {
+            if (!this.sessions.delete(session)) return;
+            if (this.active === session) this.active = undefined;
+            stop(); events.abort();
+            if (!this.presenting && this.route) this.cancel();
+            controller.dispose(); this.publish();
+        };
+        try {
+            for (const [id, label, key, run, enabled] of [
+                ["links.discover", "Discover module links", "F4", () => { this.active = session; this.start(true); }, () => !this.disconnected],
+                ["links.return", "Return to link origin", "Shift+F4", this.returnToOrigin, () => !!this.route?.opened],
+            ] as const) {
+                const command = editor.commands.register({ id, label, run, enabled }, { keys: [key] });
+                events.signal.addEventListener("abort", command.dispose, { once: true });
+            }
+        } catch (error) { detach(); throw error; }
+        editor.input.addEventListener("focus", () => {
+            if (this.active !== session && this.cell.get().status === "resolving" && !this.presenting) this.cancel();
+            this.active = session; this.publish();
+        }, { signal: events.signal });
+        for (const type of ["beforeinput", "compositionstart", "paste", "cut"]) editor.input.addEventListener(type, () => {
+            if (!this.presenting && this.route?.documents.has(this.options.uri(editor.view.documentId))) this.cancel();
+        }, { signal: events.signal });
+        return detach;
     }
-    readonly discover = (): void => this.start(false);
-    private start(keyboard: boolean): void {
+    private render(route: Route, page = this.cell.get().page) {
+        const state = route.origin.controller.getSnapshot(), status = state.status;
+        if (status === "pending") { this.publish({ status, pending: true, message: "Discovering module links…" }); return; }
+        if (status === "resolving") { this.publish({ status, pending: true, message: "Resolving the selected link…" }); return; }
+        if (status !== "ready") {
+            this.route = undefined;
+            this.publish({ ...initial, status, message: state.message || (status === "expired" ? "The source or link target changed." : "Module links dismissed.") });
+            return;
+        }
+        const { source } = route;
+        const links = state.links.slice(page * linkLimits.page, (page + 1) * linkLimits.page).map(item => {
+            const doc = item.target ? route.documents.get(item.target) : undefined, line = source.buffer.lineAt(item.from);
+            return { from: item.from, to: item.to, tooltip: item.tooltip || item.target || "Unresolved provider link",
+                module: source.buffer.slice(item.from, Math.min(item.to, item.from + 128)), title: source.title.slice(0, 128),
+                target: doc ? { document: doc.id, resource: doc.resourceId, revision: doc.revision, length: doc.buffer.length } : null,
+                targetTitle: doc?.title.slice(0, 128) ?? null, resolvable: item.canResolve, line: line + 1, column: item.from - source.buffer.offsetAt(line) + 1,
+                open: () => this.open(route, item) };
+        });
+        this.publish({ status, pending: false, links, page, count: state.links.length, message: `${state.links.length} module links.` });
+    }
+    readonly discover = () => this.start(false);
+    private start(keyboard: boolean, returning = false) {
         const origin = this.active;
-        if (this.disconnected || !origin || !this.available(origin)) { this.publish({ message: "Focus an available source and reconnect first." }); return; }
-        if (!this.canCapture(origin.editor.view.documentId)) { this.publish({ message: "Finish pending input, navigation, table conversion or composition first." }); return; }
-        this.cancel(); const doc = this.workspace.document(origin.editor.view.documentId), selected = origin.editor.view.getSnapshot(), documents = new Map<string, DocumentSnapshot>([[doc.id, doc]]);
-        let input: LinksInput;
-        try {
-            if (doc.key.variant !== "working") throw new Error("Links require a captured working source.");
-            const aliases = [...this.aliases].map(([module, id]) => { const target = this.workspace.document(id); if (!this.canCapture(id) || target.key.variant !== "working") throw new Error("Finish pending target input before discovering links."); documents.set(id, target);
-                return { module, resource: target.resourceId, document: id, revision: target.revision, length: target.buffer.length }; });
-            input = validateLinksInput({ id: ++this.sequence, resource: doc.resourceId, document: doc.id, revision: doc.revision, length: doc.buffer.length, aliases, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) });
-        } catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid link capture." }); return; }
-        this.fault = undefined; const targets = new Map<string, Session>(); for (const s of this.sessions.values()) if (this.available(s) && !targets.has(s.editor.view.documentId)) targets.set(s.editor.view.documentId, s); targets.set(doc.id, origin);
-        const capture = this.capture(origin);
-        if (!capture) { this.publish({ message: "The source changed before capture; discover fresh links." }); return; }
-        const job: Job = { origin, input, generation: this.generation, capture,
-            sources: new Map([...documents].map(([id, d]) => [id, { document: d, authority: this.authority(d.id) }])), targets, leases: [], stops: [], timer: 0, invalid: false, ready: false, opened: false, links: [] };
-        this.job = job; this.metrics.requested++; const win = origin.editor.element.ownerDocument.defaultView!;
-        const changed = () => this.changed(job);
-        try {
-            for (const d of documents.values()) if (d.id !== doc.id) { job.leases.push(this.workspace.acquire(d.resourceId)); job.stops.push(this.workspace.observeDocument(d.id).subscribe(changed), this.workspace.resourceForDocument(d.id).metadata.subscribe(changed)); }
-            capture.signal.addEventListener("abort", changed, { once: true });
-            job.timer = win.setTimeout(() => { if (this.job === job && !job.ready) { this.release(); this.metrics.failed++; this.publish({ status: "failed", message: "Link provider timed out; source is unchanged." }); } }, 30000);
-            this.publish({ status: "pending", message: `Discovering exact module-import links from ${origin.id}.`, work: 0, total: doc.buffer.length, page: 0 });
-            const connectionChanged = () => { if (this.client && (!this.client.snapshot().connected && !this.client.snapshot().busy || this.job?.ready && !this.current(this.job))) { this.drop(); this.release(); this.publish({ status: "failed", message: "Link connection or capture changed; discover fresh links." }); } else this.publish(); };
-            this.client ??= this.factory(win, connectionChanged);
-            void this.client.links(input, doc.buffer, work => { if (this.current(job)) this.publish({ work }); }).then(result => {
-                if (!this.current(job)) { changed(); return; }
-                // Ready links retain resource ownership but allow view movement between explicit opens.
-                job.leases.push(this.workspace.acquire(doc.resourceId));
-                job.stops.push(this.workspace.observeDocument(doc.id).subscribe(changed), this.workspace.resourceForDocument(doc.id).metadata.subscribe(changed));
-                job.ready = true; job.links = result.links; win.clearTimeout(job.timer); capture.cancel();
-                const at = result.links.findIndex(l => l.from <= selected.selection.head && selected.selection.head <= l.to), page = at < 0 ? 0 : Math.floor(at / linkLimits.page);
-                this.publish({ status: "ready", message: `${result.links.length} module links; ${result.links.filter(l => !l.target).length} unresolved. Open a captured target explicitly.`, work: input.length, page });
-                if (keyboard && this.job === job && this.current(job) && this.list?.isConnected && win.document.activeElement === origin.editor.input) this.list.focus();
-            }).catch(error => { if (this.job !== job) return; this.release(); this.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Link provider failed; source is unchanged." }); });
-        } catch (error) { this.release(); this.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Link provider is unavailable." }); }
+        if (!origin || this.disconnected || !this.canCapture(origin.editor.view.documentId)) return;
+        const source = this.workspace.document(origin.editor.view.documentId);
+        if (source.key.variant !== "working") return;
+        const documents = new Map([[this.options.uri(source.id), source]]);
+        for (const id of this.aliases.values()) {
+            if (!this.canCapture(id)) return;
+            documents.set(this.options.uri(id), this.workspace.document(id));
+        }
+        const targets = new Map<DocumentId, Session>();
+        for (const s of this.sessions) if (!targets.has(s.editor.view.documentId)) targets.set(s.editor.view.documentId, s);
+        targets.set(source.id, origin);
+        this.release();
+        const route = { origin, source, documents, targets, selections: origin.editor.view.getSnapshot().selectionSet, opened: false };
+        this.route = route; this.metrics.requested++;
+        if (!returning) this.publish({ ...initial });
+        void origin.controller.request().then(() => {
+            const state = origin.controller.getSnapshot();
+            if (this.route !== route || state.status !== "ready") return;
+            const head = route.selections.ranges[route.selections.primary]!.head;
+            const index = state.links.findIndex(link => link.from <= head && head <= link.to);
+            if (index >= 0) this.render(route, Math.floor(index / linkLimits.page));
+            if (keyboard && origin.editor.element.ownerDocument.activeElement === origin.editor.input) this.list?.focus();
+        });
     }
-    private place(job: Job, document: DocumentId, selections: SelectionSet | null): boolean {
-        if (!job.ready || job.resolving !== undefined || !this.current(job) || !this.canCapture(document)) { this.publish({ message: "Finish pending input or discover fresh links." }); return false; }
+    private place(route: Route, doc: DocumentSnapshot, selections?: SelectionSet) {
+        const live = this.workspace.observeDocument(doc.id).getSnapshot();
+        if (this.route !== route || !this.canCapture(doc.id) || live?.revision !== doc.revision || live.buffer !== doc.buffer) return;
+        const captured = route.targets.get(doc.id);
         this.presenting = true;
         try {
-            const captured = job.targets.get(document), editor = captured && this.available(captured) ? captured.editor : this.present(document);
-            if (!editor || this.job !== job || !this.current(job) || editor.view.documentId !== document) { this.publish({ message: "The captured link destination cannot be presented in an available pane." }); return false; }
-            const revision = job.sources.get(document)!.document.revision, applied = selections ? editor.view.setSelections(revision, selections.ranges, selections.primary) : editor.view.setSelection(revision, { anchor: 0, head: 0 });
-            if (!applied) return false; job.opened = true; editor.viewport.revealOffset(editor.view.getSnapshot().selection.head); editor.focus(); this.publish(); return true;
+            const editor = captured && this.sessions.has(captured) ? captured.editor : this.present(doc.id);
+            if (!editor || this.route !== route || editor.view.documentId !== doc.id) return;
+            const placed = selections ? editor.view.setSelections(doc.revision, selections.ranges, selections.primary)
+                : editor.view.setSelection(doc.revision, { anchor: 0, head: 0 });
+            if (!placed) return;
+            editor.viewport.revealOffset(editor.view.getSnapshot().selection.head); editor.focus(); return editor;
         } finally { this.presenting = false; }
     }
-    open(token: number | null, ordinal: number): void { const job = this.job; if (!job || token !== job.input.id || !Number.isSafeInteger(ordinal) || job.resolving !== undefined || !this.current(job)) return; const link = job.links[ordinal]; if (!link) return;
-        if (!link.target && link.resolvable && this.client?.resolve) {
-            const capture = this.capture(job.origin);
-            if (!capture) { this.publish({ message: "The source changed before capture; discover fresh links." }); return; }
-            job.resolving = ordinal; job.resolveCapture = capture;
-            capture.signal.addEventListener("abort", () => this.changed(job), { once: true });
-            const owner = job.origin.editor.element.ownerDocument, focused = owner.activeElement;
-            // Disabling or replacing a result button can focus the body. A later click on a heading does too.
-            let follow = true;
-            owner.addEventListener("pointerdown", () => { follow = false; }, { capture: true, once: true, signal: capture.signal });
-            this.publish({ status: "resolving", message: "Resolving the captured provider link." });
-            void this.client.resolve(link).then(resolved => {
-                if (!this.current(job) || job.links[ordinal] !== link) return; job.links = Object.freeze(job.links.map((value, index) => index === ordinal ? resolved : value)); job.resolving = undefined; delete job.resolveCapture; capture.cancel();
-                this.publish({ status: "ready", message: resolved.target ? "Resolved a host-authorized destination." : "Provider link target is outside the host's captured resources." });
-                if (follow && resolved.target && (owner.activeElement === focused || owner.activeElement === owner.body && (!focused?.isConnected || !!this.list?.contains(focused)))) this.open(token, ordinal);
-            }).catch(error => { if (this.job !== job) return; this.release(); this.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Link resolution failed; source is unchanged." }); }); return;
-        }
-        if (!link.target) return;
-        if (this.place(job, link.target.document as DocumentId, null)) { this.metrics.opened++; this.publish({ message: `Opened captured module ${link.module}.` }); } }
-    readonly returnToOrigin = (): void => { const job = this.job; if (job?.opened && this.place(job, job.input.document as DocumentId, job.capture.selectionSet)) { this.metrics.returned++; this.publish({ message: "Returned to the captured source and complete selection set." }); } };
-    readonly nextPage = (): void => { const s = this.cell.get(); if ((s.page + 1) * linkLimits.page < s.count) this.publish({ page: s.page + 1 }); };
-    readonly previousPage = (): void => { const s = this.cell.get(); if (s.page) this.publish({ page: s.page - 1 }); };
-    setAlias(module: string, document: DocumentId | null): void {
-        if (!validDomainModule(module) || document && this.workspace.document(document).key.variant !== "working") throw new Error("Choose a bounded module alias and working resource.");
-        if (document === (this.aliases.get(module) ?? null)) return; if (document && !this.aliases.has(module) && this.aliases.size === linkLimits.aliases) throw new Error("Module alias limit reached.");
-        this.cancel(); this.generation++; if (document) this.aliases.set(module, document); else this.aliases.delete(module); this.publish({ message: "Host module routes changed; discover fresh links." });
+    private async open(route: Route, item: DocumentLinkChoice) {
+        if (this.route !== route || !this.sessions.has(route.origin)) return;
+        const editor = route.origin.editor, owner = editor.element.ownerDocument, focused = owner.activeElement;
+        const events = new AbortController(); let follow = true;
+        if (item.canResolve) owner.addEventListener("pointerdown", () => { follow = false; }, { capture: true, once: true, signal: events.signal });
+        try {
+            await item.open(uri => {
+                const doc = route.documents.get(uri);
+                if (!doc) { this.publish({ message: "Provider link target is outside the host's captured resources." }); return; }
+                if (!follow || owner.activeElement !== focused && !(owner.activeElement === owner.body && (!focused?.isConnected || !!this.list?.contains(focused)))) return;
+                // A host can replace the only mounted source while presenting the destination.
+                const release = this.retainReturn(route);
+                let placed = false;
+                try { placed = !!this.place(route, doc); }
+                finally { if (!placed || this.sessions.has(route.origin)) release(); else route.releaseHistory = release; }
+                if (!placed) return;
+                route.opened = true; this.metrics.opened++;
+                this.publish({ message: `Opened ${doc.title}.`, ...(!this.sessions.has(route.origin) ? { status: "away" as const } : {}) });
+            });
+        } finally { events.abort(); }
     }
-    readonly addCompanion = (): void => { if (this.disposed) return; this.companion ??= this.workspace.createTextResource({ scope: "host-fixture", resource: "module-companion", variant: "working" }, "Module companion", { value: "export const value = 1;\r\n" }).documentId;
-        this.setAlias("sample-utils", this.companion); this.publish({ message: "Module companion registered for sample-utils. Discover links in an exact import line." }); };
-    setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid links delay."); this.delay = value; }
-    faultNext(value: NonNullable<LinksInput["fault"]>): void { this.fault = value; }
-    faultIdle(): boolean { return this.client?.faultIdle?.() ?? false; }
-    debug() { const job = this.job; return { ...this.metrics, state: this.cell.get(), capture: job ? { input: job.input, view: job.origin.id, selections: job.capture.selectionSet } : null, companion: this.companion ?? null, aliases: [...this.aliases].map(([module, document]) => ({ module, document })), generation: this.generation, transport: this.client?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
-    dispose(): void { if (this.disposed) return; this.cancel(); this.drop(); this.bindList(null); this.aliases.clear(); this.disposed = true; this.active = undefined; this.publish(); }
+    private retainReturn(route: Route) {
+        const { source } = route, lease = this.workspace.acquire(source.resourceId), handle = this.workspace.observeDocument(source.id);
+        const metadata = this.workspace.resourceForDocument(source.id).metadata;
+        const invalidate = () => { route.opened = false; queueMicrotask(() => { if (this.route === route) this.cancel(); }); };
+        const stop = handle.subscribe(invalidate), stopMetadata = metadata.subscribe(invalidate);
+        return () => { stop(); stopMetadata(); lease.release(); };
+    }
+    readonly returnToOrigin = () => {
+        const route = this.route;
+        if (!route?.opened || !this.place(route, route.source, route.selections)) return;
+        this.metrics.returned++;
+        if (!this.sessions.has(route.origin)) this.start(false, true);
+        else this.publish({ message: "Returned to the captured source and selection." });
+    };
+    private page(delta: number) {
+        const route = this.route, state = this.cell.get(), page = state.page + delta;
+        if (route && state.status === "ready" && page >= 0 && page * linkLimits.page < state.count) this.render(route, page);
+    }
+    readonly nextPage = () => this.page(1);
+    readonly previousPage = () => this.page(-1);
+    setAlias(module: string, document: DocumentId | null) {
+        if (!validDomainModule(module) || document && this.workspace.document(document).key.variant !== "working") throw new Error("Choose a bounded module alias and working resource.");
+        if (document === (this.aliases.get(module) ?? null)) return;
+        if (document && !this.aliases.has(module) && this.aliases.size === linkLimits.aliases) throw new Error("Module alias limit reached.");
+        this.cancel(); if (document) this.aliases.set(module, document); else this.aliases.delete(module);
+    }
+    readonly addCompanion = () => {
+        if (this.disposed) return;
+        this.companion ??= this.workspace.createTextResource({ scope: "host-fixture", resource: "module-companion", variant: "working" }, "Module companion", { value: "export const value = 1;\r\n" }).documentId;
+        this.setAlias("sample-utils", this.companion); this.publish({ message: "Module companion registered for sample-utils." });
+    };
+    setDelay(value: number) { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid links delay."); this.delay = value; }
+    faultNext(value: NonNullable<LinksInput["fault"]>) { this.fault = value; }
+    debug() { return { ...this.metrics, state: this.cell.get(), companion: this.companion ?? null,
+        sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
+    dispose() { if (!this.disposed) { this.cancel(); this.bindList(null); this.aliases.clear(); this.disposed = true; this.publish(); } }
 }
