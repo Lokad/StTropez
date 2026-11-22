@@ -90,6 +90,8 @@ try {
         await harness.page.goto(`/hosts/${mode}/?editor=candidate`);
         const input = harness.page.getByRole("textbox", { name: "Primary source", exact: true });
         await input.fill("const saMORE = 123; // TODO\n😀 const value = 2;");
+        await harness.page.waitForFunction(() => window.hostFixture.snapshot().bindings.language.sessions
+            .some(session => session.id === "primary" && session.provider.connected));
         await harness.page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "plain" }));
         await harness.page.getByRole("button", { name: "Open source review", exact: true }).click();
         await input.press("Control+Home"); for (let i = 0; i < 8; i++) await input.press("ArrowRight");
