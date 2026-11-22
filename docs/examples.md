@@ -107,6 +107,7 @@ Editing, moving the caret, switching panes or pressing Escape cancels it. Otherw
 when the service is ready. An empty completion or signature result appears in the footer.
 Switching files clears that feedback, even if the previous file replies later.
 
+Moving focus to JavaScript output during a definition lookup cancels the jump and preserves Back history.
 In the references and quick-fix lists, Up and Down move the choice, including from a
 focused result button. Enter in the source opens the chosen location or confirms a ready
 fix. Escape from either list returns focus to the source.

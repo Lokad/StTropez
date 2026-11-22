@@ -46,14 +46,15 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     const navigation = createNavigationController(editor, provider, { canCapture: idle, resultLifetime: "view", documents: () => files().map(file => workspace.document(file.resource.documentId)),
         onDefinition: offset => request("definition", offset) });
     scope.defer(navigation.dispose);
+    const pendingNavigation = editor.latestOperation();
+    scope.defer(pendingNavigation.dispose);
     const target = workspace.tabs.capture(file.tab);
     const sourceAnchor = (capture: CapturedViewRequest) => {
         const caret = capture.selectionSet.ranges[capture.selectionSet.primary]!;
         return { revision: capture.document.revision, offset: caret.head, affinity: caret.headAffinity ?? "after" };
     };
-    const cancelNavigation = () => {
-        query = undefined; locationsOverlay.hide(); navigation.cancel();
-    };
+    const hideLocations = () => { pendingNavigation.cancel(); query = undefined; locationsOverlay.hide(); };
+    const cancelNavigation = () => { hideLocations(); navigation.cancel(); };
     scope.defer(cancelNavigation);
     const markChoice = (captured: Query) => {
         for (const button of popup.querySelectorAll<HTMLButtonElement>("[data-location]")) button.dataset.chosen = String(Number(button.dataset.location) === captured.page?.selected.index);
@@ -93,15 +94,18 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         if (!idle()) return; dismissOther(); closeRename(false); cancelNavigation(); editor.focus();
         const caret = editor.view.getSnapshot().selection;
         if (pointed === undefined) editor.viewport.revealOffset(caret.head, { affinity: caret.headAffinity ?? "after" });
-        const captured: Query = { page: undefined, message: "", offset: pointed ?? caret.head, revision: workspace.document(file.resource.documentId).revision };
-        query = captured; showNavigation(captured, kind === "definition" ? "Finding definition…" : "Finding references…");
-        void navigation.request(kind, captured.offset).then(result => {
-            if (query !== captured || navigation.getSnapshot().result !== result) return;
-            if (kind === "definition" && result.count === 1) { choose(result.locationAt(0)!); return; }
-            captured.page = result.pageFor();
-            showNavigation(captured, result.count ? `Choose a ${kind === "definition" ? "definition" : "reference"}.` : `No ${kind} in this sample.`);
-        }).catch(error => { if (query === captured) showNavigation(captured,
-            error instanceof Error ? `Cannot open this location: ${error.message}` : "This location is unavailable in the sample."); });
+        void pendingNavigation.run({}, op => {
+            const captured: Query = { page: undefined, message: "", offset: pointed ?? caret.head, revision: op.document.revision };
+            query = captured; showNavigation(captured, kind === "definition" ? "Finding definition…" : "Finding references…");
+            const reply = navigation.request(kind, captured.offset).catch((error: unknown) =>
+                error instanceof Error ? `Cannot open this location: ${error.message}` : "This location is unavailable in the sample.");
+            return op.step(reply, result => {
+                if (typeof result === "string") { showNavigation(captured, result); return; }
+                if (kind === "definition" && result.count === 1) { choose(result.locationAt(0)!); return; }
+                captured.page = result.pageFor();
+                showNavigation(captured, result.count ? `Choose a ${kind === "definition" ? "definition" : "reference"}.` : `No ${kind} in this sample.`);
+            });
+        }).catch(reportError);
     }
     const rename = new HostRenameTools(workspace, () => idle(), id => id === file.resource.documentId && valid() ? editor : undefined,
         { provider }, { open: beginRename });
@@ -177,7 +181,7 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     scope.defer(rename.attach("source", file.tab, editor));
     scope.defer(navigation.subscribe(() => {
         const status = navigation.getSnapshot().status;
-        if (query && (status === "expired" || status === "idle")) { query = undefined; locationsOverlay.hide(); }
+        if (query && (status === "expired" || status === "idle")) hideLocations();
     }));
     return Object.freeze({ definition: () => request("definition"), references: () => request("references"), rename: () => editor.commands.run("rename.start"),
         dismiss: () => { cancelNavigation(); closeRename(false); }, isOpen: () => !!query || !!renameSource });

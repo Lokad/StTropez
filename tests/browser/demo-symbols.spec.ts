@@ -82,14 +82,33 @@ test("real rename previews a captured name, rejects an old name and shares one u
     await page.locator('[data-file="pricing.ts"]').click(); await expect(page.locator("#editor")).toContainText("export function basketTotal(");
 });
 
-test("held real definition replies cannot follow a later file and typing target", async ({ page }) => {
-    let held = false, release: (() => void) | undefined;
+test("a delayed definition leaves output focus, Back history and the next typing target alone", async ({ page }) => {
+    let release: (() => void) | undefined, cancelled = false;
     await page.routeWebSocket("**/demo-provider/*", client => {
-        const server = client.connectToServer(), ids = new Set<number>();
-        client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "textDocument/definition") ids.add(value.id); server.send(message); });
-        server.onMessage(message => { const value = JSON.parse(message.toString()); if (!held && ids.has(value.id)) { held = true; release = () => client.send(message); } else client.send(message); });
+        const server = client.connectToServer();
+        let definitionId: number | undefined;
+        client.onMessage(message => {
+            const value = JSON.parse(message.toString());
+            if (value.method === "textDocument/definition") definitionId = value.id;
+            if (value.method === "$/cancelRequest" && value.params.id === definitionId) cancelled = true;
+            server.send(message);
+        });
+        server.onMessage(message => {
+            const value = JSON.parse(message.toString());
+            if (definitionId !== undefined && value.id === definitionId && "result" in value) {
+                expect(value.result).toHaveLength(1);
+                release = () => { definitionId = undefined; client.send(message); };
+            } else client.send(message);
+        });
     });
-    await openDemo(page); const source = await symbol(page); await source.press("F12"); await expect.poll(() => held).toBe(true);
+    await openDemo(page); const source = await symbol(page);
+    await source.press("F12"); await expect.poll(() => !!release).toBe(true);
+    const output = page.getByRole("region", { name: "JavaScript output", exact: true }).getByRole("textbox");
+    await output.focus(); await expect.poll(() => cancelled).toBe(true); release!(); release = undefined;
+    await expect(output).toBeFocused(); await expect(source).toBeVisible();
+    await expect(page.locator("#navigate-back")).toBeDisabled(); await expect(page.locator(".demo-symbols")).toBeHidden();
+
+    await source.press("F12"); await expect.poll(() => !!release).toBe(true);
     await page.locator('[data-file="pricing.ts"]').click(); const pricing = page.getByRole("textbox", { name: "pricing.ts", exact: true });
     await pricing.press("Control+Home"); await pricing.pressSequentially("// Keep my current helper\n"); release!();
     await expect(pricing).toBeFocused(); await expect(page.locator("#editor")).toContainText("// Keep my current helper");
