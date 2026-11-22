@@ -1,4 +1,5 @@
 import { createReviewKey } from "./panel-actions.ts";
+import { createPanelKeyBinding } from "./panel-keys.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { createCodeActionController } from "../../src/browser/index.ts";
@@ -34,8 +35,7 @@ export class HostActionsTools {
     private active: Session | undefined;
     private panel: Panel | undefined;
     private readonly stopReviewOwner: (() => void) | undefined;
-    private moduleInput: HTMLInputElement | undefined;
-    private moduleEvents: AbortController | undefined;
+    private readonly moduleField = createPanelKeyBinding<HTMLInputElement>(() => (this.panel?.source ?? this.active)?.editor);
 
     private disposed = false;
     private disconnected = false;
@@ -87,14 +87,7 @@ export class HostActionsTools {
     readonly disconnect = (): void => { this.disconnected = true; this.cancel(); this.publish({ message: "Action provider disconnected; local editing remains available." }); };
     readonly reconnect = (): void => { this.disconnected = false; this.cancel(); this.reconnectProvider?.(); this.publish({ message: "Preview a fresh action with current source." }); };
     setModule(value: string): void { if (value === this.cell.get().module) return; this.cancel(); this.publish({ module: value.slice(0, 65), status: "idle", message: "Module changed; preview a fresh action.", title: "", disabled: null, edits: [], work: 0, total: 0, choices: [], page: 0, editCount: 0 }); }
-    readonly bindModule = (input: HTMLInputElement | null): void => {
-        this.moduleEvents?.abort(); this.moduleEvents = undefined; this.moduleInput = input ?? undefined; if (!input || this.disposed) return;
-        const events = new AbortController(); this.moduleEvents = events;
-        input.addEventListener("keydown", event => {
-            const origin = this.panel?.source ?? this.active;
-            if (origin?.editor.keymap.handle(event)) event.stopPropagation();
-        }, { signal: events.signal });
-    };
+    readonly bindModule = this.moduleField.bind;
     private readonly documents = () => this.workspace.getSnapshot().documents.filter(doc => doc.language !== null);
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
         const target = this.workspace.tabs.capture(tab), events = new AbortController();
@@ -123,7 +116,7 @@ export class HostActionsTools {
             this.publish();
         }, { once: true });
         editor.signal.addEventListener("abort", detach, { once: true, signal: events.signal });
-        const ownsModule = () => this.moduleInput?.matches(":focus") === true && (this.panel?.source ?? this.active) === s;
+        const ownsModule = () => this.moduleField.element?.matches(":focus") === true && (this.panel?.source ?? this.active) === s;
         try {
             const request = editor.commands.register({ id: "actions.request", label: "Preview module action", enabled: () => this.available(s),
                 run: from => { this.active = s; this.start(from !== "panel"); } }, { keys: ["Ctrl+.", "Meta+."] });
@@ -157,7 +150,7 @@ export class HostActionsTools {
         const controller = origin.controller;
         this.panel = { source: origin, input, stop: controller.subscribe(() => this.publish()), page: 0, choicePage: 0, edits: undefined, preview: null };
         this.requested++; controller.request();
-        if (keyboard && this.moduleInput && this.cell.get().pending) { this.moduleInput.focus(); this.moduleInput.select(); }
+        if (keyboard && this.moduleField.element && this.cell.get().pending) { this.moduleField.element.focus(); this.moduleField.element.select(); }
     }
     private goToPage(direction: -1 | 1): void {
         const panel = this.panel; if (!panel?.preview || !panel.edits) return;
@@ -189,5 +182,5 @@ export class HostActionsTools {
     }
     debug() { return { requested: this.requested, state: this.cell.get(), capture: this.panel && this.cell.get().token !== null ? { view: this.panel.source.id, input: this.panel.input } : null,
         transport: this.panel ? "lsp3.17" : null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
-    dispose(): void { if (this.disposed) return; this.cancel(); this.bindModule(null); this.stopReviewOwner?.(); this.disposed = true; for (const session of this.sessions) session.events.abort(); this.active = undefined; this.publish(); }
+    dispose(): void { if (this.disposed) return; this.cancel(); this.moduleField.dispose(); this.stopReviewOwner?.(); this.disposed = true; for (const session of this.sessions) session.events.abort(); this.active = undefined; this.publish(); }
 }

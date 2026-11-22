@@ -1,3 +1,4 @@
+import { createPanelKeyBinding } from "./panel-keys.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, DocumentSnapshot, SelectionSet, TabId, Workspace } from "../../src/index.ts";
@@ -28,8 +29,7 @@ export class HostDocumentLinks {
     private active: Session | undefined;
     private route: Route | undefined;
     private companion: DocumentId | undefined;
-    private list: HTMLElement | undefined;
-    private listEvents: AbortController | undefined;
+    private readonly linkList = createPanelKeyBinding<HTMLElement>(() => this.listEditor());
     private disposed = false;
     private disconnected = false;
     private presenting = false;
@@ -64,14 +64,7 @@ export class HostDocumentLinks {
         const route = this.route;
         return route && (this.sessions.has(route.origin) ? route.origin.editor : route.destination);
     }
-    readonly bindList = (list: HTMLElement | null) => {
-        this.listEvents?.abort(); this.list = list ?? undefined;
-        if (!list || this.disposed) return;
-        const events = new AbortController(); this.listEvents = events;
-        list.addEventListener("keydown", event => {
-            if (this.listEditor()?.keymap.handle(event)) event.stopPropagation();
-        }, { signal: events.signal });
-    };
+    readonly bindList = this.linkList.bind;
     attach(id: string, _tab: TabId, editor: TextEditor) {
         const controller = createDocumentLinkController(editor, this.options.provider, {
             documents: () => [...(this.route?.documents.values() ?? [])], canCapture: this.canCapture,
@@ -99,7 +92,7 @@ export class HostDocumentLinks {
                 events.signal.addEventListener("abort", command.dispose, { once: true });
             }
             const dismiss = editor.commands.register({ id: "links.dismiss", label: "Dismiss module links",
-                enabled: () => this.listEditor() === editor && !!this.list?.matches(":focus-within"),
+                enabled: () => this.listEditor() === editor && !!this.linkList.element?.matches(":focus-within"),
                 run: () => {
                     const origin = this.route?.origin;
                     this.cancel();
@@ -164,7 +157,7 @@ export class HostDocumentLinks {
             const head = route.selections.ranges[route.selections.primary]!.head;
             const index = state.links.findIndex(link => link.from <= head && head <= link.to);
             if (index >= 0) this.render(route, Math.floor(index / linkLimits.page));
-            if (keyboard && origin.editor.getSnapshot().focused) this.list?.focus();
+            if (keyboard && origin.editor.getSnapshot().focused) this.linkList.element?.focus();
         });
     }
     private place(route: Route, doc: DocumentSnapshot, selections?: SelectionSet) {
@@ -190,7 +183,7 @@ export class HostDocumentLinks {
             const result = await item.open(uri => {
                 const doc = route.documents.get(uri);
                 if (!doc) { this.publish({ message: "Provider link target is outside the host's captured resources." }); return; }
-                if (!follow || owner.activeElement !== focused && !(owner.activeElement === owner.body && (!focused?.isConnected || !!this.list?.contains(focused)))) return;
+                if (!follow || owner.activeElement !== focused && !(owner.activeElement === owner.body && (!focused?.isConnected || !!this.linkList.element?.contains(focused)))) return;
                 // A host can replace the only mounted source while presenting the destination.
                 const release = this.retainReturn(route);
                 let placed: TextEditor | undefined;
@@ -240,5 +233,5 @@ export class HostDocumentLinks {
     faultNext(value: NonNullable<LinksInput["fault"]>) { this.fault = value; }
     debug() { return { ...this.metrics, state: this.cell.get(), companion: this.companion ?? null,
         sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
-    dispose() { if (!this.disposed) { this.cancel(); this.bindList(null); this.aliases.clear(); this.disposed = true; this.publish(); } }
+    dispose() { if (!this.disposed) { this.cancel(); this.linkList.dispose(); this.aliases.clear(); this.disposed = true; this.publish(); } }
 }

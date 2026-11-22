@@ -1,4 +1,5 @@
 import { createReviewKey } from "./panel-actions.ts";
+import { createPanelKeyBinding } from "./panel-keys.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId, Workspace } from "../../src/index.ts";
 import { createRenameController } from "../../src/browser/index.ts";
@@ -33,8 +34,7 @@ export class HostRenameTools {
     private delay = 0;
     private fault: NavigationFault | undefined;
     private requested = 0;
-    private input: HTMLInputElement | undefined;
-    private nameEvents: AbortController | undefined;
+    private readonly nameField = createPanelKeyBinding<HTMLInputElement>(() => (this.owner ?? this.active)?.editor);
     private readonly cell = new HostCell(initial);
     readonly state = this.cell.observable;
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined,
@@ -68,14 +68,7 @@ export class HostRenameTools {
         const name = value.slice(0, 256);
         if (this.owner) this.owner.controller.setName(name); else this.publish({ name });
     }
-    readonly bindName = (input: HTMLInputElement | null) => {
-        this.nameEvents?.abort(); this.input = input ?? undefined;
-        if (!input || this.disposed) return;
-        const events = new AbortController(); this.nameEvents = events;
-        input.addEventListener("keydown", event => {
-            if ((this.owner ?? this.active)?.editor.keymap.handle(event)) event.stopPropagation();
-        }, { signal: events.signal });
-    };
+    readonly bindName = this.nameField.bind;
     attach(id: string, _tab: TabId, editor: TextEditor): () => void {
         const controller = createRenameController(editor, this.backend.provider, {
             documents: () => this.workspace.getSnapshot().documents.filter(doc => doc.language !== null),
@@ -99,14 +92,14 @@ export class HostRenameTools {
             const command = editor.commands.register({ id: "rename.start", label: "Rename symbol", enabled: () => !this.disconnected && this.canCapture(editor.view.documentId),
                 run: () => { if (this.options.open && !this.options.open()) return false; this.active = session; this.prompt(session); return true; } }, { keys: ["F2"] });
             events.signal.addEventListener("abort", command.dispose, { once: true });
-            const ownsField = () => (this.owner ?? this.active) === session && !!this.input?.matches(":focus");
+            const ownsField = () => (this.owner ?? this.active) === session && !!this.nameField.element?.matches(":focus");
             const submit = editor.commands.register({ id: "rename.submit", label: "Preview or apply rename", enabled: ownsField,
                 run: () => {
-                    this.setName(this.input!.value);
+                    this.setName(this.nameField.element!.value);
                     const state = this.cell.get();
                     if (state.pending) return;
                     if (!state.preview) this.prepareIn(session);
-                    else if (state.preview.confirm().applied && this.input?.matches(":focus")) editor.focus();
+                    else if (state.preview.confirm().applied && this.nameField.element?.matches(":focus")) editor.focus();
                 } }, { keys: ["Enter"], shared: true, priority: 33, repeat: false });
             events.signal.addEventListener("abort", submit.dispose, { once: true });
             const dismiss = editor.commands.register({ id: "rename.cancel", label: "Cancel rename", enabled: ownsField,
@@ -125,7 +118,7 @@ export class HostRenameTools {
         const hint = this.hint(session);
         session.controller.setName(hint ?? "");
         this.publish({ name: hint ?? "", symbol: hint ?? "position", message: "Enter a name, then preview its changes." });
-        this.input?.focus(); this.input?.select();
+        this.nameField.element?.focus(); this.nameField.element?.select();
     }
     readonly prepare = () => this.prepareIn(this.active);
     private prepareIn(s: Session | undefined) {
@@ -155,5 +148,5 @@ export class HostRenameTools {
     }
     debug() { return { state: this.cell.get(), requested: this.requested, capture: this.owner ? { view: this.owner.id } : null,
         sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
-    dispose() { if (!this.disposed) { this.disposed = true; this.cancel(); this.bindName(null); for (const s of this.sessions) s.stop(); } }
+    dispose() { if (!this.disposed) { this.disposed = true; this.cancel(); this.nameField.dispose(); for (const s of this.sessions) s.stop(); } }
 }

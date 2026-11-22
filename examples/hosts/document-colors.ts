@@ -1,4 +1,5 @@
 import { createReviewKey } from "./panel-actions.ts";
+import { createPanelKeyBinding } from "./panel-keys.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId, Workspace } from "../../src/index.ts";
 import { createDocumentColorController } from "../../src/browser/index.ts";
@@ -35,10 +36,9 @@ export class HostDocumentColors {
     private owner: Session | undefined;
     private displayed: readonly DocumentColorChoice[] | undefined;
     private value = "";
-    private valueInput: HTMLInputElement | undefined;
-    private list: HTMLElement | undefined;
-    private fieldEvents: AbortController | undefined;
-    private listEvents: AbortController | undefined;
+    private readonly panelEditor = () => (this.owner ?? this.active)?.editor;
+    private readonly valueField = createPanelKeyBinding<HTMLInputElement>(this.panelEditor);
+    private readonly colorList = createPanelKeyBinding<HTMLElement>(this.panelEditor);
     private disposed = false;
     private disconnected = false;
     private delay = 0;
@@ -96,7 +96,7 @@ export class HostDocumentColors {
             return { from: c.from, to: c.to, color: c.color, label, text: doc.buffer.slice(c.from, Math.min(c.to, c.from + 96)), css: label, ordinal, line: line + 1, column: column + 1,
                 inspect: () => {
                     if (this.owner !== s || s.controller.getSnapshot().colors[ordinal] !== c) return;
-                    s.controller.dismissPreview(); this.render(s, { selected: ordinal, value: label }); this.valueInput?.focus(); this.valueInput?.select();
+                    s.controller.dismissPreview(); this.render(s, { selected: ordinal, value: label }); this.valueField.element?.focus(); this.valueField.element?.select();
                 } };
         }) : old.colors;
         const review = state.review, pending = state.status === "previewing";
@@ -118,19 +118,8 @@ export class HostDocumentColors {
     };
     readonly disconnect = () => { this.disconnected = true; this.cancel(); };
     readonly reconnect = () => { this.disconnected = false; this.cancel(); this.reconnectProvider?.(); };
-    private readonly handlePanelKey = (event: KeyboardEvent) => {
-        if ((this.owner ?? this.active)?.editor.keymap.handle(event)) event.stopPropagation();
-    };
-    readonly bindList = (list: HTMLElement | null) => {
-        this.listEvents?.abort(); this.list = list ?? undefined; if (!list || this.disposed) return;
-        const events = new AbortController(); this.listEvents = events;
-        list.addEventListener("keydown", this.handlePanelKey, { signal: events.signal });
-    };
-    readonly bindValue = (input: HTMLInputElement | null) => {
-        this.fieldEvents?.abort(); this.valueInput = input ?? undefined; if (!input || this.disposed) return;
-        const events = new AbortController(); this.fieldEvents = events;
-        input.addEventListener("keydown", this.handlePanelKey, { signal: events.signal });
-    };
+    readonly bindList = this.colorList.bind;
+    readonly bindValue = this.valueField.bind;
     setValue(value: string) {
         if (value === this.cell.get().value) return;
         this.value = value.slice(0, colorLimits.literal + 1); this.owner?.controller.dismissPreview();
@@ -157,12 +146,12 @@ export class HostDocumentColors {
             const command = editor.commands.register({ id: "colors.discover", label: "Discover document colors", enabled: () => !this.disconnected,
                 run: () => { this.active = s; this.start(true); } }, { keys: ["F6"] });
             events.signal.addEventListener("abort", command.dispose, { once: true });
-            const ownsValue = () => (this.owner ?? this.active) === s && !!this.valueInput?.matches(":focus");
+            const ownsValue = () => (this.owner ?? this.active) === s && !!this.valueField.element?.matches(":focus");
             const preview = editor.commands.register({ id: "colors.preview", label: "Preview color presentations",
                 enabled: () => this.owner === s && ownsValue(), run: this.preview }, { keys: ["Enter"], shared: true, priority: 34, repeat: false });
             events.signal.addEventListener("abort", preview.dispose, { once: true });
             const dismiss = editor.commands.register({ id: "colors.dismiss", label: "Dismiss color preview",
-                enabled: () => ownsValue() || (this.owner === s && !!this.list?.matches(":focus-within")),
+                enabled: () => ownsValue() || (this.owner === s && !!this.colorList.element?.matches(":focus-within")),
                 run: () => { this.cancel(); focusSource(editor); } }, { keys: ["Escape"], shared: true, priority: 8 });
             events.signal.addEventListener("abort", dismiss.dispose, { once: true });
             this.syncSwatches();
@@ -179,7 +168,7 @@ export class HostDocumentColors {
         const s = this.active;
         if (!s || this.disconnected || !this.canCapture(s.editor.view.documentId) || this.workspace.document(s.editor.view.documentId).key.variant !== "working") return;
         this.cancel(); this.owner = s; this.metrics.requested++;
-        void s.controller.request().then(() => { if (keyboard && this.owner === s && s.controller.getSnapshot().status === "ready" && s.editor.getSnapshot().focused) this.list?.focus(); });
+        void s.controller.request().then(() => { if (keyboard && this.owner === s && s.controller.getSnapshot().status === "ready" && s.editor.getSnapshot().focused) this.colorList.element?.focus(); });
     }
     readonly preview = () => {
         const s = this.owner, state = this.cell.get(), proposed = parseColor(state.value), reference = s?.controller.getSnapshot().colors[state.selected];
@@ -201,5 +190,5 @@ export class HostDocumentColors {
     faultNext(value: ColorFault) { this.fault = value; }
     debug() { return { ...this.metrics, state: this.cell.get(), sessions: this.sessions.size, subscriptions: this.cell.count(),
         decoratedViews: [...this.sessions].filter(s => !!s.painted).length, disposed: this.disposed }; }
-    dispose() { if (!this.disposed) { this.disposed = true; this.cancel(); this.bindList(null); this.bindValue(null); for (const s of this.sessions) s.detach(); } }
+    dispose() { if (!this.disposed) { this.disposed = true; this.cancel(); this.colorList.dispose(); this.valueField.dispose(); for (const s of this.sessions) s.detach(); } }
 }
