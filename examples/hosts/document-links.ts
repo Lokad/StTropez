@@ -1,7 +1,7 @@
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts";
 import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.ts";
-import { presentDocument, type LanguageHost } from "./language-host.ts";
+import { presentDocument, unavailablePaneMessage, type LanguageHost } from "./language-host.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, DocumentSnapshot, SelectionSet, TabId } from "../../src/index.ts";
@@ -168,12 +168,13 @@ export class HostDocumentLinks {
     }
     private place(route: Route, doc: DocumentSnapshot, selections?: SelectionSet) {
         const live = this.host.workspace.observeDocument(doc.id).getSnapshot();
-        if (this.route !== route || !this.host.canCapture(doc.id) || live?.revision !== doc.revision || live.buffer !== doc.buffer) return;
+        if (this.route !== route || live?.revision !== doc.revision || live.buffer !== doc.buffer) return;
         const captured = route.targets.get(doc.id);
         this.presenting = true;
         try {
-            const editor = presentDocument(this.host, doc.id, captured && this.sessions.has(captured) ? [captured] : []);
-            if (!editor || this.route !== route) return;
+            const editor = this.host.canCapture(doc.id) && presentDocument(this.host, doc.id, captured && this.sessions.has(captured) ? [captured] : []);
+            if (this.route !== route) return;
+            if (!editor) { this.publish({ message: unavailablePaneMessage }); return; }
             const placed = selections ? editor.view.setSelections(doc.revision, selections.ranges, selections.primary)
                 : editor.view.setSelection(doc.revision, { anchor: 0, head: 0 });
             if (!placed) return;

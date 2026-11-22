@@ -10,6 +10,8 @@ export type LanguageHost = Readonly<{
     reconnect?: () => void;
 }>;
 
+export const unavailablePaneMessage = "Show a source pane or finish its pending input, then try again.";
+
 export function presentDocument(host: LanguageHost, id: DocumentId, sessions: Iterable<{ editor: TextEditor }>): TextEditor | undefined {
     const live = (editor: TextEditor) => editor.view.documentId === id && !editor.signal.aborted
         && editor.element.isConnected && host.workspace.ownsDocumentView(editor.view, editor.tab);
@@ -28,7 +30,7 @@ export function openChangedFile(
     try {
         if (!host.canCapture(id)) return "Finish the current edit before opening the changed file.";
         const editor = presentDocument(host, id, sessions);
-        if (!editor) return "Show a source pane or finish its pending input, then try again.";
+        if (!editor) return unavailablePaneMessage;
         focus(editor);
         return `Opened ${title}.`;
     } catch {

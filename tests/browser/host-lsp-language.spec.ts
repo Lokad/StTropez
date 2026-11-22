@@ -370,6 +370,42 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         expect((await snapshot(page)).bindings.links.opened).toBe(2); expect((await snapshot(page)).history).toEqual(history);
         expect(methods).toContain("textDocument/documentLink"); expect(methods).toContain("documentLink/resolve"); expect((await snapshot(page)).source.exports).toBe(0);
     });
+    test("a link waits for the secondary pane's paste and opens on a fresh click", async ({ page }) => {
+        const replies = await holdLspReplies(page, "documentLink/resolve"); await page.reload();
+        const raw = 'import "sample-utils";\ncatalogue;';
+        await seed(page, raw, raw.indexOf("catalogue") + 1);
+        await button(page, "Add navigation companion").click();
+        await field(page).press("F12");
+        const secondary = field(page, "Secondary source");
+        await expect(secondary).toBeFocused();
+        await button(page, "Add module companion").click();
+        await page.getByRole("checkbox", { name: "Paste tables as CSV" }).check();
+        await field(page).press("F4");
+        const row = page.getByLabel("Module link results", { exact: true }).getByRole("button");
+        replies.hold(); await row.click(); await expect.poll(replies.waiting).toBe(true);
+        await field(page, "Configuration path").focus(); await replies.release();
+        await expect(row).toContainText("Module companion");
+        const before = await snapshot(page), occupant = before.bindings.navigation.companion!;
+        await secondary.press("Control+End");
+        const pending = await row.evaluate(node => {
+            const input = document.activeElement as HTMLTextAreaElement;
+            const paste = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
+            paste.clipboardData!.setData("text/plain", "one\ttwo"); input.dispatchEvent(paste);
+            const busy = window.hostFixture.snapshot().bindings.tablePaste.pending;
+            (node as HTMLButtonElement).click();
+            return busy;
+        });
+        expect(pending).toBe(true);
+        await expect(page.getByLabel("Module link status", { exact: true })).toContainText("pending input");
+        await expect(secondary).toBeFocused();
+        await expect.poll(async () => (await snapshot(page)).bindings.tablePaste.status).toBe("applied");
+        expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, occupant)).toMatch(/"one","two"$/);
+        expect((await snapshot(page)).bindings.links.opened).toBe(0);
+        await row.click(); await expect(secondary).toBeFocused();
+        expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")?.documentId).toBe(before.bindings.links.companion);
+        await secondary.press("Shift+F4"); await expect(field(page)).toBeFocused(); await exact(page, raw);
+        await disposeColorsAndLinks(page);
+    });
     test("F4 links restore complete comparison and secondary selections without taking later form focus", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/documentLink"); await page.reload();
         const raw = '\ufeffimport "sample-utils";\r\nconst café = "😀";'; await seed(page, raw);
