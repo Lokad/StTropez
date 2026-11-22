@@ -315,8 +315,9 @@ command. Escape returns to the pane. Replacing the originating view closes the p
    last tab, view and operation detach.
 
 Ctrl/Cmd+F/H opens Find/Replace in the editor’s tool region. F3/Shift+F3 or Enter/Shift+Enter in
-Find navigate. While scanning, Find keeps the latest valid navigation request. Escape returns to the
-editor that opened Find. Reference Find is read-only. See [search](search.md).
+Find navigate. During a search, moving the caret, changing the visible folds or leaving the
+originating control cancels a waiting Find or Replace Current command. A fresh keypress uses the
+finished search. Escape returns to the editor that opened Find. Reference Find is read-only. See [search](search.md).
 
 Try entering a blank batch size. The transfer field keeps the raw input so it survives editing and
 recovery. A valid size is a decimal integer from 1 to 100,000. Run creates a read-only record of the

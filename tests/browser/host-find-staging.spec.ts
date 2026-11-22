@@ -34,18 +34,21 @@ test("host commands use confirmed matches immediately while a local edit is awai
     await primary(page).press("Control+z"); await expect(page.getByLabel("Find status", { exact: true })).toHaveText("2000 matches · ready");
 });
 
-test("a pending F3 in a shadow editor follows its match until the user leaves the source", async ({ page }) => {
+test("a pending F3 in a shadow editor respects focus and fold changes", async ({ page }) => {
     await page.goto("/hosts/plain/?editor=candidate"); await ready(page);
     const prefix = "some line\n".repeat(20000);
+    await primary(page).focus();
     await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot().source;
         f.editSource(s.revision, [{ from: 0, to: s.length, insert: text }]);
-        f.selectSource("primary", f.snapshot().source.revision, { anchor: 0, head: 0 });
-    }, prefix + "first second");
+        f.selectSource("primary", f.snapshot().source.revision, { anchor: 0, head: 18 });
+    }, prefix + "first second third");
+    await button(page, "Fold selected lines").click();
+    await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.collapsedFolds).toBe(1);
     const source = primary(page), query = page.getByRole("textbox", { name: "Find source", exact: true });
     await moveEditorIntoShadow(source); await source.press("Control+f");
     const input = (await source.elementHandle())!;
     try {
-        for (const needle of ["first", "second"]) {
+        for (const needle of ["first", "second", "third"]) {
             const pending = await query.evaluate((node, { input, needle }) => {
                 const field = node as HTMLInputElement, source = input as HTMLElement;
                 field.value = needle; field.dispatchEvent(new Event("input", { bubbles: true }));
@@ -53,6 +56,7 @@ test("a pending F3 in a shadow editor follows its match until the user leaves th
                 source.dispatchEvent(new KeyboardEvent("keydown", { key: "F3", bubbles: true, cancelable: true }));
                 const pending = window.hostFixture.snapshot().bindings.language.findCommandPending;
                 if (needle === "second") { field.focus(); source.focus(); }
+                if (needle === "third") source.dispatchEvent(new KeyboardEvent("keydown", { key: "}", code: "BracketRight", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
                 return pending;
             }, { input, needle });
             expect(pending).toBe("navigate");
@@ -60,6 +64,9 @@ test("a pending F3 in a shadow editor follows its match until the user leaves th
             await expect.poll(async () => selection(await snapshot(page))).toMatchObject({ anchor: prefix.length, head: prefix.length + 5 });
             expect((await snapshot(page)).bindings.language.findCommandPending).toBeNull();
         }
+        expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.collapsedFolds).toBe(0);
+        await source.press("F3");
+        await expect.poll(async () => selection(await snapshot(page))).toMatchObject({ anchor: prefix.length + 13, head: prefix.length + 18 });
     } finally { await input.dispose(); }
 });
 

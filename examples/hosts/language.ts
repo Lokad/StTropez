@@ -160,54 +160,40 @@ export class HostLanguageTools {
         if (captured.status === "ready") { execute(); return; }
         if (captured.status !== "searching") return;
         if (captured.retained && execute()) return;
-        const metadata = this.workspace.resourceForDocument(session.editor.view.documentId).metadata;
-        const authority = () => { const m = metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); };
-        const capturedAuthority = command.kind === "replace" ? authority() : undefined, access = metadata.getSnapshot();
-        if (command.kind === "replace" && (access.state !== "ready" || !access.capabilities.edit.includes("human") || access.editLock !== null)) return;
         const editor = session.editor, clock = editor.element.ownerDocument.defaultView!;
         const sourceFocused = editor.getSnapshot().focused;
         const origin = sourceFocused ? editor.element : editor.element.querySelector<HTMLElement>(":focus") ?? this.toolsElement?.querySelector<HTMLElement>(":focus");
         if (!origin) return;
-        const selections = editor.view.getSnapshot().selectionSet, listeners = new AbortController(), stops: (() => void)[] = [];
-        let disability: MutationObserver | undefined;
-        let stopped = false, queued = false;
-        const stop = () => { if (stopped) return; stopped = true; listeners.abort(); disability?.disconnect(); for (const unsubscribe of stops) unsubscribe();
-            if (this.pendingFind?.stop === stop) this.pendingFind = undefined; };
-        const current = () => {
-            if (disability?.takeRecords().length) return false;
-            const state = find.getSnapshot();
-            return this.active === session && this.sessions.get(session.id) === session && session.find === find
-                && (capturedAuthority === undefined || authority() === capturedAuthority)
-                && origin.isConnected && (sourceFocused ? editor.getSnapshot().focused : origin.matches(":focus"))
-                && !(origin.closest("button,input,select,textarea") ?? origin).matches(":disabled")
-                && editor.element.isConnected && !editor.activity().disposed && !editor.activity().composing && this.workspace.ownsDocumentView(editor.view)
-                && this.ownsSession(session)
-                && this.workspace.document(editor.view.documentId).revision === captured.revision && editor.view.getSnapshot().selectionSet === selections
-                && state.revision === captured.revision && state.query === captured.query && state.wholeWord === captured.wholeWord
-                && state.matchCase === captured.matchCase && state.regularExpression === captured.regularExpression
-                && (state.status === "searching" || state.status === "ready");
-        };
-        const changed = () => {
-            if (stopped) return;
-            if (!current()) { stop(); return; }
-            if (!queued && find.getSnapshot().status === "ready") {
-                queued = true;
-                // Observable delivery rejects reentrant commands. Revalidate after the delivery ends.
-                clock.queueMicrotask(() => { if (stopped) return; const valid = current(); stop(); if (valid) execute(); });
-            }
+        const intent = new AbortController();
+        const stop = () => {
+            if (this.pendingFind?.stop === stop) this.pendingFind = undefined;
+            intent.abort();
         };
         this.pendingFind = { kind: command.kind, session, stop };
-        // Native blur may follow a render that reenables the control. A disabled transition still expires the command.
-        disability = new clock.MutationObserver(stop);
-        for (let node: HTMLElement | null = origin; node; node = node.parentElement) disability.observe(node, { attributes: true, attributeFilter: ["disabled"] });
-        origin.addEventListener(sourceFocused ? "focusout" : "blur", stop, { signal: listeners.signal });
-        origin.addEventListener("input", stop, { signal: listeners.signal });
-        origin.addEventListener("compositionstart", stop, { signal: listeners.signal });
-        editor.onEditIntent(kind => { if (kind === "compositionstart") stop(); }, listeners.signal);
-        clock.addEventListener("blur", stop, { signal: listeners.signal });
-        stops.push(find.subscribe(changed), this.workspace.observeDocument(editor.view.documentId).subscribe(changed), editor.view.subscribe(changed), this.workspace.tabs.subscribe(changed));
-        if (command.kind === "replace") stops.push(metadata.subscribe(changed));
-        changed();
+        void editor.operation({ write: command.kind === "replace", signal: intent.signal }, op => {
+            const events = { signal: op.signal };
+            origin.addEventListener(sourceFocused ? "focusout" : "blur", stop, events);
+            origin.addEventListener("input", stop, events);
+            origin.addEventListener("compositionstart", stop, events);
+            clock.addEventListener("blur", stop, events);
+            // A control can be disabled and reenabled before the browser sends blur.
+            const disabled = new clock.MutationObserver(stop);
+            for (let node: HTMLElement | null = origin; node; node = node.parentElement) disabled.observe(node, { attributes: true, attributeFilter: ["disabled"] });
+            op.signal.addEventListener("abort", () => disabled.disconnect(), { once: true });
+            const ready = new Promise<boolean>(resolve => {
+                const changed = () => {
+                    const { status } = find.getSnapshot();
+                    if (status !== "searching") resolve(status === "ready");
+                };
+                op.signal.addEventListener("abort", find.subscribe(changed), { once: true });
+                changed();
+            });
+            return op.step(ready, found => {
+                if (found && this.ownsSession(session) && !disabled.takeRecords().length && origin.isConnected
+                    && (sourceFocused ? editor.getSnapshot().focused : origin.matches(":focus"))
+                    && !(origin.closest("button,input,select,textarea") ?? origin).matches(":disabled")) execute();
+            });
+        }).finally(stop).catch(reportError);
     }
     private toolsSession(event: KeyboardEvent): Session | undefined {
         const root = this.toolsElement, target = event.target, realm = root?.ownerDocument.defaultView, session = this.active;

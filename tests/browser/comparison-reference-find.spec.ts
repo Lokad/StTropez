@@ -409,6 +409,7 @@ for (const host of ["plain", "react"]) {
         await p.waitForFunction(() => window.heldReferenceMatches?.length === 1);
         await query(p).fill("\\b(?:needle|NEEDLE)\\b|nomatch");
         await p.waitForFunction(() => window.heldReferenceMatches?.length === 2);
+        const idleLeases = (await snapshot(p)).diagnostics.leases;
         await query(p).press("Shift+Enter");
         expect((await snapshot(p)).bindings.language.navigationPending).toBe(true);
         const before = await snapshot(p), oldView = before.bindings.language.referenceFind[0]!.viewId;
@@ -427,7 +428,7 @@ for (const host of ["plain", "react"]) {
         expect(s.diagnostics.resources).toBe(before.diagnostics.resources);
         expect(s.diagnostics.documents).toBe(before.diagnostics.documents);
         expect(s.diagnostics.views).toBe(before.diagnostics.views);
-        expect(s.diagnostics.leases).toBe(before.diagnostics.leases);
+        expect(s.diagnostics.leases).toBe(idleLeases);
         await p.evaluate(() => { window.holdReferenceMatches = false; for (const { worker, data } of window.heldReferenceMatches!)
             worker.dispatchEvent(new MessageEvent("message", { data })); window.heldReferenceMatches = []; });
         await waitForReview(p);
