@@ -1,4 +1,5 @@
 import { latch } from "../helpers/latch.ts";
+import { moveEditorIntoShadow } from "../helpers/shadow-editor.ts";
 import { expect, expectPanelKeyReserved, test } from "./fixtures.ts";
 import { runDemoHostIntegrations } from "./demo-host-integrations.ts";
 import { dragBundleScrollbars, hoverString, selectInsideString } from "./demo-minified.ts";
@@ -411,22 +412,36 @@ async function holdRegexMatches(page: Page) {
     };
 }
 
-test("a fold made while F3 waits for regex results stays closed until the next F3", async ({ page, baseURL }) => {
-    const gate = await holdRegexMatches(page);
-    await page.goto(baseURL!); await page.getByRole("button", { name: "pricing.ts", exact: true }).click();
-    const source = page.getByRole("textbox", { name: "pricing.ts", exact: true }), fold = page.locator("#editor .st-fold-button").first();
-    await expect(fold).toBeVisible({ timeout: 30000 });
-    await source.press("Control+Home"); await source.press("Control+f"); await page.locator("#find-regex").click();
-    await page.locator("#find-query").fill("name: string"); await expect.poll(gate.waiting).toBe(1);
-    await source.press("F3"); await source.press("Control+Shift+BracketLeft");
-    await expect(fold).toHaveAttribute("aria-expanded", "false");
-    await gate.release(); await expect(page.locator("#find-status")).toHaveText("1 match");
-    await page.evaluate(() => new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
-    await expect(fold).toHaveAttribute("aria-expanded", "false"); await expect(page.locator("#cursor")).toHaveText("Ln 1, Col 1");
-    await source.press("F3"); await expect(fold).toHaveAttribute("aria-expanded", "true");
-    await expect(page.locator("#cursor")).toHaveText("Ln 2, Col 17"); await expect(source).toBeFocused();
-    expect(await source.evaluate(node => { const field = node as HTMLTextAreaElement; return field.value.slice(field.selectionStart, field.selectionEnd); })).toBe("name: string");
-});
+for (const interrupt of ["folding", "a focus round trip in a shadow root"] as const) {
+    test(`${interrupt} while F3 waits for regex results requires a fresh F3`, async ({ page, baseURL }) => {
+        const gate = await holdRegexMatches(page);
+        await page.goto(baseURL!); await page.getByRole("button", { name: "pricing.ts", exact: true }).click();
+        const source = page.getByRole("textbox", { name: "pricing.ts", exact: true }), fold = page.locator("#editor .st-fold-button").first();
+        await expect(fold).toBeVisible({ timeout: 30000 });
+        if (interrupt !== "folding") {
+            await moveEditorIntoShadow(source);
+            await source.evaluate(node => {
+                const button = document.createElement("button");
+                button.textContent = "Host control"; (node.getRootNode() as ShadowRoot).append(button);
+            });
+        }
+        await source.press("Control+Home"); await source.press("Control+f"); await page.locator("#find-regex").click();
+        await page.locator("#find-query").fill("name: string"); await expect.poll(gate.waiting).toBe(1);
+        await source.press("F3");
+        if (interrupt === "folding") {
+            await source.press("Control+Shift+BracketLeft"); await expect(fold).toHaveAttribute("aria-expanded", "false");
+        } else {
+            await page.getByRole("button", { name: "Host control", exact: true }).focus(); await source.focus();
+        }
+        await gate.release(); await expect(page.locator("#find-status")).toHaveText("1 match");
+        await page.evaluate(() => new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+        await expect(fold).toHaveAttribute("aria-expanded", interrupt === "folding" ? "false" : "true");
+        await expect(page.locator("#cursor")).toHaveText("Ln 1, Col 1");
+        await source.press("F3"); await expect(fold).toHaveAttribute("aria-expanded", "true");
+        await expect(page.locator("#cursor")).toHaveText("Ln 2, Col 17"); await expect(source).toBeFocused();
+        expect(await source.evaluate(node => { const field = node as HTMLTextAreaElement; return field.value.slice(field.selectionStart, field.selectionEnd); })).toBe("name: string");
+    });
+}
 
 test("a pending regex search allows large-file scrolling and typing and expires on file change", async ({ page, baseURL }) => {
     const gate = await holdRegexMatches(page);

@@ -72,6 +72,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     let navigatedZero: Readonly<{ index: number; selectionSet: SelectionSet }> | undefined;
     let replacedZero: Readonly<{ revision: number; head: number; selectionSet: SelectionSet }> | undefined;
     let advanceAfterReplace: SelectionSet | undefined;
+    let focusOrigin: Element | null | undefined;
     let pendingNext: { direction: 1 | -1; selection: SelectionSet; origin: Element | null | undefined } | undefined;
     let pendingPreview: { selection: SelectionSet; scrollUnchanged: () => boolean; listeners: AbortController } | undefined;
     let previewed: { index: number; selection: SelectionSet } | undefined;
@@ -313,7 +314,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const pending = pendingNext;
         pendingNext = undefined;
         if (pending && valid() && pending.selection === editor.view.getSnapshot().selectionSet
-            && pending.origin === viewport?.element.ownerDocument.activeElement && !pending.origin?.matches(":disabled")) next(pending.direction);
+            && (!pending.origin || pending.origin.matches(":focus:not(:disabled)"))) next(pending.direction);
     }
     const next: FindController["next"] = (direction = 1, options) => {
         scope.assertWritable();
@@ -322,7 +323,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         if (editor.activity().composing) { publish({ reason: "composition-active", message: "Finish composition before navigating." }); return false; }
         const match = nextMatch(direction);
         if (!match && options?.whenReady && store.get().status === "searching") {
-            pendingNext = { direction, selection: editor.view.getSnapshot().selectionSet, origin: viewport?.element.ownerDocument.activeElement };
+            pendingNext = { direction, selection: editor.view.getSnapshot().selectionSet, origin: captureFocus() };
             return true;
         }
         cancelPreview();
@@ -341,6 +342,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         // A synchronous literal replacement must leave an in-progress repair alive on a no-op.
         // Yielding plans cancel scans and retain authority until their captured commit.
         if (!immediate) stop();
+        captureFocus();
         const token = generation, focusToken = focusGeneration; let committed = false;
         if (!immediate) { observePlanAuthority(token); publish({ status: "replacing", reason: null, message: "" }); }
         if (token !== generation) return false;
@@ -408,6 +410,24 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     // Disabling the command button can clear activeElement without a new focus choice.
     const cancelNavigation = () => { advanceAfterReplace = undefined; pendingNext = undefined; };
     const focusChanged = () => { focusGeneration++; cancelNavigation(); };
+    function originBlurred(event: Event) {
+        focusOrigin = undefined;
+        cancelPreview();
+        if ((event as FocusEvent).relatedTarget) focusChanged();
+    }
+    function captureFocus() {
+        if (!viewport) return;
+        const root = viewport.element.getRootNode() as Document | ShadowRoot;
+        let active = root.activeElement ?? viewport.element.ownerDocument.activeElement;
+        while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+        // Focus changes between shadow siblings do not reach the document.
+        if (active !== focusOrigin) {
+            focusOrigin?.removeEventListener("blur", originBlurred);
+            focusOrigin = active;
+            active?.addEventListener("blur", originBlurred, { once: true });
+        }
+        return active;
+    }
     owner.addEventListener("focusin", focusChanged);
     const window = viewport?.element.ownerDocument.defaultView;
     window?.addEventListener("blur", focusChanged);
@@ -427,7 +447,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         projection = next;
     });
     const subscriptions = [() => owner.removeEventListener("focusin", focusChanged), () => window?.removeEventListener("blur", focusChanged),
-        editIntent.dispose, stopFolds, workspace.observeDocument(documentId).subscribe(() => {
+        () => focusOrigin?.removeEventListener("blur", originBlurred), editIntent.dispose, stopFolds, workspace.observeDocument(documentId).subscribe(() => {
         const current = workspace.observeDocument(documentId).getSnapshot();
         if (current && sameOwner(observed, current) && current.revision === observed.revision && current.buffer === observed.buffer) return;
         if (store.get().status === "cancelled" && valid()) { observed = workspace.document(documentId); publish({ revision: observed.revision, length: observed.buffer.length }); }
@@ -452,6 +472,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             const listeners = new AbortController(), events = { signal: listeners.signal, passive: true };
             const root = viewport?.element, top = root?.scrollTop, left = root?.scrollLeft;
             const scrollUnchanged = () => root?.scrollTop === top && root?.scrollLeft === left;
+            captureFocus();
             pendingPreview = { selection: editor.view.getSnapshot().selectionSet, scrollUnchanged, listeners };
             owner.addEventListener("focusout", cancelPreview, events);
             if (root) {

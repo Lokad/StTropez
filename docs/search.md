@@ -185,7 +185,9 @@ provided the view, query, selections, visible folds and focus are current. Navig
 composition. You can search a read-only view. Replacement also needs edit permission and an unlocked resource.
 
 Find leaves keyboard focus in the control that invoked it. Enter and Shift+Enter can therefore
-navigate without leaving the query field. Call the editor’s `focus()` when closing your Find bar.
+navigate without leaving the query field. Moving focus to another control and back cancels a
+waiting navigation, including between controls in one shadow root. Call the editor’s `focus()`
+when closing your Find bar.
 
 Replacing one confirmed literal match runs synchronously, even during index repair. If the replacement
 leaves the text unchanged, repair continues. For a replacement plan, the planner reuses the captured
