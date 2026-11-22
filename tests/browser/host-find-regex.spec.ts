@@ -37,6 +37,8 @@ for (const host of ["plain", "react"]) {
         await source(page).press("Escape"); await source(page).press("Control+Home"); await source(page).pressSequentially("human ");
         await expect(status(page)).toContainText("6 matches · ready"); await ready(page); expect(await page.evaluate(() => window.hostFixture.range(0, 6))).toBe("human ");
         await button(page, "Find next").click(); await ready(page); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: 6, head: 12 });
+        await source(page).press("Control+z"); await ready(page);
+        expect(await page.evaluate(() => window.hostFixture.range(0, 11))).toBe("humanfoobar");
         await source(page).press("Control+z"); await ready(page); await exact(page, original); await source(page).press("Control+f"); await query.fill(pattern); await expect(status(page)).toContainText("6 matches · ready");
         await replacement.fill("[$<value>:$&:$1:$$]");
         await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: 6 }, { anchor: f.snapshot().source.length, head: f.snapshot().source.length }]); });
