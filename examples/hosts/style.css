@@ -47,3 +47,8 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .host-inline-swatch { width: .8em; height: .8em; margin-inline-end: .2em; background: var(--swatch-color); outline: 1px solid currentColor; }
 .st-document-color { text-decoration: underline dotted; text-decoration-thickness: 2px; }
 .host-color-swatch { display: inline-block; width: 1.2em; height: 1.2em; border: 1px solid currentColor; margin: 0 .4em; vertical-align: middle; }
+.host-command-palette { width: min(28rem, 80vw); border: 1px solid #8193a7; border-radius: 6px; padding: 1rem; font: inherit; }
+.host-command-palette::backdrop { background: rgb(0 0 0 / 25%); }
+.host-command-palette label { display: grid; gap: .3rem; }
+.host-command-palette select { width: 100%; margin: .6rem 0; font: inherit; }
+.host-command-palette div { display: flex; justify-content: end; gap: .5rem; }

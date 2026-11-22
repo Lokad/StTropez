@@ -24,6 +24,55 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
 
         await page.goto(`/hosts/${mode}/?editor=candidate`); await expect(primary(page)).toBeVisible(); await ready(page);
     });
+    test("the command palette filters the originating pane's commands and retires on remount", async ({ page }) => {
+        const original = "one\ntwo\nthree";
+        await setSource(page, original);
+        const secondary = page.getByRole("textbox", { name: "Secondary source", exact: true });
+        await secondary.focus();
+        await page.evaluate(() => {
+            const f = window.hostFixture;
+            f.selectSourceSet("secondary", f.snapshot().source.revision, [{ anchor: 5, head: 5 }]);
+        });
+        const caret = async () => (await snapshot(page)).bindings.views.find(view => view.id === "secondary")!.selection.head;
+        expect(await caret()).toBe(5);
+        await secondary.press("Control+k"); await secondary.press("Control+p");
+        const dialog = page.getByRole("dialog", { name: "Editor commands" });
+        const filter = dialog.getByRole("searchbox", { name: "Filter commands" });
+        const run = dialog.getByRole("button", { name: "Run command" });
+        await expect(filter).toBeFocused(); await filter.fill("qqqq");
+        await expect(dialog.getByRole("option", { name: "No matching commands" })).toBeDisabled();
+        await expect(run).toBeDisabled(); await filter.fill("insert line below");
+        await expect(dialog.getByRole("option")).toHaveCount(1);
+        await expect(dialog.getByRole("option")).toContainText("Ctrl+Enter");
+        expect(await caret()).toBe(5);
+        await filter.press("ArrowDown");
+        const matches = dialog.getByRole("listbox"); await expect(matches).toBeFocused();
+        await matches.press("Enter"); await expect(dialog).toHaveCount(0); await expect(secondary).toBeFocused();
+        await expect.poll(() => source(page)).toBe("one\ntwo\n\nthree");
+        await secondary.press("Control+z"); await expect.poll(() => source(page)).toBe(original);
+
+        await page.getByRole("button", { name: "Open source review", exact: true }).click();
+        const reference = page.getByRole("textbox", { name: "Comparison baseline source", exact: true });
+        await reference.focus();
+        await page.getByRole("button", { name: "Editor commands", exact: true }).click();
+        await filter.fill("insert line below"); await expect(run).toBeDisabled();
+        await expect(dialog.getByRole("option")).toBeDisabled(); await filter.press("Escape");
+        await expect(dialog).toHaveCount(0); await expect(reference).toBeFocused();
+
+        const field = page.getByRole("textbox", { name: "Configuration path", exact: true });
+        await field.focus();
+        const unhandled = await field.evaluate(node => ["k", "p"].map(key =>
+            node.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, bubbles: true, cancelable: true }))));
+        expect(unhandled).toEqual([true, true]); await expect(dialog).toHaveCount(0);
+
+        await secondary.press("Control+k"); await secondary.press("Control+p"); await filter.fill("delete lines");
+        await expect(run).toBeEnabled();
+        const retired = await run.elementHandle(); expect(retired).not.toBeNull();
+        await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
+        await expect(dialog).toHaveCount(0);
+        await retired!.evaluate(node => (node as HTMLButtonElement).click()); await retired!.dispose();
+        expect(await source(page)).toBe(original);
+    });
     for (const key of ["Tab", "Shift+Tab"]) test(`read-only ${key} cannot become a deferred edit after the host restores permission`, async ({ page }) => {
         const original = "    const sample = 1;\r\n".repeat(1024); await setSource(page, original);
         await page.getByRole("button", { name: "Open source review", exact: true }).click(); await ready(page);

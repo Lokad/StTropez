@@ -280,6 +280,11 @@ Enter in **Replacement** replaces the current match once per press. Escape retur
 
 ### Editing, review and captured services
 
+Choose **Editor commands** after focusing a source or comparison pane, or press Ctrl+K then
+Ctrl+P in the pane (Cmd+K then Cmd+P on macOS). Filter by command name or ID. The list shows
+the pane’s registered shortcuts and disables unavailable commands. Enter runs the selected
+command. Escape returns to the pane. Replacing the originating view closes the palette.
+
 1. Edit **Primary source** and undo from **Secondary source**. Both views share text and history
    but keep their own selections and scroll positions. Press Escape, then Tab or Shift+Tab, to
    reach host controls.

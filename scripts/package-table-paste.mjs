@@ -42,7 +42,10 @@ export async function runPackagedTablePaste(browser, origin, options) {
         await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await ready(); assert.equal(await exact(original), true);
         assert.deepEqual(primary(await page.evaluate(() => window.hostFixture.snapshot())).selectionSet, primary(before).selectionSet);
         await input.press("Control+Shift+z"); await ready(); assert.equal(await exact(expected), true);
-        await input.press("Control+s"); await page.waitForFunction(() => window.hostFixture.snapshot().pendingSaves.length === 1);
+        await click("Editor commands");
+        const filter = page.getByRole("dialog", { name: "Editor commands" }).getByRole("searchbox");
+        await filter.fill("source.save"); await filter.press("Enter");
+        await page.waitForFunction(() => window.hostFixture.snapshot().pendingSaves.length === 1);
         await input.press("Escape"); await input.press("Control+End"); await input.pressSequentially(" later"); await page.evaluate(() => window.hostFixture.finishSave()); await ready(); assert.equal(await exact(expected + " later"), true);
         await input.press("Control+z"); await ready(); assert.equal(await exact(expected), true); assert.equal((await page.evaluate(() => window.hostFixture.snapshot())).source.dirty, false);
         const viewId = primary(await page.evaluate(() => window.hostFixture.snapshot())).viewId;

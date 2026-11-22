@@ -4,6 +4,7 @@ import type { ViewBindings } from "./bindings.ts";
 export function actions(controller: HostController, bindings: ViewBindings): readonly Readonly<{ label: string; invoke: () => void }>[] {
     return [
         ...(bindings.editor === "candidate" ? [
+            { label: "Editor commands", invoke: bindings.openCommands },
             { label: "Insert transfer instruction", invoke: bindings.insertInstruction },
             { label: "Anchor instruction at caret", invoke: bindings.anchorInstruction },
             { label: "Close anchored instruction", invoke: controller.instruction.clear },

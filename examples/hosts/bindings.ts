@@ -1,3 +1,5 @@
+import { registerCommandPalette } from "./command-palette.ts";
+import { onSourceFocus } from "./source-focus.ts";
 import { isSaveKey } from "../shared/host-shortcuts.ts";
 import { editRefusedEvent, inputConflictEvent, mountTextEditor, mountTextComparison } from "../../src/browser/index.ts";
 import type { EditRefusedDetail, TextEditor, TextEditorDiagnostics, TextComparison, ViewportDiagnostics, ViewRestoreOptions, ViewState } from "../../src/browser/index.ts";
@@ -36,6 +38,7 @@ export function hostEditor(): HostEditor { return new URLSearchParams(location.s
 /** Stable refs own editor descendants; the controller and resource IDs survive every detach. */
 export class ViewBindings {
     private readonly controller: HostController;
+    private commandSource: TextEditor | undefined;
     private readonly mountNative: NativeEditorMount | undefined;
     private instructionMount: ReturnType<typeof mountInstructionWidget> | undefined;
     private readonly instructionMemory: InstructionViewState = { generation: 0, fields: {}, focus: undefined };
@@ -127,8 +130,8 @@ export class ViewBindings {
             } else this.referenceState = undefined;
             const documentId = review.panes.working.view.documentId;
             review.panes.working.element.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
-            this.registerSave(review.panes.working, saveTarget, scope);
-            this.registerSave(reference, saveTarget, scope);
+            this.registerPaneCommands(review.panes.working, saveTarget, scope);
+            this.registerPaneCommands(reference, saveTarget, scope);
             scope.defer(this.controller.comparisonReference.subscribe(() => this.updateReference()));
             this.reviewScope = scope;
         } catch (error) { scope.rollback(error); }
@@ -137,7 +140,12 @@ export class ViewBindings {
         const tab = this.controller.workspace.tabs.resolve(target);
         return tab?.surface.kind === "text" && tab.surface.documentId === this.controller.source.documentId;
     }
-    private registerSave(editor: TextEditor, target: TabTarget, scope: CleanupScope): void {
+    readonly openCommands = (): void => { (this.commandSource ?? this.mounted.get("primary")?.candidate)?.commands.run("host.commands"); };
+    private registerPaneCommands(editor: TextEditor, target: TabTarget, scope: CleanupScope): void {
+        const events = new AbortController();
+        onSourceFocus(editor, events.signal, () => { this.commandSource = editor; });
+        scope.defer(() => { events.abort(); if (this.commandSource === editor) this.commandSource = undefined; });
+        scope.defer(registerCommandPalette(editor));
         scope.defer(editor.commands.register({ id: "source.save", label: "Save source",
             enabled: () => this.ownsSaveTarget(target), run: () => this.controller.save() },
             { keys: ["Ctrl+s", "Meta+s"], shared: true, repeat: false }).dispose);
@@ -317,7 +325,7 @@ export class ViewBindings {
                 }
                 mounted.element.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
                 const saveTarget = workspace.tabs.capture(tabId);
-                if (candidate) this.registerSave(candidate, saveTarget, scope);
+                if (candidate) this.registerPaneCommands(candidate, saveTarget, scope);
                 else mounted.element.addEventListener("keydown", event => {
                     if (!isSaveKey(event) || !mounted.element.isConnected || mounted.element.matches(":disabled") || !this.ownsSaveTarget(saveTarget)) return;
                     event.preventDefault();
