@@ -975,7 +975,7 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     const list = rename.getByRole("list", { name: "Rename edits" });
     await expect(list).toHaveJSProperty("start", 65);
     await expect(edits.first()).toBeInViewport({ ratio: 1 }); await expect(nextEdits).toBeInViewport({ ratio: 1 });
-    await list.focus(); await list.press("End"); await expect(edits.last()).toBeInViewport({ ratio: 1 });
+    await list.focus(); await list.press("End"); await expect(edits.last().locator("code")).toBeInViewport({ ratio: 1 });
     await rename.getByRole("button", { name: "Previous edits", exact: true }).click();
     await expect(list).toHaveJSProperty("start", 1); await expect(edits.first()).toBeInViewport({ ratio: 1 });
     for (let i = 0; i < 18; i++) await nextEdits.click();

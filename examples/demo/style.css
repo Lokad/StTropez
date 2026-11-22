@@ -42,6 +42,7 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .demo-rename:not([hidden]) { display: flex; flex-direction: column; }
 .demo-rename > :not(ol) { flex: none; }
 .demo-rename ol { min-height: 2.3em; overflow: auto; margin: 0; padding: 2px 0; list-style-position: inside; line-height: 1.8; }
+.demo-rename li:last-child { margin-bottom: .5em; }
 .demo-rename ol:empty { display: none; }
 .demo-rename del { color: #ed9a9a; } .demo-rename ins { color: #8ce0ca; }
 .demo-language-popups .host-symbol-info { position: fixed; z-index: 19; width: min(420px, calc(100vw - 16px)); max-height: 290px; overflow: auto; padding: 12px 16px; border: 1px solid #50627f; border-radius: 7px; background: #1b283c; color: #dbe5f4; box-shadow: 0 8px 28px #0007; font-size: 12px; }
