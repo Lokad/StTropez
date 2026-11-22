@@ -81,6 +81,28 @@ test("an async editor operation applies once and releases every expired or faile
     expect(result).toMatchObject({ error: "RangeError", cancelled: 1, continued: false, text: "Xbc!" });
 });
 
+test("operation delivery runs at validation and releases pending presentation on cancellation", async ({ page }) => {
+    const observed = await page.evaluate(async () => {
+        const f = window.editingFixture, lane = f.latestOperation();
+        const leases = () => f.snapshot().diagnostics.leases;
+        const before = leases(), abort = new AbortController();
+        let atDelivery: boolean | undefined, cancelledCalls = 0, continued = false;
+        const reply = { isCurrent: () => { queueMicrotask(() => abort.abort()); return !abort.signal.aborted; } };
+        const pending = lane.run({ signal: abort.signal }, async op => {
+            await op.step({ result: Promise.resolve(reply), cancel: () => { cancelledCalls++; } }, value => {
+                atDelivery = value === reply && !abort.signal.aborted;
+                return new Promise<void>(() => {});
+            });
+            continued = true;
+        });
+        const { status } = await pending;
+        lane.dispose();
+        return { status, atDelivery, cancelledCalls, continued, before, after: leases() };
+    });
+    expect(observed).toMatchObject({ status: "stale", atDelivery: true, cancelledCalls: 0, continued: false });
+    expect(observed.after).toBe(observed.before);
+});
+
 const state = (page: Page) => page.evaluate(() => window.editingFixture.snapshot());
 test.beforeEach(async ({ page }) => {
 

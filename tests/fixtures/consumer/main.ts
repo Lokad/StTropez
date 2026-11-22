@@ -153,9 +153,11 @@ const fixture = { text: () => workspace.document(documentId).text(),
             if (editor.viewport.getDiagnostics().visibleLines !== 2) throw new Error("Compiled folded edit exposed hidden rows.");
             model.undo({ documentId: source.documentId, expectedRevision: 1 }); await wait(); exact();
             const saved = editor.captureView(), retired = editor;
+            let replyAfterRemount!: () => void;
+            const delivered: string[] = [];
             const pending = editor.operation({ write: true }, async op => {
                 op.apply({ edits: [{ from: 0, to: 0, insert: "expired" }] });
-                await op.step(new Promise<void>(() => {}));
+                await op.step(new Promise<void>(resolve => { replyAfterRemount = resolve; }), () => { delivered.push("retired"); });
             });
             let jumpCalls = 0;
             const open = editor.commands.register({ id: "sample.jump", label: "Jump to line", run: () => { jumpCalls++; return retired.commands.run("go-to-line"); } });
@@ -174,6 +176,9 @@ const fixture = { text: () => workspace.document(documentId).text(),
             if (retired.keymap.getShortcuts("sample.jump").length || retired.keymap.handle(jump()) || retired.commands.run("sample.jump") || editor.keymap.handle(jump()))
                 throw new Error("Retired host command survived editor replacement.");
             if ((await pending).status !== "stale") throw new Error("A retired editor kept its pending edit.");
+            replyAfterRemount();
+            await editor.operation({}, op => op.step(Promise.resolve("current"), value => { delivered.push(value); }));
+            if (delivered.join() !== "current") throw new Error("Operation delivery reached the wrong editor after remount.");
             if (!promptSignal.aborted) throw new Error("Retired view left its line request active.");
             reply(200); await Promise.resolve();
             if (editor.viewport.getDiagnostics().visibleLines !== 2 || view.getSnapshot().selectionSet.ranges.length !== 2) throw new Error("Compiled remount lost folds or complete selections.");

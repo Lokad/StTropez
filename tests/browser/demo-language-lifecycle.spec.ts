@@ -2,8 +2,9 @@ import { build } from "esbuild";
 import { basename } from "node:path";
 import { test, expect } from "./fixtures.ts";
 
-test("language mounting releases partial owners, preserves failures and rejects late attachment", async ({ page }, info) => {
+test.beforeEach(async ({ page }) => {
     const built = await build({ entryPoints: { project: "examples/demo/project.ts", language: "examples/demo/language-view.ts",
+        commands: "examples/demo/language-commands.ts", cleanup: "examples/shared/cleanup-scope.ts", core: "src/index.ts",
         browser: "src/browser/index.ts", provider: "examples/demo/provider.ts" }, outdir: "artifacts/demo-language-lifecycle",
         bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
     const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
@@ -15,6 +16,41 @@ test("language mounting releases partial owners, preserves failures and rejects 
     await page.route("**/workspace-fixture.js", route => route.fulfill({ contentType: "text/javascript", body: "" }));
     await page.goto("/workspace/");
     await page.setContent('<base href="/"><link rel="stylesheet" href="/app.css"><div id="mount" style="width:600px;height:240px"></div>');
+});
+
+test("a host focus change during language startup cannot dispatch from the old pane", async ({ page }) => {
+    const calls = await page.evaluate(async () => {
+        const path = "/demo-language-lifecycle/";
+        const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const { mountLanguageCommands } = await import(path + "commands.js") as typeof import("../../examples/demo/language-commands.ts");
+        const { CleanupScope } = await import(path + "cleanup.js") as typeof import("../../examples/shared/cleanup-scope.ts");
+        const ws = new Workspace(), file = ws.createTextResource({ scope: "demo", resource: "file", variant: "working" }, "Source", { value: "code" });
+        const editor = mountTextEditor(document.querySelector<HTMLElement>("#mount")!, ws, file.documentId);
+        const field = document.createElement("button"); document.body.append(field);
+        const focused: boolean[] = [];
+        try {
+            // Sweep both sides of readiness validation and the following promise continuation.
+            for (const delay of [0, 1, 2, 3]) {
+                const scope = new CleanupScope(), output = document.createElement("output");
+                try {
+                    const commands = mountLanguageCommands(scope, editor, output, () => { focused.push(editor.getSnapshot().focused); }, error => { throw error; });
+                    editor.focus(); editor.commands.run("demo.language.complete");
+                    if (!output.textContent) throw new Error("The command did not wait for startup.");
+                    commands.ready();
+                    let remaining = delay;
+                    const leave = () => { if (remaining-- > 0) queueMicrotask(leave); else field.focus(); };
+                    leave(); await new Promise<void>(done => setTimeout(done, 0));
+                    if (!output.hidden) throw new Error("The old pane retained command feedback.");
+                } finally { scope.dispose(); }
+            }
+        } finally { editor.dispose(); field.remove(); }
+        return focused;
+    });
+    expect(calls).toContain(true); expect(calls).not.toContain(false);
+});
+
+test("language mounting releases partial owners, preserves failures and rejects late attachment", async ({ page }, info) => {
     const results = await page.evaluate(async () => {
         const path = "/demo-language-lifecycle/";
         const { DemoProject } = await import(path + "project.js") as typeof import("../../examples/demo/project.ts");

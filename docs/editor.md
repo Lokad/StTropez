@@ -118,6 +118,11 @@ Await `op.step(call)` for a promise or a provider call with `result` and `cancel
 cancels an outstanding call when the target expires. A result with an `isCurrent()` method stays
 part of the check through the next step and any edit.
 
+Use `op.step(call, deliver)` to open a popup or start another command at the captured caret.
+The editor checks the target and calls `deliver(result)` in the same turn, before another
+microtask can change focus or the selection. If delivery returns a promise, the step waits
+for it and rechecks the target. Use `op.signal` to cancel work started by the callback.
+
 ```ts
 import type { TextEditor } from "sttropez/browser";
 

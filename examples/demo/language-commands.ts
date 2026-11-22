@@ -37,22 +37,24 @@ export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, o
         if (phase === "ready" && command !== "complete" && command !== "signature") { execute(command, menu); return; }
         void lane.run({}, async op => {
             op.signal.addEventListener("abort", () => { resume = undefined; receive = undefined; show(""); }, { once: true });
+            const dispatch = () => {
+                resume = undefined; show("");
+                if (command !== "complete" && command !== "signature") { execute(command, menu); return; }
+                // Keep an empty-result message at its originating caret until the user leaves it.
+                return new Promise<void>(done => {
+                    op.signal.addEventListener("abort", () => done(), { once: true });
+                    receive = (feature, message, finished) => {
+                        if (feature !== command) return;
+                        show(message);
+                        if (finished) { receive = undefined; if (!message) done(); }
+                    };
+                    execute(command, menu);
+                });
+            };
             if (phase === "starting") {
                 show(shortcuts[command][0] + " when TypeScript is ready…");
-                await op.step(new Promise<void>(ready => { resume = ready; }));
-                show("");
-            }
-            if (command !== "complete" && command !== "signature") { execute(command, menu); return; }
-            // Keep an empty-result message at its originating caret until the user leaves it.
-            await new Promise<void>(done => {
-                op.signal.addEventListener("abort", () => done(), { once: true });
-                receive = (feature, message, finished) => {
-                    if (feature !== command) return;
-                    show(message);
-                    if (finished) { receive = undefined; if (!message) done(); }
-                };
-                execute(command, menu);
-            });
+                await op.step(new Promise<void>(ready => { resume = ready; }), dispatch);
+            } else await dispatch();
         }).catch(reportError);
     };
     for (const command of Object.keys(shortcuts) as Command[]) {
@@ -69,7 +71,7 @@ export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, o
     editor.onEditIntent(lane.cancel, events.signal);
     editor.element.ownerDocument.defaultView!.addEventListener("blur", lane.cancel, { signal: events.signal });
     return {
-        ready() { phase = "ready"; const start = resume; resume = undefined; start?.(); },
+        ready() { phase = "ready"; resume?.(); },
         failed() { phase = "failed"; lane.cancel(); },
         feedback: (...args: Parameters<Feedback>) => receive?.(...args),
     };

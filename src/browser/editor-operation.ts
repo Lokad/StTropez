@@ -7,7 +7,7 @@ type OperationCall<T> = PromiseLike<T> | Readonly<{ result: PromiseLike<T>; canc
 type OperationEdit = Pick<EditRequest, "edits" | "selection" | "selectionSet" | "source" | "history">;
 export type EditorOperation = Readonly<{
     document: DocumentSnapshot; selectionSet: SelectionSet; signal: AbortSignal;
-    step: <T>(call: OperationCall<T>) => Promise<T>;
+    step: <T>(call: OperationCall<T>, deliver?: (value: T) => void | PromiseLike<void>) => Promise<T>;
     /** Stage one edit for the captured document. It commits when the callback finishes current. */
     apply: (edit: OperationEdit) => boolean;
 }>;
@@ -53,8 +53,8 @@ export async function runEditorOperation<T>(editor: TextEditor, options: EditorO
         cancel(); return false;
     };
     const requireCurrent = () => { if (!current()) throw stale; };
-    const step = async <R>(call: OperationCall<R>): Promise<R> => {
-        const remote = "result" in call ? call : undefined;
+    const step = async <R>(call: OperationCall<R>, deliver?: (value: R) => void | PromiseLike<void>): Promise<R> => {
+        let remote = "result" in call ? call : undefined;
         const promise = Promise.resolve("result" in call ? call.result : call);
         let interrupt: (() => void) | undefined;
         try {
@@ -69,11 +69,18 @@ export async function runEditorOperation<T>(editor: TextEditor, options: EditorO
             const pending = Promise.race([promise, interruption]);
             if (!current()) cancel();
             const result = await pending;
+            remote = undefined;
             if (result && typeof result === "object" && "isCurrent" in result && typeof result.isCurrent === "function") {
                 const check = result.isCurrent.bind(result) as () => boolean;
                 guards.push(check);
             }
-            requireCurrent(); return result;
+            requireCurrent();
+            if (deliver) {
+                const delivered = deliver(result);
+                if (delivered) await Promise.race([delivered, interruption]);
+                requireCurrent();
+            }
+            return result;
         } finally { if (interrupt) lifetime.signal.removeEventListener("abort", interrupt); }
     };
     try {
