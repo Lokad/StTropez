@@ -16,7 +16,7 @@ export async function qualifyPackageExports(project, consumer, assetRoot) {
     await mkdir(join(consumer, "exports-probe/node_modules"), { recursive: true });
     const root = await realpath(join(consumer, "exports-probe")), installed = join(root, "node_modules/sttropez");
     await cp(assetRoot, installed, { recursive: true, force: false, errorOnExist: true });
-    /** @type {{ assets: { path: string }[]; entries: Record<"core" | "browser" | "protocol" | "css" | "regexWorker", string> }} */
+    /** @type {{ assets: { path: string }[]; entries: Record<"core" | "browser" | "protocol" | "kernels" | "css" | "regexWorker", string> }} */
     const manifest = JSON.parse(await readFile(join(installed, "manifest.json"), "utf8"));
     for (const asset of manifest.assets.filter(asset => asset.path.endsWith(".d.ts"))) {
         const source = await readFile(join(installed, asset.path), "utf8");
@@ -27,7 +27,8 @@ export async function qualifyPackageExports(project, consumer, assetRoot) {
     await writeFile(join(root, "main.ts"), `import * as core from "sttropez";
 import * as browser from "sttropez/browser";
 import * as protocol from "sttropez/protocol";
-export { core, browser, protocol };
+import * as kernels from "sttropez/kernels";
+export { core, browser, protocol, kernels };
 
 type RequiresTrue<T extends true> = T;
 type HoverDocument = Parameters<ReturnType<typeof protocol.createLspHoverClient>["options"]>[0];
@@ -48,20 +49,28 @@ type HasColorPresentation = RequiresTrue<"textDocument/colorPresentation" extend
         assert.ok(within(root, input) || compilerRoots.some(directory => within(directory, input)), `Declaration escaped the exports consumer: ${input}`);
         typeInputs.push(input);
     }
-    for (const entry of ["index.d.ts", "browser/index.d.ts", "protocol/index.d.ts"]) assert.ok(typeInputs.includes(await realpath(join(installed, entry))), `Missing exports declaration: ${entry}`);
+    for (const entry of ["index.d.ts", "browser/index.d.ts", "protocol/index.d.ts", "kernels/index.d.ts"]) assert.ok(typeInputs.includes(await realpath(join(installed, entry))), `Missing exports declaration: ${entry}`);
     const bundle = await build({ absWorkingDir: root, entryPoints: ["main.ts"], bundle: true, write: false, format: "esm", platform: "browser", metafile: true });
     const bundleInputs = Object.keys(bundle.metafile.inputs);
     for (const path of bundleInputs) assert.ok(within(root, await realpath(resolve(root, path))), `Runtime escaped the exports consumer: ${path}`);
-    for (const entry of ["index.js", "browser/index.js", "protocol/index.js"]) assert.ok(bundleInputs.includes(`node_modules/sttropez/${entry}`), `Missing exports runtime: ${entry}`);
+    for (const entry of ["index.js", "browser/index.js", "protocol/index.js", "kernels/index.js"]) assert.ok(bundleInputs.includes(`node_modules/sttropez/${entry}`), `Missing exports runtime: ${entry}`);
     await writeFile(join(root, "resolve.mjs"), `import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { TextBuffer } from "sttropez";
-const names = ["sttropez", "sttropez/browser", "sttropez/protocol", "sttropez/editor.css", "sttropez/regex-worker.js"];
-assert.equal(TextBuffer.from("export probe").slice(0, 6), "export");
+import * as core from "sttropez";
+import * as protocol from "sttropez/protocol";
+import * as kernels from "sttropez/kernels";
+assert.deepEqual(kernels.decodeLspColor({ red: 0, green: 1, blue: 0, alpha: 1 }), { red: 0, green: 1, blue: 0, alpha: 1 });
+assert.ok(Object.keys(protocol).every(name => !name.startsWith("decodeLsp")));
+assert.equal("JsonRpcConnection" in protocol, false);
+assert.equal("LspSession" in protocol, false);
+assert.equal("TextDiff" in core, false);
+assert.equal(typeof kernels.TextDiff, "function");
+const names = ["sttropez", "sttropez/browser", "sttropez/protocol", "sttropez/kernels", "sttropez/editor.css", "sttropez/regex-worker.js"];
+assert.equal(core.TextBuffer.from("export probe").slice(0, 6), "export");
 assert.throws(() => import.meta.resolve("sttropez/core/text-buffer.js"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
 console.log(JSON.stringify(Object.fromEntries(names.map(name => [name, fileURLToPath(import.meta.resolve(name))]))));\n`);
     const entries = JSON.parse(execFileSync(process.execPath, [join(root, "resolve.mjs")], { cwd: root, encoding: "utf8", stdio: "pipe" }));
-    const expected = { sttropez: manifest.entries.core, "sttropez/browser": manifest.entries.browser, "sttropez/protocol": manifest.entries.protocol,
+    const expected = { sttropez: manifest.entries.core, "sttropez/browser": manifest.entries.browser, "sttropez/protocol": manifest.entries.protocol, "sttropez/kernels": manifest.entries.kernels,
         "sttropez/editor.css": manifest.entries.css, "sttropez/regex-worker.js": manifest.entries.regexWorker };
     assert.deepEqual(Object.keys(entries), Object.keys(expected));
     for (const [name, path] of Object.entries(entries)) {

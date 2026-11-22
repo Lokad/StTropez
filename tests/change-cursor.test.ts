@@ -1,7 +1,8 @@
 import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
-import { BufferChangeCursor, TextBuffer } from "../src/index.ts";
+import { TextBuffer } from "../src/index.ts";
+import { BufferChangeCursor } from "../src/kernels/index.ts";
 function delta(before: TextBuffer, after: TextBuffer, budget = 256) {
     const cursor = new BufferChangeCursor(before, after); let prior = 0;
     try { for (;;) { const step = cursor.next(budget); assert.ok(step.workUnits - prior < budget + 256); prior = step.workUnits;

@@ -1,4 +1,5 @@
-import { anchoredRange, composePositionMaps } from "../../src/index.ts";
+import { anchoredRange } from "../../src/index.ts";
+import { composePositionMaps } from "../../src/kernels/index.ts";
 import type { DocumentSnapshot, PositionMapping, TextBuffer, Affinity } from "../../src/index.ts";
 import type { InlineDecoration, PresentedLine } from "../../src/browser/index.ts";
 

@@ -41,6 +41,7 @@ same [entry points](#package-contents-and-entry-points) for both.
 export * as model from "sttropez";
 export * as browser from "sttropez/browser";
 export * as protocol from "sttropez/protocol";
+export * as kernels from "sttropez/kernels";
 ```
 
 Include `editor.css` in your stylesheet bundle or serve it directly. For an asset folder
@@ -69,8 +70,11 @@ Paths are relative to the restored `assets/` folder or the staged directory.
 | `sttropez` | `index.js` | `index.d.ts` |
 | `sttropez/browser` | `browser/index.js` | `browser/index.d.ts` |
 | `sttropez/protocol` | `protocol/index.js` | `protocol/index.d.ts` |
+| `sttropez/kernels` | `kernels/index.js` | `kernels/index.d.ts` |
 | `sttropez/editor.css` | `editor.css` | — |
 | `sttropez/regex-worker.js` | `browser/regex-worker.js` | — |
+
+Use `sttropez/kernels` for standalone text algorithms, position maps, JSON-RPC connections, LSP sessions and raw response decoders. The editor and language clients load their own implementations.
 
 The package declares these exports, the ESM module format and the MIT license in `package.json`.
 Private `.d.ts` files describe types used by the public API. Only the paths in the exports map
@@ -97,6 +101,7 @@ The array includes metadata and both license notices, and excludes the manifest 
 | `core` | `index.js` |
 | `browser` | `browser/index.js` |
 | `protocol` | `protocol/index.js` |
+| `kernels` | `kernels/index.js` |
 | `types` | `index.d.ts` |
 | `css` | `editor.css` |
 | `regexWorker` | `browser/regex-worker.js` |

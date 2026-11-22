@@ -1,5 +1,6 @@
 import type { Observable } from "../../../src/index.ts";
-import type { JsonValue, LspSession } from "../../../src/protocol/index.ts";
+import type { JsonValue } from "../../../src/protocol/index.ts";
+import type { LspSession } from "../../../src/kernels/index.ts";
 import type { TextEditor, CompletionSnippet, CompletionChoice, EditorDiagnostic } from "../../../src/browser/index.ts";
 
 export type ProviderSnapshot = Readonly<{ message: string; connected: boolean; pending: boolean; offerText: string | null; diagnostics: readonly EditorDiagnostic[]; diagnosticRevision: number; diagnosticsPending?: boolean;

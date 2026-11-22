@@ -1,7 +1,8 @@
 import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
-import { LiteralSearch, TextBuffer } from "../src/index.ts";
+import { TextBuffer } from "../src/index.ts";
+import { LiteralSearch } from "../src/kernels/index.ts";
 import type { LiteralSearchOptions } from "../src/index.ts";
 function all(buffer: TextBuffer, query: string, budget = 3, options?: LiteralSearchOptions) {
     let previous = buffer.readMetrics(); // Include construction in the first measured advance.

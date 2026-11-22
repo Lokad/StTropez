@@ -127,7 +127,7 @@ it to send nothing. An empty string sends an empty message. The adapter captures
 before opening the socket and applies the usual send limits. Success means the send was queued. Put
 any authentication reply or further handshake in the host connection factory.
 
-`JsonRpcConnection` handles requests in both directions, notifications, bounded batches, cancellation
+`JsonRpcConnection` from `sttropez/kernels` handles requests in both directions, notifications, bounded batches, cancellation
 and deadlines. Each call has an ID, a result promise and `cancel()`. The connection accepts string,
 null and safe-integer IDs. A notification gets no reply. A late success is ignored. An error with no
 matching call goes to `onError`.
@@ -151,7 +151,7 @@ capabilities or feature results. Completion counts it as an invalid reply. Error
 configuration and local edit planning keep their original types. `RpcError` carries the codes for
 cancellation and expired captures.
 
-If you don’t use a `Workspace`, create an `LspSession` with a connection factory and scheduler. Pass
+If you don’t use a `Workspace`, create an `LspSession` from `sttropez/kernels` with a connection factory and scheduler. Pass
 immutable buffers to `bindDocument`. Keep the returned handles to submit expected-revision updates and
 to close bindings. Close a binding before reusing its URI. An old handle cannot update the new
 document.

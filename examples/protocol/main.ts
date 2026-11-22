@@ -1,4 +1,5 @@
-import { JsonRpcConnection, RpcError, LspSession } from "../../src/protocol/index.ts";
+import { RpcError } from "../../src/protocol/index.ts";
+import { JsonRpcConnection, LspSession } from "../../src/kernels/index.ts";
 import type { JsonValue } from "../../src/protocol/index.ts";
 import { TextBuffer } from "../../src/core/text-buffer.ts";
 import { openWebSocketTransport } from "../../src/browser/lsp-websocket.ts";

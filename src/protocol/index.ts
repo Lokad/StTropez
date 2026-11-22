@@ -1,15 +1,12 @@
 export type { LspClientDiagnostics, LspFeatureClient, LspProjectClientDiagnostics, LspDocumentRequest, LspPositionRequest, LspProjectRequest } from "./lsp-client.ts";
-export { JsonRpcConnection } from "./json-rpc.ts";
 export { RpcError, ProtocolDecodeError } from "./wire.ts";
 export type { JsonValue } from "./wire.ts";
 export type { RpcId, RpcTransport, RpcScheduler, RpcOptions, RpcCall, RpcRequestContext } from "./json-rpc.ts";
 export { LspLineIndex } from "./lsp-positions.ts";
 export type { LspPosition, LspRange, LspTextChange, LspCooperate, LspChangeHint } from "./lsp-positions.ts";
-export { LspSession } from "./lsp-session.ts";
 export type { LspFeature, LspClientFeature, LspDocumentFeature, LspCommandAuthorization, LspCommandCall, LspDocumentSnapshot, LspDocument, LspDocumentCapture, LspCall, LspConnectContext, LspRequestContext, LspRegistration, LspSessionSnapshot, LspSessionOptions } from "./lsp-session.ts";
-export { UnsupportedLspSnippetError, lspRangeOffsets, decodeLspDiagnostics, decodeLspCompletions, decodeLspResolvedCompletion, rebaseLspCompletion, lspCompletionPlan, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit, decodeLspApplyEdit } from "./lsp-features.ts";
+export { UnsupportedLspSnippetError, lspRangeOffsets, rebaseLspCompletion, lspCompletionPlan } from "./lsp-features.ts";
 export type { LspDiagnostic, LspDiagnostics, LspCompletionPlan, LspCompletionSelectionPlan, LspCompletion, LspCompletionOptions, LspCompletions, LspCompletionFallback, LspHover, LspLocationTarget, LspLocation, LspEditTarget, LspDocumentEdits, LspWorkspaceEdit, LspApplyEdit, LspApplyEditResult } from "./lsp-features.ts";
-export { decodeLspCodeActions, decodeLspResolvedCodeAction } from "./lsp-code-actions.ts";
 export type { LspCodeAction, LspCodeActions } from "./lsp-code-actions.ts";
 export type { LspCommand } from "./lsp-command-value.ts";
 export { LspWorkspace } from "./lsp-workspace.ts";
@@ -22,8 +19,8 @@ export type { LspCommandRunner, LspCommandScope, LspCommandReceipt, LspCommandPo
 export { createLspHoverClient, type LspHoverClient, type LspHoverResult } from "./lsp-hover.ts";
 export { createLspCompletionClient } from "./lsp-completion.ts";
 export type { LspCompletionClient, LspCompletionBatch, LspCompletionRequest, LspCompletionResolution } from "./lsp-completion.ts";
-export { decodeLspFoldingRanges, createLspFoldingClient, type LspFoldingClient } from "./lsp-folding.ts";
-export { decodeLspDocumentHighlights, createLspHighlightClient } from "./lsp-highlights.ts";
+export { createLspFoldingClient, type LspFoldingClient } from "./lsp-folding.ts";
+export { createLspHighlightClient } from "./lsp-highlights.ts";
 export type { DocumentationContent, DocumentationPart } from "../core/documentation.ts";
 export type { LspHighlightClient, LspDocumentHighlight, LspDocumentHighlights } from "./lsp-highlights.ts";
 export type { LspRenameClient, LspRenameRequest } from "./lsp-rename.ts";
@@ -32,7 +29,6 @@ export type { LspNavigationClient, LspDefinitionPreview, LspDefinitionRequest, L
 export { createLspNavigationClient } from "./lsp-navigation.ts";
 export { createLspActionClient } from "./lsp-actions.ts";
 export type { LspActionClient, LspActionResult, LspActionOptions, LspActionRequest } from "./lsp-actions.ts";
-export { decodeLspSignatureHelp, decodeLspDocumentLinks, decodeLspResolvedDocumentLink, decodeLspColor, decodeLspDocumentColors, decodeLspColorPresentations } from "./lsp-features.ts";
 export type { LspSignature, LspSignatureHelp, LspDocumentLink, LspColor, LspDocumentColor, LspColorPresentation } from "./lsp-features.ts";
 export { createLspSignatureClient, createLspLinkClient, createLspColorClient } from "./lsp-language.ts";
 export type { LspSignatureClient, LspLinkClient, LspColorClient, LspSignatureContext, LspSignatureRequest } from "./lsp-language.ts";

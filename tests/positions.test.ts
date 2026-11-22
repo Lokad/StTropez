@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import { unchangedPositionEdges } from "../src/core/positions.ts";
 import assert from "node:assert/strict";
-import { PositionMap, anchoredRange, applyTextEdits, composePositionMaps, importText, exportText } from "../src/index.ts";
+import { anchoredRange, applyTextEdits, importText, exportText } from "../src/index.ts";
+import { PositionMap, composePositionMaps } from "../src/kernels/index.ts";
 import type { Affinity, AnchoredRange, PositionMapping, TextEdit } from "../src/index.ts";
 import { nextSeed, corpus } from "../fixtures/workloads.ts";
 

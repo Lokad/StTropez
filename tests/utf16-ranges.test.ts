@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { TextBuffer, createGraphemeCursor } from "../src/index.ts";
+import { TextBuffer } from "../src/index.ts";
+import { createGraphemeCursor } from "../src/kernels/index.ts";
 
 
 test("heated clipped grapheme windows cannot turn a raw high surrogate into an emoji continuation", () => {

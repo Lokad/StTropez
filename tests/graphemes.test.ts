@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
-import { TextBuffer, createGraphemeCursor, graphemeBoundaries, GraphemeLimitError, unicodeGraphemeVersion } from "../src/index.ts";
+import { TextBuffer } from "../src/index.ts";
+import { createGraphemeCursor, graphemeBoundaries, GraphemeLimitError, unicodeGraphemeVersion } from "../src/kernels/index.ts";
 import { graphemeBreakProperty, indicConjunctBreak, extendedPictographic, defaultIgnorable } from "../src/core/grapheme-data.ts";
-import type { GraphemeCursor, GraphemeIndex } from "../src/index.ts";
+import type { GraphemeCursor } from "../src/index.ts";
+import type { GraphemeIndex } from "../src/kernels/index.ts";
 const fixture = async (name: string) => gunzipSync(await readFile(new URL(`fixtures/graphemes/${name}.txt.gz`, import.meta.url))).toString("utf8");
 function finish(cursor: GraphemeCursor, budget = 256): GraphemeIndex { let previous = cursor.snapshot(); while (true) { const step = cursor.next(budget); assert.ok(Object.isFrozen(step)); assert.ok(step.workUnits - previous.workUnits <= budget + 256); if (step.status === "ready") return step.result!; assert.equal(step.status, "running"); assert.equal(step.result, null); previous = step; } }
 const records = (text: string) => text.trim().split(/\r?\n/).map(line => line.split(";").map(v => v.trim()));

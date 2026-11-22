@@ -9,7 +9,8 @@ import type { RpcScheduler, RpcTransport } from "../src/protocol/json-rpc.ts";
 import type { LspSessionOptions, LspRequestContext } from "../src/protocol/index.ts";
 
 import { TextBuffer } from "../src/index.ts";
-import { LspSession, RpcError } from "../src/protocol/index.ts";
+import { RpcError } from "../src/protocol/index.ts";
+import { LspSession } from "../src/kernels/index.ts";
 const settled = async () => { await setImmediate(); await setImmediate(); };
 function fixture(t: test.TestContext, capabilities: InitializeResult["capabilities"] = { positionEncoding: "utf-16", textDocumentSync: 2, hoverProvider: true }) {
     const timers = new Set<ReturnType<typeof setTimeout>>(), peers: ReturnType<typeof peer>[] = [];

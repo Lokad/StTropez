@@ -98,8 +98,7 @@ const compilerRoots = await consumerCompilerRoots(project), demoCompiler = await
 const compilerOptions = { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM", "DOM.Iterable"],
     strict: true, noUncheckedIndexedAccess: true, exactOptionalPropertyTypes: true, noUnusedLocals: true, noUnusedParameters: true,
     verbatimModuleSyntax: true, allowImportingTsExtensions: true, noEmit: true, skipLibCheck: false, types: [], paths: {
-        sttropez: [join(assetRoot, "index.d.ts")], "sttropez/browser": [join(assetRoot, "browser/index.d.ts")],
-        "sttropez/protocol": [join(assetRoot, "protocol/index.d.ts")], "typescript-demo": [join(demoCompiler, "lib/typescript.d.ts")],
+        ...Object.fromEntries(libraryModules.map(entry => [entry.specifier, [join(assetRoot, entry.types)]])), "typescript-demo": [join(demoCompiler, "lib/typescript.d.ts")],
     } };
 const compilerFiles = [...Object.values(entryPoints), measurementEntry, "styles.d.ts"];
 await writeFile(join(hostRoot, "tsconfig.json"), JSON.stringify({ compilerOptions, files: compilerFiles }));
@@ -153,7 +152,7 @@ for (const path of harnessOutput.split(/\r?\n/).filter(Boolean)) {
         || /\.d\.[cm]?ts$/.test(input) && [assetRoot, ...toolRoots].some(root => within(root, input)), `Unexpected demo harness input: ${input}`);
     harnessInputs.push(input);
 }
-for (const path of [...scripts, bridge, join(hostRoot, measurementEntry), join(assetRoot, "browser/index.d.ts")]) {
+for (const path of [...scripts, bridge, join(hostRoot, measurementEntry), join(assetRoot, "browser/index.d.ts"), join(assetRoot, "kernels/index.d.ts")]) {
     assert.ok(harnessInputs.includes(await realpath(path)), "Demo harness must check its callers, actual hook and restored declarations.");
 }
 // Keep bundler working-directory resolution in the development host, with explicit staged

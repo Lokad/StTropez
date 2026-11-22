@@ -9,8 +9,9 @@ Index a captured buffer in steps. Yield between steps and cancel if the document
 changes.
 
 ```ts
-import { createGraphemeCursor } from "sttropez";
-import type { GraphemeIndex, TextBuffer } from "sttropez";
+import { createGraphemeCursor } from "sttropez/kernels";
+import type { TextBuffer } from "sttropez";
+import type { GraphemeIndex } from "sttropez/kernels";
 
 export async function indexGraphemes(
     buffer: TextBuffer,

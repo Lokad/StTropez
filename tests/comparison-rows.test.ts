@@ -1,7 +1,8 @@
 import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
-import { TextBuffer, TextDiff, FoldIndex, createFoldRegions } from "../src/index.ts";
+import { TextBuffer, FoldIndex, createFoldRegions } from "../src/index.ts";
+import { TextDiff } from "../src/kernels/index.ts";
 import { ComparisonRowsCursor } from "../src/core/comparison-rows.ts";
 import type { ComparisonRows } from "../src/core/comparison-rows.ts";
 function capture(a: string, b: string) { const baseline = TextBuffer.from(a), working = TextBuffer.from(b), diff = new TextDiff(baseline, working); let result = diff.next(32768); while (result.status === "running") result = diff.next(32768); return { baseline, working, hunks: result.hunks }; }

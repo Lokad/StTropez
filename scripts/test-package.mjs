@@ -1,6 +1,7 @@
 // @ts-check
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { libraryModules } from "./library-entries.mjs";
 import { execFileSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -112,10 +113,7 @@ const reactHost = reactOnly ? await (await import("./package-react-host.mjs")).s
 const readinessFixture = !lspOnly && !deferredOnly ? await stageHostFixture(project, consumer, "examples/shared/readiness.ts", "readiness.ts") : undefined;
 if (!lspOnly && !deferredOnly) await stageHostFixture(project, consumer, "examples/shared/save-queue.ts", "save-queue.ts");
 const compilerOptions = { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true,
-    skipLibCheck: false, noEmit: true, types: [], paths: {
-        sttropez: [join(assetRoot, "index.d.ts")], "sttropez/browser": [join(assetRoot, "browser/index.d.ts")],
-        "sttropez/protocol": [join(assetRoot, "protocol/index.d.ts")],
-    } };
+    skipLibCheck: false, noEmit: true, types: [], paths: Object.fromEntries(libraryModules.map(entry => [entry.specifier, [join(assetRoot, entry.types)]])) };
 if (reactHost) Object.assign(compilerOptions, reactHost.compilerOptions, { paths: { ...compilerOptions.paths, ...reactHost.compilerOptions.paths } });
 const compilerFiles = lspOnly ? ["lsp.ts"] : deferredOnly ? ["activation-main.ts", workspaceOnly ? "workspace.ts" : "activate.ts"] : ["main.ts", "pilot.ts", ...(reactHost?.compilerFiles ?? [])];
 await writeFile(join(consumer, "package.json"), '{"type":"module"}');

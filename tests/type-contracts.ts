@@ -1,8 +1,10 @@
 import type { DocumentSnapshot, DocumentView, Observable, ResourceHandle, ResourceSnapshot, SaveSubmission } from "../src/index.ts";
 import type { FontAssetSnapshot } from "../src/browser/index.ts";
-import type { JsonRpcConnection, JsonValue, LspDocument, LspSession, LspWorkspaceScope } from "../src/protocol/index.ts";
+import type { JsonValue, LspDocument, LspWorkspaceScope } from "../src/protocol/index.ts";
+import type { JsonRpcConnection, LspSession } from "../src/kernels/index.ts";
 
-import type { GraphemeIndex, GraphemeProgress } from "../src/index.ts";
+import type { GraphemeProgress } from "../src/index.ts";
+import type { GraphemeIndex } from "../src/kernels/index.ts";
 
 export function graphemeReadContract(index: GraphemeIndex, progress: GraphemeProgress): void {
     // @ts-expect-error Published boundaries are immutable.

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
-import { TextBuffer, createGraphemeCursor } from "../src/index.ts";
+import { TextBuffer } from "../src/index.ts";
+import { createGraphemeCursor } from "../src/kernels/index.ts";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
 
 const verify = process.argv.includes("--verify"), now = () => verify ? 0 : performance.now(), source = await sourceIdentity(), budget = 4096, cases = [];

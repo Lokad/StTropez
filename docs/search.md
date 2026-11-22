@@ -139,7 +139,7 @@ options object if supplied. Bounds and `SearchMatch` ranges use original UTF-16 
 exclusive end. Matches cannot overlap. They preserve raw line endings. An empty query has no matches.
 
 ```ts
-import { LiteralSearch } from "sttropez";
+import { LiteralSearch } from "sttropez/kernels";
 import type { SearchMatch, TextBuffer } from "sttropez";
 
 export function* findWords(buffer: TextBuffer, query: string): Generator<readonly SearchMatch[]> {

@@ -4,7 +4,7 @@ import { basename } from "node:path";
 
 test.beforeEach(async ({ page }) => {
     // Two evaluations of the browser entry share one core module, like separately loaded views.
-    const built = await build({ entryPoints: { core: "src/index.ts", comparison: "src/browser/comparison.ts", tools: "src/browser/index.ts" }, outdir: "artifacts/comparison-ownership",
+    const built = await build({ entryPoints: { core: "src/index.ts", kernels: "src/kernels/index.ts", comparison: "src/browser/comparison.ts", tools: "src/browser/index.ts" }, outdir: "artifacts/comparison-ownership",
         bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
     const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
     await page.route("**/comparison-ownership/**", route => {
@@ -114,7 +114,8 @@ type Presentation = {
 test("browser comparison work yields with large requested budgets and cancels its next turn", async ({ page }) => {
     const results = await page.evaluate(async () => {
         const path = "/comparison-ownership/";
-        const { Workspace, TextBuffer, TextDiff } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { Workspace, TextBuffer } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { TextDiff } = await import(path + "kernels.js") as typeof import("../../src/kernels/index.ts");
         const { mountTextComparison } = await import(path + "comparison.js") as typeof import("../../src/browser/comparison.ts");
         const timeout = window.setTimeout, clear = window.clearTimeout, next = TextDiff.prototype.next;
         const clock = Object.getOwnPropertyDescriptor(performance, "now"), tasks = new Map<number, () => void>();
@@ -176,7 +177,8 @@ declare global { interface Window { comparisonPresentation: Presentation } }
 test("review highlights survive every typing paint while exact comparison work is held", async ({ page }) => {
     await page.evaluate(async () => {
         const path = "/comparison-ownership/";
-        const { Workspace, TextBuffer, TextDiff } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { Workspace, TextBuffer } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { TextDiff } = await import(path + "kernels.js") as typeof import("../../src/kernels/index.ts");
         const { mountTextComparison } = await import(path + "comparison.js") as typeof import("../../src/browser/comparison.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "paint", variant: "working" }, "Working", { value: "old\n" + "unchanged\n".repeat(4000) });
         const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "working"), host = document.createElement("section");

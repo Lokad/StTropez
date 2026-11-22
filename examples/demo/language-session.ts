@@ -1,4 +1,5 @@
-import { JsonRpcConnection, RpcError } from "../../src/protocol/index.ts";
+import { RpcError } from "../../src/protocol/index.ts";
+import { JsonRpcConnection } from "../../src/kernels/index.ts";
 import type { RpcRequestContext, RpcScheduler, RpcTransport } from "../../src/protocol/index.ts";
 import type { BrowserLanguageService } from "./browser-language-service.ts";
 

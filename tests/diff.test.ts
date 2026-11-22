@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { nextSeed } from "../fixtures/workloads.ts";
 import test from "node:test";
-import { TextDiff, TextBuffer } from "../src/index.ts";
+import { TextBuffer } from "../src/index.ts";
+import { TextDiff } from "../src/kernels/index.ts";
 
 function diff(a: string, b: string, buffers?: readonly [TextBuffer, TextBuffer]) {
     const job = new TextDiff(buffers?.[0] ?? TextBuffer.from(a), buffers?.[1] ?? TextBuffer.from(b)); let result = job.next(512), calls = 1;

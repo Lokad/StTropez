@@ -2,7 +2,8 @@ import { mapReplacementSelections } from "../src/core/selections.ts";
 import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
-import { Workspace, TextBuffer, PositionMap, createSelectionSet, mapSelectionSet, planSelectionEdits } from "../src/index.ts";
+import { Workspace, TextBuffer, createSelectionSet } from "../src/index.ts";
+import { PositionMap, mapSelectionSet, planSelectionEdits } from "../src/kernels/index.ts";
 import type { Selection, SelectionSet } from "../src/index.ts";
 
 const endpoints = (set: SelectionSet) => set.ranges.map(range => [range.anchor, range.head]);

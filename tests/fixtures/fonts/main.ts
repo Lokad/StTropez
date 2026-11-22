@@ -1,4 +1,4 @@
-import { graphemeBoundaries } from "../../../src/index.ts";
+import { graphemeBoundaries } from "../../../src/kernels/index.ts";
 import { createFontAssetController } from "../../../src/browser/index.ts";
 import { fontFixture } from "../consumer/font-fixture.ts";
 

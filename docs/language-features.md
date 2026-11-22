@@ -29,6 +29,7 @@ Import the headless client and its type from `sttropez/protocol`, for example
 Offsets are UTF-16 code units in that snapshot. Navigation, rename and code actions also accept a
 `project` array containing the same source revision. Omitting it captures the source alone.
 An optional `prepare` callback runs after synchronization and before dispatch.
+Clients decode their own replies. For custom messages with standard LSP payloads, import the matching decoder, such as `decodeLspDiagnostics`, from `sttropez/kernels`.
 
 Read `call.result` for the decoded reply. `call.cancel()` stops a pending request, including target
 loading. After settlement it leaves the reply available. A new request or `client.cancel()` expires
@@ -289,7 +290,7 @@ Markdown. `{ language, value }` preserves code. Your host places and dismisses t
 the range is absent.
 
 Use `mountDocumentation` from `sttropez/browser` to append a `DocumentationView`. `setContent` reuses
-an unchanged immutable array. `dispose` removes the view and listeners. All three entries (`sttropez`,
+an unchanged immutable array. `dispose` removes the view and listeners. The host entries (`sttropez`,
 `sttropez/browser`, `sttropez/protocol`) export the headless `DocumentationContent` and
 `DocumentationPart` types.
 

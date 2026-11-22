@@ -124,7 +124,7 @@ one original-coordinate replacement and one resulting caret per range. Pass a st
 a string per range in normalized order.
 
 ```ts
-import { planSelectionEdits } from "sttropez";
+import { planSelectionEdits } from "sttropez/kernels";
 import type { SelectionSet, TextBuffer } from "sttropez";
 
 export function replaceSelections(
@@ -148,7 +148,8 @@ returns text with its map. Conversion recognizes CRLF as one ending and preserve
 units. It scans whole strings; buffer creation never implicitly converts line endings.
 
 ```ts
-import { composePositionMaps, exportText, importText, TextBuffer } from "sttropez";
+import { exportText, importText, TextBuffer } from "sttropez";
+import { composePositionMaps } from "sttropez/kernels";
 
 const imported = importText("a\r\nb\rc\n", "lf");
 const buffer = TextBuffer.from(imported.text);
@@ -182,7 +183,8 @@ display value, including its captured indentation. Invalid/unavailable choices r
 or value; exceeded limits throw. Hosts apply the complete plan atomically:
 
 ```ts
-import { parseSnippet, planSnippetChoice, TextBuffer } from "sttropez";
+import { TextBuffer } from "sttropez";
+import { parseSnippet, planSnippetChoice } from "sttropez/kernels";
 
 const parsed = parseSnippet("call(${1:value}, $1, ${2|draft,ready|})$0", 4096);
 if (!parsed.snippet) throw new Error(parsed.reason);
@@ -201,7 +203,7 @@ share storage without reading their text. Equal buffers with separate storage, o
 yield a wide span.
 
 ```ts
-import { BufferChangeCursor } from "sttropez";
+import { BufferChangeCursor } from "sttropez/kernels";
 import type { BufferChangeSpan, TextBuffer } from "sttropez";
 
 export function* planTransfer(before: TextBuffer, after: TextBuffer): Generator<void, BufferChangeSpan> {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { TextBuffer, createSelectionSet, parseSnippet, offsetSnippetStops, planSnippetEdit, planSnippetChoice, snippetChoiceText, planSelectionEdits, planLanguageEdit, resolveLanguageConfiguration } from "../src/index.ts";
+import { TextBuffer, createSelectionSet, planLanguageEdit, resolveLanguageConfiguration } from "../src/index.ts";
+import { parseSnippet, offsetSnippetStops, planSnippetEdit, planSnippetChoice, snippetChoiceText, planSelectionEdits } from "../src/kernels/index.ts";
 import type { SnippetStop } from "../src/index.ts";
 
 test("snippets expand forward mirrors, literal defaults, escaped choices and numeric/final stops", () => {

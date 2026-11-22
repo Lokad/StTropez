@@ -1,7 +1,8 @@
 import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
-import { TextBuffer, WordCursor } from "../src/index.ts";
+import { TextBuffer } from "../src/index.ts";
+import { WordCursor } from "../src/kernels/index.ts";
 import type { WordOptions } from "../src/index.ts";
 const checkedCursor = (buffer: TextBuffer, offset: number, direction: -1 | 1, options: WordOptions = {}) => {
     const beforeConstruction = buffer.readMetrics(), cursor = new WordCursor(buffer, offset, direction, options);

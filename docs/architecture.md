@@ -6,14 +6,18 @@ Your application decides when to release the file, where to save it and which se
 
 ## Use
 
-The arrows show which modules may import which others. An application imports the public
-`sttropez`, `sttropez/browser` and `sttropez/protocol` entries.
+An application uses `sttropez` for workspace state, `sttropez/browser` for editor views
+and `sttropez/protocol` for language clients. Import `sttropez/kernels` for standalone
+algorithms or direct access to JSON-RPC and LSP messages.
 
 ```mermaid
 flowchart TD
     Host[Host application] --> Browser[src/browser]
     Host --> Protocol[src/protocol]
     Host --> Core[src/core]
+    Host --> Kernels[src/kernels]
+    Kernels --> Protocol
+    Kernels --> Core
     Browser --> Protocol
     Browser --> Core
     Protocol --> Core

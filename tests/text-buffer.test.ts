@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PositionMap, TextBuffer, applyTextEdits, validateTextEdits } from "../src/index.ts";
+import { TextBuffer, applyTextEdits, validateTextEdits } from "../src/index.ts";
+import { PositionMap } from "../src/kernels/index.ts";
 import { nextSeed, corpus, corpusIds, editLog } from "../fixtures/workloads.ts";
 
 test("the selected buffer applies atomic original-coordinate batches and preserves immutable snapshots", () => {

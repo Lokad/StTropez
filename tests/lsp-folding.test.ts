@@ -1,3 +1,4 @@
+import { decodeLspFoldingRanges } from "../src/kernels/index.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { clientFixture, protocol, settled } from "./helpers/lsp-client.ts";
@@ -22,7 +23,7 @@ test("LSP folding negotiates whole lines and validates the entire response again
     assert.deepEqual((await client.run({ document: f.document() }).result).ranges, [{ from: 7, to: mixed.indexOf("end") }]);
     const scope = f.provider.createScope(), document = scope.attachDocument(f.source.documentId); await scope.flush();
     const capture = scope.synchronized(document)!; scope.dispose();
-    assert.throws(() => protocol.decodeLspFoldingRanges([], capture), error => error instanceof RpcError && error.code === -32801);
+    assert.throws(() => decodeLspFoldingRanges([], capture), error => error instanceof RpcError && error.code === -32801);
 });
 test("fold discovery cancellation and edits cannot publish obsolete provider ranges", async t => {
     const f = clientFixture(t), client = createLspFoldingClient(f.provider), entered = latch<void>(), answer = latch<unknown>();

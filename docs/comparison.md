@@ -120,7 +120,7 @@ provide a globally minimal character diff or moved-block detection.
 If you use `TextDiff` directly, your caller decides when to take the next step.
 
 ```ts
-import { TextDiff } from "sttropez";
+import { TextDiff } from "sttropez/kernels";
 import type { DiffProgress, TextBuffer } from "sttropez";
 
 export function* compareText(reference: TextBuffer, working: TextBuffer): Generator<DiffProgress> {

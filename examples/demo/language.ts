@@ -1,6 +1,7 @@
 import type { DocumentLanguage, Observable, Workspace } from "../../src/index.ts";
 import { BrowserLspWorkspace } from "../../src/browser/index.ts";
-import { type LspWorkspace, createLspFoldingClient, type LspFoldingClient, decodeLspDiagnostics, lspRangeOffsets } from "../../src/protocol/index.ts";
+import { type LspWorkspace, createLspFoldingClient, type LspFoldingClient, lspRangeOffsets } from "../../src/protocol/index.ts";
+import { decodeLspDiagnostics } from "../../src/kernels/index.ts";
 import type { LspWorkspaceScope, RpcCall, LspScopeAccess, LspTargetResolver } from "../../src/protocol/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import type { DemoFile } from "./project.ts";

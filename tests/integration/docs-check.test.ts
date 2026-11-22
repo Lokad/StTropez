@@ -98,7 +98,7 @@ test("documentation compiler rejects private imports and reports invalid public 
     await assert.rejects(compileDocumentation([{ path, line: 8, language: "ts",
         code: 'import { Workspace } from "../../src/index.ts";\nexport const workspace = new Workspace();' }]), /broken-example.md:8: Import .*public entry point/);
     const result = await compileDocumentation([{ path, line: 8, language: "ts",
-        code: 'import { LiteralSearch } from "sttropez";\nexport const broken = new LiteralSearch("not a buffer", "query");' }]);
+        code: 'import { LiteralSearch } from "sttropez/kernels";\nexport const broken = new LiteralSearch("not a buffer", "query");' }]);
     assert.equal(result.success, false);
     assert.match(result.output, /docs\/broken-example\.md\(9,\d+\): error TS2345/);
     assert.match(result.output, /TextBuffer/);

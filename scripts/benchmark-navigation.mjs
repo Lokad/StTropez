@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
-import { TextBuffer, WordCursor } from "../src/index.ts";
+import { TextBuffer } from "../src/index.ts";
+import { WordCursor } from "../src/kernels/index.ts";
 import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
 

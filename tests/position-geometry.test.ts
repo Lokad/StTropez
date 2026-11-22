@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { PositionMap } from "../src/index.ts";
+import { PositionMap } from "../src/kernels/index.ts";
 import { batchGeometry, composeGeometry } from "../src/core/position-geometry.ts";
 
 test("successive one-unit deletions retain bounded geometry even when their constant pieces start as singletons", () => {

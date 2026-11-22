@@ -24,6 +24,10 @@
       "types": "./dist/protocol/index.d.ts",
       "import": "./dist/protocol/index.js"
     },
+    "./kernels": {
+      "types": "./dist/kernels/index.d.ts",
+      "import": "./dist/kernels/index.js"
+    },
     "./editor.css": "./dist/editor.css",
     "./regex-worker.js": "./dist/browser/regex-worker.js"
   },

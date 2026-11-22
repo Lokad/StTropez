@@ -10,7 +10,8 @@ import { attachDemoProvider } from "../../examples/demo/provider-server.ts";
 import type { DemoProviderBootstrap } from "../../examples/demo/provider-contract.ts";
 import { demoSample } from "../../examples/demo/samples.ts";
 import { Workspace } from "../../src/index.ts";
-import { LspWorkspace, createLspActionClient, decodeLspCompletions, decodeLspResolvedCompletion, lspCompletionPlan } from "../../src/protocol/index.ts";
+import { LspWorkspace, createLspActionClient, lspCompletionPlan } from "../../src/protocol/index.ts";
+import { decodeLspCompletions, decodeLspResolvedCompletion } from "../../src/kernels/index.ts";
 import type { LspDocumentCapture, LspScopeAccess } from "../../src/protocol/index.ts";
 import { openWebSocketTransport } from "../../src/browser/index.ts";
 

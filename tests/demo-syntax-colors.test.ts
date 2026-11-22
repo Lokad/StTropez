@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Workspace, PositionMap } from "../src/index.ts";
+import { Workspace } from "../src/index.ts";
+import { PositionMap } from "../src/kernels/index.ts";
 import type { DocumentSnapshot } from "../src/index.ts";
 import { DemoSyntaxColors } from "../examples/demo/syntax-colors.ts";
 import { analyzeTypeScript } from "../examples/demo/syntax.ts";

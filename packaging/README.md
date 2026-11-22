@@ -17,6 +17,7 @@ Configure the host's frontend resolution against that folder. Its `package.json`
 | `sttropez` | `index.js`, `index.d.ts` | Headless workspace and text model |
 | `sttropez/browser` | `browser/index.js`, `browser/index.d.ts` | Browser editor and controllers |
 | `sttropez/protocol` | `protocol/index.js`, `protocol/index.d.ts` | JSON-RPC and LSP integration |
+| `sttropez/kernels` | `kernels/index.js`, `kernels/index.d.ts` | Text, diff and selection algorithms, JSON-RPC sessions and LSP decoders |
 | `sttropez/editor.css` | `editor.css` | Scoped editor styles |
 | `sttropez/regex-worker.js` | `browser/regex-worker.js` | Standalone module worker for regex find |
 

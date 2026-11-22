@@ -1,7 +1,8 @@
 import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
-import { TextBuffer, createGraphemeCursor } from "../src/index.ts";
+import { TextBuffer } from "../src/index.ts";
+import { createGraphemeCursor } from "../src/kernels/index.ts";
 import { localAsciiGraphemePoint } from "../src/core/grapheme-point.ts";
 
 function verify(text: string): number {

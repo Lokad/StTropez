@@ -1,12 +1,12 @@
-import { Workspace, TextBuffer, TextDiff, WordCursor, importText, exportText, anchoredRange, composePositionMaps, createGraphemeCursor } from "sttropez";
+import { Workspace, TextBuffer, importText, exportText, anchoredRange } from "sttropez";
+import { TextDiff, WordCursor, composePositionMaps, createGraphemeCursor, planSelectionEdits, JsonRpcConnection } from "sttropez/kernels";
 import { editRefusedEvent, inputConflictEvent, typedTextEvent, type TypedTextDetail, createFontAssetController, createFindController, createNavigationHistory, createRegexFindBackend, mountTextComparison, mountTextViewport, mountTextEditor } from "sttropez/browser";
 import * as browserApi from "sttropez/browser";
 import type { TextEditorDiagnostics, ViewportDiagnostics, ViewportSnapshot } from "sttropez/browser";
 import { fontFixture } from "./font-fixture.js";
-import { createSelectionSet, planSelectionEdits } from "sttropez";
+import { createSelectionSet } from "sttropez";
 import type { ResourceVisibility, SaveReview } from "sttropez";
 import type { CapturedInsertion, EditRefusedDetail, FindDiagnostics, FindReason, TextComparisonDiagnostics, InputConflictDetail, LinePrompt, PresentedLine, TextComparisonOptions, TextComparisonSnapshot, TextViewportOptions } from "sttropez/browser";
-import { JsonRpcConnection } from "sttropez/protocol";
 import { openWebSocketTransport } from "sttropez/browser";
 const workspace = new Workspace();
 const documentId = workspace.createDocument({ scope: "consumer", resource: "source", variant: "working" }, "Consumer source", "restored assets");

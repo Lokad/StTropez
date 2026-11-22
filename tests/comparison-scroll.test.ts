@@ -1,7 +1,8 @@
 import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
-import { TextBuffer, TextDiff } from "../src/index.ts";
+import { TextBuffer } from "../src/index.ts";
+import { TextDiff } from "../src/kernels/index.ts";
 import { comparisonLine } from "../src/core/comparison-scroll.ts";
 function mapping(a: string, b: string) {
     const baseline = TextBuffer.from(a), working = TextBuffer.from(b), diff = new TextDiff(baseline, working); let result = diff.next(32768);
