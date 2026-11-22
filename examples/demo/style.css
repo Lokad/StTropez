@@ -39,9 +39,9 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .demo-rename label { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .demo-rename input { min-width: 0; width: 100%; }
 .demo-rename button { font-size: 12px; margin: 0 4px 6px 0; }
-.demo-rename:not([hidden]) { display: flex; flex-direction: column; }
+.demo-rename:not([hidden]) { display: flex; flex-direction: column; width: min(28rem, calc(100vw - 16px)); max-height: min(28rem, calc(100vh - 16px)); }
 .demo-rename > :not(ol) { flex: none; }
-.demo-rename ol { min-height: 2.3em; overflow: auto; margin: 0; padding: 2px 0; list-style-position: inside; line-height: 1.8; }
+.demo-rename ol { min-height: 2.3em; overflow: auto; margin: 0; padding: 2px 0; list-style-position: inside; line-height: 1.8; overflow-wrap: anywhere; }
 .demo-rename li:last-child { margin-bottom: .5em; }
 .demo-rename ol:empty { display: none; }
 .demo-rename del { color: #ed9a9a; } .demo-rename ins { color: #8ce0ca; }
