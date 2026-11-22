@@ -377,7 +377,8 @@ If references, module links, document colors or code actions refresh while you h
 Previous, releasing the button keeps the new list on its selected page. Choosing a different
 code action starts its edit preview on page one.
 
-F4 opens the module links list. Escape dismisses it and returns focus to its mounted source,
+F4 opens the module links list. Closing another view of the source keeps those links available.
+Escape dismisses the list and returns focus to its mounted source,
 including while a link resolves. If you Tab away, the resolved link stays in the list until you
 open it. After following a link, Shift+F4 restores the original document and selection.
 In the F2 name field, Enter previews the rename. A second press applies the reviewed edits.

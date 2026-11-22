@@ -82,7 +82,8 @@ export class HostDocumentLinks {
             if (!this.sessions.delete(session)) return;
             if (this.active === session) this.active = undefined;
             stop(); events.abort();
-            if (!this.presenting && this.route) this.cancel();
+            const route = this.route;
+            if (!this.presenting && route && (route.targets.get(editor.view.documentId) === session || route.destination === editor)) this.cancel();
             controller.dispose(); this.publish();
         };
         try {
@@ -144,15 +145,18 @@ export class HostDocumentLinks {
         const source = this.workspace.document(origin.editor.view.documentId);
         if (!source.language) return;
         const documents = new Map([[source.language.uri, source]]);
-        for (const id of this.aliases.values()) {
+        const aliases = new Set(this.aliases.values());
+        for (const id of aliases) {
             if (!this.canCapture(id)) return;
             const target = this.workspace.document(id);
             if (!target.language) return;
             documents.set(target.language.uri, target);
         }
-        const targets = new Map<DocumentId, Session>();
-        for (const s of this.sessions) if (!targets.has(s.editor.view.documentId)) targets.set(s.editor.view.documentId, s);
-        targets.set(source.id, origin);
+        const targets = new Map<DocumentId, Session>([[source.id, origin]]);
+        for (const session of this.sessions) {
+            const id = session.editor.view.documentId;
+            if (aliases.has(id) && !targets.has(id)) targets.set(id, session);
+        }
         this.release();
         const route: Route = { origin, source, documents, targets, selections: origin.editor.view.getSnapshot().selectionSet };
         this.route = route; this.metrics.requested++;

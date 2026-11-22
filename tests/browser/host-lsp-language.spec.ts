@@ -451,8 +451,16 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
             expect((await snapshot(page)).bindings.links.opened).toBe(0); await exact(page, current);
         }
         await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion);
+        const working = field(page, "Comparison working source"), row = page.getByLabel("Module link results", { exact: true }).getByRole("button");
+        await button(page, "Open source review").click(); await working.focus(); await discover();
+        await expect(row).toBeEnabled(); await button(page, "Close source review").click();
+        await expect(row).toHaveCount(0);
+        await button(page, "Open source review").click();
+        await expect(working).toBeVisible();
         await select(); await discover();
-        await page.getByLabel("Module link results", { exact: true }).getByRole("button").click();
+        await expect(row).toBeEnabled(); await button(page, "Close source review").click();
+        await expect(working).toHaveCount(0);
+        await row.click();
         await settledColorsAndLinks(page);
         await expect(field(page, "Secondary source")).toBeFocused();
         expect((await snapshot(page)).bindings.links.opened).toBe(1);
