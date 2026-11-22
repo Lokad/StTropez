@@ -142,6 +142,32 @@ test("narrow layouts keep JavaScript, Problems and review reachable from the key
     await files.last().press("Enter"); await expect(files.last()).toHaveAttribute("aria-pressed", "true");
 });
 
+test("short windows keep the caret and the next edit on screen in wide and stacked layouts", async ({ page, baseURL }) => {
+    const url = new URL(baseURL!); url.searchParams.set("sample", "shipping");
+    const source = page.getByRole("textbox", { name: "shipping.ts", exact: true });
+    const output = page.getByRole("region", { name: "JavaScript output", exact: true });
+    const cursor = page.locator("#cursor");
+    const caretOnScreen = (pane: Locator) => pane.locator(".st-input-caret").evaluate(caret => {
+        const rect = caret.getBoundingClientRect();
+        return rect.height > 0 && rect.top >= 0 && rect.bottom <= innerHeight && scrollY === 0;
+    });
+    for (const width of [1280, 375]) {
+        await page.setViewportSize({ width, height: 360 }); await page.goto(url.href);
+        await source.press("Control+Home");
+        for (let i = 0; i < 30; i++) await source.press("ArrowDown");
+        await expect(cursor).toContainText("Ln 31,");
+        const editor = page.locator("#editor");
+        await expect.poll(() => caretOnScreen(editor)).toBe(true);
+        await source.press("Home"); await page.keyboard.insertText("// short ");
+        await expect(editor.locator('.st-viewport-row[data-line="30"]')).toContainText("// short ");
+        const reader = output.getByRole("textbox");
+        await reader.press("Control+Home"); await reader.press("ArrowDown");
+        await expect(cursor).toHaveText("Ln 2, Col 1");
+        await expect.poll(() => caretOnScreen(output)).toBe(true);
+        await expect(output.locator('.st-viewport-row[data-line="1"]')).toContainText(/\S/);
+    }
+});
+
 test("Go to line returns typing to the chosen large-file row and cancels when the source view closes", async ({ page, baseURL }) => {
     await page.goto(baseURL!); await page.locator("#sample").selectOption("large");
     const source = page.getByRole("textbox", { name: "large.ts", exact: true });

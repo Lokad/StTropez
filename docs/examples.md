@@ -138,6 +138,7 @@ stay visible.
 The footer shows the caret position in the last focused editor, including generated JavaScript
 and the saved copy. On narrow screens the output sits below the source. Use **Hide** to give
 the editor more room, or choose **JavaScript**, **Problems** or **Changes** to open that panel.
+In short windows the description and footer scroll so the source and output can each show a code row.
 In the file and panel button strips, Left and Right move focus. Enter or Space opens the choice.
 
 In **Changes**, **Hide** leaves the working file open for editing.
