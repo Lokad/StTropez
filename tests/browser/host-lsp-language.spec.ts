@@ -312,16 +312,20 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         fault = "malformed"; await list.getByRole("button").click();
         await expect(page.getByLabel("Module link status", { exact: true })).toContainText("range or identity");
         expect((await snapshot(page)).bindings.links.state.status).toBe("failed");
-        for (const destination of ["form", "heading"]) {
+        for (const destination of ["escape", "form", "heading", "back-to-list"]) {
             await field(page).focus(); await button(page, "Discover module links").click(); await expect(list.getByRole("button")).toBeEnabled();
-            hold = true; await list.getByRole("button").click(); await expect.poll(() => !!release).toBe(true);
-            if (destination === "form") await field(page, "Configuration path").focus();
-            else await page.getByRole("heading", { name: "Module document links", exact: true }).click();
-            const focused = destination === "form" ? field(page, "Configuration path") : page.locator("body");
+            hold = true; await list.getByRole("button").press("Enter"); await expect.poll(() => !!release).toBe(true);
+            await expect(list).toBeFocused();
+            let focused = list;
+            if (destination === "escape") { await page.keyboard.press("Escape"); focused = field(page); }
+            if (destination === "form") { focused = field(page, "Configuration path"); await focused.focus(); }
+            if (destination === "heading") { await page.getByRole("heading", { name: "Module document links", exact: true }).click(); focused = page.locator("body"); }
+            if (destination === "back-to-list") { await page.keyboard.press("Tab"); await expect(list).not.toBeFocused(); await list.focus(); }
             await expect(focused).toBeFocused(); release!(); release = undefined;
             await page.evaluate(() => window.hostFixture.providerCustom("fixture/state", {}));
             await expect.poll(async () => (await snapshot(page)).bindings.links.state.pending).toBe(false);
             expect((await snapshot(page)).bindings.links.opened).toBe(1); await expect(focused).toBeFocused();
+            if (destination === "escape") await expect(list.getByRole("button")).toHaveCount(0);
         }
         await list.getByRole("button").click(); await expect(field(page, "Secondary source")).toBeFocused();
         expect((await snapshot(page)).bindings.links.opened).toBe(2); expect((await snapshot(page)).history).toEqual(history);

@@ -176,14 +176,22 @@ export class HostDocumentLinks {
     }
     private async open(route: Route, item: DocumentLinkChoice, module: string) {
         if (this.route !== route || !this.sessions.has(route.origin)) return;
-        const editor = route.origin.editor, owner = editor.element.ownerDocument, focused = owner.activeElement;
+        const owner = route.origin.editor.element.ownerDocument, list = this.linkList.element;
+        // Resolving disables the row. Keep Escape and Tab in the results list.
+        if (item.canResolve && list?.matches(":focus-within")) list.focus({ preventScroll: true });
+        const focused = owner.activeElement;
         const events = new AbortController(); let follow = true;
-        if (item.canResolve) owner.addEventListener("pointerdown", () => { follow = false; }, { capture: true, once: true, signal: events.signal });
+        if (item.canResolve) {
+            const leave = () => { follow = false; }, options = { capture: true, once: true, signal: events.signal };
+            owner.addEventListener("pointerdown", leave, options);
+            owner.addEventListener("focusin", leave, options);
+            list?.addEventListener("focusout", leave, options);
+        }
         try {
             const result = await item.open(uri => {
                 const doc = route.documents.get(uri);
                 if (!doc) { this.publish({ message: "Provider link target is outside the host's captured resources." }); return; }
-                if (!follow || owner.activeElement !== focused && !(owner.activeElement === owner.body && (!focused?.isConnected || !!this.linkList.element?.contains(focused)))) return;
+                if (!follow || owner.activeElement !== focused) return;
                 // A host can replace the only mounted source while presenting the destination.
                 const release = this.retainReturn(route);
                 let placed: TextEditor | undefined;

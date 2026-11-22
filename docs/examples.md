@@ -375,8 +375,9 @@ returned document's text and revision to label the result and select its range.
 If the host cannot open the pane, the panel shows the error. You can retry the same result. Return records successful visits.
 If references refresh while you hold Next or Previous, the new list stays on its first page.
 
-F4 opens the module links list. Escape dismisses the list and returns focus to its source if that
-editor is mounted. After following a link, Shift+F4 restores the original document and selection.
+F4 opens the module links list. Escape dismisses it and returns focus to its mounted source,
+including while a link resolves. If you Tab away, the resolved link stays in the list until you
+open it. After following a link, Shift+F4 restores the original document and selection.
 In the F2 name field, Enter previews the rename. A second press applies the reviewed edits.
 In the F6 colour picker, Enter previews the proposed value. **Apply captured color** applies the
 reviewed format. Changing formats during a press requires a fresh click.
