@@ -63,7 +63,8 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
                 await page.evaluate(() => window.hostFixture.failSave());
                 await expect.poll(async () => (await snapshot(page)).source.saveStatus).toBe("failed");
                 await expect.poll(async () => (await snapshot(page)).pendingCommands).toBe(0);
-                await expect(page.getByRole("status", { name: "Host messages", exact: true })).toContainText("Your document is retained");
+                const messages = page.getByRole("status", { name: "Host messages", exact: true });
+                await expect(messages).toContainText("Source save failed.");
                 await expect(primary).toBeFocused(); await expect(primary).toHaveAttribute("data-failure-retained", "yes");
                 const failed = await snapshot(page);
                 expect(await text(page)).toBe(later); expect(failed.source.revision).toBe(before.source.revision);
@@ -75,7 +76,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
                 expect(failed.source).toMatchObject({ serverVersion: "v0", dirty: true });
                 if (editor === "candidate") expect(failed.source.exports).toBe(0); else expect(failed.source.exports).toBeGreaterThan(0);
                 expect(failed.activity).toMatchObject({ writes: 0, errors: 1 });
-                await button("Dismiss message").click(); await button("Save source").click();
+                await button("Save source").click();
                 await expect.poll(async () => (await snapshot(page)).pendingSaves).toEqual([
                     { revision: failed.source.revision, length: later.length, expectedServerVersion: "v0" },
                 ]);
@@ -85,6 +86,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
                 expect(selections(await snapshot(page))).toEqual(retained); await primary.focus();
                 await page.evaluate(() => window.hostFixture.finishSave());
                 await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1");
+                await expect(messages).not.toContainText("Source save failed.");
                 await expect.poll(async () => (await snapshot(page)).pendingCommands).toBe(0);
                 await expect(primary).toBeFocused(); expect(await text(page)).toBe(newest);
                 const saved = await snapshot(page); expect(saved.source.dirty).toBe(true);

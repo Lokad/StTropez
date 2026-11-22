@@ -654,6 +654,9 @@ test("reset names its sample and recovery follows the stored draft across sample
     await expect(page.locator("#editor")).toContainText("// My previous large-file edits");
     await page.getByRole("button", { name: "Reset sample", exact: true }).click();
     expect(prompts.at(-1)).toContain("Large file");
+    await expect(page.locator("#status")).toContainText("Sample restored.");
+    await source.press("Control+z"); await expect(page.locator("#status")).toHaveText("Unsaved changes.");
+    await source.press("Control+y"); await expect(page.locator("#status")).toHaveText("Files match the original sample.");
     await expect(page.locator("#recovery-status")).toHaveText("All changes are saved.");
     await page.reload(); await page.locator("#sample").selectOption("large");
     await expect(page.locator("#recovery-status")).toHaveText("Recovery is ready.");

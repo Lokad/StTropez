@@ -87,15 +87,15 @@ export async function runDemoUnopenedNavigation(page: Page, url = "/") {
             const tx = this.transaction;
             if (tx.db.name === "sttropez-demo-projects-v1" && key === "navigation") {
                 IDBObjectStore.prototype.put = put; held.files = row.value.files;
-                tx.addEventListener("complete", event => {
-                    event.stopImmediatePropagation(); held.acknowledge = () => tx.dispatchEvent(new Event("complete"));
-                }, { capture: true, once: true });
+                const complete = tx.oncomplete!;
+                tx.oncomplete = event => { held.acknowledge = () => complete.call(tx, event); };
             }
             return put.call(this, row, key);
         };
     });
     await main.press("Control+s");
     await expect.poll(() => page.evaluate(() => !!(window as unknown as { heldNavigationSave: HeldSave }).heldNavigationSave.acknowledge)).toBe(true);
+    await expect(page.locator("#save")).toBeDisabled();
     await expect(page.locator("#files button")).toHaveText(["main.ts"]); await expect(main).toBeFocused();
     await select(page, main, "const label = formatLabel"); await main.press("ArrowRight"); await main.press("ArrowLeft");
     const cursor = "Ln 6, Col 25"; await expect(page.locator("#cursor")).toHaveText(cursor);
@@ -110,11 +110,12 @@ export async function runDemoUnopenedNavigation(page: Page, url = "/") {
     await page.mouse.click(point.x, point.y); await page.keyboard.up("Control"); await expect(labels).toBeVisible();
     await expect(page.locator("#editor")).toContainText("export function formatLabel");
     await labels.press("Control+End"); await page.keyboard.insertText("// edit the loaded module\n");
+    await expect(page.locator("#files")).toContainText("labels.ts ●");
     const submitted = await page.evaluate(() => {
         const held = (window as unknown as { heldNavigationSave: HeldSave }).heldNavigationSave;
         held.acknowledge!(); return held.files!["labels.ts"];
     });
-    await expect(page.locator("#status")).toContainText("Saved in this browser");
+    await expect(page.locator("#status")).toHaveText("Saved in this browser. Later edits remain unsaved.");
     await expect(labels).toHaveValue(submitted + "// edit the loaded module\n"); await expect(labels).toBeFocused();
     await expect(page.locator("#files")).toContainText("labels.ts ●"); await labels.press("Control+z");
     await expect(labels).toHaveValue(submitted!); await expect(page.locator("#files")).not.toContainText("●");
@@ -675,10 +676,11 @@ export async function runDemoWalkthrough(page: Page, url = "/") {
     await page.getByRole("button", { name: "Use baseline", exact: true }).click();
     await working.press("Control+z"); await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
     await expect(page.locator(".st-comparison-panes > section").last()).toContainText("basketTotal(cart, 0.2)");
-    await working.press("Control+s"); await expect(page.locator("#status")).toContainText("Saved in this browser");
+    await working.press("Control+s"); await expect(page.locator("#status")).toHaveText("Saved in this browser.");
     await expect(page.locator("#files")).not.toContainText("●"); await expect(page.locator(".st-comparison-controls output")).toHaveText("No changes");
     await page.locator('[data-panel="javascript"]').click();
     await main.press("Control+Home"); await main.pressSequentially("// Recover this cart\n");
+    await expect(page.locator("#status")).toHaveText("Unsaved changes.");
     await page.locator('[data-file="pricing.ts"]').click(); await pricing.press("Control+Home"); await pricing.pressSequentially("// Recover this helper\n");
     await expect(page.locator("#recovery-status")).toHaveText("Recovery draft captured in this browser.", { timeout: 30000 });
     await page.reload();

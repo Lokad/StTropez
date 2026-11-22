@@ -4,6 +4,7 @@ import type { RunSubmission, SaveResponse, SaveSubmission, SnapshotValue } from 
 export type Connection = Readonly<{ path: string; format: "csv"; [key: string]: SnapshotValue }>;
 export type RunSettings = Readonly<{ mode: "preview" | "inspect" }>;
 export type ServiceActivity = Readonly<{ writes: number }>;
+export class SourceSaveFailure extends Error {}
 type RunInput = RunSubmission<string, Connection, RunSettings>;
 
 /** Deferred services for the host example. Captures, review and application remain in their owners. */
@@ -33,7 +34,7 @@ export class HostFixtureServices {
         this.buffer = TextBuffer.from(pending.submission.value.trimEnd());
         pending.resolve({ kind: "saved", serverVersion: this.version, canonical: pending.submission.value.trimEnd() });
     };
-    readonly failSave = (): void => { this.saves.shift()?.reject(new Error("Synthetic save transport failure")); };
+    readonly failSave = (): void => { this.saves.shift()?.reject(new SourceSaveFailure("Synthetic save transport failure")); };
     externalWrite(text: string): void {
         if (this.disposed) return;
         this.buffer = TextBuffer.from(text); this.version = `v${++this.serial}`;

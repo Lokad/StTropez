@@ -214,7 +214,8 @@ project releases it and, for a local server, stops its process and deletes its t
 Idle local allocations expire after two minutes.
 
 The demo saves the whole sample in IndexedDB, including files you haven’t opened. Saving keeps the
-current tabs and selection. Save, Restore draft and Keep current files return
+current tabs and selection. If you type during a save, the footer reports that the later edits
+are unsaved. Save, Restore draft and Keep current files return
 keyboard focus to the source editor or the last active comparison pane as soon as you activate them.
 **Reset sample** restores the open sample’s original
 text in one undoable edit. You can keep typing while a recovery offer is open. The demo checkpoints

@@ -8,7 +8,7 @@ import { ConfigurationSave } from "./configuration.ts";
 import { HostTransfer } from "./transfers.ts";
 import { RunResources } from "./run-resources.ts";
 import { TransferInstruction } from "./instruction.ts";
-import { HostFixtureServices } from "./fixture-services.ts";
+import { HostFixtureServices, SourceSaveFailure } from "./fixture-services.ts";
 import type { Connection, RunSettings, ServiceActivity } from "./fixture-services.ts";
 
 export type { Connection } from "./fixture-services.ts";
@@ -42,7 +42,11 @@ export class HostController {
     private readonly sourceReview = new HostSourceReview(this.workspace, this.commands, this.source, {
         inputReady: () => this.sourceInputReady(), presentation: () => this.presentation.presentation(), present: () => this.openReview(),
         server: () => this.services.server, save: submission => this.services.save(submission), track: task => { void this.track(task); },
-        saved: revision => this.updateActivity({ lastSavedRevision: revision }), reportError: error => this.reportError(error),
+        saved: revision => {
+            const modal = this.layout.getSnapshot().modal;
+            if (modal.kind === "error" && modal.source === "source-save") this.presentation.clearError();
+            this.updateActivity({ lastSavedRevision: revision });
+        }, reportError: error => this.reportError(error),
     });
     readonly comparisonReference = this.sourceReview.comparisonReference;
     readonly saveConflict = this.sourceReview.saveConflict;
@@ -93,7 +97,8 @@ export class HostController {
         if (this.disposed) return;
         this.reportedError = error;
         this.updateActivity({ errors: this.activityCell.get().errors + 1 });
-        this.presentation.error("The host operation failed. Your document is retained.");
+        if (error instanceof SourceSaveFailure) this.presentation.error("Source save failed. Your edits are intact. Use Save source to retry.", "source-save");
+        else this.presentation.error("The host operation failed. Your document is retained.");
     };
     private track<T>(pending: Promise<T>): Promise<T> {
         this.operations.add(pending);

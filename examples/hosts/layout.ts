@@ -3,7 +3,7 @@ import { HostCell } from "../shared/observable.ts";
 
 export type Layout = Readonly<{ position: "left" | "right"; visible: boolean; formFault: boolean; primarySurface: "text" | "panel" | "loading" | "closed";
     navigation: Readonly<{ kind: "workspace" } | { kind: "review" }>;
-    modal: Readonly<{ kind: "none" } | { kind: "error"; message: string } | { kind: "close"; tabId: TabId }> }>;
+    modal: Readonly<{ kind: "none" } | { kind: "error"; message: string; source?: "source-save" } | { kind: "close"; tabId: TabId }> }>;
 
 /** Owns host tab placement/presentation and modal state; resource lifetime stays with its owner. */
 export class HostLayout {
@@ -25,7 +25,9 @@ export class HostLayout {
     viewTab(id: "primary" | "secondary"): TabId { return id === "primary" ? this.primaryTab : this.secondaryTab; }
     presentation(): TabTarget { return this.workspace.tabs.capture(this.primaryTab); }
     navigate(kind: "workspace" | "review"): void { this.cell.set({ ...this.cell.get(), navigation: { kind } }); }
-    error(message: string): void { this.cell.set({ ...this.cell.get(), modal: { kind: "error", message } }); }
+    error(message: string, source?: "source-save"): void {
+        this.cell.set({ ...this.cell.get(), modal: { kind: "error", message, ...(source && { source }) } });
+    }
     surface(primarySurface: "text" | "loading"): void { this.cell.set({ ...this.cell.get(), primarySurface }); }
     /** Select the captured tab before a caller begins its load; publish its surface afterwards. */
     targetText(documentId: DocumentId): TabTarget {

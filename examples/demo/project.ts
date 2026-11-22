@@ -45,7 +45,13 @@ export class DemoProject {
     private reviewedRevisions: readonly number[] | undefined;
     private includeOpenedFileInSave: ((file: DemoFile) => void) | undefined;
     saving = false;
-    message = "Changes are kept in this page until you save locally.";
+    private notice: { text: string; keepOnEdit?: true } | undefined = { text: "Changes are kept in this page until you save locally." };
+    get message(): string {
+        if (this.notice) return this.notice.text;
+        if (this.reviewedRevisions && !this.canSaveReviewed()) return "The files changed after review. Review the saved copy again before saving.";
+        return this.dirty() ? "Unsaved changes." : this.token ? "Saved in this browser." : "Files match the original sample.";
+    }
+    set message(text: string) { this.notice = { text }; }
     private readonly inputIdle: () => boolean;
     private readonly noteModels = new Map<DemoFile, HostSourceNotes>();
     notesFor(file: DemoFile): HostSourceNotes {
@@ -85,6 +91,9 @@ export class DemoProject {
             const tab = this.workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "editor");
             owners.defer(() => { this.workspace.tabs.close(tab); });
             const view = this.workspace.createDocumentView(resource.documentId); owners.defer(() => view.dispose());
+            owners.defer(this.workspace.onDocumentChange(resource.documentId, () => {
+                if (!this.notice?.keepOnEdit) this.notice = undefined;
+            }));
             file = Object.freeze({ name, resource, tab, view, readOnly });
             this.baselines.set(name, { buffer: this.workspace.document(resource.documentId).buffer, version: this.token ?? "sample" });
             this.loaded = Object.freeze([...this.loaded, file]); if (!readOnly) delete this.unloaded[name];
@@ -118,7 +127,7 @@ export class DemoProject {
                 backing: () => ({ ...next.unloaded, ...next.sample.declarations }), load: (name, text) => next.load(name, text),
             });
             next.services = { recovery, language };
-            if (message !== undefined) next.message = message;
+            if (message !== undefined) next.notice = { text: message, keepOnEdit: true };
             return next;
         } catch (error) {
             const errors = [error];
@@ -153,7 +162,7 @@ export class DemoProject {
     }
     async save(changed: () => void, reviewed = false): Promise<void> {
         if (this.disposed || this.saving) return;
-        if (!this.inputIdle()) { this.message = "An edit is still in progress. Save again when it finishes."; changed(); return; }
+        if (!this.inputIdle()) { this.notice = { text: "An edit is still in progress. Save again when it finishes.", keepOnEdit: true }; changed(); return; }
         if (reviewed && !this.canSaveReviewed()) return;
         const expected = reviewed ? this.conflict!.token : this.token;
         const tickets: { file: DemoFile; ticket: SaveTicket<string>; buffer: TextBuffer }[] = [];
@@ -176,7 +185,7 @@ export class DemoProject {
             // buffer with the other tickets. Typing in the newly opened tab stays dirty.
             this.includeOpenedFileInSave = file => { capture(file).start(); };
             try {
-                this.message = "Saving locally…"; changed();
+                this.notice = { text: "Saving locally…", keepOnEdit: true }; changed();
                 writing = true;
                 await this.store.write({ token, value: { version: 1, files } }, expected);
             } finally { this.includeOpenedFileInSave = undefined; }
@@ -188,7 +197,7 @@ export class DemoProject {
             }
             await this.recovery.settleSavedDraft();
             if (this.disposed) return;
-            this.message = "Saved in this browser. Later edits remain unsaved.";
+            this.notice = this.dirty() ? { text: "Saved in this browser. Later edits remain unsaved." } : undefined;
         } catch (error) {
             // The store checks the captured token in one read/write transaction across every file.
             const remote = writing ? await this.store.read().catch(() => null) : null;
@@ -200,9 +209,10 @@ export class DemoProject {
                     this.conflict = { token: remote.token, baselines: new Map(Object.entries(saved.files).map(([name, text]) => [name, { buffer: TextBuffer.from(text), version: remote.token }])) };
                 } catch { this.conflict = undefined; }
             }
-            this.message = remote && remote.token !== expected
+            const text = remote && remote.token !== expected
                 ? "Another page saved this sample. Your edits are intact. Review the saved copy or download your changes."
                 : error instanceof Error ? `Could not save: ${error.message}` : "Could not save. Your edits are intact.";
+            this.notice = { text, keepOnEdit: true };
         } finally {
             tickets.forEach(({ ticket }) => ticket.finish()); this.saving = false;
             if (this.disposed) { if (this.languageDisposed) this.release(); } else changed();
