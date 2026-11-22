@@ -8,6 +8,14 @@ export type LanguageHost = Readonly<{
     reconnect?: () => void;
 }>;
 
+export function presentDocument(host: LanguageHost, id: DocumentId, sessions: Iterable<{ editor: TextEditor }>): TextEditor | undefined {
+    const live = (editor: TextEditor) => editor.view.documentId === id && !editor.signal.aborted
+        && editor.element.isConnected && host.workspace.ownsDocumentView(editor.view, editor.tab);
+    for (const { editor } of sessions) if (live(editor)) return editor;
+    const editor = host.present(id);
+    return editor && live(editor) ? editor : undefined;
+}
+
 /** A completed edit identifies a document. Resolve its current editor when the user opens it. */
 export function openChangedFile(
     host: LanguageHost, id: DocumentId, sessions: Iterable<{ editor: TextEditor }>, focus = (editor: TextEditor) => editor.focus(),
@@ -17,10 +25,8 @@ export function openChangedFile(
     catch { return "The changed file is no longer available."; }
     try {
         if (!host.canCapture(id)) return "Finish the current edit before opening the changed file.";
-        const live = (editor: TextEditor) => editor.view.documentId === id && !editor.signal.aborted
-            && editor.element.isConnected && host.workspace.ownsDocumentView(editor.view, editor.tab);
-        const editor = [...sessions].find(session => live(session.editor))?.editor ?? host.present(id);
-        if (!editor || !live(editor)) return "Show a source pane or finish its pending input, then try again.";
+        const editor = presentDocument(host, id, sessions);
+        if (!editor) return "Show a source pane or finish its pending input, then try again.";
         focus(editor);
         return `Opened ${title}.`;
     } catch {

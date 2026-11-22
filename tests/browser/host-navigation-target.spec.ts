@@ -35,10 +35,10 @@ test("the navigation panel opens a declaration loaded by the host resolver and r
         const provider = new BrowserLspWorkspace(ws, { connect: signal => openWebSocketTransport(url.href, { signal }),
             resolveTarget: async uri => uri === "library:types" ? { text: "// declarations\ntype Currency = string", languageId: "generic" } : undefined });
         let destination: typeof editor | undefined, attempts = 0;
-        const host = new HostNavigationTools(ws, () => true, id => {
+        const host = new HostNavigationTools({ workspace: ws, canCapture: () => true, present: id => {
             if (++attempts === 1) throw new Error("Declaration pane is unavailable.");
             return destination = mountTextEditor(document.getElementById("destination")!, ws, id, { ariaLabel: "Declaration" });
-        }, { provider, prepare: () => async () => {} });
+        } }, { provider, prepare: () => async () => {} });
         const detach = host.attach("source", tab, editor), removePanel = mountNavigationPanel(document.getElementById("panel")!, host);
         editor.focus();
         return async () => {

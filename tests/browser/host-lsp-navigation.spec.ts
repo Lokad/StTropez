@@ -76,6 +76,25 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await field(page).focus(); await select(page, text.indexOf(";") + 1); await button(page, "Find definition").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(0);
         expect(methods.filter(message => message.method === "textDocument/definition").length).toBe(definitions + 1);
     });
+    if (coversHost("candidate-hosts", host, "candidate")) test("F12 from the secondary pane selects the definition when that pane opens the file", async ({ page }) => {
+        await seed(page, "catalogue;", 0);
+        await button(page, "Add navigation companion").click();
+        const secondary = field(page, "Secondary source");
+        await secondary.focus();
+        await secondary.press("Home"); await secondary.press("ArrowRight"); await secondary.press("ArrowRight");
+        const before = await snapshot(page);
+        await secondary.press("F12");
+        await expect.poll(async () => (await snapshot(page)).bindings.views.find(view => view.id === "secondary")?.documentId)
+            .toBe(before.bindings.navigation.companion);
+        await expect(secondary).toBeFocused();
+        const after = await snapshot(page);
+        expect(after.bindings.views.find(view => view.id === "secondary")?.selection).toMatchObject({ anchor: 6, head: 15 });
+        await expect(results(page)).toHaveCount(0);
+        await expect(button(page, "Return to navigation origin")).toBeDisabled();
+        await secondary.press("ArrowLeft");
+        expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")?.selection).toMatchObject({ anchor: 6, head: 6 });
+        expect(after.source.id).toBe(before.source.id); expect(after.history).toEqual(before.history);
+    });
     if (coversHost("candidate-hosts", host, "candidate")) test("closing the review preserves primary references and retires the review's own request", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/references");
         await page.reload();

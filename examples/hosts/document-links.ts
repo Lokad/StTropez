@@ -1,9 +1,10 @@
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts";
 import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.ts";
+import { presentDocument, type LanguageHost } from "./language-host.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import { createWorkingSource } from "./working-source.ts";
-import type { DocumentId, DocumentSnapshot, SelectionSet, TabId, Workspace } from "../../src/index.ts";
+import type { DocumentId, DocumentSnapshot, SelectionSet, TabId } from "../../src/index.ts";
 import { createDocumentLinkController } from "../../src/browser/index.ts";
 import type { DocumentLinkChoice, DocumentLinkController, DocumentLinkSnapshot, TextEditor } from "../../src/browser/index.ts";
 import type { LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
@@ -41,15 +42,11 @@ export class HostDocumentLinks {
     private readonly metrics = { requested: 0, opened: 0, returned: 0 };
     private readonly cell = new HostCell(initial);
     readonly state = this.cell.observable;
-    private readonly workspace: Workspace;
-    private readonly canCapture: (id: DocumentId) => boolean;
-    private readonly present: (id: DocumentId) => TextEditor | undefined;
+    private readonly host: LanguageHost;
     private readonly options: LinkHostOptions;
-    private readonly reconnectProvider: (() => void) | undefined;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined,
-        options: LinkHostOptions, reconnectProvider?: () => void) {
-        this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.pageKey = createReviewKey(workspace);
-        this.options = options; this.reconnectProvider = reconnectProvider;
+    constructor(host: LanguageHost, options: LinkHostOptions) {
+        this.host = host; this.options = options;
+        this.pageKey = createReviewKey(host.workspace);
     }
     private publish(patch: Partial<DocumentLinksSnapshot> = {}) {
         this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && !this.disposed && !this.active.editor.signal.aborted,
@@ -62,7 +59,7 @@ export class HostDocumentLinks {
     }
     readonly cancel = () => { this.release(); this.publish({ ...initial, message: "Module links dismissed." }); };
     readonly disconnect = () => { this.disconnected = true; this.cancel(); };
-    readonly reconnect = () => { this.disconnected = false; this.cancel(); this.reconnectProvider?.(); };
+    readonly reconnect = () => { this.disconnected = false; this.cancel(); this.host.reconnect?.(); };
     private listEditor() {
         const route = this.route;
         return route && (this.sessions.has(route.origin) ? route.origin.editor : route.destination);
@@ -71,9 +68,9 @@ export class HostDocumentLinks {
     attach(id: string, _tab: TabId, editor: TextEditor) {
         if (this.disposed) throw new Error("Link panel is disposed.");
         const controller = createDocumentLinkController(editor, this.options.provider, {
-            documents: () => [...(this.route?.documents.values() ?? [])], canCapture: this.canCapture,
+            documents: () => [...(this.route?.documents.values() ?? [])], canCapture: this.host.canCapture,
             prepareRequest: () => {
-                const aliases = [...this.aliases].map(([module, id]) => ({ module, uri: this.workspace.document(id).language!.uri }));
+                const aliases = [...this.aliases].map(([module, id]) => ({ module, uri: this.host.workspace.document(id).language!.uri }));
                 const fault = this.fault; this.fault = undefined; return this.options.prepare(aliases, this.delay, fault);
             },
         });
@@ -107,7 +104,7 @@ export class HostDocumentLinks {
             this.active = session; this.publish();
         });
         editor.onEditIntent(() => {
-            const uri = this.workspace.document(editor.view.documentId).language?.uri;
+            const uri = this.host.workspace.document(editor.view.documentId).language?.uri;
             if (!this.presenting && uri && this.route?.documents.has(uri)) this.cancel();
         }, events.signal);
         return detachWithEditor(editor, events.signal, detach);
@@ -140,14 +137,14 @@ export class HostDocumentLinks {
     readonly discover = () => this.start(false);
     private start(keyboard: boolean, returning = false) {
         const origin = this.active;
-        if (!origin || this.disconnected || !this.canCapture(origin.editor.view.documentId)) return;
-        const source = this.workspace.document(origin.editor.view.documentId);
+        if (!origin || this.disconnected || !this.host.canCapture(origin.editor.view.documentId)) return;
+        const source = this.host.workspace.document(origin.editor.view.documentId);
         if (!source.language) return;
         const documents = new Map([[source.language.uri, source]]);
         const aliases = new Set(this.aliases.values());
         for (const id of aliases) {
-            if (!this.canCapture(id)) return;
-            const target = this.workspace.document(id);
+            if (!this.host.canCapture(id)) return;
+            const target = this.host.workspace.document(id);
             if (!target.language) return;
             documents.set(target.language.uri, target);
         }
@@ -170,13 +167,13 @@ export class HostDocumentLinks {
         });
     }
     private place(route: Route, doc: DocumentSnapshot, selections?: SelectionSet) {
-        const live = this.workspace.observeDocument(doc.id).getSnapshot();
-        if (this.route !== route || !this.canCapture(doc.id) || live?.revision !== doc.revision || live.buffer !== doc.buffer) return;
+        const live = this.host.workspace.observeDocument(doc.id).getSnapshot();
+        if (this.route !== route || !this.host.canCapture(doc.id) || live?.revision !== doc.revision || live.buffer !== doc.buffer) return;
         const captured = route.targets.get(doc.id);
         this.presenting = true;
         try {
-            const editor = captured && this.sessions.has(captured) ? captured.editor : this.present(doc.id);
-            if (!editor || this.route !== route || editor.view.documentId !== doc.id) return;
+            const editor = presentDocument(this.host, doc.id, captured && this.sessions.has(captured) ? [captured] : []);
+            if (!editor || this.route !== route) return;
             const placed = selections ? editor.view.setSelections(doc.revision, selections.ranges, selections.primary)
                 : editor.view.setSelection(doc.revision, { anchor: 0, head: 0 });
             if (!placed) return;
@@ -216,8 +213,8 @@ export class HostDocumentLinks {
         } finally { events.abort(); }
     }
     private retainReturn(route: Route) {
-        const { source } = route, lease = this.workspace.acquire(source.resourceId), handle = this.workspace.observeDocument(source.id);
-        const metadata = this.workspace.resourceForDocument(source.id).metadata;
+        const { source } = route, lease = this.host.workspace.acquire(source.resourceId), handle = this.host.workspace.observeDocument(source.id);
+        const metadata = this.host.workspace.resourceForDocument(source.id).metadata;
         const invalidate = () => { delete route.destination; queueMicrotask(() => { if (this.route === route) this.cancel(); }); };
         const stop = handle.subscribe(invalidate), stopMetadata = metadata.subscribe(invalidate);
         return () => { stop(); stopMetadata(); lease.release(); };
@@ -230,14 +227,14 @@ export class HostDocumentLinks {
         else this.publish({ message: "Returned to the captured source and selection." });
     };
     setAlias(module: string, document: DocumentId | null) {
-        if (!validDomainModule(module) || document && this.workspace.document(document).key.variant !== "working") throw new Error("Choose a bounded module alias and working resource.");
+        if (!validDomainModule(module) || document && this.host.workspace.document(document).key.variant !== "working") throw new Error("Choose a bounded module alias and working resource.");
         if (document === (this.aliases.get(module) ?? null)) return;
         if (document && !this.aliases.has(module) && this.aliases.size === linkLimits.aliases) throw new Error("Module alias limit reached.");
         this.cancel(); if (document) this.aliases.set(module, document); else this.aliases.delete(module);
     }
     readonly addCompanion = () => {
         if (this.disposed) return;
-        this.companion ??= createWorkingSource(this.workspace, "module-companion", "Module companion", { value: "export const value = 1;\r\n" }).documentId;
+        this.companion ??= createWorkingSource(this.host.workspace, "module-companion", "Module companion", { value: "export const value = 1;\r\n" }).documentId;
         this.setAlias("sample-utils", this.companion); this.publish({ message: "Module companion registered for sample-utils." });
     };
     setDelay(value: number) { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid links delay."); this.delay = value; }
