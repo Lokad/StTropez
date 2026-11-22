@@ -116,7 +116,7 @@ test("a failed synchronous batch publishes committed workspace changes and relea
     const seen: string[] = [], failure = new Error("command");
     const stop = source.subscribe(() => {
         seen.push(workspace.document(source.documentId).text());
-        assert.throws(() => scope.batch(() => workspace.setCapabilities(source.id, { edit: [], save: false, run: false })), /Reentrant/);
+        assert.throws(() => scope.batch(() => workspace.setCapabilities(source.id, { edit: [], save: false })), /Reentrant/);
     });
     const edit = (revision: number, insert: string) => workspace.edit({ documentId: source.documentId, expectedRevision: revision,
         origin: "human", edits: [{ from: 0, to: 1, insert }] });

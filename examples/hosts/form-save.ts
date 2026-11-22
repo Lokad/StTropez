@@ -1,5 +1,6 @@
 import { HostCell } from "../shared/observable.ts";
-import type { Immutable, Observable, ResourceHandle, ResourceSnapshot, ResourceTarget, SaveResponse, SaveReview, SaveSubmission, SnapshotValue, Workspace, WorkspaceCommands } from "../../src/index.ts";
+import type { Immutable, Observable, ResourceHandle, ResourceSnapshot, ResourceTarget, SaveReview, SaveSubmission, SnapshotValue, Workspace } from "../../src/index.ts";
+import type { SaveResponse, HostSaveQueue } from "../shared/save-queue.ts";
 
 type State<T> = Readonly<{ pending: boolean; message: string; conflict: Readonly<{ version: string; value: Immutable<T> | null }> | null; preview: string | null }>;
 type Pending<T> = Readonly<{ submission: SaveSubmission<T>; resolve: (response: SaveResponse<T>) => void; reject: (error: Error) => void }>;
@@ -12,7 +13,7 @@ export type FormPolicy<T> = Readonly<{ title: string; noun: string; prefix: stri
 /** Deferred host fixture; core owns immutable capture, serialized saves and guarded receipts. */
 export class FormSave<T extends SnapshotValue> {
     private readonly workspace: Workspace;
-    private readonly commands: WorkspaceCommands;
+    private readonly saves: HostSaveQueue;
     private readonly resource: ResourceHandle<T>;
     private readonly track: (task: Promise<unknown>) => void;
     private readonly policy: FormPolicy<T>;
@@ -26,8 +27,8 @@ export class FormSave<T extends SnapshotValue> {
     private serverVersion: string | null;
     private serial = 0;
     private disposed = false;
-    constructor(workspace: Workspace, commands: WorkspaceCommands, resource: ResourceHandle<T>, track: (task: Promise<unknown>) => void, policy: FormPolicy<T>) {
-        this.workspace = workspace; this.commands = commands; this.resource = resource; this.track = track; this.policy = policy;
+    constructor(workspace: Workspace, saves: HostSaveQueue, resource: ResourceHandle<T>, track: (task: Promise<unknown>) => void, policy: FormPolicy<T>) {
+        this.workspace = workspace; this.saves = saves; this.resource = resource; this.track = track; this.policy = policy;
         const initial = resource.getSnapshot(); if (initial.state !== "ready") throw new Error(`${policy.title} fixture must start ready.`);
         this.serverValue = initial.value(); this.serverVersion = initial.metadata.serverVersion;
         this.cell = new HostCell<State<T>>({ pending: false, message: `${policy.title} is saved independently of source and Run.`, conflict: null, preview: null }); this.state = this.cell.observable;
@@ -64,7 +65,7 @@ export class FormSave<T extends SnapshotValue> {
     private submit(review?: SaveReview): void {
         this.publish({ pending: true, message: `Saving captured ${this.policy.noun}…` }); if (this.disposed) return;
         try {
-            const task = this.commands.save(this.workspace.captureSave(this.resource, review), { save: submission => {
+            const task = this.saves.save(this.workspace.captureSave(this.resource, review), { save: submission => {
                 if (this.disposed) throw new Error(`${this.policy.title} save was interrupted.`);
                 return new Promise<SaveResponse<T>>((resolve, reject) => { this.request = { submission, resolve, reject }; this.publish({ message: `${this.policy.title} request captured. Editing and Run remain independent.` }); });
             } }).then(result => {

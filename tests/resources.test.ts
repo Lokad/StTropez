@@ -1,7 +1,10 @@
+import { runWithResources, type RunSettings } from "../examples/hosts/run-command.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { TextBuffer, Workspace, WorkspaceCommands } from "../src/index.ts";
-import type { SaveResponse, SaveSubmission } from "../src/index.ts";
+import { TextBuffer, Workspace } from "../src/index.ts";
+import { HostSaveQueue } from "../examples/shared/save-queue.ts";
+import type { SaveSubmission } from "../src/index.ts";
+import type { SaveResponse } from "../examples/shared/save-queue.ts";
 
 function deferred<T>() {
     let resolve!: (value: T) => void;
@@ -97,7 +100,7 @@ test("internal resources keep captured ownership while workspace inventories con
     const { workspace, source, form, tab } = fixture(), before = workspace.getSnapshot(), tabs = workspace.tabs.getSnapshot();
     const options = { visibility: "internal" as const }, buffer = TextBuffer.from("immutable reference");
     const reference = workspace.createTextResourceFromBuffer({ scope: "test", resource: "reference", variant: "one" }, "Reference",
-        { buffer }, { edit: [], save: false, run: false }, options);
+        { buffer }, { edit: [], save: false }, options);
     const scratch = workspace.createTextResource({ scope: "test", resource: "scratch", variant: "one" }, "Scratch", { value: "x" }, undefined, options);
     const panel = workspace.createResource({ scope: "test", resource: "panel", variant: "one" }, "Panel", { value: { count: 0 } }, undefined, options);
     const referenceTab = workspace.tabs.open({ kind: "text", documentId: reference.documentId }, "reference");
@@ -346,10 +349,10 @@ test("dirty close confirmations capture generations/revisions and hold ownership
 
 test("capabilities reject all edit origins and prevent stale refresh from erasing local work", () => {
     const { workspace, source, edit } = fixture();
-    workspace.setCapabilities(source.id, { edit: [], save: false, run: false });
+    workspace.setCapabilities(source.id, { edit: [], save: false });
     for (const origin of ["human", "agent", "host"] as const) assert.deepEqual(edit("blocked", origin), { applied: false, reason: "read-only" });
     assert.throws(() => workspace.captureSave(source));
-    workspace.setCapabilities(source.id, { edit: ["human"], save: true, run: true });
+    workspace.setCapabilities(source.id, { edit: ["human"], save: true });
     edit("new work");
     assert.throws(() => workspace.operations.beginLoad(source));
     assert.equal(workspace.document(source.documentId).text(), "new work");
@@ -357,7 +360,7 @@ test("capabilities reject all edit origins and prevent stale refresh from erasin
 
 test("two queued saves capture exact contents; canonical replies and close/reopen never overwrite later typing", async () => {
     const { workspace, source, tab, edit } = fixture();
-    const commands = new WorkspaceCommands(workspace), responses = [deferred<SaveResponse<string>>(), deferred<SaveResponse<string>>()];
+    const commands = new HostSaveQueue(workspace), responses = [deferred<SaveResponse<string>>(), deferred<SaveResponse<string>>()];
     const calls: SaveSubmission<string>[] = [];
     const port = { save: (submission: SaveSubmission<string>) => { calls.push(submission); return responses[calls.length - 1]!.promise; } };
     edit("first"); const first = commands.save(workspace.captureSave(source), port);
@@ -382,7 +385,7 @@ test("two queued saves capture exact contents; canonical replies and close/reope
 
 test("canonical saves apply only without later edits or a revoked edit capability; failures/conflicts preserve the baseline", async () => {
     const { workspace, source, edit } = fixture();
-    const errors: unknown[] = [], commands = new WorkspaceCommands(workspace, error => errors.push(error));
+    const errors: unknown[] = [], commands = new HostSaveQueue(workspace, error => errors.push(error));
     edit("local");
     const saved = await commands.save(workspace.captureSave(source), { save: async () => ({ kind: "saved", serverVersion: "v1", canonical: "LOCAL" }) });
     assert.equal(saved.kind, "saved"); assert.equal(workspace.document(source.documentId).text(), "LOCAL"); assert.equal(source.metadata.getSnapshot().dirty, false);
@@ -393,17 +396,17 @@ test("canonical saves apply only without later edits or a revoked edit capabilit
     assert.equal(failed.kind, "failed"); assert.equal(errors.length, 1); assert.equal(workspace.ownership(source.id).leases, 0);
     const response = deferred<SaveResponse<string>>();
     const pending = commands.save(workspace.captureSave(source), { save: () => response.promise }); await Promise.resolve();
-    workspace.setCapabilities(source.id, { edit: [], save: true, run: true });
+    workspace.setCapabilities(source.id, { edit: [], save: true });
     response.resolve({ kind: "saved", serverVersion: "v2", canonical: "RETRY" }); await pending;
     assert.equal(workspace.document(source.documentId).text(), "retry"); assert.equal(source.metadata.getSnapshot().dirty, true);
 });
 
 test("Run captures source/configuration/settings before awaiting and retains both resources without saving", async () => {
     const { workspace, source, form, tab, edit } = fixture();
-    const commands = new WorkspaceCommands(workspace), result = deferred<string>(), settings = { mode: "preview" };
+    const result = deferred<string>(), settings: { mode: RunSettings["mode"] } = { mode: "preview" };
     let captured: unknown;
-    const run = commands.run(source, form, settings, { run: submission => { captured = submission; return result.promise; } });
-    settings.mode = "changed"; edit("after run");
+    const run = runWithResources(workspace, source, form, settings, submission => { captured = submission; return result.promise; });
+    settings.mode = "inspect"; edit("after run");
     workspace.updateResource(form, { expectedRevision: 0, origin: "human", value: { path: "new.csv", nested: { enabled: false } } });
     workspace.tabs.close(tab);
     assert.throws(() => workspace.releaseResource(source.id, true)); assert.throws(() => workspace.releaseResource(form.id, true));
@@ -437,14 +440,14 @@ test("invalid host values publish nothing and mismatched operation presentations
 test("save permission is rechecked before queued submission, and host error recovery retains the document", async () => {
     const { workspace, source, edit } = fixture();
     let calls = 0, errors = 0;
-    const commands = new WorkspaceCommands(workspace, () => { errors++; edit("host recovery"); throw new Error("Reporter failure"); });
+    const commands = new HostSaveQueue(workspace, () => { errors++; edit("host recovery"); throw new Error("Reporter failure"); });
     edit("unsaved");
     const pending = commands.save(workspace.captureSave(source), { save: async () => { calls++; return { kind: "saved", serverVersion: "unexpected" }; } });
-    workspace.setCapabilities(source.id, { edit: ["human", "host"], save: false, run: true });
+    workspace.setCapabilities(source.id, { edit: ["human", "host"], save: false });
     assert.equal((await pending).kind, "failed"); assert.equal(calls, 0); assert.equal(errors, 1);
     assert.equal(workspace.document(source.documentId).text(), "host recovery");
     assert.equal(source.metadata.getSnapshot().serverVersion, "v0"); assert.equal(workspace.ownership(source.id).leases, 0);
-    workspace.setCapabilities(source.id, { edit: ["human", "host"], save: true, run: true });
+    workspace.setCapabilities(source.id, { edit: ["human", "host"], save: true });
     const retry = await commands.save(workspace.captureSave(source), { save: async () => ({ kind: "saved", serverVersion: "v1" }) });
     assert.equal(retry.kind, "saved"); assert.equal(source.metadata.getSnapshot().dirty, false);
 });

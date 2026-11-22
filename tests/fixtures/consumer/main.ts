@@ -2,7 +2,6 @@ import { Workspace, TextBuffer, TextDiff, WordCursor, importText, exportText, an
 import { editRefusedEvent, inputConflictEvent, typedTextEvent, type TypedTextDetail, createFontAssetController, createFindController, createNavigationHistory, createRegexFindBackend, mountTextComparison, mountTextViewport, mountTextEditor } from "sttropez/browser";
 import * as browserApi from "sttropez/browser";
 import { fontFixture } from "./font-fixture.js";
-import { WorkspaceCommands } from "sttropez";
 import { createSelectionSet, planSelectionEdits } from "sttropez";
 import type { ResourceVisibility, SaveReview } from "sttropez";
 import type { CapturedInsertion, EditRefusedDetail, FindDiagnostics, FindReason, TextComparisonDiagnostics, InputConflictDetail, LinePrompt, PresentedLine, TextComparisonOptions, TextComparisonSnapshot, TextViewportOptions } from "sttropez/browser";
@@ -385,11 +384,11 @@ const fixture = { text: () => workspace.document(documentId).text(),
             editor.view.setSelection(0, { anchor: 0, head: text.length });
             if (editor.getSnapshot() !== initial || !Object.isFrozen(initial) || initial.disabled || initial.readOnlyReason !== null)
                 throw new Error("A selection changed editor focus or authority.");
-            model.setCapabilities(source.id, { edit: ["host"], save: true, run: true });
+            model.setCapabilities(source.id, { edit: ["host"], save: true });
             editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: "x", bubbles: true, cancelable: true }));
             const before = model.observeHistory(source.documentId).getSnapshot(); let lockedAtHandler = false;
             editor.input.addEventListener("keydown", () => { lockedAtHandler = editor.getSnapshot().readOnlyReason === "read-only";
-                queueMicrotask(() => model.setCapabilities(source.id, { edit: ["human", "host"], save: true, run: true })); }, { once: true });
+                queueMicrotask(() => model.setCapabilities(source.id, { edit: ["human", "host"], save: true })); }, { once: true });
             editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: outdent, bubbles: true, cancelable: true }));
             await new Promise<void>(resolve => { let turns = 16; const step = () => { if (--turns) setTimeout(step, 0); else resolve(); }; setTimeout(step, 0); });
             const lease = model.acquireEditLease(source.id, "consumer", "host");
@@ -408,19 +407,21 @@ const fixture = { text: () => workspace.document(documentId).text(),
         const doc = model.document(source.documentId);
         const proposal = model.replaceText(doc.id, "merged", { expectedRevision: doc.revision, origin: "agent", history: "record", kind: "proposal" });
         if (!proposal.applied || !proposal.changed) throw new Error("Restored proposal did not replace the text.");
-        const commands = new WorkspaceCommands(model);
-        await commands.save(model.captureSave(source), { save: async () => ({ kind: "conflict", serverVersion: "v1" }) });
+        const first = model.captureSave(source);
+        try { first.start(); first.conflict(); } finally { first.finish(); }
         const baselineBefore = source.metadata.getSnapshot().serverVersion;
         const review: SaveReview = { target: model.captureResource(source.id), expectedRevision: source.getSnapshot().revision, expectedServerVersion: "v1" };
-        let precondition: string | null = null;
-        const saved = await commands.save(model.captureSave(source, review), { save: async submission => {
+        const retry = model.captureSave(source, review);
+        let precondition: string | null, savedValue: string;
+        try {
+            const submission = retry.start();
             precondition = submission.expectedServerVersion;
             model.edit({ documentId: source.documentId, expectedRevision: submission.revision, origin: "human", edits: [{ from: 6, to: 6, insert: " later" }] });
-            return { kind: "saved", serverVersion: "v2" };
-        } });
+            savedValue = retry.accept({ serverVersion: "v2" }).savedValue;
+        } finally { retry.finish(); }
         const textAfter = model.document(source.documentId).text(), dirtyAfter = source.metadata.getSnapshot().dirty;
         model.undo({ documentId: source.documentId, expectedRevision: source.getSnapshot().revision });
-        return { baselineBefore, precondition, saved: saved.kind, textAfter, dirtyAfter, cleanAfterUndo: !source.metadata.getSnapshot().dirty,
+        return { baselineBefore, precondition, savedValue, textAfter, dirtyAfter, cleanAfterUndo: !source.metadata.getSnapshot().dirty,
             serverVersion: source.metadata.getSnapshot().serverVersion, leases: model.ownership(source.id).leases };
     },
     graphemes: () => {

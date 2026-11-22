@@ -100,7 +100,7 @@ test("delayed whole-review reversion rejects newer typing, selection, reference 
 test("permission and lease cycles cannot revive an old discard confirmation", () => {
     for (const change of ["permissions", "lease"] as const) {
         const f = fixture(); ready(f.comparison); const ticket = f.comparison.beginReversion();
-        if (change === "permissions") { f.workspace.setCapabilities(f.resource.id, { edit: ["host"], save: true, run: true }); f.workspace.setCapabilities(f.resource.id, { edit: ["human", "host", "agent"], save: true, run: true }); }
+        if (change === "permissions") { f.workspace.setCapabilities(f.resource.id, { edit: ["host"], save: true }); f.workspace.setCapabilities(f.resource.id, { edit: ["human", "host", "agent"], save: true }); }
         if (change === "lease") { const lease = f.workspace.acquireEditLease(f.resource.id, "other", "host"); lease.release(); }
         const before = f.workspace.document(f.resource.documentId); assert.equal(ticket.complete(), false, change); assert.equal(f.workspace.document(f.resource.documentId), before);
         f.comparison.dispose(); assert.equal(f.workspace.diagnostics().leases, 0);
@@ -199,7 +199,7 @@ test("comparison observes its document, policy and tab rather than unrelated wor
         const captured = ready(controller), hunk = controller.hunkAt(0)!; workspace.reads = 0;
         workspace.edit({ documentId: other, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 0, insert: "x" }] });
         assert.equal(workspace.reads, 0); assert.equal(controller.getSnapshot(), captured);
-        workspace.setCapabilities(source.id, { edit: [], save: true, run: false }); assert.equal(hunk.revert(), false);
+        workspace.setCapabilities(source.id, { edit: [], save: true }); assert.equal(hunk.revert(), false);
         workspace.tabs.close(tab); assert.equal(controller.getSnapshot().status, "expired");
     } finally { controller.dispose(); assert.equal(workspace.diagnostics().subscriptions, 0); }
 });
@@ -226,7 +226,7 @@ test("same-lane and cross-lane races reject stale tickets, permission changes re
     assert.equal(old.isCurrent(), false); assert.equal(old.complete({ buffer: TextBuffer.from("old"), version: "old" }), false);
     assert.equal(fresh.complete({ buffer: TextBuffer.from("fresh"), version: "fresh" }), true);
     assert.equal(acceptance.complete({ buffer: acceptance.capture.working.buffer, version: "stale" }), false);
-    const denied = comparison.beginAcceptance(); workspace.setCapabilities(resource.id, { edit: [], save: true, run: false });
+    const denied = comparison.beginAcceptance(); workspace.setCapabilities(resource.id, { edit: [], save: true });
     assert.equal(denied.complete({ buffer: denied.capture.working.buffer, version: "denied" }), false);
     assert.throws(() => comparison.beginAcceptance(), /unavailable/);
     const allowedRefresh = comparison.beginRefresh(); allowedRefresh.cancel(); allowedRefresh.finish(); assert.equal(allowedRefresh.isCurrent(), false);
@@ -248,7 +248,7 @@ test("supplied views remain owned by the host, buffer resources retain exact dat
     const { workspace, resource, tab, reference, comparison } = fixture(); comparison.dispose();
     const view = workspace.createDocumentView(resource.documentId), controller = createComparisonController(workspace, tab, reference, { view });
     controller.dispose(); assert.equal(workspace.ownsDocumentView(view), true); view.dispose();
-    const buffer = TextBuffer.from("a\r\nb\n").replace(1, 1, "\t"), display = workspace.createTextResourceFromBuffer({ scope: "test", resource: "reference", variant: "display" }, "Reference", { buffer, serverVersion: "v1" }, { edit: [], save: false, run: false });
+    const buffer = TextBuffer.from("a\r\nb\n").replace(1, 1, "\t"), display = workspace.createTextResourceFromBuffer({ scope: "test", resource: "reference", variant: "display" }, "Reference", { buffer, serverVersion: "v1" }, { edit: [], save: false });
     assert.equal(workspace.document(display.documentId).buffer, buffer); assert.equal(buffer.readMetrics().textExports, 0);
     for (const origin of ["human", "agent", "host"] as const) assert.equal(workspace.edit({ documentId: display.documentId, expectedRevision: 0, origin, edits: [{ from: 0, to: 0, insert: "bad" }] }).applied, false);
     workspace.releaseResource(display.id); assert.equal(workspace.diagnostics().leases, 0);

@@ -1,5 +1,6 @@
 import { TextBuffer } from "../../src/index.ts";
-import type { ComparisonBaseline, Observable, Operation, SavePort, SaveReview, SaveSubmission, TabTarget, TextResourceHandle, Workspace, WorkspaceCommands } from "../../src/index.ts";
+import type { ComparisonBaseline, Observable, Operation, SaveReview, SaveSubmission, TabTarget, TextResourceHandle, Workspace } from "../../src/index.ts";
+import type { SavePort, HostSaveQueue } from "../shared/save-queue.ts";
 import { HostCell } from "../shared/observable.ts";
 import { ReviewVariants } from "./variants.ts";
 
@@ -14,7 +15,7 @@ type ReviewPorts = Readonly<{ inputReady: () => boolean; presentation: () => Tab
 /** One source-save/reference owner, including the ordering shared by conflict and version reads. */
 export class HostSourceReview {
     private readonly workspace: Workspace;
-    private readonly commands: WorkspaceCommands;
+    private readonly saves: HostSaveQueue;
     private readonly source: TextResourceHandle;
     private readonly ports: ReviewPorts;
     private savedReference: ComparisonBaseline;
@@ -32,8 +33,8 @@ export class HostSourceReview {
         reference: Reference; currentRequest: () => boolean }[] = [];
     readonly variants: ReviewVariants;
     private disposed = false;
-    constructor(workspace: Workspace, commands: WorkspaceCommands, source: TextResourceHandle, ports: ReviewPorts) {
-        this.workspace = workspace; this.commands = commands; this.source = source; this.ports = ports;
+    constructor(workspace: Workspace, saves: HostSaveQueue, source: TextResourceHandle, ports: ReviewPorts) {
+        this.workspace = workspace; this.saves = saves; this.source = source; this.ports = ports;
         this.savedReference = Object.freeze({ buffer: workspace.document(source.documentId).buffer, version: "reference:saved-v0" });
         this.referenceCell = new HostCell<Reference>({ generation: 0, baseline: this.savedReference }); this.comparisonReference = this.referenceCell.observable;
         this.saveConflictPresentation = Object.freeze({ getSnapshot: () => this.presentationSnapshot(), subscribe: (listener: () => void) => {
@@ -76,7 +77,7 @@ export class HostSourceReview {
         if (!this.ports.inputReady()) return;
         const conflictId = this.conflictCell.get()?.id;
         let captured: SaveSubmission<string> | undefined;
-        this.ports.track(this.commands.save(this.workspace.captureSave(this.source, review), { save: submission => { captured = submission; return this.ports.save(submission); } })
+        this.ports.track(this.saves.save(this.workspace.captureSave(this.source, review), { save: submission => { captured = submission; return this.ports.save(submission); } })
             .then(result => {
                 if (!this.disposed && result.kind === "saved") {
                     this.variants.remember(this.savedReference);

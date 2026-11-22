@@ -233,7 +233,7 @@ the gutter-edge colors. `--st-comparison-removed` and `--st-comparison-added` se
 behind the changed characters. Choose colors that keep your syntax tokens legible on both backgrounds.
 
 The reference pane is read-only. Passing a workspace document displays it directly and follows
-its edits. An external baseline uses a private document with Save and Run disabled. It takes no tab
+its edits. An external baseline uses a private read-only document with Save disabled. It takes no tab
 and stays out of the workspace inventory. A host lease can retain it after comparison disposal.
 [Inventory visibility](workspace.md#inventory-visibility)
 

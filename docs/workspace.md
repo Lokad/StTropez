@@ -1,7 +1,7 @@
 # Workspace
 
 `Workspace` holds resources, document revisions and undo history. Views share text and keep
-independent selections. Hosts with panes or a tab strip can use `workspace.tabs`. `WorkspaceCommands` calls host services to save or run captured inputs.
+independent selections. Hosts with panes or a tab strip can use `workspace.tabs`. A save ticket captures the resource and revision for a host write.
 
 ## Use
 
@@ -9,7 +9,7 @@ Open a text resource and a typed panel in separate panes. A panel can store stru
 allocating a text document.
 
 ```ts
-import { Workspace, WorkspaceCommands } from "sttropez";
+import { Workspace } from "sttropez";
 
 export function createWorkset() {
     const workspace = new Workspace();
@@ -28,7 +28,7 @@ export function createWorkset() {
     const configurationTab = workspace.tabs.open(
         { kind: "panel", resourceId: configuration.id, panelType: "configuration" }, "side"
     );
-    return { workspace, commands: new WorkspaceCommands(workspace), source,
+    return { workspace, source,
         configuration, sourceTab, configurationTab };
 }
 ```
@@ -112,13 +112,13 @@ export function createReference(workspace: Workspace, buffer: TextBuffer) {
     const options: ResourceOptions = { visibility: "internal" };
     return workspace.createTextResourceFromBuffer(
         workspace.createResourceKey("review", "reference"), "Reference", { buffer },
-        { edit: [], save: false, run: false }, options
+        { edit: [], save: false }, options
     );
 }
 ```
 
 The workspace snapshot lists visible resources and documents. The tab handle lists visible tabs. Direct lookup, captures and leases also reach internal entries. `diagnostics()` counts
-both. Visibility grants no edit, Save or Run permissions. The creator closes internal tabs and
+both. Each resource retains its edit and Save permissions. The creator closes internal tabs and
 releases resources once views and leases allow it.
 
 `workspace.tabs.subscribe()` notifies on internal tab moves, replacements and closes, even when its visible array
@@ -367,7 +367,7 @@ prompt fails, finish the operation. A move preserves the decision. Closing, repl
 target expires it. Use `tabs.close` for an immediate decision or `tabs.captureClose` for an intent without a
 lease.
 
-### Save, conflicts and Run
+### Save and conflicts
 
 To install text that the host already has on disk or at the server, call `workspace.adoptSaved(resourceId,
 { text, serverVersion, history })`. Supply a string or `TextBuffer`. Listeners see the new revision, clean
@@ -382,32 +382,36 @@ several files. Each entry supplies `resourceId`, `text` and `serverVersion`. Inc
 any changes. One Undo from a changed file restores every changed file’s working text against its new
 saved baseline. A batch with `history: "reset"` clears history for the supplied documents.
 
-Use one `WorkspaceCommands` coordinator for related saves. `captureSave(resource, review?)` fixes
-the content and revision immediately. Pass the ticket to `commands.save(ticket, port)`. A queued
-save submits that captured content with the latest known saved server version as its write
-precondition. The workspace prevents simultaneous active write tickets across coordinators.
+Capture a ticket when the user chooses Save. If writes are queued, start the ticket when the
+preceding write for that resource settles. Its content and revision are fixed at capture. Its
+server precondition comes from the last acknowledged write at the time of submission.
 
 ```ts
-import { WorkspaceCommands } from "sttropez";
-import type { SavePort, SaveReview, TextResourceHandle, Workspace } from "sttropez";
+import type { SaveReview, SaveSubmission, TextResourceHandle, Workspace } from "sttropez";
 
-export function bindSave(
+export async function saveFile(
     workspace: Workspace, source: TextResourceHandle,
-    port: SavePort<string>, onError: (error: unknown) => void
+    write: (submission: SaveSubmission<string>) => Promise<
+        { kind: "saved"; serverVersion: string; canonical?: string } | { kind: "conflict"; serverVersion: string }>,
+    review?: SaveReview
 ) {
-    const commands = new WorkspaceCommands(workspace, onError);
-    return {
-        save: () => commands.save(workspace.captureSave(source), port),
-        saveReviewed: (review: SaveReview) => commands.save(workspace.captureSave(source, review), port)
-    };
+    const ticket = workspace.captureSave(source, review);
+    try {
+        const response = await write(ticket.start());
+        if (response.kind === "saved") return ticket.accept(response);
+        ticket.conflict();
+        return response;
+    } catch (error) {
+        ticket.fail();
+        throw error;
+    } finally {
+        ticket.finish();
+    }
 }
 ```
 
-Return `saved` with the server version and optional canonical value, or `conflict` with the competing
-version. A `SaveOutcome` reports saved, conflict or failed. Initial validation can throw before `save`
-returns. A service or queue failure invokes the error callback and returns `failed`. Even if the
-callback throws, the workspace releases the lease. Failure or conflict preserves the local text and
-previous baseline.
+Only one ticket can submit a write to a resource at a time. A conflict or service failure
+preserves its working text and saved baseline.
 
 A `SaveReceipt` records the submission, canonical saved value, new server version and whether the
 working copy adopted that value. The saved baseline advances on success. Replacing working text
@@ -438,16 +442,6 @@ and the remote version they saw. Capture rejects a stale target or revision, or 
 reservation. Submission also checks that the known saved version hasn’t changed. The next write uses
 the reviewed remote version as its precondition. If someone saves again first, expect another
 conflict. The baseline advances only on success.
-
-For a custom coordinator, `captureSave` exposes `start`, `accept`, `conflict`, `fail` and `finish`.
-Finish every ticket you take. `WorkspaceCommands` finishes accepted tickets. If another workspace’s
-coordinator rejects a ticket synchronously, the caller must finish it. Typed tickets preserve their
-submission and receipt types through the queue.
-
-`WorkspaceCommands.run(source, configuration, settings, port)` captures immutable resource
-targets, keys, revisions, values and server versions plus copied settings. It checks Run
-capability and retains both resources until settlement. It does not save; Run failures reject
-the returned promise. These callbacks perform no built-in networking, storage or execution.
 
 ### Observables
 
@@ -480,8 +474,8 @@ export function restrictPair(workspace: Workspace, first: ResourceId, second: Re
     // Resolve both targets before either write; batching itself provides no rollback.
     workspace.resource(first); workspace.resource(second);
     workspace.createNotificationScope().batch(() => {
-        workspace.setCapabilities(first, { edit: [], save: true, run: true });
-        workspace.setCapabilities(second, { edit: [], save: true, run: true });
+        workspace.setCapabilities(first, { edit: [], save: true });
+        workspace.setCapabilities(second, { edit: [], save: true });
     });
 }
 ```

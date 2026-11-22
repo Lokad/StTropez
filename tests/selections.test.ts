@@ -107,7 +107,7 @@ test("invalid, stale and unauthorized multi-range results cannot partially publi
     assert.throws(() => workspace.edit({ ...request, view: b, selectionSet: createSelectionSet(4, [{ anchor: 1, head: 1 }]) }));
     assert.throws(() => workspace.edit({ ...request, selection: { anchor: 0, head: 0 }, selectionSet: createSelectionSet(4, [{ anchor: 1, head: 1 }]) }));
     assert.deepEqual(workspace.edit({ ...request, expectedRevision: 1 }), { applied: false, reason: "stale-revision" });
-    workspace.setCapabilities(first.id, { edit: ["host"], save: true, run: true });
+    workspace.setCapabilities(first.id, { edit: ["host"], save: true });
     const locked = workspace.getSnapshot(); assert.deepEqual(workspace.edit(request), { applied: false, reason: "read-only" }); assert.strictEqual(workspace.getSnapshot(), locked);
     a.dispose(); b.dispose(); workspace.releaseResource(first.id, true); workspace.releaseResource(second.id, true);
 });

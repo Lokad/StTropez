@@ -1,7 +1,8 @@
 import { createWorkingSource } from "./working-source.ts";
 import { HostCell } from "../shared/observable.ts";
-import { TextBuffer, Workspace, WorkspaceCommands } from "../../src/index.ts";
-import type { ComparisonBaseline, DocumentId, DocumentView, TabId, TextEdit, TextResourceHandle } from "../../src/index.ts";
+import { TextBuffer, Workspace } from "../../src/index.ts";
+import { HostSaveQueue } from "../shared/save-queue.ts";
+import type { ComparisonBaseline, DocumentId, DocumentView, ResourceId, TabId, TextEdit, TextResourceHandle } from "../../src/index.ts";
 import { HostSourceReview, type SaveConflict } from "./source-review.ts";
 import { HostLayout } from "./layout.ts";
 import { HostLoadedSource } from "./loaded-source.ts";
@@ -10,7 +11,8 @@ import { HostTransfer } from "./transfers.ts";
 import { RunResources } from "./run-resources.ts";
 import { TransferInstruction } from "./instruction.ts";
 import { HostFixtureServices, SourceSaveFailure } from "./fixture-services.ts";
-import type { Connection, RunSettings, ServiceActivity } from "./fixture-services.ts";
+import { runWithResources, type RunSettings } from "./run-command.ts";
+import type { Connection, ServiceActivity, SubmittedRun } from "./fixture-services.ts";
 
 export type { Connection } from "./fixture-services.ts";
 type RecoveredInput = Readonly<{ documentId: DocumentId; expectedRevision: number; reason: string; contextFrom: number; attemptedText: string; attemptedEdit: TextEdit | null }>;
@@ -22,12 +24,14 @@ export type Activity = ServiceActivity & Readonly<{ pendingRuns: number; complet
 
 /** Persistent composition root shared by plain and React hosts; no DOM and no mirrored text cell. */
 export class HostController {
+    private readonly canRun: (resource: ResourceId) => boolean;
+    constructor(canRun: (resource: ResourceId) => boolean = () => true) { this.canRun = canRun; }
     readonly workspace = new Workspace({ onListenerError: error => this.reportError(error) });
-    readonly commands = new WorkspaceCommands(this.workspace, error => this.reportError(error));
+    readonly saves = new HostSaveQueue(this.workspace, error => this.reportError(error));
     readonly source = createWorkingSource(this.workspace, "source", "Primary source", { value: "start", serverVersion: "v0" });
     readonly connection = this.workspace.createResource<Connection>({ scope: "host-fixture", resource: "connection", variant: "working" }, "Connection", { value: { path: "source.csv", format: "csv" } });
-    readonly configurationSave = new ConfigurationSave(this.workspace, this.commands, this.connection, task => { void this.track(task); });
-    readonly transfer = new HostTransfer(this.workspace, this.commands, task => { void this.track(task); });
+    readonly configurationSave = new ConfigurationSave(this.workspace, this.saves, this.connection, task => { void this.track(task); });
+    readonly transfer = new HostTransfer(this.workspace, this.saves, task => { void this.track(task); });
     readonly runResources = new RunResources(this.workspace, this.source, this.connection, this.transfer.resource);
     readonly instruction = new TransferInstruction(this);
     private readonly presentation = new HostLayout(this.workspace, this.source, this.connection.id);
@@ -40,7 +44,7 @@ export class HostController {
     private readonly services = new HostFixtureServices(this.workspace.document(this.source.documentId).buffer, activity => this.updateActivity(activity));
     private readonly recoveryCell = new HostCell<Readonly<{ visible: boolean; items: readonly RecoveredInput[] }>>({ visible: false, items: [] });
     readonly recovery = this.recoveryCell.observable;
-    private readonly sourceReview = new HostSourceReview(this.workspace, this.commands, this.source, {
+    private readonly sourceReview = new HostSourceReview(this.workspace, this.saves, this.source, {
         inputReady: () => this.sourceInputReady(), presentation: () => this.presentation.presentation(), present: () => this.openReview(),
         server: () => this.services.server, save: submission => this.services.save(submission), track: task => { void this.track(task); },
         saved: revision => {
@@ -162,19 +166,23 @@ export class HostController {
     readonly saveReviewedSource = (expected: SaveConflict | null = this.saveConflict.getSnapshot()): void => this.safe(() => this.sourceReview.saveReviewedSource(expected));
     readonly finishSave = (): void => { this.services.finishSave(); };
     readonly failSave = (): void => { this.services.failSave(); };
+    private async submitRun<R>(submit: (input: SubmittedRun) => Promise<R>): Promise<R> {
+        if (![this.source.id, this.connection.id, this.transfer.resource.id].every(id => this.canRun(id))) throw new Error("Run permission denied.");
+        return runWithResources(this.workspace, this.source, this.connection, this.settingsCell.get(), submit);
+    }
     readonly run = async (): Promise<void> => {
         if (this.disposed || !this.sourceInputReady()) return;
         const validation = this.configurationSave.validation() ?? this.runResources.validation(); if (validation) { this.reportError(new Error(validation)); return; }
         let started = false;
-        await this.track(this.commands.run(this.source, this.connection, this.settingsCell.get(), { run: submission => {
+        await this.track(this.submitRun(submission => {
             const id = this.runResources.start(submission);
             const pending = this.services.run(submission, status => this.runResources.finish(id, status)); started = true;
             this.updateActivity({ pendingRuns: this.activityCell.get().pendingRuns + 1, lastRun: Object.freeze({ sourceRevision: submission.source.revision,
                 configurationRevision: submission.configuration.revision, mode: submission.settings.mode }) });
             return pending;
-        } }).then(() => { if (!this.disposed) this.updateActivity({ completedRuns: this.activityCell.get().completedRuns + 1, pendingRuns: this.activityCell.get().pendingRuns - 1 }); })
+        }).then(() => { if (!this.disposed) this.updateActivity({ completedRuns: this.activityCell.get().completedRuns + 1, pendingRuns: this.activityCell.get().pendingRuns - 1 }); })
             .catch(error => { if (!this.disposed && started) this.updateActivity({ pendingRuns: this.activityCell.get().pendingRuns - 1 });
-                if (!started) this.reportError(error); }));
+                this.reportError(error); }));
     };
     readonly finishRun = (): void => { this.services.finishRun(); };
     readonly failRun = (): void => { this.services.failRun(); };
@@ -186,11 +194,11 @@ export class HostController {
         const result = this.workspace.edit({ documentId: document.id, expectedRevision: document.revision, origin: "host",
             edits: [{ from: document.buffer.length, to: document.buffer.length, insert: "Q" }] });
         phases.push(`edit:${result.applied}`);
-        void this.track(this.commands.run(this.source, this.connection, this.settingsCell.get(), { run: async submission => { phases.push(`run:${submission.settings.mode}`); } }).catch(error => this.reportError(error)));
+        void this.track(this.submitRun(async submission => { phases.push(`run:${submission.settings.mode}`); }).catch(error => this.reportError(error)));
         void this.track(write.then(async () => {
             if (this.disposed) return;
             phases.push(`write:${this.settingsCell.get().mode}`);
-            await this.commands.run(this.source, this.connection, this.settingsCell.get(), { run: async submission => { phases.push(`run:${submission.settings.mode}`); } });
+            await this.submitRun(async submission => { phases.push(`run:${submission.settings.mode}`); });
             this.updateActivity({ ordering: Object.freeze(phases) });
         }).catch(error => this.reportError(error)));
     };

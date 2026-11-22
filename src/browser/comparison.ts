@@ -177,7 +177,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         if (disposed) return; state = controller.getSnapshot();
         if (state.baseline && !referenceEditor()) {
             if (typeof baseline !== "string") display = workspace.createTextResourceFromBuffer(workspace.createResourceKey("comparison", "baseline"), "Comparison baseline",
-                { buffer: state.baseline.buffer, serverVersion: state.baseline.version }, { edit: [], save: false, run: false }, { visibility: "internal" });
+                { buffer: state.baseline.buffer, serverVersion: state.baseline.version }, { edit: [], save: false }, { visibility: "internal" });
             const referenceId = typeof baseline === "string" ? baseline : display!.documentId;
             const mounted = mountEditor(referencePane.content, workspace, referenceId, { ariaLabel: "Comparison baseline source", readOnly: true, ...paneOptions }, foldContainsChange("baseline"));
             const editor = mounted.editor;

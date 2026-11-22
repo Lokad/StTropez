@@ -110,6 +110,7 @@ for (const asset of assets.assets) {
 const exportsResolution = reused?.exportsResolution ?? await qualifyPackageExports(project, consumer, assetRoot);
 const reactHost = reactOnly ? await (await import("./package-react-host.mjs")).stagePackagedReactHost(project, consumer) : undefined;
 const readinessFixture = !lspOnly && !deferredOnly ? await stageHostFixture(project, consumer, "examples/shared/readiness.ts", "readiness.ts") : undefined;
+if (!lspOnly && !deferredOnly) await stageHostFixture(project, consumer, "examples/shared/save-queue.ts", "save-queue.ts");
 const compilerOptions = { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true,
     skipLibCheck: false, noEmit: true, types: [], paths: {
         sttropez: [join(assetRoot, "index.d.ts")], "sttropez/browser": [join(assetRoot, "browser/index.d.ts")],
@@ -446,7 +447,7 @@ try {
     assert.equal(remountedComparison.internalBaseline, true);
     assert.equal(remountedComparison.viewId, retainedComparison.viewId); assert.deepEqual(remountedComparison.selection, retainedComparison.selection);
     const saveReview = await page.evaluate(() => window.consumer.saveReview());
-    assert.deepEqual(saveReview, { baselineBefore: "v0", precondition: "v1", saved: "saved", textAfter: "merged later", dirtyAfter: true,
+    assert.deepEqual(saveReview, { baselineBefore: "v0", precondition: "v1", savedValue: "merged", textAfter: "merged later", dirtyAfter: true,
         cleanAfterUndo: true, serverVersion: "v2", leases: 0 });
     const graphemes = await page.evaluate(() => window.consumer.graphemes());
     assert.deepEqual(graphemes, { version: "18.0.0", boundaries: [0, 4, 9, 11], coordinate: "buffer", released: true, exports: 0 });

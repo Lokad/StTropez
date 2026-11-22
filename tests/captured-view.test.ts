@@ -15,13 +15,13 @@ function fixture(t: TestContext) {
 }
 
 test("read captures survive expanded fold metadata and defer abort handlers beyond observer delivery", async t => {
-    const f = fixture(t); f.workspace.setCapabilities(f.source.id, { edit: ["host"], save: true, run: true });
+    const f = fixture(t); f.workspace.setCapabilities(f.source.id, { edit: ["host"], save: true });
     const captured = captureViewRequest(f.workspace, f.target, f.view); assert.ok(captured);
     assert.equal(captureViewRequest(f.workspace, f.target, f.view, { editOrigin: "human" }), undefined);
     assert.ok(Object.isFrozen(captured)); assert.equal(captured.document.id, f.source.documentId);
     f.view.folding.setRanges(f.view.folding.getSnapshot(), [{ id: "body", from: 0, to: captured.document.buffer.length, collapsed: false }]);
     assert.notEqual(f.view.folding.getSnapshot().generation, captured.folding.generation); assert.equal(captured.isCurrent(), true);
-    f.workspace.setCapabilities(f.source.id, { edit: ["host"], save: false, run: true }); assert.equal(captured.isCurrent(), true);
+    f.workspace.setCapabilities(f.source.id, { edit: ["host"], save: false }); assert.equal(captured.isCurrent(), true);
     let aborted = 0;
     captured.signal.addEventListener("abort", () => {
         aborted++;

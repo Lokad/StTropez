@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Workspace, WorkspaceCommands, applyTextEdits, anchoredRange } from "../src/index.ts";
+import { Workspace, applyTextEdits, anchoredRange } from "../src/index.ts";
+import { HostSaveQueue } from "../examples/shared/save-queue.ts";
 import type { DocumentId, EditKind, HistoryOptions, Selection } from "../src/index.ts";
 import { corpus, editLog } from "../fixtures/workloads.ts";
 import { TextHistory } from "../src/core/history.ts";
@@ -120,7 +121,7 @@ test("workspace snapshots export text only through explicit captured readers", (
     assert.deepEqual([anchor.from, anchor.to], [102, 132]);
     const current = document(); assert.notEqual(current.buffer, saved); assert.equal(current.buffer.length, saved.length + 2);
     const lease = workspace.acquireEditLease(source.id, "synthetic", "host"); lease.release();
-    workspace.setCapabilities(source.id, { edit: ["human"], save: true, run: true });
+    workspace.setCapabilities(source.id, { edit: ["human"], save: true });
     for (const snapshot of [first, firstResource, current, source.getSnapshot(), workspace.getSnapshot()]) {
         const spread = { ...snapshot }, assigned = Object.assign({}, snapshot);
         assert.deepEqual(Object.keys(spread), Object.keys(assigned)); JSON.stringify(spread); JSON.stringify(snapshot);
@@ -143,7 +144,7 @@ test("explicit consecutive groups, origins, standalone intents and saved boundar
     const { workspace, source, document, state, replace, undo, redo } = fixture();
     replace("abcd", "typing", "typing-one"); replace("abcde", "typing", "typing-one");
     assert.equal(state.getSnapshot().undoDepth, 1);
-    const commands = new WorkspaceCommands(workspace);
+    const commands = new HostSaveQueue(workspace);
     const saved = await commands.save(workspace.captureSave(source), { save: async () => ({ kind: "saved", serverVersion: "v1" }) }); assert.equal(saved.kind, "saved");
     replace("abcdef", "typing", "typing-one"); assert.equal(state.getSnapshot().undoDepth, 2);
     const beforeUndo = document().revision; assert.equal(undo().applied, true);
@@ -206,7 +207,7 @@ test("undo restores selections inside a host replacement only to the views that 
 test("typing grouping is local to its document while unrelated live traffic and saves continue", async () => {
     const { workspace, source, document, replace, state, undo } = fixture();
     const other = workspace.createTextResource({ scope: "history", resource: "background", variant: "working" }, "Background", { value: "0" });
-    const commands = new WorkspaceCommands(workspace);
+    const commands = new HostSaveQueue(workspace);
     for (let index = 1; index <= 3; index++) {
         replace(`abc${"x".repeat(index)}`, "typing", "continuous");
         workspace.edit({ documentId: other.documentId, expectedRevision: workspace.document(other.documentId).revision,
@@ -234,9 +235,9 @@ test("multi-document edits preflight every target, publish coherently, and undo/
     });
     assert.equal(workspace.editDocuments(requests()).applied, true); unsubscribe(); assert.equal(notifications, 1);
     assert.equal(document().change!.transactionId, workspace.document(other.documentId).change!.transactionId);
-    workspace.setCapabilities(other.id, { edit: [], save: true, run: true }); const locked = workspace.getSnapshot();
+    workspace.setCapabilities(other.id, { edit: [], save: true }); const locked = workspace.getSnapshot();
     assert.deepEqual(workspace.undo({ documentId: source.documentId, expectedRevision: 1 }), { applied: false, reason: "read-only" }); assert.equal(workspace.getSnapshot(), locked);
-    workspace.setCapabilities(other.id, { edit: ["human", "host"], save: true, run: true });
+    workspace.setCapabilities(other.id, { edit: ["human", "host"], save: true });
     assert.equal(workspace.undo({ documentId: source.documentId, expectedRevision: 1 }).applied, true);
     assert.equal(document().text(), "abc"); assert.equal(workspace.document(other.documentId).text(), "xyz");
     assert.equal(source.metadata.getSnapshot().dirty, false); assert.equal(other.metadata.getSnapshot().dirty, false);
@@ -357,7 +358,7 @@ test("no-op/malformed/stale edits publish no history or text and reject foreign 
 
 test("canonical saves and deferred receipts remain exact through undo and redo, with reload as a history boundary", async () => {
     const { workspace, source, document, replace, undo, redo, state } = fixture();
-    replace("local"); const commands = new WorkspaceCommands(workspace);
+    replace("local"); const commands = new HostSaveQueue(workspace);
     const saved = await commands.save(workspace.captureSave(source), { save: async () => ({ kind: "saved", serverVersion: "v1", canonical: "LOCAL" }) });
     assert.ok(saved.kind === "saved" && saved.receipt.canonicalApplied); undo(); assert.equal(document().text(), "local"); assert.equal(source.metadata.getSnapshot().dirty, true);
     redo(); assert.equal(document().text(), "LOCAL"); assert.equal(source.metadata.getSnapshot().dirty, false);

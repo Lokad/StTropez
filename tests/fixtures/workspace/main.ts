@@ -1,6 +1,9 @@
+import { runWithResources } from "../../../examples/hosts/run-command.ts";
 import { mountTextareaEditor } from "../../../fixtures/textarea-editor.ts";
-import { Workspace, WorkspaceCommands } from "../../../src/index.ts";
-import type { SaveResponse, SaveSubmission } from "../../../src/index.ts";
+import { Workspace } from "../../../src/index.ts";
+import { HostSaveQueue } from "../../../examples/shared/save-queue.ts";
+import type { SaveSubmission } from "../../../src/index.ts";
+import type { SaveResponse } from "../../../examples/shared/save-queue.ts";
 import { inputConflictEvent } from "../../../src/browser/index.ts";
 import type { InputConflictDetail } from "../../../src/browser/index.ts";
 import "./style.css";
@@ -22,7 +25,7 @@ function track<T>(pending: Promise<T>): Promise<T> {
     return pending;
 }
 const commandErrors: string[] = [];
-const commands = new WorkspaceCommands(workspace, () => { if (!disposed) commandErrors.push("Synthetic command failure"); });
+const commands = new HostSaveQueue(workspace, () => { if (!disposed) commandErrors.push("Synthetic command failure"); });
 const documentId = workspace.createDocument({ scope: "demo", resource: "transform", variant: "working" },
     "Transform source", "// Synthetic sample\nconst rows = [12, 18, 24];\nconst total = rows.reduce((sum, value) => sum + value, 0);\n");
 const sourceTab = workspace.tabs.open({ kind: "text", documentId }, "left");
@@ -94,10 +97,10 @@ finish.addEventListener("click", () => {
 }, { signal: events.signal });
 const run = document.createElement("button"); run.textContent = "Run preview";
 run.addEventListener("click", () => {
-    void track(commands.run(source, connection, { mode: "preview" }, { run: async submission => {
+    void track(runWithResources(workspace, source, connection, { mode: "preview" }, async submission => {
         lastRun = Object.freeze({ sourceRevision: submission.source.revision, configurationRevision: submission.configuration.revision,
             sourceLength: submission.source.value.length, pathLength: submission.configuration.value.path.length });
-    } })).catch(() => {}); // WorkspaceCommands reports command errors through its captured callback.
+    })).catch(() => { if (!disposed) commandErrors.push("Synthetic command failure"); });
 }, { signal: events.signal });
 element("tabs").append(save, finish, run);
 window.addEventListener("pagehide", event => { if (!event.persisted) void dispose().catch(error => console.error(error)); }, { signal: events.signal });
@@ -162,7 +165,7 @@ const instrumentation = {
     readyAt: performance.now(),
     dispose,
     diagnostics: () => ({ ...workspace.diagnostics(), disposed, pendingCommands: operations.size, pendingSaves: pendingSaves.length, frames: frames.size }),
-    setReadOnly: (readOnly: boolean) => workspace.setCapabilities(source.id, { edit: readOnly ? [] : ["human", "agent", "host"], save: true, run: true }),
+    setReadOnly: (readOnly: boolean) => workspace.setCapabilities(source.id, { edit: readOnly ? [] : ["human", "agent", "host"], save: true }),
     snapshot: () => ({ revision: workspace.getSnapshot().revision,
         resources: workspace.getSnapshot().resources.map(resource => ({ id: resource.id, kind: resource.kind,
             state: resource.state, dirty: resource.dirty })),

@@ -272,7 +272,7 @@ catch any final uncommitted input.
 
 ### Save, Run and draft recovery
 
-Use [workspace save, conflict and Run](workspace.md#save-conflicts-and-run) to call host services.
+Write the [captured save ticket](workspace.md#save-and-conflicts) through your storage service. Run belongs to the host, which chooses the inputs, permissions and execution service.
 Choose your endpoints and conditional-write checks, and decide how users review a conflict. Keep
 rejected editor input separate from a storage conflict. Writing a recovery draft leaves the service
 and Run untouched.

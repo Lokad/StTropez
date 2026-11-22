@@ -48,7 +48,7 @@ export function ownsTextSurface(workspace: Workspace, view: DocumentView, target
 }
 export type ResourceKey = Readonly<{ scope: string; resource: string; variant: string }>;
 export type EditOrigin = "human" | "agent" | "host";
-export type Capabilities = Readonly<{ edit: readonly EditOrigin[]; save: boolean; run: boolean }>;
+export type Capabilities = Readonly<{ edit: readonly EditOrigin[]; save: boolean }>;
 export type ResourceVisibility = "workspace" | "internal";
 export type ResourceOptions = Readonly<{ visibility?: ResourceVisibility }>;
 export type DocumentLanguage = Readonly<{ uri: string; languageId: string }>;
@@ -161,9 +161,9 @@ type ResourceRecord = {
     leases: Set<symbol>;
     saveReservations: number; reloadReservations: number; saving: symbol | null; editLease: EditLease | null;
 };
-const defaultCapabilities: Capabilities = Object.freeze({ edit: Object.freeze(["human", "agent", "host"] as const), save: true, run: true });
+const defaultCapabilities: Capabilities = Object.freeze({ edit: Object.freeze(["human", "agent", "host"] as const), save: true });
 function capabilities(value: Capabilities): Capabilities {
-    return Object.freeze({ edit: Object.freeze([...new Set(value.edit)]), save: value.save, run: value.run });
+    return Object.freeze({ edit: Object.freeze([...new Set(value.edit)]), save: value.save });
 }
 function sameMetadata(a: ResourceMetadata, b: ResourceMetadata): boolean {
     return (Object.keys(a) as (keyof ResourceMetadata)[]).every(key => a[key] === b[key]);
@@ -581,7 +581,7 @@ export class Workspace {
         this.scope.assertWritable();
         const record = this.requireResource(id), state = record.state.get();
         const next = capabilities(permissions), current = state.metadata.capabilities;
-        if (next.save === current.save && next.run === current.run && next.edit.length === current.edit.length
+        if (next.save === current.save && next.edit.length === current.edit.length
             && next.edit.every(origin => current.edit.includes(origin))) return;
         this.commitRecord(record, withMetadata(state, { ...state.metadata, capabilities: next }));
     }

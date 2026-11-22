@@ -12,7 +12,7 @@ const workspace = new Workspace();
 const workingBuffer = TextBuffer.from("const title = 'Working';\r\n// shared separator\r\nconst count = 2;\r\n// shared boundary\r\n\treturn title;\r\n// working note\r\n");
 const resource = workspace.createTextResourceFromBuffer({ scope: "fixture", resource: "working", variant: "source" }, "Working source",
     { buffer: workingBuffer, serverVersion: fixedRevisions ? "saved-2" : "saved-1" },
-    fixedRevisions ? { edit: [], save: false, run: false } : undefined);
+    fixedRevisions ? { edit: [], save: false } : undefined);
 const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "main");
 const customControls = options.get("controls") === "host";
 const comparison = mountTextComparison(document.querySelector<HTMLElement>("#comparison")!, workspace, tab,
@@ -60,7 +60,7 @@ const fixture = Object.freeze({ snapshot, setText, begin, finish, dispose, revie
     select: (selection: Selection) => comparison.controller.view.setSelection(workspace.document(resource.documentId).revision, selection),
     range: (from: number, to: number) => workspace.document(resource.documentId).buffer.slice(from, to),
     baselineRange: (from: number, to: number) => comparison.controller.getSnapshot().baseline?.buffer.slice(from, to),
-    readOnly: (value: boolean) => workspace.setCapabilities(resource.id, { edit: value ? [] : ["human", "agent", "host"], save: true, run: true }),
+    readOnly: (value: boolean) => workspace.setCapabilities(resource.id, { edit: value ? [] : ["human", "agent", "host"], save: true }),
     replaceTab: () => { const documentId = workspace.createDocument({ scope: "fixture", resource: "replacement", variant: "source" }, "Replacement", "replacement"); workspace.tabs.replace(tab, { kind: "text", documentId }); },
     moveTab: () => workspace.tabs.move(tab, "moved"), history });
 declare global { interface Window { comparisonFixture: typeof fixture } }

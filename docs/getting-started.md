@@ -11,7 +11,7 @@ and each mounted pane scrolls independently. The host owns storage, execution an
 
 | Public import | Use it to |
 | --- | --- |
-| `sttropez` | Open files and edit shared text with the headless `Workspace`. Pass host save and Run functions to `WorkspaceCommands`. |
+| `sttropez` | Open files and edit shared text with the headless `Workspace`. Capture a ticket when saving. |
 | `sttropez/browser` | Mount the DOM editor with `mountTextEditor`, review changes with `mountTextComparison`, or open a WebSocket transport. |
 | `sttropez/protocol` | Share an `LspWorkspace` across views. The host supplies its transport and scheduler. |
 
@@ -280,43 +280,42 @@ showDirty();
 
 The example writes to session storage and keeps each successful save as a review baseline.
 `captureSave` fixes the text before the write starts. If the user keeps typing, the later edits stay
-unsaved. For shared storage, check `expectedServerVersion` and return
-`{ kind: "conflict", serverVersion }` if someone else saved first.
+unsaved. For shared storage, send `expectedServerVersion` with the write. Call `ticket.conflict()`
+if the server reports a competing version.
 
 ```js
-import { TextBuffer, WorkspaceCommands } from "sttropez";
+import { TextBuffer } from "sttropez";
 
-const commands = new WorkspaceCommands(workspace, console.error);
 let baseline = { buffer: TextBuffer.from(openedText), version: "opened" };
-button("Save", async () => {
-    const result = await commands.save(workspace.captureSave(file), {
-        async save({ value }) {
-            sessionStorage.setItem(name, value);
-            return { kind: "saved", serverVersion: crypto.randomUUID() };
-        }
-    });
-    if (result.kind === "saved") {
-        baseline = { buffer: TextBuffer.from(result.receipt.savedValue), version: result.receipt.serverVersion };
+button("Save", () => {
+    const ticket = workspace.captureSave(file);
+    try {
+        sessionStorage.setItem(name, ticket.start().value);
+        const receipt = ticket.accept({ serverVersion: crypto.randomUUID() });
+        baseline = { buffer: TextBuffer.from(receipt.savedValue), version: receipt.serverVersion };
+        output.textContent = "Saved";
+    } catch (error) {
+        ticket.fail();
+        output.textContent = String(error);
+    } finally {
+        ticket.finish();
     }
-    output.textContent = result.kind;
 });
 ```
 
 #### Run a check on the draft
 
-This host counts unfinished tasks. `run` captures the working
-file, configuration and settings together when clicked, including unsaved edits.
+This host counts unfinished tasks using the current draft and the configured marker.
 
 ```js
 const rules = workspace.createResource(
     { scope: "checklist", resource: "rules", variant: "working" },
     "Checklist rules", { value: { marker: "- [ ] " } });
-button("Run", async () => {
-    const count = await commands.run(file, rules, {}, {
-        async run({ source, configuration }) {
-            return source.value.split("\n").filter(line => line.startsWith(configuration.value.marker)).length;
-        }
-    });
+button("Run", () => {
+    const draft = file.getSnapshot(), config = rules.getSnapshot();
+    if (draft.state !== "ready" || config.state !== "ready") return;
+    const marker = config.value().marker;
+    const count = draft.value().split("\n").filter(line => line.startsWith(marker)).length;
     output.textContent = `${count} open tasks`;
 });
 ```
@@ -381,7 +380,7 @@ apply the plan with `applyLspWorkspaceEdit`. One undo restores every affected fi
 
 A revision changes when you edit or undo. The saved version changes when your storage service
 acknowledges a write. Undo back to the saved text and the file is clean again.
-[Save and conflicts](workspace.md#save-conflicts-and-run)
+[Save and conflicts](workspace.md#save-and-conflicts)
 
 ## Host responsibilities
 

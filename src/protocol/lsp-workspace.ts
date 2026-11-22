@@ -279,7 +279,7 @@ export class LspWorkspace {
                 if (source.text.length > limit) throw new RangeError("LSP target size limit exceeded.");
                 const buffer = typeof source.text === "string" ? TextBuffer.from(source.text) : source.text;
                 const resource = this.workspace.createTextResourceFromBuffer(this.workspace.createResourceKey("lsp", uri), uri, { buffer },
-                    { edit: [], save: false, run: false }, { visibility: "internal", language: { uri, languageId: source.languageId } });
+                    { edit: [], save: false }, { visibility: "internal", language: { uri, languageId: source.languageId } });
                 lease = this.workspace.acquire(resource.id);
                 this.workspace.releaseResourceWhenUnowned(resource.id);
                 doc = this.workspace.document(resource.documentId);

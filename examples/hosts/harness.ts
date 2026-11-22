@@ -54,7 +54,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => bindings.selectSource(id, revision, selection),
         selectSourceSet: (id: "primary" | "secondary" | "comparison", revision: number, ranges: readonly Selection[], primary = 0) => bindings.selectSourceSet(id, revision, ranges, primary),
         configureSource: (id: "primary" | "secondary" | "comparison", configuration: import("../../src/index.ts").LanguageConfiguration) => bindings.configureSource(id, configuration),
-        setSourceReadOnly: (value: boolean) => controller.workspace.setCapabilities(controller.source.id, { edit: value ? ["host"] : ["human", "host", "agent"], save: true, run: true }),
+        setSourceReadOnly: (value: boolean) => controller.workspace.setCapabilities(controller.source.id, { edit: value ? ["host"] : ["human", "host", "agent"], save: true }),
         cycleSourceEditLease: () => { const lease = controller.workspace.acquireEditLease(controller.source.id, "host-fixture", "host"); lease.release(); },
         openTransferTarget: (text: string) => {
             if (lifecycle.disposed || transferTarget) throw new Error("Transfer target cannot be mounted.");
@@ -72,7 +72,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         transferSnapshot,
         editTransferTarget: (expectedRevision: number, edits: readonly TextEdit[]) => controller.workspace.edit({ documentId: transferSnapshot().documentId, expectedRevision, edits, origin: "host" }),
         setTransferReadOnly: (value: boolean) => { if (!transferTarget) throw new Error("No transfer target is mounted.");
-            controller.workspace.setCapabilities(transferTarget.id, { edit: value ? ["host"] : ["human", "host"], save: true, run: false }); },
+            controller.workspace.setCapabilities(transferTarget.id, { edit: value ? ["host"] : ["human", "host"], save: true }); },
         setProviderDelay: (delay: number) => bindings.language.setDelay(delay), faultProviderNext: (fault: "malformed" | "failure") => bindings.language.faultNext(fault),
         providerCustom: (method: string, params: JsonValue) => bindings.language.customRequest(method, params),
         providerState: () => bindings.language.state.getSnapshot().provider,

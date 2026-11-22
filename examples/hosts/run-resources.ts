@@ -1,5 +1,6 @@
 import { HostCell } from "../shared/observable.ts";
-import type { ResourceHandle, ResourceId, ResourceLease, RunSubmission, TabId, TextResourceHandle, Workspace } from "../../src/index.ts";
+import type { ResourceHandle, ResourceId, ResourceLease, TabId, TextResourceHandle, Workspace } from "../../src/index.ts";
+import type { SubmittedRun } from "./fixture-services.ts";
 import type { Connection } from "./controller.ts";
 import type { TransferSettings } from "./transfers.ts";
 import { transferValidation } from "./transfers.ts";
@@ -12,7 +13,7 @@ type RunLog = Readonly<{ kind: "log"; runId: ResourceId; ordinal: number; messag
 type RunInfo = Readonly<{ id: ResourceId; number: number; status: Status; progress: number; logs: readonly ResourceId[] }>;
 type Inspection = Readonly<{ id: ResourceId; title: string; text: string; preview: string | null; links: readonly Readonly<{ label: string; id: ResourceId }>[] }>;
 export type RunResourcesSnapshot = Readonly<{ runs: readonly RunInfo[]; selected: ResourceId | null; inspection: Inspection | null }>;
-const inspectionPermissions = Object.freeze({ edit: Object.freeze([]), save: false, run: false });
+const inspectionPermissions = Object.freeze({ edit: Object.freeze([]), save: false });
 
 /** Immutable captured inputs/log entries; transient progress and inspector selection belong to the host. */
 export class RunResources {
@@ -30,8 +31,8 @@ export class RunResources {
     constructor(workspace: Workspace, source: TextResourceHandle, configuration: ResourceHandle<Connection>, transfer: ResourceHandle<TransferSettings>) {
         this.workspace = workspace; this.source = source; this.configuration = configuration; this.transfer = transfer;
     }
-    validation(): string | null { const s = this.transfer.getSnapshot(); return s.state !== "ready" || !s.metadata.capabilities.run ? "Transfer settings are unavailable for Run." : transferValidation(s.value()); }
-    start(submission: RunSubmission<string, Connection, Readonly<{ mode: string }>>): ResourceId {
+    validation(): string | null { const s = this.transfer.getSnapshot(); return s.state !== "ready" ? "Transfer settings are unavailable for Run." : transferValidation(s.value()); }
+    start(submission: SubmittedRun): ResourceId {
         if (this.disposed) throw new Error("Run resources are disposed.");
         const error = this.validation(), transfer = this.transfer.getSnapshot(); if (error || transfer.state !== "ready") throw new Error(error ?? "Transfer settings unavailable.");
         const lease = this.workspace.acquire(this.transfer.id), number = ++this.serial;

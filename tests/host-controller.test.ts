@@ -1,3 +1,4 @@
+import type { ResourceId } from "../src/index.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { HostController } from "../examples/hosts/controller.ts";
@@ -244,7 +245,8 @@ test("host disposal retains an applied proposal as an ordinary unsaved document"
 });
 
 test("parallel Run captures, denied submission and older results keep independent counts and targets", async () => {
-    const host = new HostController();
+    const denied = new Set<ResourceId>();
+    const host = new HostController(id => !denied.has(id));
     try {
         const first = host.run(); host.setPath("second.csv");
         host.workspace.edit({ documentId: host.source.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 5, insert: "second source" }] });
@@ -252,7 +254,7 @@ test("parallel Run captures, denied submission and older results keep independen
         assert.equal(host.debug().activity.pendingRuns, 2);
         assert.deepEqual(host.runCapture(0), { source: "start", configuration: { path: "source.csv", format: "csv" }, settings: { mode: "preview" } });
         assert.deepEqual(host.runCapture(1), { source: "second source", configuration: { path: "second.csv", format: "csv" }, settings: { mode: "preview" } });
-        host.workspace.setCapabilities(host.source.id, { edit: ["human", "host", "agent"], save: true, run: false });
+        denied.add(host.source.id);
         await host.run(); assert.equal(host.debug().activity.pendingRuns, 2); assert.equal(host.debug().activity.errors, 1);
         const latest = host.debug().activity.lastRun;
         host.finishRun(); await first;

@@ -76,11 +76,11 @@ test("workspace-edit preflight and core validation refuse a bad last target with
     }
     reject(withLast({ ...last!, edits: [{ from: 0, to: 1000, insert: "invalid" }] }), /range|bound|length/i);
     reject({ ...plan, documents: [...plan.documents, first!] }, /once/);
-    f.workspace.setCapabilities(f.resources[1]!.id, { edit: ["host"], save: true, run: false });
+    f.workspace.setCapabilities(f.resources[1]!.id, { edit: ["host"], save: true });
     reject(plan, /read-only/);
-    f.workspace.setCapabilities(f.resources[1]!.id, { edit: ["human"], save: true, run: false });
+    f.workspace.setCapabilities(f.resources[1]!.id, { edit: ["human"], save: true });
     reject(plan, /read-only/);
-    f.workspace.setCapabilities(f.resources[1]!.id, { edit: ["human", "host"], save: true, run: false });
+    f.workspace.setCapabilities(f.resources[1]!.id, { edit: ["human", "host"], save: true });
     const lock = f.workspace.acquireEditLease(f.resources[1]!.id, "locked", "host");
     try { reject(plan, /edit-locked/); } finally { lock.release(); }
     const foreign = new Workspace(), foreignId = foreign.createDocument({ scope: "foreign", resource: "source", variant: "working" }, "Foreign", "text"), foreignView = foreign.createDocumentView(foreignId);

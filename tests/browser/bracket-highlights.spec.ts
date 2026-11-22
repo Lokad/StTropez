@@ -68,7 +68,7 @@ for (const shadow of [false, true]) test(`${shadow ? "shadow" : "document"} brac
     expect(await page.locator(".st-matching-bracket.st-viewport-selected").evaluate(node => getComputedStyle(node).backgroundColor)).toBe("rgb(36, 73, 107)");
     await page.getByRole("button", { name: "Outside" }).click(); await settled(page); await expect(marks(page)).toHaveCount(0);
     await input(page).focus(); await settled(page); await expect(marks(page)).toHaveText(["(", ")"]);
-    await page.evaluate(() => { const f = window.bracketFixture; f.workspace.setCapabilities(f.resource, { edit: ["host"], save: true, run: true }); });
+    await page.evaluate(() => { const f = window.bracketFixture; f.workspace.setCapabilities(f.resource, { edit: ["host"], save: true }); });
     await expect(input(page)).toHaveJSProperty("readOnly", true); await expect(marks(page)).toHaveCount(2);
     await page.evaluate(() => window.bracketFixture.editor.configure({ language: { pairs: [] } })); await settled(page); await expect(marks(page)).toHaveCount(0);
     await page.evaluate(() => window.bracketFixture.editor.configure({ bracketMatching: false })); expect((await state(page)).status).toBe("disabled");

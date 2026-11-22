@@ -65,7 +65,7 @@ const fixture = { ready: true, setText, edit, select, history,
     range: (from: number, to: number) => workspace.document(source.documentId).buffer.slice(from, to),
     coords: (offset: number, affinity: "before" | "after" = "after") => editors.primary.viewport.coordsAt(offset, affinity),
     hit: (x: number, y: number) => editors.primary.viewport.hitTest(x, y),
-    readOnly: (value: boolean) => workspace.setCapabilities(source.id, { edit: value ? ["host"] : ["human", "host", "agent"], save: true, run: true }),
+    readOnly: (value: boolean) => workspace.setCapabilities(source.id, { edit: value ? ["host"] : ["human", "host", "agent"], save: true }),
     replacePrimary: () => workspace.tabs.replace(primaryTab, { kind: "text", documentId: source.documentId }),
     snapshot: () => {
         const current = workspace.getSnapshot().documents.find(document => document.id === source.documentId);

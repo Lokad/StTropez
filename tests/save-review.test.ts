@@ -1,13 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { TextBuffer, Workspace, WorkspaceCommands } from "../src/index.ts";
-import type { SaveResponse, SaveSubmission, TextTransaction } from "../src/index.ts";
+import { TextBuffer, Workspace } from "../src/index.ts";
+import { HostSaveQueue } from "../examples/shared/save-queue.ts";
+import type { SaveSubmission, TextTransaction } from "../src/index.ts";
+import type { SaveResponse } from "../examples/shared/save-queue.ts";
 
 function fixture() {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "review", resource: "source", variant: "working" }, "Source", { value: "base", serverVersion: "v0" });
     const edit = (text: string) => { const current = workspace.document(source.documentId); return workspace.edit({ documentId: current.id, expectedRevision: current.revision,
         origin: "human", edits: [{ from: 0, to: current.buffer.length, insert: text }] }); };
-    return { workspace, source, edit, commands: new WorkspaceCommands(workspace) };
+    return { workspace, source, edit, commands: new HostSaveQueue(workspace) };
 }
 
 test("successive edits publish one revision, map other views and undo together", () => {
@@ -139,7 +141,7 @@ test("saved text respects outstanding saves, reload reservations and dirty read-
     const lease = workspace.acquire(source.id, { preventReload: true });
     assert.equal(workspace.adoptSaved(source.id, next).applied, false); lease.release();
     assert.equal(source.getSnapshot().revision, state.revision);
-    workspace.setCapabilities(source.id, { edit: [], save: false, run: false });
+    workspace.setCapabilities(source.id, { edit: [], save: false });
     assert.deepEqual(workspace.adoptSaved(source.id, next), { applied: false, reason: "read-only" });
     assert.equal(workspace.document(source.documentId).buffer.slice(0, 5), "local");
 });
@@ -198,7 +200,7 @@ test("a review version is copied at capture and an intervening local receipt exp
 
 
 test("typed resources use the reviewed precondition without acquiring a text document", async () => {
-    const workspace = new Workspace(), commands = new WorkspaceCommands(workspace);
+    const workspace = new Workspace(), commands = new HostSaveQueue(workspace);
     const form = workspace.createResource({ scope: "review", resource: "form", variant: "working" }, "Form", { value: { path: "base.csv" }, serverVersion: "v0" });
     workspace.updateResource(form, { expectedRevision: 0, origin: "human", value: { path: "merged.csv" } });
     const result = await commands.save(workspace.captureSave(form, { target: workspace.captureResource(form.id), expectedRevision: 1, expectedServerVersion: "v1" }), { save: async submission => {

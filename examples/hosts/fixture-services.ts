@@ -1,16 +1,17 @@
 import { TextBuffer } from "../../src/index.ts";
-import type { RunSubmission, SaveResponse, SaveSubmission, SnapshotValue } from "../../src/index.ts";
+import type { SaveSubmission, SnapshotValue } from "../../src/index.ts";
+import type { SaveResponse } from "../shared/save-queue.ts";
+import type { RunSubmission } from "./run-command.ts";
 
 export type Connection = Readonly<{ path: string; format: "csv"; [key: string]: SnapshotValue }>;
-export type RunSettings = Readonly<{ mode: "preview" | "inspect" }>;
 export type ServiceActivity = Readonly<{ writes: number }>;
 export class SourceSaveFailure extends Error {}
-type RunInput = RunSubmission<string, Connection, RunSettings>;
+export type SubmittedRun = RunSubmission<string, Connection>;
 
 /** Deferred services for the host example. Captures, review and application remain in their owners. */
 export class HostFixtureServices {
     private readonly saves: { submission: SaveSubmission<string>; resolve: (response: SaveResponse<string>) => void; reject: (error: unknown) => void }[] = [];
-    private readonly runs: { submission: RunInput; resolve: () => void; reject: (error: unknown) => void }[] = [];
+    private readonly runs: { submission: SubmittedRun; resolve: () => void; reject: (error: unknown) => void }[] = [];
     private version = "v0";
     private serial = 0;
     private buffer: TextBuffer;
@@ -39,7 +40,7 @@ export class HostFixtureServices {
         if (this.disposed) return;
         this.buffer = TextBuffer.from(text); this.version = `v${++this.serial}`;
     }
-    run(submission: RunInput, settled: (status: "completed" | "failed" | "interrupted") => void): Promise<void> {
+    run(submission: SubmittedRun, settled: (status: "completed" | "failed" | "interrupted") => void): Promise<void> {
         if (this.disposed) { settled("interrupted"); return Promise.resolve(); }
         return new Promise((resolve, reject) => this.runs.push({ submission,
             resolve: () => { settled(this.disposed ? "interrupted" : "completed"); resolve(); },

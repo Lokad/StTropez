@@ -1,4 +1,5 @@
-import type { SnapshotValue, Workspace, WorkspaceCommands } from "../../src/index.ts";
+import type { SnapshotValue, Workspace } from "../../src/index.ts";
+import type { HostSaveQueue } from "../shared/save-queue.ts";
 import { FormSave } from "./form-save.ts";
 
 export type TransferSettings = Readonly<{ destination: string; batchSize: string; [key: string]: SnapshotValue }>;
@@ -11,10 +12,10 @@ export class HostTransfer {
     readonly resource;
     readonly save;
     private readonly workspace: Workspace;
-    constructor(workspace: Workspace, commands: WorkspaceCommands, track: (task: Promise<unknown>) => void) {
+    constructor(workspace: Workspace, saves: HostSaveQueue, track: (task: Promise<unknown>) => void) {
         this.workspace = workspace;
         this.resource = workspace.createResource<TransferSettings>({ scope: "host-fixture", resource: "transfer", variant: "working" }, "Transfer settings", { value: { destination: "target.csv", batchSize: "1000" } });
-        this.save = new FormSave(workspace, commands, this.resource, track, { title: "Transfer settings", noun: "transfer settings", prefix: "transfer", validate: transferValidation,
+        this.save = new FormSave(workspace, saves, this.resource, track, { title: "Transfer settings", noun: "transfer settings", prefix: "transfer", validate: transferValidation,
             canonical: value => Object.freeze({ ...value, destination: value.destination.trim() }),
             external: (value, destination = "remote-target.csv") => Object.freeze({ ...value, destination }) });
     }

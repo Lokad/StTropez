@@ -1,5 +1,7 @@
-import { TextBuffer, Workspace, WorkspaceCommands } from "sttropez";
-import type { ComparisonBaseline, SaveOutcome, SaveResponse, SaveSubmission, Selection } from "sttropez";
+import { TextBuffer, Workspace } from "sttropez";
+import { HostSaveQueue } from "./save-queue.js";
+import type { ComparisonBaseline, SaveSubmission, Selection } from "sttropez";
+import type { SaveOutcome, SaveResponse } from "./save-queue.js";
 import { mountTextEditor, mountTextComparison } from "sttropez/browser";
 import type { TextEditor, TextComparison } from "sttropez/browser";
 import { comparisonSettled, editorSettled } from "./readiness.js";
@@ -32,7 +34,7 @@ export function mountPackagedPilot(host: HTMLElement, original: string) {
     let resultMessage = "Ready", lastOutcome: Readonly<{ kind: string; submittedRevision?: number; serverVersion?: string; canonicalApplied?: boolean }> | null = null;
     type Pending = { submission: SaveSubmission<string>; resolve: (response: SaveResponse<string>) => void; reject: (error: Error) => void };
     const pending = new Map<string, Pending>();
-    const commands = new WorkspaceCommands(workspace, () => { reportedFailures++; });
+    const commands = new HostSaveQueue(workspace, () => { reportedFailures++; });
     function readSource() { const document = workspace.document(source.documentId), metadata = source.metadata.getSnapshot();
         return Object.freeze({ id: source.id, documentId: source.documentId, revision: document.revision, length: document.buffer.length,
             exports: document.buffer.readMetrics().textExports, serverVersion: metadata.serverVersion, dirty: metadata.dirty, saveStatus: metadata.saveStatus }); }

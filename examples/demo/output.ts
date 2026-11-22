@@ -5,7 +5,7 @@ import { mountTextEditor } from "../../src/browser/index.ts";
 export function mountDemoOutput(host: HTMLElement, text: string, settings: Readonly<{ minimap: boolean; fontLigatures: boolean }>) {
     const workspace = new Workspace();
     const resource = workspace.createTextResource({ scope: "demo-output", resource: "javascript", variant: "generated" }, "JavaScript output",
-        { value: text }, { edit: [], save: false, run: false });
+        { value: text }, { edit: [], save: false });
     const editor = mountTextEditor(host, workspace, resource.documentId, { ariaLabel: "JavaScript output", readOnly: true, settings });
     editor.element.classList.add("demo-output");
     let disposed = false;

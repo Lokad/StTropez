@@ -97,8 +97,7 @@ notifying the view. Cancellation returns only unconsumed input. Editing, folding
 and bracket matching share scheduling helpers. Each controller checks its own captures, disposes
 iterators and publishes its result. Dispose the caret before the viewport.
 
-The workspace commits text, history and view changes atomically. Save and Run capture the resource
-at invocation. See [workspace ownership](workspace.md#identities-and-snapshots).
+The workspace commits text, history and view changes atomically. Save tickets capture the resource and revision at invocation. See [workspace ownership](workspace.md#identities-and-snapshots).
 
 Language clients share synchronization and cancellation. If preparation edits the document,
 synchronize the resulting revision. Preserve provider and validation errors when cleanup also

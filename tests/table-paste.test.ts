@@ -38,7 +38,7 @@ test("permission/lease interruptions latch even when authority returns before th
         const f = fixture(); try {
             f.paste("x".repeat(20000) + "\tend"); f.turn(); assert.equal(f.tools.state.getSnapshot().status, "converting");
             assert.ok(f.tools.state.getSnapshot().work > 0); assert.equal(f.text(), "abc\r\nxyz");
-            if (kind === "permission") { f.workspace.setCapabilities(f.source.id, { edit: ["host"], save: true, run: true }); f.workspace.setCapabilities(f.source.id, { edit: ["human", "host"], save: true, run: true }); }
+            if (kind === "permission") { f.workspace.setCapabilities(f.source.id, { edit: ["host"], save: true }); f.workspace.setCapabilities(f.source.id, { edit: ["human", "host"], save: true }); }
             else { const lease = f.workspace.acquireEditLease(f.source.id, "table-test", "host"); lease.release(); }
             await Promise.resolve(); f.drain(); assert.equal(f.text(), "abc\r\nxyz"); assert.equal(f.tools.state.getSnapshot().status, "cancelled"); assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, 0);
             f.paste("fresh\tvalue"); f.drain(); assert.equal(f.tools.state.getSnapshot().status, "applied");

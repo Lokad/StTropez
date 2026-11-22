@@ -8,7 +8,7 @@ as soon as you serve the page, then add the features you need.
 - [Move a tab or close it without losing the draft](getting-started.md#switch-and-move-tabs)
 - [Color source text with your own tokenizer](getting-started.md#plug-in-a-standalone-tokenizer)
 - [Look up a keyboard or pointer command](editor.md#keyboard-and-pointer-commands)
-- [Save a file while the user keeps typing](workspace.md#save-conflicts-and-run)
+- [Save a file while the user keeps typing](workspace.md#save-and-conflicts)
 - [Connect a language server](language-server.md#use)
 
 ## Subjects
