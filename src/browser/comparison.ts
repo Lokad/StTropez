@@ -4,7 +4,7 @@ import { partitionPoint } from "../core/bound-search.ts";
 import type { Observable } from "../core/observable.ts";
 import { compareText } from "../core/comparison.ts";
 import type { ComparisonBaseline, ComparisonController, ComparisonHunk, ComparisonSnapshot } from "../core/comparison.ts";
-import { lineContentEnd } from "../core/language-edits.ts";
+import { lineContentEnd } from "../core/newlines.ts";
 import { splitsSurrogatePair } from "../core/utf16.ts";
 import type { DiffHunk } from "../core/diff.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";

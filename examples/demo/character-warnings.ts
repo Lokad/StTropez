@@ -11,7 +11,7 @@ export function inspectCharacters(editor: TextEditor, workspace: Workspace, host
     note.textContent = capture.warnings.length ? "Characters near the source cursor. Select an entry to locate it. Some are intentional, including emoji joiners."
         : "No character warnings within 64 characters of the source cursor.";
     for (const warning of capture.warnings) {
-        const line = document.buffer.lineAt(warning.from), column = warning.from - document.buffer.offsetAt(line);
+        const { line, column } = document.buffer.positionAt(warning.from);
         const button = host.ownerDocument.createElement("button");
         button.textContent = `Ln ${line + 1}, Col ${column + 1}: ${characterWarningLabel(warning)}`;
         button.addEventListener("click", () => {

@@ -15,7 +15,7 @@ const original = TextBuffer.from("one\r\ntwo");
 const secondWord = anchoredRange(original.length, 5, 8);
 const change = original.apply([{ from: 0, to: 3, insert: "first" }]);
 export const movedWord = change.mapping.mapRange(secondWord); // [7, 10)
-export const secondLine = change.buffer.slice(change.buffer.offsetAt(1), change.buffer.length);
+export const secondLine = change.buffer.line(1).text;
 // secondLine is "two"; original contains "one\r\ntwo".
 ```
 
@@ -36,6 +36,9 @@ navigation applies the [Unicode boundary rules](unicode.md).
 | `length`, `lineCount`, `longestLineLength` | Constant-work metadata; longest line counts raw units excluding LF, including any preceding CR |
 | `lineAt(offset)` | Zero-based line containing the position; counts LF characters before the offset |
 | `offsetAt(line)` | Start offset of an existing zero-based line |
+| `line(n)` | A `BufferLine` with half-open offsets `from` and `to` excluding LF or CRLF. Reading `text` copies just that range. |
+| `positionAt(offset)` | Zero-based `BufferPosition` with a `line` number and a UTF-16 `column`. An offset between CR and LF maps to the end of the preceding line. |
+| `offsetAt({ line, column })` | Offset on an existing line. A column beyond its content lands at the end. Columns must be nonnegative safe integers. |
 | `slice(from, to)` | Materializes the requested range |
 | `chunks(from?, to?)` | Iterates the requested range; defaults to the whole buffer; chunk boundaries are storage boundaries |
 | `text()` | Explicitly materializes the whole buffer |

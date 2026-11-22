@@ -117,11 +117,11 @@ export class HostDocumentLinks {
         }
         const { source } = route;
         const links = state.links.slice(page * linkLimits.page, (page + 1) * linkLimits.page).map(item => {
-            const doc = item.target ? route.documents.get(item.target) : undefined, line = source.buffer.lineAt(item.from);
+            const doc = item.target ? route.documents.get(item.target) : undefined, { line, column } = source.buffer.positionAt(item.from);
             return { from: item.from, to: item.to, tooltip: item.tooltip || item.target || "Unresolved provider link",
                 module: source.buffer.slice(item.from, Math.min(item.to, item.from + 128)), title: source.title.slice(0, 128),
                 target: doc ? { document: doc.id, resource: doc.resourceId, revision: doc.revision, length: doc.buffer.length } : null,
-                targetTitle: doc?.title.slice(0, 128) ?? null, resolvable: item.canResolve, line: line + 1, column: item.from - source.buffer.offsetAt(line) + 1,
+                targetTitle: doc?.title.slice(0, 128) ?? null, resolvable: item.canResolve, line: line + 1, column: column + 1,
                 open: () => this.open(route, item) };
         });
         this.publish({ status, pending: false, links, page, count: state.links.length, message: `${state.links.length} module links.` });

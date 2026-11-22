@@ -1,6 +1,6 @@
 import type { TextEdit } from "../core/changes.ts";
 import type { Selection } from "../core/history.ts";
-import { lineContentEnd } from "../core/language-edits.ts";
+import { lineContentEnd } from "../core/newlines.ts";
 import { PositionMap, positionChanges } from "../core/positions.ts";
 import { createSelectionSet, mapSelectionSet } from "../core/selections.ts";
 import type { SelectionSet } from "../core/selections.ts";

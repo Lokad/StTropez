@@ -29,8 +29,8 @@ export class DemoDiagnosticState {
             return mapped && Object.freeze({ documentId: target.documentId, revision: after.revision, from: mapped.from, to: mapped.to });
         };
         const at = (id: DocumentId, offset: number) => {
-            const buffer = next.get(id)!.document.buffer, line = buffer.lineAt(offset);
-            return Object.freeze({ line, character: offset - buffer.offsetAt(line) });
+            const { line, column } = next.get(id)!.document.buffer.positionAt(offset);
+            return Object.freeze({ line, character: column });
         };
         const items: DemoDiagnostic[] = [];
         for (const item of this.items) {

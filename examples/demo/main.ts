@@ -210,8 +210,8 @@ function paintMetadata(): void {
     if (!project || !active || disposed) return;
     if (activePane) {
         const buffer = activePane.workspace.document(activePane.view.documentId).buffer, { head } = activePane.view.getSnapshot().selection;
-        const line = buffer.lineAt(head);
-        element("cursor").textContent = `Ln ${line + 1}, Col ${head - buffer.offsetAt(line) + 1}`;
+        const { line, column } = buffer.positionAt(head);
+        element("cursor").textContent = `Ln ${line + 1}, Col ${column + 1}`;
     }
     element("status").textContent = project.message;
     element("analysis-status").textContent = hostLanguage() ? "Host colors & editing rules" : referencePresentation?.status === "failed" ? "Saved-copy analysis unavailable" : presentation.status === "failed" ? "Analysis unavailable" : presentation.status === "ready"

@@ -1,4 +1,4 @@
-import { lineContentEnd, lineEnding } from "./language-edits.ts";
+import { lineContentEnd, lineEnding } from "./newlines.ts";
 import { PositionMap } from "./positions.ts";
 import { mapSelectionRanges, planSelectionEdits } from "./selections.ts";
 import type { SelectionEditPlan, SelectionSet } from "./selections.ts";

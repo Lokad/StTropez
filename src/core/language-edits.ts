@@ -1,3 +1,4 @@
+import { lineContentEnd, lineEnding } from "./newlines.ts";
 import { createClosingBracketCursor } from "./bracket-matching.ts";
 import type { EditingPair, PairingContext, ResolvedLanguageConfiguration } from "./language-configuration.ts";
 import type { TextBuffer } from "./text-buffer.ts";
@@ -74,15 +75,6 @@ function outdentLength(prefix: string, tabSize: number): number {
     }
     return units;
 }
-/** Internal shared convention: use this LF row's ending, or the preceding ending at EOF. */
-export function lineEnding(buffer: Pick<TextBuffer, "lineCount" | "offsetAt" | "slice">, line: number): "\n" | "\r\n" {
-    const end = buffer.offsetAt(line + 1 < buffer.lineCount ? line + 1 : line);
-    return end >= 2 && buffer.slice(end - 2, end) === "\r\n" ? "\r\n" : "\n";
-}
-export function lineContentEnd(buffer: TextBuffer, line: number): number {
-    return line + 1 === buffer.lineCount ? buffer.length : buffer.offsetAt(line + 1) - lineEnding(buffer, line).length;
-}
-
 /** Carets arrive in document order. Reuse the scanned prefix when several occupy one line. */
 export function lineColumnScanner(read: (from: number, to: number) => string, tabSize: number) {
     let lineStart = -1, offset = 0, column = 0, previousStop = 0, indentation = true;

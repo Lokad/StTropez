@@ -1,5 +1,5 @@
 import { applyTextEdits } from "./changes.ts";
-import { lineEnding } from "./language-edits.ts";
+import { lineEnding } from "./newlines.ts";
 import { PositionMap } from "./positions.ts";
 import { partitionPoint } from "./bound-search.ts";
 import type { TextBuffer } from "./text-buffer.ts";

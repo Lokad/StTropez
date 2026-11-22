@@ -88,8 +88,8 @@ export class HostDocumentColors {
         const value = patch.value ?? (fresh && reference ? rgbaColor(reference.color) : this.value), proposed = parseColor(value);
         this.value = value;
         const colors = fresh || page !== old.page ? state.colors.slice(page * colorLimits.page, (page + 1) * colorLimits.page).map((c, i) => {
-            const line = doc.buffer.lineAt(c.from), ordinal = page * colorLimits.page + i, label = rgbaColor(c.color);
-            return { from: c.from, to: c.to, color: c.color, label, text: doc.buffer.slice(c.from, Math.min(c.to, c.from + 96)), css: label, ordinal, line: line + 1, column: c.from - doc.buffer.offsetAt(line) + 1,
+            const { line, column } = doc.buffer.positionAt(c.from), ordinal = page * colorLimits.page + i, label = rgbaColor(c.color);
+            return { from: c.from, to: c.to, color: c.color, label, text: doc.buffer.slice(c.from, Math.min(c.to, c.from + 96)), css: label, ordinal, line: line + 1, column: column + 1,
                 inspect: () => {
                     if (this.owner !== s || s.controller.getSnapshot().colors[ordinal] !== c) return;
                     s.controller.dismissPreview(); this.render(s, { selected: ordinal, value: label }); this.valueInput?.focus(); this.valueInput?.select();

@@ -50,9 +50,9 @@ export class HostNavigationTools {
         const page = job?.page;
         if (job && page) for (const choice of page.locations) {
             const doc = job.sources.get(choice.document.documentId)!;
-            const line = doc.buffer.lineAt(choice.from);
+            const { line, column } = doc.buffer.positionAt(choice.from);
             locations.push({ document: doc.id, revision: doc.revision, from: choice.from, to: choice.to, declaration: job.input.kind === "definition",
-                ordinal: choice.index, title: doc.title.slice(0, 128), line: line + 1, column: choice.from - doc.buffer.offsetAt(line) + 1, open: () => this.open(job, choice) });
+                ordinal: choice.index, title: doc.title.slice(0, 128), line: line + 1, column: column + 1, open: () => this.open(job, choice) });
         }
         const transport = this.client?.getDiagnostics();
         this.cell.set({ ...state, available: !!this.active && this.available(this.active), connected: !!transport?.connected, disconnected: this.disconnected, syncedDocuments: transport?.documents.length ?? 0, view: this.active?.id ?? null, requestView: job?.origin.id ?? null, token: job?.input.id ?? null,

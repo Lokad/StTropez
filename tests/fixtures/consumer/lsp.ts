@@ -55,6 +55,9 @@ command("Definition", async () => { const value = await navigation.request("defi
     if (![page, page.locations, page.selected].every(Object.isFrozen) || page.selected !== page.locations[0]
         || value.pageFor(value.count) !== undefined) throw new Error("Invalid navigation page");
     const choice = page.selected;
+    const { buffer } = choice.document, at = buffer.positionAt(choice.from), row = buffer.line(at.line);
+    if (buffer.offsetAt(at) !== choice.from || row.text.slice(at.column, at.column + choice.to - choice.from) !== buffer.slice(choice.from, choice.to))
+        throw new Error("Definition line and column do not locate the captured symbol");
     const open = document.createElement("button"); open.textContent = "Open definition";
     open.onclick = () => {
         const current = choice.open(at => { notes.navigation = at.document.documentId; });

@@ -1,6 +1,7 @@
 import { validateTextEdits } from "./changes.ts";
 import type { TextEdit } from "./changes.ts";
 import { PositionMap } from "./positions.ts";
+import { lineContentEnd } from "./newlines.ts";
 import { joinTrees } from "./avl.ts";
 import { partitionPoint } from "./bound-search.ts";
 
@@ -217,6 +218,9 @@ function batch(root: Root, edits: readonly TextEdit[]): Root {
     return result;
 }
 
+export type BufferPosition = Readonly<{ line: number; column: number }>;
+export type BufferLine = Readonly<{ from: number; to: number; text: string }>;
+
 /** Immutable persistent piece tree. Lines are LF-indexed; raw UTF-16, including CRLF, is preserved. */
 export class TextBuffer {
     readonly #root: Root;
@@ -258,7 +262,22 @@ export class TextBuffer {
         }
         return node ? count + lowerBound(node.piece.backing.lines, node.piece.from + offset) - node.piece.firstLine : count;
     }
-    offsetAt(line: number): number {
+    line(index: number): BufferLine {
+        const from = this.offsetAt(index), to = lineContentEnd(this, index), buffer = this;
+        return Object.freeze({ from, to, get text() { return buffer.slice(from, to); } });
+    }
+    positionAt(offset: number): BufferPosition {
+        const line = this.lineAt(offset), start = this.offsetAt(line);
+        return Object.freeze({ line, column: Math.min(offset, lineContentEnd(this, line)) - start });
+    }
+    offsetAt(position: number | BufferPosition): number {
+        if (typeof position !== "number") {
+            if (!position || !Number.isSafeInteger(position.line) || !Number.isSafeInteger(position.column) || position.column < 0)
+                throw new RangeError("Invalid line or column.");
+            const start = this.offsetAt(position.line);
+            return Math.min(start + position.column, lineContentEnd(this, position.line));
+        }
+        let line = position;
         if (!Number.isSafeInteger(line) || line < 0 || line >= this.lineCount) throw new RangeError("Invalid line.");
         if (line === 0) return 0;
         let node = this.#root!, offset = 0;

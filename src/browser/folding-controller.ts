@@ -1,5 +1,5 @@
 import { Store } from "../core/observable.ts";
-import { lineContentEnd } from "../core/language-edits.ts";
+import { lineContentEnd } from "../core/newlines.ts";
 import { reconcileFoldRanges } from "../core/fold-discovery.ts";
 import type { DiscoveredFold } from "../core/fold-discovery.ts";
 import { ownsTextSurface } from "../core/workspace.ts";

@@ -17,7 +17,7 @@ import type { SelectionSet } from "./selections.ts";
 import { NotificationScope, Store } from "./observable.ts";
 import type { Observable } from "./observable.ts";
 import { collapseFoldRegions, createFoldRegions, foldingSnapshot, mapFoldRegions, revealFoldRange, revealSelectionFolds } from "./folding.ts";
-import { lineContentEnd } from "./language-edits.ts";
+import { lineContentEnd } from "./newlines.ts";
 import type { DocumentFolding, FoldingSnapshot, FoldVersion } from "./folding.ts";
 import { equalValue, snapshotValue } from "./values.ts";
 import type { Immutable, SnapshotValue } from "./values.ts";

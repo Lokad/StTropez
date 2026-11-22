@@ -1,5 +1,5 @@
 import type { TextBuffer } from "./text-buffer.ts";
-import { lineContentEnd } from "./language-edits.ts";
+import { lineContentEnd } from "./newlines.ts";
 import { readUtf16Window } from "./utf16.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
 import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";

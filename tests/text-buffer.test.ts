@@ -93,7 +93,7 @@ test("random replay preserves UTF-16, CRLF and all retained roots against a stri
     }
 });
 
-for (const text of ["", "\n", "\r\n", "a\r\nb\r\n", "\ud800x\udc00", "😀e\u0301\n👩‍💻"]) {
+for (const text of ["", "\n", "\r\n", "a\r\nb\r\n", "a\rb\n\r", "\ud800x\udc00", "😀e\u0301\n👩‍💻"]) {
     test(`buffer validates ranges and line indexes without changing ${JSON.stringify(text)}`, () => {
         // A surviving suffix is a single leaf whose backing starts before the logical text.
         const prefix = "padding\r\n";
@@ -107,9 +107,28 @@ for (const text of ["", "\n", "\r\n", "a\r\nb\r\n", "\ud800x\udc00", "😀e\u030
             for (const value of [-1, 0.5, NaN, Infinity]) {
                 assert.throws(() => buffer.lineAt(value), RangeError);
                 assert.throws(() => buffer.offsetAt(value), RangeError);
+                assert.throws(() => buffer.line(value), RangeError);
+                assert.throws(() => buffer.positionAt(value), RangeError);
+                assert.throws(() => buffer.offsetAt({ line: 0, column: value }), RangeError);
             }
             assert.throws(() => buffer.lineAt(text.length + 1), RangeError);
             assert.throws(() => buffer.offsetAt(buffer.lineCount), RangeError);
+            assert.throws(() => buffer.offsetAt({ line: buffer.lineCount, column: 0 }), RangeError);
+            const lines = text.split("\n");
+            let start = 0;
+            for (const [line, raw] of lines.entries()) {
+                const content = line < lines.length - 1 ? raw.replace(/\r$/, "") : raw;
+                const end = start + content.length, row = buffer.line(line);
+                assert.ok(Object.isFrozen(row));
+                assert.deepEqual([row.from, row.to, row.text], [start, end, content]);
+                for (let offset = start; offset <= start + raw.length; offset++) {
+                    const position = buffer.positionAt(offset);
+                    assert.deepEqual(position, { line, column: Math.min(offset, end) - start });
+                    assert.equal(buffer.offsetAt(position), Math.min(offset, end));
+                }
+                assert.equal(buffer.offsetAt({ line, column: Number.MAX_SAFE_INTEGER }), end);
+                start += raw.length + 1;
+            }
             for (let from = 0; from <= text.length; from++) for (let to = from; to <= text.length; to++) {
                 assert.equal(buffer.slice(from, to), text.slice(from, to));
             }
@@ -120,6 +139,18 @@ for (const text of ["", "\n", "\r\n", "a\r\nb\r\n", "\ud800x\udc00", "😀e\u030
         }
     });
 }
+
+test("looking up a long line reads only its ending until text is requested", () => {
+    const text = "x".repeat(100_000);
+    const buffer = TextBuffer.from(text + "\n").replace(text.length, text.length, "\r");
+    const before = buffer.readMetrics(), row = buffer.line(0);
+    assert.deepEqual([row.from, row.to], [0, text.length]);
+    assert.deepEqual(buffer.positionAt(text.length + 1), { line: 0, column: text.length });
+    assert.equal(buffer.offsetAt({ line: 0, column: text.length + 7 }), text.length);
+    assert.ok(buffer.readMetrics().sliceUnits - before.sliceUnits <= 6);
+    assert.equal(row.text, text);
+    assert.equal(buffer.readMetrics().textExports, before.textExports);
+});
 
 test("buffer trees stay balanced under alternating end edits, deletes and retained history", () => {
     let buffer = TextBuffer.from("x".repeat(100_000));

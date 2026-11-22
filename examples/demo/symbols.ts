@@ -11,17 +11,13 @@ export type DemoSymbolTarget = Readonly<{ documentId: DocumentId; revision: numb
 
 function locationButton(file: DemoFile, location: NavigationChoice): HTMLButtonElement {
     const buffer = location.document.buffer;
-    const line = buffer.lineAt(location.from), start = buffer.offsetAt(line);
-    const end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
-    const from = Math.max(start, location.from - 24), at = location.from - from;
-    const limit = 112;
-    // Allow for CRLF when deciding whether there is more source to show.
-    const excerpt = buffer.slice(from, Math.min(end, from + limit + 2)).replace(/\r?\n$/, "");
-    const clipped = excerpt.length > limit;
-    const text = clipped ? excerpt.slice(0, limit).replace(/[\uD800-\uDBFF]$/u, "") : excerpt;
+    const line = buffer.lineAt(location.from), { from: start, to: end } = buffer.line(line);
+    const offset = Math.min(location.from, end), from = Math.max(start, offset - 24), at = offset - from;
+    const clipped = end - from > 112, excerpt = buffer.slice(from, Math.min(end, from + 112));
+    const text = clipped ? excerpt.replace(/[\uD800-\uDBFF]$/u, "") : excerpt;
     const stop = Math.min(text.length, location.to - from);
     const button = document.createElement("button"), code = document.createElement("code"), match = document.createElement("mark");
-    button.textContent = file.name + " · " + (line + 1) + ":" + (location.from - start + 1);
+    button.textContent = file.name + " · " + (line + 1) + ":" + (offset - start + 1);
     code.append((from > start ? "…" : "") + text.slice(0, at).replace(/^[\uDC00-\uDFFF]/u, "").trimStart());
     match.textContent = text.slice(at, stop);
     code.append(match, text.slice(stop), clipped ? "…" : "");

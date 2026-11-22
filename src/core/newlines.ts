@@ -5,6 +5,23 @@ import { PositionMap } from "./positions.ts";
 export type LineEnding = "lf" | "crlf" | "cr";
 export type ImportedText = Readonly<{ text: string; detected: LineEnding | "mixed" | "none"; mapping: PositionMap }>;
 
+type LineReader = Readonly<{ lineCount: number; offsetAt(line: number): number; slice(from: number, to: number): string }>;
+
+function endingBefore(buffer: LineReader, end: number): "\n" | "\r\n" {
+    return end >= 2 && buffer.slice(end - 2, end) === "\r\n" ? "\r\n" : "\n";
+}
+
+/** Use this LF row's ending, or the preceding ending at EOF. */
+export function lineEnding(buffer: LineReader, line: number): "\n" | "\r\n" {
+    return endingBefore(buffer, buffer.offsetAt(line + 1 < buffer.lineCount ? line + 1 : line));
+}
+
+export function lineContentEnd(buffer: LineReader & { readonly length: number }, line: number): number {
+    if (line + 1 === buffer.lineCount) return buffer.length;
+    const next = buffer.offsetAt(line + 1);
+    return next - endingBefore(buffer, next).length;
+}
+
 /** Import/export conversion is explicit; UTF-16 text is never silently repaired or normalized. */
 export function importText(text: string, policy: "preserve" | "lf"): ImportedText {
     const kinds = new Set<LineEnding>(), edits: TextEdit[] = [];

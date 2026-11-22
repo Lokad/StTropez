@@ -45,8 +45,8 @@ export class HostRenameTools {
     private render(state: RenameSnapshot, page = 0) {
         const preview = state.preview, notes = preview?.readPage(page)?.notes ?? [];
         const locations = notes.map(({ insert, insertUnits, ...at }, i) => {
-            const buffer = this.workspace.document(at.document as DocumentId).buffer, line = buffer.lineAt(at.from);
-            return { ...at, ordinal: page * navigationLimits.page + i, line, column: at.from - buffer.offsetAt(line),
+            const { line, column } = this.workspace.document(at.document as DocumentId).buffer.positionAt(at.from);
+            return { ...at, ordinal: page * navigationLimits.page + i, line, column,
                 before: at.before + (at.to - at.from > 256 ? ` (${at.to - at.from} UTF-16 units)` : ""),
                 after: insert + (insertUnits > insert.length ? `… (${insertUnits} UTF-16 units)` : "") };
         });
