@@ -147,6 +147,18 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         await input.pressSequentially("ok"); await expect(hint).toBeHidden();
         await page.evaluate(() => window.publicLsp.dispose()); const final = await state(); assert.equal(final.provider.scopes, 0); assert.equal(final.provider.created, final.provider.terminated);
         assert.deepEqual([final.diagnostics.leases, final.diagnostics.views, final.diagnostics.subscriptions], [0, 0, 0]); assert.deepEqual(final.errors, []); assert.deepEqual(errors, []);
-        await writeFile(`artifacts/package/lsp-${browser.browserType().name()}.json`, JSON.stringify({ status: "passed", packageSha256, automaticCompletion: true, obsoleteListControlRejected: true, notes: final.notes, synchronization: counts, final, errors }, null, 2));
+        const readOnly = new URL(url); readOnly.searchParams.set("readOnly", "");
+        await page.goto(readOnly.href); await input.waitFor(); const original = await text(), readOnlyDepth = (await state()).history.undoDepth;
+        await button("Connect").click(); await expect.poll(async () => (await state()).editor.connected).toBe(true);
+        await button("Code actions").click(); await button("Review lazy action").click();
+        await expect.poll(async () => (await state()).notes.resolved).toBe(true);
+        const refusal = await button("Apply reviewed action").evaluate(node => {
+            const button = /** @type {HTMLButtonElement} */ (node);
+            return { disabled: button.disabled, outcome: button.onclick?.(new PointerEvent("click")) };
+        });
+        assert.deepEqual({ ...refusal, text: await text(), depth: (await state()).history.undoDepth },
+            { disabled: true, outcome: { status: "not-writable" }, text: original, depth: readOnlyDepth });
+        await page.evaluate(() => window.publicLsp.dispose()); assert.deepEqual(errors, []);
+        await writeFile(`artifacts/package/lsp-${browser.browserType().name()}.json`, JSON.stringify({ status: "passed", packageSha256, automaticCompletion: true, obsoleteListControlRejected: true, readOnlyAction: refusal, notes: final.notes, synchronization: counts, final, errors }, null, 2));
     } finally { await page.close(); }
 }

@@ -68,8 +68,6 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
         if (!current(j)) { expire(j); return; }
         fail(j, error);
     }
-    const writable = (edit: LspWorkspaceEdit) => writableEdit(workspace, edit) && !(editor.getSnapshot().readOnlyReason
-        && edit.documents.some(change => change.target.document.documentId === view.documentId && change.edits.length));
     function makePreview(name: string, count: number, canApply: boolean): RenamePreview {
         // A retained button keeps the identity of its preview, never the project's old buffers.
         const preview: RenamePreview = Object.freeze({ name, count, canApply, readPage(page = 0) {
@@ -80,7 +78,7 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
             scope.assertWritable(); const j = job, edit = j?.edit;
             if (cell.get().preview !== preview || !j || !edit || !current(j)) return reviewRefused("expired");
             if (!count) return reviewRefused("no-changes");
-            if (!canApply || !writable(edit)) return reviewRefused("not-writable");
+            if (!canApply || !writableEdit(editor, edit)) return reviewRefused("not-writable");
             try {
                 let changed: readonly DocumentSnapshot[] = [];
                 if (!j.source.commit(() => {
@@ -121,7 +119,7 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
                 if (!current(j)) { expire(j); return; }
                 win.clearTimeout(j.timer); j.project.includeEdit(edit);
                 const count = edit.documents.reduce((n, change) => n + change.edits.length, 0);
-                const canApply = count > 0 && writable(edit);
+                const canApply = count > 0 && writableEdit(editor, edit);
                 publish({ name, status: "ready", preview: makePreview(name, count, canApply),
                     message: !count ? "No edits for this name." : !canApply ? "A rename target is read-only or locked."
                         : `Review ${count} ${count === 1 ? "change" : "changes"}.` });

@@ -105,7 +105,7 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
         const j = job, action = j?.selection, batch = j?.batch;
         if (cell.get().preview !== preview || !j || !action || !batch || !current(j)) return expired;
         if (disabled(batch, action) !== null) return Object.freeze({ status: "disabled" });
-        if (!writableEdit(workspace, action.edit)) return Object.freeze({ status: "not-writable" });
+        if (!writableEdit(editor, action.edit)) return Object.freeze({ status: "not-writable" });
         if (action.command) {
             let live = true;
             const isCurrent = () => live && batch.commandCurrent();
@@ -164,7 +164,7 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
         if (!j.batch || !current(j)) { expire(j); return; }
         j.selection = action;
         const reason = disabled(j.batch, action);
-        const preview = makePreview(index, action.title, action.command?.command ?? null, reason, !reason && writableEdit(workspace, action.edit));
+        const preview = makePreview(index, action.title, action.command?.command ?? null, reason, !reason && writableEdit(editor, action.edit));
         publish({ ...cell.get(), status: "ready", choice: index, preview, message: reason ?? "Review the selected action before confirming." });
         if (!reason && applyWhen?.(action)) preview.confirm();
     }

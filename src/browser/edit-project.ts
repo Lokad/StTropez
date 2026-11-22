@@ -1,4 +1,4 @@
-import type { DocumentId, Workspace } from "../core/workspace.ts";
+import type { DocumentId } from "../core/workspace.ts";
 import type { LspWorkspaceEdit } from "../protocol/lsp-features.ts";
 import { retainDocuments } from "./retained-documents.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -18,10 +18,12 @@ export function retainEditProject(editor: TextEditor, available: (id: DocumentId
     return { ...project, includeEdit };
 }
 
-export function writableEdit(workspace: Workspace, edit: LspWorkspaceEdit | null) {
+export function writableEdit(editor: TextEditor, edit: LspWorkspaceEdit | null) {
     return (edit?.documents ?? []).every(change => {
         if (!change.edits.length) return true;
-        const metadata = workspace.resourceForDocument(change.target.document.documentId as DocumentId).metadata.getSnapshot();
+        const document = change.target.document.documentId as DocumentId;
+        if (document === editor.view.documentId && editor.getSnapshot().readOnlyReason) return false;
+        const metadata = editor.workspace.resourceForDocument(document).metadata.getSnapshot();
         return metadata.capabilities.edit.includes("human") && metadata.capabilities.edit.includes("host") && metadata.editLock === null;
     });
 }

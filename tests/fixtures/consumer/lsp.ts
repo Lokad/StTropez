@@ -10,7 +10,9 @@ const source = workspace.createTextResource({ scope: "consumer", resource: "sour
     { language: { uri: "consumer+opaque:project/source", languageId: "generic" } });
 const companion = workspace.createTextResourceFromBuffer({ scope: "consumer", resource: "companion", variant: "working" }, "Companion", { buffer: TextBuffer.from("const catalogue = 1;\r\ncatalogue;\r\n") }, undefined,
     { language: { uri: companionUri, languageId: "generic" } });
-const editor = mountTextEditor(document.getElementById("editor")!, workspace, source.documentId, { ariaLabel: "Public LSP source" });
+const editor = mountTextEditor(document.getElementById("editor")!, workspace, source.documentId, {
+    ariaLabel: "Public LSP source", readOnly: new URL(location.href).searchParams.has("readOnly"),
+});
 const endpoint = new URL("/lsp-fixture", location.href); endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";
 const provider = new BrowserLspWorkspace(workspace, {
     initializationOptions: { fixtureModuleUris: [{ module: "sample-utils", uri: companionUri }] },
