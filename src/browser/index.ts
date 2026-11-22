@@ -6,7 +6,7 @@ export { editRefusedEvent, inputConflictEvent, typedTextEvent } from "./input-ev
 export type { EditRefusedDetail, InputConflictDetail, TypedTextDetail } from "./input-events.ts";
 export { mountTextViewport } from "./viewport.ts";
 export type { DecorationLayer, DecorationLayerOptions, DecorationLayers, DecorationProvider } from "./decoration-layers.ts";
-export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RenderedRowBounds, RevealAlignment, RevealOptions, TextViewport, TextViewportOptions, ViewportSettings, ViewportActivity, ViewportSnapshot, ViewportInputBinding } from "./viewport.ts";
+export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RenderedRowBounds, RevealAlignment, RevealOptions, TextViewport, TextViewportOptions, ViewportSettings, ViewportActivity, ViewportDiagnostics, ViewportSnapshot, ViewportInputBinding } from "./viewport.ts";
 export type { EditorOperation, EditorOperationLane, EditorOperationOptions, EditorOperationOutcome } from "./editor-operation.ts";
 export { mountTextEditor } from "./text-editor.ts";
 export { mountAnchoredOverlay } from "./anchored-overlay.ts";
@@ -42,7 +42,7 @@ export type { DocumentationOptions, DocumentationView } from "./documentation.ts
 export type { DocumentationContent, DocumentationPart } from "../core/documentation.ts";
 export type { LspHighlightSnapshot, LspHighlightController } from "./lsp-highlights.ts";
 export type { CompletionController, CompletionControllerOptions, CompletionSnapshot, CompletionSnippet, CompletionChoice } from "./completion-controller.ts";
-export type { EditorEditIntent, EditorPasteHandler, EditorRevealOptions, EditorRevealRange, EditorSettings, ResolvedEditorSettings, LinePrompt, TextEditor, TextEditorSnapshot, TextEditorActivity, TextEditorCommand, TextEditorEdit, TextEditorEditTransform, TextEditorOptions } from "./text-editor.ts";
+export type { EditorEditIntent, EditorPasteHandler, EditorRevealOptions, EditorRevealRange, EditorSettings, ResolvedEditorSettings, LinePrompt, TextEditor, TextEditorSnapshot, TextEditorDiagnostics, TextEditorActivity, TextEditorCommand, TextEditorEdit, TextEditorEditTransform, TextEditorOptions } from "./text-editor.ts";
 export type { CapturedInsertion } from "./captured-insertion.ts";
 export { captureViewRequest } from "./captured-view.ts";
 export type { CapturedViewRequest, CapturedViewOptions } from "./captured-view.ts";

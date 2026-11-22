@@ -74,9 +74,9 @@ test("input refresh reuses bounded projections while repairing native state and 
             input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
             input.setRangeText("あ", input.selectionStart, input.selectionEnd, "end"); const composingValue = input.value;
             edit(doc().buffer.length, doc().buffer.length, "tail"); refresh();
-            const held = input.value === composingValue, conflicts = editor.snapshot().conflicts;
+            const held = input.value === composingValue, conflicts = editor.getDiagnostics().conflicts;
             input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
-            const expiredComposition = held && editor.snapshot().conflicts === conflicts + 1 && exact()
+            const expiredComposition = held && editor.getDiagnostics().conflicts === conflicts + 1 && exact()
                 && doc().buffer.slice(at, at + 2) !== "Zあ" && doc().buffer.slice(doc().buffer.length - 4, doc().buffer.length) === "tail";
             // Raw positions on either side of CRLF can share one native offset; capture each exact model target.
             const crlf = doc().buffer.offsetAt(1) - 1;

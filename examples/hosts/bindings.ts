@@ -1,6 +1,6 @@
 import { isSaveKey } from "../shared/host-shortcuts.ts";
 import { editRefusedEvent, inputConflictEvent, mountTextEditor, mountTextComparison } from "../../src/browser/index.ts";
-import type { EditRefusedDetail, TextEditor, TextComparison, ViewportSnapshot, ViewRestoreOptions, ViewState } from "../../src/browser/index.ts";
+import type { EditRefusedDetail, TextEditor, TextEditorDiagnostics, TextComparison, ViewportDiagnostics, ViewRestoreOptions, ViewState } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../shared/language/presentation.ts";
@@ -28,7 +28,7 @@ export type NativeEditorMount = (host: HTMLElement, workspace: Workspace, tabId:
     options: Readonly<{ ariaLabel?: string; view?: DocumentView }>) => Readonly<{ element: HTMLTextAreaElement; view: DocumentView;
         captureView: () => ViewState; restoreView: (state: ViewState, options?: ViewRestoreOptions) => void; dispose: () => void }>;
 type BoundEditor = Omit<ReturnType<NativeEditorMount>, "element"> & Readonly<{
-    element: HTMLElement; metrics: () => null | ReturnType<TextEditor["snapshot"]> & Readonly<{ viewport: ViewportSnapshot }>;
+    element: HTMLElement; metrics: () => null | TextEditorDiagnostics & Readonly<{ viewport: ViewportDiagnostics }>;
 }>;
 type ViewTool = Readonly<{ attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void }>;
 export function hostEditor(): HostEditor { return new URLSearchParams(location.search).get("editor") === "candidate" ? "candidate" : "native"; }
@@ -294,7 +294,7 @@ export class ViewBindings {
                 const candidate = this.editor === "candidate" ? mountTextEditor(surface, workspace, tabId, { ariaLabel, view, requestLine: linePrompt(surface.ownerDocument) }) : undefined;
                 const mounted: BoundEditor = candidate ? { element: candidate.element, view, captureView: candidate.captureView,
                     restoreView: candidate.restoreView, dispose: candidate.dispose,
-                    metrics: () => ({ ...candidate.snapshot(), viewport: candidate.viewport.snapshot() }) }
+                    metrics: () => ({ ...candidate.getDiagnostics(), viewport: candidate.viewport.getDiagnostics() }) }
                     : { ...this.mountNative!(host, workspace, tabId, { ariaLabel, view }), metrics: () => null };
                 scope.defer(mounted.dispose);
                 const lane = surface !== host ? host.ownerDocument.createElement("div") : undefined;
@@ -373,9 +373,9 @@ export class ViewBindings {
             viewId: this.review!.panes.working.view.id, foldGeneration: this.review!.panes.working.view.folding.getSnapshot().generation, selection: this.review!.panes.working.view.getSnapshot().selection, selectionSet: this.review!.panes.working.view.getSnapshot().selectionSet,
             baseline: comparison.baseline && { version: comparison.baseline.version, epoch: comparison.baseline.epoch, length: comparison.baseline.buffer.length, exports: comparison.baseline.buffer.readMetrics().textExports },
             hunks: comparison.hunks.length, pending: this.reviewTickets.map(ticket => ({ kind: ticket.kind, revision: ticket.capture.working.revision, current: ticket.isCurrent() })),
-            result: this.reviewResult, work: this.review!.getDiagnostics(), input: this.review!.panes.working.snapshot(), referenceInput: this.review!.panes.reference.snapshot(),
+            result: this.reviewResult, work: this.review!.getDiagnostics(), input: this.review!.panes.working.getDiagnostics(), referenceInput: this.review!.panes.reference.getDiagnostics(),
             discards: this.discardTickets.map(({ ticket, variantGeneration }) => ({ revision: ticket.capture.working.revision, current: ticket.isCurrent() && this.controller.variants.state.getSnapshot().generation === variantGeneration })),
-            workingViewport: this.review!.panes.working.viewport.snapshot(), referenceViewport: this.review!.panes.reference.viewport.snapshot() } : null,
+            workingViewport: this.review!.panes.working.viewport.getDiagnostics(), referenceViewport: this.review!.panes.reference.viewport.getDiagnostics() } : null,
         views: [...this.mounted].map(([id, { editor, documentId, candidate }]) => ({ id, documentId, viewId: editor.view.id, foldGeneration: editor.view.folding.getSnapshot().generation,
             selection: editor.view.getSnapshot().selection, selectionSet: editor.view.getSnapshot().selectionSet, focused: candidate?.getSnapshot().focused ?? editor.element.matches(":focus"), metrics: editor.metrics() })) }; }
 }

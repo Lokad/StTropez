@@ -52,7 +52,7 @@ function snapshot() {
     return { status: state.status, generation: state.generation, selection: comparison.controller.view.getSnapshot().selection, baseline: state.baseline && { epoch: state.baseline.epoch, version: state.baseline.version, length: state.baseline.buffer.length, exports: state.baseline.buffer.readMetrics().textExports },
         working: { id: current.id, resourceId: current.resourceId, revision: current.revision, length: current.buffer.length, exports: current.buffer.readMetrics().textExports, metadata: resource.metadata.getSnapshot() },
         reads: { working: current.buffer.readMetrics(), baseline: state.baseline?.buffer.readMetrics() ?? null },
-        hunks: state.hunks, history: workspace.observeHistory(current.id).getSnapshot(), viewId: comparison.panes.working.view.id, editor: { ...comparison.panes.working.snapshot(), viewport: comparison.panes.working.viewport.snapshot() }, reference: comparison.panes.reference.viewport.snapshot(),
+        hunks: state.hunks, history: workspace.observeHistory(current.id).getSnapshot(), viewId: comparison.panes.working.view.id, editor: { ...comparison.panes.working.getDiagnostics(), viewport: comparison.panes.working.viewport.getDiagnostics() }, reference: comparison.panes.reference.viewport.getDiagnostics(),
         pending: { refreshes: refreshes.length, acceptances: acceptances.length }, comparison: comparison.getDiagnostics(), diagnostics: workspace.diagnostics(), result, disposed };
 }
 const fixture = Object.freeze({ snapshot, setText, begin, finish, dispose, review: comparison, focus: () => comparison.panes.working.focus(),

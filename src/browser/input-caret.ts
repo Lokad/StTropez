@@ -3,7 +3,7 @@ import { isFocused } from "./dom-focus.ts";
 import { partitionPoint } from "../core/bound-search.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import type { DocumentSnapshot, DocumentView } from "../core/workspace.ts";
-import type { TextViewport } from "./viewport.ts";
+import type { TextViewport, ViewportActivity, ViewportSnapshot } from "./viewport.ts";
 
 /** Owns only caret DOM, placement cache and its animation frame; input/model state stays with the adapter. */
 export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement, view: DocumentView,
@@ -18,7 +18,7 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
     let disposed = false, frame: number | undefined;
     const schedule = () => { if (!disposed && frame === undefined) frame = win.requestAnimationFrame(positionCaret); };
     reducedMotion.addEventListener("change", schedule);
-    let caretLayout: Readonly<{ state: ReturnType<TextViewport["snapshot"]>; visible: boolean; focused: boolean }> | undefined;
+    let caretLayout: Readonly<{ state: ViewportSnapshot; activity: ViewportActivity; visible: boolean; focused: boolean }> | undefined;
     function positionCaret(): void {
         frame = undefined;
         if (disposed) return;
@@ -26,15 +26,15 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
         const { selection: selected, selectionSet } = view.getSnapshot(), focused = isFocused(input);
         let rectangle = clientBox(root, viewport.settings().minimap);
         const currentDocument = readDocument();
-        let state = viewport.snapshot(), point = viewport.coordsAt(selected.head, selected.headAffinity);
+        let state = viewport.getSnapshot(), activity = viewport.activity(), point = viewport.coordsAt(selected.head, selected.headAffinity);
         let visible = point && point.left >= rectangle.left + state.gutterWidth * rectangle.zoom && point.left < rectangle.right
             && point.top + point.height > rectangle.top && point.top < rectangle.bottom;
         const prior = caretLayout;
         // Reuse bounded reveal after layout changes hide a previously visible focused head.
         // Explicit scrolling, new selections/revisions and inactive views retain their own positions.
-        const retainLayout = !visible && focused && !composing && prior?.visible && prior.focused && state.revision === prior.state.revision
-            && currentDocument?.revision === state.revision && selectionSet === state.selectionSet && state.selectionSet === prior.state.selectionSet
-            && state.foldGeneration === prior.state.foldGeneration && view.folding.getSnapshot().generation === state.foldGeneration
+        const retainLayout = !visible && focused && !composing && prior?.visible && prior.focused && activity.revision === prior.activity.revision
+            && currentDocument?.revision === activity.revision && selectionSet === activity.selectionSet && activity.selectionSet === prior.activity.selectionSet
+            && activity.foldGeneration === prior.activity.foldGeneration && view.folding.getSnapshot().generation === activity.foldGeneration
             && state.scrollTop === prior.state.scrollTop && state.scrollLeft === prior.state.scrollLeft;
         const layoutChanged = retainLayout && (state.width !== prior.state.width || state.height !== prior.state.height
             || state.columnWidth !== prior.state.columnWidth || state.lineHeight !== prior.state.lineHeight);
@@ -42,12 +42,12 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
             viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" });
             viewport.flush();
             rectangle = clientBox(root, viewport.settings().minimap);
-            state = viewport.snapshot(); point = viewport.coordsAt(selected.head, selected.headAffinity);
+            state = viewport.getSnapshot(); activity = viewport.activity(); point = viewport.coordsAt(selected.head, selected.headAffinity);
             visible = point && point.left >= rectangle.left + state.gutterWidth * rectangle.zoom && point.left < rectangle.right && point.top + point.height > rectangle.top && point.top < rectangle.bottom;
         }
         // DOM layout can advance before ResizeObserver queues a render. Retain the last valid
         // placement until measured metrics arrive, then attempt reveal once even if no point exists.
-        if (!retainLayout || layoutChanged) caretLayout = { state, visible: !!visible, focused: focused && !composing };
+        if (!retainLayout || layoutChanged) caretLayout = { state, activity, visible: !!visible, focused: focused && !composing };
         const buffer = currentDocument?.buffer, active = isFocused(input);
         let lastLine = -1, lastRow: ReturnType<TextViewport["rowBounds"]>;
         const bounds = (line: number) => {
@@ -56,8 +56,8 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
         };
         const points = [];
         let ranged = selected.anchor !== selected.head;
-        if (!composing && active && buffer && state.selectionSet === selectionSet && state.lastLine > state.firstLine) {
-            const from = buffer.offsetAt(state.firstLine), to = state.lastLine < buffer.lineCount ? buffer.offsetAt(state.lastLine) : buffer.length;
+        if (!composing && active && buffer && activity.selectionSet === selectionSet && state.lineTo > state.lineFrom) {
+            const from = buffer.offsetAt(state.lineFrom), to = state.lineTo < buffer.lineCount ? buffer.offsetAt(state.lineTo) : buffer.length;
             // Heads of normalized disjoint ranges are ordered. Measure only visible candidates,
             // using the same bounded native row geometry as the primary caret.
             const low = partitionPoint(selectionSet.ranges.length, index => selectionSet.ranges[index]!.head < from);

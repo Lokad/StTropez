@@ -5,7 +5,7 @@ import type { TextViewport } from "./viewport.ts";
 /** Inspect only painted fragments. Folded and horizontally clipped matches cannot win. */
 export function visibleFindMatch(viewport: TextViewport, matches: FindIndex, preferred: number): number | undefined {
     viewport.flush();
-    const root = viewport.element, box = clientBox(root, viewport.settings().minimap, viewport.snapshot().gutterWidth);
+    const root = viewport.element, box = clientBox(root, viewport.settings().minimap, viewport.getSnapshot().gutterWidth);
     let first: number | undefined, after: number | undefined;
     for (const row of root.querySelectorAll<HTMLElement>(".st-viewport-row")) {
         const bounds = row.getBoundingClientRect();

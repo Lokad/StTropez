@@ -60,6 +60,14 @@ export type TextEditorEdit = Readonly<{ expectedRevision: number; edits: readonl
 export type TextEditorEditTransform = (edit: TextEditorEdit) => Readonly<{ edits: readonly TextEdit[]; selectionSet: SelectionSet; complete?: (applied: boolean) => void }> | undefined;
 export type TextEditorActivity = Readonly<{ disposed: boolean; composing: boolean; pendingInput: boolean; pendingCommand: boolean;
     pendingCaret: boolean; pendingDragScroll: boolean; pendingWord: boolean; pendingGrapheme: boolean }>;
+export type TextEditorDiagnostics = TextEditorActivity & Readonly<{
+    inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number;
+    maxQueuedInputTurnMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number;
+    navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number;
+    lastWordSelectionMs: number; maxWordSelectionTurnMs: number; dragScrollFrames: number; maxDragScrollStepMs: number;
+    commits: number; conflicts: number; queuedInputUnits: number; wordScanSteps: number; maxWordScanStepMs: number;
+    graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number;
+}>;
 export type TextEditorSnapshot = Readonly<{ focused: boolean; disabled: boolean; composing: boolean;
     readOnlyReason: EditRefusedDetail["reason"] | null }>;
 export type TextEditorCommand = EditingCommand | ViewCommand;
@@ -97,7 +105,7 @@ export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HT
     focus: () => void; captureView: () => ViewState; restoreView: TextViewport["restoreView"];
     /** Immutable activity capture, reused while its fields are unchanged. Does not collect metrics. */
     activity: () => TextEditorActivity;
-    snapshot: () => TextEditorActivity & Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number; maxQueuedInputTurnMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number; navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number; lastWordSelectionMs: number; maxWordSelectionTurnMs: number; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; queuedInputUnits: number; wordScanSteps: number; maxWordScanStepMs: number; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number }>;
+    getDiagnostics: () => TextEditorDiagnostics;
     dispose: () => void }>;
 export type MountedTextEditor = Readonly<{ editor: TextEditor; input: HTMLTextAreaElement; setComparisonRows: ReturnType<typeof mountViewport>["setComparisonRows"] }>;
 
@@ -700,8 +708,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             style.fontVariantLigatures, style.fontKerning, style.fontFeatureSettings, style.fontVariationSettings, style.transform, cssZoom(root), owner.fonts.status].join("|");
     }
     function navigationLayout(style = navigationStyle()): string {
-        const state = viewport.snapshot();
-        return [style, root.clientWidth, root.clientHeight, state.width, state.height, state.lineHeight, state.columnWidth, state.rowGeneration, view.folding.getSnapshot().generation].join("|");
+        const state = viewport.getSnapshot();
+        return [style, root.clientWidth, root.clientHeight, state.width, state.height, state.lineHeight, state.columnWidth, viewport.activity().rowGeneration, view.folding.getSnapshot().generation].join("|");
     }
     function beginNavigation(prepare: (capture: CommandCapture, style: string, inline: boolean) => void, canInline?: (capture: CommandCapture) => boolean): void {
         cancelWord(); navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
@@ -738,7 +746,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         return true;
     }
     function verticalCount(page: boolean): number {
-        const state = viewport.snapshot(); return page ? Math.max(1, Math.floor(state.height / state.lineHeight) - 1) : 1;
+        const state = viewport.getSnapshot(); return page && state.lineHeight > 0 ? Math.max(1, Math.floor(state.height / state.lineHeight) - 1) : 1;
     }
     function shortVertical(capture: CommandCapture, direction: -1 | 1, page: boolean): boolean {
         if (capture.selectionSet.ranges.length > 2) return false;
@@ -816,7 +824,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const buffer = capture.buffer, selected = capture.selection;
         if (!viewport.coordsAt(selected.head, selected.headAffinity)) { revealCaret(selected); viewport.flush(); }
         if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
-        const state = viewport.snapshot(), layout = navigationLayout(style);
+        const state = viewport.getSnapshot(), layout = navigationLayout(style);
         const prior = preferred?.selections === capture.selectionSet && preferred.revision === capture.revision && preferred.layout === layout ? preferred.columns : undefined;
         const columns: (number | undefined)[] = [], count = verticalCount(page);
         navigationPreparationMs = win.performance.now() - began;
@@ -976,7 +984,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             case "scroll-line-up": case "scroll-line-down": case "scroll-page-up": case "scroll-page-down": {
                 group = undefined;
                 viewport.flush();
-                const state = viewport.snapshot(), page = command === "scroll-page-up" || command === "scroll-page-down";
+                const state = viewport.getSnapshot(), page = command === "scroll-page-up" || command === "scroll-page-down";
                 const distance = page ? state.height : state.lineHeight;
                 viewport.scrollTo({ top: state.scrollTop + (command.endsWith("-up") ? -distance : distance) });
                 return true;
@@ -1331,7 +1339,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             && drag.revision === revision && drag.selectionSet === view.getSnapshot().selectionSet && live() && root.hasPointerCapture(drag.pointer);
     }
     function dragBounds() {
-        return clientBox(root, viewport.settings().minimap, viewport.snapshot().gutterWidth);
+        return clientBox(root, viewport.settings().minimap, viewport.getSnapshot().gutterWidth);
     }
     function updateDragHead(): void {
         const current = drag; if (!current) return; const bounds = dragBounds();
@@ -1370,7 +1378,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     const dragScrolling = createEdgeAutoscroll(win, viewport, {
         capture: () => drag, valid: () => validDrag(),
         velocity: captured => {
-            const velocity = edgeVelocity(captured, dragBounds(), viewport.snapshot(), "outside");
+            const velocity = edgeVelocity(captured, dragBounds(), viewport.getSnapshot(), "outside");
             return captured.unit?.kind === "line" ? { x: 0, y: velocity.y } : velocity;
         },
         update: () => { updateDragHead(); dragScrollFrames++; }, cancel: () => stopDrag(),
@@ -1555,7 +1563,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         reveal,
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state, options) => { const result = viewport.restoreView(state, options); if (result) refresh(); return result; },
-        snapshot: () => Object.freeze({ ...activity(), inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, maxQueuedInputTurnMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs,
+        getDiagnostics: () => Object.freeze({ ...activity(), inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, maxQueuedInputTurnMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs,
             dragScrollFrames, maxDragScrollStepMs, commits, conflicts, queuedInputUnits: inputQueue.pending?.units ?? 0, wordScanSteps, maxWordScanStepMs, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves }),
         dispose: () => {
             if (disposed) return;

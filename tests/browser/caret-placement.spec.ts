@@ -95,7 +95,7 @@ for (const shadow of [false, true]) test(`${shadow ? "shadow" : "document"} care
             const revealed = { reveals, visible: !primary.hidden, error: error(primary, 60), left: host.getBoundingClientRect().left };
             input.blur(); run(); const blurred = primary.hidden;
             input.focus({ preventScroll: true }); select([161 * 900]); run();
-            const offscreen = { hidden: primary.hidden, height: parseFloat(input.style.height), expectedHeight: viewport.snapshot().lineHeight, reveals };
+            const offscreen = { hidden: primary.hidden, height: parseFloat(input.style.height), expectedHeight: viewport.getSnapshot().lineHeight, reveals };
             layer.dispose(); layer.schedule();
             return { work, composition, beforeResize, revealed, blurred, offscreen, disposed: !layer.pending() && !root.contains(primary) };
         } finally { layer.dispose(); viewport.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); container.remove(); }

@@ -73,8 +73,8 @@ const fixture = { ready: true, setText, edit, select, history,
     snapshot: () => {
         const current = workspace.getSnapshot().documents.find(document => document.id === source.documentId);
         return { document: current ? { revision: current.revision, length: current.buffer.length, exports: current.buffer.readMetrics().textExports } : null,
-            primary: { ...editors.primary.snapshot(), viewport: editors.primary.viewport.snapshot(), selection: editors.primary.view.getSnapshot().selection },
-            secondary: { ...editors.secondary.snapshot(), viewport: editors.secondary.viewport.snapshot(), selection: editors.secondary.view.getSnapshot().selection },
+            primary: { ...editors.primary.getDiagnostics(), viewport: editors.primary.viewport.getDiagnostics(), selection: editors.primary.view.getSnapshot().selection },
+            secondary: { ...editors.secondary.getDiagnostics(), viewport: editors.secondary.viewport.getDiagnostics(), selection: editors.secondary.view.getSnapshot().selection },
             history: current ? workspace.observeHistory(source.documentId).getSnapshot() : null,
             find: (() => { const state = findUI.find.getSnapshot(); return { wholeWord: state.wholeWord, matchCase: state.matchCase, regularExpression: state.regularExpression, revision: state.revision, status: state.status, count: state.count, scanned: state.scanned, current: state.current, matchesVersion: state.matchesVersion, reason: state.reason, message: state.message, ...findUI.find.getDiagnostics() }; })(),
             presentation: { primary: presentation.primary.snapshot(), secondary: presentation.secondary.snapshot() },

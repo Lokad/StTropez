@@ -85,7 +85,7 @@ test("viewport maps retained source rows through newline edits without stale con
             const folds = viewport.view.folding.getSnapshot(), buffer = doc().buffer, cursor = new ComparisonRowsCursor(buffer, buffer, Object.freeze([]), folds.index, folds.index);
             let alignment = cursor.next(4096); while (!alignment.result) alignment = cursor.next(4096); cursor.dispose();
             setComparisonRows({ documentId: source.documentId, revision: doc().revision, foldGeneration: folds.generation, id: 1,
-                lineHeight: viewport.snapshot().lineHeight + 2, index: alignment.result.working }); settle();
+                lineHeight: viewport.getSnapshot().lineHeight + 2, index: alignment.result.working }); settle();
             run("expired alignment", () => { edit([{ from: 0, to: 0, insert: "aligned header\n" }]); target++; });
             const selected = row(target).querySelector(".st-viewport-selected")?.textContent;
             const token = row(target).querySelector(".row-token");
@@ -96,7 +96,7 @@ test("viewport maps retained source rows through newline edits without stale con
             target = 500; viewport.revealOffset(doc().buffer.offsetAt(target) + 2000); settle();
             const clipped = row(target), clippedChild = clipped.firstChild, neighbor = row(target - 1);
             edit([{ from: doc().buffer.offsetAt(target - 2), to: doc().buffer.offsetAt(target - 2), insert: "\n" }]); target++; settle();
-            const fragment = { partial: viewport.snapshot().partialRows > 0, retained: row(target) === clipped && row(target).firstChild === clippedChild,
+            const fragment = { partial: viewport.getDiagnostics().partialRows > 0, retained: row(target) === clipped && row(target).firstChild === clippedChild,
                 neighbor: row(target - 1) === neighbor, exact: exact(), error: nativeError(target, 2000) };
             // Deleting an empty CRLF row must not steal the next empty row or identical neighbors.
             edit([{ from: 0, to: doc().buffer.length, insert: "\r\n\nsame\nsame\n" }]); viewport.scrollTo({ top: 0, left: 0 }); settle();

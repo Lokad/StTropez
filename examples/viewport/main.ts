@@ -61,7 +61,7 @@ const fixture = { ready: true, load, edit, background,
         const current = workspace.getSnapshot().documents.find(document => document.id === source.documentId);
         return { document: current ? { revision: current.revision, length: current.buffer.length, lines: current.buffer.lineCount,
             longest: current.buffer.longestLineLength, exports: current.buffer.readMetrics().textExports } : null,
-            primary: views.primary.snapshot(), secondary: views.secondary.snapshot(), diagnostics: workspace.diagnostics(), ticks, native: native !== undefined, disposed };
+            primary: views.primary.getDiagnostics(), secondary: views.secondary.getDiagnostics(), diagnostics: workspace.diagnostics(), ticks, native: native !== undefined, disposed };
     },
     dispose: () => {
         if (disposed) return; disposed = true; background(false); unsubscribe(); listeners.abort(); native?.dispose(); native = undefined;

@@ -22,7 +22,7 @@ test("owner activity retains immutable captures without collecting metrics and f
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
         const { editor, input, setComparisonRows } = mountEditor(host, workspace, tab), viewport = editor.viewport;
         const forbidden = () => { throw new Error("Readiness collected metrics"); };
-        const readyViewport = { ...viewport, snapshot: forbidden }, readyEditor = { ...editor, viewport: readyViewport, snapshot: forbidden };
+        const readyViewport = { ...viewport, getDiagnostics: forbidden }, readyEditor = { ...editor, viewport: readyViewport, getDiagnostics: forbidden };
         const ready = () => editorSettled(readyEditor), frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
         const settle = async () => { for (let i = 0; i < 60; i++) { await frame(); if (ready()) return; } throw new Error("Editor did not settle"); };
         const states: Record<string, unknown> = {};
@@ -39,7 +39,7 @@ test("owner activity retains immutable captures without collecting metrics and f
             const metricCaptures = new Set<object>(), activityCaptures = new Set<object>();
             let metricValueReads = 0;
             try {
-                for (let i = 0; i < 1000; i++) { metricCaptures.add(editor.snapshot()); metricCaptures.add(viewport.snapshot()); }
+                for (let i = 0; i < 1000; i++) { metricCaptures.add(editor.getDiagnostics()); metricCaptures.add(viewport.getDiagnostics()); }
                 metricValueReads = valueReads; valueReads = 0; layoutReads = 0;
                 for (let i = 0; i < 1000; i++) {
                     activityCaptures.add(editor.activity()); activityCaptures.add(viewport.activity());
@@ -63,7 +63,7 @@ test("owner activity retains immutable captures without collecting metrics and f
             const folds = editor.view.folding.getSnapshot(), cursor = new ComparisonRowsCursor(buffer, buffer, Object.freeze([]), folds.index, folds.index);
             let alignment = cursor.next(4096); while (!alignment.result) alignment = cursor.next(4096); cursor.dispose();
             setComparisonRows({ documentId: source.documentId, revision: 1, foldGeneration: folds.generation, id: 42,
-                lineHeight: viewport.snapshot().lineHeight, index: alignment.result.working }); state("alignment queued");
+                lineHeight: viewport.getSnapshot().lineHeight, index: alignment.result.working }); state("alignment queued");
             await settle(); state("alignment painted");
             setComparisonRows(undefined); await settle(); state("alignment cleared");
             const insertion = editor.captureInsertion()!; state("insertion captured"); insertion.cancel(); state("insertion cancelled");

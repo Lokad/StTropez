@@ -151,17 +151,21 @@ coordinates, including inherited CSS zoom. Check the returned revision. A stale 
 can return `undefined`. Inside a grapheme, `coordsAt` uses affinity to choose an edge. The minimap is
 outside the text hit area.
 
-Read the viewport snapshot for the available text width. Scroll in local CSS units. To navigate from a
-host control, use [editor.reveal](editor.md#reveal-a-destination) to select, unfold and focus the target.
-The editor handles keyboard movement, preferred columns and temporary measurement batches.
+`getSnapshot()` returns the last painted geometry in local CSS pixels. `width` measures the text
+area. `gutterWidth` measures the strip for line numbers and fold controls. `scrollTop` and
+`scrollLeft` use logical document coordinates, including on very large files.
 
-`snapshot().width` measures the text area. `gutterWidth` measures the fixed strip for line numbers and fold controls, in CSS pixels. The gutter omits folded lines and comparison padding rows.
+The zero-based interval `[lineFrom, lineTo)` runs from the first source line on screen through the
+last, including partially visible rows. Its ends exclude overscan and comparison padding. The
+interval is empty before the first paint, when only padding is visible, and after disposal.
+`subscribe(listener)` reports geometry changes. A repaint with the same geometry keeps the same
+frozen `ViewportSnapshot`. The returned function unsubscribes the listener.
 
 Check `activity()` for the painted revision, selections, fold/alignment IDs, row generation, pending
 frame and disposal. The immutable `ViewportActivity` is cached and reads no layout. Even with
 `pending: false`, compare the painted state with the model and view. Call `flush()` to paint pending
-work synchronously. `snapshot()` adds `ViewportSnapshot` dimensions, counts and
-[timings](README.md#glossary).
+work synchronously. `getDiagnostics()` returns `ViewportDiagnostics` with row and buffer-read counts,
+overscan bounds, navigation work and [render timings](README.md#glossary).
 
 Call `onRender(listener)` before the first frame to observe initial paint, and keep its unsubscribe
 function. A paint or scheduled render can notify even when rows stay the same. An idle `flush()` is

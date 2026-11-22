@@ -29,7 +29,7 @@ export function createComparisonScroll(win: Window, panes: ComparisonPanes,
             if (disposed || !linked || snapshot() !== capture || reference() !== baseline
                 || source.view.folding.getSnapshot() !== sourceFolds || target.view.folding.getSnapshot() !== targetFolds) return;
             if (!canSync()) { paused = true; return; }
-            const a = source.snapshot(), b = target.snapshot();
+            const a = source.activity(), b = target.activity();
             if (a.rowGeneration !== sourceRows || b.rowGeneration !== targetRows) return;
             if (!source.element.isConnected || !target.element.isConnected || a.disposed || b.disposed) return;
             if (a.pending || b.pending) { if (attempt < 2) request(source, attempt + 1); else paused = true; return; }
@@ -37,24 +37,25 @@ export function createComparisonScroll(win: Window, panes: ComparisonPanes,
             const targetRevision = target === working ? capture.working!.revision : baseline.view.getSnapshot().revision;
             if (a.revision !== sourceRevision || b.revision !== targetRevision || a.foldGeneration !== sourceFolds.generation || b.foldGeneration !== targetFolds.generation) return;
             if (a.aligned !== b.aligned || a.aligned && a.alignmentId !== b.alignmentId) return;
-            const row = Math.max(0, (a.scrollTop - viewportPadding) / a.lineHeight); let targetRow = row;
+            const sourceGeometry = source.getSnapshot(), targetGeometry = target.getSnapshot();
+            const row = Math.max(0, (sourceGeometry.scrollTop - viewportPadding) / sourceGeometry.lineHeight); let targetRow = row;
             if (!a.aligned) {
                 const whole = Math.min(sourceFolds.index.visibleLineCount - 1, Math.floor(row)), line = sourceFolds.index.lineAt(whole) + row - whole;
                 const mapped = comparisonLine(capture.hunks, source === working ? "working" : "baseline", line, capture.baseline!.buffer, capture.working!.buffer);
                 const integer = Math.floor(mapped), hidden = targetFolds.index.hiddenBy(integer); targetRow = targetFolds.index.rowAt(integer) + (hidden ? 0 : mapped - integer);
             }
-            const top = a.scrollTop < viewportPadding ? a.scrollTop : viewportPadding + targetRow * b.lineHeight;
-            if (Math.abs(b.scrollTop - Math.min(Math.max(0, b.verticalExtent - b.height), top)) < .5) return;
+            const top = sourceGeometry.scrollTop < viewportPadding ? sourceGeometry.scrollTop : viewportPadding + targetRow * targetGeometry.lineHeight;
+            if (Math.abs(targetGeometry.scrollTop - Math.min(Math.max(0, targetGeometry.verticalExtent - targetGeometry.height), top)) < .5) return;
             // Record the clamped follower before its synchronous render event can echo back.
-            positions.set(target, Math.min(Math.max(0, b.verticalExtent - b.height), top));
+            positions.set(target, Math.min(Math.max(0, targetGeometry.verticalExtent - targetGeometry.height), top));
             target.scrollTo({ top }); target.flush();
             // CSSOM scroll events arrive later, including for API writes. Remember the clamped
             // logical destination so that event cannot become a new source and feed back.
-            positions.set(target, target.snapshot().scrollTop);
+            positions.set(target, target.getSnapshot().scrollTop);
         });
     }
     function scrolled(view: TextViewport): void {
-        const top = view.snapshot().scrollTop, previous = positions.get(view); positions.set(view, top);
+        const top = view.getSnapshot().scrollTop, previous = positions.get(view); positions.set(view, top);
         if (previous !== undefined && Math.abs(top - previous) < .5) return;
         request(view);
     }
@@ -62,15 +63,15 @@ export function createComparisonScroll(win: Window, panes: ComparisonPanes,
     // releases its capture. Resume from that actual pane when its queued paint settles.
     const resume = () => { if (paused && canSync()) request(leader); };
     const rendered = (view: TextViewport) => {
-        const state = view.snapshot(), generation = paintedRows.get(view); paintedRows.set(view, state.rowGeneration);
-        if (generation !== undefined && generation !== state.rowGeneration) {
+        const { rowGeneration } = view.activity(), generation = paintedRows.get(view); paintedRows.set(view, rowGeneration);
+        if (generation !== undefined && generation !== rowGeneration) {
             // A new grid may move its own source anchor. Keep the initiating pane as leader.
-            positions.set(view, state.scrollTop); request(leader);
+            positions.set(view, view.getSnapshot().scrollTop); request(leader);
         } else scrolled(view);
         resume();
     };
     function remember(view: TextViewport): void {
-        const state = view.snapshot(); positions.set(view, state.scrollTop); paintedRows.set(view, state.rowGeneration);
+        positions.set(view, view.getSnapshot().scrollTop); paintedRows.set(view, view.activity().rowGeneration);
     }
     function unlisten(): void {
         stopObserving?.(); stopObserving = undefined; stopReference?.(); stopReference = undefined;

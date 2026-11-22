@@ -123,7 +123,7 @@ test("large documents and horizontal fragments keep warning work local and sourc
     await fixture(page, (row + "\n").repeat(100000), true);
     const result = await page.evaluate(() => {
         const f = window.warningFixture, viewport = f.editor.viewport, buffer = f.workspace.document(f.editor.view.documentId).buffer;
-        viewport.scrollTo({ top: viewport.snapshot().lineHeight * 50000 }); viewport.flush();
+        viewport.scrollTo({ top: viewport.getSnapshot().lineHeight * 50000 }); viewport.flush();
         const rows = [...f.host.querySelectorAll<HTMLElement>(".st-viewport-layer .st-viewport-row")], before = buffer.readMetrics();
         const capture = f.editor.characterWarnings.query(300001, 500000, { maxUnits: 64, maxWarnings: 8 })!, after = buffer.readMetrics();
         const bounded = { read: after.sliceUnits - before.sliceUnits, exports: after.textExports, units: capture.scannedUnits, complete: capture.complete };

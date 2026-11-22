@@ -2,7 +2,7 @@ import type { clientBox } from "./dom-coordinates.ts";
 
 type Velocity = Readonly<{ x: number; y: number }>;
 type Host = Pick<Window, "requestAnimationFrame" | "cancelAnimationFrame">;
-type Viewport = Readonly<{ snapshot: () => Readonly<{ scrollLeft: number; scrollTop: number }>;
+type Viewport = Readonly<{ getSnapshot: () => Readonly<{ scrollLeft: number; scrollTop: number }>;
     scrollTo: (position: Readonly<{ left: number; top: number }>) => void; flush: () => void }>;
 const direct = (work: () => void) => work();
 
@@ -50,14 +50,14 @@ export function createEdgeAutoscroll<C>(host: Host, viewport: Viewport, options:
                 const speed = options.velocity(capture);
                 if (!speed.x && !speed.y && !options.updateAtRest) { previousTime = undefined; return; }
                 const elapsed = previousTime === undefined ? 1000 / 60 : Math.max(0, Math.min(32, time - previousTime)); previousTime = time;
-                const before = viewport.snapshot();
+                const before = viewport.getSnapshot();
                 viewport.scrollTo({ left: before.scrollLeft + speed.x * elapsed / 1000, top: before.scrollTop + speed.y * elapsed / 1000 }); viewport.flush();
                 if (!valid(capture, epoch)) return;
                 options.update(capture);
                 // A callback may already have scheduled a replacement gesture. Its frame owns continuation.
                 if (generation !== epoch || frame !== undefined) return;
                 if (options.capture() === undefined) return;
-                const after = viewport.snapshot();
+                const after = viewport.getSnapshot();
                 if (after.scrollLeft !== before.scrollLeft || after.scrollTop !== before.scrollTop) {
                     // Selection avoids a geometry read after selection writes; drop placement rechecks its edge.
                     if (options.recheckAfterUpdate) schedule(); else request();

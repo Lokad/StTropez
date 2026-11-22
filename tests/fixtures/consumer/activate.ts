@@ -9,7 +9,7 @@ export function createActivationSession(original: string, selection: Selection, 
     const ownTab = shared ? undefined : workspace.tabs.open({ kind: "text", documentId: source.documentId }, "source"), view = workspace.createDocumentView(source.documentId, selection), history = workspace.observeHistory(source.documentId);
     let editor: TextEditor | undefined, find: FindController | undefined, stopFind: (() => void) | undefined, viewState: ViewState | undefined;
     let disposed = false, mounts = 0, workers = 0;
-    const busy = () => { const s = editor?.snapshot(); return !!s && (s.composing || s.pendingInput || s.pendingCommand || s.pendingWord || s.pendingGrapheme || s.pendingDragScroll); };
+    const busy = () => { const s = editor?.activity(); return !!s && (s.composing || s.pendingInput || s.pendingCommand || s.pendingWord || s.pendingGrapheme || s.pendingDragScroll); };
     const unmount = () => { if (busy()) return false; stopFind?.(); stopFind = undefined; find?.dispose(); find = undefined;
         if (editor) { viewState = editor.captureView(); editor.dispose(); editor = undefined; } return true; };
     return Object.freeze({
@@ -39,7 +39,7 @@ export function createActivationSession(original: string, selection: Selection, 
         snapshot: () => ({ resourceId: source.id, documentId: source.documentId, viewId: view.id, revision: source.getSnapshot().revision, selections: view.getSnapshot().selectionSet,
             tab: workspace.tabs.getSnapshot().find(tab => tab.id === (shared ? shared.tab() : ownTab)) ?? null, readOnly: editor ? editor.getSnapshot().readOnlyReason !== null : null,
             history: history.getSnapshot(), diagnostics: workspace.diagnostics(), mounts, workers, disposed,
-            input: editor?.snapshot() ?? null, viewport: editor?.viewport.snapshot() ?? null, find: find?.getSnapshot() ?? null,
+            input: editor?.getDiagnostics() ?? null, viewport: editor?.viewport.getDiagnostics() ?? null, find: find?.getSnapshot() ?? null,
             exports: disposed ? 0 : workspace.document(source.documentId).buffer.readMetrics().textExports }),
         dispose: () => { if (!disposed) { stopFind?.(); stopFind = undefined; find?.dispose(); editor?.dispose(); editor = undefined; find = undefined; view.dispose();
             if (!shared) { workspace.tabs.close(ownTab!); workspace.releaseResource(source.id, true); } disposed = true; } return workspace.diagnostics(); },

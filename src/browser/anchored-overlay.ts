@@ -89,7 +89,7 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
         const document = workspace.observeDocument(view.documentId).getSnapshot();
         if (!document || document.revision !== anchor.revision || !ownsTextSurface(workspace, view, editor.tab)) { hide(); return; }
         if (!element.isConnected) { conceal(); return; }
-        const box = clientBox(viewport.element, viewport.settings().minimap, viewport.snapshot().gutterWidth);
+        const box = clientBox(viewport.element, viewport.settings().minimap, viewport.getSnapshot().gutterWidth);
         const visual = win.visualViewport, left = visual?.offsetLeft ?? 0, top = visual?.offsetTop ?? 0;
         const right = left + (visual?.width ?? owner.documentElement.clientWidth), bottom = top + (visual?.height ?? owner.documentElement.clientHeight);
         const point = visibleAnchor(editor, anchor, document.buffer, { left: Math.max(left, box.left), right: Math.min(right, box.right),

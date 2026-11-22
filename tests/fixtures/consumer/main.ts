@@ -1,6 +1,7 @@
 import { Workspace, TextBuffer, TextDiff, WordCursor, importText, exportText, anchoredRange, composePositionMaps, createGraphemeCursor } from "sttropez";
 import { editRefusedEvent, inputConflictEvent, typedTextEvent, type TypedTextDetail, createFontAssetController, createFindController, createNavigationHistory, createRegexFindBackend, mountTextComparison, mountTextViewport, mountTextEditor } from "sttropez/browser";
 import * as browserApi from "sttropez/browser";
+import type { TextEditorDiagnostics, ViewportDiagnostics, ViewportSnapshot } from "sttropez/browser";
 import { fontFixture } from "./font-fixture.js";
 import { createSelectionSet, planSelectionEdits } from "sttropez";
 import type { ResourceVisibility, SaveReview } from "sttropez";
@@ -102,7 +103,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
         let editor = mountTextEditor(host, model, tab, options);
         const other = mountTextEditor(otherHost, model, tab, { view: peer, ariaLabel: "Restored fold peer" });
         const wait = async () => { const deadline = performance.now() + 10000;
-            while ([editor, other].some(e => { const s = e.snapshot(), p = e.viewport.snapshot(); return s.pendingCaret || s.pendingWord || s.pendingGrapheme || s.pendingDragScroll || p.pending
+            while ([editor, other].some(e => { const s = e.activity(), p = e.viewport.activity(); return s.pendingCaret || s.pendingWord || s.pendingGrapheme || s.pendingDragScroll || p.pending
                 || p.revision !== model.document(source.documentId).revision || p.selectionSet !== e.view.getSnapshot().selectionSet || p.foldGeneration !== e.view.folding.getSnapshot().generation; })) {
                 if (performance.now() > deadline) throw new Error("Compiled folding did not settle."); await new Promise(resolve => setTimeout(resolve, 0));
             } };
@@ -121,7 +122,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             } finally { discovery.dispose(); }
             if (editor.commands.get("fold.collapse-all")) throw new Error("Disposed fold command remained in the menu.");
             editor.focus(); await wait();
-            if (editor.viewport.snapshot().rows !== 2 || editor.viewport.snapshot().visibleLines !== 2 || peer.folding.getSnapshot().index.collapsedCount) throw new Error("Compiled folded projection is not bounded or independent.");
+            if (editor.viewport.getDiagnostics().rows !== 2 || editor.viewport.getDiagnostics().visibleLines !== 2 || peer.folding.getSnapshot().index.collapsedCount) throw new Error("Compiled folded projection is not bounded or independent.");
             const summary = host.querySelector<HTMLElement>(".st-fold-summary");
             if (!summary || !getComputedStyle(summary, "::after").content.includes("100000 lines hidden") || getComputedStyle(summary).pointerEvents !== "auto")
                 throw new Error("Restored assets did not present a clickable hidden-line count.");
@@ -149,7 +150,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
                 await wait();
                 if (!forwarded) throw new Error("Restored change subscription lost the edit or its provenance.");
             } finally { stop(); }
-            if (editor.viewport.snapshot().visibleLines !== 2) throw new Error("Compiled folded edit exposed hidden rows.");
+            if (editor.viewport.getDiagnostics().visibleLines !== 2) throw new Error("Compiled folded edit exposed hidden rows.");
             model.undo({ documentId: source.documentId, expectedRevision: 1 }); await wait(); exact();
             const saved = editor.captureView(), retired = editor;
             const pending = editor.operation({ write: true }, async op => {
@@ -175,7 +176,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             if ((await pending).status !== "stale") throw new Error("A retired editor kept its pending edit.");
             if (!promptSignal.aborted) throw new Error("Retired view left its line request active.");
             reply(200); await Promise.resolve();
-            if (editor.viewport.snapshot().visibleLines !== 2 || view.getSnapshot().selectionSet.ranges.length !== 2) throw new Error("Compiled remount lost folds or complete selections.");
+            if (editor.viewport.getDiagnostics().visibleLines !== 2 || view.getSnapshot().selectionSet.ranges.length !== 2) throw new Error("Compiled remount lost folds or complete selections.");
             const fresh = model.createDocumentView(source.documentId), freshHost = document.createElement("div"); freshHost.style.height = "180px"; document.body.append(freshHost);
             const restored = mountTextEditor(freshHost, model, tab, { view: fresh });
             try {
@@ -243,12 +244,12 @@ const fixture = { text: () => workspace.document(documentId).text(),
             find.setQuery("(?<value>foo|foobar|k|𐐨)"); await wait("ready"); if (workers || find.getSnapshot().count) throw new Error("Literal mode started a regex worker.");
             const buffer = model.document(source.documentId).buffer, beforeReveal = editor.view.getSnapshot();
             editor.viewport.revealRange(buffer.offsetAt(50000), buffer.offsetAt(50003)); editor.viewport.flush();
-            const scrolled = editor.viewport.snapshot().scrollTop;
+            const scrolled = editor.viewport.getSnapshot().scrollTop;
             editor.viewport.revealRange(buffer.offsetAt(50001), buffer.offsetAt(50002)); editor.viewport.flush();
-            if (!scrolled || editor.viewport.snapshot().scrollTop !== scrolled || editor.view.getSnapshot() !== beforeReveal)
+            if (!scrolled || editor.viewport.getSnapshot().scrollTop !== scrolled || editor.view.getSnapshot() !== beforeReveal)
                 throw new Error("Restored range reveal moved a visible result or changed the selection.");
             find.setQuery("foobar", { preview: true }); await wait("ready"); editor.viewport.flush();
-            if (find.getSnapshot().current !== 0 || editor.viewport.snapshot().scrollTop > editor.viewport.snapshot().lineHeight || editor.view.getSnapshot() !== beforeReveal)
+            if (find.getSnapshot().current !== 0 || editor.viewport.getSnapshot().scrollTop > editor.viewport.getSnapshot().lineHeight || editor.view.getSnapshot() !== beforeReveal)
                 throw new Error("Restored Find did not preview the offscreen match independently of selection.");
             if (!find.next() || find.getSnapshot().wrappedTo !== null || !find.next() || find.getSnapshot().wrappedTo !== "start")
                 throw new Error("Restored Find did not select the preview and then wrap.");
@@ -327,8 +328,8 @@ const fixture = { text: () => workspace.document(documentId).text(),
             if (kind === "paste-word") editor.registerPasteHandler({ accepts: () => true, paste: (_data, target) => { target.insert("out of order"); } });
             host.addEventListener(typedTextEvent, event => typed.push((event as CustomEvent<TypedTextDetail>).detail));
             editor.element.addEventListener(inputConflictEvent, event => recovered.push((event as CustomEvent<InputConflictDetail>).detail.attemptedText));
-            const ready = async () => { for (let turn = 0; ; turn++) { const s = editor.snapshot();
-                if (!s.pendingInput && !s.pendingWord && !s.pendingGrapheme && !s.pendingCaret && !editor.viewport.snapshot().pending) return;
+            const ready = async () => { for (let turn = 0; ; turn++) { const s = editor.activity();
+                if (!s.pendingInput && !s.pendingWord && !s.pendingGrapheme && !s.pendingCaret && !editor.viewport.activity().pending) return;
                 if (turn >= 4000) throw new Error("Compiled ordered input did not settle."); await new Promise<void>(resolve => setTimeout(resolve, 1)); } };
             const command = () => {
                 if (kind !== "pointer-word") return input.dispatchEvent(new KeyboardEvent("keydown", { key: kind === "many-carets" ? "ArrowDown" : "ArrowRight", ctrlKey: kind === "long-word" || kind === "paste-word", bubbles: true, cancelable: true }));
@@ -343,7 +344,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             };
             try {
                 editor.focus(); editor.view.setSelections(0, heads.map(head => ({ anchor: head, head })), heads.length - 1); await ready(); command(); type();
-                if (!editor.snapshot().pendingInput || model.document(source.documentId).revision !== 0 || typed.length) throw new Error("Compiled command failed to yield/capture input.");
+                if (!editor.activity().pendingInput || model.document(source.documentId).revision !== 0 || typed.length) throw new Error("Compiled command failed to yield/capture input.");
                 await ready(); const changed = model.document(source.documentId), parts: string[] = []; let from = 0;
                 if (kind !== "paste-word" && (typed[0]?.text !== text || typed[0].documentId !== source.documentId || typed[0].revision !== changed.revision
                     || typed[0].selectionSet !== editor.view.getSnapshot().selectionSet || !Object.isFrozen(typed[0]))) throw new Error("Compiled typing reported the wrong committed input.");
@@ -362,7 +363,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
         }
         return { cases: results, source: "restored-compiled-assets", nativeQualified: false };
     },
-    multipleInput: () => { const { model, source, editor } = multipleInput!, document = model.document(source.documentId), state = editor.snapshot(), viewport = editor.viewport.snapshot();
+    multipleInput: () => { const { model, source, editor } = multipleInput!, document = model.document(source.documentId), state = editor.getDiagnostics(), viewport = editor.viewport.getDiagnostics();
         return { text: document.buffer.slice(0, document.buffer.length), selectionSet: editor.view.getSnapshot().selectionSet, revision: document.revision,
             pending: state.pendingCaret || state.pendingGrapheme || state.pendingWord || viewport.pending, commits: state.commits, exports: document.buffer.readMetrics().textExports }; },
     prepareMultipleEnd: () => { const { model, source, editor } = multipleInput!, before = model.document(source.documentId);
@@ -456,7 +457,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
         internalBaseline: visibility === "internal" && !inventory.documents.some(document => document.id === reference.view.documentId)
             && reference.tab === undefined,
         selectedHunk: review.selectedHunk, canNavigate: review.canNavigate, canRevert: review.canRevert,
-        viewId: comparisonView.id, selection: comparisonView.getSnapshot().selection, reference: comparison.panes.reference.viewport.snapshot(), working: comparison.panes.working.viewport.snapshot() }; },
+        viewId: comparisonView.id, selection: comparisonView.getSnapshot().selection, reference: comparison.panes.reference.viewport.getDiagnostics(), working: comparison.panes.working.viewport.getDiagnostics() }; },
     hunkAt: (index: number) => comparison.hunkAt(index),
     remountComparison: () => {
         const baseline = comparison.controller.getSnapshot().baseline!, state = comparison.panes.working.captureView();
@@ -468,8 +469,9 @@ const fixture = { text: () => workspace.document(documentId).text(),
     diff: () => { const d = new TextDiff(TextBuffer.from("a\r\n"), TextBuffer.from("a\n"));
         try { let s = d.next(512); while (s.status === "running") s = d.next(512); return { status: s.status, whitespaceOnly: s.hunks[0]?.whitespaceOnly }; }
         finally { d.dispose(); } },
-    viewport: () => viewport.snapshot(),
-    candidate: () => ({ ...candidate.snapshot(), viewport: candidate.viewport.snapshot() }),
+    viewport: () => viewport.getDiagnostics(),
+    candidate: () => ({ ...candidate.getDiagnostics() satisfies TextEditorDiagnostics,
+        viewport: candidate.viewport.getDiagnostics() satisfies ViewportDiagnostics, geometry: candidate.viewport.getSnapshot() satisfies ViewportSnapshot }),
     captureCandidate: candidate.captureView,
     navigation: () => {
         const buffer = TextBuffer.from("x".repeat(100_000) + "  tail"), cursor = new WordCursor(buffer, 0, 1);

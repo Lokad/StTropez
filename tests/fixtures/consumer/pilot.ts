@@ -103,10 +103,10 @@ export function mountPackagedPilot(host: HTMLElement, original: string) {
                 pendingSaves: Object.freeze([...pending.values()].map(({ submission: s }) => Object.freeze({ id: s.id, resourceId: s.target.id, revision: s.revision, length: s.value.length, expectedServerVersion: s.expectedServerVersion }))),
                 bindings: Object.freeze({ activeViews: views.filter(([, editor]) => editor).length, mounts,
                     views: Object.freeze(views.flatMap(([id, editor]) => editor ? [Object.freeze({ id, viewId: editor.view.id, documentId: editor.view.documentId,
-                        selection: editor.view.getSnapshot().selection, metrics: Object.freeze({ ...editor.snapshot(), viewport: editor.viewport.snapshot() }) })] : [])),
+                        selection: editor.view.getSnapshot().selection, metrics: Object.freeze({ ...editor.getDiagnostics(), viewport: editor.viewport.getDiagnostics() }) })] : [])),
                     comparison: c && comparison ? Object.freeze({ status: c.status, generation: c.generation, baseline: c.baseline ? Object.freeze({ version: c.baseline.version, epoch: c.baseline.epoch, length: c.baseline.buffer.length }) : null,
                         workingRevision: c.working?.revision, referenceIsWorkingBuffer: c.baseline?.buffer === document?.buffer, viewId: reviewView.id, selection: reviewView.getSnapshot().selection,
-                        hunks: c.hunks.length, hunkRanges: c.hunks, progress: c.progress, work: comparison.getDiagnostics(), input: comparison.panes.working.snapshot(), workingViewport: comparison.panes.working.viewport.snapshot(), referenceViewport: comparison.panes.reference.viewport.snapshot() }) : null }) });
+                        hunks: c.hunks.length, hunkRanges: c.hunks, progress: c.progress, work: comparison.getDiagnostics(), input: comparison.panes.working.getDiagnostics(), workingViewport: comparison.panes.working.viewport.getDiagnostics(), referenceViewport: comparison.panes.reference.viewport.getDiagnostics() }) : null }) });
         },
         range: (from: number, to: number) => workspace.document(source.documentId).buffer.slice(from, to),
         referenceRange: (from: number, to: number) => comparison!.controller.getSnapshot().baseline!.buffer.slice(from, to),

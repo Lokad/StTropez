@@ -136,7 +136,7 @@ async function probeTypedHover() {
     } finally { client.dispose(); }
 }
 const bridge = { text, probeTypedHover, select: (at: number) => editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: at, head: at }),
-    state: () => ({ provider: provider.snapshot(), editor: controller.getDiagnostics(), completion: controller.getSnapshot(), history: workspace.observeHistory(source.documentId).getSnapshot(), diagnostics: workspace.diagnostics(), notes, companion: companion.documentId, metrics: editor.snapshot(), errors }),
+    state: () => ({ provider: provider.snapshot(), editor: controller.getDiagnostics(), completion: controller.getSnapshot(), history: workspace.observeHistory(source.documentId).getSnapshot(), diagnostics: workspace.diagnostics(), notes, companion: companion.documentId, metrics: editor.getDiagnostics(), errors }),
     showDiagnostic: () => {
         const state = diagnostics.getSnapshot(), first = state.diagnostics[0];
         if (first) { diagnosticHint.textContent = first.message; hint.show({ revision: state.diagnosticRevision, from: first.from, to: first.to }); }

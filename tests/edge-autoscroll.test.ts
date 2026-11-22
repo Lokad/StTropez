@@ -19,7 +19,7 @@ function fixture(maximum = 1000) {
     const frames = new Map<number, FrameRequestCallback>(), updates: number[] = [], cancelled: number[] = [];
     let duringFlush = () => {}, duringUpdate = () => {};
     const scroll = createEdgeAutoscroll({ requestAnimationFrame: work => { frames.set(++id, work); return id; }, cancelAnimationFrame: id => { frames.delete(id); } }, {
-        snapshot: () => position,
+        getSnapshot: () => position,
         scrollTo: point => { position = { scrollLeft: Math.min(maximum, point.left), scrollTop: Math.min(maximum, point.top) }; },
         flush: () => duringFlush(),
     }, {

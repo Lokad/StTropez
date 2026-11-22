@@ -30,7 +30,7 @@ function fixture(count = 5000) {
         const read = () => { reads++; return { revision: current.getSnapshot().revision,
             foldGeneration: current.folding.getSnapshot().generation, naturalLineHeight: 20, lineHeight: 20, rowGeneration: installed?.id ?? 0,
             aligned: !!installed, alignmentId: installed?.id ?? null, pending: false, disposed: false, scrollTop: top, verticalExtent: count * 40, height: 200 }; };
-        const value = { view: current, element, snapshot: read, activity: read,
+        const value = { view: current, element, getSnapshot: read, activity: read,
             onRender: (listener: () => void) => { rendered.addEventListener("render", listener); return () => rendered.removeEventListener("render", listener); },
             scrollTo: ({ top: next }: { top?: number }) => { if (next !== undefined) top = next; }, flush: () => {} } as unknown as TextViewport;
         return { value, element, setComparisonRows: (rows: ViewportComparisonRows | undefined) => { installed = rows; return true; }, installed: () => installed, render: () => rendered.dispatchEvent(new Event("render")), renderListeners: () => getEventListeners(rendered, "render").length,

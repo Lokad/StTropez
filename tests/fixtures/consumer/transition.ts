@@ -9,7 +9,7 @@ let disposed = false;
 const fixture = {
     snapshot: () => ({ text: workspace.document(resource.documentId).buffer.slice(0, workspace.document(resource.documentId).buffer.length),
         selections: editor.view.getSnapshot().selectionSet, history: workspace.observeHistory(resource.documentId).getSnapshot() }),
-    ready: () => { const input = editor.snapshot(), viewport = editor.viewport.snapshot(); return !input.pendingInput && !input.pendingCommand && !input.pendingCaret
+    ready: () => { const input = editor.activity(), viewport = editor.viewport.activity(); return !input.pendingInput && !input.pendingCommand && !input.pendingCaret
         && !viewport.pending && viewport.revision === workspace.document(resource.documentId).revision && viewport.selectionSet === editor.view.getSnapshot().selectionSet; },
     dispose: () => { if (!disposed) { disposed = true; editor.dispose(); workspace.tabs.close(tab); workspace.releaseResource(resource.id, true); } return workspace.diagnostics(); },
 };

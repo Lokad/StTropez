@@ -307,6 +307,10 @@ try {
     await page.waitForFunction(() => { const state = window.consumer.candidate(); return state.viewport.revision === 4 && !state.viewport.pending; });
     const candidate = await page.evaluate(() => window.consumer.candidate());
     assert.equal(candidate.commits, 1); assert.ok(candidate.inputUnits <= 2600);
+    assert.ok(candidate.beforeInputEvents > 0 && Number.isFinite(candidate.lastBeforeInputMs));
+    assert.ok(candidate.viewport.renders > 0 && Number.isFinite(candidate.viewport.lastRenderMs));
+    assert.equal(candidate.geometry.lineFrom, 0); assert.equal(candidate.geometry.lineTo, 1);
+    assert.ok(!("lastRenderMs" in candidate.geometry));
     assert.equal(await candidateInput.evaluate(element => getComputedStyle(element).width), "1px");
     await candidateInput.press("Control+z"); assert.equal(await page.evaluate(() => window.consumer.text()), "edited restored package");
     for (const target of [candidateInput, editor]) {

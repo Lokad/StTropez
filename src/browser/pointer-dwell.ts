@@ -21,7 +21,7 @@ export function observePointerDwell(editor: TextEditor, listener: (position: Poi
         win.clearTimeout(timer); timer = undefined; pending = undefined; last = undefined;
     }
     function hit(x: number, y: number) {
-        const state = viewport.snapshot(), box = clientBox(viewport.element, viewport.settings().minimap, state.gutterWidth);
+        const state = viewport.getSnapshot(), box = clientBox(viewport.element, viewport.settings().minimap, state.gutterWidth);
         if (x < box.left || x >= box.right || y < box.top || y >= box.bottom) return;
         const point = viewport.hitTest(x, y);
         if (point && !point.padding && Math.abs(point.left - x) <= state.columnWidth * box.zoom * 1.5

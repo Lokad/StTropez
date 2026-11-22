@@ -58,7 +58,7 @@ test("viewport input ownership and render delivery survive removal, reentrancy a
             root.querySelector<HTMLButtonElement>(".st-fold-button")!.focus();
             let afterDestroy = 0; viewport.onRender(() => afterDestroy++);
             folding.setRanges(folding.getSnapshot(), []); viewport.flush();
-            const destroyed = viewport.snapshot(); const inactive = !replacement.setComposing(true); replacement.dispose();
+            const destroyed = viewport.getDiagnostics(); const inactive = !replacement.setComposing(true); replacement.dispose();
             viewport.onRender(() => afterDestroy++)(); viewport.flush();
             return { firstOrder, secondOrder, revision: workspace.document(source.documentId).revision, errors, afterError, duplicate,
                 guarded, existingEscaped, newEscaped, markersIgnored, escapedFocus, removedFocus, detached, expired, inactive, afterDestroy,

@@ -1,5 +1,6 @@
 import { clientBox, cssZoom, minimapWidth } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
+import { Store, type Observable } from "../core/observable.ts";
 import { captureTextSurface, ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentSnapshot, DocumentView, TabId, Workspace } from "../core/workspace.ts";
 import type { Selection } from "../core/history.ts";
@@ -34,7 +35,13 @@ export type RenderedRowBounds = Readonly<{ revision: number; foldGeneration: num
 
 export type ViewportActivity = Readonly<{ revision: number | null; selectionSet: SelectionSet | null; foldGeneration: number;
     aligned: boolean; alignmentId: number | null; rowGeneration: number; pending: boolean; disposed: boolean }>;
-export type ViewportSnapshot = ViewportActivity & Readonly<{ selection: Selection | null; renders: number; firstLine: number; lastLine: number;
+export type ViewportSnapshot = Readonly<{ lineFrom: number; lineTo: number; scrollTop: number; scrollLeft: number;
+    width: number; height: number; gutterWidth: number; lineHeight: number; naturalLineHeight: number; columnWidth: number;
+    verticalExtent: number; horizontalExtent: number }>;
+const emptyViewport: ViewportSnapshot = Object.freeze({ lineFrom: 0, lineTo: 0, scrollTop: 0, scrollLeft: 0,
+    width: 0, height: 0, gutterWidth: 0, lineHeight: 0, naturalLineHeight: 0, columnWidth: 0, verticalExtent: 0, horizontalExtent: 0 });
+const geometryKeys = Object.keys(emptyViewport) as (keyof ViewportSnapshot)[];
+export type ViewportDiagnostics = ViewportActivity & Readonly<{ selection: Selection | null; renders: number; firstLine: number; lastLine: number;
     visibleLines: number; collapsedFolds: number; visualRows: number; paddingRows: number; naturalLineHeight: number;
     rows: number; partialRows: number; textUnits: number; readUnits: number; navigationReadUnits: number; navigationRows: number; navigationBatches: number; navigationPreparedRows: number; maxNavigationBatchRows: number; lastRenderMs: number; scrollTop: number; scrollLeft: number; width: number; height: number; gutterWidth: number;
     lineHeight: number; columnWidth: number; verticalExtent: number; horizontalExtent: number;
@@ -51,7 +58,7 @@ type ViewportNavigation = Readonly<{
     caretAtColumn: (line: number, column: number) => Readonly<Pick<CaretRectangle, "offset" | "affinity" | "revision">> | undefined;
     prepareNavigationRows: (lines: readonly number[]) => () => void;
 }>;
-export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentView; decorations: DecorationLayers;
+export type TextViewport = Observable<ViewportSnapshot> & Readonly<{ element: HTMLDivElement; view: DocumentView; decorations: DecorationLayers;
     /** Observe completed paints and consumed scheduled renders, including unchanged paints. */
     onRender: (listener: () => void) => () => void;
     /** One input owner controls composition and source-focus recovery. */
@@ -69,7 +76,7 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     activity: () => ViewportActivity;
     revealOffset: (offset: number, options?: RevealOptions) => void;
     revealRange: (from: number, to: number, align?: RevealAlignment) => void;
-    snapshot: () => ViewportSnapshot; dispose: () => void }>;
+    getDiagnostics: () => ViewportDiagnostics; dispose: () => void }>;
 type Row = Readonly<{ line: number; start: number; end: number; breakEnd: number; from: number; to: number; text: string; left: number; complete: boolean; endsLine: boolean }>;
 /** CRLF has two raw positions at one painted line edge. Keep the requested model offset. */
 function rowCaretOffset(buffer: TextBuffer, end: number, offset: number): number | undefined {
@@ -177,6 +184,11 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     };
     const notify = (type: "render" | "focus") => events.dispatchEvent(new win.Event(type));
     const rulers = mountColumnRulers(layer, padding), notifications = workspace.createNotificationScope();
+    const geometryState = new Store(emptyViewport, notifications);
+    function publishGeometry(next: ViewportSnapshot): void {
+        const prior = geometryState.get();
+        if (geometryKeys.some(key => prior[key] !== next[key])) notifications.publish(geometryState, Object.freeze(next));
+    }
     let currentLineBackground: HTMLDivElement | undefined;
     const clearCurrentLine = () => { currentLineBackground?.remove(); currentLineBackground = undefined; };
     const currentLine = (document: DocumentSnapshot, selections: SelectionSet, index: RowIndex): number | undefined => {
@@ -552,7 +564,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             layer.style.transform = "none"; layer.style.width = "0px"; layer.style.height = "0px";
             root.setAttribute("aria-disabled", "true");
             previous = undefined; anchor = undefined; renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; firstLine = 0; lastLine = 0;
-            renderedIndex = emptyIndex; renderedFoldGeneration = -1; renderedAlignmentId = null; comparisonRows = undefined; paddingRows.clear(); foldButtons.clear(); foldLayer.replaceChildren(); return;
+            renderedIndex = emptyIndex; renderedFoldGeneration = -1; renderedAlignmentId = null; comparisonRows = undefined; paddingRows.clear(); foldButtons.clear(); foldLayer.replaceChildren();
+            publishGeometry(emptyViewport); return;
         }
         const folds = view.folding.getSnapshot();
         if (comparisonRows && (comparisonRows.revision !== document.revision || comparisonRows.foldGeneration !== folds.generation || !comparisonRows.index.matches(document.buffer, folds.index))) { comparisonRows = undefined; rowGeneration++; }
@@ -646,6 +659,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             }
             // Consuming scheduled work still releases caret/alignment/linked-scroll listeners.
             // An idle synchronous flush needs neither row work nor a new caret frame.
+            if (geometryState.get().horizontalExtent !== x.extent) publishGeometry({ ...geometryState.get(), horizontalExtent: x.extent });
             if (scheduled) notify("render");
             return;
         }
@@ -655,7 +669,18 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const lastRow = Math.min(index.visibleLineCount, Math.max(firstRow + 1, Math.ceil((top + height) / lineHeight) + overscanLines));
         firstLine = index.lineAt(firstRow); lastLine = index.lineAt(lastRow - 1) + 1;
         const next: Row[] = [], blanks: number[] = [];
-        for (let visible = firstRow; visible < lastRow; visible++) { if (gapAt(index, visible)) blanks.push(visible); else next.push(row(document.buffer, index.lineAt(visible))); }
+        const visibleFrom = Math.floor((top - padding) / lineHeight), visibleTo = Math.ceil((top + height - padding) / lineHeight);
+        let lineFrom = 0, lineTo = 0;
+        for (let visible = firstRow; visible < lastRow; visible++) {
+            if (gapAt(index, visible)) { blanks.push(visible); continue; }
+            const line = index.lineAt(visible); next.push(row(document.buffer, line));
+            if (height > 0 && visible >= visibleFrom && visible < visibleTo) {
+                if (!lineTo) lineFrom = line;
+                lineTo = line + 1;
+            }
+        }
+        const paintedGeometry = { lineFrom, lineTo, scrollTop: top, scrollLeft: left, width, height, gutterWidth,
+            lineHeight, naturalLineHeight, columnWidth, verticalExtent: y.extent, horizontalExtent: x.extent };
         visibleItems = next; dirtyRows.clear();
         retainRows(document, next);
         partialRows = next.filter(row => !row.complete).length;
@@ -784,6 +809,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         lastRenderMs = win.performance.now() - started;
         // Keep the scroll/extent values actually painted; reveal corrections may queue a newer one.
         painted = { key, horizontalAnchor, placement: fragmentPlacement };
+        publishGeometry(paintedGeometry);
         notify("render");
     }
     const foldButton = (target: EventTarget | null): HTMLButtonElement | undefined => {
@@ -886,6 +912,13 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         element: root,
         view,
         activity,
+        getSnapshot: geometryState.observable.getSnapshot,
+        subscribe(listener) {
+            if (disposed) throw new Error("Viewport is disposed.");
+            const unsubscribe = geometryState.observable.subscribe(listener);
+            const stop = () => { unsubscribe(); observationStops.delete(stop); };
+            observationStops.add(stop); return stop;
+        },
         onRender: listener => observe("render", listener),
         bindInput: focus => {
             if (disposed || !live() || inputOwner) throw new Error("Viewport requires one current input owner.");
@@ -1017,7 +1050,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
                 horizontal: "nearest", vertical: "nearest", affinity: "after" };
             schedule();
         },
-        snapshot: () => Object.freeze({ ...activity(), selection: renderedSelection, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, visibleLines: previous ? view.folding.getSnapshot().index.visibleLineCount : 0, collapsedFolds: previous ? renderedIndex.collapsedCount : 0, visualRows: previous ? renderedIndex.visibleLineCount : 0, paddingRows: paddingRows.size, naturalLineHeight, navigationReadUnits, navigationRows, navigationBatches, navigationPreparedRows: preparedRows?.rows.size ?? 0, maxNavigationBatchRows, lastRenderMs,
+        getDiagnostics: () => Object.freeze({ ...activity(), selection: renderedSelection, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, visibleLines: previous ? view.folding.getSnapshot().index.visibleLineCount : 0, collapsedFolds: previous ? renderedIndex.collapsedCount : 0, visualRows: previous ? renderedIndex.visibleLineCount : 0, paddingRows: paddingRows.size, naturalLineHeight, navigationReadUnits, navigationRows, navigationBatches, navigationPreparedRows: preparedRows?.rows.size ?? 0, maxNavigationBatchRows, lastRenderMs,
             scrollTop: top, scrollLeft: left, width, height, gutterWidth, lineHeight, columnWidth, verticalExtent: y.extent, horizontalExtent: x.extent,
             physicalHeight: y.physicalExtent, physicalWidth: x.physicalExtent }),
         dispose: () => {
@@ -1025,7 +1058,6 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             releaseScrollbar(); pressedSummary = undefined;
             decorations.dispose(); visibleItems = []; dirtyRows.clear();
             inputOwner?.detach(); inputOwner = undefined;
-            for (const stop of observationStops) stop();
             rulers.clear(); clearCurrentLine(); settings = defaultSettings;
             minimap?.dispose(); minimap = undefined;
             observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); rowSources.clear(); rowSourceRevision = null; paddingRows.clear(); comparisonRows = undefined; renderedAlignmentId = null; geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
@@ -1033,6 +1065,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             navigationBatches = 0; maxNavigationBatchRows = 0;
             renderedIndex = emptyIndex; renderedFoldGeneration = -1; lineNumbers.clear(); numbers.replaceChildren(); foldButtons.clear(); foldLayer.replaceChildren();
             renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; navigationReadUnits = 0; navigationRows = 0; layer.replaceChildren(); root.replaceChildren(); root.remove();
+            publishGeometry(emptyViewport);
+            for (const stop of observationStops) stop();
             if (!options.view) view.dispose();
         }
     });

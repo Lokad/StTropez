@@ -22,7 +22,7 @@ export function createComparisonAlignment(win: Window, panes: ComparisonPanes,
     const schedule = () => { if (!disposed && enabled && !scheduled) { runner.schedule(step); scheduled = true; } };
     const clear = () => { workingMount.setComparisonRows(undefined); reference()?.setComparisonRows(undefined); };
     const current = (c: Capture) => getComparison() === c.state && reference() === c.reference && working.view.folding.getSnapshot() === c.b && c.reference.editor.view.folding.getSnapshot() === c.a;
-    const pitch = (c: Capture) => Math.max(working.viewport.snapshot().naturalLineHeight, c.reference.editor.viewport.snapshot().naturalLineHeight);
+    const pitch = (c: Capture) => Math.max(working.viewport.getSnapshot().naturalLineHeight, c.reference.editor.viewport.getSnapshot().naturalLineHeight);
     function listen(): void {
         stopObserving = panes.observe({ render: () => {
             if (enabled && (!capture || !current(capture) || result && (status === "waiting" && stableInput() || pitch(capture) !== installedPitch))) schedule();
@@ -56,8 +56,9 @@ export function createComparisonAlignment(win: Window, panes: ComparisonPanes,
     }
     function publish(c: Capture): void {
         if (!result || !current(c) || !c.state.working) return;
-        if (!stableInput()) { if (status !== "waiting") { status = "waiting"; changed(); } return; }
-        const lineHeight = pitch(c), id = ++serial, a = c.reference.editor.view.getSnapshot();
+        const lineHeight = pitch(c);
+        if (!stableInput() || lineHeight <= 0) { if (status !== "waiting") { status = "waiting"; changed(); } return; }
+        const id = ++serial, a = c.reference.editor.view.getSnapshot();
         const baseline = c.reference.setComparisonRows({ documentId: c.reference.editor.view.documentId, revision: a.revision, foldGeneration: c.a.generation, id, lineHeight, index: result.baseline });
         const source = workingMount.setComparisonRows({ documentId: working.view.documentId, revision: c.state.working.revision, foldGeneration: c.b.generation, id, lineHeight, index: result.working });
         if (!baseline || !source) { clear(); capture = undefined; result = undefined; schedule(); return; }

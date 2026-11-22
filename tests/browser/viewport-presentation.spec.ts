@@ -138,19 +138,19 @@ test("revealing a source range in a read-only editor aligns the painted rows and
             try { editor.reveal({ from: row.to, to: row.from }, { select: true, focus: true }); } catch (error) { rejected = error instanceof RangeError; }
             const untouched = view.getSnapshot().selectionSet === selection && folding.getSnapshot().index.collapsedCount === 1 && document.activeElement === other;
             const point = editor.reveal({ line: 80, column: 999 }, { align: "start" });
-            viewport.flush(); const start = viewport.snapshot().scrollTop;
+            viewport.flush(); const start = viewport.getSnapshot().scrollTop;
             const preview = point?.from === row.to && point.to === row.to && !!viewport.coordsAt(row.to)
                 && view.getSnapshot().selectionSet === selection && document.activeElement === other && folding.getSnapshot().index.collapsedCount === 0;
-            editor.reveal(row); viewport.flush(); const kept = viewport.snapshot().scrollTop === start;
+            editor.reveal(row); viewport.flush(); const kept = viewport.getSnapshot().scrollTop === start;
             const selected = editor.reveal(row, { align: "center", select: true, focus: true, expectedRevision: revision });
-            viewport.flush(); const centered = viewport.snapshot();
+            viewport.flush(); const centered = viewport.getDiagnostics();
             const centerDelta = start - centered.scrollTop;
             const center = Math.abs(centerDelta - (centered.height - centered.lineHeight) / 2) < centered.lineHeight;
             const chosen = selected?.from === row.from && selected.to === row.to && view.getSnapshot().selection.head === row.to
                 && view.getSnapshot().selection.anchor === row.from && editor.getSnapshot().focused;
             const eof = editor.reveal({ line: 999, column: 999 });
             editor.restoreView(origin); viewport.flush();
-            const returned = viewport.snapshot().scrollTop === origin.scrollTop && view.getSnapshot().selection.anchor === 5 && view.getSnapshot().selection.head === 1
+            const returned = viewport.getSnapshot().scrollTop === origin.scrollTop && view.getSnapshot().selection.anchor === 5 && view.getSnapshot().selection.head === 1
                 && view.getSnapshot().selectionSet.ranges.length === 2;
             return { stale, rejected, untouched, preview, kept, center, chosen, eof: eof?.from === buffer.length, returned };
         } finally { editor.dispose(); other.remove(); host.remove(); }
@@ -180,7 +180,7 @@ test("minimap gestures preserve focus and multiple selections as the document pr
     await expect.poll(() => canvas.evaluate(c => (c as HTMLCanvasElement).width)).toBeGreaterThan(0);
     const original = await bitmap(), trackBox = (await track.boundingBox())!;
     expect(await page.evaluate(({ x, y }) => window.presentationFixture.editor.viewport.hitTest(x + 5, y + 5), trackBox)).toBeUndefined();
-    const snapshot = () => page.evaluate(() => window.presentationFixture.editor.viewport.snapshot());
+    const snapshot = () => page.evaluate(() => window.presentationFixture.editor.viewport.getDiagnostics());
     await page.mouse.click(trackBox.x + 8, trackBox.y + trackBox.height / 2);
     await expect.poll(async () => (await snapshot()).firstLine).toBeGreaterThan(80);
     expect((await snapshot()).lastLine).toBeLessThan(120);
@@ -238,29 +238,38 @@ test("minimap projects comparison gaps and follows linked and independent scroll
         const comparison = mountTextComparison(host, workspace, tab, { buffer: TextBuffer.from(lines.join("\n")), version: "one" }, { rowsAligned: true, settings: { minimap: true } });
         window.presentationFixture = { workspace, host, tab, resource: resource.id, editor: comparison.panes.working, comparison };
     });
-    await page.waitForFunction(() => window.presentationFixture.editor.viewport.snapshot().aligned);
+    await page.waitForFunction(() => window.presentationFixture.editor.viewport.activity().aligned);
     const maps = page.locator(".st-minimap"), saved = maps.first(), working = maps.last();
     const bandHasInk = (map: typeof saved) => map.locator("canvas").evaluate(element => {
         const c = element as HTMLCanvasElement;
         return c.width ? c.getContext("2d")!.getImageData(0, Math.round(c.height / 3), c.width, 10).data.some((v, i) => i % 4 === 3 && v > 0) : undefined;
     });
     await expect.poll(() => bandHasInk(saved)).toBe(true); await expect.poll(() => bandHasInk(working)).toBe(false);
+    await page.evaluate(() => {
+        const pane = window.presentationFixture.editor.viewport;
+        pane.scrollTo({ top: 70 * pane.getSnapshot().lineHeight }); pane.flush();
+    });
+    await page.waitForFunction(() => {
+        const panes = window.presentationFixture.comparison!.panes;
+        const a = panes.working.viewport.getSnapshot(), b = panes.reference.viewport.getSnapshot();
+        return a.lineFrom === a.lineTo && b.lineFrom > 40 && b.lineTo < 120 && Math.abs(a.scrollTop - b.scrollTop) < 2;
+    });
     const box = (await saved.boundingBox())!;
     await page.mouse.click(box.x + 5, box.y + box.height * .8);
-    await page.waitForFunction(() => { const c = window.presentationFixture.comparison!, ref = c.panes.reference.viewport.snapshot(), work = c.panes.working.viewport.snapshot();
+    await page.waitForFunction(() => { const c = window.presentationFixture.comparison!, ref = c.panes.reference.viewport.getDiagnostics(), work = c.panes.working.viewport.getDiagnostics();
         return ref.firstLine > 140 && Math.abs(ref.scrollTop - work.scrollTop) < 2; });
     const independent = await page.evaluate(() => {
         const c = window.presentationFixture.comparison!; c.setRowsAligned(false); c.setScrollLinked(false);
         const reference = c.panes.reference, doc = window.presentationFixture.workspace.document(reference.view.documentId);
         reference.view.folding.setRanges(reference.view.folding.getSnapshot(), [{ id: "saved", from: 0, to: doc.buffer.offsetAt(39), collapsed: true }]);
         reference.viewport.flush(); c.panes.working.viewport.flush();
-        return { workingTop: c.panes.working.viewport.snapshot().scrollTop, readOnly: reference.getSnapshot().readOnlyReason === "read-only", selection: reference.view.getSnapshot().selectionSet };
+        return { workingTop: c.panes.working.viewport.getSnapshot().scrollTop, readOnly: reference.getSnapshot().readOnlyReason === "read-only", selection: reference.view.getSnapshot().selectionSet };
     });
     expect(independent.readOnly).toBe(true);
     await saved.click({ position: { x: 5, y: 1 } });
-    await page.waitForFunction(() => window.presentationFixture.comparison!.panes.reference.viewport.snapshot().scrollTop === 0);
+    await page.waitForFunction(() => window.presentationFixture.comparison!.panes.reference.viewport.getSnapshot().scrollTop === 0);
     const result = await page.evaluate(() => { const c = window.presentationFixture.comparison!;
-        return { work: c.panes.working.viewport.snapshot(), ref: c.panes.reference.viewport.snapshot(), selection: c.panes.reference.view.getSnapshot().selectionSet }; });
+        return { work: c.panes.working.viewport.getDiagnostics(), ref: c.panes.reference.viewport.getDiagnostics(), selection: c.panes.reference.view.getSnapshot().selectionSet }; });
     expect(result.work.scrollTop).toBeCloseTo(independent.workingTop, 0); expect(result.work.visibleLines).toBe(160);
     expect(result.ref.visibleLines).toBe(202); expect(result.selection).toEqual(independent.selection);
 });
@@ -277,16 +286,16 @@ test.describe("scrolling beyond the last line", () => {
             const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Trailing source" }), viewport = editor.viewport;
             window.presentationFixture = { workspace, editor, host, tab, resource: resource.id };
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush();
-            const defaults = viewport.settings().scrollBeyondLastLine, ordinary = viewport.snapshot(), selection = editor.view.getSnapshot().selectionSet;
+            const defaults = viewport.settings().scrollBeyondLastLine, ordinary = viewport.getDiagnostics(), selection = editor.view.getSnapshot().selectionSet;
             viewport.configure({ scrollBeyondLastLine: true }); viewport.flush();
-            const preserved = viewport.snapshot().scrollTop === ordinary.scrollTop, enabled = viewport.snapshot();
-            viewport.scrollTo({ top: 1e12 }); viewport.flush(); const end = viewport.snapshot(), last = host.querySelector('.st-viewport-row[data-line="2"]')!.getBoundingClientRect();
+            const preserved = viewport.getSnapshot().scrollTop === ordinary.scrollTop, enabled = viewport.getDiagnostics();
+            viewport.scrollTo({ top: 1e12 }); viewport.flush(); const end = viewport.getDiagnostics(), last = host.querySelector('.st-viewport-row[data-line="2"]')!.getBoundingClientRect();
             const layer = host.querySelector(".st-viewport-layer")!.getBoundingClientRect();
             viewport.configure({ scrollBeyondLastLine: false }); viewport.flush();
-            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush(); const restored = viewport.snapshot();
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush(); const restored = viewport.getDiagnostics();
             const renders = restored.renders; viewport.configure({ scrollBeyondLastLine: false }); viewport.flush();
             return { defaults, ordinary, enabled, end, topError: Math.abs((last.top - layer.top) / 1.25 - 12), preserved,
-                restored, sameSelection: selection === editor.view.getSnapshot().selectionSet, noOpRenders: viewport.snapshot().renders - renders, pending: viewport.activity().pending };
+                restored, sameSelection: selection === editor.view.getSnapshot().selectionSet, noOpRenders: viewport.getDiagnostics().renders - renders, pending: viewport.activity().pending };
         });
         expect(initial).toMatchObject({ defaults: false, preserved: true, sameSelection: true, noOpRenders: 0, pending: false });
         expect(initial.ordinary.verticalExtent).toBeCloseTo(3 * initial.ordinary.lineHeight + 24, 5);
@@ -303,7 +312,7 @@ test.describe("scrolling beyond the last line", () => {
             // Drive the native scrollbar to its physical end, then let its scroll event map back.
             viewport.element.scrollTop = viewport.element.scrollHeight;
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush();
-            const s = viewport.snapshot();
+            const s = viewport.getDiagnostics();
             const current = f.workspace.document(doc.id), end = current.buffer.length;
             f.editor.view.setSelection(current.revision, { anchor: end, head: end }); viewport.flush();
             const caret = viewport.coordsAt(end)!, layer = f.host.querySelector(".st-viewport-layer")!.getBoundingClientRect();
@@ -315,17 +324,17 @@ test.describe("scrolling beyond the last line", () => {
         expect(scaled.s.rows).toBeLessThan(16); expect(scaled.s.textUnits).toBeLessThan(40); expect(scaled.topError).toBeLessThan(1.01);
         expect(scaled.hit).toBe(scaled.end); expect(scaled.horizontalOverflow).toBe(0); expect(scaled.exports).toBe(0);
         const source = page.getByRole("textbox", { name: "Trailing source", exact: true });
-        const before = await page.evaluate(() => window.presentationFixture.editor.viewport.snapshot().scrollTop);
+        const before = await page.evaluate(() => window.presentationFixture.editor.viewport.getSnapshot().scrollTop);
         await source.press("A"); await expect(page.locator('.st-viewport-layer .st-viewport-row[data-line="110000"]')).toHaveText("endA");
-        expect(await page.evaluate(() => window.presentationFixture.editor.viewport.snapshot().scrollTop)).toBeCloseTo(before, 4);
+        expect(await page.evaluate(() => window.presentationFixture.editor.viewport.getSnapshot().scrollTop)).toBeCloseTo(before, 4);
         await source.press("Control+z"); await expect(page.locator('.st-viewport-layer .st-viewport-row[data-line="110000"]')).toHaveText("end");
-        expect(await page.evaluate(() => window.presentationFixture.editor.viewport.snapshot().scrollTop)).toBeCloseTo(before, 4);
+        expect(await page.evaluate(() => window.presentationFixture.editor.viewport.getSnapshot().scrollTop)).toBeCloseTo(before, 4);
         await info.attach("trailing-space", { body: await page.screenshot(), contentType: "image/png" });
         const folded = await page.evaluate(() => {
             const f = window.presentationFixture, viewport = f.editor.viewport, doc = f.workspace.document(f.editor.view.documentId);
             f.editor.view.folding.setRanges(f.editor.view.folding.getSnapshot(), [{ id: "body", from: 0, to: doc.buffer.offsetAt(110000), collapsed: true }]); viewport.flush();
-            viewport.scrollTo({ top: 1e12 }); viewport.flush(); const s = viewport.snapshot();
-            viewport.configure({ scrollBeyondLastLine: false }); viewport.flush(); const clamped = viewport.snapshot().scrollTop;
+            viewport.scrollTo({ top: 1e12 }); viewport.flush(); const s = viewport.getDiagnostics();
+            viewport.configure({ scrollBeyondLastLine: false }); viewport.flush(); const clamped = viewport.getSnapshot().scrollTop;
             f.editor.dispose(); return { s, clamped, rejected: !viewport.configure({ scrollBeyondLastLine: true }), reset: !viewport.settings().scrollBeyondLastLine, nodes: f.host.childNodes.length, views: f.workspace.diagnostics().views };
         });
         expect(folded.s.visibleLines).toBe(2); expect(folded.s.scrollTop).toBeCloseTo(folded.s.lineHeight, 5);
@@ -348,12 +357,12 @@ test.describe("scrolling beyond the last line", () => {
         const result = await page.evaluate(() => {
             const f = window.presentationFixture, c = f.comparison!, working = c.panes.working.viewport, reference = c.panes.reference.viewport;
             working.configure({ scrollBeyondLastLine: true }); working.scrollTo({ top: 1e12 }); working.flush();
-            const independent = !reference.settings().scrollBeyondLastLine, grid = working.snapshot();
+            const independent = !reference.settings().scrollBeyondLastLine, grid = working.getDiagnostics();
             reference.configure({ scrollBeyondLastLine: true }); reference.scrollTo({ top: 1e12 }); reference.flush();
             const top = (viewport: typeof working, line: number) => viewport.rowBounds(line)!.top - viewport.element.querySelector(".st-viewport-layer")!.getBoundingClientRect().top;
-            const workingTop = top(working, 2), referenceTop = top(reference, 3), rows = reference.snapshot().visualRows;
+            const workingTop = top(working, 2), referenceTop = top(reference, 3), rows = reference.getDiagnostics().visualRows;
             working.configure({ scrollBeyondLastLine: false }); working.flush();
-            const clamped = working.snapshot().scrollTop, retained = reference.settings().scrollBeyondLastLine; c.dispose();
+            const clamped = working.getSnapshot().scrollTop, retained = reference.settings().scrollBeyondLastLine; c.dispose();
             return { independent, grid, rows, workingTop, referenceTop, clamped, retained, views: f.workspace.diagnostics().views };
         });
         expect(result).toMatchObject({ independent: true, rows: 4, clamped: 0, retained: true, views: 0 });
@@ -375,7 +384,7 @@ test.describe("scrolling beyond the last line", () => {
                 const doc = workspace.document(resource.documentId);
                 if (value) workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "host", edits: [{ from: 0, to: 0, insert: value }] });
                 for (let i = 0; i < 12; i++) {
-                    await new Promise(resolve => requestAnimationFrame(resolve)); viewport.flush(); const s = viewport.snapshot(), root = viewport.element;
+                    await new Promise(resolve => requestAnimationFrame(resolve)); viewport.flush(); const s = viewport.getDiagnostics(), root = viewport.element;
                     samples.push({ width: root.clientWidth, height: root.clientHeight, overflow: root.scrollWidth > root.clientWidth || root.scrollHeight > root.clientHeight, extent: s.verticalExtent, lineHeight: s.lineHeight });
                 }
             }
@@ -412,8 +421,8 @@ test("ligature policy changes native shaping while preserving caret, selection, 
         const off = sample(); viewport.configure({ fontLigatures: true }); const on = sample();
         viewport.configure({ fontLigatures: false }); const restored = sample(); viewport.configure({ fontLigatures: true }); const again = sample();
         const observer = new MutationObserver(() => {}); observer.observe(viewport.element, { subtree: true, childList: true, attributes: true });
-        const renders = viewport.snapshot().renders; viewport.configure({ fontLigatures: true }); viewport.flush();
-        const noOp = { mutations: observer.takeRecords().length, renders: viewport.snapshot().renders - renders, pending: viewport.activity().pending }; observer.disconnect();
+        const renders = viewport.getDiagnostics().renders; viewport.configure({ fontLigatures: true }); viewport.flush();
+        const noOp = { mutations: observer.takeRecords().length, renders: viewport.getDiagnostics().renders - renders, pending: viewport.activity().pending }; observer.disconnect();
         return { off, on, restored, again, noOp, enabled: viewport.settings().fontLigatures, sameChild: child === host.querySelector('.st-viewport-row[data-line="0"]')!.firstChild,
             sameSelection: selection === editor.view.getSnapshot().selectionSet, revision: workspace.document(resource.documentId).revision };
     }, Array.from(fontFixture({ ligatures: true })));
@@ -474,11 +483,11 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
         window.presentationFixture = { workspace, editor, host, tab, resource: resource.id };
         const settle = () => { for (let i = 0; i < 8; i++) { viewport.flush(); if (!viewport.activity().pending) return; } throw new Error("Viewport did not settle."); };
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        settle(); const plain = viewport.snapshot(), point = viewport.coordsAt(20)!, row = host.querySelector('.st-viewport-row[data-line="0"]')!, child = row.firstChild;
+        settle(); const plain = viewport.getDiagnostics(), point = viewport.coordsAt(20)!, row = host.querySelector('.st-viewport-row[data-line="0"]')!, child = row.firstChild;
         const plainExtent = [plain.horizontalExtent, plain.verticalExtent, viewport.element.scrollWidth, viewport.element.scrollHeight];
         const defaults = viewport.settings().columnRulers, buffer = workspace.document(resource.documentId).buffer, beforeReads = buffer.readMetrics().sliceUnits;
         const configured = [40, 20, 40, 1_000_000]; viewport.configure({ columnRulers: configured }); configured[0] = 1; viewport.flush();
-        const after = viewport.snapshot(), captured = viewport.settings().columnRulers, guide = host.querySelector<HTMLElement>('.st-column-ruler[data-column="20"]')!;
+        const after = viewport.getDiagnostics(), captured = viewport.settings().columnRulers, guide = host.querySelector<HTMLElement>('.st-column-ruler[data-column="20"]')!;
         const range = document.createRange(); range.setStart(child!, 20); range.collapse(true); const native = range.getClientRects()[0]!;
         const noRowReads = buffer.readMetrics().sliceUnits - beforeReads;
         const observer = new MutationObserver(() => {}); observer.observe(viewport.element, { subtree: true, childList: true, attributes: true });
@@ -511,7 +520,7 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
         const rows: { name: string; error: number; columnWidth: number; inside: boolean; physicalWidth: number; textUnits: number; rows: number }[] = [];
         const settle = () => { for (let i = 0; i < 8; i++) { viewport.flush(); if (!viewport.activity().pending) return; } throw new Error("Viewport did not settle."); };
         const measure = (name: string) => {
-            settle(); const s = viewport.snapshot(), guide = f.host.querySelector<HTMLElement>('.st-column-ruler[data-column="40"]')!;
+            settle(); const s = viewport.getDiagnostics(), guide = f.host.querySelector<HTMLElement>('.st-column-ruler[data-column="40"]')!;
             const row = f.host.querySelector<HTMLElement>(`.st-viewport-row[data-line="${Math.max(0, s.firstLine)}"]`)!;
             const range = document.createRange(); range.setStart(row.firstChild!, 40); range.collapse(true); const rect = range.getClientRects()[0]!;
             rows.push({ name, error: Math.abs(guide.getBoundingClientRect().left - rect.left) / Number(f.host.style.zoom || 1), columnWidth: s.columnWidth,
@@ -527,9 +536,9 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
         // The physical scrollbar is capped; rulers continue to use logical source columns.
         const doc = f.workspace.document(f.editor.view.documentId);
         f.workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "host", edits: [{ from: 0, to: doc.buffer.length, insert: "x".repeat(1_000_000) }] });
-        viewport.configure({ columnRulers: [500000] }); settle(); viewport.scrollTo({ left: 500000 * viewport.snapshot().columnWidth }); settle();
+        viewport.configure({ columnRulers: [500000] }); settle(); viewport.scrollTo({ left: 500000 * viewport.getSnapshot().columnWidth }); settle();
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); settle();
-        const s = viewport.snapshot(), guide = f.host.querySelector<HTMLElement>(".st-column-ruler")!, rectangle = f.host.querySelector(".st-viewport-layer")!.getBoundingClientRect();
+        const s = viewport.getDiagnostics(), guide = f.host.querySelector<HTMLElement>(".st-column-ruler")!, rectangle = f.host.querySelector(".st-viewport-layer")!.getBoundingClientRect();
         const scaledError = Math.abs(guide.getBoundingClientRect().left - rectangle.left - (12 + 500000 * s.columnWidth - s.scrollLeft) * 1.25);
         const markedPoint = viewport.coordsAt(500000), selected = f.editor.view.getSnapshot().selectionSet, extent = [viewport.element.scrollWidth, viewport.element.scrollHeight];
         viewport.configure({ columnRulers: [] }); settle();
@@ -571,7 +580,7 @@ test("current-line presentation follows the primary caret through input, folding
         viewport.configure({ highlightCurrentLine: true });
         return { defaults, enabled, noOpPending: viewport.activity().pending, samePoint: JSON.stringify(point) === JSON.stringify(viewport.coordsAt(1)),
             sameChild: row.firstChild === child, className: row.className, background: getComputedStyle(row).backgroundColor, color: getComputedStyle(child as HTMLElement).color,
-            width: background.getBoundingClientRect().width, viewportWidth: viewport.element.clientWidth - viewport.snapshot().gutterWidth, extent,
+            width: background.getBoundingClientRect().width, viewportWidth: viewport.element.clientWidth - viewport.getSnapshot().gutterWidth, extent,
             nextExtent: [viewport.element.scrollWidth, viewport.element.scrollHeight] };
     });
     expect(initial).toMatchObject({ defaults: false, enabled: true, noOpPending: false, samePoint: true, sameChild: true,
@@ -615,9 +624,9 @@ test("current-line presentation follows the primary caret through input, folding
         const referenceClass = current(reference)!.className;
         working.view.setSelection(f.workspace.document(working.view.documentId).revision, { anchor: 6, head: 6 }); working.viewport.flush();
         const row = current(working)!, backdrop = working.element.querySelector(".st-current-line-background")!, background = backdrop.getBoundingClientRect();
-        const result = { workingClass, referenceDefault, referenceClass, referenceReadOnly: reference.getSnapshot().readOnlyReason === "read-only", padding: working.viewport.snapshot().paddingRows,
-            line: row.getAttribute("data-line"), rowGap: (working.viewport.rowBounds(1)!.top - working.viewport.rowBounds(0)!.top) / working.viewport.snapshot().lineHeight, topError: Math.abs(background.top - row.getBoundingClientRect().top),
-            height: background.height, lineHeight: working.viewport.snapshot().lineHeight,
+        const result = { workingClass, referenceDefault, referenceClass, referenceReadOnly: reference.getSnapshot().readOnlyReason === "read-only", padding: working.viewport.getDiagnostics().paddingRows,
+            line: row.getAttribute("data-line"), rowGap: (working.viewport.rowBounds(1)!.top - working.viewport.rowBounds(0)!.top) / working.viewport.getSnapshot().lineHeight, topError: Math.abs(background.top - row.getBoundingClientRect().top),
+            height: background.height, lineHeight: working.viewport.getSnapshot().lineHeight,
             edges: getComputedStyle(backdrop).boxShadow, fill: getComputedStyle(backdrop, "::before").backgroundColor };
         working.viewport.configure({ highlightCurrentLine: false }); working.viewport.flush();
         return { ...result, disabled: !current(working), referenceRetained: current(reference)?.getAttribute("data-line") };
