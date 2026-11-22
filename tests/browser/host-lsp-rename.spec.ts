@@ -35,7 +35,10 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP renam
         await name(page).fill("discarded"); await name(page).press("Enter"); await waitForRename(page);
         expect((await snapshot(page)).bindings.rename.capture?.view).toBe("primary");
         await expect(targets(page)).toHaveCount(5); await exact(page, raw);
-        await name(page).fill("café"); await expect(button(page, "Apply captured rename")).toBeDisabled(); await expect(targets(page)).toHaveCount(0); await name(page).press("Enter"); await waitForRename(page);
+        const apply = button(page, "Apply captured rename");
+        await apply.hover(); await page.mouse.down();
+        await name(page).fill("café"); await expect(apply).toBeDisabled(); await expect(targets(page)).toHaveCount(0); await name(page).press("Enter"); await waitForRename(page);
+        await expect(apply).toBeEnabled(); await apply.hover(); await page.mouse.up(); await waitForRename(page); await exact(page, raw);
         await expect(targets(page)).toHaveCount(5); await expect(targets(page).filter({ hasText: "// fixture rename" })).toHaveCount(1); expect((await snapshot(page)).history).toEqual(before.history);
         await expect(name(page)).toHaveAttribute("data-retained", "rename-name");
         // Some frame-inspection backends expose raw UTF-8 as Latin-1. Applied model text below

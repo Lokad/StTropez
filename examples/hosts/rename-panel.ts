@@ -1,9 +1,10 @@
+import { renderPanelActions } from "./panel-actions.ts";
 import type { HostRenameTools, RenameNote, HostRenameSnapshot } from "./rename.ts";
 type RenamePanelTools = Pick<HostRenameTools, "prepare" | "cancel" | "previousPage" | "nextPage" | "disconnect" | "reconnect" | "bindName" | "setName" | "openChanged">;
 function renameActions(tools: RenamePanelTools, s: HostRenameSnapshot) {
     return [
         { label: "Prepare rename preview", invoke: tools.prepare, disabled: !s.available || s.disconnected || s.pending },
-        { label: "Apply captured rename", invoke: s.preview?.confirm ?? (() => false), disabled: !s.canApply },
+        { label: "Apply captured rename", reviewKey: s.reviewKey, invoke: s.preview?.confirm ?? (() => false), disabled: !s.canApply },
         { label: "Dismiss rename preview", invoke: tools.cancel, disabled: !s.pending && !s.preview },
         { label: "Previous rename targets", invoke: tools.previousPage, disabled: s.page === 0 || s.status !== "ready" },
         { label: "Next rename targets", invoke: tools.nextPage, disabled: (s.page + 1) * 64 >= s.count || s.status !== "ready" },
@@ -34,12 +35,11 @@ export function mountRenamePanel(host: HTMLElement, tools: HostRenameTools): () 
     name.maxLength = initial.name.maxLength; name.type = "text"; name.value = initial.name.value; name.oninput = () => initial.name.change(name.value); label.append(initial.name.label, name);
     initial.name.bind(name);
     targets.setAttribute("aria-label", initial.targets.label); changes.setAttribute("aria-label", initial.changes.label);
-    const buttons = initial.actions.map(action => { const button = owner.createElement("button"); button.textContent = action.label; controls.append(button); return button; });
     host.replaceChildren(title, description, status, label, controls, targets, changes);
     let previousTargets: unknown, previousChanges: unknown, previousName: string | undefined;
     const render = () => {
         const model = renamePanelModel(tools, tools.state.getSnapshot()); status.textContent = model.status.text; if (name.value !== model.name.value) name.value = model.name.value;
-        for (const [i, action] of model.actions.entries()) { buttons[i]!.disabled = action.disabled; buttons[i]!.onclick = action.invoke; }
+        renderPanelActions(controls, model.actions);
         if (previousTargets !== model.targets.identity || previousName !== model.name.value) { previousTargets = model.targets.identity; previousName = model.name.value; targets.start = model.targets.start;
             targets.replaceChildren(...model.targets.items().map(at => { const li = owner.createElement("li"); li.textContent = at.text; return li; })); }
         if (previousChanges !== model.changes.identity) { previousChanges = model.changes.identity; changes.replaceChildren(...model.changes.items().map(change => { const li = owner.createElement("li"), button = owner.createElement("button"); button.textContent = change.label; button.onclick = change.invoke; li.append(button); return li; })); }

@@ -1,3 +1,4 @@
+import { createReviewKey } from "./panel-actions.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId, Workspace } from "../../src/index.ts";
 import { createRenameController } from "../../src/browser/index.ts";
@@ -11,10 +12,10 @@ export type RenameHostOptions = Readonly<{ provider: LspWorkspace; prepare?: (de
 type Session = { id: string; editor: TextEditor; controller: RenameController; stop: () => void };
 export type RenameNote = Readonly<{ ordinal: number; document: string; resource: string; title: string; revision: number; from: number; to: number; line: number; column: number; context: string; before?: string; after?: string }>;
 export type HostRenameSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; status: RenameSnapshot["status"];
-    message: string; name: string; symbol: string; preview: RenamePreview | null; canApply: boolean; count: number; page: number; locations: readonly RenameNote[];
+    message: string; name: string; symbol: string; preview: RenamePreview | null; reviewKey: number | null; canApply: boolean; count: number; page: number; locations: readonly RenameNote[];
     changes: RenameSnapshot["changes"] }>;
 const initial: HostRenameSnapshot = { available: false, connected: false, disconnected: false, pending: false, status: "idle",
-    message: "Focus a source and prepare a rename preview.", name: "", symbol: "", preview: null, canApply: false, count: 0, page: 0, locations: [], changes: [] };
+    message: "Focus a source and prepare a rename preview.", name: "", symbol: "", preview: null, reviewKey: null, canApply: false, count: 0, page: 0, locations: [], changes: [] };
 
 /** The host owns the name field, paging and opening changed files. Each pane owns its rename preview. */
 export class HostRenameTools {
@@ -22,6 +23,7 @@ export class HostRenameTools {
     private active: Session | undefined;
     private owner: Session | undefined;
     private readonly workspace: Workspace;
+    private readonly reviewKey;
     private readonly canCapture: (id: DocumentId) => boolean;
     private readonly present: (id: DocumentId) => TextEditor | undefined;
     private readonly backend: RenameHostOptions;
@@ -37,6 +39,7 @@ export class HostRenameTools {
     readonly state = this.cell.observable;
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined,
         backend: RenameHostOptions, options: Readonly<{ reconnectProvider?: () => void; open?: () => boolean }> = {}) {
+        this.reviewKey = createReviewKey(workspace);
         this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backend = backend; this.options = options;
     }
     private publish(patch: Partial<HostRenameSnapshot> = {}) {
@@ -52,12 +55,12 @@ export class HostRenameTools {
                 after: insert + (insertUnits > insert.length ? `… (${insertUnits} UTF-16 units)` : "") };
         });
         if (state.status === "expired" && this.backend.provider.getSnapshot().phase === "disconnected") this.disconnected = true;
-        this.publish({ name: state.name, status: state.status, message: state.message, preview, pending: state.status === "pending",
+        this.publish({ name: state.name, status: state.status, message: state.message, preview, reviewKey: this.reviewKey(preview), pending: state.status === "pending",
             canApply: preview?.canApply ?? false, count: preview?.count ?? 0, page, locations, ...(state.status === "applied" ? { changes: state.changes } : {}) });
     }
     readonly cancel = () => {
         const owner = this.owner; this.owner = undefined; owner?.controller.cancel();
-        this.publish({ status: "idle", pending: false, preview: null, canApply: false, count: 0, locations: [], page: 0, message: "Rename preview dismissed." });
+        this.publish({ status: "idle", pending: false, preview: null, reviewKey: null, canApply: false, count: 0, locations: [], page: 0, message: "Rename preview dismissed." });
     };
     readonly disconnect = () => { this.disconnected = true; this.cancel(); };
     readonly reconnect = () => { this.disconnected = false; this.cancel(); this.options.reconnectProvider?.(); };

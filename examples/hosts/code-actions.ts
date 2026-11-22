@@ -1,3 +1,4 @@
+import { createReviewKey } from "./panel-actions.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { createCodeActionController } from "../../src/browser/index.ts";
@@ -14,7 +15,7 @@ export type ActionHostOptions = Readonly<{ provider: LspWorkspace; commandPolicy
 export type ActionChoice = CodeActionChoice;
 export type ActionNote = Readonly<{ document: string; resource: string; title: string; revision: number; from: number; to: number; insert: string; context: string; before?: string; insertUnits?: number }>;
 type ActionChange = Readonly<{ document: DocumentId; title: string }>;
-export type ActionsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; pending: boolean; canApply: boolean; confirm: (() => void) | null; token: number | null; module: string;
+export type ActionsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; pending: boolean; canApply: boolean; confirm: (() => void) | null; reviewKey: number | null; token: number | null; module: string;
     status: "idle" | "pending" | "ready" | "expired" | "failed" | "applied" | "executed"; message: string; title: string; disabled: string | null; work: number; total: number; command: string | null;
     edits: readonly ActionNote[]; changed: ActionChange | null; changes: readonly ActionChange[]; choices: readonly ActionChoice[]; choice: number | null; choicePage: number; resolving: boolean; page: number; editCount: number }>;
 
@@ -23,6 +24,7 @@ type Panel = { source: Session; input: ActionInput; stop: () => void;
 /** Routes the shared host sidebar to its originating editor and supplies fixture and command policy. */
 export class HostActionsTools {
     private readonly workspace: Workspace;
+    private readonly reviewKey;
     private readonly canCapture: (id: DocumentId) => boolean;
     private readonly present: (id: DocumentId) => TextEditor | undefined;
     private readonly options: ActionHostOptions;
@@ -40,12 +42,13 @@ export class HostActionsTools {
     private delay = 0;
     private fault: ActionInput["fault"];
     private requested = 0;
-    private readonly cell = new HostCell<ActionsSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, pending: false, canApply: false, confirm: null, token: null, module: "sample-utils", status: "idle", message: "Focus a candidate source to preview a module-import action.", title: "", disabled: null, work: 0, total: 0, command: null, edits: [], changed: null, changes: [], choices: [], choice: null, choicePage: 0, resolving: false, page: 0, editCount: 0 });
+    private readonly cell = new HostCell<ActionsSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, pending: false, canApply: false, confirm: null, reviewKey: null, token: null, module: "sample-utils", status: "idle", message: "Focus a candidate source to preview a module-import action.", title: "", disabled: null, work: 0, total: 0, command: null, edits: [], changed: null, changes: [], choices: [], choice: null, choicePage: 0, resolving: false, page: 0, editCount: 0 });
     readonly state = this.cell.observable;
 
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean,
         present: (id: DocumentId) => TextEditor | undefined, options: ActionHostOptions,
         reviewOwner?: HostProjectTools, reconnectProvider?: () => void) {
+        this.reviewKey = createReviewKey(workspace);
         this.workspace = workspace; this.canCapture = canCapture; this.present = present;
         this.options = options; this.reviewOwner = reviewOwner; this.reconnectProvider = reconnectProvider;
         this.stopReviewOwner = reviewOwner?.state.subscribe(() => this.publish());
@@ -72,7 +75,7 @@ export class HostActionsTools {
             status: status === "executing" || status === "resolving" ? "pending" : status ?? "idle",
             title: preview?.title ?? (state?.choice != null ? state.choices[state.choice]?.title : "") ?? "",
             message: state?.message ?? this.cell.get().message, command: preview?.command ?? null, choices: state?.choices ?? [], choice: state?.choice ?? null,
-            canApply: !!preview?.canApply && (!preview.command || !!this.reviewOwner?.canRunAction(panel!.source.editor)), confirm: preview?.confirm ?? null,
+            canApply: !!preview?.canApply && (!preview.command || !!this.reviewOwner?.canRunAction(panel!.source.editor)), confirm: preview?.confirm ?? null, reviewKey: this.reviewKey(preview),
             disabled: preview?.disabled ?? null, page: panel?.page ?? 0, editCount: panel?.edits?.count ?? 0, edits: panel?.edits?.notes ?? [],
             choicePage: panel?.choicePage ?? 0, work: state?.status === "ready" ? panel!.input.length : 0, total: panel?.input.length ?? 0,
             changes, changed: changes.find(c => c.document === panel?.source.editor.view.documentId) ?? changes[0] ?? null, ...patch });

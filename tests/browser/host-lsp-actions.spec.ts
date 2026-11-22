@@ -73,7 +73,12 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await choices(page).nth(5).evaluate(node => { node.dataset.retained = "action-choice"; });
         await input(page, "Action module").evaluate(node => { node.dataset.retained = "action-module"; });
         await choices(page).nth(3).click(); await expect(button(page, "Apply captured action")).toBeDisabled(); await expect(page.getByLabel("Code action status", { exact: true })).toContainText("requires another context");
-        await choices(page).nth(4).click(); await expect(button(page, "Execute captured action")).toBeEnabled(); await choices(page).nth(5).click(); await expect(button(page, "Execute captured action")).toBeEnabled(); expect(requests.some(r => r.method === "workspace/executeCommand")).toBe(false); await exact(page, raw);
+        await choices(page).nth(4).click();
+        const execute = button(page, "Execute captured action");
+        await expect(execute).toBeEnabled(); await execute.hover(); await page.mouse.down();
+        await choices(page).nth(5).evaluate(node => (node as HTMLButtonElement).click()); await expect(choices(page).nth(5)).toHaveAttribute("aria-pressed", "true");
+        await expect(execute).toBeEnabled(); await execute.hover(); await page.mouse.up(); await waitForActions(page);
+        expect(requests.some(r => r.method === "workspace/executeCommand")).toBe(false); await exact(page, raw);
         await expect(choices(page).nth(5)).toHaveAttribute("data-retained", "action-choice"); await expect(choices(page).nth(5)).toHaveAttribute("aria-pressed", "true");
         await expect(input(page, "Action module")).toHaveAttribute("data-retained", "action-module");
         replies.hold(); await choices(page).nth(2).click(); await expect.poll(replies.waiting).toBe(true);

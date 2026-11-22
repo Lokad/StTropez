@@ -1,7 +1,8 @@
+import { createReviewKey } from "./panel-actions.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId, Workspace } from "../../src/index.ts";
 import { createDocumentColorController } from "../../src/browser/index.ts";
-import type { ColorPresentationReview, DecorationLayer, DocumentColorChoice, DocumentColorController, TextEditor } from "../../src/browser/index.ts";
+import type { DecorationLayer, DocumentColorChoice, DocumentColorController, TextEditor } from "../../src/browser/index.ts";
 import type { LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import { colorLimits, parseColor, rgbaColor } from "../../fixtures/language/colors.ts";
 import type { ColorFault, ColorReference } from "../../fixtures/language/colors.ts";
@@ -29,7 +30,7 @@ function focusSource(editor: TextEditor) {
 /** The host owns the picker, swatches, preview list and focus after confirmation. */
 export class HostDocumentColors {
     private readonly sessions = new Set<Session>();
-    private readonly reviewKeys = new WeakMap<ColorPresentationReview, number>();
+    private readonly reviewKey;
     private active: Session | undefined;
     private owner: Session | undefined;
     private displayed: readonly DocumentColorChoice[] | undefined;
@@ -51,6 +52,7 @@ export class HostDocumentColors {
     private readonly options: ColorHostOptions;
     private readonly reconnectProvider: (() => void) | undefined;
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined, options: ColorHostOptions, reconnectProvider?: () => void) {
+        this.reviewKey = createReviewKey(workspace);
         this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.options = options; this.reconnectProvider = reconnectProvider;
     }
     private publish(patch: Partial<DocumentColorsSnapshot> = {}) {
@@ -98,18 +100,13 @@ export class HostDocumentColors {
                 } };
         }) : old.colors;
         const review = state.review, pending = state.status === "previewing";
-        let reviewKey = review && this.reviewKeys.get(review);
-        if (review && reviewKey === undefined) {
-            reviewKey = this.workspace.allocateIdentity();
-            this.reviewKeys.set(review, reviewKey);
-        }
         const choices = state.presentations.map((choice, i) => ({ id: `provider-${i}`, label: choice.label, select: choice.select }));
         const edits = review?.edits.map(edit => ({ ...edit, document: doc.id, resource: doc.resourceId, title: doc.title.slice(0, 128), revision: doc.revision,
             context: doc.buffer.slice(Math.max(0, edit.from - 32), Math.min(doc.buffer.length, edit.from + 32)) })) ?? [];
         this.publish({ status: state.status === "ready" ? "colors" : "presentations", message: pending ? "Requesting color presentations…" : review ? "Review the edits before applying." : `${state.colors.length} document colors.`,
             pending, count: state.colors.length, colors, selected, page, value, css: proposed ? rgbaColor(proposed) : null, choices,
             presentation: review ? choices[state.presentations.indexOf(review.choice)]!.id : "", edits, canPreview: !!reference && !!proposed && !pending,
-            canApply: review?.canApply ?? false, reviewKey: reviewKey ?? null, apply: review ? () => {
+            canApply: review?.canApply ?? false, reviewKey: this.reviewKey(review), apply: review ? () => {
                 if (!review.apply()) return false;
                 if (this.sessions.has(s)) focusSource(s.editor);
                 return true;

@@ -1,3 +1,4 @@
+import { renderPanelActions } from "./panel-actions.ts";
 import type { HostProjectTools, ProjectSnapshot } from "./project.ts";
 import { actionTarget } from "./actions-panel.ts";
 type ProjectPanelTools = Pick<HostProjectTools, "register" | "unregister" | "requestEdits" | "requestStatus" | "cancel" | "disconnect" | "reconnect" | "openChanged">;
@@ -32,20 +33,11 @@ export function mountProjectPanel(host: HTMLElement, tools: HostProjectTools): (
     const owner = host.ownerDocument, heading = owner.createElement("h2"), status = owner.createElement("output"), controls = owner.createElement("div"), changed = owner.createElement("ul"), description = owner.createElement("p");
     host.setAttribute("aria-label", initial.title); heading.textContent = initial.title; status.setAttribute("aria-label", initial.status.label);
     const previewTitle = owner.createElement("p"), preview = owner.createElement("ol"); previewTitle.setAttribute("aria-label", initial.review.titleLabel); preview.setAttribute("aria-label", initial.review.label);
-    const buttonFor = (label: string) => { const button = owner.createElement("button"); button.textContent = label; return button; };
-    const buttons = initial.actions.map(action => buttonFor(action.label)); controls.append(...buttons);
-    let renderedReview = initial.review.key;
     description.textContent = initial.changes.description; changed.setAttribute("aria-label", initial.changes.label);
     host.replaceChildren(heading, status, controls, ...(initial.review.enabled ? [previewTitle, preview] : []), description, changed); let previous: ProjectSnapshot["changes"] | undefined, previousReview: unknown;
     const render = () => {
         const model = projectPanelModel(tools, tools.state.getSnapshot()); status.textContent = model.status.text;
-        for (const [i, action] of model.actions.entries()) {
-            if ("reviewKey" in action && action.reviewKey !== renderedReview) {
-                const next = buttonFor(action.label); buttons[i]!.replaceWith(next); buttons[i] = next;
-            }
-            buttons[i]!.disabled = action.disabled; buttons[i]!.onclick = action.invoke;
-        }
-        renderedReview = model.review.key;
+        renderPanelActions(controls, model.actions);
         previewTitle.hidden = !model.review.visible; previewTitle.textContent = model.review.title;
         if (previousReview !== model.review.identity) { previousReview = model.review.identity; preview.start = model.review.start; preview.replaceChildren(...model.review.items().map(text => { const li = owner.createElement("li"), pre = owner.createElement("pre"); pre.textContent = text; li.append(pre); return li; })); }
         if (previous !== model.changes.identity) { previous = model.changes.identity; changed.replaceChildren(...model.changes.items().map(change => { const item = owner.createElement("li"), button = owner.createElement("button");

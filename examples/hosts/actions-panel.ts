@@ -1,9 +1,10 @@
+import { renderPanelActions } from "./panel-actions.ts";
 import type { HostActionsTools, ActionNote, ActionChoice, ActionsSnapshot } from "./code-actions.ts";
 type ActionsPanelTools = Pick<HostActionsTools, "request" | "cancel" | "moveChoicePage" | "previousPage" | "nextPage" | "disconnect" | "reconnect" | "bindModule" | "setModule" | "openChangedDocument">;
 function actionsControls(tools: ActionsPanelTools, s: ActionsSnapshot) {
     return [
         { label: "Preview module action", invoke: tools.request, disabled: !s.available || s.disconnected || s.pending },
-        { label: s.command ? "Execute captured action" : "Apply captured action", invoke: () => s.confirm?.(), disabled: !s.canApply },
+        { label: s.command ? "Execute captured action" : "Apply captured action", reviewKey: s.reviewKey, invoke: () => s.confirm?.(), disabled: !s.canApply },
         { label: "Dismiss action preview", invoke: tools.cancel, disabled: s.token === null },
         ...([{ label: "Previous action choices", invoke: () => tools.moveChoicePage(-1), disabled: s.pending || s.choicePage === 0 },
             { label: "Next action choices", invoke: () => tools.moveChoicePage(1), disabled: s.pending || (s.choicePage + 1) * 16 >= s.choices.length },
@@ -41,11 +42,10 @@ export function mountActionsPanel(host: HTMLElement, tools: HostActionsTools): (
     host.setAttribute("aria-label", initial.title); heading.textContent = initial.title; description.textContent = initial.description; status.setAttribute("aria-label", initial.status.label);
     module.type = "text"; module.maxLength = initial.module.maxLength; module.value = initial.module.value; module.oninput = () => initial.module.change(module.value); label.append(initial.module.label, module); initial.module.bind(module);
     title.setAttribute("aria-label", initial.preview.label); edits.setAttribute("aria-label", initial.edits.label);
-    const buttons = initial.actions.map(action => { const button = owner.createElement("button"); button.textContent = action.label; controls.append(button); return button; });
     host.replaceChildren(heading, description, status, label, controls, ...(initial.choices.enabled ? [choices] : []), title, edits, changes); let previous: unknown, previousChoices: unknown, previousChanges: unknown;
     let choiceButtons: { key: number; button: HTMLButtonElement }[] = [], previousChoicePage: string | undefined;
     const render = () => { const model = actionsPanelModel(tools, tools.state.getSnapshot()); status.textContent = model.status.text; if (module.value !== model.module.value) module.value = model.module.value; title.textContent = model.preview.text;
-        for (const [i, action] of model.actions.entries()) { buttons[i]!.textContent = action.label; buttons[i]!.disabled = action.disabled; buttons[i]!.onclick = action.invoke; }
+        renderPanelActions(controls, model.actions);
         if (previousChoices !== model.choices.identity || previousChoicePage !== model.choices.pageKey) { previousChoices = model.choices.identity; previousChoicePage = model.choices.pageKey; choiceButtons = []; choices.start = model.choices.start; choices.replaceChildren(...model.choices.items().map(choice => { const li = owner.createElement("li"), button = owner.createElement("button"); button.textContent = choice.label; button.onclick = choice.invoke; choiceButtons.push({ key: choice.key, button }); li.append(button); return li; })); }
         for (const { key, button } of choiceButtons) { button.disabled = model.choices.disabled; button.setAttribute("aria-pressed", String(model.choices.isSelected(key))); }
         if (previous !== model.edits.identity) { previous = model.edits.identity; edits.start = model.edits.start; edits.replaceChildren(...model.edits.items().map(text => { const li = owner.createElement("li"), pre = owner.createElement("pre"); pre.textContent = text; li.append(pre); return li; })); }

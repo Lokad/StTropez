@@ -1,3 +1,4 @@
+import { panelActionKey } from "./panel-actions.ts";
 import { Profiler, StrictMode, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
@@ -196,7 +197,7 @@ function ActionsTools() {
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
         <output aria-label={model.status.label}>{model.status.text}</output>
         <label>{model.module.label}<input ref={model.module.bind} type="text" maxLength={model.module.maxLength} value={model.module.value} onChange={event => model.module.change(event.currentTarget.value)} /></label>
-        <div>{model.actions.map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        <div>{model.actions.map(action => <button key={panelActionKey(action)} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
         {model.choices.enabled && <ol aria-label={model.choices.label} start={model.choices.start}>{model.choices.items().map(choice => <li key={choice.key}><button disabled={model.choices.disabled} aria-pressed={model.choices.isSelected(choice.key)} onClick={choice.invoke}>{choice.label}</button></li>)}</ol>}
         <p aria-label={model.preview.label}>{model.preview.text}</p><ol aria-label={model.edits.label} start={model.edits.start}>{model.edits.items().map((text, i) => <li key={i}><pre>{text}</pre></li>)}</ol>
         <div aria-label={model.changes.label}>{model.changes.items().map(change => <button key={change.key} disabled={model.changes.disabled} onClick={change.invoke}>{change.label}</button>)}</div></section>;
@@ -206,7 +207,7 @@ function RenameTools() {
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
         <output aria-label={model.status.label}>{model.status.text}</output>
         <label>{model.name.label}<input ref={model.name.bind} type="text" maxLength={model.name.maxLength} value={model.name.value} onChange={event => model.name.change(event.currentTarget.value)} /></label>
-        <div>{model.actions.map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        <div>{model.actions.map(action => <button key={panelActionKey(action)} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
         <ol aria-label={model.targets.label} start={model.targets.start}>{model.targets.items().map(at => <li key={at.key}>{at.text}</li>)}</ol>
         <ul aria-label={model.changes.label}>{model.changes.items().map(change => <li key={change.key}><button disabled={model.changes.disabled} onClick={change.invoke}>{change.label}</button></li>)}</ul></section>;
 }
@@ -214,7 +215,7 @@ function ProjectTools() {
     const tools = bindings.project, model = projectPanelModel(tools, useObserved(tools.state));
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2>
         <output aria-label={model.status.label}>{model.status.text}</output>
-        <div>{model.actions.map(action => <button key={"reviewKey" in action ? action.label + ":" + action.reviewKey : action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        <div>{model.actions.map(action => <button key={panelActionKey(action)} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
         {model.review.visible && <><p aria-label={model.review.titleLabel}>{model.review.title}</p><ol aria-label={model.review.label} start={model.review.start}>{model.review.items().map((text, index) => <li key={index}><pre>{text}</pre></li>)}</ol></>}
         {model.changes.visible && <p>{model.changes.description}</p>}
         <ul aria-label={model.changes.label}>{model.changes.items().map(change => <li key={change.key}><button disabled={model.changes.disabled} onClick={change.invoke}>{change.label}</button></li>)}</ul></section>;

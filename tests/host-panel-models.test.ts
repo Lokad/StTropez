@@ -149,7 +149,7 @@ test("rename presentation retains its preview name, confirmation action and chan
     let formatted = 0;
     const preview = (id: number, name: string) => ({ name, count: 1, canApply: true, readPage: () => undefined, confirm: () => { applied.push(id); return true; } });
     const state: HostRenameSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, pending: false, status: "ready", message: "Captured rename",
-        name: "firstName", symbol: "symbol", preview: preview(3, "firstName"), canApply: true, count: 1, page: 0,
+        name: "firstName", symbol: "symbol", reviewKey: 3, preview: preview(3, "firstName"), canApply: true, count: 1, page: 0,
         locations: Object.freeze([Object.freeze({ ordinal: 0, document: firstId, resource: "source", title: "First", revision: 1, from: 0, to: 6, line: 0, column: 0,
             get context() { formatted++; return "symbol"; } })]), changes: Object.freeze([Object.freeze({ document: firstId, title: "First" })]) });
     const first = renamePanelModel(tools, state), renamed = renamePanelModel(tools, { ...state, name: "secondName", preview: preview(4, "secondName"), changes: [{ document: secondId, title: "Second" }] });
@@ -162,7 +162,7 @@ test("rename presentation retains its preview name, confirmation action and chan
 
 test("action controls invoke the choice and confirmation supplied by their snapshot", () => {
     const selected: number[] = [], applied: number[] = [], opened: DocumentId[] = [], firstId = "first" as DocumentId, secondId = "second" as DocumentId;
-    const state: ActionsSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, reconnectRequired: false, pending: false, canApply: true,
+    const state: ActionsSnapshot = Object.freeze({ reviewKey: 1, available: true, connected: true, disconnected: false, reconnectRequired: false, pending: false, canApply: true,
         token: 9, confirm: () => { applied.push(9); }, module: "module", status: "ready", message: "Captured action", title: "Action", disabled: null, work: 1, total: 1, command: null, edits: Object.freeze([]),
         changed: Object.freeze({ document: firstId, title: "First" }), changes: Object.freeze([Object.freeze({ document: firstId, title: "First" })]),
         choices: Object.freeze([Object.freeze({ index: 0, title: "First action", kind: null, preferred: false, disabled: null, needsResolve: false, select: () => { selected.push(9); } })]),
