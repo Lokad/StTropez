@@ -1,7 +1,7 @@
 import { TextBuffer, Workspace } from "sttropez";
 import type { DocumentId } from "sttropez";
 import { createLspHoverClient, RpcError, type LspHoverClient } from "sttropez/protocol";
-import type { AnchoredOverlay, DiagnosticController, HoverController, ReviewEditResult } from "sttropez/browser";
+import type { AnchoredOverlay, DiagnosticController, DocumentLinkOpenResult, HoverController, ReviewEditResult } from "sttropez/browser";
 import { BrowserLspWorkspace, createCodeActionController, createCompletionController, createDiagnosticController, createDocumentColorController, createDocumentLinkController, createHoverController, createNavigationController, createRenameController, createSignatureController, mountAnchoredOverlay, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
 
 const workspace = new Workspace();
@@ -33,7 +33,7 @@ const text = () => { const buffer = workspace.document(source.documentId).buffer
 const position = () => text().indexOf("catalogue") + 2;
 const result = document.getElementById("result")!, status = document.getElementById("status")!, choices = document.getElementById("choices")!;
 let disposed = false;
-const notes: { hover?: string; navigation?: string; renameEdits?: number; actions?: number; resolved?: boolean; signature?: string; linkUri?: string; colorPresentations?: number; colorApplied?: boolean; lastReview?: ReviewEditResult } = {};
+const notes: { hover?: string; navigation?: string; renameEdits?: number; actions?: number; resolved?: boolean; signature?: string; linkUri?: string; lastLink?: DocumentLinkOpenResult; colorPresentations?: number; colorApplied?: boolean; lastReview?: ReviewEditResult } = {};
 const command = (label: string, invoke: () => void | Promise<unknown>) => { const button = document.createElement("button"); button.textContent = label;
     button.onclick = () => { void Promise.resolve().then(invoke).catch(error => { result.textContent = String(error); }); }; document.getElementById("controls")!.append(button); return button; };
 function reviewButton<T>(label: string, record?: (value: T) => void) {
@@ -128,7 +128,11 @@ openLink.disabled = true;
 links.subscribe(() => {
     const state = links.getSnapshot(), link = state.links[0];
     openLink.disabled = state.status !== "ready" || !link;
-    openLink.onclick = link ? () => link.open(uri => { notes.linkUri = uri; result.textContent = uri; }) : null;
+    openLink.onclick = link ? async () => {
+        const outcome = await link.open(uri => { notes.linkUri = uri; result.textContent = uri; });
+        notes.lastLink = outcome;
+        return outcome;
+    } : null;
 });
 command("Colors", async () => {
     await colors.request(); await colors.getSnapshot().colors[0]?.preview({ red: 0, green: 1, blue: 0, alpha: 1 });

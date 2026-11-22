@@ -28,7 +28,7 @@ export { createRenameController } from "./rename-controller.ts";
 export { createDocumentLinkController } from "./document-link-controller.ts";
 export { createDocumentColorController } from "./document-color-controller.ts";
 export type { DocumentColorChoice, ColorPresentationChoice, ColorPresentationReview, DocumentColorSnapshot, DocumentColorController, DocumentColorControllerOptions } from "./document-color-controller.ts";
-export type { DocumentLinkChoice, DocumentLinkController, DocumentLinkControllerOptions, DocumentLinkSnapshot } from "./document-link-controller.ts";
+export type { DocumentLinkChoice, DocumentLinkController, DocumentLinkControllerOptions, DocumentLinkOpenResult, DocumentLinkSnapshot } from "./document-link-controller.ts";
 export type { RenameController, RenameControllerOptions, RenamePreview, RenameSnapshot } from "./rename-controller.ts";
 export type { ReviewEditResult } from "./review-edit.ts";
 export type { SignatureController, SignatureControllerOptions, SignatureSnapshot } from "./signature-controller.ts";

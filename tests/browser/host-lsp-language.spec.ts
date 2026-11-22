@@ -147,6 +147,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await expect(button(page, "Previous module links")).toBeDisabled(); await button(page, "Next module links").click(); await expect(links.getByRole("listitem")).toHaveCount(7);
         await expect(button(page, "Next module links")).toBeDisabled(); await expect(links.getByRole("button").last()).toBeEnabled();
         await links.getByRole("button").last().click(); await settledColorsAndLinks(page); await expect(links.getByRole("button").last()).toBeDisabled();
+        await expect(page.getByLabel("Module link status", { exact: true })).toContainText("No destination for missing-utils");
         expect((await snapshot(page)).bindings.links.opened).toBe(0); await button(page, "Previous module links").click(); await expect(links.getByRole("listitem")).toHaveCount(64);
         await button(page, "Discover document colors").click(); await settledColorsAndLinks(page); await expect(colors.getByRole("listitem")).toHaveCount(64);
         await expect(button(page, "Previous document colors")).toBeDisabled(); await button(page, "Next document colors").click(); await expect(colors.getByRole("listitem")).toHaveCount(6);
@@ -285,13 +286,13 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
     });
     test("provider links resolve to captured host resources and late or outside destinations do not steal focus", async ({ page }) => {
         const methods: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value.method); }));
-        let outside = false, hold = false, release: (() => void) | undefined;
+        let fault: "malformed" | "outside" | null = null, hold = false, release: (() => void) | undefined;
         await page.routeWebSocket("**/lsp-fixture", client => {
             const server = client.connectToServer(), held = new Set<number>();
             client.onMessage(message => { const value = JSON.parse(message.toString());
                 if (value.method === "documentLink/resolve") {
                     if (hold) { hold = false; held.add(value.id); }
-                    if (outside) { outside = false; server.send(JSON.stringify({ ...value, params: { ...value.params, _fixture: { delay: 0, fault: "outside" } } })); return; }
+                    if (fault) { server.send(JSON.stringify({ ...value, params: { ...value.params, _fixture: { delay: 0, fault } } })); fault = null; return; }
                 }
                 server.send(message);
             });
@@ -305,8 +306,12 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await list.getByRole("button").click(); await expect.poll(async () => (await snapshot(page)).bindings.links.opened).toBe(1); await expect(field(page, "Secondary source")).toBeFocused();
         await button(page, "Return to link origin").click(); await expect(field(page)).toBeFocused(); expect((await snapshot(page)).history).toEqual(history);
         await button(page, "Discover module links").click(); await expect(list.getByRole("button")).toBeEnabled();
-        outside = true; await list.getByRole("button").click(); expect(outside).toBe(false);
+        fault = "outside"; await list.getByRole("button").click(); expect(fault).toBeNull();
         await expect(page.getByLabel("Module link status", { exact: true })).toContainText("outside the host"); await expect(list.getByRole("button")).toBeDisabled(); expect((await snapshot(page)).bindings.links.opened).toBe(1);
+        await button(page, "Discover module links").click(); await expect(list.getByRole("button")).toBeEnabled();
+        fault = "malformed"; await list.getByRole("button").click();
+        await expect(page.getByLabel("Module link status", { exact: true })).toContainText("range or identity");
+        expect((await snapshot(page)).bindings.links.state.status).toBe("failed");
         for (const destination of ["form", "heading"]) {
             await field(page).focus(); await button(page, "Discover module links").click(); await expect(list.getByRole("button")).toBeEnabled();
             hold = true; await list.getByRole("button").click(); await expect.poll(() => !!release).toBe(true);

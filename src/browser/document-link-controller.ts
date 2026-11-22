@@ -10,9 +10,13 @@ import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainDocuments } from "./retained-documents.ts";
 import type { TextEditor } from "./text-editor.ts";
 
+export type DocumentLinkOpenResult = Readonly<
+    { status: "presented" | "expired" | "no-target" | "resolving" }
+    | { status: "failed"; message: string }
+>;
 export type DocumentLinkChoice = Readonly<{
     from: number; to: number; tooltip: string; target: string | null; canResolve: boolean;
-    open: (present: (uri: string) => void) => Promise<boolean>;
+    open: (present: (uri: string) => void) => Promise<DocumentLinkOpenResult>;
 }>;
 export type DocumentLinkSnapshot = Readonly<{
     status: "idle" | "pending" | "ready" | "resolving" | "expired" | "failed" | "disposed";
@@ -27,9 +31,12 @@ export type DocumentLinkController = Observable<DocumentLinkSnapshot> & Readonly
 }>;
 type Job = {
     client: LspLinkClient; project: ReturnType<typeof retainDocuments>; capture?: CapturedViewRequest<TextEditor["tab"]>;
-    reply?: Awaited<ReturnType<LspLinkClient["run"]>["result"]>; invalid: boolean; timer?: number;
+    reply?: Awaited<ReturnType<LspLinkClient["run"]>["result"]>; connection?: ReturnType<LspWorkspace["getSnapshot"]>;
+    invalid: boolean; timer?: number; failure?: string;
 };
 const empty: readonly DocumentLinkChoice[] = Object.freeze([]);
+const expired = Object.freeze({ status: "expired" } as const);
+const noTarget = Object.freeze({ status: "no-target" } as const);
 const idle: DocumentLinkSnapshot = Object.freeze({ status: "idle", links: empty, message: "" });
 
 /** Discover links for one editor. Only a current user action hands an opaque target to the host. */
@@ -56,16 +63,23 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
         j.invalid = true;
         queueMicrotask(() => { if (job === j) { release(); publish("expired"); } });
     }
-    function current(j: Job) {
+    function captureCurrent(j: Job) {
         if (job !== j || j.invalid || !ownsTextSurface(workspace, view, tab) || !available(view.documentId)
-            || j.capture && !j.capture.isCurrent() || j.reply && !j.reply.isCurrent()) return false;
+            || j.capture && !j.capture.isCurrent()) return false;
         if (options.canCapture) for (const id of j.project.documents.keys()) if (!options.canCapture(id)) return false;
         return true;
     }
+    function current(j: Job) { return captureCurrent(j) && (!j.reply || j.reply.isCurrent()); }
+    function providerChanged(j: Job) {
+        const connection = provider.getSnapshot();
+        return j.connection && (connection.phase !== "ready" || connection.epoch !== j.connection.epoch
+            || connection.registrationGeneration !== j.connection.registrationGeneration);
+    }
     function fail(j: Job, error: unknown) {
         if (job !== j) return;
-        if (!current(j)) { expire(j); return; }
-        release(); publish("failed", empty, error instanceof Error ? error.message : "Document link request failed.");
+        if (!captureCurrent(j) || providerChanged(j)) { expire(j); return; }
+        j.failure = error instanceof Error ? error.message : "Document link request failed.";
+        release(); publish("failed", empty, j.failure);
     }
     function bindCapture(j: Job, source: NonNullable<Job["capture"]>) {
         j.capture = source;
@@ -83,27 +97,33 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
             open: present => open(result, index, present) });
         return result;
     }
-    async function open(selected: DocumentLinkChoice, index: number, present: (uri: string) => void) {
+    async function open(selected: DocumentLinkChoice, index: number, present: (uri: string) => void): Promise<DocumentLinkOpenResult> {
         scope.assertWritable();
         const j = job, before = state.get();
-        if (!j?.reply || before.status !== "ready" || before.links[index] !== selected) return false;
-        if (!current(j)) { expire(j); return false; }
+        if (!j?.reply || before.links[index] !== selected) return expired;
+        if (!current(j)) { expire(j); return expired; }
+        if (before.status === "resolving") return Object.freeze({ status: "resolving" });
         let target = selected.target;
         if (target === null) {
-            if (!selected.canResolve) return false;
+            if (!selected.canResolve) return noTarget;
             const source = capture();
-            if (!source) return false;
+            if (!source) return expired;
             bindCapture(j, source); publish("resolving", before.links);
             try {
                 const resolved = await j.reply.resolve(j.reply.items[index]!);
-                if (!current(j)) { expire(j); return false; }
+                if (!current(j)) { expire(j); return expired; }
                 finishCapture(j);
                 const links = before.links.slice(); links[index] = choice(resolved, index);
                 publish("ready", Object.freeze(links)); target = resolved.target;
-            } catch (error) { fail(j, error); return false; }
+            } catch (error) {
+                fail(j, error);
+                return j.failure === undefined ? expired : Object.freeze({ status: "failed", message: j.failure });
+            }
         }
-        if (target === null || !current(j)) return false;
-        present(target); return true;
+        if (!current(j)) return expired;
+        if (target === null) return noTarget;
+        present(target);
+        return Object.freeze({ status: "presented" });
     }
     async function request() {
         scope.assertWritable();
@@ -121,11 +141,16 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
             publish("pending");
             j.reply = await client.run({ document: source.document, prepare: options.prepareRequest?.() }).result;
             if (!current(j)) { expire(j); return; }
+            j.connection = provider.getSnapshot();
             finishCapture(j); publish("ready", Object.freeze(j.reply.items.map(choice)));
         } catch (error) { fail(j, error); }
     }
     function cancel() { scope.assertWritable(); if (!events.signal.aborted) { release(); publish("idle"); } }
-    const stop = provider.subscribe(() => { if (job?.reply && !job.reply.isCurrent()) expire(job); });
+    const stop = provider.subscribe(() => {
+        const j = job;
+        // A malformed resolve reply invalidates the protocol result before its rejection reaches open().
+        if (j?.reply && !j.reply.isCurrent() && (!j.capture || providerChanged(j))) expire(j);
+    });
     editor.onEditIntent(() => { if (job) cancel(); }, events.signal);
     function dispose() {
         if (events.signal.aborted) return;

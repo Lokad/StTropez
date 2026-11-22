@@ -605,25 +605,30 @@ after commit, report the uncertain delivery and leave the edit in history.
 `createDocumentLinkController(editor, provider, { documents })` discovers links in the mounted
 document. Include any project documents whose revision or edit permissions affect your URI mapping.
 Call `request()` and render `getSnapshot().links`. Each link carries its range, literal tooltip,
-optional target and an `open` action. Bind the button to that link.
+optional target and an `open` action. Give each choice its own button.
 
 ```ts
 import type { DocumentLinkChoice } from "sttropez/browser";
 
-export function bindLink(button: HTMLButtonElement, link: DocumentLinkChoice, visit: (uri: string) => void) {
+export function linkButton(link: DocumentLinkChoice, visit: (uri: string) => void) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = link.tooltip || link.target || "Open link";
     button.disabled = link.target === null && !link.canResolve;
     button.onclick = () => link.open(visit);
+    return button;
 }
 ```
 
-`open(visit)` resolves a missing target when the provider supports resolution. It returns true
-when it calls `visit` with a URI. The host decides which URIs to open, where to show them and
-how to return. If the user clicks elsewhere during resolution, keep focus there. Read the updated
+`open(visit)` resolves a missing target when the provider supports resolution. Its result has
+status `presented` when it calls `visit`, `no-target` when no URI is available, or `resolving`
+when a lookup is already running. A provider failure returns `failed` with a message.
+The host decides which URIs to open, where to show them and how to return. If the user clicks elsewhere during resolution, keep focus there. Read the updated
 link from the snapshot for a fresh click.
 
 Caret movement cancels a pending lookup. After discovery, the list survives caret movement.
 An edit or authority change in a captured document, a new request, cancellation or editor
-disposal invalidates its actions. A stale action returns false. The protocol client
+disposal invalidates its actions. An expired action returns `{ status: "expired" }`. The protocol client
 `createLspLinkClient` exposes the list and its `resolve` operation. `decodeLspDocumentLinks`
 checks ranges and bounds the URI, tooltip and opaque data. `decodeLspResolvedDocumentLink` allows
 a new target and tooltip while requiring the original range and identity.

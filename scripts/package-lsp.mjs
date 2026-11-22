@@ -94,8 +94,16 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         const oldLink = await button("Open link").evaluateHandle(node => /** @type {HTMLButtonElement} */ (node).onclick?.bind(node));
         await button("Edit companion").click(); await expect(button("Open link")).toBeDisabled();
         await button("Links").click(); await expect(button("Open link")).toBeEnabled();
-        assert.equal(await oldLink.evaluate(open => open?.(new PointerEvent("click"))), false); await oldLink.dispose();
-        assert.equal((await state()).notes.linkUri, undefined); await button("Open link").click(); await expect.poll(async () => (await state()).notes.linkUri).toBe("consumer+opaque:project/companion%2Fpart");
+        assert.deepEqual(await oldLink.evaluate(open => open?.(new PointerEvent("click"))), { status: "expired" }); await oldLink.dispose();
+        assert.equal((await state()).notes.linkUri, undefined);
+        const duplicate = await button("Open link").evaluate(node => {
+            const control = /** @type {HTMLButtonElement} */ (node), open = control.onclick?.bind(control);
+            control.click();
+            return open?.(new PointerEvent("click"));
+        });
+        assert.deepEqual(duplicate, { status: "resolving" });
+        await expect.poll(async () => (await state()).notes.linkUri).toBe("consumer+opaque:project/companion%2Fpart");
+        assert.deepEqual((await state()).notes.lastLink, { status: "presented" });
         await button("Colors").click(); await expect.poll(async () => (await state()).notes.colorPresentations ?? 0).toBeGreaterThan(0);
         const beforeColor = await text(), colorDepth = (await state()).history.undoDepth;
         const oldColor = await button("Apply color").evaluateHandle(node => /** @type {HTMLButtonElement} */ (node).onclick?.bind(node));

@@ -129,11 +129,12 @@ export class HostDocumentLinks {
         const { source } = route;
         const links = state.links.slice(page * linkLimits.page, (page + 1) * linkLimits.page).map(item => {
             const doc = item.target ? route.documents.get(item.target) : undefined, { line, column } = source.buffer.positionAt(item.from);
+            const module = source.buffer.slice(item.from, Math.min(item.to, item.from + 128));
             return { from: item.from, to: item.to, tooltip: item.tooltip || item.target || "Unresolved provider link",
-                module: source.buffer.slice(item.from, Math.min(item.to, item.from + 128)), title: source.title.slice(0, 128),
+                module, title: source.title.slice(0, 128),
                 target: doc ? { document: doc.id, resource: doc.resourceId, revision: doc.revision, length: doc.buffer.length } : null,
                 targetTitle: doc?.title.slice(0, 128) ?? null, resolvable: item.canResolve, line: line + 1, column: column + 1,
-                open: () => this.open(route, item) };
+                open: () => this.open(route, item, module) };
         });
         this.publish({ status, pending: false, links, page, count: state.links.length, message: `${state.links.length} module links.` });
     }
@@ -180,13 +181,13 @@ export class HostDocumentLinks {
             editor.viewport.revealOffset(editor.view.getSnapshot().selection.head); editor.focus(); return editor;
         } finally { this.presenting = false; }
     }
-    private async open(route: Route, item: DocumentLinkChoice) {
+    private async open(route: Route, item: DocumentLinkChoice, module: string) {
         if (this.route !== route || !this.sessions.has(route.origin)) return;
         const editor = route.origin.editor, owner = editor.element.ownerDocument, focused = owner.activeElement;
         const events = new AbortController(); let follow = true;
         if (item.canResolve) owner.addEventListener("pointerdown", () => { follow = false; }, { capture: true, once: true, signal: events.signal });
         try {
-            await item.open(uri => {
+            const result = await item.open(uri => {
                 const doc = route.documents.get(uri);
                 if (!doc) { this.publish({ message: "Provider link target is outside the host's captured resources." }); return; }
                 if (!follow || owner.activeElement !== focused && !(owner.activeElement === owner.body && (!focused?.isConnected || !!this.list?.contains(focused)))) return;
@@ -199,6 +200,9 @@ export class HostDocumentLinks {
                 route.destination = placed; this.metrics.opened++;
                 this.publish({ message: `Opened ${doc.title}.`, ...(!this.sessions.has(route.origin) ? { status: "away" as const } : {}) });
             });
+            if (result.status === "no-target" && this.route === route && this.cell.get().status === "ready") {
+                this.publish({ message: `No destination for ${module}.` });
+            }
         } finally { events.abort(); }
     }
     private retainReturn(route: Route) {
