@@ -74,6 +74,7 @@ page. Repeat the check on the browsers and devices you support.
 | Elapsed duration | Time between the stated start and end, including waiting. |
 | Input-handler duration | Time inside one adapter listener. It includes model updates, synchronous subscribers and browser work triggered there. Native work before the listener, other listeners and later service or render work fall outside it. |
 | Editor handler samples | `lastBeforeInputMs`, `lastInputMs` and `lastKeydownMs` each time one listener. Check its event counter to tell whether a sample is new. |
+| Completion samples | `lastCompletionBeforeInputMs` times the completion input listener. `lastCompletionCommandMs` times a registered command, including synchronous publication. `completionCommands` counts those calls. Provider replies and later paint fall outside both clocks. |
 | Command callback duration | `maxQueuedInputTurnMs`, `maxWordSelectionTurnMs` and `maxDragScrollStepMs` are per-mount maxima for whole synchronous callbacks, including guards, publication, refresh and scheduling. Later work falls outside them. |
 | Navigation work | `navigationWorkMs` and `maxNavigationTurnMs` count initialization and scheduled navigation callbacks, including synchronous flushes. Nested work counts once. Later caret and render frames fall outside the measurement. |
 | Navigation preparation | `navigationPreparationMs` times the initial viewport and primary-caret geometry setup within navigation work. |

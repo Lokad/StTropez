@@ -143,13 +143,16 @@ for (const quote of shippingQuotes(parcel, "local")) {
             "labels.ts": 'import type { LabelOptions } from "./main";\n\n/** Format a stable label for display. */\nexport function formatLabel(id: string, options: LabelOptions = { prefix: "Label" }): string {\n  return `${options.prefix}: ${id}`;\n}\n' },
         declarations: { "contracts.d.ts": '/** An identifier supplied by a host contract. This declaration is read-only. */\nexport type RecordId = `record-${number}`;\n' } };
     if (id === "documentation") return { id, title: "Documentation & help",
-        description: "Inspect applyDiscount with Hover or Code → Inspect type. Its documentation has formatting and a help link. Inside the call, use Code → Signature help. Help links open the TypeScript handbook; edited programs are never executed.",
+        description: "Inspect applyDiscount with Hover or Code → Inspect type. Inside the call, open Code → Signature help and use ↑ or ↓ to switch between the percentage and fixed-amount overloads.",
         files: { "documentation.ts": [
             "/**", " * Apply a **percentage discount** to a price.", " *", " * Use a fraction such as `0.1` for *ten percent*.", " *",
             " * - Keeps the original price unchanged.", " * - Returns a new discounted value.", " *", " * ```typescript", " * applyDiscount(50, 0.1); // 45", " * ```", " *",
             " * [TypeScript function guide](https://www.typescriptlang.org/docs/handbook/2/functions.html)", " *",
             " * @param price The **original price** before the discount.", " * @param rate A fraction between `0` and `1`.", " */",
-            "export function applyDiscount(price: number, rate: number): number {", "  return price * (1 - rate);", "}", "", "const discounted = applyDiscount(50, 0.1);", "",
+            "export function applyDiscount(price: number, rate: number): number;",
+            "/** Deduct a fixed amount from the price. */", "export function applyDiscount(price: number, deduction: { amount: number }): number;",
+            "export function applyDiscount(price: number, discount: number | { amount: number }): number {",
+            "  return typeof discount === \"number\" ? price * (1 - discount) : price - discount.amount;", "}", "", "const discounted = applyDiscount(50, 0.1);", "",
         ].join("\n") } };
     if (id === "outline") return { id, title: "Host outline",
         description: "A plain host-owned outline, with no language server or compiler. Indentation defines nested blocks; #region markers define the regions group. Use the gutter or Code → Collapse group, then Find to reveal hidden text.",

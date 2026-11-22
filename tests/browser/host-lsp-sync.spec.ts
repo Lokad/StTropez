@@ -121,7 +121,7 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP synch
             expect(await page.evaluate(({ from, to }) => window.hostFixture.range(from, to), { from: line * row.length, to: (line + 1) * row.length })).toBe(row.replace("saMORE", "sample"));
             expect(metrics.inputUnits).toBeLessThanOrEqual(4096); expect((await snapshot(page)).source.exports).toBe(0);
             diagnostics.push({ line, beforeinputHandlerMs: metrics.lastBeforeInputMs, inputHandlerMs: metrics.lastInputMs, completionBeforeInputMs: completionMetrics.lastCompletionBeforeInputMs,
-                completionKeydownMs: completionMetrics.lastCompletionKeydownMs, beforeinputEvents: metrics.beforeInputEvents, inputEvents: metrics.inputEvents, completeAutomationMs,
+                editorKeydownMs: metrics.lastKeydownMs, beforeinputEvents: metrics.beforeInputEvents, inputEvents: metrics.inputEvents, completeAutomationMs,
                 completionAutomationMs: performance.now() - completionStart, interactionAutomationMs: performance.now() - started });
         }
         const completedRow = row.replace("saMORE", "sample");

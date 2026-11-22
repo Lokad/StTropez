@@ -81,9 +81,18 @@ export class HostHoverTools {
         const cancelDwell = () => { if (pointerTimer !== undefined) win.clearTimeout(pointerTimer); pointerTimer = undefined; session.scheduled = false; key = undefined; };
         const cancelPointer = () => { cancelDwell(); requested = undefined; };
         session.cancelTimers = cancelPointer;
-        const inspect = editor.commands.register({ id: "hover.inspect", label: "Inspect type",
-            enabled: () => this.canCapture(editor.view.documentId), run: () => this.inspectCaret(id) });
-        for (const modifier of ["Ctrl", "Meta"]) editor.keymap.bind(modifier + "+k " + modifier + "+i", "hover.inspect");
+        try {
+            const inspect = editor.commands.register({ id: "hover.inspect", label: "Inspect type",
+                enabled: () => this.canCapture(editor.view.documentId), run: () => this.inspectCaret(id) },
+                { keys: ["Ctrl+k Ctrl+i", "Meta+k Meta+i"] });
+            listeners.signal.addEventListener("abort", inspect.dispose, { once: true });
+            const close = editor.commands.register({ id: "hover.dismiss", label: "Dismiss hover",
+                enabled: () => this.current === session || session.scheduled, run: () => {
+                    if (this.current !== session) { cancelPointer(); return false; }
+                    const visible = this.cell.get().visible; this.dismiss(); return visible;
+                } }, { keys: ["Escape"], priority: 20 });
+            listeners.signal.addEventListener("abort", close.dispose, { once: true });
+        } catch (error) { listeners.abort(); controller.dispose(); throw error; }
         this.sessions.set(id, session);
         const stop = controller.subscribe(() => { if (this.current === session) this.publish(); });
         const pointerAt = (x: number, y: number) => {
@@ -129,11 +138,6 @@ export class HostHoverTools {
             if (event.key !== "Control" && event.key !== "Meta") return;
             cancelPointer(); if (this.current === session && this.kind === "pointer") this.dismiss();
         }, { signal: listeners.signal });
-        editor.input.addEventListener("keydown", event => {
-            if (event.isComposing || editor.activity().composing) return;
-            if (["Control", "Meta", "Shift", "Alt"].includes(event.key)) return;
-            if (event.key === "Escape" && (this.current || session.scheduled)) { event.preventDefault(); event.stopImmediatePropagation(); this.dismiss(); return; }
-        }, { capture: true, signal: listeners.signal });
         editor.input.addEventListener("blur", () => { if (this.current === session && this.kind === "keyboard") this.dismiss(); }, { signal: listeners.signal });
         editor.input.addEventListener("compositionstart", () => { session.cancelTimers(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
         editor.input.addEventListener("beforeinput", () => { cancelPointer(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
@@ -151,7 +155,7 @@ export class HostHoverTools {
         win.addEventListener("resize", () => { cancelPointer(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
         let detached = false;
         return () => {
-            if (detached) return; detached = true; if (this.current === session) this.dismiss(); session.cancelTimers(); inspect.dispose(); listeners.abort(); stop();
+            if (detached) return; detached = true; if (this.current === session) this.dismiss(); session.cancelTimers(); listeners.abort(); stop();
             const counts = controller.getDiagnostics(); for (const name of Object.keys(this.retired) as (keyof typeof this.retired)[]) this.retired[name] += counts[name];
             controller.dispose(); this.sessions.delete(id);
         };

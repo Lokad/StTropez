@@ -149,6 +149,11 @@ export async function runDemoDocumentation(page: Page, url = "/") {
     await expect(signature.getByLabel("Active signature parameter")).toContainText("rate");
     await expect(signature.locator("strong").first()).toHaveText("percentage discount"); await expect(signature.locator("ul li")).toHaveCount(2);
     await expect(signature.locator(".st-documentation").last().locator("code")).toHaveText(["0", "1"]);
+    const overload = signature.getByLabel("Active signature parameter");
+    const cursor = page.locator("#cursor"), callPosition = await cursor.innerText();
+    await source.press("ArrowDown"); await expect(overload).toContainText("deduction");
+    await signature.getByRole("button", { name: "Previous signature" }).click(); await expect(overload).toContainText("rate");
+    await expect(source).toBeFocused(); await expect(cursor).toHaveText(callPosition);
     await expect.poll(() => clearsLine(signature)).toBe(true);
     expect(await signature.evaluate(node => { const box = node.getBoundingClientRect(); return box.top >= 0 && box.bottom <= innerHeight; })).toBe(true);
     await source.pressSequentially("M");
@@ -161,6 +166,9 @@ export async function runDemoDocumentation(page: Page, url = "/") {
             && (list.y + list.height <= help.y || help.y + help.height <= list.y);
     }, { message: "Completion and signature help stay readable while typing an argument" }).toBe(true);
     await expect(source).toBeFocused();
+    const chosen = completions.getByRole("option", { selected: true });
+    const first = await chosen.textContent();
+    await source.press("ArrowDown"); await expect(chosen).not.toHaveText(first!); await expect(overload).toContainText("rate");
     await source.press("Escape"); await expect(completions).toBeHidden();
     await source.press("Control+z");
     await source.press("Escape"); await expect(signature).toBeHidden(); await expect(page.locator("#files")).not.toContainText("●");

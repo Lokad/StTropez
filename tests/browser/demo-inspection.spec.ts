@@ -53,13 +53,19 @@ test("real signature help follows typed arguments and respects completion Escape
 
     await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready");
     const source = page.getByRole("textbox", { name: "main.ts", exact: true }), popup = page.getByRole("tooltip", { name: "Signature help", exact: true });
+    await source.press("Control+f"); const find = page.locator("#find-bar"); await expect(find).toBeVisible();
     await source.press("Control+End"); await source.pressSequentially("\ncalculateTotal(");
     await expect(popup).toContainText("calculateTotal"); await expect(popup.getByLabel("Active signature parameter")).toContainText("items");
     await source.pressSequentially("cart, "); await expect(popup.getByLabel("Active signature parameter")).toContainText("discount");
     await source.press("Control+Space"); await expect(page.locator(".demo-completion")).toBeVisible();
     await source.pressSequentially("Mat"); await expect(page.getByRole("option", { name: "Math", exact: true })).toBeVisible();
     await source.press("Escape"); await expect(page.locator(".demo-completion")).toBeHidden(); await expect(popup).toBeVisible();
-    await source.press("Escape"); await expect(popup).toBeHidden();
+    await source.press("Escape"); await expect(popup).toBeHidden(); await expect(find).toBeVisible();
+    await source.press("Escape"); await expect(find).toBeHidden(); await expect(source).toBeFocused();
+    const cursor = page.locator("#cursor"), at = await cursor.innerText();
+    const line = Number(/^Ln (\d+),/.exec(at)![1]);
+    await page.keyboard.press("ArrowUp"); await expect(cursor).toContainText("Ln " + (line - 1) + ",");
+    await page.keyboard.press("ArrowDown"); await expect(cursor).toHaveText(at);
     await source.press("Control+Shift+Space"); await expect(popup.getByLabel("Active signature parameter")).toContainText("discount");
     await page.getByRole("button", { name: "pricing.ts", exact: true }).click(); await expect(popup).toHaveCount(0);
 

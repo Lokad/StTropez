@@ -557,6 +557,25 @@ test("a rebound chord belongs to its editor and leaves host field editing local"
         listed: { id: "sample.action", label: "Sample action", enabled: false }, retired: false, calls: 1 });
 });
 
+test("popup bindings fall back in priority order and roll back conflicts without replacing the owner", async ({ page }) => {
+    await page.goto("/editing/");
+    expect(await page.evaluate(() => {
+        const { commands, keymap } = window.editingFixture, calls: string[] = [];
+        const press = (key: string) => keymap.handle(new KeyboardEvent("keydown", { key, cancelable: true }));
+        const lower = commands.register({ id: "test.find", label: "Close Find", run: () => { calls.push("find"); } },
+            { keys: ["Escape"], shared: true });
+        let open = false;
+        const higher = commands.register({ id: "test.popup", label: "Dismiss popup", run: () => { calls.push("popup"); return open; } },
+            { keys: ["Escape"], priority: 5, shared: true });
+        let conflict = false;
+        try { commands.register({ id: "test.rejected", label: "Duplicate", run: () => { calls.push("rejected"); } },
+            { keys: ["F8", "Escape"], priority: 5, shared: true }); } catch { conflict = true; }
+        const partial = commands.get("test.rejected") !== undefined || press("F8");
+        press("Escape"); open = true; press("Escape"); higher.dispose(); press("Escape"); lower.dispose();
+        return { calls, conflict, partial, after: press("Escape") };
+    })).toEqual({ calls: ["popup", "find", "popup", "find"], conflict: true, partial: false, after: false });
+});
+
 test("Alt arrows move and copy lines while typing and Undo follow the selected block", async ({ page }) => {
     await page.evaluate(() => { const f = window.editingFixture; f.setText("a\r\nb\nc"); f.selections([{ anchor: 4, head: 3 }]); f.focus("primary"); });
     const rows = page.locator("#primary .st-viewport-row");

@@ -19,6 +19,9 @@ export type SignatureSnapshot = Readonly<{ available: boolean; connected: boolea
     status: "idle" | "pending" | "ready" | "empty" | "expired" | "failed"; message: string; view: string | null;
     before: string; parameter: string; after: string; documentation: string; parameterDocumentation: string; content: DocumentationContent; parameterContent: DocumentationContent; activeSignature: number; signatureCount: number; argument: number | null; work: number; total: number }>;
 const emptyContent: DocumentationContent = Object.freeze([]);
+const signatureLabels = { "signature.request": "Show signature help", "signature.previous": "Previous signature",
+    "signature.next": "Next signature", "signature.dismiss": "Dismiss signature help" } as const;
+type SignatureCommand = keyof typeof signatureLabels;
 /** One captured signature lane per host; automatic requests are debounced outside input handlers. */
 export class HostSignatureTools {
     private readonly workspace: Workspace;
@@ -29,7 +32,6 @@ export class HostSignatureTools {
     private job: Job | undefined;
     private client: SignatureBackend | undefined;
     private readonly factory: SignatureBackendFactory;
-    private readonly completionOpen: (() => boolean) | undefined;
     private armed = false;
     private disconnected = false;
     private disposed = false;
@@ -42,7 +44,7 @@ export class HostSignatureTools {
         status: "idle", message: "Use Ctrl/Cmd+Shift+Space for signature help.", view: null, before: "", parameter: "", after: "", documentation: "", parameterDocumentation: "", content: emptyContent, parameterContent: emptyContent, activeSignature: 0, signatureCount: 0, argument: null, work: 0, total: 0 });
     readonly state = this.cell.observable;
     private readonly reconnectProvider: (() => void) | undefined;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, beforeRequest: () => void, factory: SignatureBackendFactory, completionOpen?: () => boolean, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.beforeRequest = beforeRequest; this.factory = factory; this.completionOpen = completionOpen; }
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, beforeRequest: () => void, factory: SignatureBackendFactory, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.beforeRequest = beforeRequest; this.factory = factory; }
     private available(s: Session): boolean {
         const tab = this.workspace.tabs.resolve(s.target);
         return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
@@ -99,11 +101,14 @@ export class HostSignatureTools {
             documentation: signature.documentation, parameterDocumentation: parameter?.documentation ?? "No declared parameter for this argument in this overload.",
             content: signature.content ?? emptyContent, parameterContent: parameter?.content ?? emptyContent });
     }
-    readonly previous = (): void => this.cycle(-1);
-    readonly next = (): void => this.cycle(1);
+    command(id: SignatureCommand) {
+        const session = this.active, job = this.job, entry = session?.editor.commands.get(id);
+        return { label: entry?.label ?? signatureLabels[id], disabled: !entry?.enabled,
+            invoke: () => { if (session && this.active === session && (id === "signature.request" || this.job === job)) session.editor.commands.run(id); } };
+    }
     private cycle(delta: number): void { const job = this.job; if (!job?.ready || !job.result?.signatures.length || !this.current(job)) return;
         this.show(job, (this.cell.get().activeSignature + delta + job.result.signatures.length) % job.result.signatures.length); }
-    readonly inspect = (): void => { if (this.active) this.request(this.active); };
+    readonly inspect = (): void => { this.active?.editor.commands.run("signature.request"); };
     private trigger(s: Session, character = "("): boolean {
         if (!this.available(s)) return false;
         this.ensureClient(s.editor.element.ownerDocument.defaultView!);
@@ -138,14 +143,27 @@ export class HostSignatureTools {
     }
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
         const s: Session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor, stop: () => {} }, events = new AbortController();
+        const register = (id: SignatureCommand, keys: string[], enabled: () => boolean, run: () => void | boolean) => {
+            const command = editor.commands.register({ id, label: signatureLabels[id], enabled, run }, { keys, priority: 10 });
+            events.signal.addEventListener("abort", command.dispose, { once: true });
+        };
+        const canCycle = () => this.job?.session === s && (this.job.result?.signatures.length ?? 0) > 1 && this.current(this.job);
+        try {
+            register("signature.request", ["Ctrl+Shift+Space", "Meta+Shift+Space"], () => this.available(s) && !this.disconnected,
+                () => { this.active = s; this.request(s); });
+            register("signature.dismiss", ["Escape"], () => this.active === s && !!(this.job || this.auto || this.armed), () => {
+                const visible = this.cell.get().visible; this.dismiss(); return visible;
+            });
+            register("signature.previous", ["ArrowUp"], canCycle, () => this.cycle(-1));
+            register("signature.next", ["ArrowDown"], canCycle, () => this.cycle(1));
+        } catch (error) { events.abort(); throw error; }
         this.sessions.set(s.token, s);
         editor.input.addEventListener("focus", () => { if (this.active !== s) { this.dismiss(); this.active = s; this.publish(); } }, { signal: events.signal });
         editor.input.addEventListener("blur", () => { if (this.active === s) this.dismiss(); }, { signal: events.signal });
+        // Paired punctuation can commit during editor keydown without a native beforeinput.
         editor.input.addEventListener("keydown", event => {
             if (event.defaultPrevented || event.isComposing || editor.activity().composing) return;
-            if ((event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && event.key === " ") { event.preventDefault(); event.stopImmediatePropagation(); this.active = s; this.request(s); }
-            else if (event.key === "Escape" && (this.job || this.auto || this.armed)) { if (this.completionOpen?.()) return; event.preventDefault(); event.stopImmediatePropagation(); this.dismiss(); }
-            else if (!event.ctrlKey && !event.metaKey && !event.altKey && !this.disconnected && (event.key.length === 1 && this.trigger(s, event.key))) {
+            if (!event.ctrlKey && !event.metaKey && !event.altKey && !this.disconnected && (event.key.length === 1 && this.trigger(s, event.key))) {
                 const retrigger = this.armed; this.active = s; this.armed = true; this.clear("idle", "Signature context changed while typing."); this.schedule(s, { triggerKind: 2, triggerCharacter: event.key, isRetrigger: retrigger }); }
         }, { capture: true, signal: events.signal });
         editor.input.addEventListener("beforeinput", (event: InputEvent) => {

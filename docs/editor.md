@@ -310,7 +310,9 @@ commit once after validating the captured target; intermediate planning publishe
 `commands.get(id, argument?)` looks up one entry and checks availability for that argument.
 An unknown ID returns `undefined`. `commands.run(id, argument?)` passes the same value to
 the registered `enabled` and `run` callbacks. Shortcuts and `list()` supply no argument.
-`register({ id, label, run, enabled })` adds a command to this mount. Duplicate IDs throw.
+`register({ id, label, run, enabled })` adds a command to this mount. An optional second argument
+such as `{ keys: ["Escape"], priority: 10 }` installs its shortcuts together. A conflict rolls back
+the registration. Duplicate IDs throw.
 Disposing a registration removes its bindings. Disposing the editor retires the registry.
 
 `editor.keymap.bind("Mod+k Mod+i", id)` binds a two-stroke chord. A single stroke uses the
@@ -319,8 +321,10 @@ and `Alt` match exact modifiers on `KeyboardEvent.key`. Use `Space` or `Plus` fo
 For a physical key, use its code, as in `Ctrl+Shift+Code:BracketLeft`. A binding for the
 character produced by the event takes precedence over a physical binding for the same stroke.
 Chords expire after 1.5 seconds or a change of focus, selection or document revision.
-Duplicate bindings and single strokes that conflict with chord prefixes throw.
-Use `keymap.unbind(keys)` to change a default binding. Disposing a binding removes that registration.
+Bindings for the same sequence run in descending `priority` (default 0). A disabled command or one
+that returns `false` lets the next binding try. A handled command consumes the keystroke.
+Equal priorities for the same sequence and single strokes that conflict with chord prefixes throw.
+`keymap.unbind(keys)` removes all bindings for a sequence. Disposing a binding removes only that registration.
 
 Editor input dispatches registered shortcuts. A binding marked `{ shared: true }` also works
 from controls inside the editor, including the fold gutter. For an external toolbar or form,

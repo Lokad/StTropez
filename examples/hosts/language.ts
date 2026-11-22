@@ -93,12 +93,6 @@ export class HostLanguageTools {
         this.bindCommands(session, listeners);
         this.sessions.set(id, session); this.attachProvider(session);
         editor.input.addEventListener("focus", () => this.activate(session), { signal: listeners.signal });
-        editor.input.addEventListener("keydown", event => {
-            if (event.isComposing || editor.activity().composing || event.defaultPrevented) return;
-            if ((event.ctrlKey || event.metaKey) && !event.altKey && event.code === "Space") { event.preventDefault(); this.activate(session); session.provider?.request(); }
-            else if (event.altKey && event.key === "Enter" && session.provider?.getSnapshot().offerText != null) { event.preventDefault(); const state = session.provider.getSnapshot(); state.completionAt(state.choiceIndex ?? 0)?.accept("replace"); }
-            else if (event.key === "Escape" && (session.provider?.getSnapshot().pending || session.provider?.getSnapshot().offerText != null)) { event.preventDefault(); session.provider?.cancel(); }
-        }, { signal: listeners.signal });
         this.resume(session); return this.detachSession(session, listeners);
     }
     attachReferenceFind(id: string, editor: TextEditor, presentation: EditingPresentation, reference: () => ComparisonBaseline | null, target: TabTarget): () => void {

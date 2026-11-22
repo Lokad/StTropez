@@ -164,14 +164,21 @@ export async function completionLabels(
 `createCompletionController(editor, provider, options?)` attaches completion and snippets to one view.
 The controller handles input, selection checks and acceptance. The host renders choices and status.
 `request()` invokes completion. Set `automatic: false` to require explicit requests. Supply
-`canCapture` for additional readiness checks. `getDiagnostics()` reports completion counts and time
-spent in its `beforeinput` and `keydown` handlers. These clocks stop when the handler returns.
+`canCapture` for additional readiness checks. `getDiagnostics()` reports completion counts,
+`lastCompletionBeforeInputMs` for the input listener and `lastCompletionCommandMs` for the most
+recent registered completion or snippet command. Both clocks stop on return.
 
 Completion and diagnostics share one binding and lease but have separate scopes. `prepareCompletion`
 receives the completion scope after synchronization. Cancellation skips pending preparation or
 discards a late result. Dispose the attachment, editor and provider separately.
 
 Automatic completion waits for input to settle after prefix typing or an advertised trigger character.
+The controller registers `completion.request`, `completion.dismiss`, `completion.previous`,
+`completion.next`, `completion.page-previous`, `completion.page-next`, `completion.insert` and
+`completion.replace` on the owning editor at shortcut priority 30. Snippet choice commands
+(`snippet.choice-previous` and `snippet.choice-next`) also use 30. Placeholder navigation
+(`snippet.previous` and `snippet.next`) uses 40 so Tab advances an active snippet first.
+Escape cancels an invisible request and lets the next binding or focus traversal handle the key.
 It needs one collapsed caret and no composition. Press Ctrl/Cmd+Space to request suggestions yourself.
 Up and Down select one choice. PageUp and PageDown move a page and stop at the first or last choice.
 Supply `getPageSize` to report the number of visible rows, or zero while the list is hidden.
@@ -333,6 +340,10 @@ buffer and grants no editing rights. A late cancelled reply cannot replace it.
 Choose when to request signature help, which popup gets a key and how to display overloads. Wait for
 input and composition as needed. Switching overloads leaves source text intact. Render signature and
 parameter content with the [documentation view](#hover-and-documentation).
+
+In the examples, Up and Down cycle through overloads while signature help is visible. An open
+completion list takes those keys first. Escape dismisses one visible popup per press and keeps
+the caret in the editor.
 
 ### Navigation and target loading
 

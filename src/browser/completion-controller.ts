@@ -35,7 +35,7 @@ export type CompletionControllerOptions = Readonly<{ autoConnect?: boolean; auto
 export type CompletionController = Observable<CompletionSnapshot> & Readonly<{ request: () => void; cancel: () => void; connect: () => void;
     customRequest: (method: string, params: JsonValue) => Promise<JsonValue>; dispose: () => void;
     getDiagnostics: () => Readonly<{ posted: number; received: number; applied: number; stale: number; cancelled: number; invalid: number; failed: number; resolved: number;
-        completionBeforeInputEvents: number; lastCompletionBeforeInputMs: number; completionKeydownEvents: number; lastCompletionKeydownMs: number;
+        completionBeforeInputEvents: number; lastCompletionBeforeInputMs: number; completionCommands: number; lastCompletionCommandMs: number;
         connected: boolean; pending: boolean; offer: boolean; transport: "lsp3.17"; protocol: ReturnType<LspWorkspace["snapshot"]>["protocol"] }> }>;
 const word = new RegExp(`^(?:${codeWordConstituentPattern})$`, "u");
 
@@ -48,7 +48,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     try { binding = scope.attachDocument(documentId); completion = createLspCompletionClient(provider); }
     catch (error) { scope.dispose(); throw error; }
     const counters = { posted: 0, applied: 0, stale: 0, cancelled: 0, invalid: 0, failed: 0, resolved: 0,
-        completionBeforeInputEvents: 0, lastCompletionBeforeInputMs: 0, completionKeydownEvents: 0, lastCompletionKeydownMs: 0 };
+        completionBeforeInputEvents: 0, lastCompletionBeforeInputMs: 0, completionCommands: 0, lastCompletionCommandMs: 0 };
     let job: Job | undefined, disposed = false, connecting: Promise<void> | undefined, inputIntent: Input | undefined, autoFrame: number | undefined, autoTurns = 0, applying = false;
     type SnippetSession = { stops: readonly SnippetStop[]; active: number; revision: number; authority: ResourceMetadata;
         indentation: Job["indentation"]; maxUnits: number; primaryGroup: number };
@@ -419,48 +419,62 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
         const selections = editor.view.getSnapshot().selectionSet, caret = selections.ranges[selections.primary]!;
         inputIntent = { revision: workspace.document(documentId).revision, selections, caret: caret.head, data: event.data, word: true, reused: false }; scheduleAuto();
     }, { signal: listeners.signal });
-    const keydown = (event: KeyboardEvent) => {
-        if (event.defaultPrevented || event.isComposing || editor.activity().composing) return;
-        if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.code === "Space") { event.preventDefault(); request(); return; }
-        if (event.key === "Escape" && (snippet || job || inputIntent || autoFrame !== undefined)) {
-            // Invisible work must not consume the editor's focus-traversal arm.
-            if (snippet || job?.visible.length) event.preventDefault();
-            cancel(); return;
+    // Home and End dismiss the list even when the caret is already at the boundary.
+    editor.input.addEventListener("keydown", event => {
+        if (!event.isComposing && !editor.activity().composing && job?.visible.length && (event.key === "Home" || event.key === "End")) {
+            cancelAuto(); counters.cancelled++; release(); publish("Completion dismissed.");
         }
-        if (snippet && event.key === "Tab" && !event.ctrlKey && !event.metaKey && !event.altKey) { if (moveSnippet(event.shiftKey ? -1 : 1)) event.preventDefault(); return; }
-        if (snippet && (event.key === "ArrowDown" || event.key === "ArrowUp") && event.altKey && !event.ctrlKey && !event.metaKey) {
-            const stop = snippet.stops[snippet.active]!, index = snippetChoiceIndex(snippet, stop), next = (Math.max(0, index) + (event.key === "ArrowDown" ? 1 : stop.choices.length - 1)) % stop.choices.length;
-            if (chooseSnippet(next)) event.preventDefault(); return;
-        }
-        if (!job?.visible.length) return;
-        if (event.key === "Home" || event.key === "End") {
-            cancelAuto(); counters.cancelled++; release(); publish("Completion dismissed."); return;
-        }
-        if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && (event.key === "PageDown" || event.key === "PageUp")) {
-            const rows = options.getPageSize?.() ?? 10;
-            if (!Number.isSafeInteger(rows) || rows <= 0) return;
-            const next = Math.max(0, Math.min(job.visible.length - 1, job.choice + (event.key === "PageDown" ? rows : -rows)));
-            if (next === job.choice || chooseCompletion(next, job.id)) event.preventDefault();
-            return;
-        }
-        if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
-            const next = (job.choice + (event.key === "ArrowDown" ? 1 : job.visible.length - 1)) % job.visible.length;
-            if (chooseCompletion(next, job.id)) event.preventDefault();
-        } else if (!event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === "Enter" || event.key === "Tab" && !event.altKey)) {
-            event.preventDefault();
-            if (!accept(event.key === "Tab" ? "insert" : "replace", job.id) && job) cancel();
-        }
-    };
-    editor.input.addEventListener("keydown", event => { const started = clock.performance.now();
-        try { keydown(event); } finally { counters.completionKeydownEvents++; counters.lastCompletionKeydownMs = clock.performance.now() - started; }
-    }, { capture: true, signal: listeners.signal });
+    }, { signal: listeners.signal });
+    const registrations: { dispose(): void }[] = [];
+    const visible = () => !!job?.visible.length;
+    const navigatingSnippet = () => !!snippet;
+    function register(id: string, label: string, keys: string[], enabled: () => boolean, run: () => boolean | void, priority = 30) {
+        registrations.push(editor.commands.register({ id, label, enabled, run() {
+            notifications.assertWritable();
+            const started = clock.performance.now();
+            try { return run(); } finally { counters.completionCommands++; counters.lastCompletionCommandMs = clock.performance.now() - started; }
+        } }, { keys, priority }));
+    }
+    function navigate(direction: -1 | 1, page: boolean) {
+        if (!job?.visible.length) return false;
+        const count = job.visible.length;
+        if (!page) return chooseCompletion((job.choice + direction + count) % count, job.id);
+        const rows = options.getPageSize?.() ?? 10;
+        if (!Number.isSafeInteger(rows) || rows <= 0) return false;
+        const next = Math.max(0, Math.min(count - 1, job.choice + direction * rows));
+        return next === job.choice || chooseCompletion(next, job.id);
+    }
+    function cycleChoice(direction: -1 | 1) {
+        if (!snippet) return false;
+        const stop = snippet.stops[snippet.active]!, count = stop.choices.length;
+        return count > 0 && chooseSnippet((Math.max(0, snippetChoiceIndex(snippet, stop)) + direction + count) % count);
+    }
     const dispose = () => {
         if (disposed) return;
         notifications.assertWritable(); disposed = true; snippet = undefined;
+        for (const registration of registrations) registration.dispose();
         stopTransform(); cancelAuto(); for (const stop of stops) stop();
         listeners.abort(); release(); completion.dispose(); binding.dispose(); scope.dispose();
         publish("Completion controller disposed."); for (const stop of [...observers]) stop();
     };
+    try {
+        register("completion.request", "Show completions", ["Ctrl+Code:Space", "Meta+Code:Space"], available, () => request());
+        register("completion.dismiss", "Dismiss completion", ["Escape"], () => !!(snippet || job || inputIntent || autoFrame !== undefined), () => {
+            const consumed = visible() || !!snippet;
+            cancel(); return consumed;
+        });
+        for (const [id, label, direction, key] of [["previous", "Previous", -1, "Up"], ["next", "Next", 1, "Down"]] as const) {
+            register("completion." + id, label + " completion", ["Arrow" + key], visible, () => navigate(direction, false));
+            register("completion.page-" + id, label + " completion page", ["Page" + key], visible, () => navigate(direction, true));
+            register("snippet." + id, label + " placeholder", [direction === 1 ? "Tab" : "Shift+Tab"], navigatingSnippet, () => moveSnippet(direction), 40);
+            register("snippet.choice-" + id, label + " snippet choice", ["Alt+Arrow" + key, "Alt+Shift+Arrow" + key],
+                () => !!snippet?.stops[snippet.active]?.choices.length, () => cycleChoice(direction));
+        }
+        for (const mode of ["insert", "replace"] as const) {
+            register("completion." + mode, mode === "insert" ? "Insert completion" : "Replace with completion",
+                mode === "insert" ? ["Tab"] : ["Enter", "Alt+Enter"], visible, () => { if (!accept(mode) && job) cancel(); });
+        }
+    } catch (error) { dispose(); throw error; }
     editor.signal.addEventListener("abort", dispose, { once: true, signal: listeners.signal });
     if (options.autoConnect !== false) connect();
     return Object.freeze({ ...state, request: () => { notifications.assertWritable(); if (!disposed) request(); },

@@ -70,7 +70,11 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         await seed(page, "const ", 6); await expect.poll(async () => (await provider(page)).connected).toBe(true);
         replies.hold(); await field(page).pressSequentially("z"); await expect.poll(replies.waiting).toBe(true);
         expect((await provider(page)).pending).toBe(true); await expect(page.getByRole("option")).toHaveCount(0);
-        if (completed) { await replies.release(); await expect.poll(async () => (await provider(page)).pending).toBe(false); }
+        if (completed) {
+            await replies.release(); await expect.poll(async () => (await provider(page)).pending).toBe(false);
+            await field(page).press("Control+Shift+Space");
+            await expect.poll(async () => (await snapshot(page)).bindings.signature.presentation.status).toBe("empty");
+        }
         const before = await snapshot(page), selection = before.bindings.views.find(view => view.id === "primary")!.selection;
         await field(page).press("Escape"); await page.keyboard.press(completed ? "Shift+Tab" : "Tab");
         const target = completed ? button(page, "Inject form error") : field(page, "Configuration path");

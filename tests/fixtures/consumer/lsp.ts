@@ -43,8 +43,8 @@ const stop = controller.subscribe(() => {
     choices.replaceChildren(...state.choices.map((label, index) => { const item = document.createElement("li"), button = document.createElement("button");
         button.textContent = label; button.onclick = () => state.completionAt(index)?.select(); item.append(button); return item; }));
 });
-command("Connect", controller.connect); command("Request completion", controller.request);
-const applyCompletion = command("Apply completion", () => { const state = controller.getSnapshot(); state.completionAt(state.choiceIndex)?.accept("replace"); });
+command("Connect", controller.connect); command("Request completion", () => { editor.commands.run("completion.request"); });
+const applyCompletion = command("Apply completion", () => { editor.commands.run("completion.replace"); });
 applyCompletion.onpointerdown = event => event.preventDefault();
 command("Hover", () => { hover.request({ revision: workspace.document(source.documentId).revision, offset: text().indexOf("TODO") + 1 }); });
 hover.subscribe(() => {

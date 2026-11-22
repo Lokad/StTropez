@@ -27,7 +27,7 @@ export function mountDemoInspection(scope: CleanupScope, workspace: Workspace, f
             diagnostics: state.diagnostics.filter(item => item.documentId === doc.id && item.revision === doc.revision) };
     } } });
     const signature = new HostSignatureTools(workspace, canCapture, () => { hover.dismiss(); beforeInspect(); },
-        (_clock, changed) => lspSignatureBackend(workspace, provider, changed), completionOpen);
+        (_clock, changed) => lspSignatureBackend(workspace, provider, changed));
     scope.defer(() => signature.dispose());
     const canOpenLink = (target: string) => valid() && canOpenDemoHelp(target);
     const links = { canOpenLink, openLink: (target: string) => { if (canOpenLink(target)) window.open(target, "_blank", "noopener,noreferrer"); } };
