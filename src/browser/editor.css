@@ -103,8 +103,14 @@
 .st-comparison-panes > section { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .st-comparison-panes h3 { font: inherit; margin: 0; padding: .5rem; }
 .st-comparison-editor { flex: 1 1 auto; height: 440px; min-height: 0; }
-.st-comparison-line-baseline { background: #4d252c; min-width: 100%; box-shadow: inset 3px 0 #d07886; }
-.st-comparison-line-working { background: #183d30; min-width: 100%; box-shadow: inset 3px 0 #64be8d; }
+.st-comparison-line-baseline { background-color: #4d252c; --st-change-bar: #d07886; }
+.st-comparison-line-working { background-color: #183d30; --st-change-bar: #64be8d; }
+/* The text fragment moves horizontally. Paint its backdrop from the fixed edge beside the gutter. */
+.st-viewport-row:is(.st-comparison-line-baseline, .st-comparison-line-working)::before {
+    content: ""; position: absolute; top: 0; bottom: 0; left: calc(0px - var(--st-fragment-left));
+    width: var(--st-text-area-width); background-color: inherit; box-shadow: inset 3px 0 var(--st-change-bar);
+    z-index: -1; pointer-events: none;
+}
 .st-comparison-removed { background: #873e4e; }
 .st-comparison-added { background: #246246; }
 .st-comparison-preview { display: grid; flex: none; max-height: min(8rem, 30%); overflow: auto; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .5rem; padding: .5rem; }

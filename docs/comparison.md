@@ -220,7 +220,8 @@ current query, and folding maps surviving ranges to the new revision. Publish de
 against the revision of the pane they describe. [Decoration layers](viewport.md#decoration-layers)
 
 A pure insertion or deletion marks the empty side with a point at the corresponding text position.
-Only the side containing changed text receives a changed-line background.
+Only the side containing changed text receives a changed-line background. The tint fills the
+visible text area as you scroll sideways. Its change bar stays beside the gutter.
 
 The reference pane is read-only. Passing a workspace document displays it directly and follows
 its edits. An external baseline uses a private document with Save and Run disabled. It takes no tab
@@ -250,7 +251,8 @@ scroll, focus, selection, history and reference identity are independent.
 Aligned panes use the same measured line height. If you insert three lines on the right, the
 grid adds three lines of padding on the left using the completed diff. Each pane keeps its own
 folds. A row folded on one side leaves padding there. A row folded on both sides disappears
-from the grid. Padding contributes nothing to copied text and contains no focusable control.
+from the grid. Each collapsed header says “contains changes” when it hides part of a hunk.
+Navigating to that change unfolds it in both panes. Padding contributes nothing to copied text and contains no focusable control.
 Click it to select an adjacent source boundary. Arrows skip it and Page commands follow the grid.
 
 Alignment charges one work unit per collapsed-fold boundary, comparison hunk or processed

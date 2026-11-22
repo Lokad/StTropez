@@ -107,6 +107,7 @@ export type RevealOptions = Readonly<{ horizontal?: "center" | "nearest"; vertic
 export type ViewportSettings = Readonly<{ columnRulers: readonly number[]; highlightCurrentLine: boolean;
     fontLigatures: boolean; scrollBeyondLastLine: boolean; minimap: boolean }>;
 export type TextViewportOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; settings?: Partial<ViewportSettings> }>;
+export type FoldContainsChange = (buffer: TextBuffer, firstHiddenLine: number, lineTo: number) => boolean;
 
 const defaultSettings: ViewportSettings = Object.freeze({ columnRulers: resolveColumnRulers(), highlightCurrentLine: false,
     fontLigatures: false, scrollBeyondLastLine: false, minimap: false });
@@ -138,7 +139,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, ident
 
 /** Internal mount: navigation and comparison publication share the viewport lifetime. */
 export function mountViewport(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId | ReturnType<typeof captureTextSurface>,
-    options: TextViewportOptions = {}): Readonly<{ viewport: TextViewport; navigation: ViewportNavigation; setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean }> {
+    options: TextViewportOptions = {}, foldContainsChange?: FoldContainsChange): Readonly<{ viewport: TextViewport; navigation: ViewportNavigation; setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean }> {
     let settings = viewportSettings(defaultSettings, options.settings);
     const { documentId, resource, tab } = typeof identity === "string" ? captureTextSurface(workspace, identity) : identity;
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
@@ -431,7 +432,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const fold = item.endsLine && index?.headerAt(item.line);
         if (fold && fold.collapsed) {
             const count = fold.lineTo - fold.lineFrom - 1;
-            parts.push({ text: "", className: "st-fold-summary", ornament: "fold", label: `… ${count} ${count === 1 ? "line" : "lines"} hidden` });
+            const changes = foldContainsChange?.(document.buffer, fold.lineFrom + 1, fold.lineTo) ? " · contains changes" : "";
+            parts.push({ text: "", className: "st-fold-summary", ornament: "fold", label: `… ${count} ${count === 1 ? "line" : "lines"} hidden${changes}` });
         }
         return renderRowChildren(element, parts) || changed;
     };
@@ -643,6 +645,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         if (requested && scrollbarPressed) settleScrollbarReveal();
         root.scrollLeft = physicalLeft; root.scrollTop = physicalTop;
         layer.style.width = `calc(100% - ${mapWidth + gutterWidth}px)`; layer.style.height = "100%";
+        layer.style.setProperty("--st-text-area-width", `${width}px`);
         layer.style.transform = `translate(${physicalLeft + gutterWidth}px, ${physicalTop}px)`;
         gutter.style.transform = `translate(${physicalLeft}px, ${physicalTop}px)`;
         gutter.style.width = `${gutterWidth}px`; gutter.style.height = `${height}px`;
@@ -659,7 +662,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             if (!element) { element = owner.createElement("div"); element.className = "st-viewport-row"; rows.set(item.line, element); layer.append(element); }
             const placement = fragmentPlacement, shift = placement?.revision === document.revision && placement.line === item.line
                 && placement.from === item.from && placement.to === item.to && placement.left === left ? placement.shift : 0;
-            element.style.transform = `translate(${item.left + shift}px, ${padding + index.rowAt(item.line) * lineHeight - top}px)`;
+            element.style.setProperty("--st-fragment-left", `${item.left + shift}px`);
+            element.style.transform = `translate(var(--st-fragment-left), ${padding + index.rowAt(item.line) * lineHeight - top}px)`;
             element.style.height = `${lineHeight}px`;
             element.style.lineHeight = comparisonRows ? `${lineHeight}px` : "";
             if (paintRow(element, item, document, selectionSet, highlightedLine, index)) geometries.delete(item.line);

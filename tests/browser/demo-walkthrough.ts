@@ -369,15 +369,36 @@ export async function runDemoFoldingBoundaries(page: Page, url = "/") {
     await page.getByRole("button", { name: "Compare", exact: true }).click();
     await expect(page.locator(".st-comparison-controls output")).toHaveText("No changes");
     const panes = page.locator(".st-comparison-panes > section"), left = panes.first(), right = panes.last();
+    const working = right.getByRole("textbox");
+    await working.press("Control+Home"); await working.press("ArrowDown"); await working.press("End");
+    await page.keyboard.insertText(" // reviewed");
+    const status = page.locator(".st-comparison-controls output");
+    await expect(status).toHaveText(/1 change|Change 1 of 1/);
     for (const pane of [left, right]) {
         const toggles = pane.locator(".st-fold-button");
         await expect(toggles).toHaveCount(2);
         await toggles.first().click(); await toggles.last().click();
         await expect(pane.locator(".st-viewport-row")).toHaveText([branches[0]!, branches[2]!, ...branches.slice(4)]);
+        const summaries = pane.locator(".st-fold-summary");
+        await expect(summaries.first()).toHaveAttribute("data-label", "… 1 line hidden · contains changes");
+        await expect(summaries.last()).toHaveAttribute("data-label", "… 1 line hidden");
+        const visible = await summaries.first().evaluate(node => {
+            const box = node.getBoundingClientRect(), layer = node.closest(".st-viewport-layer")!.getBoundingClientRect();
+            return box.width > 0 && box.left >= layer.left && box.right <= layer.right;
+        });
+        expect(visible).toBe(true);
     }
     await left.locator(".st-fold-button").first().click();
     await expect(left.locator('.st-viewport-row[data-line="1"]')).toHaveText("  first();");
     await expect(right.locator('.st-viewport-row[data-line="1"]')).toHaveCount(0);
+    await page.getByRole("button", { name: "Next change", exact: true }).click();
+    await expect(right.locator('.st-viewport-row[data-line="1"]')).toContainText("// reviewed");
+    await page.getByRole("button", { name: "Use baseline", exact: true }).click();
+    await expect(status).toHaveText("No changes");
+    for (const pane of [left, right]) {
+        await pane.locator(".st-fold-button").first().click();
+        await expect(pane.locator(".st-fold-summary").first()).toHaveAttribute("data-label", "… 1 line hidden");
+    }
 }
 
 export async function runDemoEditingRules(page: Page, url = "/") {

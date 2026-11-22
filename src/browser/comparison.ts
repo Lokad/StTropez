@@ -87,14 +87,14 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     let epoch = -1, scheduled = false, disposed = false;
     let measuredGeneration = -1, steps = 0, advances = 0, maxStepMs = 0, totalStepMs = 0;
     let decoratedGeneration = -1, decoratedStatus: string | undefined;
-    function hunkAtLine(side: "baseline" | "working", line: number): DiffHunk | undefined {
+    function firstHunkInLines(side: "baseline" | "working", from: number, to = from + 1): DiffHunk | undefined {
         if (state.status !== "ready" && state.status !== "running") return;
-        const low = partitionPoint(state.hunks.length, index => { const range = state.hunks[index]![side]; return Math.max(range.lineFrom + 1, range.lineTo) <= line; });
-        const hunk = state.hunks[low]; return hunk && hunk[side].lineFrom <= line ? hunk : undefined;
+        const low = partitionPoint(state.hunks.length, index => { const range = state.hunks[index]![side]; return Math.max(range.lineFrom + 1, range.lineTo) <= from; });
+        const hunk = state.hunks[low]; return hunk && hunk[side].lineFrom < to ? hunk : undefined;
     }
     const decorate = (side: "baseline" | "working") => (line: PresentedLine): readonly InlineDecoration[] => {
         if (side === "working" && line.revision !== state.working?.revision) return [];
-        const hunk = hunkAtLine(side, line.line);
+        const hunk = firstHunkInLines(side, line.line);
         if (!hunk) return [];
         const buffer = state[side]!.buffer;
         const range = inlineChange(line.line, side, hunk, buffer, state[side === "working" ? "baseline" : "working"]!.buffer);
@@ -110,12 +110,14 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     };
     const lineClass = (side: "baseline" | "working") => (line: PresentedLine) => {
         if (side === "working" && line.revision !== state.working?.revision) return;
-        const range = hunkAtLine(side, line.line)?.[side];
+        const range = firstHunkInLines(side, line.line)?.[side];
         return range && range.from < range.to ? `st-comparison-line-${side}` : undefined;
     };
     const paneOptions = { ...(options.settings ? { settings: options.settings } : {}), ...(options.requestLine ? { requestLine: options.requestLine } : {}) };
+    const foldContainsChange = (side: "baseline" | "working") => (buffer: TextBuffer, from: number, to: number) =>
+        state[side]?.buffer === buffer && firstHunkInLines(side, from, to) !== undefined;
     let workingMount: MountedTextEditor;
-    try { workingMount = mountEditor(workingPane.content, workspace, identity, { view: controller.view, ...paneOptions, ariaLabel: "Comparison working source" }); }
+    try { workingMount = mountEditor(workingPane.content, workspace, identity, { view: controller.view, ...paneOptions, ariaLabel: "Comparison working source" }, foldContainsChange("working")); }
     catch (error) { root.remove(); controller.dispose(); throw error; }
     const working = workingMount.editor, pair = createComparisonPanes(workingMount, changed), referenceEditor = () => pair.reference()?.editor, referenceViewport = () => referenceEditor()?.viewport;
     const differences = (editor: TextEditor, side: "working" | "baseline") => editor.decorations.addProvider({
@@ -177,7 +179,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
             if (typeof baseline !== "string") display = workspace.createTextResourceFromBuffer(workspace.createResourceKey("comparison", "baseline"), "Comparison baseline",
                 { buffer: state.baseline.buffer, serverVersion: state.baseline.version }, { edit: [], save: false, run: false }, { visibility: "internal" });
             const referenceId = typeof baseline === "string" ? baseline : display!.documentId;
-            const mounted = mountEditor(referencePane.content, workspace, referenceId, { ariaLabel: "Comparison baseline source", readOnly: true, ...paneOptions });
+            const mounted = mountEditor(referencePane.content, workspace, referenceId, { ariaLabel: "Comparison baseline source", readOnly: true, ...paneOptions }, foldContainsChange("baseline"));
             const editor = mounted.editor;
             referenceDiff = differences(editor, "baseline");
             try { pair.setReference(mounted); } catch (error) { editor.dispose(); throw error; }

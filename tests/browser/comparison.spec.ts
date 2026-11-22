@@ -54,6 +54,36 @@ test("paired rows highlight their own changed text and restore together", async 
     await expect(working.locator(".st-comparison-added")).toHaveText(["5", "😁", "x"]);
     await expect(baseline.locator('[data-line="2"] .st-comparison-anchor')).toHaveCount(1);
     await expect(working.locator('.st-comparison-line-working[data-line="3"]')).toBeVisible();
+    await page.evaluate(() => {
+        for (const pane of Object.values(window.comparisonFixture.review.panes)) pane.configure({ minimap: true });
+    }); await ready(page);
+    const viewports = sections.locator(".st-viewport");
+    for (const positions of [[0, 0], [110, 220]]) {
+        await viewports.evaluateAll((panes, positions) => panes.forEach((pane, i) => {
+            pane.scrollLeft = positions[i]!; pane.dispatchEvent(new Event("scroll"));
+        }), positions); await ready(page);
+        for (const [index, pane] of (await viewports.all()).entries()) {
+            const stripe = await pane.evaluate(node => {
+                const layer = node.querySelector(".st-viewport-layer")!.getBoundingClientRect();
+                const map = node.querySelector(".st-minimap")!.getBoundingClientRect();
+                const row = node.querySelector('.st-viewport-row[data-line="0"]')!, glyph = document.createRange();
+                glyph.selectNodeContents(row);
+                const x = Math.ceil(layer.left);
+                return { x, y: Math.ceil(row.getBoundingClientRect().top) + 3, width: Math.floor(map.left) - x,
+                    mapWidth: map.width, origin: glyph.getBoundingClientRect().left - x, scroll: node.scrollLeft };
+            });
+            expect(stripe.scroll).toBe(positions[index]); expect(stripe.mapWidth).toBeGreaterThan(0);
+            if (!stripe.scroll) expect(stripe.origin).toBeGreaterThan(3);
+            const png = await page.screenshot({ scale: "css", clip: { x: stripe.x, y: stripe.y, width: stripe.width, height: 1 } });
+            const colors = await page.evaluate(async bytes => {
+                const image = new Image(); image.src = "data:image/png;base64," + bytes; await image.decode();
+                const canvas = document.createElement("canvas"); canvas.width = image.width; canvas.height = 1;
+                const ctx = canvas.getContext("2d")!; ctx.drawImage(image, 0, 0);
+                return [1, canvas.width - 2].map(x => Array.from(ctx.getImageData(x, 0, 1, 1).data.slice(0, 3)));
+            }, png.toString("base64"));
+            expect(colors).toEqual(index === 0 ? [[208, 120, 134], [77, 37, 44]] : [[100, 190, 141], [24, 61, 48]]);
+        }
+    }
     await page.getByRole("button", { name: "Next change" }).click();
     await expect(page.locator(".st-comparison-controls output")).toHaveText("Change 1 of 1");
     await page.getByRole("button", { name: "Use baseline" }).click(); await ready(page);
@@ -63,13 +93,15 @@ test("paired rows highlight their own changed text and restore together", async 
 });
 
 test("a one-sided change marks the empty range without tinting its unchanged neighbour", async ({ page }) => {
-    const original = "first\nmiddle\nlast\n";
+    const tail = "shared long line ".repeat(32);
+    const original = "first\nmiddle\nlast\n" + tail;
     await page.evaluate(text => {
         const f = window.comparisonFixture; f.setText(text); f.begin("accept"); f.finish("accept");
+        for (const pane of Object.values(f.review.panes)) pane.configure({ minimap: true });
     }, original);
     const sections = page.locator(".st-comparison-panes > section");
     for (const insert of [true, false]) {
-        const working = insert ? "first\nextra\nmiddle\nlast\n" : "first\nlast\n";
+        const working = (insert ? "first\nextra\nmiddle\nlast\n" : "first\nlast\n") + tail;
         await page.evaluate(text => window.comparisonFixture.setText(text), working); await ready(page);
         const empty = insert ? sections.first() : sections.last(), changed = insert ? sections.last() : sections.first();
         const row = empty.locator('.st-viewport-row[data-line="1"]');
@@ -80,6 +112,17 @@ test("a one-sided change marks the empty range without tinting its unchanged nei
             const marker = row.locator('.st-comparison-anchor[data-ornament="point"]');
             expect(await marker.evaluate(el => parseFloat(getComputedStyle(el, "::after").borderBottomWidth))).toBeGreaterThan(0);
             await expect(changed.locator(insert ? ".st-comparison-line-working" : ".st-comparison-line-baseline")).toHaveText(insert ? "extra" : "middle");
+            if (aligned) {
+                const viewport = empty.locator(".st-viewport");
+                await viewport.evaluate(node => { node.scrollLeft = 220; node.dispatchEvent(new Event("scroll")); }); await ready(page);
+                const coverage = await viewport.evaluate(node => {
+                    const gap = node.querySelector(".st-comparison-padding")!, box = gap.getBoundingClientRect();
+                    return { scroll: node.scrollLeft, left: box.left - node.querySelector(".st-viewport-gutter")!.getBoundingClientRect().right,
+                        right: box.right - node.querySelector(".st-minimap")!.getBoundingClientRect().left, stripes: getComputedStyle(gap).backgroundImage };
+                });
+                expect(coverage.scroll).toBe(220); expect(Math.abs(coverage.left)).toBeLessThan(1);
+                expect(Math.abs(coverage.right)).toBeLessThan(1); expect(coverage.stripes).toContain("gradient");
+            }
         }
         await page.getByRole("button", { name: "Next change" }).click();
         await page.getByRole("button", { name: "Use baseline", exact: true }).click(); await ready(page);
@@ -123,10 +166,9 @@ test("paired navigation exposes exact whitespace and reverts one hunk through sh
     const fitting = await page.locator(".st-comparison-panes .st-viewport").evaluateAll(panes => panes.map(pane => {
         const row = pane.querySelector<HTMLElement>(".st-viewport-row")!, bounds = pane.getBoundingClientRect(), range = pane.ownerDocument.createRange();
         range.selectNodeContents(row);
-        return { overflow: pane.scrollWidth - pane.clientWidth, textLeft: range.getBoundingClientRect().left - bounds.left,
-            colored: getComputedStyle(row).backgroundColor !== "rgba(0, 0, 0, 0)", fills: row.getBoundingClientRect().right >= bounds.right - 1 };
+        return { overflow: pane.scrollWidth - pane.clientWidth, textLeft: range.getBoundingClientRect().left - bounds.left };
     }));
-    for (const pane of fitting) { expect(pane.overflow).toBeLessThanOrEqual(1); expect(pane.textLeft).toBeGreaterThanOrEqual(0); expect(pane.colored && pane.fills).toBe(true); }
+    for (const pane of fitting) { expect(pane.overflow).toBeLessThanOrEqual(1); expect(pane.textLeft).toBeGreaterThanOrEqual(0); }
     await page.getByRole("button", { name: "Use baseline", exact: true }).click(); await ready(page);
     expect(await page.evaluate(() => window.comparisonFixture.range(0, 25))).toContain("Baseline");
     expect((await page.evaluate(() => window.comparisonFixture.snapshot())).history.undoDepth).toBe(1);
