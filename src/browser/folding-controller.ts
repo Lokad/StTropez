@@ -13,7 +13,9 @@ export type FoldDiscoveryBatch = Readonly<{ ranges: readonly DiscoveredFold[]; i
 export type FoldDiscoveryCursor = KernelCursor<Readonly<{ status: KernelStatus; result: readonly DiscoveredFold[] | null; failure: string | null }>>;
 export type FoldDiscoveryResult = readonly DiscoveredFold[] | FoldDiscoveryCursor | FoldDiscoveryBatch;
 export type FoldDiscovery = (document: DocumentSnapshot, signal: AbortSignal) => FoldDiscoveryResult | Promise<FoldDiscoveryResult>;
-export type FoldCommand = "collapse" | "expand" | "collapse-all" | "expand-all";
+const foldLabels = { "fold.collapse": "Collapse block", "fold.expand": "Expand block",
+    "fold.collapse-all": "Collapse group", "fold.expand-all": "Expand group" } as const;
+export type FoldCommand = keyof typeof foldLabels;
 export type FoldingStatus = Readonly<{ status: "pending" | "ready" | "failed" | "disposed"; revision: number; regions: number; collapsed: number;
     groups: readonly string[]; message: string }>;
 
@@ -87,30 +89,20 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
         }).catch(error => fail(capture, error));
     };
     const refresh = () => { if (!available()) return; cancel(); publish("pending", "Discovering folds…"); later(start, delay); };
-    let observed = workspace.document(view.documentId).revision;
-    const stopDocument = workspace.observeDocument(view.documentId).subscribe(() => {
-        const next = workspace.observeDocument(view.documentId).getSnapshot();
-        if (!next) { cancel(); return; }
-        if (next.revision !== observed) { observed = next.revision; refresh(); }
-    });
-    const stopTab = target && workspace.tabs.subscribe(() => { if (!available()) cancel(); });
-    const stopFolds = view.folding.subscribe(() => { if (!disposed) publish(cell.get().status, cell.get().message); });
     const commandFilter = (command: FoldCommand, group?: string) => {
-        const collapse = command === "collapse" || command === "collapse-all";
-        const atCaret = command === "collapse" || command === "expand";
+        const collapse = command === "fold.collapse" || command === "fold.collapse-all";
+        const atCaret = command === "fold.collapse" || command === "fold.expand";
         const line = atCaret ? workspace.document(view.documentId).buffer.lineAt(view.getSnapshot().selection.head) : 0;
         return (range: FoldRegion) => range.collapsed !== collapse && (group === undefined || range.group === group)
             && (!atCaret || range.lineFrom <= line && line < range.lineTo);
     };
-    const canRunCommand = (command: FoldCommand, group?: string) =>
-        available() && !busy() && view.folding.getSnapshot().regions.some(commandFilter(command, group));
-    const runCommand = (command: FoldCommand, group?: string): boolean => {
+    const runCommand = (command: FoldCommand, group: unknown): boolean => {
         notifications.assertWritable();
-        if (!available() || busy()) return false;
+        if (group !== undefined && typeof group !== "string") return false;
         const document = workspace.document(view.documentId), before = view.folding.getSnapshot(), state = view.getSnapshot();
-        const line = document.buffer.lineAt(state.selection.head), collapse = command === "collapse" || command === "collapse-all";
+        const line = document.buffer.lineAt(state.selection.head), collapse = command === "fold.collapse" || command === "fold.collapse-all";
         let candidates = before.regions.filter(commandFilter(command, group));
-        if (command === "collapse" || command === "expand") {
+        if (command === "fold.collapse" || command === "fold.expand") {
             const chosen = collapse ? candidates.at(-1) : candidates[0]; candidates = chosen ? [chosen] : [];
         }
         if (!candidates.length) return false;
@@ -123,20 +115,39 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
         }
         return applied;
     };
-    // Handle folds before ordinary navigation reveals a hidden logical caret.
-    editor.element.addEventListener("keydown", event => {
-        if (event.defaultPrevented || event.isComposing || !(event.ctrlKey || event.metaKey) || !event.shiftKey || event.altKey) return;
-        const command = event.code === "BracketLeft" ? "collapse" : event.code === "BracketRight" ? "expand" : undefined;
-        if (command && runCommand(command)) event.preventDefault();
-    }, { capture: true, signal: listeners.signal });
+    const registrations: { dispose(): void }[] = [];
+    try {
+        for (const id of Object.keys(foldLabels) as FoldCommand[]) {
+            registrations.push(editor.commands.register({ id, label: foldLabels[id],
+                enabled: group => available() && !busy() && (group === undefined || typeof group === "string")
+                    && view.folding.getSnapshot().regions.some(commandFilter(id, group)),
+                run: group => runCommand(id, group) }));
+        }
+        for (const mod of ["Ctrl", "Meta"]) {
+            editor.keymap.bind(mod + "+Shift+Code:BracketLeft", "fold.collapse", { shared: true });
+            editor.keymap.bind(mod + "+Shift+Code:BracketRight", "fold.expand", { shared: true });
+        }
+    } catch (error) {
+        for (const registration of registrations) registration.dispose();
+        throw error;
+    }
+    let observed = workspace.document(view.documentId).revision;
+    const stopDocument = workspace.observeDocument(view.documentId).subscribe(() => {
+        const next = workspace.observeDocument(view.documentId).getSnapshot();
+        if (!next) { cancel(); return; }
+        if (next.revision !== observed) { observed = next.revision; refresh(); }
+    });
+    const stopTab = target && workspace.tabs.subscribe(() => { if (!available()) cancel(); });
+    const stopFolds = view.folding.subscribe(() => { if (!disposed) publish(cell.get().status, cell.get().message); });
     const dispose = () => {
         if (disposed) return;
         notifications.assertWritable();
         disposed = true;
+        for (const registration of registrations) registration.dispose();
         cancel(); listeners.abort(); stopDocument(); stopTab?.(); stopFolds(); publish("disposed");
     };
     editor.signal.addEventListener("abort", dispose, { once: true, signal: listeners.signal });
     refresh();
-    return Object.freeze({ ...cell.observable, refresh: () => { notifications.assertWritable(); refresh(); }, canRunCommand, runCommand, dispose });
+    return Object.freeze({ ...cell.observable, refresh: () => { notifications.assertWritable(); refresh(); }, dispose });
 }
 export type FoldingController = ReturnType<typeof createFoldingController>;

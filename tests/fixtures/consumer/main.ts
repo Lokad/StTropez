@@ -87,7 +87,15 @@ const fixture = { text: () => workspace.document(documentId).text(),
         try {
             view.setSelections(0, [{ anchor: 0, head: 0 }, { anchor: original.length, head: original.length }]);
             const initial = view.folding.getSnapshot();
-            if (!view.folding.setRanges(initial, [{ id: "body", from: 0, to: footer, collapsed: true }]) || view.folding.setCollapsed(initial, "body", false)) throw new Error("Compiled folding did not enforce captured versions.");
+            const body = { id: "body", from: 0, to: footer, group: "blocks" };
+            if (!view.folding.setRanges(initial, [body]) || view.folding.setCollapsed(initial, "body", true)) throw new Error("Compiled folding did not enforce captured versions.");
+            const discovery = browserApi.createFoldingController(editor, () => [body]);
+            try {
+                const command = editor.commands.get("fold.collapse-all", "blocks");
+                if (!command?.enabled || editor.commands.run(command.id, "imports") || !editor.commands.run(command.id, "blocks"))
+                    throw new Error("Restored grouped folding did not use the editor's command registry.");
+            } finally { discovery.dispose(); }
+            if (editor.commands.get("fold.collapse-all")) throw new Error("Disposed fold command remained in the menu.");
             editor.focus(); await wait();
             if (editor.viewport.snapshot().rows !== 2 || editor.viewport.snapshot().visibleLines !== 2 || peer.folding.getSnapshot().index.collapsedCount) throw new Error("Compiled folded projection is not bounded or independent.");
             const summary = host.querySelector<HTMLElement>(".st-fold-summary");

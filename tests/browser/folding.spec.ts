@@ -10,8 +10,8 @@ test("collapsing from a body caret moves it to the header for navigation and typ
         f.select("primary", { anchor: 8, head: 8 }); f.select("secondary", { anchor: 13, head: 13 });
     });
     const source = input(page), fold = page.locator("#primary .st-fold-button");
-    await expect(fold).toHaveAttribute("aria-expanded", "true"); await source.press("Control+Shift+BracketLeft");
-    await expect(fold).toHaveAttribute("aria-expanded", "false");
+    await expect(fold).toHaveAttribute("aria-expanded", "true"); await fold.press("Control+Shift+BracketLeft");
+    await expect(fold).toHaveAttribute("aria-expanded", "false"); await expect(source).toBeFocused();
     const current = () => page.evaluate(() => window.editingFixture.selectionSet().ranges[0]);
     expect(await current()).toMatchObject({ anchor: 4, head: 4 });
     await source.press("ArrowDown"); await ready(page); expect(await current()).toMatchObject({ anchor: 22, head: 22 });
@@ -103,7 +103,7 @@ test("group folding preserves every selection and typing replaces the retained h
     const before = await page.evaluate(() => window.editingFixture.snapshot());
     const selected = before.primary.viewport.selectionSet;
     const folded = async (command: "collapse-all" | "expand-all") => {
-        expect(await page.evaluate(command => window.editingFixture.foldCommand(command, "regions"), command)).toBe(true); await ready(page);
+        expect(await page.evaluate(command => window.editingFixture.commands.run("fold." + command, "regions"), command)).toBe(true); await ready(page);
         const after = await page.evaluate(() => window.editingFixture.snapshot());
         expect(after.primary.viewport.selectionSet).toEqual(selected); expect(after.document).toEqual(before.document);
         expect(after.history).toEqual(before.history); expect(after.secondary.selection).toEqual(before.secondary.selection);
@@ -154,6 +154,37 @@ test("nested fold shortcuts move insertion carets to each visible header and pre
     await page.evaluate(() => window.editingFixture.dispose());
     expect((await page.evaluate(() => window.editingFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
 });
+test("disposing fold discovery releases its shortcuts and a conflicting remount rolls back", async ({ page }) => {
+    await page.goto("/editing/");
+    await page.evaluate(() => {
+        const f = window.editingFixture; f.setText("header\n  child\ntail");
+        f.discoverFolds(() => [{ from: 0, to: 15, group: "blocks" }]);
+    });
+    await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
+    const result = await page.evaluate(() => {
+        const f = window.editingFixture, id = "fold.collapse-all";
+        const block = f.commands.get(id, "blocks"), unknown = f.commands.get(id, "other");
+        const invalid = f.commands.run(id, {}); f.stopFoldDiscovery();
+        let hostCalls = 0;
+        const host = f.commands.register({ id: "host.bracket", label: "Host bracket", run: () => { hostCalls++; } });
+        f.keymap.bind("Ctrl+Shift+Code:BracketRight", "host.bracket");
+        let conflict = "";
+        try { f.discoverFolds(() => []); } catch (error) { conflict = String(error); }
+        const partial = f.commands.list().filter(entry => entry.id.startsWith("fold."));
+        const retired = f.commands.run(id);
+        // A keyboard layout can produce a different character at this physical key.
+        const node = document.querySelector<HTMLTextAreaElement>("#primary textarea")!;
+        node.dispatchEvent(new KeyboardEvent("keydown", { key: "Å", code: "BracketRight", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+        host.dispose();
+        f.discoverFolds(() => [{ from: 0, to: 15, group: "blocks" }]);
+        return { block, unknown: unknown?.enabled, invalid, conflict, partial, retired, hostCalls };
+    });
+    expect(result).toEqual({ block: { id: "fold.collapse-all", label: "Collapse group", enabled: true }, unknown: false, invalid: false,
+        conflict: expect.stringContaining("Key binding conflicts"), partial: [], retired: false, hostCalls: 1 });
+    await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
+    await input(page).press("Control+Shift+[");
+    await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.collapsed)).toBe(1);
+});
 test("automatic discovery preserves newer view choices, cancels changed targets and waits for composition", async ({ page }) => {
     await page.goto("/editing/");
     await page.evaluate(() => {
@@ -170,7 +201,7 @@ test("automatic discovery preserves newer view choices, cancels changed targets 
         const f = window.editingFixture, groups = f.foldStatus()!.groups;
         f.refreshFolds(); return groups === f.foldStatus()!.groups;
     })).toBe(true); await expect.poll(count).toBe(2);
-    await page.evaluate(() => window.editingFixture.foldCommand("collapse-all")); await resolve();
+    await page.evaluate(() => window.editingFixture.commands.run("fold.collapse-all")); await resolve();
     await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
     expect((await page.evaluate(() => window.editingFixture.folding())).regions[0]!.collapsed).toBe(true);
     await page.evaluate(() => window.editingFixture.refreshFolds()); await expect.poll(count).toBe(3);
@@ -315,7 +346,7 @@ test("a 100k-line fold keeps row work bounded, maps edits and undo, and reveals 
     expect((await page.evaluate(() => window.editingFixture.folding())).regions[0]!.collapsed).toBe(false);
     await page.evaluate(end => window.editingFixture.discoverFolds(() => [{ from: 0, to: end, group: "large" }]), end);
     await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
-    expect(await page.evaluate(() => window.editingFixture.foldCommand("collapse-all", "large"))).toBe(true); await ready(page);
+    expect(await page.evaluate(() => window.editingFixture.commands.run("fold.collapse-all", "large"))).toBe(true); await ready(page);
     state = await page.evaluate(() => window.editingFixture.snapshot());
     expect(state.primary.selection).toMatchObject({ anchor: 5, head: 5 });
     expect(state.primary.viewport.rows).toBe(2); expect(state.primary.inputUnits).toBeLessThanOrEqual(2600);

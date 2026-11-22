@@ -273,7 +273,10 @@ export async function runDemoFolding(page: Page, url = "/") {
     await expect(left.locator(".st-fold-button").first()).toBeVisible();
     await expect(left.locator('.st-fold-button[aria-expanded="false"]')).toHaveCount(0);
     await expect(right.locator('.st-fold-button[aria-expanded="false"]')).toHaveCount(1);
-    await left.locator(".st-fold-button").first().click();
+    const saved = left.getByRole("textbox");
+    await saved.press("Control+Home"); await saved.press("Control+Shift+BracketLeft");
+    await expect(left.locator('.st-fold-button[aria-expanded="false"]')).toHaveCount(1);
+    await expect(saved).toBeFocused();
     await expect(page.locator("#folding-status")).toContainText("Saved copy ·");
     await menu("fold-group-expand");
     await expect(left.locator('.st-fold-button[aria-expanded="false"]')).toHaveCount(0);

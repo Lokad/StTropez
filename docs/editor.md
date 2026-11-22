@@ -307,19 +307,24 @@ cannot edit, is composing/disposed, or lacks the requested comment rule. Long pl
 commit once after validating the captured target; intermediate planning publishes no text.
 
 `editor.commands.list()` returns immutable entries with an ID, label and current enabled state.
-`register({ id, label, run, enabled })` adds a command to this mount. The optional `enabled`
-predicate also controls keyboard dispatch of host commands. Duplicate IDs throw.
+`commands.get(id, argument?)` looks up one entry and checks availability for that argument.
+An unknown ID returns `undefined`. `commands.run(id, argument?)` passes the same value to
+the registered `enabled` and `run` callbacks. Shortcuts and `list()` supply no argument.
+`register({ id, label, run, enabled })` adds a command to this mount. Duplicate IDs throw.
 Disposing a registration removes its bindings. Disposing the editor retires the registry.
 
 `editor.keymap.bind("Mod+k Mod+i", id)` binds a two-stroke chord. A single stroke uses the
 same API. `Mod` means Meta on Apple platforms and Ctrl elsewhere. `Ctrl`, `Meta`, `Shift`
 and `Alt` match exact modifiers on `KeyboardEvent.key`. Use `Space` or `Plus` for those keys.
+For a physical key, use its code, as in `Ctrl+Shift+Code:BracketLeft`. A binding for the
+character produced by the event takes precedence over a physical binding for the same stroke.
 Chords expire after 1.5 seconds or a change of focus, selection or document revision.
 Duplicate bindings and single strokes that conflict with chord prefixes throw.
 Use `keymap.unbind(keys)` to change a default binding. Disposing a binding removes that registration.
 
-Editor input dispatches registered shortcuts. A host can mark a binding `{ shared: true }`
-and forward a toolbar or form's bubbling keydown to the owning pane's `keymap.handle(event)`.
+Editor input dispatches registered shortcuts. A binding marked `{ shared: true }` also works
+from controls inside the editor, including the fold gutter. For an external toolbar or form,
+forward its bubbling keydown to the owning pane's `keymap.handle(event)`.
 It prevents the default action for a handled shortcut. Ordinary field input and composition
 stay with the field. [Host command example](host-integration.md)
 

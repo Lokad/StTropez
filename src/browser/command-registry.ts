@@ -1,8 +1,10 @@
-export type EditorCommand = Readonly<{ id: string; label: string; enabled?: () => boolean; run: () => void | boolean }>;
+export type EditorCommand = Readonly<{ id: string; label: string; enabled?: (argument?: unknown) => boolean; run: (argument?: unknown) => void | boolean }>;
+type CommandInfo = Readonly<{ id: string; label: string; enabled: boolean }>;
 export type EditorCommands = Readonly<{
     register: (command: EditorCommand) => { dispose(): void };
-    run: (id: string) => boolean;
-    list: () => readonly Readonly<{ id: string; label: string; enabled: boolean }>[];
+    run: (id: string, argument?: unknown) => boolean;
+    get: (id: string, argument?: unknown) => CommandInfo | undefined;
+    list: () => readonly CommandInfo[];
 }>;
 export type EditorKeymap = Readonly<{
     bind: (keys: string, id: string, options?: Readonly<{ shared?: boolean }>) => { dispose(): void };
@@ -15,13 +17,10 @@ const modifiers = ["ctrl", "meta", "alt", "shift"];
 function stroke(text: string, apple: boolean): string {
     const parts = text.toLowerCase().split("+"), key = parts.pop()!;
     const names = parts.map(part => part === "mod" ? (apple ? "meta" : "ctrl") : part);
-    if (!key || modifiers.includes(key) || names.some(part => !modifiers.includes(part)) || new Set(names).size !== names.length)
+    if (!key || modifiers.includes(key) || (key.startsWith("code:") && !/^code:[a-z0-9]+$/.test(key))
+        || names.some(part => !modifiers.includes(part)) || new Set(names).size !== names.length)
         throw new TypeError(`Invalid key stroke: ${text}`);
     return [...modifiers.filter(name => names.includes(name)), key].join("+");
-}
-function eventStroke(event: KeyboardEvent): string {
-    const key = event.key === " " ? "space" : event.key === "+" ? "plus" : event.key.toLowerCase();
-    return (event.ctrlKey ? "ctrl+" : "") + (event.metaKey ? "meta+" : "") + (event.altKey ? "alt+" : "") + (event.shiftKey ? "shift+" : "") + key;
 }
 
 type Binding = Readonly<{ id: string; shared: boolean }>;
@@ -35,7 +34,9 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
         if (!prefix) return;
         clearTimeout(prefix.timer); prefix.listeners.abort(); prefix = undefined;
     }
-    const enabled = (entry: EditorCommand) => available() && (entry.enabled?.() ?? true);
+    const enabled = (entry: EditorCommand, argument?: unknown) => available() && (entry.enabled?.(argument) ?? true);
+    const describe = (entry: EditorCommand, argument?: unknown): CommandInfo =>
+        Object.freeze({ id: entry.id, label: entry.label, enabled: enabled(entry, argument) });
     const commands: EditorCommands = Object.freeze({
         register(command) {
             if (disposed || !command.id.trim() || !command.label.trim() || entries.has(command.id)) throw new Error(`Cannot register command: ${command.id}`);
@@ -50,11 +51,15 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
                 }
             } };
         },
-        run(id) {
+        run(id, argument) {
             const entry = entries.get(id);
-            return !!entry && enabled(entry) && entries.get(id) === entry && entry.run() !== false;
+            return !!entry && enabled(entry, argument) && entries.get(id) === entry && entry.run(argument) !== false;
         },
-        list: () => Object.freeze(Array.from(entries.values(), entry => Object.freeze({ id: entry.id, label: entry.label, enabled: enabled(entry) }))),
+        get(id, argument) {
+            const entry = entries.get(id);
+            return entry && describe(entry, argument);
+        },
+        list: () => Object.freeze(Array.from(entries.values(), entry => describe(entry))),
     });
     function sequence(keys: string) {
         const parts = keys.trim().split(/\s+/);
@@ -67,13 +72,16 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
             reset(); return false;
         }
         if (["Control", "Meta", "Alt", "Shift"].includes(event.key)) return false;
-        const key = eventStroke(event), pending = prefix, group = bindings.get(key);
+        const mods = (event.ctrlKey ? "ctrl+" : "") + (event.metaKey ? "meta+" : "") + (event.altKey ? "alt+" : "") + (event.shiftKey ? "shift+" : "");
+        const key = mods + (event.key === " " ? "space" : event.key === "+" ? "plus" : event.key.toLowerCase());
+        const physical = mods + "code:" + event.code.toLowerCase();
+        const pending = prefix, group = bindings.get(key) ?? bindings.get(physical);
         if (!group && !pending) return false;
         reset();
         if (!available()) return false;
         const accept = (binding: Binding | undefined) => !!binding && (!sharedOnly || binding.shared) && execute(binding.id);
         if (pending && pending.event.target === event.target && pending.current()) {
-            const suffix = pending.keys.get(key);
+            const suffix = pending.keys.get(key) ?? pending.keys.get(physical);
             if (key === "escape" || accept(suffix)) { event.preventDefault(); return true; }
             if (suffix && (!sharedOnly || suffix.shared)) return false;
         }

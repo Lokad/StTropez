@@ -151,9 +151,12 @@ and collapse policy.
 
 ### Commands and interaction
 
-`FoldCommand` accepts `collapse`, `expand`, `collapse-all` or `expand-all`, optionally filtered by
-group. Enable controls with `canRunCommand(command, group)`. `runCommand` rechecks the caret, group,
-collapse state and availability. Ctrl/Cmd+Shift+[ and Ctrl/Cmd+Shift+] act at the caret.
+The controller registers four `FoldCommand` IDs on its editor. `fold.collapse` and `fold.expand`
+act at the caret. `fold.collapse-all` and `fold.expand-all` act across the view. Pass an optional
+group name to limit any command to that group. For example, `editor.commands.run("fold.collapse-all", "imports")`
+collapses import groups. Use `editor.commands.get(id, group)` for the menu label and availability.
+Dispatch rechecks the current caret, group and fold state. Disposing the controller removes its commands and shortcuts.
+Ctrl/Cmd+Shift+[ and Ctrl/Cmd+Shift+] use the physical bracket keys to collapse or expand at the caret.
 Collapsing with a command or gutter button moves each newly hidden insertion caret to the end
 of its header. Typing there edits the header. Busy or unavailable views reject the command.
 

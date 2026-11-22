@@ -32,10 +32,10 @@
                 <label class="menu-check"><input id="character-warnings" type="checkbox" checked> Character warnings</label>
                 <button id="inspect-characters" title="Explain unusual characters near the cursor in the source editor">Inspect source characters</button>
                 <div id="character-warning-details"></div>
-                <button id="fold" title="Ctrl+Shift+[">Collapse block</button>
-                <button id="unfold" title="Ctrl+Shift+]">Expand block</button>
+                <button id="fold" title="Ctrl/Cmd+Shift+[" disabled></button>
+                <button id="unfold" title="Ctrl/Cmd+Shift+]" disabled></button>
                 <label>Fold group <select id="fold-group"><option value="">All groups</option></select></label>
-                <button id="fold-group-collapse">Collapse group</button><button id="fold-group-expand">Expand group</button>
+                <button id="fold-group-collapse" disabled></button><button id="fold-group-expand" disabled></button>
                 <output id="folding-status" aria-live="polite"></output>
                 <div id="host-controls" hidden>
                     <label>Paste format <select id="host-paste-mode" title="Ctrl+Alt+V switches format"><option value="literal">Literal text</option><option value="csv">Table as CSV</option></select></label>

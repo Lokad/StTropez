@@ -1,7 +1,7 @@
 import { Workspace } from "../../src/index.ts";
 import type { FoldRange, Selection, TextEdit } from "../../src/index.ts";
 import { inputConflictEvent, mountTextEditor, createFoldingController } from "../../src/browser/index.ts";
-import type { TextEditorCommand, TextEditorEditTransform, FoldDiscovery, FoldCommand, FoldingController, InputConflictDetail } from "../../src/browser/index.ts";
+import type { TextEditorCommand, TextEditorEditTransform, FoldDiscovery, FoldingController, InputConflictDetail } from "../../src/browser/index.ts";
 import { corpus, corpusIds } from "../../fixtures/workloads.ts";
 import { EditingPresentation } from "../shared/language/presentation.ts";
 import { editorSettled } from "../shared/readiness.ts";
@@ -48,7 +48,7 @@ const fixture = { ready: true, setText, edit, select, history,
     captureInsertion: () => editors.primary.captureInsertion(),
     registerEditTransform: (transform: TextEditorEditTransform) => editors.primary.registerEditTransform(transform),
     discoverFolds: (discover: FoldDiscovery) => { foldingController?.dispose(); foldingController = createFoldingController(editors.primary, discover, { delayMs: 0 }); },
-    foldCommand: (command: FoldCommand, group?: string) => foldingController?.runCommand(command, group),
+    stopFoldDiscovery: () => { foldingController?.dispose(); foldingController = undefined; },
     refreshFolds: () => foldingController?.refresh(), foldStatus: () => foldingController?.getSnapshot(),
     configure: editors.primary.configure,
     commands: editors.primary.commands, keymap: editors.primary.keymap,

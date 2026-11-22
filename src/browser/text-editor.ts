@@ -1121,6 +1121,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const started = win.performance.now(); keydownEvents++;
         try { keydown(event); } finally { lastKeydownMs = win.performance.now() - started; }
     }, { signal: listeners.signal });
+    root.addEventListener("keydown", event => {
+        if (event.target !== input && event.target instanceof win.Element && event.target.closest(".st-editor") === root)
+            registry.keymap.handle(event);
+    }, { signal: listeners.signal });
     function pointerHit(event: MouseEvent) {
         // A native scrollbar press targets the scroll container. Only its client area is text.
         if (event.target === root) {

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createFoldingController } from "../src/browser/folding-controller.ts";
+import { createCommandRegistry } from "../src/browser/command-registry.ts";
 import { createLspHighlightController } from "../src/browser/lsp-highlights.ts";
 import type { TextEditor } from "../src/browser/text-editor.ts";
 import { clientFixture } from "./helpers/lsp-client.ts";
@@ -9,12 +10,18 @@ for (const kind of ["folding", "highlights"] as const) test(`${kind} commands re
     const f = clientFixture(t), tab = f.workspace.tabs.open({ kind: "text", documentId: f.source.documentId }, "source"), view = f.workspace.createDocumentView(f.source.documentId);
     const tasks = new Map<number, () => void>(); let serial = 0;
     const owner = { defaultView: { performance, setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } };
-    const editor = { signal: new AbortController().signal, workspace: f.workspace, tab: f.workspace.tabs.capture(tab), view, element: Object.assign(new EventTarget(), { ownerDocument: owner }), input: Object.assign(new EventTarget(), { getRootNode: () => owner }),
+    const registry = createCommandRegistry(false, () => true, () => () => true);
+    if (kind === "folding") {
+        const before = f.workspace.document(view.documentId);
+        f.workspace.edit({ documentId: before.id, expectedRevision: before.revision, edits: [{ from: 0, to: 0, insert: "head\nbody\n" }], origin: "host" });
+        view.folding.setRanges(view.folding.getSnapshot(), [{ id: "block", from: 0, to: 10 }]);
+    }
+    const editor = { commands: registry.commands, keymap: registry.keymap, signal: new AbortController().signal, workspace: f.workspace, tab: f.workspace.tabs.capture(tab), view, element: Object.assign(new EventTarget(), { ownerDocument: owner }), input: Object.assign(new EventTarget(), { getRootNode: () => owner }),
         activity: () => ({ disposed: false, composing: false }), viewport: { revealRange: () => {} }, focus: () => {} } as unknown as TextEditor;
     const controller = kind === "folding" ? createFoldingController(editor, () => [])
         : createLspHighlightController(editor, { provider: f.provider });
     const commands = [controller.refresh, controller.dispose];
-    if ("runCommand" in controller) commands.push(() => { controller.runCommand("collapse"); });
+    if (kind === "folding") commands.push(() => { editor.commands.run("fold.collapse-all"); });
     let attempted = false, rejected = 0; const unexpected: unknown[] = [];
     const stop = controller.subscribe(() => {
         if (attempted) return; attempted = true;
