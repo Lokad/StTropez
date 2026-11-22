@@ -264,6 +264,48 @@ test("Find toggles regex on the existing query and replaces captured groups in o
     await expect(query).toHaveValue('import \\{ calculateTotal \\} from "\\./pricing";');
 });
 
+test("opening Find and Replace keeps the same code under the pointer", async ({ page, baseURL }) => {
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    const row = page.locator('#editor .st-viewport-row[data-line="0"]'), query = page.locator("#find-query");
+    for (const [width, height] of [[1280, 700], [375, 700], [375, 360]] as const) {
+        await page.setViewportSize({ width, height }); await page.goto(baseURL!);
+        await source.press("Control+Home");
+        const point = await paintedCharacter(row, "import", 2);
+        const lineAtPoint = () => page.evaluate(pt =>
+            document.elementFromPoint(pt.x, pt.y)?.closest("#editor .st-viewport-row")?.getAttribute("data-line"), point);
+        await expect.poll(lineAtPoint).toBe("0");
+        await source.press("Control+h");
+        await expect(page.locator("#replacement")).toBeFocused();
+        await expect.poll(() => paintedCharacter(row, "import", 2)).toEqual(point);
+        await expect.poll(lineAtPoint).toBe("0");
+        await page.locator("#find-close").click(); await expect(query).toBeHidden();
+        await page.mouse.click(point.x, point.y); await expect(source).toBeFocused();
+        await page.keyboard.insertText("X"); await expect(row).toContainText(/imXp|impX/);
+    }
+});
+
+test("multiline Find and Replace preserves line breaks, regex captures and one-step Undo", async ({ page, baseURL }) => {
+    await page.goto(baseURL!);
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    const original = "start\nitem 2\nend\nstart\nitem 4\nend";
+    await source.press("Control+a"); await page.keyboard.insertText(original); await source.press("Control+Home");
+    await source.press("Shift+ArrowDown"); await source.press("Shift+End"); await source.press("Control+f");
+    const query = page.locator("#find-query"), status = page.locator("#find-status"), replacement = page.locator("#replacement");
+    await expect(query).toHaveValue("start\nitem 2");
+    await query.press("Control+a"); await page.keyboard.insertText("item 4\nend");
+    await expect(query).toHaveValue("item 4\nend"); await expect(status).toHaveText("1 of 1");
+    await query.press("Enter"); await expect(query).toBeFocused();
+    await query.press("Control+h"); await replacement.fill("last"); await replacement.press("Control+Enter");
+    await page.keyboard.insertText("line"); await expect(replacement).toHaveValue("last\nline");
+    await replacement.press("Enter"); await expect(source).toHaveValue("start\nitem 2\nend\nstart\nlast\nline");
+    await replacement.press("Escape"); await source.press("Control+z"); await expect(source).toHaveValue(original);
+    await source.press("Control+h"); await page.locator("#find-regex").click();
+    await query.fill("start\nitem (\\d)\nend"); await expect(status).toHaveText(/2 matches|of 2/);
+    await replacement.fill("$1\\nnext\\\\n"); await page.locator("#replace-all").click();
+    await expect(source).toHaveValue("2\nnext\\n\n4\nnext\\n");
+    await source.press("Control+z"); await expect(source).toHaveValue(original);
+});
+
 test("Find combines case and word boundaries and keeps the options across files", async ({ page, baseURL }) => {
     await page.goto(baseURL!);
     const query = page.getByRole("textbox", { name: "Find text" }), status = page.locator("#find-status");
@@ -307,8 +349,10 @@ test("the Find toolbar follows generated output and both Changes panes", async (
     await page.locator('[data-panel="changes"]').click();
     const panes = page.locator(".st-comparison-panes > section"), saved = panes.first(), working = panes.last();
     const savedInput = saved.getByRole("textbox");
-    await savedInput.press("Control+Home"); await savedInput.press("Shift+End"); await savedInput.press("Control+f");
-    await expect(label).toHaveText("Saved copy · read-only"); await expect(query).toHaveValue('import { calculateTotal } from "./pricing";');
+    await savedInput.press("Control+Home"); await savedInput.press("Shift+ArrowDown"); await savedInput.press("Shift+End");
+    await savedInput.press("Control+f");
+    await expect(label).toHaveText("Saved copy · read-only");
+    await expect(query).toHaveValue('import { calculateTotal } from "./pricing";\nimport type { CartItem } from "./pricing";');
     await expect(saved.locator(".st-search-match").first()).toBeVisible(); await expect(working.locator(".st-search-match")).toHaveCount(0);
     await page.locator("#replace-toggle").click(); await expect(replaceAll).toBeDisabled();
     await query.press("F3"); await expect(query).toBeFocused(); await expect(status).toHaveText("1 of 1 · Wrapped to start");

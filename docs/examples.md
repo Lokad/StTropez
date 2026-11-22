@@ -70,14 +70,18 @@ In Shopping cart, open **Find** and enter `quantity:\s*(\d+)`. Choose **Use regu
 Under **Replace…**, use `quantity: $1 + 1` and choose **Replace all**. Open Changes to see both
 edits. One undo restores both quantities. **Match case** and **Match whole word** work with
 literal text and regular expressions. The query and search options follow the active file while Find is open.
-Opening Find picks up a short, single-line source selection and escapes it in regex mode.
-With an empty, multiline or oversized selection, the previous query stays in the field.
+Paste multiple lines into either field, or press Ctrl/Cmd+Enter to insert a line break.
+In regex replacements, `\n` starts a new line and `\\` inserts one backslash.
+Opening Find picks up a selection of up to 4,096 UTF-16 units and escapes it in regex mode.
+An empty or oversized selection keeps the previous query. For a selection containing carriage
+returns, use regex mode to preserve the exact line endings.
 Typing a query previews a match while focus stays in Find. Enter selects it. The counter shows
 the active match and total, and reports when navigation wraps.
 Choose **Find** after focusing generated JavaScript or the saved copy to search that pane.
 The bar names the read-only target. Escape returns focus to it. Focusing the working source
 while the bar is open searches the same query there and enables replacement for matches.
 Ctrl/Cmd+F and Ctrl/Cmd+H open Find and Replace from the panes, Find fields and toolbar.
+The bar opens below the workspace. In short windows it uses the top of the window to keep code visible.
 Escape returns to the search pane. F3 and Shift+F3 continue the last query with the bar closed.
 
 ### Language tools and samples

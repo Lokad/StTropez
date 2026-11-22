@@ -23,6 +23,7 @@ import "./style.css";
 
 const element = (id: string) => document.getElementById(id)!;
 const field = (id: string) => element(id) as HTMLInputElement;
+const findQuery = element("find-query") as HTMLTextAreaElement, replacement = element("replacement") as HTMLTextAreaElement;
 const button = (id: string) => element(id) as HTMLButtonElement;
 const codeMenu = element("code-menu") as HTMLDetailsElement;
 const projects = new Map<SampleId, DemoProject>(), activeFiles = new Map<SampleId, string>();
@@ -482,7 +483,7 @@ function bindPaneCommands(target: TextEditor): void {
     bindFindCommands(target, target.signal, replace => {
         setActivePane(target); openFind(replace);
     }, direction => {
-        if (!field("find-query").value) return false;
+        if (!findQuery.value) return false;
         setActivePane(target, true); find?.next(direction, { whenReady: true });
         return true;
     });
@@ -513,7 +514,7 @@ function setActivePane(target: TextEditor, repeat = false): void {
         button("replace-current").disabled = !(hasMatches && (snapshot.status === "ready" || snapshot.status === "searching" && snapshot.retained));
     };
     stopFind = current.subscribe(render); render();
-    current.setQuery(field("find-query").value);
+    current.setQuery(findQuery.value);
 }
 function findFlags() {
     const pressed = (id: string) => button(id).getAttribute("aria-pressed") === "true";
@@ -531,29 +532,42 @@ function findStatus(state: FindSnapshot): string {
 }
 function selectedFindQuery(source: TextEditor, regex: boolean): string | undefined {
     const { anchor, head } = source.view.getSnapshot().selection, length = Math.abs(head - anchor);
-    // The single-line Find field accepts a short selection even in a multi-megabyte document.
+    // Bound the slice before reading it from a potentially multi-megabyte document.
     const limit = 4096;
     if (!length || length > limit) return;
     const text = source.workspace.document(source.view.documentId).buffer.slice(Math.min(anchor, head), Math.max(anchor, head));
-    if (/[\r\n]/.test(text)) return;
-    const query = regex ? text.replace(/[.*+?^$(){}|[\]\\]/g, "\\$&") : text;
+    // A textarea normalizes CR to LF. Preserve an exact CR match as a regex escape.
+    if (!regex && text.includes("\r")) return;
+    const query = regex ? text.replace(/[.*+?^$(){}|[\]\\]/g, "\\$&").replace(/\r/g, "\\r") : text;
     return query.length <= limit ? query : undefined;
 }
 function openFind(replace = false): void {
-    const bar = element("find-bar"), query = field("find-query");
+    const bar = element("find-bar");
     if (!activePane) return;
     if (bar.hidden) {
-        query.value = selectedFindQuery(activePane, findFlags().regularExpression) ?? query.value;
+        findQuery.value = selectedFindQuery(activePane, findFlags().regularExpression) ?? findQuery.value;
+        sizeFindField(findQuery);
         releaseFind();
     }
-    bar.hidden = false; element("replace-controls").hidden = !replace;
+    bar.hidden = false; showReplacement(replace);
     setActivePane(activePane);
-    const target = replace && activePane === editor && !active?.readOnly ? field("replacement") : query;
+    const target = replace && activePane === editor && !active?.readOnly ? replacement : findQuery;
     target.focus(); target.select();
 }
 function closeFind(): void {
     element("find-bar").hidden = true;
     releaseFind(); activePane?.focus();
+}
+function showReplacement(show: boolean): void {
+    element("replace-controls").hidden = !show;
+    button("replace-toggle").setAttribute("aria-expanded", String(show));
+}
+function sizeFindField(input: HTMLTextAreaElement): void {
+    input.rows = input.value.includes("\n") ? 2 : 1;
+}
+function replacementText(): string {
+    if (!findFlags().regularExpression) return replacement.value;
+    return replacement.value.replace(/\\([\\n])/g, (_, char: string) => char === "n" ? "\n" : "\\");
 }
 const on = (id: string, action: () => void) => element(id).addEventListener("click", action, { signal: listeners.signal });
 element("panel-content").addEventListener(editRefusedEvent, () => {
@@ -567,13 +581,13 @@ for (const toggle of element("find-options").querySelectorAll("button")) {
     on(toggle.id, () => {
         toggle.setAttribute("aria-pressed", String(toggle.getAttribute("aria-pressed") !== "true"));
         find?.setFlags(findFlags());
-        field("find-query").focus();
+        findQuery.focus();
     });
 }
-on("replace-toggle", () => { element("replace-controls").hidden = !element("replace-controls").hidden; });
+on("replace-toggle", () => showReplacement(Boolean(element("replace-controls").hidden)));
 on("find-next", () => { activePane?.commands.run("find.next"); }); on("find-previous", () => { activePane?.commands.run("find.previous"); });
-on("replace-current", () => { find?.replaceCurrent(field("replacement").value); });
-on("replace-all", () => { find?.replaceAll(field("replacement").value, { focusEditor: true }); });
+on("replace-current", () => { find?.replaceCurrent(replacementText()); });
+on("replace-all", () => { find?.replaceAll(replacementText(), { focusEditor: true }); });
 on("compare", () => setPanel("changes")); on("analysis-retry", () => { presentation.retry(); referencePresentation?.retry(); referenceFolding?.refresh(); });
 on("inspect-type", () => languageView?.run("inspect"));
 for (const id of ["complete", "signature", "definition", "references", "rename", "quickfix"] as const)
@@ -703,11 +717,22 @@ for (const strip of [element("files"), element("panels")]) {
         event.preventDefault(); tabs[next]!.focus();
     }, { signal: listeners.signal });
 }
-field("find-query").addEventListener("input", () => find?.setQuery(field("find-query").value, { preview: true }), { signal: listeners.signal });
+findQuery.addEventListener("input", () => {
+    sizeFindField(findQuery); find?.setQuery(findQuery.value, { preview: true });
+}, { signal: listeners.signal });
+replacement.addEventListener("input", () => sizeFindField(replacement), { signal: listeners.signal });
 element("find-bar").addEventListener("keydown", event => {
     if (event.isComposing || event.keyCode === 229 || event.defaultPrevented || activePane?.keymap.handle(event)) return;
-    if (event.key === "Enter" && event.target === field("find-query")) { event.preventDefault(); activePane?.commands.run(event.shiftKey ? "find.previous" : "find.next"); }
-    else if (event.key === "Enter" && event.target === field("replacement")) { event.preventDefault(); button("replace-current").click(); }
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey
+        && (event.target === findQuery || event.target === replacement)) {
+        event.preventDefault();
+        const input = event.target as HTMLTextAreaElement;
+        input.setRangeText("\n", input.selectionStart, input.selectionEnd, "end");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        return;
+    }
+    if (event.key === "Enter" && event.target === findQuery) { event.preventDefault(); activePane?.commands.run(event.shiftKey ? "find.previous" : "find.next"); }
+    else if (event.key === "Enter" && event.target === replacement) { event.preventDefault(); button("replace-current").click(); }
 }, { signal: listeners.signal });
 for (const controls of document.querySelectorAll<HTMLElement>("header, #files, #panels")) {
     controls.addEventListener("keydown", event => { activePane?.keymap.handle(event); }, { signal: listeners.signal });
