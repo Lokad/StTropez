@@ -8,12 +8,13 @@ import { mountDemoInspection } from "./inspect.ts";
 import { mountDemoSymbols } from "./symbols.ts";
 import type { DemoSymbolTarget } from "./symbols.ts";
 import { mountDemoActions } from "./actions.ts";
+import { mountLanguageCommands } from "./language-commands.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
 import { completionPageSize, revealCompletionRow } from "../shared/language/completion-list.ts";
 
 /** Contextual completion UI around the public editor controller. It never changes text itself. */
 export function mountDemoLanguage(workspace: Workspace, files: () => readonly DemoFile[], file: DemoFile, editor: TextEditor, language: DemoLanguage,
-    open: (target: DemoSymbolTarget) => void, reportError: (error: unknown) => void) {
+    open: (target: DemoSymbolTarget) => void, reportError: (error: unknown) => void, feedback: HTMLElement) {
     const scope = new CleanupScope(); let disposed = false;
     const dispose = () => { disposed = true; scope.dispose(); };
     try {
@@ -39,9 +40,25 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         let symbols: ReturnType<typeof mountDemoSymbols> | undefined;
         let actions: ReturnType<typeof mountDemoActions> | undefined;
         let highlights: LspHighlightController | undefined;
+        const commands = mountLanguageCommands(scope, editor, feedback, (command, menu) => {
+            switch (command) {
+                case "complete":
+                    if (menu) { actions?.dismiss(); symbols?.dismiss(); inspection?.dismiss(); }
+                    editor.commands.run("completion.request"); break;
+                case "signature":
+                    if (menu) controller?.cancel();
+                    editor.commands.run("signature.request"); break;
+                case "inspect": inspection?.inspect(); break;
+                case "rename": symbols?.rename(); break;
+                case "definition": symbols?.definition(); break;
+                case "references": symbols?.references(); break;
+                case "quickfix": actions?.request(); break;
+            }
+        });
         const valid = () => !disposed && editor.element.isConnected && !editor.activity().disposed && workspace.tabs.resolve(target)?.surface.kind === "text";
         const render = () => {
             const state = controller?.getSnapshot();
+            if (state) commands.feedback("complete", state.choices.length ? "" : state.pending ? "Getting completions…" : state.message, !state.pending || !!state.choices.length);
             const snippet = state?.snippet; snippetPanel.hidden = !valid() || !snippet;
             if (snippet && !snippetPanel.hidden && renderedSnippet !== snippet) {
                 renderedSnippet = snippet;
@@ -72,9 +89,6 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         };
         snippetPanel.addEventListener("pointerdown", event => event.preventDefault(), { signal: listeners.signal });
         popup.addEventListener("pointerdown", event => event.preventDefault(), { signal: listeners.signal });
-        editor.input.addEventListener("keydown", event => {
-            if (!controller && (event.ctrlKey || event.metaKey) && event.code === "Space") event.preventDefault();
-        }, { capture: true, signal: listeners.signal });
         const attach = (provider: LspWorkspace) => {
             if (!valid()) return;
             try {
@@ -93,10 +107,14 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
                     else occurrences.clear();
                 }));
                 inspection = mountDemoInspection(scope, workspace, file, editor, provider, language, valid, () => !!controller?.getSnapshot().choices.length || !!symbols?.isOpen() || !!actions?.isOpen(),
-                    () => controller?.cancel(), () => { symbols?.dismiss(); actions?.dismiss(); });
+                    () => controller?.cancel(), () => { symbols?.dismiss(); actions?.dismiss(); },
+                    state => {
+                        if (state.status === "empty" || state.status === "failed") commands.feedback("signature", state.message, true);
+                        else if (state.status === "ready") commands.feedback("signature", "", true);
+                    });
                 symbols = mountDemoSymbols(scope, workspace, files, file, editor, provider, valid, () => { controller?.cancel(); inspection?.dismiss(); actions?.dismiss(); }, open);
                 actions = mountDemoActions(scope, workspace, file, editor, provider, language, valid, () => { controller?.cancel(); inspection?.dismiss(); symbols?.dismiss(); });
-                scope.defer(controller.subscribe(render)); controller.connect(); render();
+                scope.defer(controller.subscribe(render)); controller.connect(); render(); commands.ready();
             } catch (error) {
                 disposed = true;
                 try { scope.rollback(error); } catch (failure) { reportError(failure); }
@@ -104,10 +122,7 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         };
         const connected = language.connectedProvider;
         if (connected) attach(connected);
-        else void language.connect().then(attach, () => { /* The project reports connection failures and owns retry. */ });
-        return Object.freeze({ complete: () => { actions?.dismiss(); symbols?.dismiss(); inspection?.dismiss(); editor.focus(); controller?.request(); }, inspect: () => inspection?.inspect(), signature: () => inspection?.signature(),
-            definition: () => symbols?.definition(), references: () => symbols?.references(), rename: () => symbols?.rename(),
-            quickfix: () => actions?.request(),
-            dispose });
+        else void language.connect().then(attach, () => { if (!disposed) commands.failed(); });
+        return Object.freeze({ run: commands.run, dispose });
     } catch (error) { disposed = true; return scope.rollback(error); }
 }

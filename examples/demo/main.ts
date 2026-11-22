@@ -131,7 +131,7 @@ function renderProblems(): void {
             problem.source, ...(!confirmed ? ["Awaiting recheck"] : []), ...(problem.tags ?? []).flatMap(tag => tag === 1 ? ["Unnecessary"] : tag === 2 ? ["Deprecated"] : [])].filter(Boolean).join(" · ");
         if (captured.files.some(file => file.resource.documentId === problem.documentId && !file.readOnly)) {
             const fixes = document.createElement("button"); fixes.textContent = "Check quick fixes"; fixes.disabled = !confirmed;
-            fixes.onclick = () => { if (open(problem)) languageView?.quickfix(); };
+            fixes.onclick = () => { if (open(problem)) languageView?.run("quickfix"); };
             metadata.append(" · ", fixes);
         }
         const href = problem.codeDescription?.href;
@@ -274,7 +274,7 @@ function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEd
     };
     try {
         return mountDemoLanguage(capturedProject.workspace, () => capturedProject.files, file, capturedEditor, capturedProject.language,
-            target => openLocation(capturedProject, file, capturedEditor, target), report);
+            target => openLocation(capturedProject, file, capturedEditor, target), report, element("language-command-status"));
     } catch (error) { report(error); }
 }
 function detachLanguage(): void {
@@ -549,9 +549,9 @@ on("find-next", () => { findTarget?.commands.run("find.next"); }); on("find-prev
 on("replace-current", () => { find?.replaceCurrent(field("replacement").value); });
 on("replace-all", () => { find?.replaceAll(field("replacement").value, { focusEditor: true }); });
 on("compare", () => setPanel("changes")); on("analysis-retry", () => { presentation.retry(); referencePresentation?.retry(); referenceFolding?.refresh(); });
-on("complete", () => languageView?.complete());
-on("inspect-type", () => languageView?.inspect()); on("signature", () => languageView?.signature());
-on("definition", () => languageView?.definition()); on("references", () => languageView?.references()); on("rename", () => languageView?.rename());
+on("inspect-type", () => languageView?.run("inspect"));
+for (const id of ["complete", "signature", "definition", "references", "rename", "quickfix"] as const)
+    on(id, () => languageView?.run(id));
 on("navigate-back", goBack);
 on("go-to-line", () => { editor?.focus(); editor?.commands.run("go-to-line"); });
 on("inspect-characters", () => { if (editor && project) inspectCharacters(editor, project.workspace, element("character-warning-details")); });
@@ -565,7 +565,6 @@ for (const id of ["view-rulers", "view-current-line", "view-ligatures", "view-tr
     editor?.configure(settings); comparison?.panes.reference.configure(settings);
     output?.editor.configure({ minimap: settings.minimap, fontLigatures: settings.fontLigatures });
 }, { signal: listeners.signal });
-on("quickfix", () => languageView?.quickfix());
 for (const command of ["line-comment", "block-comment", "indent", "outdent"] as const) on(command, () => {
     if (editor?.commands.run(command === "indent" ? "indent-lines" : command)) editor.focus();
 });
@@ -590,8 +589,10 @@ on("language-retry", () => {
     const mountFailed = languageViewFailure !== undefined;
     detachLanguage();
     if (mountFailed) { languageView = attachLanguage(captured, file, view); renderLanguage(); return; }
-    void captured.language.retry().then(() => {
-        if (!disposed && project === captured && editor === view) { languageView = attachLanguage(captured, file, view); folding?.refresh(); }
+    const retry = captured.language.retry();
+    languageView = attachLanguage(captured, file, view);
+    void retry.then(() => {
+        if (!disposed && project === captured && editor === view) folding?.refresh();
     }, () => { /* Connection failure is reported by the captured project. */ });
 });
 on("panel-collapse", () => {

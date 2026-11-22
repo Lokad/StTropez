@@ -33,7 +33,7 @@ test("language mounting releases partial owners, preserves failures and rejects 
             return { resources, documents, tabs, views, leases, subscriptions };
         };
         const panels = ".demo-completion, .demo-snippet, .demo-language-popups, .demo-symbols, .demo-rename, .demo-actions";
-        const results = [];
+        const results = [], feedback = document.createElement("output");
         try {
             await frames();
             for (const point of ["sync", "nested", "cleanup", "late"] as const) {
@@ -56,7 +56,7 @@ test("language mounting releases partial owners, preserves failures and rejects 
                     if (point === "cleanup" && !cleaned && this.classList.contains("demo-language-popups")) { cleaned = true; throw cleanupFailure; }
                 };
                 try {
-                    try { view = mountDemoLanguage(project.workspace, () => project.files, file, editor, point === "late" ? delayed : project.language, () => {}, error => errors.push(error)); }
+                    try { view = mountDemoLanguage(project.workspace, () => project.files, file, editor, point === "late" ? delayed : project.language, () => {}, error => errors.push(error), feedback); }
                     catch (error) { errors.push(error); }
                     if (point === "late") { view!.dispose(); view!.dispose(); release!(provider); }
                     await frames();
@@ -69,7 +69,7 @@ test("language mounting releases partial owners, preserves failures and rejects 
                     view?.dispose(); view?.dispose();
                 }
             }
-            const view = mountDemoLanguage(project.workspace, () => project.files, file, editor, project.language, () => {}, error => { throw error; });
+            const view = mountDemoLanguage(project.workspace, () => project.files, file, editor, project.language, () => {}, error => { throw error; }, feedback);
             await frames();
             results.push({ point: "retry", panels: document.querySelectorAll(panels).length }); view.dispose();
         } finally { editor.dispose(); project.dispose(); await project.language.dispose(); }

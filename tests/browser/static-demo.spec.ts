@@ -377,6 +377,70 @@ test("host language, structured/literal insertion and mapped notes share editing
 });
 import { runDemoUnopenedNavigation, runDemoActions } from "./demo-walkthrough.ts";
 
+test("language commands pressed during startup follow the original caret and report empty results", async ({ page, baseURL }) => {
+    type Gate = { release?: () => void; completions: number };
+    type HeldWorker = Window & { languageGate?: Gate };
+    await page.addInitScript(() => {
+        const gate: Gate = { completions: 0 }; (window as HeldWorker).languageGate = gate;
+        Worker.prototype.postMessage = new Proxy(Worker.prototype.postMessage, { apply(send, worker, args) {
+            if (args[0]?.start === true && Array.isArray(args[0].names)) {
+                gate.release = () => Reflect.apply(send, worker, args); return;
+            }
+            if (typeof args[0] === "string" && JSON.parse(args[0]).method === "textDocument/completion") gate.completions++;
+            return Reflect.apply(send, worker, args);
+        } });
+    });
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    const message = page.getByLabel("Language command", { exact: true });
+    const completions = page.getByRole("listbox", { name: "Completions" });
+    const rename = page.getByRole("dialog", { name: "Rename symbol" });
+    const open = async () => {
+        await page.goto(baseURL!);
+        await page.waitForFunction(() => !!(window as HeldWorker).languageGate?.release);
+        const row = page.locator("#editor .st-viewport-row").filter({ hasText: "import { calculateTotal }" });
+        const point = await paintedCharacter(row, "calculateTotal", 2); await page.mouse.click(point.x, point.y);
+    };
+    const release = async () => {
+        await page.evaluate(() => (window as HeldWorker).languageGate!.release!());
+        await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    };
+    await open();
+    await source.press("Control+Space"); await expect(message).toBeVisible();
+    await expect(message).toContainText("completions");
+    await release(); await expect(completions.getByRole("option", { name: "calculateTotal", exact: true })).toBeVisible();
+    const requests = () => page.evaluate(() => (window as HeldWorker).languageGate!.completions);
+    expect(await requests()).toBe(1);
+    await source.press("Escape"); await source.press("Control+Home"); await source.press("Control+Shift+Space");
+    await expect(message).toHaveText("No signature at this position.");
+    await source.press("End"); await page.keyboard.insertText(" // comment");
+    await source.press("Control+Space"); await expect(message).toContainText(/no.*completions/i);
+    await source.press("ArrowLeft"); await expect(message).toBeHidden();
+
+    await open();
+    await source.press("Control+Space"); await source.press("F2"); await expect(message).toContainText("Rename");
+    await release(); await expect(rename.getByRole("textbox", { name: "New name" })).toBeFocused();
+    expect(await requests()).toBe(0);
+    await page.keyboard.press("Escape"); await expect(source).toBeFocused();
+
+    await open();
+    await source.press("F2"); await source.press("ArrowRight"); await expect(message).toBeHidden();
+    await source.press("Control+Space"); await source.press("Escape"); await expect(message).toBeHidden();
+    await source.press("F2"); await page.keyboard.insertText("x"); await expect(message).toBeHidden();
+    await source.press("F2"); await expect(message).toContainText("Rename");
+    const output = page.getByRole("region", { name: "JavaScript output", exact: true }).getByRole("textbox");
+    await output.focus(); await expect(message).toBeHidden();
+    await release(); await expect(output).toBeFocused(); await expect(rename).toBeHidden(); await expect(completions).toBeHidden();
+    expect(await requests()).toBe(0);
+
+    await open();
+    await page.locator("#code-menu summary").click(); await page.getByRole("button", { name: "Rename symbol", exact: true }).click();
+    await expect(message).toContainText("Rename");
+    await page.locator('[data-file="pricing.ts"]').click();
+    const pricing = page.getByRole("textbox", { name: "pricing.ts", exact: true });
+    await expect(pricing).toBeFocused(); await release();
+    await expect(message).toBeHidden(); await expect(rename).toBeHidden(); await expect(pricing).toBeFocused();
+});
+
 test("broader project actions retain preview, stale recovery and atomic multi-file history", async ({ page, baseURL }) => { await runDemoActions(page, baseURL!); });
 
 test("unopened targets load for navigation and atomic rename with read-only declarations and return", async ({ page, baseURL }) => {
@@ -540,16 +604,22 @@ test("the real 1200-field catalogue reaches the last candidate with bounded rows
 });
 
 test("browser worker failure leaves typing/save usable and Retry synchronizes the latest code", async ({ page, baseURL }) => {
-    let block = true;
-    await page.route("**/demo-language-worker.js", route => block ? route.abort() : route.continue());
+    let block = true; const retry = latch<void>();
+    await page.route("**/demo-language-worker.js", async route => {
+        if (block) await route.abort();
+        else { await retry.promise; await route.continue(); }
+    });
     await page.goto(baseURL!); await expect(page.locator("#language-status")).toHaveText("Language service unavailable");
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+End"); await source.pressSequentially("\n// Saved while provider unavailable"); await source.press("Control+s");
     await expect(page.locator("#status")).toContainText("Saved in this browser");
     block = false; await page.getByRole("button", { name: "Retry language service", exact: true }).click();
+    try {
+        await source.press("Control+End"); await source.pressSequentially("\nMath.ma"); await source.press("Control+Space");
+        await expect(page.getByLabel("Language command", { exact: true })).toContainText("completions");
+    } finally { retry.resolve(); }
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await expect(page.locator("#editor")).toContainText("// Saved while provider unavailable");
-    await source.press("Control+End"); await source.pressSequentially("\nMath.ma"); await source.press("Escape"); await source.press("Control+Space");
     await expect(page.getByRole("option", { name: "max", exact: true })).toBeVisible();
     await page.getByRole("option", { name: "max", exact: true }).click(); await expect(page.locator("#editor")).toContainText("Math.max");
 });

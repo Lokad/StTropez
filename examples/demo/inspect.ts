@@ -5,6 +5,7 @@ import { lspSignatureBackend } from "../shared/language/lsp-language-clients.ts"
 import { HostHoverTools } from "../hosts/hover.ts";
 import { mountHoverPanel } from "../hosts/hover-panel.ts";
 import { HostSignatureTools } from "../hosts/signature.ts";
+import type { SignatureSnapshot } from "../hosts/signature.ts";
 import { mountSignaturePopup } from "../hosts/signature-panel.ts";
 import type { DemoFile } from "./project.ts";
 import type { DemoLanguage } from "./language.ts";
@@ -13,7 +14,7 @@ import type { CleanupScope } from "../shared/cleanup-scope.ts";
 
 /** Reuses captured popup controllers; the host owns explicit external-help opening. */
 export function mountDemoInspection(scope: CleanupScope, workspace: Workspace, file: DemoFile, editor: TextEditor, provider: LspWorkspace, language: DemoLanguage,
-    valid: () => boolean, completionOpen: () => boolean, cancelCompletion: () => void, beforeInspect: () => void = () => {}) {
+    valid: () => boolean, completionOpen: () => boolean, cancelCompletion: () => void, beforeInspect: () => void, onSignature: (state: SignatureSnapshot) => void) {
     const host = document.createElement("div"); scope.defer(() => host.remove());
     host.className = "demo-language-popups"; document.body.append(host);
     // Pending caret paint does not invalidate an already committed model selection.
@@ -35,9 +36,9 @@ export function mountDemoInspection(scope: CleanupScope, workspace: Workspace, f
     scope.defer(mountSignaturePopup(host, signature, true, links));
     scope.defer(hover.attach("source", file.tab, editor));
     scope.defer(signature.attach("source", file.tab, editor));
+    scope.defer(signature.state.subscribe(() => onSignature(signature.state.getSnapshot())));
     return Object.freeze({
         dismiss: () => { hover.dismiss(); signature.dismiss(); },
         inspect: () => { editor.focus(); editor.commands.run("hover.inspect"); },
-        signature: () => { cancelCompletion(); editor.focus(); signature.inspect(); },
     });
 }

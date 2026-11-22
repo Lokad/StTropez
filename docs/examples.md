@@ -91,6 +91,11 @@ Escape returns to the search pane. F3 and Shift+F3 continue the last query with 
 | Problems | Choose a current diagnostic to open its named file and range. Related locations expand on demand; help links require an explicit click and the demo's HTTPS TypeScript-documentation policy. |
 | Occurrences | Place the caret on a symbol to shade its occurrences. Browser-provider writes also have an outline; the pinned local server reports reads for the sample's variable declarations and assignments. |
 
+While TypeScript starts, the footer shows the last language command you requested.
+It runs when the service is ready if focus and the caret are in their original positions. Editing,
+moving the caret, switching panes or pressing Escape cancels the request. The footer also
+reports when an explicit completion or signature request has no results.
+
 The Example picker loads samples on demand. You can keep using the arrow keys while a sample
 opens. The last choice appears, and returning to a sample keeps its edits. [Sample catalogue](../examples/demo/samples.ts)
 

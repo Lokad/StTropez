@@ -94,7 +94,7 @@ export class HostSignatureTools {
         const result = job.result!, signature = result.signatures[index], argument = signature?.activeParameter ?? result.call?.argument ?? null, parameter = argument === null ? undefined : signature?.parameters[argument];
         if (!signature) {
             if (result.reason === "no-call" || result.reason === "depth-limit") this.armed = false;
-            this.publish({ status: "empty", visible: false, message: result.reason === "depth-limit" ? "Signature nesting exceeds the local provider limit." : "No supported signature in this captured context.", before: "", parameter: "", after: "", documentation: "", parameterDocumentation: "", signatureCount: 0, argument: null }); return;
+            this.publish({ status: "empty", visible: false, message: result.reason === "depth-limit" ? "Signature nesting exceeds the local provider limit." : "No signature at this position.", before: "", parameter: "", after: "", documentation: "", parameterDocumentation: "", signatureCount: 0, argument: null }); return;
         }
         this.publish({ status: "ready", visible: true, message: `Signature ${index + 1} of ${result.signatures.length}; argument ${(argument ?? 0) + 1}.`, activeSignature: index, signatureCount: result.signatures.length, argument,
             before: parameter ? signature.label.slice(0, parameter.from) : signature.label, parameter: parameter ? signature.label.slice(parameter.from, parameter.to) : "", after: parameter ? signature.label.slice(parameter.to) : "",
