@@ -1,6 +1,7 @@
 import type { InlineDecoration, PresentedLine, TextEditor } from "../../src/browser/index.ts";
 import type { LanguageConfiguration } from "../../src/index.ts";
 import type { DemoFile, DemoProject } from "./project.ts";
+import { CleanupScope } from "../shared/cleanup-scope.ts";
 import { HostTablePaste } from "../hosts/table-paste.ts";
 import type { HostSourceNotes } from "../shared/source-notes.ts";
 import type { DemoSymbolTarget } from "./symbols.ts";
@@ -68,27 +69,36 @@ function mountNotes(model: HostSourceNotes, project: DemoProject, file: DemoFile
 export function mountHostIntegrations(project: DemoProject, file: DemoFile, editor: TextEditor,
     controls: Readonly<{ mode: HTMLSelectElement; insert: HTMLButtonElement; annotate: HTMLButtonElement; status: HTMLElement }>, open: (target: DemoSymbolTarget) => void) {
     const table = new HostTablePaste(), events = new AbortController(), model = project.notesFor(file);
-    const stopNotes = mountNotes(model, project, file, editor, open), detach = table.attach("source", file.tab, editor);
-    const mode = () => { table.setEnabled(controls.mode.value === "csv"); };
+    const setFormat = (format: string) => { controls.mode.value = format; table.setEnabled(format === "csv"); };
     const renderStatus = () => { controls.status.textContent = table.state.getSnapshot().message; };
-    const stop = table.state.subscribe(renderStatus); mode(); renderStatus();
-    controls.mode.addEventListener("change", () => { mode(); editor.focus(); }, { signal: events.signal });
-    controls.insert.addEventListener("click", () => {
+    const insert = () => {
         if (controls.mode.value === "csv") table.insertTable("source", exampleTable);
         else { const capture = editor.captureInsertion(); controls.status.textContent = capture?.insert(exampleTable) ? "Inserted literal tab-separated example text. Undo restores your selection." : "Finish pending input before inserting."; }
         editor.focus();
-    }, { signal: events.signal });
+    };
     const annotate = () => {
         const snapshot = editor.activity(); if (snapshot.pendingInput || snapshot.pendingCommand || snapshot.composing) return;
         editor.captureView(); const selected = editor.view.getSnapshot();
         const added = model.add(selected.revision, Math.min(selected.selection.anchor, selected.selection.head), Math.max(selected.selection.anchor, selected.selection.head), "Host note");
         controls.status.textContent = added ? "Added a source note. It follows edits and folded lines; deleting its range removes it." : "The note could not be added (64-note limit)."; editor.focus();
     };
-    controls.annotate.addEventListener("click", annotate, { signal: events.signal });
-    editor.input.addEventListener("keydown", event => {
-        if (event.defaultPrevented || event.isComposing || !event.ctrlKey || !event.altKey || event.metaKey || event.shiftKey) return;
-        if (event.key.toLowerCase() === "m") { event.preventDefault(); annotate(); }
-        if (event.key.toLowerCase() === "v") { event.preventDefault(); controls.mode.value = controls.mode.value === "csv" ? "literal" : "csv"; mode(); }
-    }, { capture: true, signal: events.signal });
-    return { dispose: () => { events.abort(); detach(); table.cancel(); stop(); stopNotes(); controls.status.textContent = ""; } };
+    const scope = new CleanupScope();
+    try {
+        scope.defer(() => { controls.status.textContent = ""; });
+        scope.defer(mountNotes(model, project, file, editor, open));
+        scope.defer(table.attach("source", file.tab, editor));
+        scope.defer(table.state.subscribe(renderStatus));
+        scope.defer(() => events.abort());
+        const noteKey = "Ctrl+Alt+M", formatKey = "Ctrl+Alt+V";
+        scope.defer(editor.commands.register({ id: "host.note.add", label: controls.annotate.textContent!, run: annotate }, { keys: [noteKey] }).dispose);
+        scope.defer(editor.commands.register({ id: "host.paste.toggle", label: "Switch paste format", run: () => {
+            setFormat(controls.mode.value === "csv" ? "literal" : "csv");
+        } }, { keys: [formatKey] }).dispose);
+        controls.annotate.title = noteKey; controls.mode.title = formatKey + " switches format";
+        controls.annotate.addEventListener("click", () => editor.commands.run("host.note.add"), { signal: events.signal });
+        controls.mode.addEventListener("change", () => { setFormat(controls.mode.value); editor.focus(); }, { signal: events.signal });
+        controls.insert.addEventListener("click", insert, { signal: events.signal });
+        setFormat(controls.mode.value); renderStatus();
+        return { dispose: scope.dispose };
+    } catch (error) { return scope.rollback(error); }
 }

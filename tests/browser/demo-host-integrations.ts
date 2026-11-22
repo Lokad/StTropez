@@ -93,6 +93,15 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
 
     await source.press("Control+f"); await page.locator("#find-query").fill("quantity < 10");
     await expect(page.locator("#find-status")).toHaveText("1 of 1"); await page.locator("#find-next").click(); await page.locator("#find-close").click();
+    const mode = page.locator("#host-paste-mode");
+    const prevented = await source.evaluate(node => ["m", "v"].map(key => {
+        const event = new KeyboardEvent("keydown", { key, ctrlKey: true, altKey: true, modifierAltGraph: true, bubbles: true, cancelable: true });
+        if (!event.getModifierState("AltGraph")) throw new Error("Missing synthetic AltGraph modifier.");
+        node.dispatchEvent(event); return event.defaultPrevented;
+    }));
+    expect(prevented).toEqual([false, false]); await expect(notes).toHaveCount(2); await expect(mode).toHaveValue("literal");
+    await source.press("Control+Alt+v"); await expect(mode).toHaveValue("csv");
+    await source.press("Control+Alt+v"); await expect(mode).toHaveValue("literal");
     await source.press("Control+Alt+m"); await expect(notes).toHaveCount(3);
     await source.press("Delete"); await expect(notes).toHaveCount(2);
     await source.press("Control+z"); await expect(source).toHaveValue(original);
