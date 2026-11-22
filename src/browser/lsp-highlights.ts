@@ -1,4 +1,5 @@
 import { Store } from "../core/observable.ts";
+import { codeWordConstituentPattern } from "../core/words.ts";
 import { isFocused } from "./dom-focus.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 import { ownsTextSurface } from "../core/workspace.ts";
@@ -10,6 +11,8 @@ import type { TextEditor } from "./text-editor.ts";
 
 export type LspHighlightSnapshot = Readonly<{ status: "idle" | "pending" | "ready" | "unavailable" | "disposed";
     documentId: DocumentId; revision: number; caret: number | null; items: readonly LspDocumentHighlight[] }>;
+
+const identifier = new RegExp(`^(?:\\$|${codeWordConstituentPattern})+$`, "u");
 
 /** Advisory occurrences for one captured view. Never changes text, selection, focus or connection policy. */
 export function createLspHighlightController(editor: TextEditor,
@@ -23,6 +26,7 @@ export function createLspHighlightController(editor: TextEditor,
         revision: workspace.document(documentId).revision, caret: null, items: empty }), notifications);
     const events = new AbortController(), runner = createCooperativeRunner(win); let disposed = false, generation = 0;
     let result: Awaited<ReturnType<typeof client.run>["result"]> | undefined;
+    let occurrence: LspDocumentHighlight | undefined;
     const available = () => !disposed && !editor.activity().disposed && ownsTextSurface(workspace, view, target);
     const focused = () => isFocused(editor.input);
     const busy = () => { const state = editor.activity(); return state.composing || state.pendingInput || state.pendingCommand || state.pendingWord || state.pendingGrapheme; };
@@ -31,7 +35,7 @@ export function createLspHighlightController(editor: TextEditor,
     };
     const cancel = () => {
         generation++; runner.cancel();
-        result = undefined; client.cancel();
+        result = undefined; occurrence = undefined; client.cancel();
     };
     const later = (work: () => void, ms: number) => { runner.schedule(work, ms); };
     const start = (token: number, deadline: number) => {
@@ -45,7 +49,15 @@ export function createLspHighlightController(editor: TextEditor,
             const call = client.run(document, caret); publish("pending", document.revision, caret);
             void call.result.then(batch => {
                 if (!current() || !batch.isCurrent()) return;
-                result = batch; publish("ready", document.revision, caret);
+                result = batch;
+                if (selections.ranges.length === 1 && selections.ranges[0]!.anchor === caret && caret < document.buffer.length) {
+                    const [hit] = batch.intersect(caret, caret + 1);
+                    // A provider may also return overlapping regions or a whole block of code.
+                    // Only reuse an unambiguous word and bound the text read on a long line.
+                    if (hit && hit.to - hit.from <= 4096 && identifier.test(document.buffer.slice(hit.from, hit.to))
+                        && batch.intersect(hit.from, hit.to).length === 1) occurrence = hit;
+                }
+                publish("ready", document.revision, caret);
             }, () => { if (current()) publish("unavailable", document.revision, caret); });
         } catch { if (current()) publish("unavailable", document.revision, caret); }
     };
@@ -55,8 +67,18 @@ export function createLspHighlightController(editor: TextEditor,
             const token = generation; later(() => start(token, win.performance.now() + 5000), delay);
         }
     };
+    const viewChanged = () => {
+        const { selection, selectionSet } = view.getSnapshot();
+        if (occurrence && selectionSet.ranges.length === 1 && selection.anchor === selection.head
+            && occurrence.from <= selection.head && selection.head < occurrence.to
+            && available() && focused() && !busy() && result?.isCurrent()) {
+            if (cell.get().caret !== selection.head) publish("ready", result.revision, selection.head);
+            return;
+        }
+        refresh();
+    };
     let provider = options.provider.getSnapshot();
-    const stops = [workspace.observeDocument(documentId).subscribe(refresh), view.subscribe(refresh),
+    const stops = [workspace.observeDocument(documentId).subscribe(refresh), view.subscribe(viewChanged),
         options.provider.subscribe(() => {
             const next = options.provider.getSnapshot(), changed = next.phase !== provider.phase || next.epoch !== provider.epoch || next.registrationGeneration !== provider.registrationGeneration;
             provider = next; if (changed) refresh();

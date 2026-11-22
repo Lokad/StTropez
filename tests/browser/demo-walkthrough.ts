@@ -251,6 +251,17 @@ export async function runDemoHighlights(page: Page, url = "/", distinctWrites = 
     // The pinned Node server reports all these spans as reads; the compiler-backed static
     // provider distinguishes writes. Preserve provider semantics instead of inventing kinds.
     await expect(writes).toHaveCount(distinctWrites ? 2 : 0); await expect(reads).toHaveCount(distinctWrites ? 1 : 3);
+    const continuity = await page.locator("#editor").evaluateHandle(root => {
+        let minimum = 3;
+        const observer = new MutationObserver(() => {
+            minimum = Math.min(minimum, root.querySelectorAll(".demo-occurrence-read, .demo-occurrence-write").length);
+        });
+        observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+        return () => { observer.disconnect(); return minimum; };
+    });
+    await source.press("ArrowRight");
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    expect(await continuity.evaluate(stop => stop())).toBe(3); await continuity.dispose();
     await page.locator("#find-toggle").click(); await page.locator("#find-query").fill("value");
     await expect(page.locator("#find-status")).toHaveText(/^[1-3] of 3$/);
     await page.locator("#find-next").click(); await source.focus();

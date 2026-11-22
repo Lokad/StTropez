@@ -99,8 +99,11 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
                 scope.defer(() => highlights!.dispose());
                 const occurrences = editor.decorations.add({ name: "occurrences", order: 20, minimap: false });
                 scope.defer(occurrences.dispose);
+                let painted = highlights.getSnapshot().items;
                 scope.defer(highlights.subscribe(() => {
                     const state = highlights!.getSnapshot();
+                    if (painted === state.items) return;
+                    painted = state.items;
                     if (valid() && state.items.length) occurrences.set(state.revision, state.items.map(item => ({
                         from: item.from, to: item.to, className: `demo-occurrence-${item.kind}`
                     })));

@@ -607,8 +607,11 @@ means text. It retains all results within input limits, including overlapping ra
 queries skip unrelated intervals and omit zero-width markers without changing the stored items.
 
 Attach `createLspHighlightController(editor, { provider, delayMs? })` to request
-occurrences when the caret settles and queued input or composition finishes. It clears stale results
-on document, selection, focus, tab or provider changes. Subscribe to invalidate your decorations, then
+occurrences when the caret settles and queued input or composition finishes. A single caret can move
+inside the same highlighted identifier (up to 4,096 UTF-16 units) without clearing its highlights or
+starting another request. The range end is exclusive. An overlapping range, a selection or a move
+outside the identifier starts a fresh lookup. Edits, focus loss and provider changes clear the result.
+Subscribe to invalidate your decorations, then
 call `intersect` for each visible line and style by occurrence kind. Highlighting preserves text and
 selection. Connect or retry the provider yourself. `dispose` releases the client and listeners.
 
