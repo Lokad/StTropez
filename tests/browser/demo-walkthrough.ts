@@ -228,6 +228,14 @@ export async function runDemoDocumentation(page: Page, url = "/") {
     await error.locator("summary").click(); await error.getByRole("button", { name: /types.ts:2:3/ }).click();
     const types = page.getByRole("textbox", { name: "types.ts", exact: true }); await expect(types).toBeFocused();
     await expect(page.locator("#cursor")).toHaveText("Ln 2, Col 8");
+    const mounted = await types.elementHandle(), fold = page.locator("#editor .st-fold-button").first();
+    await fold.click(); await expect(fold).toHaveAttribute("aria-expanded", "false");
+    const related = error.getByRole("button", { name: /types.ts:2:3/ });
+    if (!await related.isVisible()) await error.locator("summary").click();
+    await related.click(); await expect(types).toBeFocused();
+    await expect(fold).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator("#editor .st-viewport-selected")).toHaveText("price");
+    expect(await mounted!.evaluate(input => input.isConnected)).toBe(true);
     await warning.locator("summary").click(); await warning.getByRole("button", { name: /Replacement declared here/ }).click();
     const details = page.getByRole("textbox", { name: "details.ts", exact: true }); await expect(details).toBeFocused();
     await expect(page.locator("#cursor")).toHaveText("Ln 4, Col 19");

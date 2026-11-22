@@ -82,6 +82,29 @@ Use the [edit refusal event](host-integration.md#input-conflict-recovery) to exp
 
 <a id="native-input-and-ordered-commands"></a>
 
+### Reveal a destination
+
+Call `editor.reveal(target, options)` to open folds covering a destination and scroll it into view.
+Pass a zero-based `{ line, column }` or half-open UTF-16 offsets `{ from, to }`. Coordinates must be safe
+integers. Out-of-bounds values clamp to the document or line. Reversed ranges throw before the view changes.
+
+`align` controls vertical placement. The default, `"nearest"`, leaves a visible range in place.
+Use `"start"` to put the first row at the top or `"center"` to center the range. For a range taller
+than the viewport, the first row is the target. Scrolling takes effect on the next viewport paint.
+
+`select: true` replaces the selection set with the resolved range. `focus: true` focuses the editor.
+Both default to false and work in read-only views. The call returns the resolved offsets or `null`
+when the captured editor is unavailable, input or a command is pending, composition is active, or
+`expectedRevision` has expired. Keep the destination’s document identity when choosing a mounted editor.
+
+```ts
+import type { TextEditor } from "sttropez/browser";
+
+export function openProblem(editor: TextEditor, revision: number, from: number, to: number) {
+    return editor.reveal({ from, to }, { expectedRevision: revision, select: true, focus: true });
+}
+```
+
 ### Async operations
 
 Use `editor.operation(options, work)` for a request that belongs to the current editor, document

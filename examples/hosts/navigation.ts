@@ -143,8 +143,12 @@ export class HostNavigationTools {
             const captured = job.targets.get(document), editor = captured && this.available(captured) ? captured.editor : this.present(document);
             if (!editor || this.job !== job || job.origin.controller.getSnapshot().result !== job.result || editor.view.documentId !== document) { this.publish({ message: "The captured destination cannot be presented in an available candidate pane." }); return false; }
             const revision = job.sources.get(document)!.revision;
-            const applied = "ranges" in selections ? editor.view.setSelections(revision, selections.ranges, selections.primary) : editor.view.setSelection(revision, { anchor: selections.from, head: selections.to });
-            if (!applied) return false; job.navigated = true; editor.viewport.revealOffset(editor.view.getSnapshot().selection.head); editor.focus(); this.publish(); return true;
+            if ("ranges" in selections) {
+                if (!editor.view.setSelections(revision, selections.ranges, selections.primary)) return false;
+                const { head } = selections.ranges[selections.primary]!;
+                if (!editor.reveal({ from: head, to: head }, { expectedRevision: revision, focus: true })) return false;
+            } else if (!editor.reveal(selections, { expectedRevision: revision, select: true, focus: true })) return false;
+            job.navigated = true; this.publish(); return true;
         } finally { this.presenting = false; }
     }
     private open(job: Job, choice: NavigationChoice): void {

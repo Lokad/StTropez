@@ -122,12 +122,12 @@ function renderProblems(): void {
         item.textContent = `${problem.name} · ${code}${problem.message}`;
         const current = () => project === captured && captured.language.state.getSnapshot() === state;
         const open = (target: { documentId: typeof problem.documentId; revision: number; from: number; to: number }) => {
-            if (!current() || !confirmed || editor?.activity().composing) return false;
+            const activity = editor?.activity();
+            if (!current() || !confirmed || activity?.composing || activity?.pendingCommand || activity?.pendingInput) return false;
             const file = captured.files.find(file => file.resource.documentId === target.documentId);
             if (!file || captured.workspace.document(target.documentId).revision !== target.revision) return false;
-            mountFile(file, true);
-            if (!editor || !file.view.setSelection(target.revision, { anchor: target.from, head: target.to })) return false;
-            editor.viewport.revealOffset(target.from); editor.focus(); return true;
+            if (file !== active) mountFile(file);
+            return editor?.view === file.view && !!editor.reveal(target, { expectedRevision: target.revision, select: true, focus: true });
         };
         item.disabled = !confirmed;
         item.addEventListener("click", () => open(problem));
@@ -268,11 +268,13 @@ function openLocation(capturedProject: DemoProject, file: DemoFile, capturedEdit
     if (disposed || project !== capturedProject || editor !== capturedEditor || state.disposed || state.composing || state.pendingInput || state.pendingCommand) return;
     const destination = capturedProject.files.find(file => file.resource.documentId === target.documentId);
     if (!destination || capturedProject.workspace.document(target.documentId).revision !== target.revision) return;
-    locations.push({ project: capturedProject, file, revision: capturedProject.workspace.document(file.resource.documentId).revision,
-        selected: file.view.getSnapshot().selectionSet, view: capturedEditor.captureView() });
+    const origin = { project: capturedProject, file, revision: capturedProject.workspace.document(file.resource.documentId).revision,
+        view: capturedEditor.captureView() };
+    if (destination !== active) mountFile(destination);
+    if (editor?.view !== destination.view || !editor.reveal(target, { expectedRevision: target.revision, select: true, focus: true })) return;
+    locations.push(origin);
     if (locations.length > 100) locations.shift();
-    mountFile(destination, true); destination.view.setSelection(target.revision, { anchor: target.from, head: target.to });
-    editor?.viewport.revealOffset(target.from); editor?.focus();
+    renderMetadata();
 }
 function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEditor: TextEditor) {
     languageViewFailure = undefined;
@@ -371,15 +373,15 @@ function mountFile(file: DemoFile, focus = false): void {
 }
 // View IDs are local to a Workspace; each sample owns a separate workspace.
 const savedViews = new Map<DemoFile["view"], ReturnType<TextEditor["captureView"]>>();
-const locations: { project: DemoProject; file: DemoFile; revision: number; selected: ReturnType<DemoFile["view"]["getSnapshot"]>["selectionSet"]; view: ReturnType<TextEditor["captureView"]> }[] = [];
+const locations: { project: DemoProject; file: DemoFile; revision: number; view: ReturnType<TextEditor["captureView"]> }[] = [];
 function goBack(): void {
     if (!project || !editor || editor.activity().composing || editor.activity().pendingInput || editor.activity().pendingCommand) return;
     let index = locations.length - 1; while (index >= 0 && locations[index]!.project !== project) index--; if (index < 0) return;
     const location = locations.splice(index, 1)[0]!;
-    mountFile(location.file, true);
+    if (location.file !== active) mountFile(location.file);
     // Unchanged sources restore the exact directed selection set; edited sources keep their mapped view selections.
     if (project.workspace.document(location.file.resource.documentId).revision === location.revision) {
-        location.file.view.setSelections(location.revision, location.selected.ranges, location.selected.primary); editor?.restoreView(location.view);
+        editor?.restoreView(location.view);
     }
     renderMetadata(); editor?.focus();
 }

@@ -46,12 +46,10 @@ export function createDiagnosticController(editor: TextEditor, provider: LspWork
             if (result.freshness === "unversioned") messages.push(message + " (provider version unknown)");
             const select = (): boolean => {
                 notifications.assertWritable();
-                const now = source.getSnapshot(), activity = editor.activity();
+                const now = source.getSnapshot();
                 if (!available() || displayed !== result || now.result !== result || !now.isPlacementCurrent()
-                    || cell.get().diagnostics !== diagnostics || activity.composing || activity.pendingInput || activity.pendingCommand
-                    || activity.pendingWord || activity.pendingGrapheme || editor.input.disabled || options.canCapture?.() === false) return false;
-                if (!view.setSelection(result.snapshotRevision, { anchor: from, head: to })) return false;
-                editor.viewport.revealOffset(from); editor.focus(); return true;
+                    || cell.get().diagnostics !== diagnostics || options.canCapture?.() === false) return false;
+                return !!editor.reveal({ from, to }, { expectedRevision: result.snapshotRevision, select: true, focus: true });
             };
             const entry: EditorDiagnostic = Object.freeze({ from, to, message, select });
             diagnostics.push(entry);

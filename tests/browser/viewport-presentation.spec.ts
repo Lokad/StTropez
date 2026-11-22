@@ -70,6 +70,49 @@ test("document mounts own Find, fold discovery and pending insertions across a r
     expect(await fixture.evaluate(f => f.finish())).toMatchObject({ text: "one\n  ok\nend", ranges: 0, tabs: 0, views: 0, leases: 0, subscriptions: 0 });
 });
 
+test("revealing a source range in a read-only editor aligns the painted rows and preserves the caller's focus", async ({ page }) => {
+    const result = await page.evaluate(async () => {
+        const path = "/presentation-fixture/";
+        const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const workspace = new Workspace();
+        const resource = workspace.createTextResource({ scope: "test", resource: "reveal", variant: "working" }, "Source",
+            { value: Array.from({ length: 200 }, (_, i) => "row " + i + " 😀").join("\r\n") });
+        const host = document.createElement("main"), other = document.createElement("button");
+        host.style.height = "200px"; document.body.append(other, host);
+        const editor = mountTextEditor(host, workspace, resource.documentId, { readOnly: true });
+        try {
+            const { view, viewport } = editor, { buffer, revision } = workspace.document(resource.documentId);
+            view.setSelections(revision, [{ anchor: 5, head: 1 }, { anchor: 7, head: 7 }], 0);
+            const selection = view.getSnapshot().selectionSet, folding = view.folding;
+            folding.setRanges(folding.getSnapshot(), [{ id: "section", from: buffer.offsetAt(12), to: buffer.offsetAt(160), collapsed: true }]);
+            viewport.flush(); other.focus();
+            const origin = editor.captureView(), row = buffer.line(80);
+            const stale = editor.reveal(row, { expectedRevision: revision + 1, select: true, focus: true });
+            let rejected = false;
+            try { editor.reveal({ from: row.to, to: row.from }, { select: true, focus: true }); } catch (error) { rejected = error instanceof RangeError; }
+            const untouched = view.getSnapshot().selectionSet === selection && folding.getSnapshot().index.collapsedCount === 1 && document.activeElement === other;
+            const point = editor.reveal({ line: 80, column: 999 }, { align: "start" });
+            viewport.flush(); const start = viewport.snapshot().scrollTop;
+            const preview = point?.from === row.to && point.to === row.to && !!viewport.coordsAt(row.to)
+                && view.getSnapshot().selectionSet === selection && document.activeElement === other && folding.getSnapshot().index.collapsedCount === 0;
+            editor.reveal(row); viewport.flush(); const kept = viewport.snapshot().scrollTop === start;
+            const selected = editor.reveal(row, { align: "center", select: true, focus: true, expectedRevision: revision });
+            viewport.flush(); const centered = viewport.snapshot();
+            const centerDelta = start - centered.scrollTop;
+            const center = Math.abs(centerDelta - (centered.height - centered.lineHeight) / 2) < centered.lineHeight;
+            const chosen = selected?.from === row.from && selected.to === row.to && view.getSnapshot().selection.head === row.to
+                && view.getSnapshot().selection.anchor === row.from && document.activeElement === editor.input;
+            const eof = editor.reveal({ line: 999, column: 999 });
+            editor.restoreView(origin); viewport.flush();
+            const returned = viewport.snapshot().scrollTop === origin.scrollTop && view.getSnapshot().selection.anchor === 5 && view.getSnapshot().selection.head === 1
+                && view.getSnapshot().selectionSet.ranges.length === 2;
+            return { stale, rejected, untouched, preview, kept, center, chosen, eof: eof?.from === buffer.length, returned };
+        } finally { editor.dispose(); other.remove(); host.remove(); }
+    });
+    expect(result).toEqual({ stale: null, rejected: true, untouched: true, preview: true, kept: true, center: true, chosen: true, eof: true, returned: true });
+});
+
 test("minimap gestures preserve focus and multiple selections as the document projection changes", async ({ page }) => {
     const selection = await page.evaluate(async () => {
         const path = "/presentation-fixture/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");

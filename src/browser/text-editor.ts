@@ -13,7 +13,7 @@ import { captureTextSurface, ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentView, TabId, TabTarget, Workspace } from "../core/workspace.ts";
 import type { EditKind, Selection } from "../core/history.ts";
 import type { SelectionSet } from "../core/selections.ts";
-import type { TextBuffer } from "../core/text-buffer.ts";
+import type { BufferPosition, TextBuffer } from "../core/text-buffer.ts";
 import type { TextEdit } from "../core/changes.ts";
 import type { GraphemeCursor, GraphemeIndex } from "../core/graphemes.ts";
 import type { ViewState } from "./view-state.ts";
@@ -25,8 +25,8 @@ import type { NativeInsertionTarget } from "./input-target.ts";
 import type { InputContext } from "./input-context.ts";
 import { editRefusedEvent, inputConflictEvent, type EditRefusedDetail } from "./input-conflict.ts";
 import type { InputConflictDetail } from "./input-conflict.ts";
-import { mountViewport } from "./viewport.ts";
-import type { FoldContainsChange, RevealOptions, TextViewport, ViewportSettings } from "./viewport.ts";
+import { mountViewport, validateRevealAlignment } from "./viewport.ts";
+import type { FoldContainsChange, RevealAlignment, RevealOptions, TextViewport, ViewportSettings } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
 import { lineColumnScanner, planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
 import { exportText, lineContentEnd, lineEnding } from "../core/newlines.ts";
@@ -65,6 +65,8 @@ export type EditorSettings = Partial<ViewportSettings> & Readonly<{ language?: L
     pasteLineEndings?: "local" | "preserve"; bracketMatching?: boolean | BracketMatchOptions; characterWarnings?: boolean | CharacterWarningOptions }>;
 export type ResolvedEditorSettings = ViewportSettings & Readonly<{ language: ResolvedLanguageConfiguration;
     pasteLineEndings: "local" | "preserve"; bracketMatching: false | Required<BracketMatchOptions>; characterWarnings: false | CharacterWarningConfiguration }>;
+export type EditorRevealRange = Readonly<{ from: number; to: number }>;
+export type EditorRevealOptions = Readonly<{ align?: RevealAlignment; select?: boolean; focus?: boolean; expectedRevision?: number }>;
 export type TextEditorOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; requestLine?: LinePrompt; settings?: EditorSettings }>;
 export type TextEditor = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; workspace: Workspace; tab: TabTarget | undefined; signal: AbortSignal; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
     operation: <T>(options: EditorOperationOptions, work: (op: EditorOperation) => T | PromiseLike<T>) => Promise<EditorOperationOutcome<T>>;
@@ -79,6 +81,7 @@ export type TextEditor = Readonly<{ element: HTMLDivElement; input: HTMLTextArea
     characterWarnings: CharacterWarningHighlights;
     /** Returns whether the command was accepted; long selections finish asynchronously. */
     commands: EditorCommands; keymap: EditorKeymap;
+    reveal: (target: BufferPosition | EditorRevealRange, options?: EditorRevealOptions) => EditorRevealRange | null;
     focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void;
     /** Immutable activity capture, reused while its fields are unchanged. Does not collect metrics. */
     activity: () => TextEditorActivity;
@@ -295,6 +298,38 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             const unapplied = !executing && workspace.observeDocument(documentId).getSnapshot()?.revision === expectedRevision ? attemptedText : "";
             conflict("command-failed", undefined, expectedRevision, 0, unapplied, cause);
         }
+    }
+    const revealScope = workspace.createNotificationScope();
+    function reveal(target: BufferPosition | EditorRevealRange, options: EditorRevealOptions = {}): EditorRevealRange | null {
+        const { align = "nearest", select = false, focus: takeFocus = false, expectedRevision } = options;
+        validateRevealAlignment(align);
+        if (typeof select !== "boolean" || typeof takeFocus !== "boolean") throw new TypeError("Invalid reveal flags.");
+        if (expectedRevision !== undefined && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0))
+            throw new RangeError("Invalid reveal revision.");
+        if (disposed || input.disabled || !live() || resource.getSnapshot().state !== "ready") return null;
+        const state = activity();
+        if (state.composing || state.pendingInput || state.pendingCommand) return null;
+        const { revision, buffer } = workspace.document(documentId);
+        if (expectedRevision !== undefined && revision !== expectedRevision) return null;
+        let from: number, to: number;
+        if ("line" in target) {
+            if (!Number.isSafeInteger(target.line) || !Number.isSafeInteger(target.column)) throw new RangeError("Invalid reveal position.");
+            const line = Math.max(0, Math.min(target.line, buffer.lineCount - 1));
+            from = to = buffer.offsetAt({ line, column: Math.max(0, target.column) });
+        } else {
+            if (!Number.isSafeInteger(target.from) || !Number.isSafeInteger(target.to) || target.from > target.to)
+                throw new RangeError("Invalid reveal range.");
+            from = Math.max(0, Math.min(target.from, buffer.length));
+            to = Math.max(0, Math.min(target.to, buffer.length));
+        }
+        const applied = revealScope.batch(() => {
+            if (select && !view.setSelection(revision, { anchor: from, head: to })) return false;
+            viewport.revealRange(from, to, align);
+            return true;
+        });
+        if (!applied || disposed || !live() || workspace.document(documentId).revision !== revision) return null;
+        if (takeFocus) focus();
+        return Object.freeze({ from, to });
     }
     function revealCaret(selected = view.getSnapshot().selection, vertical: NonNullable<RevealOptions["vertical"]> = "nearest"): void {
         viewport.revealOffset(selected.head, { horizontal: "nearest", vertical, affinity: selected.headAffinity ?? "after" });
@@ -842,8 +877,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                         if (request !== lineRequest || !validCommand(capture) || !root.isConnected || !workspace.ownsDocumentView(view)) return;
                         if (line === undefined || !Number.isSafeInteger(line) || line < 1 || line > buffer.lineCount) return;
                         lineRequest = undefined;
-                        const head = buffer.offsetAt(line - 1);
-                        if (view.setSelection(capture.revision, { anchor: head, head })) { revealCaret(); focus(); }
+                        reveal({ line: line - 1, column: 0 }, { select: true, focus: true, expectedRevision: capture.revision });
                     } catch (error) {
                         if (!request.abort.signal.aborted) conflict("command-failed", undefined, capture.revision, 0, "", error);
                     } finally { if (request === lineRequest) lineRequest = undefined; }
@@ -1435,6 +1469,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             if (disposed || editTransform) throw new Error("Editor is disposed or already owns an edit planner.");
             editTransform = transform; return () => { if (editTransform === transform) editTransform = undefined; };
         },
+        reveal,
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state: ViewState) => { viewport.restoreView(state); refresh(); },
         snapshot: () => Object.freeze({ ...activity(), inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, maxQueuedInputTurnMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs,

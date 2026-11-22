@@ -160,7 +160,12 @@ const fixture = { text: () => workspace.document(documentId).text(),
             editor.commands.run("go-to-line"); reply(line + 1); await Promise.resolve(); await wait();
             if (view.getSnapshot().selection.head !== start || view.folding.getSnapshot().index.collapsedCount || !editor.viewport.coordsAt(start)) throw new Error("Compiled line navigation did not reveal its folded destination.");
             if (model.document(source.documentId).buffer.readMetrics().textExports) throw new Error("Compiled folding exported the source value.");
-            if (retired.viewport.coordsAt(0) !== undefined) throw new Error("Retired compiled geometry remained active.");
+            const revealed = editor.reveal({ line, column: 1 }, { align: "start", select: true });
+            editor.viewport.flush();
+            if (revealed?.from !== start + 1 || revealed.to !== revealed.from || !editor.viewport.coordsAt(revealed.from)
+                || view.getSnapshot().selection.head !== revealed.from) throw new Error("Restored public reveal missed its selected column.");
+            if (retired.reveal({ from: 0, to: 1 }, { select: true, focus: true }) !== null || retired.viewport.coordsAt(0) !== undefined)
+                throw new Error("Retired compiled editor still accepted navigation.");
         } finally { editor.dispose(); other.dispose(); host.remove(); otherHost.remove(); view.dispose(); peer.dispose(); model.tabs.close(tab); model.releaseResource(source.id, true); }
         if (editor.viewport.coordsAt(0) !== undefined) throw new Error("Released compiled geometry queried a missing source.");
         const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled fold resources leaked.");

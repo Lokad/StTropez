@@ -16,8 +16,7 @@ export function inspectCharacters(editor: TextEditor, workspace: Workspace, host
         button.textContent = `Ln ${line + 1}, Col ${column + 1}: ${characterWarningLabel(warning)}`;
         button.addEventListener("click", () => {
             if (!capture.isCurrent()) { host.replaceChildren(); note.textContent = "The source or warning settings changed. Inspect again."; host.append(note); return; }
-            editor.view.setSelection(capture.revision, { anchor: warning.from, head: warning.to });
-            editor.viewport.revealOffset(warning.from); editor.focus();
+            editor.reveal(warning, { expectedRevision: capture.revision, select: true, focus: true });
         });
         host.append(button);
     }

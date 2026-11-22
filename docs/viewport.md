@@ -121,13 +121,14 @@ Vertical `"center-if-outside"` keeps a fully visible row in place and centers it
 `affinity` takes
 `"before"` or `"after"` (default). Ctrl/Meta-wheel passes through to browser zoom.
 
-`revealRange(from, to)` reveals a half-open UTF-16 range and opens folds that cover it.
+`revealRange(from, to, align?)` reveals a half-open UTF-16 range and opens folds that cover it.
 It preserves the scroll position on each axis where the range is visible. Otherwise it centers the range on that
 axis. If the range exceeds the viewport, it exposes the start. For multiline ranges it uses
-the starting column and the full span of rows. The selection stays in place.
+the starting column and the full span of rows. Pass `"start"`, `"center"` or `"nearest"`
+to set vertical placement. The selection stays in place.
 
 Save `captureView()` by document and view ID to restore selections, scroll and folds. `restoreView()`
-checks scroll and anchor values before changing anything. On the same revision, its anchors keep the
+checks scroll and anchor values before changing anything. Restoring a view cancels any reveal waiting for its next paint. On the same revision, its anchors keep the
 same text in place on both axes. A new, empty view of that document and revision can take the captured
 folds. A view with newer folds keeps them. [Folding](folding.md) ·
 [Aligned panes and linked scrolling](comparison.md)
@@ -141,8 +142,8 @@ can return `undefined`. Inside a grapheme, `coordsAt` uses affinity to choose an
 outside the text hit area.
 
 Read the viewport snapshot for the available text width. Scroll in local CSS units. To navigate from a
-host control, set the captured view’s selection and call `revealOffset`. The [editor](editor.md)
-handles keyboard movement, preferred columns and temporary measurement batches.
+host control, use [editor.reveal](editor.md#reveal-a-destination) to select, unfold and focus the target.
+The editor handles keyboard movement, preferred columns and temporary measurement batches.
 
 `snapshot().width` measures the text area. `gutterWidth` measures the fixed strip for line numbers and fold controls, in CSS pixels. The gutter omits folded lines and comparison padding rows.
 

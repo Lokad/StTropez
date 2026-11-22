@@ -179,8 +179,7 @@ export class HostDomainTools {
     reveal(token: string, revision: number, id: string): void {
         const session = this.sessions.get(token); if (!this.guard(session) || session.data.revision !== revision || this.workspace.document(session.editor.view.documentId).revision !== revision) return;
         const annotation = session.data.annotations.find(item => item.id === id); if (!annotation) return;
-        if (!session.editor.view.setSelection(revision, { anchor: annotation.from, head: annotation.to })) return;
-        session.editor.viewport.revealOffset(annotation.from); session.editor.focus();
+        session.editor.reveal(annotation, { expectedRevision: revision, select: true, focus: true });
     }
     debug() { return { ...this.metrics, subscriptions: this.cell.count(), pending: this.job !== undefined, provider: { ...this.fixture.metrics }, active: this.active?.id ?? null,
         sessions: [...this.sessions.values()].map(s => ({ id: s.id, token: s.token, revision: s.data.revision, annotations: s.data.annotations.length, folds: s.data.owned.size })) }; }
