@@ -55,6 +55,14 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await button(p, "Save source").click(); expect((await snap(p)).pendingSaves).toHaveLength(0); await button(p, "Dismiss message").click();
     await p.evaluate(() => window.hostFixture.setSourceReadOnly(true)); expect(await p.evaluate(() => window.hostFixture.recoveryText())).toBe("uncommitted café😀"); await exact(p, committed);
     await field.dispatchEvent("compositionend", { data: "uncommitted café😀" }); await p.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await waitForInstruction(p); await expect(field).toHaveValue("aA.csvXY"); await exact(p, committed);
+    if (!large) {
+        const consumed = await field.evaluate(node => [{ keyCode: 229 }, { modifierAltGraph: true }].map(detail => {
+            const key = new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true, ...detail });
+            node.dispatchEvent(key); return key.defaultPrevented;
+        }));
+        expect(consumed).toEqual([false, false]);
+        expect((await snap(p)).pendingSaves).toEqual([]);
+    }
     await field.press("Control+s"); await expect.poll(async () => (await snap(p)).pendingSaves.length).toBe(1); await button(p, "Fail save").click(); await button(p, "Dismiss message").click();
     if (!large) await info.attach("anchored-instruction", { body: await p.screenshot(), contentType: "image/png" });
     await p.evaluate(() => window.hostFixture.dispose()); const stopped = await snap(p); expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0);

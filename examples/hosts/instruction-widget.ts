@@ -1,3 +1,4 @@
+import { isPrimaryShortcut } from "../shared/save-key.ts";
 import { exportText, textDifference } from "../../src/index.ts";
 import type { TabId } from "../../src/index.ts";
 import type { TextEditor } from "../../src/browser/index.ts";
@@ -53,8 +54,8 @@ export function mountInstructionWidget(host: HTMLElement, lane: HTMLElement, edi
             node.addEventListener("compositionend", () => { field.composing = false; if (!field.ignored) commit(field); else { field.capture = undefined; sync(); } }, { signal });
             node.addEventListener("blur", () => { groupField = undefined; if (!field.composing && field.capture) commit(field); }, { signal });
             node.addEventListener("keydown", event => {
-                if (event.key === "Escape") { if (event.isComposing || field.composing) return; event.preventDefault(); event.stopPropagation(); editor.input.focus({ preventScroll: true }); return; }
-                const command = (event.ctrlKey || event.metaKey) && !event.altKey, key = event.key.toLowerCase();
+                if (event.key === "Escape") { if (event.isComposing || field.composing) return; event.preventDefault(); event.stopPropagation(); editor.focus(); return; }
+                const command = isPrimaryShortcut(event), key = event.key.toLowerCase();
                 if (!command || !["s", "z", "y"].includes(key) || key === "s" && event.shiftKey) return; event.preventDefault(); event.stopPropagation();
                 if (event.repeat || event.isComposing || field.composing || fields.some(f => !!f.capture)) return; groupField = undefined;
                 if (key === "s") controller.save(); else { const d = controller.workspace.document(controller.source.documentId); controller.workspace[key === "y" || event.shiftKey ? "redo" : "undo"]({ documentId: d.id, expectedRevision: d.revision }); }

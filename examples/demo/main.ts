@@ -1,3 +1,4 @@
+import { isSaveKey } from "../shared/save-key.ts";
 import { mountTextEditor, mountTextComparison, createFindController, createRegexFindBackend, createFoldingController, editRefusedEvent } from "../../src/browser/index.ts";
 import type { EditRefusedDetail, TextEditor, FindController, FindSnapshot, TextComparison, FoldingController, DecorationLayer, DecorationProvider } from "../../src/browser/index.ts";
 import { discoverIndentationFolds } from "../../src/index.ts";
@@ -738,9 +739,9 @@ element("files").addEventListener("click", event => {
     const file = project?.files.find(file => file.name === name); if (file) mountFile(file, true);
 }, { signal: listeners.signal });
 window.addEventListener("keydown", event => {
-    if (!event.isComposing && !editor?.getSnapshot().composing && (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "s") {
-        event.preventDefault(); void save();
-    }
+    if (!isSaveKey(event) || editor?.getSnapshot().composing) return;
+    event.preventDefault();
+    if (!event.repeat) void save();
 }, { signal: listeners.signal });
 window.addEventListener("beforeunload", event => {
     if ([...projects.values()].some(project => project.dirty())) { event.preventDefault(); event.returnValue = ""; }

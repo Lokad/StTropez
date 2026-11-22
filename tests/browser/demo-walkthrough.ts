@@ -781,7 +781,18 @@ export async function runDemoConflict(page: Page, url = "/") {
     try {
         await peer.goto(page.url()); await expect(peer.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
         const main = page.getByRole("textbox", { name: "main.ts", exact: true });
-        await main.press("Control+Home"); await main.pressSequentially("// Main page saved\n"); await main.press("Control+s");
+        await main.press("Control+Home"); await main.pressSequentially("// Main page saved\n"); await expect(page.locator("#save")).toBeEnabled();
+        const shortcuts = await main.evaluate(node => [
+            { keyCode: 229 }, { modifierAltGraph: true }, { shiftKey: true }, { repeat: true }, { handled: true },
+        ].map(detail => {
+            const key = new KeyboardEvent("keydown", { key: "s", code: "KeyS", ctrlKey: true, bubbles: true, cancelable: true, ...detail });
+            if ("handled" in detail) key.preventDefault();
+            node.dispatchEvent(key);
+            return { consumed: key.defaultPrevented, saving: node.ownerDocument.querySelector<HTMLButtonElement>("#save")!.disabled };
+        }));
+        expect(shortcuts.map(s => s.consumed)).toEqual([false, false, false, true, true]);
+        expect(shortcuts.every(s => !s.saving)).toBe(true);
+        await main.press("Control+s");
         await expect(page.locator("#status")).toContainText("Saved in this browser");
         const peerMain = peer.getByRole("textbox", { name: "main.ts", exact: true });
         await peerMain.press("Control+Home"); await peerMain.pressSequentially("// Peer local work\n");

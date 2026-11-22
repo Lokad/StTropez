@@ -220,7 +220,8 @@ and save during either failure. Switching samples suspends the inactive provider
 project releases it and, for a local server, stops its process and deletes its temporary workspace.
 Idle local allocations expire after two minutes.
 
-The demo saves the whole sample in IndexedDB, including files you haven’t opened. Saving keeps the
+Press Ctrl+S or Cmd+S to save the whole sample in IndexedDB, including files you haven’t opened.
+Holding the shortcut submits one save. An input field can handle the shortcut itself. Saving keeps the
 current tabs and selection. If you type during a save, the footer reports that the later edits
 are unsaved. Save, Restore draft and Keep current files return
 keyboard focus to the source editor or the last active comparison pane as soon as you activate them.

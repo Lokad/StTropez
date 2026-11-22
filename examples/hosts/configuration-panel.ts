@@ -1,4 +1,4 @@
-import { isSaveKey } from "./save-key.ts";
+import { isSaveKey } from "../shared/save-key.ts";
 import type { HostController, Connection } from "./controller.ts";
 import type { ResourceSnapshot, SnapshotValue } from "../../src/index.ts";
 import { configurationValidation } from "./configuration.ts";
