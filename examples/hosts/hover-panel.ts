@@ -15,7 +15,8 @@ export function mountHoverPanel(host: HTMLElement, tools: HostHoverTools, option
     }, { signal: listeners.signal });
     popup.addEventListener("focusout", event => {
         const anchor = tools.popupAnchor();
-        if (anchor && event.relatedTarget instanceof Node && !popup.contains(event.relatedTarget) && event.relatedTarget !== anchor.editor.input)
+        if (anchor && event.relatedTarget instanceof Node && !popup.contains(event.relatedTarget)
+            && event.relatedTarget !== anchor.editor.input && event.relatedTarget !== previousFocus)
             tools.dismiss();
     }, { signal: listeners.signal });
     popup.addEventListener("keydown", event => {
@@ -26,6 +27,12 @@ export function mountHoverPanel(host: HTMLElement, tools: HostHoverTools, option
     popup.addEventListener("pointerenter", tools.enterPopup, { signal: listeners.signal }); popup.addEventListener("pointerleave", tools.leavePopup, { signal: listeners.signal });
     popup.addEventListener("pointerdown", event => {
         if (event.target instanceof Element && event.target.closest("button")) event.preventDefault();
+    }, { signal: listeners.signal });
+    popup.addEventListener("click", event => {
+        if (!event.detail || !popup.matches(":focus-within") || event.target instanceof Element && event.target.closest("button")) return;
+        const text = owner.getSelection();
+        if (text && !text.isCollapsed && popup.contains(text.anchorNode)) return;
+        if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
     }, { signal: listeners.signal });
     const render = () => { const state = tools.state.getSnapshot();
         if (!state.visible) previousFocus = undefined;
