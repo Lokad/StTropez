@@ -79,7 +79,14 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP serve
         await apply.hover(); await page.mouse.up(); await editors(page);
         await old.evaluate(review => review.apply());
         await expect(apply).toBeEnabled(); await exact(page, raw);
-        await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion); await done(page); await expect(button(page, "Apply captured provider edits")).toBeDisabled(); await select(page); await register(page); await request(page); await expect(button(page, "Apply captured provider edits")).toBeDisabled(); await page.evaluate(() => { const f = window.hostFixture; f.snapshot().bindings.project.state.review!.apply(); }); await done(page); await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history); await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
+        await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion);
+        await done(page); await expect(apply).toBeDisabled();
+        await select(page); await register(page); await request(page); await expect(apply).toBeDisabled();
+        await page.evaluate(() => window.hostFixture.snapshot().bindings.project.state.review!.apply());
+        await done(page);
+        await expect(page.getByLabel("Workspace provider status", { exact: true })).toHaveText("An edit target is read-only or locked.");
+        await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
+        await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
         for (const mode of ["selection", "typing", "remount"] as const) {
             await select(page); if (!(await snapshot(page)).bindings.project.registered) await register(page); await request(page); const captured = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.project.state.review!);
             if (mode === "selection") await select(page, 8); else if (mode === "typing") { await input(page).press("Control+End"); await input(page).pressSequentially("x"); await editors(page); await input(page).press("Control+z"); } else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });

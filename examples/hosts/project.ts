@@ -57,12 +57,20 @@ export class HostProjectTools {
         const job = this.job, review = job?.review;
         const preview = job && review ? Object.freeze({ ...this.reviewActions(review.key, review.page), label: review.request.label ?? "Provider workspace edit",
             ...previewLspWorkspaceEdit(review.request.edit, id => job.documents.get(id)!.title, review.page),
-            canApply: this.current(job) && review.context.isCurrent() && review.request.edit.isCurrent()
-                && review.request.edit.documents.every(change => !change.edits.length || this.editable(change.target.document.documentId as DocumentId)) }) : null;
+            canApply: this.editRefusal(job, review.request.edit, review.context) === null }) : null;
         this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && this.available(this.active), connected: this.lane.value?.snapshot().connected ?? false,
             disconnected: this.disconnected, reconnectRequired: this.provider?.getSnapshot().commandRequiresReconnect ?? false, registered: this.registered, pending: !!job, view: this.active?.id ?? null, changes: this.changes, review: preview });
     }
-    private editable(document: DocumentId): boolean { const m = this.workspace.resourceForDocument(document).metadata.getSnapshot(); return m.capabilities.edit.includes("human") && m.capabilities.edit.includes("host") && m.editLock === null; }
+    private editRefusal(job: Job, edit: LspWorkspaceEdit, context?: LspRequestContext): string | null {
+        if (context && !context.isCurrent()) return "Captured edit request changed.";
+        if (!this.current(job) || !edit.isCurrent()) return "Captured edit revision or provider changed.";
+        for (const change of edit.documents) {
+            if (!change.edits.length) continue;
+            const { capabilities, editLock } = this.workspace.resourceForDocument(change.target.document.documentId as DocumentId).metadata.getSnapshot();
+            if (editLock || !capabilities.edit.includes("human") || !capabilities.edit.includes("host")) return "An edit target is read-only or locked.";
+        }
+        return null;
+    }
     private drop(): void { this.registered = false; this.lane.drop(); }
     private connectionChanged(backend: ProjectBackend): void {
         const state = backend.snapshot(), job = this.job; this.registered = state.registered;
@@ -174,7 +182,7 @@ export class HostProjectTools {
         if (policy) {
             try {
                 const decision = policy(request);
-                if (decision === "apply") { if (!context.isCurrent()) throw new Error("Captured edit request changed."); this.applyCaptured(job, request.edit); return Promise.resolve({ applied: true }); }
+                if (decision === "apply") { this.applyCaptured(job, request.edit, context); return Promise.resolve({ applied: true }); }
                 if (decision === "decline") return Promise.resolve({ applied: false, failureReason: "The host declined this command edit." });
             } catch (error) { return Promise.resolve({ applied: false, failureReason: error instanceof Error ? error.message : "Host edit policy failed." }); }
         }
@@ -185,8 +193,9 @@ export class HostProjectTools {
             this.publish({ message: "Review every captured provider edit, then apply or decline the batch." });
         });
     }
-    private applyCaptured(job: Job, edit: LspWorkspaceEdit): number {
-        if (!this.current(job) || !edit.isCurrent() || edit.documents.some(change => change.edits.length && !this.editable(change.target.document.documentId as DocumentId))) throw new Error("Captured edit revision, authority or provider changed.");
+    private applyCaptured(job: Job, edit: LspWorkspaceEdit, context?: LspRequestContext): number {
+        const refusal = this.editRefusal(job, edit, context);
+        if (refusal) throw new Error(refusal);
         let count = 0;
         this.commit(job, () => {
             const changed = applyLspWorkspaceEdit(this.workspace, edit, { origin: "host", source: job.source, requiredOrigins: ["human"], view: job.origin.editor.view });
@@ -206,16 +215,16 @@ export class HostProjectTools {
     }
     private confirmReview(key: number): void {
         const job = this.job, review = job?.review; if (!job || !review || key !== review.key) return;
-        if (!this.current(job) || !review.context.isCurrent() || !review.request.edit.isCurrent() || review.request.edit.documents.some(change => change.edits.length && !this.editable(change.target.document.documentId as DocumentId))) {
-            this.metrics.rejected++; this.finishReview(job, review, { applied: false, failureReason: "Captured revision, authority, view or provider request changed." }); this.publish({ message: "Provider edits refused; source is unchanged by this decision." }); return;
-        }
         let committed = false;
         try {
-            const changed = this.applyCaptured(job, review.request.edit); committed = true;
+            const changed = this.applyCaptured(job, review.request.edit, review.context); committed = true;
             this.finishReview(job, review, { applied: true }); this.publish({ message: changed ? "Captured provider edits applied as one undo command; waiting for acknowledgement." : "The provider edit batch made no text changes; waiting for acknowledgement." });
         } catch (error) {
             if (committed) { job.applied = true; this.finishReview(job, review, { applied: true }); this.publish({ message: "Provider edits were applied; any later failure leaves them available to undo." }); }
-            else { this.metrics.rejected++; this.finishReview(job, review, { applied: false, failureReason: error instanceof Error ? error.message : "Provider edits refused." }); this.publish({ message: "Provider edit batch refused without application." }); }
+            else {
+                const message = error instanceof Error ? error.message : "Provider edits refused.";
+                this.metrics.rejected++; this.finishReview(job, review, { applied: false, failureReason: message }); this.publish({ message });
+            }
         }
     }
     canRunAction(editor: TextEditor): boolean { return (!this.disposed) && !this.job && !this.provider?.getSnapshot().commandRequiresReconnect && [...this.sessions.values()].some(session => session.editor === editor && this.available(session)); }
