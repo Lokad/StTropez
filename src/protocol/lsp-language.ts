@@ -1,12 +1,12 @@
 import { wireLimits, jsonSnapshot } from "./wire.ts";
-import { createLspClient, lspFeatureHandle } from "./lsp-client.ts";
-import type { DocumentSnapshot } from "../core/workspace.ts";
+import { createLspClient, lspFeatureHandle, type LspDocumentRequest, type LspPositionRequest } from "./lsp-client.ts";
 import type { JsonValue } from "./wire.ts";
 import { decodeLspColor, decodeLspColorPresentations, decodeLspDocumentColors, decodeLspDocumentLinks, decodeLspResolvedDocumentLink, decodeLspSignatureHelp } from "./lsp-features.ts";
 import type { LspColor, LspDocumentColor, LspDocumentLink, LspSignature } from "./lsp-features.ts";
 import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
 
 export type LspSignatureContext = Readonly<{ triggerKind: 1 | 2 | 3; triggerCharacter?: string; isRetrigger: boolean; activeSignatureHelp?: JsonValue }>;
+export type LspSignatureRequest = LspPositionRequest & Readonly<{ context?: LspSignatureContext }>;
 export function createLspSignatureClient(provider: LspWorkspace) {
     const lane = createLspClient(provider, "textDocument/signatureHelp");
     // Prior wire context is not fresh range/edit authority. Keep only its binding identities,
@@ -17,13 +17,14 @@ export function createLspSignatureClient(provider: LspWorkspace) {
     });
     return Object.freeze({ ...lspFeatureHandle(lane, {
         cancel: () => { previous = undefined; lane.cancel(); }, dispose: () => { previous = undefined; stop(); lane.dispose(); } }),
-        run: (document: DocumentSnapshot, offset: number, context: LspSignatureContext = { triggerKind: 1, isRetrigger: false }, prepare?: LspPrepare) => {
+        run: (request: LspSignatureRequest) => {
+            const { offset, context = { triggerKind: 1, isRetrigger: false } } = request;
             const wireContext = jsonSnapshot(context);
             if (context.triggerCharacter !== undefined && (!context.triggerCharacter.length || context.triggerCharacter.length > 8)
                 || JSON.stringify(wireContext).length > wireLimits.signatureContextUnits) throw new TypeError("Invalid signature help context.");
             const retrigger = context.isRetrigger, inherit = context.activeSignatureHelp === undefined;
             if (!retrigger) previous = undefined;
-            const call = lane.request([document], document.id, "textDocument/signatureHelp", capture => {
+            return lane.request(request, "textDocument/signatureHelp", capture => {
                 const doc = capture.document; let active = wireContext;
                 if (previous && (previous.document !== doc.documentId || previous.resource !== doc.resourceId || previous.uri !== doc.uri || previous.language !== doc.languageId
                     || previous.epoch !== capture.epoch || previous.generation !== capture.registrationGeneration)) previous = undefined;
@@ -33,8 +34,7 @@ export function createLspSignatureClient(provider: LspWorkspace) {
                     if (JSON.stringify(inherited).length <= wireLimits.signatureContextUnits) active = inherited;
                 }
                 return { position: capture.index.at(offset), context: active };
-            }, prepare);
-            return Object.freeze({ cancel: call.cancel, result: call.result.then(value => value.decode(() => {
+            }, value => value.decode(() => {
                 const help = decodeLspSignatureHelp(value.response, value.capture), { document: doc, epoch, registrationGeneration } = value.capture;
                 const context = help?.signatures.length ? { document: doc.documentId, resource: doc.resourceId, uri: doc.uri, language: doc.languageId, epoch, generation: registrationGeneration, wire: help.wire } : undefined;
                 previous = context;
@@ -44,14 +44,13 @@ export function createLspSignatureClient(provider: LspWorkspace) {
                     context.wire = Object.freeze({ ...help.wire as Readonly<Record<string, JsonValue>>, activeSignature: index });
                     return true;
                 } });
-            })) });
+            }));
         } });
 }
 export function createLspLinkClient(provider: LspWorkspace) {
     const lane = createLspClient(provider, "textDocument/documentLink");
     return Object.freeze({ ...lspFeatureHandle(lane),
-        run: async (document: DocumentSnapshot, prepare?: LspPrepare) => {
-            const result = await lane.request([document], document.id, "textDocument/documentLink", () => ({}), prepare).result;
+        run: ({ document, prepare }: LspDocumentRequest) => lane.request({ document, prepare }, "textDocument/documentLink", () => ({}), result => {
             const { capture, isCurrent } = result;
             const items = result.decode(() => decodeLspDocumentLinks(result.response, capture, lane.options(document, "textDocument/documentLink").some(option => option.resolveProvider === true)));
             return Object.freeze({ items, isCurrent, resolve: async (item: LspDocumentLink, prepareResolve?: LspPrepare) => {
@@ -59,13 +58,12 @@ export function createLspLinkClient(provider: LspWorkspace) {
                 const value = await result.follow("textDocument/documentLink", "documentLink/resolve", item.resolve, prepareResolve);
                 return result.decode(() => decodeLspResolvedDocumentLink(value, item, capture));
             } });
-        } });
+        }) });
 }
 export function createLspColorClient(provider: LspWorkspace) {
     const lane = createLspClient(provider, "textDocument/documentColor", "textDocument/colorPresentation");
     return Object.freeze({ ...lspFeatureHandle(lane),
-        run: async (document: DocumentSnapshot, prepare?: LspPrepare) => {
-            const result = await lane.request([document], document.id, "textDocument/documentColor", () => ({}), prepare).result;
+        run: (request: LspDocumentRequest) => lane.request(request, "textDocument/documentColor", () => ({}), result => {
             const { capture, isCurrent } = result;
             const items = result.decode(() => decodeLspDocumentColors(result.response, capture));
             return Object.freeze({ items, isCurrent, presentations: async (item: LspDocumentColor, color: LspColor, preparePresentation?: LspPrepare) => {
@@ -74,5 +72,5 @@ export function createLspColorClient(provider: LspWorkspace) {
                     textDocument: { uri: capture.document.uri }, color: decodeLspColor(color), range: { start: capture.index.at(item.from), end: capture.index.at(item.to) } }, preparePresentation);
                 return result.decode(() => decodeLspColorPresentations(value, item, capture));
             } });
-        } });
+        }) });
 }

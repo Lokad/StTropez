@@ -2,7 +2,7 @@ import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
-import { createLspNavigationClient } from "../protocol/lsp-navigation.ts";
+import { createLspNavigationClient, type LspNavigationResult, type LspDefinitionPreview } from "../protocol/lsp-navigation.ts";
 import type { LspLocation } from "../protocol/lsp-features.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
 import { captureViewRequest, sameEditAuthority } from "./captured-view.ts";
@@ -11,8 +11,6 @@ import type { DefinitionHit } from "./definition-pointer.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 type Client = ReturnType<typeof createLspNavigationClient>;
-type Preview = Awaited<ReturnType<Client["prepareDefinition"]>>;
-type Reply = Awaited<ReturnType<Client["run"]>>;
 export type NavigationDestination = Omit<LspLocation, "target"> & Readonly<{ document: LspLocation["target"]["document"] }>;
 export type NavigationChoice = NavigationDestination & Readonly<{ index: number; open: (present: (destination: NavigationDestination) => void) => boolean }>;
 export type NavigationPage = Readonly<{
@@ -39,7 +37,7 @@ export type NavigationController = Observable<NavigationSnapshot> & Readonly<{
 const idle: NavigationSnapshot = Object.freeze({ status: "idle", result: null });
 
 const navigationPageSize = 64;
-function navigationResult(reply: Reply, canOpen: () => boolean): NavigationResult {
+function navigationResult(reply: LspNavigationResult, canOpen: () => boolean): NavigationResult {
     const count = reply.locations.length;
     function locationAt(index: number): NavigationChoice | undefined {
         if (!Number.isSafeInteger(index)) return;
@@ -85,8 +83,8 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
     };
     const capture = () => captureViewRequest(workspace, tab, view, { available });
     type Source = NonNullable<ReturnType<typeof capture>>;
-    type Hover = { hit: DefinitionHit; client: Client; source: Source; reply: Promise<Preview>; result?: Preview };
-    type Request = { client: Client; source?: Source; stops: (() => void)[]; expired: boolean; reply?: Reply };
+    type Hover = { hit: DefinitionHit; client: Client; source: Source; reply: Promise<LspDefinitionPreview>; result?: LspDefinitionPreview };
+    type Request = { client: Client; source?: Source; stops: (() => void)[]; expired: boolean; reply?: LspNavigationResult };
     let hover: Hover | undefined, activation: Hover | undefined, explicit: Request | undefined;
     const publish = (status: NavigationSnapshot["status"], result: NavigationResult | null = null) => notifications.publish(state, Object.freeze({ status, result }));
     const release = (job?: Hover) => { job?.source.cancel(); job?.client.dispose(); };
@@ -113,7 +111,7 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
         leave(); const source = capture(); if (!source || source.document.revision !== hit.revision) { source?.cancel(); return; }
         const client = createLspNavigationClient(provider);
         try {
-            const reply = client.prepareDefinition(project(source), source.document.id, hit.offset, options.prepareRequest?.("definition"));
+            const reply = client.prepareDefinition({ document: source.document, project: project(source), offset: hit.offset, prepare: options.prepareRequest?.("definition") }).result;
             const job: Hover = { hit, client, source, reply }; hover = job;
             source.signal.addEventListener("abort", () => { if (hover === job) leave(); }, { once: true });
             void reply.then(result => {
@@ -152,14 +150,16 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
             }
             if (job.expired) throw new Error("Navigation project changed.");
             publish("pending");
-            let reply: Reply;
+            const query = () => client.run({ document: source.document, project: documents, offset, kind, includeDeclaration,
+                prepare: options.prepareRequest?.(kind) }).result;
+            let reply: LspNavigationResult;
             if (prepared) {
                 const preview = await prepared.reply;
                 if (!source.isCurrent() || !preview.isCurrent()) { expire(job); throw new Error("Definition link expired."); }
                 reply = preview.originRange && !inside(offset, preview.originRange) && offset !== prepared.hit.offset
-                    ? await client.run(documents, source.document.id, offset, kind, includeDeclaration, options.prepareRequest?.(kind))
+                    ? await query()
                     : await preview.resolve();
-            } else reply = await client.run(documents, source.document.id, offset, kind, includeDeclaration, options.prepareRequest?.(kind));
+            } else reply = await query();
             if (explicit !== job || job.expired || !source.isCurrent() || !reply.isCurrent()) {
                 expire(job); throw new Error("Navigation source changed.");
             }

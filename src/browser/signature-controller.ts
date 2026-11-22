@@ -101,7 +101,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         capture.signal.addEventListener("abort", () => expire(current), { once: true });
         try {
             client ??= createLspSignatureClient(provider); requested++;
-            current.call = client.run(doc, offset, context, options.prepareRequest);
+            current.call = client.run({ document: doc, offset, context, prepare: options.prepareRequest });
             current.timer = win.setTimeout(() => fail(current, new Error("Signature help timed out.")), 30000);
             publish({ ...idle, status: "pending", message: "Reading signature help.", anchor: Object.freeze({ revision: doc.revision, offset }) });
             void current.call.result.then(help => {

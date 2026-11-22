@@ -2,7 +2,7 @@ import { cancelledRequest, staleRequest } from "./wire.ts";
 import type { JsonValue } from "./wire.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
 import type { InsertionIndentation } from "../core/insertion-text.ts";
-import { createLspClient, lspFeatureHandle } from "./lsp-client.ts";
+import { createLspClient, lspFeatureHandle, type LspPositionRequest } from "./lsp-client.ts";
 import { decodeLspCompletions, decodeLspResolvedCompletion, rebaseLspCompletion, UnsupportedLspSnippetError } from "./lsp-features.ts";
 import type { LspCompletion, LspCompletions, LspCompletionFallback } from "./lsp-features.ts";
 import type { LspCall } from "./lsp-session.ts";
@@ -10,14 +10,13 @@ import type { LspBindingCapture, LspPrepare, LspWorkspace } from "./lsp-workspac
 
 export type LspCompletionBatch = LspCompletions & Readonly<{ document: DocumentSnapshot; offset: number;
     isCurrent: () => boolean; isBindingCurrent: () => boolean }>;
-export type LspCompletionRequestOptions = Readonly<{
+export type LspCompletionRequest = LspPositionRequest & Readonly<{
     context?: Readonly<{ triggerKind: 1 | 3; triggerCharacter?: never } | { triggerKind: 2; triggerCharacter: string }>;
     fallback?: LspCompletionFallback | (() => LspCompletionFallback); indentation?: InsertionIndentation;
     /** Keep this client's current batch usable while its replacement is pending. */
     retain?: LspCompletionBatch }>;
 export type LspCompletionResolution = Readonly<{ batch: LspCompletionBatch; item: LspCompletion | null; reason: string | null }>;
 type Batch = { binding: LspBindingCapture; value: LspCompletionBatch; requestedAt: number };
-type Response = Awaited<ReturnType<ReturnType<typeof createLspClient>["request"]>["result"]>;
 const same = (left: DocumentSnapshot | undefined, right: DocumentSnapshot) => !!left && left.id === right.id
     && left.resourceId === right.resourceId && left.revision === right.revision && left.buffer === right.buffer;
 const stale = () => staleRequest("LSP completion batch expired.");
@@ -26,7 +25,7 @@ const stale = () => staleRequest("LSP completion batch expired.");
 export function createLspCompletionClient(provider: LspWorkspace) {
     const client = createLspClient(provider, "textDocument/completion"), batches = new WeakMap<LspCompletionBatch, Batch>();
     let active: Batch | undefined, sequence = 0, received = 0, disposed = false;
-    let pending: LspCall<Response> | undefined;
+    let pending: LspCall<unknown> | undefined;
     const cancelPending = () => { sequence++; const old = pending; pending = undefined; old?.cancel(); };
     const current = (batch: Batch) => !disposed && active === batch && same(batch.binding.getSnapshot(), batch.value.document);
     const requireBatch = (value: LspCompletionBatch) => {
@@ -38,12 +37,11 @@ export function createLspCompletionClient(provider: LspWorkspace) {
             isBindingCurrent: () => !disposed && active === batch && !!binding.getSnapshot() });
         batches.set(batch.value, batch); active = batch; return batch.value;
     };
-    const own = <T>(call: LspCall<Response>, read: (value: Response) => T, list = false): LspCall<T> => {
+    const own = <T>(call: LspCall<T>): LspCall<T> => {
         const serial = sequence; pending = call; let finished = false;
         const result = call.result.then(value => {
-            if (list) received++;
             if (disposed || serial !== sequence) throw cancelledRequest("LSP completion request cancelled.");
-            return read(value);
+            return value;
         }).catch(error => { if (serial === sequence) active = undefined; throw error; }).finally(() => {
             finished = true; if (pending === call) pending = undefined;
         });
@@ -53,7 +51,8 @@ export function createLspCompletionClient(provider: LspWorkspace) {
         cancel: () => { active = undefined; cancelPending(); client.cancel(); },
         dispose: () => { if (disposed) return; disposed = true; active = undefined; cancelPending(); client.dispose(); } }),
         snapshot: () => Object.freeze({ ...client.snapshot(), received }),
-        run: (document: DocumentSnapshot, offset: number, options: LspCompletionRequestOptions = {}, prepare?: LspPrepare): LspCall<LspCompletionBatch> => {
+        run: (options: LspCompletionRequest): LspCall<LspCompletionBatch> => {
+            const { document, offset } = options;
             const context = Object.freeze({ ...(options.context ?? { triggerKind: 1 }) });
             if (context.triggerKind === 2 && (!context.triggerCharacter.length || context.triggerCharacter.length > 8)) throw new TypeError("Invalid completion trigger context.");
             const indentation = options.indentation && Object.freeze({ ...options.indentation }),
@@ -63,8 +62,8 @@ export function createLspCompletionClient(provider: LspWorkspace) {
                 if (!same(document, options.retain.document) || offset !== options.retain.offset) throw stale();
             } else active = undefined;
             cancelPending();
-            const call = client.request([document], document.id, "textDocument/completion", capture => ({ position: capture.index.at(offset), context }), prepare);
-            return own(call, value => value.decode(() => {
+            const call = client.request(options, "textDocument/completion", capture => ({ position: capture.index.at(offset), context }), value => value.decode(() => {
+                received++;
                 const binding = client.scope.captureBinding(value.target), local = binding?.getSnapshot();
                 if (!binding || !local || !same(local, document)) throw stale();
                 const configuration = client.options(document, "textDocument/completion"),
@@ -74,7 +73,8 @@ export function createLspCompletionClient(provider: LspWorkspace) {
                 const items = Object.freeze(choices.items.map((item, order) => ({ item, order }))
                     .sort((a, b) => a.item.sortText < b.item.sortText ? -1 : a.item.sortText > b.item.sortText ? 1 : a.order - b.order).map(value => value.item));
                 return publish(binding, local, offset, Object.freeze({ ...choices, items }));
-            }), true);
+            }));
+            return own(call);
         },
         rebase: (value: LspCompletionBatch, document: DocumentSnapshot): LspCompletionBatch | undefined => {
             const batch = batches.get(value), local = batch?.binding.getSnapshot();
@@ -91,10 +91,9 @@ export function createLspCompletionClient(provider: LspWorkspace) {
             const batch = requireBatch(value);
             if (!value.items.includes(item) || !item.resolve) throw new TypeError("Choose a captured unresolved completion.");
             cancelPending();
-            const call = client.request([value.document], value.document.id, "textDocument/completion", () => {
+            const call = client.request({ document: value.document, prepare }, "textDocument/completion", () => {
                 if (!current(batch)) throw stale(); return item.resolve as Record<string, JsonValue>;
-            }, prepare, "completionItem/resolve");
-            return own(call, response => response.decode(() => {
+            }, response => response.decode(() => {
                 if (!current(batch)) throw stale();
                 let resolved: LspCompletion | null, reason: string | null = null;
                 try { resolved = decodeLspResolvedCompletion(response.response, item, response.capture); }
@@ -102,6 +101,7 @@ export function createLspCompletionClient(provider: LspWorkspace) {
                 const items = Object.freeze(value.items.flatMap(value => value === item ? resolved ? [resolved] : [] : [value]));
                 const omitted = reason ? Object.freeze([...value.omitted, Object.freeze({ label: item.label, reason })]) : value.omitted;
                 return Object.freeze({ batch: publish(batch.binding, value.document, value.offset, Object.freeze({ ...value, items, omitted }), batch.requestedAt), item: resolved, reason });
-            }));
+            }), "completionItem/resolve");
+            return own(call);
         } });
 }

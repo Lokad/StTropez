@@ -59,7 +59,7 @@ type Scope = { active: boolean; generation: number; close: () => void; applyEdit
 type CommandIntent = { scope: Scope; epoch: number; generation: number; registrationGeneration: number; sent: boolean; cancelled: boolean; listeners: Set<() => void> };
 const stale = () => staleRequest("Captured provider participation changed.");
 const cancelled = () => cancelledRequest("Provider feature scope was cancelled.");
-function sameDocument(live: DocumentSnapshot | undefined, snapshot: DocumentSnapshot): boolean {
+export function sameDocument(live: DocumentSnapshot | undefined, snapshot: DocumentSnapshot): boolean {
     return live?.resourceId === snapshot.resourceId && live.revision === snapshot.revision && live.buffer === snapshot.buffer && live.language === snapshot.language;
 }
 

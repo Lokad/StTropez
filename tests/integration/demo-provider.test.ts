@@ -186,9 +186,9 @@ test("real lazy imports, snippets and reviewed command edits use public clients 
             return invocation.command === "_typescript.applyRefactoring" && typeof file === "string"
                 && pathKey(file) === pathKey(config.documents["main.ts"]!.path) ? { kind: "server" } : null;
         } });
-        const from = refactorSource.indexOf("1 + 2"), batch = await actions.run(snapshots(), before.id, from, from + 5, async session => {
+        const from = refactorSource.indexOf("1 + 2"), batch = await actions.run({ document: workspace.document(source.resource.documentId), project: snapshots(), from, to: from + 5, prepare: async session => {
             for (const kind of ["syntactic", "semantic"]) await session.request("sttropez/diagnostics", { uri: config.documents["main.ts"]!.uri, kind }).result;
-        });
+        } }).result;
         await assert.rejects(scope.requestCommand("_typescript.applyRefactoring", [{ file: config.documents["main.ts"]!.path + ".outside",
             refactor: "Extract Symbol", action: "constant_scope_0" }]).result, /Only this demo/);
         const action = batch.actions.find(item => !item.disabled && item.command?.command === "_typescript.applyRefactoring" && item.kind === "refactor.extract.constant");
@@ -237,12 +237,12 @@ test("real quick fixes use correlated diagnostic context through the public acti
         const prepare = async (session: LspScopeAccess) => {
             for (const kind of ["syntactic", "semantic"]) await session.request("sttropez/diagnostics", { uri: config.documents["main.ts"]!.uri, kind }).result;
         };
-        let batch = await client.run(files.map(file => workspace.document(file.resource.documentId)), doc.id, from, from + 13, prepare);
+        let batch = await client.run({ document: doc, project: files.map(file => workspace.document(file.resource.documentId)), from, to: from + 13, prepare }).result;
         assert.ok(batch.isCurrent());
         const helper = workspace.document(files.find(file => file.name === "pricing.ts")!.resource.documentId);
         assert.ok(workspace.edit({ documentId: helper.id, expectedRevision: helper.revision, origin: "host", edits: [{ from: 0, to: 0, insert: "// Related file changed\n" }] }).applied);
         await scope.flush(); assert.equal(batch.isCurrent(), false); await assert.rejects(request(), /current captured diagnostics/);
-        batch = await client.run(files.map(file => workspace.document(file.resource.documentId)), doc.id, from, from + 13, prepare);
+        batch = await client.run({ document: doc, project: files.map(file => workspace.document(file.resource.documentId)), from, to: from + 13, prepare }).result;
         const fix = batch.actions.find(action => action.title === "Change spelling to 'calculateTotal'"); assert.ok(fix?.edit); assert.equal(fix.command, null); assert.ok(batch.isCurrent());
         // The live demo refreshes diagnostics independently of explicit action requests.
         const refresh = scope.request("sttropez/diagnostics", { uri: config.documents["main.ts"]!.uri, kind: "semantic" });

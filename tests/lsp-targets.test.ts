@@ -23,7 +23,7 @@ test("read-only target text survives an opened view and cannot supply editable w
     t.after(() => { navigation.dispose(); rename.dispose(); });
     const source = f.document(), targetRange = { start: { line: 1, character: 5 }, end: { line: 1, character: 7 } };
     f.peer.onRequest("textDocument/definition", () => [{ uri, range: targetRange }]);
-    const result = await navigation.run([source], source.id, 0, "definition"), location = result.locations[0]!;
+    const result = await navigation.run({ document: source, offset: 0, kind: "definition" }).result, location = result.locations[0]!;
     const id = location.target.document.documentId as DocumentId, doc = f.workspace.document(id);
     assert.equal(doc.buffer.slice(location.from, location.to), "😀"); assert.equal(doc.language?.uri, uri);
     assert.ok(!f.workspace.getSnapshot().documents.includes(doc)); assert.equal(f.sent("textDocument/didOpen").length, 1);
@@ -32,7 +32,7 @@ test("read-only target text survives an opened view and cannot supply editable w
     assert.deepEqual(f.workspace.edit({ documentId: id, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "!" }] }), { applied: false, reason: "read-only" });
     view.dispose(); await settled(); assert.throws(() => f.workspace.document(id));
     f.peer.onRequest("textDocument/rename", () => ({ changes: { [uri]: [{ range, newText: "new" }] } }));
-    await assert.rejects(rename.run([source], source.id, 0, "new"), /requires a project document/); assert.equal(releases, 2);
+    await assert.rejects(rename.run({ document: source, offset: 0, newName: "new" }).result, /requires a project document/); assert.equal(releases, 2);
 });
 
 test("target checks visit the captured project once per pass and retain independent target guards", async t => {
@@ -46,7 +46,7 @@ test("target checks visit the captured project once per pass and retain independ
     let visits = 0; const observe = f.workspace.observeDocument;
     Reflect.set(f.workspace, "observeDocument", (...args: Parameters<typeof observe>) => { visits++; return observe.apply(f.workspace, args); });
     t.after(() => Reflect.set(f.workspace, "observeDocument", observe));
-    const result = await client.run(snapshots, f.source.documentId, 0, "references"), loadingVisits = visits; visits = 0;
+    const result = await client.run({ document: f.document(), project: snapshots, offset: 0, kind: "references" }).result, loadingVisits = visits; visits = 0;
     assert.equal(result.isCurrent(), true); assert.equal(visits, resources.length);
     assert.ok(loadingVisits < 12 * resources.length * leases.length, `Loading repeatedly visited the whole captured project: ${loadingVisits}`);
     t.diagnostic(JSON.stringify({ documents: resources.length, targets: leases.length, loadingVisits, currentVisits: visits }));
@@ -62,7 +62,8 @@ test("navigation resolves an opaque target once without synchronizing it, and re
         return lease.value; });
     const client = createLspNavigationClient(f.provider); t.after(client.dispose);
     f.peer.onRequest("textDocument/definition", () => [1, 2].map(() => ({ targetUri: uri, targetRange: range, targetSelectionRange: range, originSelectionRange: range })));
-    const source = f.document(), preview = await client.prepareDefinition([source], source.id, 6);
+    const source = f.document(), call = client.prepareDefinition({ document: source, offset: 6 });
+    const preview = await call.result; call.cancel();
     assert.deepEqual(preview.originRange, { from: 6, to: 10 }); assert.equal(preview.hasTargets, true); assert.equal(calls, 0);
     const [result, same] = await Promise.all([preview.resolve(), preview.resolve()]);
     assert.equal(result, same); assert.equal(f.sent("textDocument/definition").length, 1);
@@ -83,7 +84,7 @@ test("target cancellation and deferred release failures are reported without sto
     });
     const client = createLspNavigationClient(f.provider); t.after(client.dispose);
     f.peer.onRequest("textDocument/definition", () => [{ uri, range }]); const source = f.document();
-    await client.run([source], source.id, 6, "definition"); client.cancel();
+    await client.run({ document: source, offset: 6, kind: "definition" }).result; client.cancel();
     context.onCancel(() => { throw new Error("Late target cancellation failure"); }); await settled();
     assert.deepEqual(f.errors.splice(0).sort(), ["Late target cancellation failure", "Target cancellation failure", "Target release failure"]);
     assert.equal(lease.released, 1); assert.equal(f.workspace.diagnostics().leases, 1); assert.equal(f.provider.getSnapshot().phase, "ready");
@@ -95,11 +96,12 @@ for (const stop of ["cancel", "dispose", "supersede", "disconnect"] as const) te
     const f = clientFixture(t, undefined, async (_uri, context) => { context.onCancel(() => cancellations++); entered.resolve(); return answer.promise; });
     const client = createLspNavigationClient(f.provider); t.after(client.dispose);
     f.peer.onRequest("textDocument/definition", () => [{ uri, range }]); const source = f.document();
-    const pending = client.run([source], source.id, 6, "definition"), rejected = assert.rejects(pending, cancelled); await entered.promise;
+    const call = client.run({ document: source, offset: 6, kind: "definition" }), rejected = assert.rejects(call.result, cancelled); await entered.promise;
     const lease = retained(f);
     if (stop === "disconnect") f.provider.disconnect();
-    else if (stop === "supersede") { f.peer.onRequest("textDocument/definition", () => []); assert.equal((await client.run([source], source.id, 0, "definition")).isCurrent(), true); }
-    else client[stop]();
+    else if (stop === "supersede") { f.peer.onRequest("textDocument/definition", () => []); assert.equal((await client.run({ document: source, offset: 0, kind: "definition" }).result).isCurrent(), true); }
+    else if (stop === "cancel") call.cancel();
+    else client.dispose();
     await rejected; assert.equal(cancellations, 1); answer.resolve(lease.value); await settled(); assert.equal(lease.released, 1);
     client.dispose(); await settled(); assert.equal(f.workspace.diagnostics().leases, 0);
 });
@@ -108,11 +110,11 @@ test("source edits and mismatched target identities reject a loaded result witho
     const entered = latch<void>(), answer = latch<LspTargetSource>();
     const f = clientFixture(t, undefined, async () => { entered.resolve(); return answer.promise; }), client = createLspNavigationClient(f.provider); t.after(client.dispose);
     f.peer.onRequest("textDocument/definition", () => [{ uri, range }]); const source = f.document();
-    const pending = client.run([source], source.id, 6, "definition"), rejected = assert.rejects(pending, stale); await entered.promise;
+    const pending = client.run({ document: source, offset: 6, kind: "definition" }).result, rejected = assert.rejects(pending, stale); await entered.promise;
     const lease = retained(f); f.edit(); answer.resolve(lease.value); await rejected; await settled(); assert.equal(lease.released, 1);
     const other = clientFixture(t, undefined, async () => retained(other, "wrong:uri").value), next = createLspNavigationClient(other.provider); t.after(next.dispose);
     other.peer.onRequest("textDocument/definition", () => [{ uri, range }]); const origin = other.document();
-    await assert.rejects(next.run([origin], origin.id, 0, "definition"), /does not match/); await settled(); assert.equal(other.workspace.diagnostics().leases, 0);
+    await assert.rejects(next.run({ document: origin, offset: 0, kind: "definition" }).result, /does not match/); await settled(); assert.equal(other.workspace.diagnostics().leases, 0);
 });
 
 test("malformed location and edit tails reject before any host loading", async t => {
@@ -120,9 +122,9 @@ test("malformed location and edit tails reject before any host loading", async t
     const navigation = createLspNavigationClient(f.provider), rename = createLspRenameClient(f.provider); t.after(() => { navigation.dispose(); rename.dispose(); });
     const source = f.document();
     f.peer.onRequest("textDocument/definition", () => [{ uri, range }, { uri, range: { start: { line: -1, character: 0 }, end: range.end } }]);
-    await assert.rejects(navigation.run([source], source.id, 0, "definition"), ProtocolDecodeError);
+    await assert.rejects(navigation.run({ document: source, offset: 0, kind: "definition" }).result, ProtocolDecodeError);
     f.peer.onRequest("textDocument/rename", () => ({ changes: { [uri]: [{ range, newText: "value" }, { range, newText: 42 }] } }));
-    await assert.rejects(rename.run([source], source.id, 0, "value"), ProtocolDecodeError); assert.equal(loads, 0);
+    await assert.rejects(rename.run({ document: source, offset: 0, newName: "value" }).result, ProtocolDecodeError); assert.equal(loads, 0);
 });
 
 test("rename and resolved actions retain unloaded null-version edit targets through atomic host application", async t => {
@@ -131,13 +133,13 @@ test("rename and resolved actions retain unloaded null-version edit targets thro
     const rename = createLspRenameClient(f.provider), actions = createLspActionClient(f.provider); t.after(() => { rename.dispose(); actions.dispose(); });
     const source = f.document(), edit = { documentChanges: [{ textDocument: { uri, version: null }, edits: [{ range: { ...range, end: { line: 0, character: 11 } }, newText: "omega" }] }] };
     f.peer.onRequest("textDocument/rename", () => edit);
-    const plan = await rename.run([source], source.id, 6, "omega"); assert.equal(plan.isCurrent(), true);
+    const plan = await rename.run({ document: source, offset: 6, newName: "omega" }).result; assert.equal(plan.isCurrent(), true);
     f.workspace.editDocuments(plan.documents.map(item => ({ documentId: f.other.documentId, expectedRevision: item.target.document.revision, edits: item.edits, origin: "human" })));
     assert.equal(f.workspace.document(f.other.documentId).text(), "gamma omega"); assert.equal(plan.isCurrent(), false);
     rename.cancel(); await settled(); assert.equal(leases[0]!.released, 1);
     f.peer.onRequest("textDocument/codeAction", () => [{ title: "lazy", data: { key: 1 } }]);
     f.peer.onRequest("codeAction/resolve", (value: object) => ({ ...value, edit }));
-    const batch = await actions.run([source], source.id, 6, 10), action = await batch.resolve(batch.actions[0]!);
+    const batch = await actions.run({ document: source, from: 6, to: 10 }).result, action = await batch.resolve(batch.actions[0]!);
     assert.equal(action.edit!.documents[0]!.target.version, null); assert.deepEqual(purposes, ["edit", "edit"]);
     actions.cancel(); await settled(); assert.equal(action.edit!.isCurrent(), false); assert.equal(leases[1]!.released, 1);
 });
@@ -146,10 +148,10 @@ test("a closed target cannot satisfy an invented wire version or bypass read-onl
     const f = clientFixture(t, undefined, async () => retained(f).value), client = createLspRenameClient(f.provider); t.after(client.dispose);
     const source = f.document();
     f.peer.onRequest("textDocument/rename", () => ({ documentChanges: [{ textDocument: { uri, version: 1 }, edits: [{ range, newText: "new" }] }] }));
-    await assert.rejects(client.run([source], source.id, 6, "new"), stale); await settled(); assert.equal(f.workspace.diagnostics().leases, 0);
+    await assert.rejects(client.run({ document: source, offset: 6, newName: "new" }).result, stale); await settled(); assert.equal(f.workspace.diagnostics().leases, 0);
     f.workspace.setCapabilities(f.other.id, { ...f.other.metadata.getSnapshot().capabilities, edit: [] });
     f.peer.onRequest("textDocument/rename", () => ({ changes: { [uri]: [{ range, newText: "new" }], [source.language!.uri]: [{ range, newText: "new" }] } }));
-    const plan = await client.run([source], source.id, 6, "new");
+    const plan = await client.run({ document: source, offset: 6, newName: "new" }).result;
     const applied = f.workspace.editDocuments(plan.documents.map(item => ({ documentId: item.target.document.documentId as typeof source.id,
         expectedRevision: item.target.document.revision, edits: item.edits, origin: "human" })));
     assert.equal(applied.applied, false);
@@ -162,7 +164,7 @@ test("server-proposed edits resolve through the same host policy and release tar
     const client = createLspActionClient(f.provider); t.after(client.dispose); const source = f.document();
     f.peer.onRequest("textDocument/codeAction", () => [{ title: "command", command: "fixture.command" }]);
     f.peer.onRequest("workspace/executeCommand", async () => f.peer.sendRequest("workspace/applyEdit", { edit: { changes: { [uri]: [{ range, newText: "new" }] } } }));
-    const batch = await client.run([source], source.id, 6, 10);
+    const batch = await client.run({ document: source, from: 6, to: 10 }).result;
     const receipt = await batch.execute(batch.actions[0]!, { snapshots: () => [f.document()], isCurrent: () => true,
         review: async (request, context) => { assert.equal(request.edit.documents[0]!.target.document.uri, uri);
             context.onCancel(() => { throw new Error("Review cancellation failure"); }); return { applied: false, failureReason: "Host declined" }; } });

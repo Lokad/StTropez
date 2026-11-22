@@ -1,10 +1,11 @@
 import { TextBuffer, Workspace } from "sttropez";
 import type { DocumentId } from "sttropez";
+import { createLspHoverClient, RpcError } from "sttropez/protocol";
 import { BrowserLspWorkspace, createCodeActionController, createCompletionController, createDiagnosticController, createDocumentColorController, createDocumentLinkController, createHoverController, createNavigationController, createRenameController, createSignatureController, mountAnchoredOverlay, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
 
 const workspace = new Workspace();
 const companionUri = "consumer+opaque:project/companion%2Fpart";
-const source = workspace.createTextResource({ scope: "consumer", resource: "source", variant: "working" }, "Source", { value: 'const saMORE = 1; // TODO\r\ncatalogue;\r\nlookup("a", );\r\nimport "sample-utils";\r\nconst color = "#abc";' }, undefined,
+const source = workspace.createTextResource({ scope: "consumer", resource: "source", variant: "working" }, "Source", { value: 'const saMORE = 1; // TODO\r\ncatalogue;\r\nlookup("a", );\r\nimport "sample-utils";\r\nconst color = "#abc";\r\n// 😀 probe' }, undefined,
     { language: { uri: "consumer+opaque:project/source", languageId: "generic" } });
 const companion = workspace.createTextResourceFromBuffer({ scope: "consumer", resource: "companion", variant: "working" }, "Companion", { buffer: TextBuffer.from("const catalogue = 1;\r\ncatalogue;\r\n") }, undefined,
     { language: { uri: companionUri, languageId: "generic" } });
@@ -122,7 +123,19 @@ colors.subscribe(() => {
     result.textContent = review ? review.edits.map(edit => edit.insert).join("\n") : state.status === "applied" ? "Color applied" : state.message;
 });
 const dispose = () => { if (disposed) return; disposed = true; stop(); controller.dispose(); diagnostics.dispose(); hover.dispose(); navigation.dispose(); rename.dispose(); actions.dispose(); signature.dispose(); links.dispose(); colors.dispose(); provider.dispose(); editor.dispose(); };
-const bridge = { text, select: (at: number) => editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: at, head: at }),
+async function probeTypedHover() {
+    const client = createLspHoverClient(provider), document = workspace.document(source.documentId);
+    try {
+        const request = { document, offset: text().indexOf("probe") };
+        const first = client.run(request); first.cancel();
+        try { await first.result; throw new Error("Cancelled hover resolved"); }
+        catch (error) { if (!(error instanceof RpcError && error.code === -32800)) throw error; }
+        const call = client.run(request), hover = await call.result;
+        call.cancel();
+        return hover?.isCurrent() ? hover.text : null;
+    } finally { client.dispose(); }
+}
+const bridge = { text, probeTypedHover, select: (at: number) => editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: at, head: at }),
     state: () => ({ provider: provider.snapshot(), editor: controller.getDiagnostics(), completion: controller.getSnapshot(), history: workspace.observeHistory(source.documentId).getSnapshot(), diagnostics: workspace.diagnostics(), notes, companion: companion.documentId, metrics: editor.snapshot(), errors }),
     showDiagnostic: () => {
         const state = diagnostics.getSnapshot(), first = state.diagnostics[0];

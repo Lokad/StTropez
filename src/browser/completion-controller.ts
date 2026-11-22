@@ -169,13 +169,15 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
         job = captured; counters.posted++; publish("LSP completion pending.");
         void (async () => {
             if (connecting) await connecting; if (captured.requestGeneration !== 0) return; if (!current(captured)) throw staleRequest("Completion capture changed.");
-            captured.call = completion.run(document, selected.head, {
+            captured.call = completion.run({
+                document, offset: selected.head,
                 context: invocation.kind === 2 ? { triggerKind: 2, triggerCharacter: invocation.character! } : { triggerKind: invocation.kind },
                 fallback: () => wordRange(document.buffer, selected.head), indentation: captured.indentation,
-                ...(previous?.batch ? { retain: previous.batch } : {})
-            }, async scope => {
-                if (options.prepareCompletion) await options.prepareCompletion(scope);
-                if (captured.requestGeneration !== 0 || !current(captured)) throw staleRequest("Completion capture changed.");
+                ...(previous?.batch ? { retain: previous.batch } : {}),
+                prepare: async scope => {
+                    if (options.prepareCompletion) await options.prepareCompletion(scope);
+                    if (captured.requestGeneration !== 0 || !current(captured)) throw staleRequest("Completion capture changed.");
+                },
             });
             const choices = await captured.call.result;
             if (captured.requestGeneration !== 0) return;

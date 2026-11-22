@@ -38,7 +38,7 @@ export type CodeActionControllerOptions = Readonly<{
     runCommand?: (command: CodeActionCommand) => CodeActionExecution | undefined; onError?: (error: unknown) => void;
 }>;
 type Client = ReturnType<typeof createLspActionClient>;
-type Batch = Awaited<ReturnType<Client["run"]>>;
+type Batch = Awaited<ReturnType<Client["run"]>["result"]>;
 type Job = {
     id: number; capture: CapturedViewRequest<TabTarget | undefined>; project: ReturnType<typeof retainEditProject>;
     timer?: number; invalid: boolean; batch?: Batch; selection?: LspCodeAction;
@@ -177,7 +177,7 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
             capture.signal.addEventListener("abort", () => expire(j), { once: true });
             const range = capture.selectionSet.ranges[capture.selectionSet.primary]!;
             timeout(j); publish({ ...empty, status: "pending", message: "Requesting code actions." });
-            void client.run([...j.project.documents.values()], view.documentId, Math.min(range.anchor, range.head), Math.max(range.anchor, range.head), options.prepareRequest).then(batch => {
+            void client.run({ document: capture.document, project: [...j.project.documents.values()], from: Math.min(range.anchor, range.head), to: Math.max(range.anchor, range.head), prepare: options.prepareRequest }).result.then(batch => {
                 j.batch = batch;
                 if (!current(j)) { expire(j); return; }
                 win.clearTimeout(j.timer); for (const action of batch.actions) if (action.edit) j.project.includeEdit(action.edit);

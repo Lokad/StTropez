@@ -13,7 +13,7 @@ const scopeFor = (f: ReturnType<typeof clientFixture>): LspCommandScope => ({ sn
             expectedRevision: change.target.document.revision, edits: change.edits, origin: "host", history: { kind: "refactor" } })));
     } });
 const run = async (client: ReturnType<typeof createLspActionClient>, f: ReturnType<typeof clientFixture>) => {
-    const doc = f.document(); return client.run([doc], doc.id, 0, 0);
+    const doc = f.document(); return client.run({ document: doc, from: 0, to: 0 }).result;
 };
 
 test("the direct runner snapshots command identity and arguments before host preparation", async t => {

@@ -1,33 +1,41 @@
-import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
-import { createLspClient, lspFeatureHandle } from "./lsp-client.ts";
+import { createLspClient, lspFeatureHandle, type LspProjectRequest } from "./lsp-client.ts";
 import { decodeLspLocations, definitionOriginRange, lspLocationUris } from "./lsp-features.ts";
-import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
+import type { LspWorkspace } from "./lsp-workspace.ts";
+
+export type LspDefinitionRequest = LspProjectRequest & Readonly<{ offset: number }>;
+export type LspNavigationRequest = LspDefinitionRequest & Readonly<{ kind: "definition" | "references"; includeDeclaration?: boolean }>;
+export type LspNavigationResult = Readonly<{ locations: ReturnType<typeof decodeLspLocations>; isCurrent: () => boolean }>;
+export type LspDefinitionPreview = Readonly<{ hasTargets: boolean; originRange: ReturnType<typeof definitionOriginRange>;
+    isCurrent: () => boolean; resolve: () => Promise<LspNavigationResult> }>;
 
 /** Captured read-only queries; the host chooses how to present each validated target. */
 export function createLspNavigationClient(provider: LspWorkspace) {
     const client = createLspClient(provider, "textDocument/definition", "textDocument/references");
-    const lookup = async (snapshots: readonly DocumentSnapshot[], origin: DocumentId, offset: number, kind: "definition" | "references", includeDeclaration: boolean, prepare?: LspPrepare) => {
-        const value = await client.request(snapshots, origin, kind === "definition" ? "textDocument/definition" : "textDocument/references", capture => ({
-            position: capture.index.at(offset), ...(kind === "references" ? { context: { includeDeclaration } } : {}) }), prepare).result;
-        const uris = value.decode(() => lspLocationUris(value.response, kind));
-        const load = async () => {
-            await value.resolveTargets(uris, "navigation");
-            const locations = value.decode(() => decodeLspLocations(value.response, kind, value.capture, value.targetForUri));
-            return Object.freeze({ locations, isCurrent: value.isCurrent });
-        };
-        let loading: ReturnType<typeof load> | undefined;
-        return { value, uris, resolve: async () => {
-            const result = await (loading ??= load()); return value.decode(() => result);
-        } };
-    };
+    type Reply = Parameters<Parameters<typeof client.request>[3]>[0];
+    function lookup<T>(request: LspNavigationRequest,
+        read: (reply: Reply, hasTargets: boolean, load: () => Promise<LspNavigationResult>) => T | Promise<T>) {
+        const { offset, kind, includeDeclaration = true } = request;
+        return client.request(request, kind === "definition" ? "textDocument/definition" : "textDocument/references", capture => ({
+            position: capture.index.at(offset), ...(kind === "references" ? { context: { includeDeclaration } } : {}) }), reply => {
+            const uris = reply.decode(() => lspLocationUris(reply.response, kind));
+            return read(reply, uris.length > 0, async () => {
+                await reply.resolveTargets(uris, "navigation");
+                const locations = reply.decode(() => decodeLspLocations(reply.response, kind, reply.capture, reply.targetForUri));
+                return Object.freeze({ locations, isCurrent: reply.isCurrent });
+            });
+        });
+    }
     return Object.freeze({ ...lspFeatureHandle(client),
-        prepareDefinition: async (snapshots: readonly DocumentSnapshot[], origin: DocumentId, offset: number, prepare?: LspPrepare) => {
-            const { value, uris, resolve } = await lookup(snapshots, origin, offset, "definition", true, prepare);
-            return Object.freeze({ hasTargets: uris.length > 0, originRange: value.decode(() => definitionOriginRange(value.response, value.capture, offset)),
-                isCurrent: value.isCurrent, resolve });
+        prepareDefinition: (request: LspDefinitionRequest) => {
+            const { offset } = request;
+            return lookup({ ...request, kind: "definition" }, (reply, hasTargets, load): LspDefinitionPreview => {
+                const originRange = reply.decode(() => definitionOriginRange(reply.response, reply.capture, offset));
+                let loading: Promise<LspNavigationResult> | undefined;
+                return Object.freeze({ hasTargets, originRange, isCurrent: reply.isCurrent, resolve: async () => {
+                    const result = await (loading ??= load()); return reply.decode(() => result);
+                } });
+            });
         },
-        run: async (snapshots: readonly DocumentSnapshot[], origin: DocumentId, offset: number, kind: "definition" | "references", includeDeclaration = true, prepare?: LspPrepare) => {
-            return (await lookup(snapshots, origin, offset, kind, includeDeclaration, prepare)).resolve();
-        },
+        run: (request: LspNavigationRequest) => lookup(request, (_reply, _hasTargets, load) => load()),
         snapshot: () => Object.freeze({ ...client.snapshot(), ...client.inspection(), busy: client.isBusy(), version: "LSP3.17", epoch: provider.getSnapshot().epoch }) });
 }

@@ -46,7 +46,7 @@ test("feature options for other documents preserve pending and completed capture
     assert.deepEqual(observed[0]!.triggerCharacters, ["["]); assert.equal(f.provider.snapshot().documents, 0); assert.equal(f.workspace.diagnostics().leases, 0);
     const entered = latch<void>(), answer = latch<unknown>(); let requests = 0;
     t.after(() => answer.resolve(null)); peer.rpc.onRequest("textDocument/signatureHelp", () => { requests++; entered.resolve(); return answer.promise; });
-    const pending = client.run(source, 1).result; void pending.catch(() => {}); await entered.promise;
+    const pending = client.run({ document: source, offset: 1 }).result; void pending.catch(() => {}); await entered.promise;
     const owner = f.provider.snapshot(), workspace = f.workspace.diagnostics(), events = [...peer.events];
     for (const document of [other, source, other]) assert.deepEqual(client.options(document)[0]!.triggerCharacters, [document === source ? "(" : "["]);
     await settled(); assert.equal(requests, 1); assert.deepEqual(f.provider.snapshot(), owner); assert.deepEqual(f.workspace.diagnostics(), workspace); assert.deepEqual(peer.events, events);
@@ -76,8 +76,7 @@ test("signature retriggers preserve the last resolved context through a cancelle
     const register = () => f.peers.at(-1)!.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "signature", method: "textDocument/signatureHelp", registerOptions: { documentSelector: null } }] });
     const handler = (params: { context: typeof contexts[number] }) => { contexts.push(params.context); if (pause) { pause = false; entered.resolve(); return held.promise; } return response; };
     peer.rpc.onRequest("textDocument/signatureHelp", handler); await register();
-    const run = (id = f.source.documentId, isRetrigger = true, activeSignatureHelp?: ReturnType<typeof help>) => client.run(f.workspace.document(id), 0,
-        { triggerKind: 3, isRetrigger, ...(activeSignatureHelp ? { activeSignatureHelp } : {}) }).result;
+    const run = (id = f.source.documentId, isRetrigger = true, activeSignatureHelp?: ReturnType<typeof help>) => client.run({ document: f.workspace.document(id), offset: 0, context: { triggerKind: 3, isRetrigger, ...(activeSignatureHelp ? { activeSignatureHelp } : {}) } }).result;
     const initial = await run(f.source.documentId, false); assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined);
     assert.ok(initial); assert.ok(initial.selectOverload(initial.signatures[1]!));
     pause = true; f.edit(); const pending = run(), rejected = assert.rejects(pending); await entered.promise;
@@ -92,7 +91,7 @@ test("signature retriggers preserve the last resolved context through a cancelle
     await run(f.companion.documentId); assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined); replacement.dispose();
     await run(f.companion.documentId, true, help("host choice")); assert.deepEqual(contexts.at(-1)!.activeSignatureHelp, help("host choice"));
     client.cancel(); await run(f.companion.documentId); assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined);
-    const context = { triggerKind: 3 as const, isRetrigger: true }, captured = client.run(f.workspace.document(f.companion.documentId), 0, context);
+    const context = { triggerKind: 3 as const, isRetrigger: true }, captured = client.run({ document: f.workspace.document(f.companion.documentId), offset: 0, context });
     context.isRetrigger = false; await captured.result;
     assert.equal(contexts.at(-1)!.isRetrigger, true); assert.deepEqual(contexts.at(-1)!.activeSignatureHelp, help("latest"));
     await peer.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "signature", method: "textDocument/signatureHelp" }] }); await register();
@@ -113,7 +112,7 @@ test("occurrences require current dynamic authority through withdrawal and recon
         const peer = f.peers.at(-1)!; peer.rpc.onRequest("textDocument/documentHighlight", () => [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, kind: 3 }]);
         await peer.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "occurrences", method: "textDocument/documentHighlight", registerOptions: { documentSelector: [{ language: "generic-language" }] } }] });
     };
-    const run = () => client.run(f.workspace.document(f.source.documentId), 0).result;
+    const run = () => client.run({ document: f.workspace.document(f.source.documentId), offset: 0 }).result;
     await assert.rejects(run(), error => error instanceof RpcError && error.code === -32601);
     await register(); const first = await run(); assert.equal(first.items.length, 1);
     await f.peers[0]!.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "occurrences", method: "textDocument/documentHighlight" }] });
@@ -128,7 +127,7 @@ test("folding honors dynamic capability withdrawal and requires fresh authority 
         const peer = f.peers.at(-1)!; peer.rpc.onRequest("textDocument/foldingRange", () => [{ startLine: 0, endLine: 1 }]);
         await peer.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "folds", method: "textDocument/foldingRange", registerOptions: { documentSelector: [{ language: "generic-language" }] } }] });
     };
-    const run = () => client.run(f.workspace.document(f.source.documentId)).result;
+    const run = () => client.run({ document: f.workspace.document(f.source.documentId) }).result;
     await assert.rejects(run(), error => error instanceof RpcError && error.code === -32601);
     await register(); const first = await run(); assert.equal(first.ranges.length, 1);
     await f.peers[0]!.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "folds", method: "textDocument/foldingRange" }] });
@@ -138,7 +137,7 @@ test("folding honors dynamic capability withdrawal and requires fresh authority 
 });
 test("selected language clients share one binding and decode their independent results", async t => {
     const { f, signature, links, colors, rgba, doc } = await languageFixture(t);
-    const [help, linkBatch, colorBatch] = await Promise.all([signature.run(doc, 1).result, links.run(doc), colors.run(doc)]);
+    const [help, linkBatch, colorBatch] = await Promise.all([signature.run({ document: doc, offset: 1 }).result, links.run({ document: doc }).result, colors.run({ document: doc }).result]);
     assert.equal(help!.signatures[0]!.activeParameter, 0);
     assert.equal((await linkBatch.resolve(linkBatch.items[0]!)).target, "host+opaque:%2F unknown");
     const choices = await colorBatch.presentations(colorBatch.items[0]!, rgba), after = doc.buffer.apply(choices[0]!.edits).buffer;
@@ -151,7 +150,7 @@ test("selected language clients share one binding and decode their independent r
 
 test("cancelling a lazy color presentation leaves independent language results current", async t => {
     const { peer, signature, links, colors, rgba, doc } = await languageFixture(t);
-    const [help, linkBatch, colorBatch] = await Promise.all([signature.run(doc, 1).result, links.run(doc), colors.run(doc)]);
+    const [help, linkBatch, colorBatch] = await Promise.all([signature.run({ document: doc, offset: 1 }).result, links.run({ document: doc }).result, colors.run({ document: doc }).result]);
     const entered = latch<void>(), late = latch<unknown>(); t.after(() => late.resolve([]));
     peer.rpc.onRequest("textDocument/colorPresentation", () => { entered.resolve(); return late.promise; });
     const pending = colorBatch.presentations(colorBatch.items[0]!, rgba);
@@ -163,7 +162,7 @@ test("cancelling a lazy color presentation leaves independent language results c
 
 test("editing expires a captured document link before lazy resolution dispatch", async t => {
     const { f, peer, links, doc } = await languageFixture(t);
-    const batch = await links.run(doc); let resolutions = 0;
+    const batch = await links.run({ document: doc }).result; let resolutions = 0;
     peer.rpc.onRequest("documentLink/resolve", () => { resolutions++; return {}; });
     f.edit(); assert.equal(batch.isCurrent(), false);
     await assert.rejects(batch.resolve(batch.items[0]!), error => error instanceof RpcError && error.code === -32801);
@@ -172,11 +171,11 @@ test("editing expires a captured document link before lazy resolution dispatch",
 
 test("signature capability removal expires its result and prevents further dispatch", async t => {
     const { f, peer, signature, links, doc } = await languageFixture(t);
-    const help = await signature.run(doc, 1).result;
+    const help = await signature.run({ document: doc, offset: 1 }).result;
     await peer.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "language-0", method: "textDocument/signatureHelp" }] });
     assert.equal(help!.isCurrent(), false);
-    await assert.rejects(signature.run(doc, 1).result, error => error instanceof RpcError && error.code === -32601);
-    assert.equal((await links.run(f.workspace.document(doc.id))).items.length, 1);
+    await assert.rejects(signature.run({ document: doc, offset: 1 }).result, error => error instanceof RpcError && error.code === -32601);
+    assert.equal((await links.run({ document: f.workspace.document(doc.id) }).result).items.length, 1);
 });
 
 async function languageFixture(t: test.TestContext) {
@@ -262,7 +261,7 @@ test("feature scopes wait for their captured project without flushing unrelated 
         if (blocked && ms === 0) { queued.add(callback); return () => { queued.delete(callback); }; }
         const timer = setTimeout(callback, ms); return () => clearTimeout(timer);
     } }), client = createLspHoverClient(f.provider), other = f.provider.createScope(); t.after(client.dispose);
-    const run = () => client.run(f.workspace.document(f.source.documentId), 0).result;
+    const run = () => client.run({ document: f.workspace.document(f.source.documentId), offset: 0 }).result;
     await run(); blocked = true; f.edit(f.companion.documentId, "large\n".repeat(10_000)); other.attachDocument(f.companion.documentId);
     let completed = false, flushed = false;
     void run().then(() => { completed = true; }, () => {}); void other.flush().then(() => { flushed = true; }, () => {});
@@ -472,7 +471,7 @@ test("pending diagnostics map consecutive edits and undo without renewing provid
 
 test("feature requests require explicit reconnect after transport loss", async t => {
     const f = fixture(t), client = createLspHoverClient(f.provider); t.after(client.dispose);
-    const run = () => client.run(f.workspace.document(f.source.documentId), 0).result;
+    const run = () => client.run({ document: f.workspace.document(f.source.documentId), offset: 0 }).result;
     await run(); f.peers[0]!.transport.dispose(); await settled();
     for (let i = 0; i < 3; i++) await assert.rejects(run(), /explicit.*connect/i);
     assert.equal(f.peers.length, 1); await f.provider.reconnect(); await run(); assert.equal(f.peers.length, 2);

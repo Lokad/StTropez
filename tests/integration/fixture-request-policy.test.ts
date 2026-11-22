@@ -33,12 +33,12 @@ test("fixture hover policy belongs to the captured request across overlapping sc
         const prepared = latch<void>(); let count = 0;
         const rendezvous = () => { if (++count === 2) prepared.resolve(); return prepared.promise; };
         const outcomes = await Promise.allSettled([
-            first.run(documents[0]!, 8, async session => {
+            first.run({ document: documents[0]!, offset: 8, prepare: async session => {
                 const policy = { delay: 0, fault: "failure" };
                 await owner.prepareRequest(session, "textDocument/hover", policy); policy.fault = "markup";
                 await rendezvous();
-            }).result,
-            second.run(other, 8, async session => { await owner.prepareRequest(session, "textDocument/hover", { delay: 0 }); await rendezvous(); }).result,
+            } }).result,
+            second.run({ document: other, offset: 8, prepare: async session => { await owner.prepareRequest(session, "textDocument/hover", { delay: 0 }); await rendezvous(); } }).result,
         ]);
         assert.equal(outcomes[0]!.status, "rejected");
         if (outcomes[0]!.status === "rejected") assert.ok(outcomes[0]!.reason instanceof RpcError && outcomes[0]!.reason.code === -32001);
@@ -48,24 +48,24 @@ test("fixture hover policy belongs to the captured request across overlapping sc
 
     // Cancellation during preparation discards unsent policy; a held old hook cannot block retry.
     const started = latch<void>(), beforeHeld = packets.filter(packet => packet.method === "textDocument/hover").length;
-    const old = first.run(documents[0]!, 8, async session => {
+    const old = first.run({ document: documents[0]!, offset: 8, prepare: async session => {
         await owner.prepareRequest(session, "textDocument/hover", { delay: 0, fault: "failure" }); started.resolve(); await held.promise;
-    });
+    } });
     const rejected = assert.rejects(old.result, cancelled); await started.promise; old.cancel(); await rejected;
-    const replacement = await first.run(documents[0]!, 8, session => owner.prepareRequest(session, "textDocument/hover", { delay: 0, fault: "markup" })).result;
+    const replacement = await first.run({ document: documents[0]!, offset: 8, prepare: session => owner.prepareRequest(session, "textDocument/hover", { delay: 0, fault: "markup" }) }).result;
     assert.ok(replacement?.text.includes("<img")); held.resolve();
     await scope.request("fixture/state").result;
     assert.equal(packets.filter(packet => packet.method === "textDocument/hover").length, beforeHeld + 1);
 
     // Wait for the actual wire request, not an arbitrary sleep, before cancelling its delay.
     const sent = latch<void>(); onHoverSent = sent.resolve;
-    const delayed = first.run(documents[0]!, 8, session => owner.prepareRequest(session, "textDocument/hover", { delay: 1000, fault: "failure" }));
+    const delayed = first.run({ document: documents[0]!, offset: 8, prepare: session => owner.prepareRequest(session, "textDocument/hover", { delay: 1000, fault: "failure" }) });
     const delayRejected = assert.rejects(delayed.result, cancelled); await sent.promise; onHoverSent = () => {};
     const wire = packets.filter(packet => packet.method === "textDocument/hover").at(-1)!;
     assert.deepEqual(wire.params?._fixture, { delay: 1000, fault: "failure" }); delayed.cancel(); await delayRejected;
     assert.ok(packets.some(packet => packet.method === "$/cancelRequest" && packet.params?.id === wire.id));
-    assert.ok((await second.run(documents[0]!, 8, session => owner.prepareRequest(session, "textDocument/hover", { delay: 0 })).result)?.text.includes("sample"));
-    assert.ok((await first.run(documents[0]!, 8).result)?.text.startsWith("Fixture host+fixture:"));
+    assert.ok((await second.run({ document: documents[0]!, offset: 8, prepare: session => owner.prepareRequest(session, "textDocument/hover", { delay: 0 }) }).result)?.text.includes("sample"));
+    assert.ok((await first.run({ document: documents[0]!, offset: 8 }).result)?.text.startsWith("Fixture host+fixture:"));
     assert.equal(packets.filter(packet => packet.method === "textDocument/hover").at(-1)!.params?._fixture, undefined);
 
     const binding = scope.attachDocument(documents[0]!.id);
@@ -119,13 +119,13 @@ test("fixture faults stay local to overlapping language requests", { timeout: 15
         const session = completion[index]!; session.setDocuments([document]); await session.flush(); await prepare(session);
         return session.requestDocument("textDocument/completion", session.attachDocument(document.id), index => ({ position: index.at(offset) })).result;
     });
-    for (const kind of ["definition", "references"] as const) await overlap(`textDocument/${kind}`, (index, prepare) => navigation[index]!.run([document], document.id, offset, kind, true, prepare));
-    await overlap("textDocument/rename", (index, prepare) => renames[index]!.run([document], document.id, offset, "shade", prepare));
-    await overlap("textDocument/codeAction", (index, prepare) => actions[index]!.run([document], document.id, offset, offset, prepare));
-    await overlap("textDocument/signatureHelp", (index, prepare) => signatures[index]!.run(document, 12, undefined, prepare).result);
-    await overlap("textDocument/documentLink", (index, prepare) => links[index]!.run(document, prepare));
-    await overlap("textDocument/documentColor", (index, prepare) => colors[index]!.run(document, prepare));
-    const discovered = await Promise.all(colors.map(client => client.run(document)));
+    for (const kind of ["definition", "references"] as const) await overlap(`textDocument/${kind}`, (index, prepare) => navigation[index]!.run({ document, offset, kind, includeDeclaration: true, prepare }).result);
+    await overlap("textDocument/rename", (index, prepare) => renames[index]!.run({ document, offset, newName: "shade", prepare }).result);
+    await overlap("textDocument/codeAction", (index, prepare) => actions[index]!.run({ document, from: offset, to: offset, prepare }).result);
+    await overlap("textDocument/signatureHelp", (index, prepare) => signatures[index]!.run({ document, offset: 12, prepare }).result);
+    await overlap("textDocument/documentLink", (index, prepare) => links[index]!.run({ document, prepare }).result);
+    await overlap("textDocument/documentColor", (index, prepare) => colors[index]!.run({ document, prepare }).result);
+    const discovered = await Promise.all(colors.map(client => client.run({ document }).result));
     assert.ok(discovered.every(batch => batch.items.length === 1));
     await overlap("textDocument/colorPresentation", (index, prepare) => discovered[index]!.presentations(discovered[index]!.items[0]!, { red: 0, green: 0, blue: 1, alpha: 1 }, prepare));
 }));
@@ -135,11 +135,11 @@ test("fixture link captures retain nested aliases and independent resolve policy
     const links = [own(createLspLinkClient(owner)), own(createLspLinkClient(owner))];
     // Distinct views of the same source capture different alias maps, including nested data.
     const prepared = latch<void>(); let count = 0;
-    const batches = await Promise.all(links.map((client, index) => client.run(document, async session => {
+    const batches = await Promise.all(links.map((client, index) => client.run({ document, prepare: async session => {
         const policy = { delay: 0, aliases: [{ module: "sample-utils", uri: index ? secondUri : firstUri }] };
         await owner.prepareRequest(session, "textDocument/documentLink", policy); policy.aliases[0]!.uri = "host+fixture:mutated";
         if (++count === 2) prepared.resolve(); await prepared.promise;
-    })));
+    } }).result));
     const resolved = await Promise.all(batches.map(batch => batch.resolve(batch.items[0]!)));
     assert.deepEqual(resolved.map(link => link.target), [firstUri, secondUri]);
 
@@ -151,7 +151,7 @@ test("fixture link captures retain nested aliases and independent resolve policy
     ]) as { target: string; _fixture?: unknown }[];
     assert.deepEqual(responses.map(link => link.target), ["host+fixture:outside-project", firstUri]);
     assert.ok(responses.every(link => link._fixture === undefined));
-    const unconfigured = await links[0]!.run(document);
+    const unconfigured = await links[0]!.run({ document }).result;
     assert.equal((await unconfigured.resolve(unconfigured.items[0]!)).target, defaultUri);
 
     const binding = scope.attachDocument(document.id);
@@ -167,8 +167,7 @@ test("fixture action captures retain module and resolve policies", { timeout: 15
     const { owner, scope, document, offset, own } = await languagePolicy(fixture);
     const actions = [own(createLspActionClient(owner)), own(createLspActionClient(owner))];
     const binding = scope.attachDocument(document.id);
-    const actionBatches = await Promise.all(actions.map((client, index) => client.run([document], document.id, offset, offset,
-        session => owner.prepareRequest(session, "textDocument/codeAction", { delay: 0, module: index ? "other-utils" : "first-utils" }))));
+    const actionBatches = await Promise.all(actions.map((client, index) => client.run({ document, from: offset, to: offset, prepare: session => owner.prepareRequest(session, "textDocument/codeAction", { delay: 0, module: index ? "other-utils" : "first-utils" }) }).result));
     for (const [index, batch] of actionBatches.entries()) assert.ok(batch.actions[0]!.edit!.documents[0]!.edits[0]!.insert.includes(index ? "other-utils" : "first-utils"));
     const actionResults = await Promise.allSettled(actionBatches.map((batch, index) => batch.resolve(batch.actions[2]!,
         session => owner.prepareRequest(session, "codeAction/resolve", { delay: 0, ...(index ? {} : { fault: "failure" }) }))));

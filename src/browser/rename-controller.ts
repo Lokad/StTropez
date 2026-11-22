@@ -108,7 +108,7 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
             j.timer = win.setTimeout(() => fail(j, new Error("Rename request timed out.")), 30000);
             const offset = source.selectionSet.ranges[source.selectionSet.primary]!.head;
             publish({ name, status: "pending", message: "Preparing rename preview…" });
-            void client.run([...j.project.documents.values()], view.documentId, offset, name, options.prepareRequest?.()).then(edit => {
+            void client.run({ document: j.source.document, project: [...j.project.documents.values()], offset, newName: name, prepare: options.prepareRequest?.() }).result.then(edit => {
                 if (j !== job) return;
                 j.edit = edit;
                 if (!current(j)) { expire(j); return; }

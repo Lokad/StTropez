@@ -1,9 +1,8 @@
 import { ProtocolDecodeError, staleRequest } from "./wire.ts";
-import { createLspClient, lspFeatureHandle } from "./lsp-client.ts";
+import { createLspClient, lspFeatureHandle, type LspPositionRequest } from "./lsp-client.ts";
 import { lspRangeOffsets } from "./lsp-features.ts";
 import type { LspDocumentCapture } from "./lsp-session.ts";
-import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
-import type { DocumentSnapshot } from "../core/workspace.ts";
+import type { LspWorkspace } from "./lsp-workspace.ts";
 
 export type LspDocumentHighlight = Readonly<{ from: number; to: number; kind: "text" | "read" | "write" }>;
 export type LspDocumentHighlights = Readonly<{ items: readonly LspDocumentHighlight[];
@@ -42,9 +41,9 @@ export function decodeLspDocumentHighlights(value: unknown, capture: LspDocument
 export function createLspHighlightClient(provider: LspWorkspace) {
     const client = createLspClient(provider, "textDocument/documentHighlight");
     return Object.freeze({ ...lspFeatureHandle(client),
-        run: (document: DocumentSnapshot, offset: number, prepare?: LspPrepare) => {
-            const call = client.request([document], document.id, "textDocument/documentHighlight", capture => ({ position: capture.index.at(offset) }), prepare);
-            return Object.freeze({ cancel: call.cancel, result: call.result.then(value => value.decode(() => Object.freeze({
-                revision: document.revision, ...decodeLspDocumentHighlights(value.response, value.capture), isCurrent: value.isCurrent }))) });
+        run: (request: LspPositionRequest) => {
+            const { document, offset } = request;
+            return client.request(request, "textDocument/documentHighlight", capture => ({ position: capture.index.at(offset) }), value => value.decode(() => Object.freeze({
+                revision: document.revision, ...decodeLspDocumentHighlights(value.response, value.capture), isCurrent: value.isCurrent })));
         } });
 }

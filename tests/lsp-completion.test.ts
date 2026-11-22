@@ -17,7 +17,7 @@ test("completion owns immutable sorted choices, captured options and lazy fallba
     const f = clientFixture(t), client = createLspCompletionClient(f.provider); t.after(client.dispose);
     const indentation = { tabSize: 2, insertSpaces: false }, options = { indentation, fallback: { from: 0, to: 2, replaceTo: 5 } };
     f.peer.onRequest("textDocument/completion", () => [{ label: "z", sortText: "2" }, { label: "first", sortText: "1" }, { label: "second", sortText: "1" }]);
-    const call = client.run(f.document(), 2, options); indentation.tabSize = 8; options.fallback.replaceTo = 10;
+    const call = client.run({ document: f.document(), offset: 2, ...options }); indentation.tabSize = 8; options.fallback.replaceTo = 10;
     const batch = await call.result;
     assert.deepEqual(batch.items.map(item => item.label), ["first", "second", "z"]);
     assert.ok(Object.isFrozen(batch)); assert.ok(Object.isFrozen(batch.items)); assert.ok(batch.items.every(Object.isFrozen));
@@ -25,7 +25,7 @@ test("completion owns immutable sorted choices, captured options and lazy fallba
     assert.deepEqual(batch.items[0]!.commitCharacters, [";"]); assert.ok(batch.isCurrent()); call.cancel(); assert.ok(batch.isCurrent());
     let fallbackReads = 0;
     f.peer.onRequest("textDocument/completion", () => [choice()]);
-    await client.run(f.document(), 2, { fallback: () => { fallbackReads++; throw new Error("Unused fallback"); } }).result;
+    await client.run({ document: f.document(), offset: 2, fallback: () => { fallbackReads++; throw new Error("Unused fallback"); } }).result;
     assert.equal(fallbackReads, 0); assert.equal(batch.isCurrent(), false); assert.equal(client.snapshot().received, 2);
     assert.equal(f.sent("textDocument/didOpen").length, 1); assert.equal(f.workspace.diagnostics().leases, 1);
 });
@@ -33,7 +33,7 @@ test("completion owns immutable sorted choices, captured options and lazy fallba
 test("proved prefix adoption reads the actual Core change during notification and resolves against fresh synchronized text", async t => {
     const f = clientFixture(t), client = createLspCompletionClient(f.provider); t.after(client.dispose);
     const wire = choice(); f.peer.onRequest("textDocument/completion", () => [wire]);
-    const initial = await client.run(f.document(), 2).result; let rebased: LspCompletionBatch | undefined;
+    const initial = await client.run({ document: f.document(), offset: 2 }).result; let rebased: LspCompletionBatch | undefined;
     const stop = f.workspace.observeDocument(f.source.documentId).subscribe(() => {
         assert.equal(initial.isCurrent(), false); assert.equal(initial.isBindingCurrent(), true);
         rebased = client.rebase(initial, { ...f.document(), change: null }); // The supplied change cannot replace Core's proof.
@@ -56,10 +56,10 @@ test("proved prefix adoption reads the actual Core change during notification an
 test("incomplete refresh can retain a choice, cancel its replacement, and never publish the late list", async t => {
     const f = clientFixture(t), client = createLspCompletionClient(f.provider); t.after(client.dispose);
     const wire = choice(); f.peer.onRequest("textDocument/completion", () => ({ isIncomplete: true, items: [wire] }));
-    const initial = await client.run(f.document(), 2).result; type(f); const rebased = client.rebase(initial, f.document())!; assert.ok(rebased);
+    const initial = await client.run({ document: f.document(), offset: 2 }).result; type(f); const rebased = client.rebase(initial, f.document())!; assert.ok(rebased);
     const entered = latch<void>(), answer = latch<unknown>(); t.after(() => answer.resolve([]));
     f.peer.onRequest("textDocument/completion", () => { entered.resolve(); return answer.promise; });
-    const refresh = client.run(f.document(), 3, { retain: rebased, context: { triggerKind: 3 } }), rejected = assert.rejects(refresh.result, cancelled);
+    const refresh = client.run({ document: f.document(), offset: 3, retain: rebased, context: { triggerKind: 3 } }), rejected = assert.rejects(refresh.result, cancelled);
     await entered.promise; assert.ok(rebased.isCurrent()); refresh.cancel(); await rejected; assert.ok(rebased.isCurrent());
     f.peer.onRequest("completionItem/resolve", () => ({ ...wire, detail: "kept" }));
     const resolved = await client.resolve(rebased, rebased.items[0]!).result; assert.ok(resolved.batch.isCurrent());
@@ -72,7 +72,7 @@ test("incomplete refresh can retain a choice, cancel its replacement, and never 
 test("prefix adoption cancels an old resolve while a replacement resolves the rebased item", async t => {
     const f = clientFixture(t), client = createLspCompletionClient(f.provider); t.after(client.dispose);
     const wire = choice(); f.peer.onRequest("textDocument/completion", () => [wire]);
-    const initial = await client.run(f.document(), 2).result, entered = latch<void>(), answer = latch<unknown>(); t.after(() => answer.resolve(wire));
+    const initial = await client.run({ document: f.document(), offset: 2 }).result, entered = latch<void>(), answer = latch<unknown>(); t.after(() => answer.resolve(wire));
     f.peer.onRequest("completionItem/resolve", () => { entered.resolve(); return answer.promise; });
     const first = client.resolve(initial, initial.items[0]!), rejected = assert.rejects(first.result, cancelled); await entered.promise;
     type(f); const rebased = client.rebase(initial, f.document())!; assert.ok(rebased); await rejected;
@@ -85,7 +85,7 @@ test("prefix adoption cancels an old resolve while a replacement resolves the re
 test("shortening a typed prefix cancels resolution and stops at the provider's original query", async t => {
     const f = clientFixture(t), client = createLspCompletionClient(f.provider); t.after(client.dispose);
     const wire = choice(); f.peer.onRequest("textDocument/completion", () => [wire]);
-    const queried = await client.run(f.document(), 2).result;
+    const queried = await client.run({ document: f.document(), offset: 2 }).result;
     type(f); const extended = client.rebase(queried, f.document())!;
     const entered = latch<void>(), answer = latch<unknown>(); t.after(() => answer.resolve(wire));
     f.peer.onRequest("completionItem/resolve", () => { entered.resolve(); return answer.promise; });
@@ -104,14 +104,14 @@ test("shortening a typed prefix cancels resolution and stops at the provider's o
 test("host edits, copied batches and failed preparation never acquire fresh completion authority", async t => {
     const f = clientFixture(t), client = createLspCompletionClient(f.provider); t.after(client.dispose);
     f.peer.onRequest("textDocument/completion", () => [choice()]);
-    const batch = await client.run(f.document(), 2).result;
+    const batch = await client.run({ document: f.document(), offset: 2 }).result;
     assert.throws(() => client.resolve({ ...batch }, batch.items[0]!), stale);
     const before = f.document(); f.workspace.edit({ documentId: before.id, expectedRevision: before.revision, origin: "host",
         edits: [{ from: 2, to: 2, insert: "x" }] });
     assert.equal(client.rebase(batch, { ...f.document(), change: { ...f.document().change!, origin: "human", kind: "typing" } }), undefined);
     assert.equal(batch.isCurrent(), false); assert.throws(() => client.resolve(batch, batch.items[0]!), stale);
     for (const error of [new TypeError("host"), new RangeError("host")]) {
-        await assert.rejects(client.run(f.document(), 3, {}, async () => { throw error; }).result, actual => actual === error);
+        await assert.rejects(client.run({ document: f.document(), offset: 3, prepare: async () => { throw error; } }).result, actual => actual === error);
     }
     assert.equal(client.snapshot().received, 1); assert.equal(f.sent("completionItem/resolve").length, 0);
 });
@@ -121,14 +121,14 @@ test("cancellation skips unstarted preparation, supersedes held work and preserv
     const entered = latch<void>(), prepared = latch<void>(); t.after(() => prepared.resolve());
     f.peer.onRequest("textDocument/completion", () => [choice()]);
     let preparations = 0;
-    const unstarted = client.run(f.document(), 2, {}, async () => { preparations++; });
+    const unstarted = client.run({ document: f.document(), offset: 2, prepare: async () => { preparations++; } });
     const stopped = assert.rejects(unstarted.result, cancelled); unstarted.cancel(); await stopped; await settled();
     assert.equal(preparations, 0); assert.equal(f.sent("textDocument/completion").length, 0);
-    const first = client.run(f.document(), 2, {}, async () => { entered.resolve(); await prepared.promise; }), rejected = assert.rejects(first.result, cancelled);
-    await entered.promise; const second = await client.run(f.document(), 2).result; await rejected; prepared.resolve(); await settled();
+    const first = client.run({ document: f.document(), offset: 2, prepare: async () => { entered.resolve(); await prepared.promise; } }), rejected = assert.rejects(first.result, cancelled);
+    await entered.promise; const second = await client.run({ document: f.document(), offset: 2 }).result; await rejected; prepared.resolve(); await settled();
     assert.ok(second.isCurrent()); assert.equal(f.sent("textDocument/completion").length, 1);
     f.peer.onRequest("textDocument/completion", () => [null]);
-    await assert.rejects(client.run(f.document(), 2).result, ProtocolDecodeError);
+    await assert.rejects(client.run({ document: f.document(), offset: 2 }).result, ProtocolDecodeError);
     assert.equal(client.snapshot().received, 2); assert.equal(second.isCurrent(), false); assert.equal(f.provider.snapshot().documents, 0);
 });
 
@@ -136,7 +136,7 @@ test("unsupported lazy snippets omit one choice and preserve current alternative
     const f = clientFixture(t), client = createLspCompletionClient(f.provider); t.after(client.dispose);
     const unsupported = { ...choice("a"), insertTextFormat: 2 }, other = choice("b");
     f.peer.onRequest("textDocument/completion", () => [unsupported, other]);
-    const batch = await client.run(f.document(), 2).result;
+    const batch = await client.run({ document: f.document(), offset: 2 }).result;
     f.peer.onRequest("completionItem/resolve", () => ({ ...unsupported, textEdit: { ...unsupported.textEdit, newText: "${TM_FILENAME}" } }));
     const result = await client.resolve(batch, batch.items[0]!).result;
     assert.equal(result.item, null); assert.ok(result.reason); assert.deepEqual(result.batch.items.map(item => item.label), ["b"]);
@@ -149,11 +149,11 @@ test("registration and URI replacement expire retained choices, while cancellati
     const f = clientFixture(t),
         client = createLspCompletionClient(f.provider), diagnostics = f.provider.createScope();
     t.after(() => { client.dispose(); diagnostics.dispose(); }); const binding = diagnostics.attachDocument(f.source.documentId);
-    f.peer.onRequest("textDocument/completion", () => [choice()]); const batch = await client.run(f.document(), 2).result;
+    f.peer.onRequest("textDocument/completion", () => [choice()]); const batch = await client.run({ document: f.document(), offset: 2 }).result;
     assert.equal(f.workspace.diagnostics().leases, 1);
     await f.peer.sendRequest("client/registerCapability", { registrations: [{ id: "completion", method: "textDocument/completion", registerOptions: { documentSelector: null, resolveProvider: true } }] });
     assert.equal(batch.isBindingCurrent(), false); assert.throws(() => client.resolve(batch, batch.items[0]!), stale);
-    const fresh = await client.run(f.document(), 2).result;
+    const fresh = await client.run({ document: f.document(), offset: 2 }).result;
     const original = f.document().language!;
     f.workspace.setDocumentLanguage(f.source.documentId, { ...original, languageId: "other" });
     f.workspace.setDocumentLanguage(f.source.documentId, original);
@@ -161,7 +161,7 @@ test("registration and URI replacement expire retained choices, while cancellati
     assert.equal(diagnostics.captureBinding(binding), undefined);
     const replacing = f.provider.createScope(); t.after(replacing.dispose); replacing.attachDocument(f.source.documentId);
     assert.equal(fresh.isCurrent(), false); assert.throws(() => client.resolve(fresh, fresh.items[0]!), stale);
-    const next = await client.run(f.document(), 2).result; client.cancel(); assert.equal(next.isCurrent(), false);
+    const next = await client.run({ document: f.document(), offset: 2 }).result; client.cancel(); assert.equal(next.isCurrent(), false);
     client.dispose(); assert.ok(f.provider.snapshot().documents > 0); assert.equal(f.provider.getSnapshot().phase, "ready");
     assert.equal(diagnostics.synchronized(binding), undefined, "URI replacement expired the original diagnostics binding.");
 });

@@ -46,7 +46,7 @@ export function createLspHighlightController(editor: TextEditor,
             && workspace.document(documentId).buffer === document.buffer && view.getSnapshot().selectionSet === selections;
         try {
             if (!client.options(document).length) { publish("unavailable", document.revision, caret); return; }
-            const call = client.run(document, caret); publish("pending", document.revision, caret);
+            const call = client.run({ document, offset: caret }); publish("pending", document.revision, caret);
             void call.result.then(batch => {
                 if (!current() || !batch.isCurrent()) return;
                 result = batch;

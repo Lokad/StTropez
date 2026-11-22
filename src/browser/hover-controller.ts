@@ -112,7 +112,7 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
                 view.folding.subscribe(changed), workspace.observeDocument(doc.id).subscribe(changed));
             if (tab) current.stops.push(workspace.tabs.subscribe(changed));
             counts.posted++;
-            const result = calls.run({}, operation => operation.step(client.run(operation.document, offset, options.prepareRequest)));
+            const result = calls.run({}, operation => operation.step(client.run({ document: operation.document, offset, prepare: options.prepareRequest })));
             current.timer = win.setTimeout(() => {
                 if (inspection !== current || !current.pending) return;
                 current.pending = false; current.failure = "Symbol information timed out."; counts.failed++; calls.cancel(); render(current);

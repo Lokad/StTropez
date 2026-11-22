@@ -24,8 +24,15 @@ separately. Incoming edits and command execution have their own
 | Occurrences | `createLspHighlightClient`; browser `createLspHighlightController` | `textDocument/documentHighlight` |
 | Folding | [Folding client and discovery controller](folding.md#language-server-discovery) | `textDocument/foldingRange` |
 
-Import headless clients from `sttropez/protocol`. Use a separate client for each independent request.
-`run` captures the documents, `cancel` expires the work and results, and `dispose` ends participation.
+Import headless clients from `sttropez/protocol`. Pass the source snapshot to `run({ document, ... })`.
+Offsets are UTF-16 code units in that snapshot. Navigation, rename and code actions also accept a
+`project` array containing the same source revision. Omitting it captures the source alone.
+An optional `prepare` callback runs after synchronization and before dispatch.
+
+Read `call.result` for the decoded reply. `call.cancel()` stops a pending request, including target
+loading. After settlement it leaves the reply available. A new request or `client.cancel()` expires
+the previous intent and its follow-ups. Use separate clients for concurrent intents and dispose
+each client when its owner closes.
 The [provider scope](language-server.md#workspace-ownership-and-synchronization) synchronizes files.
 Your host tracks view, focus and edit permission.
 
@@ -115,8 +122,8 @@ pages the list, checks help links and opens related locations.
 ### Completion
 
 `createLspCompletionClient(provider)` owns headless completion requests, decoding, resolution
-and retained choice batches. `run(document, offset, options?, prepare?)` returns `{ result,
-cancel }`; its result is an immutable `LspCompletionBatch` with `items`, `omitted`, `incomplete`,
+and retained choice batches. `run({ document, offset })` resolves through `call.result`
+to an immutable `LspCompletionBatch` with `items`, `omitted`, `incomplete`,
 the local `document`/`offset`, and separate `isCurrent()` and `isBindingCurrent()` guards.
 Items use stable `sortText` order. Options capture indentation, a lazy fallback edit range and
 trigger context. `snapshot().received` counts completion-list replies admitted for decoding,
@@ -153,7 +160,7 @@ export async function completionLabels(
 ) {
     const client = createLspCompletionClient(provider);
     try {
-        const batch = await client.run(document, offset).result;
+        const batch = await client.run({ document, offset }).result;
         return batch.isCurrent() ? batch.items.map(item => item.label) : [];
     } finally {
         client.dispose();
@@ -274,7 +281,7 @@ fold projection, and replacing the tab expire the result. `cancel()` dismisses i
 releases the controller. For a separate analysis service, pass its observable `diagnostics` and
 `diagnosticRevision` snapshot through the `diagnostics` option. The lookup uses the painted revision.
 
-`createLspHoverClient(provider).run(document, offset, prepare?)` returns `{ result, cancel }`. A
+`createLspHoverClient(provider).run({ document, offset })` returns `{ result, cancel }`. A
 non-null reply has `text`, formatted `content`, optional `range` and `isCurrent`. `decodeLspHover`
 accepts Hover/null and legacy strings, MarkedString arrays and code fragments. Legacy strings use
 Markdown. `{ language, value }` preserves code. Your host places and dismisses the popup, even when
@@ -335,7 +342,7 @@ describe the highlighted text. Use the snapshot's `anchor` to position the popup
 while help is open requests fresh information. Blur, composition and `cancel()` dismiss it.
 Disposing the editor also disposes its controller.
 
-`createLspSignatureClient(provider).run(document, offset, context?, prepare?)` returns a cancellable
+`createLspSignatureClient(provider).run({ document, offset, context })` returns a cancellable
 call. Read `options(document)` for [provider triggers](language-server.md#feature-capability-queries).
 `LspSignatureContext` carries the trigger kind, optional character, retrigger flag and optional
 `activeSignatureHelp`. Omit it for explicit invocation.
@@ -389,13 +396,13 @@ A result list can open several choices as the caret moves. Set
 Without a callback, the controller publishes the result through `getSnapshot()`
 and `subscribe()`. Call `cancel()` to dismiss navigation and `dispose()` to detach it.
 
-`createLspNavigationClient(provider).run(project, originId, offset, kind, includeDeclaration?,
-prepare?)` returns a promise of `{ locations, isCurrent }`, with `kind` equal to `"definition"`
+`createLspNavigationClient(provider).run({ document, project, offset, kind })` provides a call whose
+result contains `{ locations, isCurrent }`, with `kind` equal to `"definition"`
 or `"references"`. `includeDeclaration` defaults to true and is sent for references. Standard
 reference locations contain no declaration flag, so the client does not infer one. Valid positions
 reach the server without requiring a local word match.
 
-For a custom pointer UI, `prepareDefinition(project, originId, offset)` returns a preview with
+For a custom pointer UI, `prepareDefinition({ document, project, offset }).result` resolves to a preview with
 `hasTargets`, `originRange`, `isCurrent()` and `resolve()`. It validates the reply without
 loading a destination. The editor underlines the provider's origin range when supplied and
 uses a bounded local word for a plain location. Calling `resolve()` loads the captured targets.
@@ -476,7 +483,7 @@ export function bindRenameReview(
 }
 ```
 
-Call `createLspRenameClient(provider).run(project, originId, offset, newName, prepare?)` for a
+Call `createLspRenameClient(provider).run({ document, project, offset, newName }).result` for a
 workspace edit plan. A null reply gives an empty plan. The server checks language naming rules. Your
 host sets the name field’s input limits.
 
@@ -533,7 +540,7 @@ cannot edit the replacement. For a direct fix, an explicit choice button can pas
 `select` that checks the resolved action before confirming it. Commands also require a host
 `runCommand` handler that owns authorization and review of any subsequent edits.
 
-`createLspActionClient(provider, options).run(project, originId, from, to, prepare?)` returns
+`createLspActionClient(provider, options).run({ document, project, from, to }).result` resolves to
 validated `actions`, currentness guards, `supports(command)`, `resolve(action)` and
 `execute(action, scope)`. Requests carry trigger kind Invoked and overlapping current versioned
 diagnostics, preserving their metadata. The request range is primary; it does not assert completed
@@ -643,7 +650,7 @@ Changing the selected format, source, selection, folds or edit permission invali
 Apply action. Read-only sources allow review. A successful Apply preserves relative carets inside
 replaced literals and groups all edits into one Undo. Matching text preserves revision and history.
 
-`createLspColorClient(provider).run(document, prepare?)` returns `{ items, isCurrent, presentations }`.
+`createLspColorClient(provider).run({ document }).result` resolves to `{ items, isCurrent, presentations }`.
 `decodeLspDocumentColors` validates every range and RGBA value. `decodeLspColor` requires finite
 channels in `[0, 1]`. `presentations(item, rgba, prepare?)` requires an item from the captured list
 and returns validated choices for that same source.
@@ -656,7 +663,7 @@ Labels need not be color literals; the proposed-color input grammar belongs to t
 
 ### Occurrences
 
-`createLspHighlightClient(provider).run(document, offset, prepare?)` returns a cancellable call
+`createLspHighlightClient(provider).run({ document, offset })` returns a cancellable call
 whose result includes `items`, `isCurrent` and indexed `intersect(from, to)`. The decoder
 `decodeLspDocumentHighlights` validates every range and text/read/write kind; an omitted kind
 means text. It retains all results within input limits, including overlapping ranges. Visible-row

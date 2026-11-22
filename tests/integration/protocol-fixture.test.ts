@@ -83,15 +83,15 @@ test("generic host profile joins selector registration, space-triggered lazy sni
     assert.ok(workspace.edit({ documentId: before.id, expectedRevision: before.revision, origin: "human", edits: plan.edits, history: { kind: "replace" } }).applied);
     assert.equal(document().text(), "// resolved import\r\nconst sample = 1;\nsample; sample(value)");
     assert.ok(workspace.undo({ documentId: before.id, expectedRevision: document().revision }).applied); assert.equal(document().text(), initial);
-    const occurrences = await highlights.run(document(), 19).result;
+    const occurrences = await highlights.run({ document: document(), offset: 19 }).result;
     assert.deepEqual(occurrences.items, [{ from: 6, to: 12, kind: "text" }, { from: 18, to: 24, kind: "text" }]);
     await scope.request("fixture/completionStyle", { style: "edits" }).result;
     assert.equal(scope.canRequest("textDocument/completion", binding), false);
     scope.setDocuments(snapshots()); await scope.flush();
 
-    const denied = await defaultActions.run(snapshots(), before.id, 0, 0), unavailable = denied.actions.find(item => item.command?.command === "fixture.unadvertised");
+    const denied = await defaultActions.run({ document: document(), from: 0, to: 0 }).result, unavailable = denied.actions.find(item => item.command?.command === "fixture.unadvertised");
     assert.ok(unavailable?.command); assert.equal(denied.supports(unavailable.command), false); defaultActions.dispose();
-    const batch = await actions.run(snapshots(), before.id, 0, 0), action = batch.actions.find(item => item.command?.command === "fixture.unadvertised");
+    const batch = await actions.run({ document: document(), from: 0, to: 0 }).result, action = batch.actions.find(item => item.command?.command === "fixture.unadvertised");
     assert.ok(action?.edit); assert.ok(action.command); assert.equal(batch.supports(action.command), true);
     assert.equal(scope.commandNames().includes("fixture.unadvertised"), false);
     let reviews = 0;

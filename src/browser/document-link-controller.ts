@@ -28,7 +28,7 @@ export type DocumentLinkController = Observable<DocumentLinkSnapshot> & Readonly
 type Client = ReturnType<typeof createLspLinkClient>;
 type Job = {
     client: Client; project: ReturnType<typeof retainDocuments>; capture?: CapturedViewRequest<TextEditor["tab"]>;
-    reply?: Awaited<ReturnType<Client["run"]>>; invalid: boolean; timer?: number;
+    reply?: Awaited<ReturnType<Client["run"]>["result"]>; invalid: boolean; timer?: number;
 };
 const empty: readonly DocumentLinkChoice[] = Object.freeze([]);
 const idle: DocumentLinkSnapshot = Object.freeze({ status: "idle", links: empty, message: "" });
@@ -120,7 +120,7 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
             bindCapture(j, source); j.project.include(source.document);
             for (const doc of options.documents?.() ?? []) j.project.include(doc);
             publish("pending");
-            j.reply = await client.run(source.document, options.prepareRequest?.());
+            j.reply = await client.run({ document: source.document, prepare: options.prepareRequest?.() }).result;
             if (!current(j)) { expire(j); return; }
             finishCapture(j); publish("ready", Object.freeze(j.reply.items.map(choice)));
         } catch (error) { fail(j, error); }

@@ -135,8 +135,8 @@ Snapshots also give the revision, counts and available groups.
 
 ### Language-server discovery
 
-`createLspFoldingClient(provider).run(document, prepare?)` from `sttropez/protocol` supplies a
-cancellable captured result with revision, ranges and an `isCurrent` guard. Enable
+`createLspFoldingClient(provider).run({ document })` from `sttropez/protocol` returns a
+cancellable call. Its `result` resolves to the captured revision, ranges and an `isCurrent` guard. Enable
 `textDocument/foldingRange` in the [provider configuration](language-server.md), and preserve
 the guard when returning a batch to the folding controller. Dispose the client with its host
 attachment. Capability registration and reconnect use the shared provider session.

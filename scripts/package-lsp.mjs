@@ -41,6 +41,7 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         const depth = (await state()).history.undoDepth; await button("Apply completion").click(); assert.equal((await state()).history.undoDepth, depth + 1);
         assert.ok((await text()).startsWith("// fixture import\r\nconst sampleValue")); await input.press("Control+z"); assert.equal(await text(), typed);
         await button("Hover").click(); await expect.poll(async () => (await state()).notes.hover).toContain("Fixture consumer+opaque:");
+        assert.equal(await page.evaluate(() => window.publicLsp.probeTypedHover()), "Fixture consumer+opaque:project/source:5:6");
         const beforeNavigation = (await state()).diagnostics.leases;
         await button("Definition").click(); await button("Open definition").click();
         await expect.poll(async () => (await state()).notes.navigation).toBe((await state()).companion);

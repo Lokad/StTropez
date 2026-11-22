@@ -1,8 +1,7 @@
 import { ProtocolDecodeError, staleRequest } from "./wire.ts";
-import { createLspClient, lspFeatureHandle } from "./lsp-client.ts";
+import { createLspClient, lspFeatureHandle, type LspDocumentRequest } from "./lsp-client.ts";
 import type { LspDocumentCapture } from "./lsp-session.ts";
-import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
-import type { DocumentSnapshot } from "../core/workspace.ts";
+import type { LspWorkspace } from "./lsp-workspace.ts";
 import type { DiscoveredFold } from "../core/fold-discovery.ts";
 
 /** Complete-line LSP folding; malformed shapes fail the batch, invalid line ranges are ignored. */
@@ -27,9 +26,9 @@ export function decodeLspFoldingRanges(value: unknown, capture: LspDocumentCaptu
 export function createLspFoldingClient(provider: LspWorkspace) {
     const client = createLspClient(provider, "textDocument/foldingRange");
     return Object.freeze({ ...lspFeatureHandle(client),
-        run: (document: DocumentSnapshot, prepare?: LspPrepare) => {
-            const call = client.request([document], document.id, "textDocument/foldingRange", () => ({}), prepare);
-            return Object.freeze({ cancel: call.cancel, result: call.result.then(value => value.decode(() =>
-                Object.freeze({ revision: document.revision, ranges: decodeLspFoldingRanges(value.response, value.capture), isCurrent: value.isCurrent }))) });
+        run: (request: LspDocumentRequest) => {
+            const { document } = request;
+            return client.request(request, "textDocument/foldingRange", () => ({}), value => value.decode(() =>
+                Object.freeze({ revision: document.revision, ranges: decodeLspFoldingRanges(value.response, value.capture), isCurrent: value.isCurrent })));
         } });
 }

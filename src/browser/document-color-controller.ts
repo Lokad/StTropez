@@ -32,7 +32,7 @@ type Client = ReturnType<typeof createLspColorClient>;
 type Capture = CapturedViewRequest<TextEditor["tab"]>;
 type Preview = { capture: Capture; reference: DocumentColorChoice; proposed: LspColor; result?: readonly LspColorPresentation[] };
 type Job = { client: Client; documents: ReturnType<typeof retainDocuments>; source: Capture; invalid: boolean; timer?: number;
-    reply?: Awaited<ReturnType<Client["run"]>>; registration?: number; preview?: Preview };
+    reply?: Awaited<ReturnType<Client["run"]>["result"]>; registration?: number; preview?: Preview };
 const empty = Object.freeze([]);
 const idle: DocumentColorSnapshot = Object.freeze({ status: "idle", colors: empty, presentations: empty, review: null, message: "", changed: false });
 
@@ -150,7 +150,7 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
             j.documents.include(source.document);
             source.signal.addEventListener("abort", () => { if (!j.reply) expire(j); }, { once: true });
             startTimer(j); publish("discovering");
-            const reply = await client.run(source.document, options.prepareRequest?.("discovery"));
+            const reply = await client.run({ document: source.document, prepare: options.prepareRequest?.("discovery") }).result;
             if (!current(j) || !reply.isCurrent()) { expire(j); return; }
             j.reply = reply; j.registration = provider.getSnapshot().registrationGeneration; source.cancel(); win.clearTimeout(j.timer);
             publish("ready", { colors: Object.freeze(reply.items.map((item, index) => reference(item, index, source.document.revision))) });

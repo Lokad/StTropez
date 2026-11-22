@@ -1,12 +1,16 @@
 import { rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError } from "./wire.ts";
-import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
+import type { DocumentSnapshot } from "../core/workspace.ts";
 import type { JsonValue } from "./wire.ts";
-import type { LspDocument, LspDocumentCapture, LspDocumentFeature, LspDocumentSnapshot } from "./lsp-session.ts";
-import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
+import type { LspCall, LspDocument, LspDocumentCapture, LspDocumentFeature, LspDocumentSnapshot } from "./lsp-session.ts";
+import { sameDocument, type LspPrepare, type LspWorkspace } from "./lsp-workspace.ts";
 import { createLspTargets } from "./lsp-targets.ts";
 import type { LspTargetContext } from "./lsp-targets.ts";
 
-type Request = { generation: number; pending: number; cancelled: boolean; reject: (error: Error) => void;
+export type LspDocumentRequest = Readonly<{ document: DocumentSnapshot; prepare?: LspPrepare | undefined }>;
+export type LspPositionRequest = LspDocumentRequest & Readonly<{ offset: number }>;
+export type LspProjectRequest = LspDocumentRequest & Readonly<{ project?: readonly DocumentSnapshot[] }>;
+
+type Request = { generation: number; pending: number; cancelled: boolean; reject: (error: unknown) => void;
     cancellation: Promise<never>; cleanups: Set<() => void>; identities: ReadonlyMap<LspDocument, LspDocumentSnapshot> };
 const cancelled = () => cancelledRequest("LSP feature request cancelled.");
 const stale = () => staleRequest("Captured LSP documents changed.");
@@ -35,13 +39,13 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
         for (const document of documents.values()) document.dispose();
         documents = new Map();
     };
-    const invalidate = (releaseDocuments: boolean) => {
+    const invalidate = (releaseDocuments: boolean, reason: unknown = cancelled()) => {
         const previous = latest;
         latest = undefined;
         generation++;
         if (previous) {
             previous.cancelled = true;
-            previous.reject(cancelled());
+            previous.reject(reason);
             for (const cleanup of [...previous.cleanups]) cleanup(); previous.cleanups.clear();
         }
         scope.cancel();
@@ -60,97 +64,102 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
         queueNotify();
         try { return await Promise.race([work(), request.cancellation]); }
         catch (error) {
-            if (current(request)) invalidate(true);
+            if (current(request)) invalidate(true, error);
             throw error;
         }
         finally { request.pending--; if (current(request)) notify(); }
     };
-    const request = (snapshots: readonly DocumentSnapshot[], origin: DocumentId, method: LspDocumentFeature,
-        params: (capture: LspDocumentCapture) => Record<string, JsonValue>, prepare?: LspPrepare, wireMethod?: "completionItem/resolve") => {
+    type Params = (capture: LspDocumentCapture) => Record<string, JsonValue>;
+    async function receive(op: Request, { document, project, prepare }: LspProjectRequest, method: LspDocumentFeature,
+        params: Params, wireMethod?: "completionItem/resolve") {
+        if (project && !sameDocument(project.find(snapshot => snapshot.id === document.id), document)) throw stale();
+        documents = scope.setDocuments(project ?? [document]);
+        op.identities = new Map([...documents.values()].map(document => [document, document.getSnapshot()]));
+        const target = documents.get(document.id);
+        if (!target) throw new Error("LSP source is outside the captured project.");
+        const connection = scope.getSnapshot();
+        if (connection.phase === "disconnected" && connection.epoch !== 0) throw closedConnection("LSP connection requires an explicit host connect or reconnect.");
+        await scope.ensureConnected();
+        validate(op);
+        await scope.flush([...documents.values()]);
+        validate(op);
+        if (prepare) await prepare(scope);
+        validate(op);
+        let capture: LspDocumentCapture | undefined, captures: ReadonlyMap<string, LspDocumentCapture> | undefined;
+        const captureParams = (value: LspDocumentCapture) => {
+            validate(op);
+            captures = scope.captureProject(); capture = value;
+            return params(value);
+        };
+        const call = wireMethod ? (() => {
+            if (!scope.canRequest(method, target)) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable.");
+            const value = scope.synchronized(target); if (!value) throw stale();
+            const body = captureParams(value); validate(op);
+            return scope.request(wireMethod, body);
+        })() : scope.requestDocument(method, target, (_index, _document, value) => captureParams(value));
+        const response = await call.result;
+        validate(op);
+        const isGenerationCurrent = () => current(op) && scope.getSnapshot().phase === "ready"
+            && scope.getSnapshot().epoch === capture!.epoch && scope.getSnapshot().registrationGeneration === capture!.registrationGeneration;
+        const targets = createLspTargets(captures!, scope.resolveTarget, { source: capture!.document, isCurrent: isGenerationCurrent, reportError: scope.reportError,
+            onCancel: listener => { op.cleanups.add(listener); return () => { op.cleanups.delete(listener); }; } });
+        const isCurrent = targets.isCurrent;
+        if (!isCurrent()) throw stale();
+        return Object.freeze({ response, capture: capture!, captures: captures!, target, isCurrent, isGenerationCurrent, targetForUri: targets.get,
+            resolveTargets: (uris: readonly string[], purpose: LspTargetContext["purpose"]) => wait(op, async () => {
+                const stop = scope.subscribe(() => { if (!isCurrent()) void Promise.resolve().then(() => {
+                    if (current(op) && !isCurrent()) { invalidate(true); notify(); }
+                }); });
+                try { await targets.resolve(uris, purpose); validate(op); if (!isCurrent()) throw stale(); }
+                finally { stop(); }
+            }),
+            decode: <T>(read: () => T): T => {
+                try { validate(op); if (!isCurrent()) throw stale(); return read(); }
+                catch (error) {
+                    if (current(op)) { invalidate(true, error); notify(); }
+                    throw error;
+                }
+            },
+            follow: (feature: LspDocumentFeature, wireMethod: string, values: JsonValue, prepareFollow?: LspPrepare) => wait(op, async () => {
+                if (!isCurrent()) throw stale();
+                if (prepareFollow) await prepareFollow(scope);
+                validate(op);
+                if (!isCurrent()) throw stale();
+                if (!scope.canRequest(feature, target)) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable.");
+                const body = { ...values as Record<string, JsonValue> };
+                delete body.textDocument;
+                const next = feature === wireMethod ? scope.requestDocument(feature, target, () => { validate(op); return body; }) : scope.request(wireMethod, values);
+                const result = await next.result;
+                validate(op);
+                if (!isCurrent()) throw stale();
+                return result;
+            }) });
+    }
+    function request<T>(input: LspProjectRequest, method: LspDocumentFeature, params: Params,
+        read: (response: Awaited<ReturnType<typeof receive>>) => T | Promise<T>, wireMethod?: "completionItem/resolve"): LspCall<T> {
         if (disposed) throw new Error("LSP feature client is disposed.");
         invalidate(false);
-        let reject!: (error: Error) => void;
+        let reject!: (error: unknown) => void;
         const cancellation = new Promise<never>((_resolve, no) => { reject = no; });
         const op: Request = { generation, identities: new Map(), pending: 1, cancelled: false, cancellation, reject, cleanups: new Set() };
         latest = op;
-        const work = (async () => {
-            documents = scope.setDocuments(snapshots);
-            op.identities = new Map([...documents.values()].map(document => [document, document.getSnapshot()]));
-            const target = documents.get(origin);
-            if (!target) throw new Error("LSP source is outside the captured project.");
-            const connection = scope.getSnapshot();
-            if (connection.phase === "disconnected" && connection.epoch !== 0) throw closedConnection("LSP connection requires an explicit host connect or reconnect.");
-            await scope.ensureConnected();
-            validate(op);
-            await scope.flush([...documents.values()]);
-            validate(op);
-            if (prepare) await prepare(scope);
-            validate(op);
-            let capture: LspDocumentCapture | undefined, captures: ReadonlyMap<string, LspDocumentCapture> | undefined;
-            const captureParams = (value: LspDocumentCapture) => {
-                validate(op);
-                captures = scope.captureProject(); capture = value;
-                return params(value);
-            };
-            const call = wireMethod ? (() => {
-                if (!scope.canRequest(method, target)) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable.");
-                const value = scope.synchronized(target); if (!value) throw stale();
-                const body = captureParams(value); validate(op);
-                return scope.request(wireMethod, body);
-            })() : scope.requestDocument(method, target, (_index, _document, value) => captureParams(value));
-            const response = await call.result;
-            validate(op);
-            const isGenerationCurrent = () => current(op) && scope.getSnapshot().phase === "ready"
-                && scope.getSnapshot().epoch === capture!.epoch && scope.getSnapshot().registrationGeneration === capture!.registrationGeneration;
-            const targets = createLspTargets(captures!, scope.resolveTarget, { source: capture!.document, isCurrent: isGenerationCurrent, reportError: scope.reportError,
-                onCancel: listener => { op.cleanups.add(listener); return () => { op.cleanups.delete(listener); }; } });
-            const isCurrent = targets.isCurrent;
-            if (!isCurrent()) throw stale();
-            return Object.freeze({ response, capture: capture!, captures: captures!, target, isCurrent, isGenerationCurrent, targetForUri: targets.get,
-                resolveTargets: (uris: readonly string[], purpose: LspTargetContext["purpose"]) => wait(op, async () => {
-                    const stop = scope.subscribe(() => { if (!isCurrent()) void Promise.resolve().then(() => {
-                        if (current(op) && !isCurrent()) { invalidate(true); notify(); }
-                    }); });
-                    try { await targets.resolve(uris, purpose); validate(op); if (!isCurrent()) throw stale(); }
-                    finally { stop(); }
-                }),
-                decode: <T>(read: () => T): T => {
-                    try { validate(op); if (!isCurrent()) throw stale(); return read(); }
-                    catch (error) {
-                        if (current(op)) { invalidate(true); notify(); }
-                        throw error;
-                    }
-                },
-                follow: (feature: LspDocumentFeature, wireMethod: string, values: JsonValue, prepareFollow?: LspPrepare) => wait(op, async () => {
-                    if (!isCurrent()) throw stale();
-                    if (prepareFollow) await prepareFollow(scope);
-                    validate(op);
-                    if (!isCurrent()) throw stale();
-                    if (!scope.canRequest(feature, target)) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable.");
-                    const body = { ...values as Record<string, JsonValue> };
-                    delete body.textDocument;
-                    const next = feature === wireMethod ? scope.requestDocument(feature, target, () => { validate(op); return body; }) : scope.request(wireMethod, values);
-                    const result = await next.result;
-                    validate(op);
-                    if (!isCurrent()) throw stale();
-                    return result;
-                }) });
-        })();
+        let finished = false;
+        const work = receive(op, input, method, params, wireMethod).then(value => { guard(op); return read(value); });
         const result = Promise.race([work, cancellation]).catch(error => {
             if (current(op)) invalidate(true);
             throw error;
         }).finally(() => {
-            op.pending--;
+            finished = true; op.pending--;
             if (latest === op || !latest) notify();
         });
         queueNotify();
         // Completed calls may be released by a view without invalidating their published result.
         return Object.freeze({ result, cancel: () => {
-            if (op.pending < 1 || op.cancelled) return;
+            if (finished || op.cancelled) return;
             if (latest === op) invalidate(false);
             else { op.cancelled = true; op.reject(cancelled()); }
         } });
-    };
+    }
     return Object.freeze({ methods, scope, request, notify, getSnapshot: scope.getSnapshot,
         subscribe: (listener: () => void) => {
             if (disposed) throw new Error("LSP feature client is disposed.");

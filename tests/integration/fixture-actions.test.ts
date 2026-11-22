@@ -27,9 +27,9 @@ test("independent action clients retain repeatable lazy previews on an unchanged
     const f = fixture(context), first = createLspActionClient(f.owner); context.defer(() => first.dispose());
     const second = createLspActionClient(f.owner); context.defer(() => second.dispose());
     const documents = f.documents(), source = documents[0]!;
-    const one = await first.run(documents, source.id, 21, 25), action = one.actions.find(item => item.resolve);
+    const one = await first.run({ document: source, project: documents, from: 21, to: 25 }).result, action = one.actions.find(item => item.resolve);
     assert.ok(action);
-    const two = await second.run(documents, source.id, 21, 25), other = two.actions.find(item => item.resolve);
+    const two = await second.run({ document: source, project: documents, from: 21, to: 25 }).result, other = two.actions.find(item => item.resolve);
     assert.ok(other); assert.equal(one.isCurrent(), true); assert.equal(two.isCurrent(), true);
     const resolved = await one.resolve(action); assert.ok(resolved.edit);
     assert.deepEqual(resolved.edit.documents[0]!.edits, [{ from: 21, to: 25, insert: "DONE" }]);
