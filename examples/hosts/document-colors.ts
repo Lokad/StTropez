@@ -1,3 +1,4 @@
+import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId, Workspace } from "../../src/index.ts";
 import { createDocumentColorController } from "../../src/browser/index.ts";
 import type { DecorationLayer, DocumentColorChoice, DocumentColorController, TextEditor } from "../../src/browser/index.ts";
@@ -156,7 +157,7 @@ export class HostDocumentColors {
             this.syncSwatches();
         } catch (error) { detach(); throw error; }
         editor.signal.addEventListener("abort", detach, { once: true, signal: events.signal });
-        editor.input.addEventListener("focus", () => { this.active = s; this.publish(); }, { signal: events.signal });
+        onSourceFocus(editor, events.signal, () => { this.active = s; this.publish(); });
         for (const type of ["beforeinput", "compositionstart", "paste", "cut"]) editor.input.addEventListener(type, () => {
             if (this.owner?.editor.view.documentId === editor.view.documentId) this.cancel();
         }, { signal: events.signal });

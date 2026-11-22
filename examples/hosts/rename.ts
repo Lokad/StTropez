@@ -1,3 +1,4 @@
+import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId, Workspace } from "../../src/index.ts";
 import { createRenameController } from "../../src/browser/index.ts";
 import type { RenameController, RenamePreview, RenameSnapshot, TextEditor } from "../../src/browser/index.ts";
@@ -104,7 +105,7 @@ export class HostRenameTools {
                 run: () => { if (this.options.open && !this.options.open()) return false; this.active = session; this.prompt(); return true; } }, { keys: ["F2"] });
             events.signal.addEventListener("abort", command.dispose, { once: true });
         } catch (error) { session.stop(); throw error; }
-        editor.input.addEventListener("focus", () => { this.active = session; this.publish(); }, { signal: events.signal });
+        onSourceFocus(editor, events.signal, () => { this.active = session; this.publish(); });
         for (const event of ["beforeinput", "compositionstart", "paste", "cut"]) editor.input.addEventListener(event, () => {
             if (this.owner && this.owner !== session && this.workspace.document(editor.view.documentId).key.variant === "working") this.cancel();
         }, { signal: events.signal });

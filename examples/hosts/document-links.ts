@@ -1,3 +1,4 @@
+import { onSourceFocus } from "./source-focus.ts";
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, DocumentSnapshot, SelectionSet, TabId, Workspace } from "../../src/index.ts";
 import { createDocumentLinkController } from "../../src/browser/index.ts";
@@ -96,10 +97,10 @@ export class HostDocumentLinks {
                 events.signal.addEventListener("abort", command.dispose, { once: true });
             }
         } catch (error) { detach(); throw error; }
-        editor.input.addEventListener("focus", () => {
+        onSourceFocus(editor, events.signal, () => {
             if (this.active !== session && this.cell.get().status === "resolving" && !this.presenting) this.cancel();
             this.active = session; this.publish();
-        }, { signal: events.signal });
+        });
         for (const type of ["beforeinput", "compositionstart", "paste", "cut"]) editor.input.addEventListener(type, () => {
             const uri = this.workspace.document(editor.view.documentId).language?.uri;
             if (!this.presenting && uri && this.route?.documents.has(uri)) this.cancel();

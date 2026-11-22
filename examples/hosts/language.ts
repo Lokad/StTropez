@@ -1,3 +1,4 @@
+import { onSourceFocus } from "./source-focus.ts";
 import { bindFindCommands } from "../shared/find-commands.ts";
 import { createFindController, createRegexFindBackend } from "../../src/browser/index.ts";
 import type { TextEditor, FindController, FindSnapshot } from "../../src/browser/index.ts";
@@ -92,7 +93,7 @@ export class HostLanguageTools {
         const target = this.workspace.tabs.capture(tab), session: Session = { id, target, editor, presentation, initialized: false }, listeners = new AbortController();
         this.bindCommands(session, listeners);
         this.sessions.set(id, session); this.attachProvider(session);
-        editor.input.addEventListener("focus", () => this.activate(session), { signal: listeners.signal });
+        onSourceFocus(editor, listeners.signal, () => this.activate(session));
         this.resume(session); return this.detachSession(session, listeners);
     }
     attachReferenceFind(id: string, editor: TextEditor, presentation: EditingPresentation, reference: () => ComparisonBaseline | null, target: TabTarget): () => void {
@@ -101,7 +102,7 @@ export class HostLanguageTools {
         if (!this.ownsSession(session)) throw new Error("Reference Find requires its captured view and baseline.");
         this.bindCommands(session, listeners);
         this.sessions.set(id, session);
-        editor.input.addEventListener("focus", () => this.activate(session), { signal: listeners.signal });
+        onSourceFocus(editor, listeners.signal, () => this.activate(session));
         // A host remount can restore the logical field target while the toolbar has focus.
         this.resume(session);
         return this.detachSession(session, listeners);

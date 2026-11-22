@@ -80,6 +80,14 @@ for (const host of ["plain", "react"]) {
         await setup(page, host, text); await button(page, "Open source review").click(); await waitForDomain(page); await input(page).focus();
         await page.evaluate(to => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: to }]); }, text.indexOf("// #region"));
         await button(page, "Fold selected lines").click(); await waitForDomain(page); const before = await snapshot(page);
+        if (!large) {
+            const fold = page.getByRole("region", { name: "Primary source", exact: true }).locator(".st-fold-button").first();
+            await input(page, "Secondary source").focus();
+            await fold.focus();
+            await expect(fold).toBeFocused();
+            expect((await snapshot(page)).bindings.language.active).toBe("secondary");
+            await input(page).focus();
+        }
         // Analysis is resource/fold-scoped; selection movement during its request must remain usable.
         expect(await button(page, "Discover domain regions").evaluate((node, head) => {
             (node as HTMLButtonElement).click(); const f = window.hostFixture, state = f.snapshot();

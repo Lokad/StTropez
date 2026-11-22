@@ -1,3 +1,4 @@
+import { onSourceFocus } from "./source-focus.ts";
 import { createFoldRegions, createSelectionSet, FoldIndex } from "../../src/index.ts";
 import type { DocumentId, DocumentView, FoldRange, FoldingSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
@@ -72,7 +73,7 @@ export class HostDomainTools {
         this.data.set(editor.view, data); const session = { token, id, editor, layer, data, target: this.workspace.tabs.capture(tab) }, listeners = new AbortController(); this.sessions.set(token, session);
         const changed = () => { this.sync(session); if (this.job?.session === session && !this.current(this.job)) this.invalidate(this.job); };
         const stops = [this.workspace.observeDocument(editor.view.documentId).subscribe(changed), editor.view.folding.subscribe(changed), this.workspace.tabs.subscribe(changed), this.workspace.resourceForDocument(editor.view.documentId).metadata.subscribe(changed)];
-        editor.input.addEventListener("focus", () => { this.active = session; this.sync(session); }, { signal: listeners.signal });
+        onSourceFocus(editor, listeners.signal, () => { this.active = session; this.sync(session); });
         for (const event of ["compositionstart", "beforeinput", "paste", "cut"] as const) editor.input.addEventListener(event, () => {
             if (this.job?.session.editor.view.documentId === editor.view.documentId) this.cancel();
         }, { signal: listeners.signal });

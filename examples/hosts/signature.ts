@@ -1,3 +1,4 @@
+import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId } from "../../src/index.ts";
 import { createSignatureController } from "../../src/browser/index.ts";
 import type { SignatureController, SignatureSnapshot, TextEditor } from "../../src/browser/index.ts";
@@ -61,17 +62,17 @@ export class HostSignatureTools {
                 return this.options.prepare!(this.delay, fault)(access);
             } } : {}),
         });
-        const focus = () => { this.active = session; this.publish(); };
+        const focusEvents = new AbortController();
         const stop = controller.subscribe(() => { if (this.active === session) this.publish(); });
         const session: Session = { editor, controller, stop: () => {
             if (!this.sessions.delete(session)) return;
             const counts = controller.getDiagnostics();
             this.retired.requested += counts.requested; this.retired.applied += counts.applied;
             if (this.active === session) this.active = undefined;
-            editor.input.removeEventListener("focus", focus); stop(); controller.dispose(); this.publish();
+            focusEvents.abort(); stop(); controller.dispose(); this.publish();
         } };
-        this.sessions.add(session); editor.input.addEventListener("focus", focus);
-        if (editor.getSnapshot().focused) focus();
+        this.sessions.add(session);
+        onSourceFocus(editor, focusEvents.signal, () => { this.active = session; this.publish(); });
         return session.stop;
     }
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid signature delay."); this.delay = value; }

@@ -1,3 +1,4 @@
+import { onSourceFocus } from "./source-focus.ts";
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, DocumentSnapshot, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { createNavigationController, createNavigationHistory } from "../../src/browser/index.ts";
@@ -81,7 +82,7 @@ export class HostNavigationTools {
             }
             this.publish();
         });
-        editor.input.addEventListener("focus", () => { this.active = session; this.publish(); }, { signal: listeners.signal });
+        onSourceFocus(editor, listeners.signal, () => { this.active = session; this.publish(); });
         for (const name of ["compositionstart", "beforeinput", "paste", "cut"] as const) editor.input.addEventListener(name, () => {
             if (!this.presenting && this.job?.sources.has(editor.view.documentId)) this.cancel();
         }, { signal: listeners.signal });

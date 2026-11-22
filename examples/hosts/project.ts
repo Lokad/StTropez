@@ -1,3 +1,4 @@
+import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, CodeActionCommand, CodeActionExecution, TextEditor } from "../../src/browser/index.ts";
@@ -146,7 +147,7 @@ export class HostProjectTools {
     readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ status: "idle", message: "Register again with current working snapshots." }); };
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
         const session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor }, events = new AbortController(); this.sessions.set(session.token, session);
-        editor.input.addEventListener("focus", () => { this.active = session; this.publish(); }, { signal: events.signal });
+        onSourceFocus(editor, events.signal, () => { this.active = session; this.publish(); });
         for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.job?.documents.has(editor.view.documentId)) this.cancel(); }, { signal: events.signal });
         let detached = false;
         return () => { if (detached) return; detached = true; if (this.job?.origin === session) this.cancel(); events.abort(); this.sessions.delete(session.token);
