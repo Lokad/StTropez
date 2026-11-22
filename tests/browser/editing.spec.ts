@@ -683,7 +683,8 @@ test("a rebound chord belongs to its editor and leaves host field editing local"
     const keys = await page.evaluate(() => {
         window.editingFixture.setText("abc");
         const { commands, keymap } = window.editingFixture;
-        const field = document.createElement("input"); document.body.append(field); field.focus();
+        const host = document.createElement("div"), field = document.createElement("input");
+        document.body.append(host); host.attachShadow({ mode: "open" }).append(field); field.focus();
         let calls = 0, enabled = true;
         const command = commands.register({ id: "sample.action", label: "Sample action", enabled: () => enabled, run: () => { calls++; } });
         const keys = "Ctrl+k Ctrl+j";
@@ -698,7 +699,7 @@ test("a rebound chord belongs to its editor and leaves host field editing local"
         field.addEventListener("keydown", forward);
         document.body.addEventListener("keydown", forward);
         const press = (key: string, isComposing = false) => !field.dispatchEvent(new KeyboardEvent("keydown", {
-            key, ctrlKey: true, cancelable: true, bubbles: true, isComposing,
+            key, ctrlKey: true, cancelable: true, bubbles: true, composed: true, isComposing,
         }));
         try {
             const prefix = press("k"), chord = press("j");
@@ -710,7 +711,7 @@ test("a rebound chord belongs to its editor and leaves host field editing local"
             command.dispose();
             return { prefix, chord, afterBlur, afterMove, local, composing, disabled, listed, retired: commands.run("sample.action"), calls,
                 initial, frozen: Object.isFrozen(initial), unbound, rebound, disposed: keymap.getShortcuts("sample.action") };
-        } finally { command.dispose(); document.body.removeEventListener("keydown", forward); field.remove(); }
+        } finally { command.dispose(); document.body.removeEventListener("keydown", forward); host.remove(); }
     });
     expect(keys).toEqual({ prefix: true, chord: true, afterBlur: false, afterMove: false, local: false, composing: false, disabled: false,
         listed: { id: "sample.action", label: "Sample action", enabled: false }, retired: false, calls: 1,

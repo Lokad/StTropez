@@ -28,12 +28,15 @@ function stroke(text: string, apple: boolean): string {
 
 type Binding = Readonly<{ id: string; keys: string; shared: boolean; priority: number; repeat: boolean }>;
 type Strokes = Map<string, readonly Binding[]>;
+// A shadow-tree key event can expose a different target after dispatch finishes.
+function chordTarget(event: KeyboardEvent): EventTarget | null { return event.composedPath()[0] ?? event.target; }
+
 /** Bindings belong to one mounted view. Only the prefix of a pending chord retains event-time state. */
 export function createCommandRegistry(apple: boolean, available: () => boolean, chordCurrent: () => () => boolean) {
     const entries = new Map<string, EditorCommand>();
     const bindings = new Map<string, Strokes>();
     let disposed = false;
-    let prefix: { keys: Strokes; event: KeyboardEvent; current: () => boolean; listeners: AbortController; timer: number } | undefined;
+    let prefix: { keys: Strokes; event: KeyboardEvent; target: EventTarget | null; current: () => boolean; listeners: AbortController; timer: number } | undefined;
     function reset() {
         if (!prefix) return;
         clearTimeout(prefix.timer); prefix.listeners.abort(); prefix = undefined;
@@ -98,7 +101,7 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
             }
             return execute(binding.id);
         });
-        if (pending && pending.event.target === event.target && pending.current()) {
+        if (pending && pending.target === chordTarget(event) && pending.current()) {
             const suffix = pending.keys.has(key) ? key : physical;
             if (key === "escape" || accept(pending.keys, suffix)) { event.preventDefault(); return true; }
             if (pending.keys.get(suffix)?.some(binding => !sharedOnly || binding.shared)) return false;
@@ -109,10 +112,11 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
         } else {
             if (sharedOnly && ![...group.values()].some(choices => choices.some(binding => binding.shared))) return false;
             const listeners = new AbortController(), options = { signal: listeners.signal };
-            event.target?.addEventListener("focusout", reset, options);
-            event.target?.addEventListener("compositionstart", reset, options);
+            const target = chordTarget(event);
+            target?.addEventListener("focusout", reset, options);
+            target?.addEventListener("compositionstart", reset, options);
             event.view?.addEventListener("blur", reset, options);
-            prefix = { keys: group, event, current: chordCurrent(), listeners, timer: window.setTimeout(reset, 1500) };
+            prefix = { keys: group, event, target, current: chordCurrent(), listeners, timer: window.setTimeout(reset, 1500) };
         }
         event.preventDefault(); return true;
     }
