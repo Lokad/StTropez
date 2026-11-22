@@ -87,6 +87,32 @@ test.beforeEach(async ({ page }) => {
     await page.goto("/editing/"); await ready(page);
 });
 
+test("closing a host dialog restores the selection for typing and immediate commands", async ({ page }) => {
+    const source = page.locator("#primary textarea");
+    await page.evaluate(() => window.editingFixture.setText("old source"));
+    await source.fill("one\ntwo\nthree");
+    expect(await page.evaluate(() => window.editingFixture.snapshot().document!.length)).toBe(13);
+    await page.evaluate(() => {
+        const f = window.editingFixture;
+        f.selections([{ anchor: 7, head: 4 }]);
+        const dialog = document.createElement("dialog"), field = document.createElement("input");
+        dialog.append(field); document.body.append(dialog); dialog.showModal();
+    });
+    await page.keyboard.press("Escape"); await expect(source).toBeFocused();
+    await page.keyboard.type("X");
+    expect(await page.evaluate(() => window.editingFixture.range(0, 11))).toBe("one\nX\nthree");
+    await source.press("Control+z");
+    const text = await page.evaluate(() => {
+        const f = window.editingFixture;
+        const dialog = document.querySelector("dialog")!;
+        f.selections([{ anchor: 5, head: 5 }]);
+        dialog.showModal(); dialog.close();
+        f.command("insert-line-below"); dialog.remove();
+        return f.range(0, f.snapshot().document!.length);
+    });
+    expect(text).toBe("one\ntwo\n\nthree");
+});
+
 test("whole-file edits and history keep both panes on their own visible lines", async ({ page }) => {
     const lines = Array.from({ length: 120 }, (_, i) => `row ${i + 1} abcdef\n`);
     const original = lines.join(""), replacement = original.replace("row 55 abcdef", "row 55 longer replacement");

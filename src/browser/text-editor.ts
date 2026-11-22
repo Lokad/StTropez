@@ -284,11 +284,14 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             revision = document.revision;
             projectedSet = selectionSet;
             if (input.value !== context.text) input.value = context.text;
-            const anchor = context.nativeAnchor, head = context.nativeHead;
-            if (input.selectionStart !== Math.min(anchor, head) || input.selectionEnd !== Math.max(anchor, head)
-                || (input.selectionDirection === "backward") !== (anchor > head)) input.setSelectionRange(Math.min(anchor, head), Math.max(anchor, head), anchor > head ? "backward" : "forward");
+            projectSelection();
         }
         scheduleCaret();
+    }
+    function projectSelection(): void {
+        const anchor = context.nativeAnchor, head = context.nativeHead;
+        if (input.selectionStart !== Math.min(anchor, head) || input.selectionEnd !== Math.max(anchor, head)
+            || (input.selectionDirection === "backward") !== (anchor > head)) input.setSelectionRange(Math.min(anchor, head), Math.max(anchor, head), anchor > head ? "backward" : "forward");
     }
     function syncSelection(): void {
         if (disposed || composing || committing || input.disabled || input.value !== context.text) return;
@@ -1145,7 +1148,12 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (event.key === "Shift") escapeState(false);
         if (event.key === "Tab") refresh(); else syncSelection();
     }, { signal: listeners.signal });
-    input.addEventListener("focus", () => { publishState(); scheduleCaret(); }, { signal: listeners.signal });
+    input.addEventListener("focus", () => {
+        // Dialog dismissal can reset the caret to the start of the textarea. A native select()
+        // sets a nonempty range before focusing and must keep that range for the next input.
+        if (!composing && !committing && input.selectionEnd === 0 && input.value === context.text) projectSelection();
+        publishState(); scheduleCaret();
+    }, { signal: listeners.signal });
     input.addEventListener("blur", () => { publishState(); syncSelection(); group = undefined; registry.reset(); scheduleCaret();
         // Clear the Escape prefix after the browser completes focus traversal.
         if (escapeSelection) queueMicrotask(() => { if (!disposed) escapeState(false); }); }, { signal: listeners.signal });

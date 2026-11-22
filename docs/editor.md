@@ -73,7 +73,8 @@ clears focus and composition, and releases its listeners.
 
 `element` is the editor root. Read focus, composition and edit permissions from `getSnapshot()`.
 Call `onEditIntent()` to observe native editing gestures and `focus()` to return typing to the pane
-without scrolling. To replace document text, use a revision-checked workspace transaction.
+without scrolling. When a dialog returns focus to the pane, typing and commands resume at its
+current selection. To replace document text, use a revision-checked workspace transaction.
 `view` exposes selections and folds. `viewport` controls rendering and geometry.
 Attach syntax, diagnostics and annotations through [editor decoration layers](viewport.md#decoration-layers).
 
