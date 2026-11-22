@@ -41,7 +41,7 @@ const metadataCommitted = () => { counters.metadata++; };
 // Stable refs lend empty subtrees to the shared presenters. Their returned cleanup also
 // handles Strict Mode replay; documentation and fitting never synchronize through effects.
 const hoverPopupRef = (host: HTMLDivElement | null) => host ? mountHoverPanel(host, bindings.hover) : undefined;
-const signaturePopupRef = (host: HTMLDivElement | null) => host ? mountSignaturePopup(host, bindings.signature) : undefined;
+const signaturePopupRef = (host: HTMLDivElement | null) => host ? mountSignaturePopup(host, bindings.signature.state, bindings.signature.activeEditor) : undefined;
 function useObserved<T>(store: Observable<T>): T { return useSyncExternalStore(store.subscribe, store.getSnapshot); }
 
 function Commands() {

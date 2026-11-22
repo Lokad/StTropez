@@ -86,7 +86,9 @@ test("held real hover and signature replies cannot reopen a popup after edits or
     await source.pressSequentially("x"); release!(); await expect(hover(page)).toBeHidden();
     method = "textDocument/signatureHelp"; held = false;
     await source.press("Control+End"); await source.pressSequentially("\ncalculateTotal("); await expect.poll(() => held).toBe(true);
-    await page.getByRole("button", { name: "pricing.ts", exact: true }).click(); release!();
-    await expect(page.getByRole("tooltip", { name: "Signature help", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "pricing.ts", exact: true }).click();
     await expect(page.getByRole("textbox", { name: "pricing.ts", exact: true })).toBeVisible();
+    await page.locator("#files").getByRole("button", { name: /^main\.ts/ }).click(); await source.focus(); release!();
+    await source.press("Home"); await expect(page.getByRole("tooltip", { name: "Signature help", exact: true })).toBeHidden();
+    await expect(source).toBeFocused();
 });

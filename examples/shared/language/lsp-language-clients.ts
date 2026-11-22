@@ -1,8 +1,6 @@
-import { createLspColorClient, createLspLinkClient, createLspSignatureClient } from "../../../src/protocol/index.ts";
-import type { LspDocumentColor, LspDocumentLink, LspPrepare, LspSignatureHelp, LspWorkspace } from "../../../src/protocol/index.ts";
+import { createLspColorClient, createLspLinkClient } from "../../../src/protocol/index.ts";
+import type { LspDocumentColor, LspDocumentLink, LspPrepare, LspWorkspace } from "../../../src/protocol/index.ts";
 import type { DocumentId, Workspace } from "../../../src/index.ts";
-import type { SignatureBackend } from "../../hosts/signature.ts";
-import type { SignatureInput } from "../../../fixtures/language/signature.ts";
 import type { HostModuleLink, LinkBackend } from "../../hosts/document-links.ts";
 import type { LinksInput, LinkTarget } from "../../../fixtures/language/links.ts";
 import type { ColorBackend } from "../../hosts/document-colors.ts";
@@ -10,25 +8,6 @@ import { rgbaColor } from "../../../fixtures/language/colors.ts";
 import type { ColorPresentationInput, ColorReference, ColorsInput } from "../../../fixtures/language/colors.ts";
 
 /** Host presentation models with optional, host-owned request preparation. */
-export function lspSignatureBackend(workspace: Workspace, provider: LspWorkspace, changed: () => void, prepare?: (input: SignatureInput) => LspPrepare): SignatureBackend {
-    const client = createLspSignatureClient(provider); let busy = false, disposed = false, result: (LspSignatureHelp & Readonly<{ isCurrent: () => boolean }>) | null = null, serial = 0;
-    // Host cleanup can release workspace leases/scopes; run it after provider delivery.
-    const stop = client.subscribe(() => queueMicrotask(() => { if (!disposed) changed(); }));
-    return Object.freeze({
-        trigger: (document, character, retrigger) => client.options(document).some(option => [...Array.isArray(option.triggerCharacters) ? option.triggerCharacters : [], ...retrigger && Array.isArray(option.retriggerCharacters) ? option.retriggerCharacters : []].includes(character)),
-        signature: async (input, buffer, _progress, context) => {
-            const token = ++serial, doc = workspace.document(input.document as DocumentId); result = null; busy = true;
-            try {
-                if (doc.revision !== input.revision || doc.buffer !== buffer) throw new Error("Signature capture changed.");
-                const help = await client.run(doc, input.offset, context, prepare?.(input)).result;
-                if (disposed || token !== serial || help && !help.isCurrent()) throw new Error("Signature result expired."); result = help;
-                return Object.freeze({ id: input.id, document: input.document, revision: input.revision, reason: help?.signatures.length ? "ready" as const : "no-call" as const,
-                    call: null, signatures: help?.signatures ?? Object.freeze([]), activeSignature: help?.activeSignature ?? 0 });
-            } finally { if (token === serial) { busy = false; changed(); } }
-        },
-        isCurrent: () => !disposed && (result?.isCurrent() ?? true), snapshot: () => Object.freeze({ connected: client.snapshot().connected, busy, transport: "lsp3.17" }),
-        dispose: () => { if (disposed) return; disposed = true; serial++; stop(); client.dispose(); } });
-}
 export function lspLinkBackend(workspace: Workspace, provider: LspWorkspace, uri: (id: DocumentId) => string, changed: () => void, prepare?: (input: LinksInput) => LspPrepare): LinkBackend {
     const client = createLspLinkClient(provider), raw = new Map<HostModuleLink, LspDocumentLink>();
     let batch: Awaited<ReturnType<typeof client.run>> | undefined, normalize: ((item: LspDocumentLink) => HostModuleLink) | undefined, busy = false, disposed = false, serial = 0;

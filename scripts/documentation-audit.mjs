@@ -32,7 +32,7 @@ const ownerGroups = {
     unicode: ["core/words", "core/graphemes", "core/grapheme-data", "core/character-warnings", "browser/font-asset"],
     "host-integration": ["browser/input-conflict", "browser/captured-view"],
     "language-server": ["protocol/wire", "protocol/json-rpc", "protocol/lsp-positions", "protocol/lsp-session", "protocol/lsp-workspace", "protocol/lsp-command", "browser/lsp-websocket"],
-    "language-features": ["protocol/lsp-features", "protocol/lsp-code-actions", "protocol/lsp-workspace-edit", "protocol/lsp-completion", "protocol/lsp-hover", "protocol/lsp-highlights", "protocol/lsp-rename", "protocol/lsp-navigation", "protocol/lsp-actions", "protocol/lsp-language", "browser/completion-controller", "browser/code-action-controller", "browser/diagnostic-controller", "browser/hover-controller", "browser/navigation-controller", "browser/lsp-highlights", "browser/documentation"]
+    "language-features": ["protocol/lsp-features", "protocol/lsp-code-actions", "protocol/lsp-workspace-edit", "protocol/lsp-completion", "protocol/lsp-hover", "protocol/lsp-highlights", "protocol/lsp-rename", "protocol/lsp-navigation", "protocol/lsp-actions", "protocol/lsp-language", "browser/completion-controller", "browser/code-action-controller", "browser/diagnostic-controller", "browser/hover-controller", "browser/navigation-controller", "browser/signature-controller", "browser/lsp-highlights", "browser/documentation"]
 };
 export const declarationOwners = Object.fromEntries(Object.entries(ownerGroups).flatMap(([page, sources]) => sources.map(source => [`src/${source}.ts`, `docs/${page}.md`])));
 

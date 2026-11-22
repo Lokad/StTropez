@@ -3,7 +3,7 @@ import { createLspClient, lspFeatureHandle } from "./lsp-client.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
 import type { JsonValue } from "./wire.ts";
 import { decodeLspColor, decodeLspColorPresentations, decodeLspDocumentColors, decodeLspDocumentLinks, decodeLspResolvedDocumentLink, decodeLspSignatureHelp } from "./lsp-features.ts";
-import type { LspColor, LspDocumentColor, LspDocumentLink } from "./lsp-features.ts";
+import type { LspColor, LspDocumentColor, LspDocumentLink, LspSignature } from "./lsp-features.ts";
 import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
 
 export type LspSignatureContext = Readonly<{ triggerKind: 1 | 2 | 3; triggerCharacter?: string; isRetrigger: boolean; activeSignatureHelp?: JsonValue }>;
@@ -36,8 +36,14 @@ export function createLspSignatureClient(provider: LspWorkspace) {
             }, prepare);
             return Object.freeze({ cancel: call.cancel, result: call.result.then(value => value.decode(() => {
                 const help = decodeLspSignatureHelp(value.response, value.capture), { document: doc, epoch, registrationGeneration } = value.capture;
-                previous = help?.signatures.length ? { document: doc.documentId, resource: doc.resourceId, uri: doc.uri, language: doc.languageId, epoch, generation: registrationGeneration, wire: help.wire } : undefined;
-                return help && Object.freeze({ ...help, isCurrent: value.isCurrent });
+                const context = help?.signatures.length ? { document: doc.documentId, resource: doc.resourceId, uri: doc.uri, language: doc.languageId, epoch, generation: registrationGeneration, wire: help.wire } : undefined;
+                previous = context;
+                return help && Object.freeze({ ...help, isCurrent: value.isCurrent, selectOverload(signature: LspSignature) {
+                    const index = help.signatures.indexOf(signature);
+                    if (index < 0 || !context || previous !== context || !value.isCurrent()) return false;
+                    context.wire = Object.freeze({ ...help.wire as Readonly<Record<string, JsonValue>>, activeSignature: index });
+                    return true;
+                } });
             })) });
         } });
 }

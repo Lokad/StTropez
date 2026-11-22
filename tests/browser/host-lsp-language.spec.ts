@@ -410,8 +410,14 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         const contexts: { triggerKind: number; triggerCharacter?: string; isRetrigger: boolean; activeSignatureHelp?: unknown }[] = [];
         page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method === "textDocument/signatureHelp") contexts.push(value.params.context); }));
         const popup = page.getByRole("tooltip", { name: "Signature help", exact: true }), parameter = popup.getByLabel("Active signature parameter", { exact: true });
-        await seed(page, "lookup"); await field(page).pressSequentially("("); await expect(parameter).toHaveText("key: string"); expect(contexts[0]).toMatchObject({ triggerKind: 2, triggerCharacter: "(", isRetrigger: false });
-        await field(page).pressSequentially("'key',"); await expect(parameter).toHaveText("fallback?: string");
+        await seed(page, "lookup");
+        await field(page).evaluate(node => node.addEventListener("keydown", e => { e.preventDefault(); e.stopImmediatePropagation(); }, { capture: true, once: true }));
+        await field(page).press("("); await expect.poll(async () => (await snapshot(page)).bindings.signature.scheduled).toBe(false); expect(contexts).toHaveLength(0);
+        await field(page).pressSequentially("("); await expect(parameter).toHaveText("key: string"); expect(contexts[0]).toMatchObject({ triggerKind: 2, triggerCharacter: "(", isRetrigger: false });
+        await field(page).press("ArrowDown"); await expect(parameter).toHaveText("keys: readonly string[]");
+        await field(page).pressSequentially("x");
+        await expect.poll(() => contexts.at(-1)).toMatchObject({ triggerKind: 3, isRetrigger: true, activeSignatureHelp: { activeSignature: 1 } });
+        await field(page).pressSequentially(","); await expect(parameter).toHaveText("fallback?: string");
         expect(contexts.at(-1)).toMatchObject({ triggerKind: 2, triggerCharacter: ",", isRetrigger: true }); expect(contexts.at(-1)!.activeSignatureHelp).toBeTruthy();
         const before = await snapshot(page), posted = before.bindings.language.sessions.find(session => session.id === "primary")!.provider.posted;
         await field(page).press("Control+Shift+Space"); await expect.poll(async () => (await snapshot(page)).bindings.signature.applied).toBe(before.bindings.signature.applied + 1); await expect(parameter).toHaveText("fallback?: string");

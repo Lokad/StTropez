@@ -12,14 +12,14 @@ import type { HoverHostOptions } from "../../examples/hosts/hover.ts";
 import type { NavigationHostOptions } from "../../examples/hosts/navigation.ts";
 import type { DocumentId, Workspace } from "../../src/index.ts";
 import type { LspSessionOptions } from "../../src/protocol/index.ts";
-import { lspColorBackend, lspLinkBackend, lspSignatureBackend } from "../../examples/shared/language/lsp-language-clients.ts";
-import type { SignatureBackendFactory } from "../../examples/hosts/signature.ts";
+import { lspColorBackend, lspLinkBackend } from "../../examples/shared/language/lsp-language-clients.ts";
+import type { SignatureHostOptions } from "../../examples/hosts/signature.ts";
 import type { LinkBackendFactory } from "../../examples/hosts/document-links.ts";
 import type { ColorBackendFactory } from "../../examples/hosts/document-colors.ts";
 import { fixtureDocumentUri } from "./document-uri.ts";
 
 /** Explicit development-host choice. Generic session/feature code has no fixture endpoint policy. */
-export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspace; provider: ProviderFactory; hover: HoverHostOptions; navigation: NavigationHostOptions; rename: LspRenameFactory; actions: ActionHostOptions; project: LspProjectFactory; signature: SignatureBackendFactory; links: LinkBackendFactory; colors: ColorBackendFactory }> {
+export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspace; provider: ProviderFactory; hover: HoverHostOptions; navigation: NavigationHostOptions; rename: LspRenameFactory; actions: ActionHostOptions; project: LspProjectFactory; signature: SignatureHostOptions; links: LinkBackendFactory; colors: ColorBackendFactory }> {
     const url = new URL("/lsp-fixture", location.href); url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const connect: LspSessionOptions["connect"] = context => { const abort = new AbortController(), stop = context.onCancel(() => abort.abort()); return openWebSocketTransport(url.href, { signal: abort.signal }).finally(stop); };
     const uri = (workspace: Workspace, id: DocumentId) => fixtureDocumentUri(workspace.resourceForDocument(id).id, id);
@@ -31,8 +31,7 @@ export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspa
     connection.createScope().setDocuments(owner.getSnapshot().documents.filter(document => document.key.variant === "working"));
     return Object.freeze({
         owner: connection,
-        signature: (_clock, changed) => lspSignatureBackend(owner, connection, changed,
-            input => session => connection.prepareRequest(session, "textDocument/signatureHelp", { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) })),
+        signature: { provider: connection, prepare: (delay, fault) => session => connection.prepareRequest(session, "textDocument/signatureHelp", { delay, ...(fault ? { fault } : {}) }) },
         links: (_clock, changed) => lspLinkBackend(owner, connection, id => uri(owner, id), changed,
             input => session => connection.prepareRequest(session, "textDocument/documentLink", { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}),
                 aliases: input.aliases.map(alias => ({ module: alias.module, uri: uri(owner, alias.document as DocumentId) })) })),

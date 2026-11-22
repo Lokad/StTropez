@@ -1,11 +1,9 @@
 import type { Workspace } from "../../src/index.ts";
-import type { TextEditor } from "../../src/browser/index.ts";
+import { createSignatureController } from "../../src/browser/index.ts";
+import type { SignatureSnapshot, TextEditor } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
-import { lspSignatureBackend } from "../shared/language/lsp-language-clients.ts";
 import { HostHoverTools } from "../hosts/hover.ts";
 import { mountHoverPanel } from "../hosts/hover-panel.ts";
-import { HostSignatureTools } from "../hosts/signature.ts";
-import type { SignatureSnapshot } from "../hosts/signature.ts";
 import { mountSignaturePopup } from "../hosts/signature-panel.ts";
 import type { DemoFile } from "./project.ts";
 import type { DemoLanguage } from "./language.ts";
@@ -20,25 +18,23 @@ export function mountDemoInspection(scope: CleanupScope, workspace: Workspace, f
     // Pending caret paint does not invalidate an already committed model selection.
     const canCapture = () => { const state = editor.activity(); return valid() && !state.composing && !state.pendingInput && !state.pendingCommand; };
     const hover = new HostHoverTools(workspace, kind => {
-        if (kind === "pointer") return canCapture() && !completionOpen() && !signature.state.getSnapshot().visible;
-        signature.dismiss(); cancelCompletion(); beforeInspect(); return canCapture();
+        if (kind === "pointer") return canCapture() && !completionOpen() && !signature.getSnapshot().anchor;
+        signature.cancel(); cancelCompletion(); beforeInspect(); return canCapture();
     }, { canCapture, provider, diagnostics: { subscribe: language.state.subscribe, getSnapshot() {
         const state = language.state.getSnapshot(), doc = workspace.document(file.resource.documentId);
         return { diagnosticRevision: doc.revision, diagnosticsPending: state.checking,
             diagnostics: state.diagnostics.filter(item => item.documentId === doc.id && item.revision === doc.revision) };
     } } });
-    const signature = new HostSignatureTools(workspace, canCapture, () => { hover.dismiss(); beforeInspect(); },
-        (_clock, changed) => lspSignatureBackend(workspace, provider, changed));
-    scope.defer(() => signature.dispose());
+    const signature = createSignatureController(editor, provider, { canCapture: valid, beforeRequest: () => { hover.dismiss(); beforeInspect(); } });
+    scope.defer(signature.dispose);
     const canOpenLink = (target: string) => valid() && canOpenDemoHelp(target);
     const links = { canOpenLink, openLink: (target: string) => { if (canOpenLink(target)) window.open(target, "_blank", "noopener,noreferrer"); } };
     scope.defer(mountHoverPanel(host, hover, links));
-    scope.defer(mountSignaturePopup(host, signature, true, links));
+    scope.defer(mountSignaturePopup(host, signature, () => editor, true, links));
     scope.defer(hover.attach("source", file.tab, editor));
-    scope.defer(signature.attach("source", file.tab, editor));
-    scope.defer(signature.state.subscribe(() => onSignature(signature.state.getSnapshot())));
+    scope.defer(signature.subscribe(() => onSignature(signature.getSnapshot())));
     return Object.freeze({
-        dismiss: () => { hover.dismiss(); signature.dismiss(); },
+        dismiss: () => { hover.dismiss(); signature.cancel(); },
         inspect: () => { editor.focus(); editor.commands.run("hover.inspect"); },
     });
 }

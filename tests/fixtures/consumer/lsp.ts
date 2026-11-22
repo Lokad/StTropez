@@ -1,7 +1,7 @@
 import { Workspace } from "sttropez";
 import type { DocumentId, DocumentSnapshot, TextEdit } from "sttropez";
-import { createCodeActionController, createCompletionController, createDiagnosticController, createHoverController, createNavigationController, mountAnchoredOverlay, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
-import { LspWorkspace, applyLspWorkspaceEdit, previewLspWorkspaceEdit, createLspColorClient, createLspLinkClient, createLspRenameClient, createLspSignatureClient } from "sttropez/protocol";
+import { createCodeActionController, createCompletionController, createDiagnosticController, createHoverController, createNavigationController, createSignatureController, mountAnchoredOverlay, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
+import { LspWorkspace, applyLspWorkspaceEdit, previewLspWorkspaceEdit, createLspColorClient, createLspLinkClient, createLspRenameClient } from "sttropez/protocol";
 import type { LspWorkspaceEdit } from "sttropez/protocol";
 
 const workspace = new Workspace();
@@ -24,7 +24,7 @@ const diagnostics = createDiagnosticController(editor, provider, { autoConnect: 
 const diagnosticHint = document.createElement("aside"); diagnosticHint.id = "diagnostic-hint"; document.body.append(diagnosticHint);
 const hint = mountAnchoredOverlay(editor, diagnosticHint);
 const hover = createHoverController(editor, provider, { diagnostics }), rename = createLspRenameClient(provider);
-const signature = createLspSignatureClient(provider), links = createLspLinkClient(provider), colors = createLspColorClient(provider);
+const signature = createSignatureController(editor, provider), links = createLspLinkClient(provider), colors = createLspColorClient(provider);
 const project = () => [workspace.document(source.documentId), workspace.document(companion.documentId)];
 const navigation = createNavigationController(editor, provider, { documents: project });
 const actions = createCodeActionController(editor, provider, { documents: project });
@@ -86,9 +86,11 @@ actions.subscribe(() => {
     notes.resolved = !!preview && !!state.choices[preview.index]?.needsResolve && !!page?.count;
     result.textContent = page?.notes.map(edit => edit.before + " → " + edit.insert).join("\n") || state.message;
 });
-command("Signature", async () => { const value = await signature.run(workspace.document(source.documentId), text().indexOf("lookup(") + 12).result;
-    if (!value?.isCurrent()) throw new Error("Signature expired"); const active = value.signatures[value.activeSignature]!, parameter = active.parameters[active.activeParameter ?? 0];
-    notes.signature = parameter ? active.label.slice(parameter.from, parameter.to) : active.label; result.textContent = notes.signature; });
+command("Signature", () => { const offset = text().indexOf("lookup(") + 12;
+    editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: offset, head: offset }); signature.request(); });
+signature.subscribe(() => { const active = signature.getSnapshot().signature;
+    if (active) { const parameter = active.parameters[active.activeParameter ?? 0];
+        notes.signature = parameter ? active.label.slice(parameter.from, parameter.to) : active.label; result.textContent = notes.signature; } });
 command("Links", async () => { const value = await links.run(workspace.document(source.documentId));
     const link = await value.resolve(value.items[0]!); if (!value.isCurrent()) throw new Error("Link expired"); notes.linkUri = link.target ?? "unresolved"; result.textContent = notes.linkUri; });
 command("Colors", async () => { const document = workspace.document(source.documentId), value = await colors.run(document), choices = await value.presentations(value.items[0]!, { red: 1 / 255, green: 2 / 255, blue: 3 / 255, alpha: .5 });

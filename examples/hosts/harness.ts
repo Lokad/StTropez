@@ -88,7 +88,6 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         editLinkTarget: (id: DocumentId, revision: number, edits: readonly TextEdit[]) => controller.workspace.edit({ documentId: id, expectedRevision: revision, origin: "host", edits }),
         setActionDelay: (value: number) => bindings.actions.setDelay(value), faultActionNext: (value: "malformed" | "failure" | "incomplete" | "markup") => bindings.actions.faultNext(value), faultIdleAction: () => bindings.actions.faultIdle(), requestAction: bindings.actions.request,
         setRenameDelay: (value: number) => bindings.rename.setDelay(value), faultRenameNext: (value: "malformed" | "failure") => bindings.rename.faultNext(value), faultIdleRename: () => bindings.rename.faultIdle(),
-        faultIdleSignature: () => bindings.signature.faultIdle(),
         faultIdleProject: () => bindings.project.faultIdle(),
         setProjectTargetReadOnly: (id: DocumentId, value: boolean) => { const resource = controller.workspace.resourceForDocument(id), metadata = resource.metadata.getSnapshot();
             controller.workspace.setCapabilities(resource.id, { ...metadata.capabilities, edit: value ? ["host"] : ["human", "host", "agent"] }); },
@@ -135,7 +134,6 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; sett
     setLinksDelay: (value: number) => void; faultLinksNext: (value: "malformed" | "failure" | "incomplete" | "markup") => void; faultIdleLinks: () => boolean; requestLinks: () => void; openLink: (token: number | null, ordinal: number) => void; setLinkAlias: (module: string, document: DocumentId | null) => void; editLinkTarget: (id: DocumentId, revision: number, edits: readonly TextEdit[]) => unknown;
     setActionDelay: (value: number) => void; faultActionNext: (value: "malformed" | "failure" | "incomplete" | "markup") => void; faultIdleAction: () => boolean; requestAction: () => void;
     setRenameDelay: (value: number) => void; faultRenameNext: (value: "malformed" | "failure") => void; faultIdleRename: () => boolean;
-    faultIdleSignature: () => boolean;
     faultIdleProject: () => boolean;
     setProjectTargetReadOnly: (id: DocumentId, value: boolean) => void;
     navigationDocument: (id: DocumentId) => Readonly<{ revision: number; length: number; text: string; exports: number }>;

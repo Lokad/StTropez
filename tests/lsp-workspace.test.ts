@@ -70,17 +70,21 @@ test("signature retriggers preserve the last resolved context through a cancelle
         client = createLspSignatureClient(f.provider); t.after(client.dispose);
     await f.provider.connect(); const peer = f.peers[0]!, entered = latch<void>(), held = latch<unknown>(); t.after(() => held.resolve(null));
     const contexts: { isRetrigger: boolean; activeSignatureHelp?: unknown }[] = []; let pause = false;
-    const help = (label: string) => ({ signatures: [{ label }], activeSignature: 0 }); let response: unknown = help("initial");
+    const help = (label: string) => ({ signatures: [{ label }], activeSignature: 0 });
+    const overloads = { signatures: [{ label: "first()" }, { label: "second()" }], activeSignature: 0 };
+    let response: unknown = overloads;
     const register = () => f.peers.at(-1)!.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "signature", method: "textDocument/signatureHelp", registerOptions: { documentSelector: null } }] });
     const handler = (params: { context: typeof contexts[number] }) => { contexts.push(params.context); if (pause) { pause = false; entered.resolve(); return held.promise; } return response; };
     peer.rpc.onRequest("textDocument/signatureHelp", handler); await register();
     const run = (id = f.source.documentId, isRetrigger = true, activeSignatureHelp?: ReturnType<typeof help>) => client.run(f.workspace.document(id), 0,
         { triggerKind: 3, isRetrigger, ...(activeSignatureHelp ? { activeSignatureHelp } : {}) }).result;
-    await run(f.source.documentId, false); assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined);
+    const initial = await run(f.source.documentId, false); assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined);
+    assert.ok(initial); assert.ok(initial.selectOverload(initial.signatures[1]!));
     pause = true; f.edit(); const pending = run(), rejected = assert.rejects(pending); await entered.promise;
-    assert.deepEqual(contexts.at(-1)!.activeSignatureHelp, help("initial"));
+    assert.deepEqual(contexts.at(-1)!.activeSignatureHelp, { ...overloads, activeSignature: 1 });
+    assert.equal(initial.selectOverload(initial.signatures[0]!), false);
     f.edit(); response = help("latest"); await run(); await rejected;
-    assert.deepEqual(contexts.at(-1)!.activeSignatureHelp, help("initial"));
+    assert.deepEqual(contexts.at(-1)!.activeSignatureHelp, { ...overloads, activeSignature: 1 });
     held.resolve(help("late")); await settled(); await run(); assert.deepEqual(contexts.at(-1)!.activeSignatureHelp, help("latest"));
     await run(f.companion.documentId); assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined);
     uriVersion++; const replacement = f.provider.createScope(); replacement.attachDocument(f.companion.documentId);

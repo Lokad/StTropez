@@ -15,7 +15,7 @@ separately. Incoming edits and command execution have their own
 | Completion | `createLspCompletionClient`; browser `createCompletionController` | `textDocument/completion` |
 | Diagnostics | `createDiagnosticController` | `textDocument/publishDiagnostics` |
 | Hover | `createHoverController`, `createLspHoverClient` | `textDocument/hover` |
-| Signature help | `createLspSignatureClient` | `textDocument/signatureHelp` |
+| Signature help | `createSignatureController`, `createLspSignatureClient` | `textDocument/signatureHelp` |
 | Definition / references | `createLspNavigationClient` | `textDocument/definition` / `textDocument/references` |
 | Rename | `createLspRenameClient` | `textDocument/rename` |
 | Code actions | `createCodeActionController`, `createLspActionClient` | `textDocument/codeAction` |
@@ -323,6 +323,17 @@ HTML tags. Otherwise the client requests plaintext. Completion documentation alw
 
 ### Signature help
 
+`createSignatureController(editor, provider)` follows the primary caret in one editor.
+Call `request()` or press Ctrl/Cmd+Shift+Space to show parameter help, including in a read-only
+view. Typing an advertised trigger such as `(` requests help after the edit settles. Up and Down
+cycle through overloads. Escape closes the topmost popup. A higher-priority completion list gets
+these keys first.
+
+Subscribe to the controller and render `getSnapshot().signature`. Its label and parameter offsets
+describe the highlighted text. Use the snapshot's `anchor` to position the popup. Moving the caret
+while help is open requests fresh information. Blur, composition and `cancel()` dismiss it.
+Disposing the editor also disposes its controller.
+
 `createLspSignatureClient(provider).run(document, offset, context?, prepare?)` returns a cancellable
 call. Read `options(document)` for [provider triggers](language-server.md#feature-capability-queries).
 `LspSignatureContext` carries the trigger kind, optional character, retrigger flag and optional
@@ -334,16 +345,16 @@ inside the signature label; tuple offsets must fit it. A signature's active para
 the batch value. Missing or out-of-range nonnegative indices select the first available entry;
 zero parameters means no highlighted parameter. Null and empty help yield no useful presentation.
 
-On a retrigger, you can omit `activeSignatureHelp` to reuse the last accepted wire context. The
+When using the protocol client directly, call `result.selectOverload(signature)` with a signature
+from that result to record the user's choice. It returns false for an expired result or a foreign
+signature. On a retrigger, omit `activeSignatureHelp` to reuse the last accepted wire context. The
 document, resource, URI, language, connection epoch and registration generation must match.
 Starting a replacement request retains that context. An empty result, a new explicit non-retrigger
 invocation, `cancel`, disposal or a provider change clears it. Context you supply takes precedence. If
 the inherited context exceeds the advisory size limit, the client omits it. It keeps no old text
 buffer and grants no editing rights. A late cancelled reply cannot replace it.
 
-Choose when to request signature help, which popup gets a key and how to display overloads. Wait for
-input and composition as needed. Switching overloads leaves source text intact. Render signature and
-parameter content with the [documentation view](#hover-and-documentation).
+Render signature and parameter content with the [documentation view](#hover-and-documentation).
 
 In the examples, Up and Down cycle through overloads while signature help is visible. An open
 completion list takes those keys first. Escape dismisses one visible popup per press and keeps
