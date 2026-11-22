@@ -370,6 +370,7 @@ Closing the review keeps F12 and Shift+F12 requests from the primary editor usab
 A request made in the review itself expires when that pane closes.
 The navigation panel also accepts declarations loaded by a host URI resolver. It uses the
 returned document's text and revision to label the result and select its range.
+If references refresh while you hold Next or Previous, the new list stays on its first page.
 
 F4 opens the module links list. Escape dismisses the list and returns focus to its source if that
 editor is mounted. After following a link, Shift+F4 restores the original document and selection.

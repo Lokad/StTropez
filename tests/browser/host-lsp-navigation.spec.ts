@@ -109,6 +109,26 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await expect(results(page)).toHaveCount(0);
         expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toEqual(selected);
     });
+    if (coversHost("candidate-hosts", host, "candidate")) test("replacing references during a press needs a fresh click to advance the page", async ({ page }) => {
+        await seed(page, "const target = 1;\n" + "target;\n".repeat(130), 8);
+        const find = button(page, "Find references"), next = button(page, "Next navigation results");
+        await find.click(); await waitForNavigation(page);
+        const first = results(page).first();
+        await expect(first).toHaveText("Primary source:1:7");
+        const initial = (await snapshot(page)).bindings.navigation.applied;
+        const oldNext = await next.elementHandle();
+        if (!oldNext) throw new Error("Missing Next button on the original references list.");
+        await next.hover(); await page.mouse.down();
+        await find.evaluate(node => (node as HTMLButtonElement).click());
+        await expect.poll(async () => (await snapshot(page)).bindings.navigation.applied).toBe(initial + 1);
+        await expect(next).toBeEnabled(); await page.mouse.up();
+        await expect(first).toHaveText("Primary source:1:7");
+        await oldNext.evaluate(node => (node as HTMLButtonElement).click()); await oldNext.dispose();
+        await expect(first).toHaveText("Primary source:1:7");
+        await next.focus(); await page.keyboard.press("Enter");
+        await expect(first).toHaveText("Primary source:65:1"); await expect(next).toBeFocused();
+        await page.keyboard.press("Space"); await expect(first).toHaveText("Primary source:129:1");
+    });
     if (coversHost("candidate-hosts", host, "candidate")) test("Return retraces two symbol jumps with their selections, scroll and focus", async ({ page }) => {
         const text = "catalogue;\n" + "// padding\n".repeat(120) + "catalogue;\n";
         const tail = text.lastIndexOf("catalogue"), primary = field(page), secondary = field(page, "Secondary source");

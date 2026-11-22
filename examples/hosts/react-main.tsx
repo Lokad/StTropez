@@ -226,7 +226,7 @@ function NavigationTools() {
         <output aria-label={model.status.label}>{model.status.text}</output>
         <progress aria-label={model.progress.label} hidden={model.progress.hidden} max={model.progress.max} value={model.progress.value} />
         <label><input type="checkbox" checked={model.declarations.checked} onChange={event => model.declarations.change(event.currentTarget.checked)} />{model.declarations.label}</label>
-        <div>{model.actions.map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        <div>{model.actions.map(action => <button key={panelActionKey(action)} onClick={action.invoke ?? undefined} disabled={action.disabled}>{action.label}</button>)}</div>
         <ul aria-label={model.results.label}>{model.results.items().map(note => <li key={note.key}><button onClick={note.invoke}>{note.label}</button></li>)}</ul></section>;
 }
 function DomainTools() {

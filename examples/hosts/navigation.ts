@@ -1,4 +1,5 @@
 import { onSourceFocus } from "./source-focus.ts";
+import { createReviewKey } from "./panel-actions.ts";
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { createNavigationController, createNavigationHistory } from "../../src/browser/index.ts";
@@ -11,16 +12,18 @@ import { HostCell } from "../shared/observable.ts";
 type Kind = LspNavigationRequest["kind"];
 export type NavigationHostOptions = Readonly<{ provider: LspWorkspace; prepare: (kind: Kind, delay: number, fault?: NavigationFault) => LspPrepare }>;
 type Session = { id: string; target: TabTarget; editor: TextEditor; controller: NavigationController };
-type Job = { id: number; kind: Kind; origin: Session; returnPoint: NavigationOrigin; sources: Set<DocumentId>; targets: Map<string, Session>;
+type Job = { kind: Kind; origin: Session; returnPoint: NavigationOrigin; sources: Set<DocumentId>; targets: Map<string, Session>;
     timer: number; page: NavigationPage | undefined };
 export type NavigationNote = NavigationLocation & Readonly<{ ordinal: number; title: string; line: number; column: number; open: () => void }>;
-export type NavigationSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; syncedDocuments: number; view: string | null; requestView: string | null; token: number | null; status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired" | "disconnected";
-    message: string; work: number; total: number; includeDeclaration: boolean; locations: readonly NavigationNote[]; count: number; truncated: boolean; first: number; hasNextPage: boolean; canReturn: boolean }>;
+type Paging = Readonly<{ key: number; previous: (() => void) | null; next: (() => void) | null }>;
+export type NavigationSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; syncedDocuments: number; view: string | null; requestView: string | null; status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired" | "disconnected";
+    message: string; work: number; total: number; includeDeclaration: boolean; locations: readonly NavigationNote[]; count: number; truncated: boolean; paging: Paging | null; canReturn: boolean }>;
 
 /** Host-owned project navigation; results carry identities, never a future focus target. */
 export class HostNavigationTools {
     private readonly workspace: Workspace;
     private readonly history: NavigationHistory;
+    private readonly queryKey;
     private readonly canCapture: (id: DocumentId) => boolean;
     private readonly present: (id: DocumentId) => TextEditor | undefined;
     private readonly sessions = new Set<Session>();
@@ -33,14 +36,14 @@ export class HostNavigationTools {
     private fault: NavigationFault | undefined;
     private readonly options: NavigationHostOptions;
     private disconnected = false;
-    private readonly cell = new HostCell<NavigationSnapshot>({ available: false, connected: false, disconnected: false, syncedDocuments: 0, view: null, requestView: null, token: null, status: "idle", message: "Focus a candidate source to navigate symbols.", work: 0, total: 0, includeDeclaration: true, locations: [], count: 0, truncated: false, first: 0, hasNextPage: false, canReturn: false });
+    private readonly cell = new HostCell<NavigationSnapshot>({ available: false, connected: false, disconnected: false, syncedDocuments: 0, view: null, requestView: null, status: "idle", message: "Focus a candidate source to navigate symbols.", work: 0, total: 0, includeDeclaration: true, locations: [], count: 0, truncated: false, paging: null, canReturn: false });
     readonly state = this.cell.observable;
     private readonly metrics = { requested: 0, applied: 0, cancelled: 0, expired: 0, failed: 0 };
     private readonly queries = { completed: 0, failed: 0 };
     private readonly reconnectProvider: (() => void) | undefined;
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined,
         options: NavigationHostOptions, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider;
-        this.workspace = workspace; this.history = createNavigationHistory(workspace); this.canCapture = canCapture; this.present = present; this.options = options;
+        this.workspace = workspace; this.history = createNavigationHistory(workspace); this.queryKey = createReviewKey(workspace); this.canCapture = canCapture; this.present = present; this.options = options;
     }
     private available(session: Session): boolean {
         const tab = this.workspace.tabs.resolve(session.target), editor = session.editor;
@@ -56,19 +59,23 @@ export class HostNavigationTools {
             return { document: id, revision: document.revision, from: choice.from, to: choice.to, declaration: job.kind === "definition",
                 ordinal: choice.index, title, line: line + 1, column: column + 1, open: () => this.open(job, choice, title) };
         }) ?? [];
-        job.page = page; this.publish({ ...patch, locations });
+        const turn = (move: (() => NavigationPage) | null) => move && (() => {
+            if (this.job?.page === page) this.showPage(job, move());
+        });
+        const paging = page ? { key: this.queryKey(job)!, previous: turn(page.previousPage), next: turn(page.nextPage) } : null;
+        job.page = page; this.publish({ ...patch, locations, paging });
         return locations;
     }
     private publish(patch: Partial<NavigationSnapshot> = {}): void {
         const job = this.job, page = job?.page;
         const transport = job?.origin.controller.getDiagnostics();
-        this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && this.available(this.active), connected: !!transport?.connected, disconnected: this.disconnected, syncedDocuments: transport?.documents.length ?? 0, view: this.active?.id ?? null, requestView: job?.origin.id ?? null, token: job?.id ?? null,
-            first: page?.first ?? 0, hasNextPage: !!page?.nextPage, count: page?.count ?? 0, canReturn: this.history.getSnapshot() > 0 });
+        this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && this.available(this.active), connected: !!transport?.connected, disconnected: this.disconnected, syncedDocuments: transport?.documents.length ?? 0, view: this.active?.id ?? null, requestView: job?.origin.id ?? null,
+            count: page?.count ?? 0, canReturn: this.history.getSnapshot() > 0 });
     }
     private clear(status: NavigationSnapshot["status"], message: string): void {
         const job = this.job; this.job = undefined;
         if (job) { job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.origin.controller.cancel(); }
-        this.publish({ status, message, work: 0, total: 0, truncated: false, locations: [] });
+        this.publish({ status, message, work: 0, total: 0, truncated: false, locations: [], paging: null });
     }
     readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.clear("idle", "Symbol navigation dismissed."); };
     readonly disconnect = (): void => { this.cancel(); this.disconnected = true; this.publish({ status: "disconnected", message: "Navigation provider disconnected; local editing remains available." }); };
@@ -132,7 +139,7 @@ export class HostNavigationTools {
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Unsupported navigation capture." }); return; }
         const targets = new Map<string, Session>(); for (const s of this.sessions) if (this.available(s) && !targets.has(s.editor.view.documentId)) targets.set(s.editor.view.documentId, s); targets.set(document.id, origin);
         const returnPoint = this.history.capture(origin.editor); if (!returnPoint) return;
-        const job: Job = { id: this.workspace.allocateIdentity(), kind, origin, returnPoint, sources, targets, timer: 0, page: undefined };
+        const job: Job = { kind, origin, returnPoint, sources, targets, timer: 0, page: undefined };
         this.job = job; this.metrics.requested++; const win = origin.editor.element.ownerDocument.defaultView!;
         try {
             // The panel deadline also bounds host preparation and loading a target after the RPC reply.
@@ -174,12 +181,6 @@ export class HostNavigationTools {
         this.publish({ message: result === "restored" ? "Returned to the captured origin and complete selection set."
             : result === "busy" ? "Finish pending input before returning." : "No navigation origin is still open." });
     };
-    private movePage(action: "previousPage" | "nextPage"): void {
-        const job = this.job, page = job?.page?.[action]?.();
-        if (job && page) this.showPage(job, page);
-    }
-    readonly nextPage = (): void => this.movePage("nextPage");
-    readonly previousPage = (): void => this.movePage("previousPage");
     setIncludeDeclaration(value: boolean): void { if (value === this.cell.get().includeDeclaration) return; this.cancel(); this.publish({ includeDeclaration: value }); }
     readonly addCompanion = (): void => {
         if (this.disposed) return; this.cancel();
