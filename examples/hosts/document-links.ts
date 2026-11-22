@@ -174,6 +174,8 @@ export class HostDocumentLinks {
                 : editor.reveal({ from: 0, to: 0 }, { expectedRevision: doc.revision, select: true });
             if (!placed) return;
             editor.focus(); return editor;
+        } catch (error) {
+            if (this.route === route) this.publish({ message: error instanceof Error ? error.message : "The host could not open the destination." });
         } finally { this.presenting = false; }
     }
     private async open(route: Route, item: DocumentLinkChoice, module: string) {

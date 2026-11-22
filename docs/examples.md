@@ -394,8 +394,8 @@ its edit preview on page one.
 F4 opens the module links list. Closing another view of the source keeps those links available.
 Escape dismisses the list and returns focus to its mounted source,
 including while a link resolves. If you Tab away, the resolved link stays in the list until you
-open it. If the destination pane is busy with a paste, the panel explains the delay.
-Click the link again after the paste finishes. Shift+F4 restores the original document, selections and scroll position.
+open it. If the destination pane is busy with a paste or fails to open, the panel shows the
+reason. Click the link again to retry. Shift+F4 restores the original document, selections and scroll position.
 Changing result pages during a press requires a fresh click to open a link on the new page.
 Press F2 on the symbol to rename. Enter and **Prepare rename preview** both use that pane,
 even if you focus another pane before requesting the preview. Press Enter in the name field

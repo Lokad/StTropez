@@ -1,11 +1,13 @@
 import { build } from "esbuild";
 import { basename } from "node:path";
 import { test, expect } from "./fixtures.ts";
+import type { LanguageHost } from "../../examples/hosts/language-host.ts";
 
 test("the navigation panel opens a declaration loaded by the host resolver and returns to the source", async ({ page }) => {
     const path = "/navigation-target/";
     const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/index.ts",
-        host: "examples/hosts/navigation.ts", panel: "examples/hosts/navigation-panel.ts" },
+        host: "examples/hosts/navigation.ts", panel: "examples/hosts/navigation-panel.ts",
+        links: "examples/hosts/document-links.ts", linkPanel: "examples/hosts/document-links-panel.ts" },
         outdir: "artifacts/navigation-target", bundle: true, splitting: true, format: "esm", platform: "browser", write: false });
     const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
     await page.route("**/navigation-target/*.js", route =>
@@ -15,18 +17,25 @@ test("the navigation panel opens a declaration loaded by the host resolver and r
         const server = client.connectToServer();
         client.onMessage(message => {
             const packet = JSON.parse(message.toString());
+            if (packet.method === "textDocument/documentLink") {
+                client.send(JSON.stringify({ jsonrpc: "2.0", id: packet.id, result: [{ target: "project:currency",
+                    range: { start: { line: 0, character: 0 }, end: { line: 0, character: 8 } } }] }));
+                return;
+            }
             if (packet.method !== "textDocument/definition") { server.send(message); return; }
             client.send(JSON.stringify({ jsonrpc: "2.0", id: packet.id, result: [{ uri: "library:types",
                 range: { start: { line: 1, character: 5 }, end: { line: 1, character: 13 } } }] }));
         });
     });
     await page.goto("/workspace/");
-    await page.setContent('<link rel="stylesheet" href="/app.css"><div id="source"></div><div id="destination"></div><div id="panel"></div>');
+    await page.setContent('<link rel="stylesheet" href="/app.css"><div id="source"></div><div id="destination"></div><div id="panel"></div><div id="links"></div>');
     const cleanup = await page.evaluateHandle(async path => {
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextEditor, openWebSocketTransport, BrowserLspWorkspace } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const { HostNavigationTools } = await import(path + "host.js") as typeof import("../../examples/hosts/navigation.ts");
         const { mountNavigationPanel } = await import(path + "panel.js") as typeof import("../../examples/hosts/navigation-panel.ts");
+        const { HostDocumentLinks } = await import(path + "links.js") as typeof import("../../examples/hosts/document-links.ts");
+        const { mountDocumentLinksPanel } = await import(path + "linkPanel.js") as typeof import("../../examples/hosts/document-links-panel.ts");
         const ws = new Workspace(), source = ws.createTextResource({ scope: "host", resource: "main", variant: "working" }, "Main",
             { value: "Currency" }, undefined, { language: { uri: "project:main", languageId: "generic" } });
         const tab = ws.tabs.open({ kind: "text", documentId: source.documentId }, "Main");
@@ -34,20 +43,39 @@ test("the navigation panel opens a declaration loaded by the host resolver and r
         const url = new URL("/lsp-fixture", location.href); url.protocol = "ws:";
         const provider = new BrowserLspWorkspace(ws, { connect: signal => openWebSocketTransport(url.href, { signal }),
             resolveTarget: async uri => uri === "library:types" ? { text: "// declarations\ntype Currency = string", languageId: "generic" } : undefined });
-        let destination: typeof editor | undefined, attempts = 0;
-        const host = new HostNavigationTools({ workspace: ws, canCapture: () => true, present: id => {
-            if (++attempts === 1) throw new Error("Declaration pane is unavailable.");
-            return destination = mountTextEditor(document.getElementById("destination")!, ws, id, { ariaLabel: "Declaration" });
-        } }, { provider, prepare: () => async () => {} });
+        const module = ws.createTextResource({ scope: "host", resource: "currency", variant: "working" }, "Currency module",
+            { value: "export const currency = 1;" }, undefined, { language: { uri: "project:currency", languageId: "generic" } });
+        let destination: typeof editor | undefined;
+        const attempted = new Set<string>();
+        const panes: LanguageHost = { workspace: ws, canCapture: () => true, present: id => {
+            const label = id === module.documentId ? "Module" : "Declaration";
+            if (!attempted.has(id)) { attempted.add(id); throw new Error(label + " pane is unavailable."); }
+            destination?.dispose();
+            return destination = mountTextEditor(document.getElementById("destination")!, ws, id, { ariaLabel: label });
+        } };
+        const host = new HostNavigationTools(panes, { provider, prepare: () => async () => {} });
+        const links = new HostDocumentLinks(panes, { provider, prepare: () => async () => {} });
+        links.setAlias("currency", module.documentId);
+        links.attach("source", tab, editor);
+        const removeLinks = mountDocumentLinksPanel(document.getElementById("links")!, links);
         const detach = host.attach("source", tab, editor), removePanel = mountNavigationPanel(document.getElementById("panel")!, host);
         editor.focus();
         return async () => {
             const loaded = destination && ws.observeDocument(destination.view.documentId);
-            removePanel(); detach(); host.dispose(); destination?.dispose(); editor.dispose(); provider.dispose();
+            removeLinks(); links.dispose(); removePanel(); detach(); host.dispose(); destination?.dispose(); editor.dispose(); provider.dispose();
             await new Promise<void>(done => requestAnimationFrame(() => done()));
             return loaded !== undefined && loaded.getSnapshot() === undefined;
         };
     }, path);
+    await page.getByRole("button", { name: "Discover module links", exact: true }).click();
+    const link = page.getByRole("list", { name: "Module link results" }).getByRole("button");
+    await link.click();
+    await expect(page.getByLabel("Module link status", { exact: true })).toHaveText("Module pane is unavailable.");
+    await expect(page.getByRole("button", { name: "Return to link origin" })).toBeDisabled();
+    await link.click();
+    await expect(page.getByRole("textbox", { name: "Module", exact: true })).toBeFocused();
+    await page.getByRole("button", { name: "Return to link origin" }).click();
+    await expect(page.getByRole("textbox", { name: "Main", exact: true })).toBeFocused();
     await page.getByRole("button", { name: "Find definition", exact: true }).click();
     const row = page.getByRole("button", { name: "library:types:2:6 · declaration", exact: true });
     await expect(row).toBeVisible(); await row.click();
