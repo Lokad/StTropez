@@ -106,7 +106,7 @@ export class HostRenameTools {
                     const state = this.cell.get();
                     if (state.pending) return;
                     if (!state.preview) this.prepareIn(session);
-                    else if (state.preview.confirm() && this.input?.matches(":focus")) editor.focus();
+                    else if (state.preview.confirm().applied && this.input?.matches(":focus")) editor.focus();
                 } }, { keys: ["Enter"], shared: true, priority: 33, repeat: false });
             events.signal.addEventListener("abort", submit.dispose, { once: true });
             const dismiss = editor.commands.register({ id: "rename.cancel", label: "Cancel rename", enabled: ownsField,

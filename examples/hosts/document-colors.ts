@@ -2,7 +2,7 @@ import { createReviewKey } from "./panel-actions.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId, Workspace } from "../../src/index.ts";
 import { createDocumentColorController } from "../../src/browser/index.ts";
-import type { DecorationLayer, DocumentColorChoice, DocumentColorController, TextEditor } from "../../src/browser/index.ts";
+import type { DecorationLayer, DocumentColorChoice, DocumentColorController, ReviewEditResult, TextEditor } from "../../src/browser/index.ts";
 import type { LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import { colorLimits, parseColor, rgbaColor } from "../../fixtures/language/colors.ts";
 import type { ColorFault, ColorReference } from "../../fixtures/language/colors.ts";
@@ -16,7 +16,7 @@ export type ColorEditNote = Readonly<{ document: string; resource: string; title
 export type DocumentColorsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; view: string | null;
     status: "idle" | "scan" | "colors" | "presentations" | "applied" | "expired" | "failed"; message: string; count: number; page: number; colors: readonly ColorNote[];
     selected: number; value: string; css: string | null; presentation: string; choices: readonly Readonly<{ id: string; label: string; select: () => void }>[];
-    edits: readonly ColorEditNote[]; canPreview: boolean; canApply: boolean; reviewKey: number | null; apply: (() => boolean) | null; changed: Readonly<{ document: DocumentId; title: string }> | null }>;
+    edits: readonly ColorEditNote[]; canPreview: boolean; canApply: boolean; reviewKey: number | null; apply: (() => ReviewEditResult) | null; changed: Readonly<{ document: DocumentId; title: string }> | null }>;
 const initial: DocumentColorsSnapshot = { available: false, connected: false, disconnected: false, pending: false, view: null,
     status: "idle", message: "Focus a source to discover colors.", count: 0, page: 0, colors: [], selected: -1, value: "", css: null,
     presentation: "", choices: [], edits: [], canPreview: false, canApply: false, reviewKey: null, apply: null, changed: null };
@@ -107,9 +107,9 @@ export class HostDocumentColors {
             pending, count: state.colors.length, colors, selected, page, value, css: proposed ? rgbaColor(proposed) : null, choices,
             presentation: review ? choices[state.presentations.indexOf(review.choice)]!.id : "", edits, canPreview: !!reference && !!proposed && !pending,
             canApply: review?.canApply ?? false, reviewKey: this.reviewKey(review), apply: review ? () => {
-                if (!review.apply()) return false;
-                if (this.sessions.has(s)) focusSource(s.editor);
-                return true;
+                const result = review.apply();
+                if (result.applied && this.sessions.has(s)) focusSource(s.editor);
+                return result;
             } : null });
     }
     readonly cancel = () => {

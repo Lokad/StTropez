@@ -54,9 +54,15 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         const retiredRename = await button("Apply rename").evaluateHandle(node => /** @type {HTMLButtonElement} */ (node).onclick?.bind(node));
         await button("Edit companion").click(); await expect(button("Apply rename")).toBeDisabled();
         await button("Rename preview").click(); await expect(button("Apply rename")).toBeEnabled();
-        assert.equal(await retiredRename.evaluate(confirm => confirm?.(new PointerEvent("click"))), false); await retiredRename.dispose();
+        assert.deepEqual(await retiredRename.evaluate(confirm => confirm?.(new PointerEvent("click"))), { applied: false, reason: "expired" }); await retiredRename.dispose();
         assert.equal(await text(), typed); await expect(button("Apply rename")).toBeEnabled();
-        const history = (await state()).history.undoDepth; await button("Apply rename").click(); await expect(page.locator("#result")).toHaveText("Rename applied");
+        const history = (await state()).history.undoDepth;
+        assert.deepEqual(await page.evaluate(() => window.publicLsp.confirmRenameWithWriteFailure()),
+            { applied: false, reason: "failed", message: "Fixture write failure" });
+        await expect(page.locator("#result")).toHaveText("Fixture write failure");
+        assert.equal(await text(), typed); assert.equal((await state()).history.undoDepth, history);
+        await button("Rename preview").click(); await button("Apply rename").click(); await expect(page.locator("#result")).toHaveText("Rename applied");
+        assert.deepEqual((await state()).notes.lastReview, { applied: true });
         assert.equal((await state()).history.undoDepth, history + 1); assert.ok((await text()).includes("inventory")); await input.press("Control+z"); assert.equal(await text(), typed);
         await button("Code actions").click(); await expect.poll(async () => (await state()).notes.actions ?? 0).toBeGreaterThan(1);
         await button("Review lazy action").click(); await expect.poll(async () => (await state()).notes.resolved).toBe(true);
@@ -94,9 +100,10 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         const beforeColor = await text(), colorDepth = (await state()).history.undoDepth;
         const oldColor = await button("Apply color").evaluateHandle(node => /** @type {HTMLButtonElement} */ (node).onclick?.bind(node));
         await button("Preview translucent color").click(); await expect(page.locator("#result")).toContainText("rgba(1, 2, 3, 0.5)");
-        assert.equal(await oldColor.evaluate(apply => apply?.(new PointerEvent("click"))), false); await oldColor.dispose();
+        assert.deepEqual(await oldColor.evaluate(apply => apply?.(new PointerEvent("click"))), { applied: false, reason: "expired" }); await oldColor.dispose();
         assert.equal(await text(), beforeColor); assert.equal((await state()).history.undoDepth, colorDepth);
         await button("Apply color").click(); await expect.poll(async () => (await state()).notes.colorApplied).toBe(true);
+        assert.deepEqual((await state()).notes.lastReview, { applied: true });
         assert.equal((await state()).history.undoDepth, colorDepth + 1); assert.equal(await text(), "// color presentation\r\n" + beforeColor.replace("#abc", "rgba(1, 2, 3, 0.5)")); await input.press("Control+z"); assert.equal(await text(), beforeColor);
         const counts = await page.evaluate(() => window.publicLsp.custom("fixture/synchronization", {}));
         assert.ok(counts && typeof counts === "object" && !Array.isArray(counts)
@@ -108,8 +115,8 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
             assert.ok(document && typeof document === "object" && !Array.isArray(document));
             return [document.uri === companionUri ? "companion" : "source", { open: document.open, close: document.close }];
         }));
-        // Navigation, the expired rename and the applied rename each release the unopened companion.
-        assert.deepEqual(lifetimes, { source: { open: 1, close: 0 }, companion: { open: 4, close: 3 } });
+        // Navigation and the expired, failed and applied renames each release the unopened companion.
+        assert.deepEqual(lifetimes, { source: { open: 1, close: 0 }, companion: { open: 5, close: 4 } });
         await page.evaluate(() => { window.publicLsp.stopCompletion(); window.publicLsp.diagnostics.request(); });
         await expect(marker).toHaveText("TODO");
         await button("Hover").click(); await expect.poll(async () => (await state()).notes.hover).toContain("Resolve this placeholder.");

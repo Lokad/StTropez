@@ -1,4 +1,5 @@
 import { Store } from "../core/observable.ts";
+import { reviewApplied, reviewFailed, reviewRefused, type ReviewEditResult } from "./review-edit.ts";
 import type { Observable } from "../core/observable.ts";
 import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
@@ -14,7 +15,7 @@ import type { TextEditor } from "./text-editor.ts";
 
 export type RenamePreview = Readonly<{
     name: string; count: number; canApply: boolean;
-    readPage: (page?: number) => LspWorkspaceEditPreview | undefined; confirm: () => boolean;
+    readPage: (page?: number) => LspWorkspaceEditPreview | undefined; confirm: () => ReviewEditResult;
 }>;
 export type RenameSnapshot = Readonly<{
     name: string; status: "idle" | "pending" | "ready" | "expired" | "failed" | "applied" | "disposed";
@@ -58,10 +59,15 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
         if (options.canCapture) for (const id of j.project.documents.keys()) if (!options.canCapture(id)) return false;
         return true;
     }
-    function fail(j: Job, error: unknown) {
-        if (job !== j) return;
+    function fail(j: Job, error: unknown): ReviewEditResult {
+        if (job !== j) return reviewRefused("expired");
+        const message = error instanceof Error ? error.message : "Rename failed.";
+        release(); publish({ status: "failed", message });
+        return reviewFailed(message);
+    }
+    function requestFailed(j: Job, error: unknown) {
         if (!current(j)) { expire(j); return; }
-        release(); publish({ status: "failed", message: error instanceof Error ? error.message : "Rename failed." });
+        fail(j, error);
     }
     const writable = (edit: LspWorkspaceEdit) => writableEdit(workspace, edit) && !(editor.getSnapshot().readOnlyReason
         && edit.documents.some(change => change.target.document.documentId === view.documentId && change.edits.length));
@@ -73,17 +79,19 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
             return previewLspWorkspaceEdit(j.edit, id => j.project.documents.get(id as DocumentId)!.title, page);
         }, confirm() {
             scope.assertWritable(); const j = job, edit = j?.edit;
-            if (cell.get().preview !== preview || !canApply || !j || !edit || !current(j) || !writable(edit)) return false;
+            if (cell.get().preview !== preview || !j || !edit || !current(j)) return reviewRefused("expired");
+            if (!count) return reviewRefused("no-changes");
+            if (!canApply || !writable(edit)) return reviewRefused("not-writable");
             try {
                 let changed: readonly DocumentSnapshot[] = [];
                 if (!j.source.commit(() => {
                     changed = applyLspWorkspaceEdit(workspace, edit, { origin: "host", requiredOrigins: ["human"], source: "rename", historyKind: "refactor", view });
                     return true;
-                })) { expire(j); return false; }
+                })) { expire(j); return reviewRefused("expired"); }
                 release(); publish({ status: "applied", message: `Applied ${count} edits across ${changed.length} files.`,
                     changes: Object.freeze(changed.map(doc => Object.freeze({ document: doc.id, title: doc.title }))) });
-                return true;
-            } catch (error) { fail(j, error); return false; }
+                return reviewApplied;
+            } catch (error) { return fail(j, error); }
         } });
         return preview;
     }
@@ -105,7 +113,7 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
             j.project.include(source.document);
             for (const doc of options.documents?.() ?? []) j.project.include(doc);
             source.signal.addEventListener("abort", () => expire(j), { once: true });
-            j.timer = win.setTimeout(() => fail(j, new Error("Rename request timed out.")), 30000);
+            j.timer = win.setTimeout(() => requestFailed(j, new Error("Rename request timed out.")), 30000);
             const offset = source.selectionSet.ranges[source.selectionSet.primary]!.head;
             publish({ name, status: "pending", message: "Preparing rename preview…" });
             void client.run({ document: j.source.document, project: [...j.project.documents.values()], offset, newName: name, prepare: options.prepareRequest?.() }).result.then(edit => {
@@ -118,8 +126,8 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
                 publish({ name, status: "ready", preview: makePreview(name, count, canApply),
                     message: !count ? "No edits for this name." : !canApply ? "A rename target is read-only or locked."
                         : `Review ${count} ${count === 1 ? "change" : "changes"}.` });
-            }).catch(error => fail(j, error));
-        } catch (error) { fail(j, error); }
+            }).catch(error => requestFailed(j, error));
+        } catch (error) { requestFailed(j, error); }
     }
     function cancel() { scope.assertWritable(); if (!events.signal.aborted) { release(); publish({}); } }
     const stop = provider.subscribe(() => { const j = job; if (j?.edit && !j.edit.isCurrent()) expire(j); });

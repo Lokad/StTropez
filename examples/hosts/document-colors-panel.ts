@@ -25,7 +25,7 @@ export function documentColorsPanelModel(tools: DocumentColorsPanelTools, s: Doc
         preview: { label: "Preview color presentations", disabled: !s.canPreview || s.pending, invoke: tools.preview },
         presentation: { label: "Color presentation ", value: s.presentation, disabled: !s.choices.length || s.pending,
             retentionKey: () => JSON.stringify(s.choices), items: () => s.choices, change: (id: string) => s.choices.find(choice => choice.id === id)?.select() },
-        apply: { label: "Apply captured color", reviewKey: s.reviewKey, disabled: !s.canApply || s.pending, invoke: s.apply ?? (() => false) },
+        apply: { label: "Apply captured color", reviewKey: s.reviewKey, disabled: !s.canApply || s.pending, invoke: () => s.apply?.() },
         edits: { label: "Proposed color edits", retentionKey: () => JSON.stringify(s.edits), items: () => s.edits.map(colorEditLabel) },
         changed: { visible: s.changed !== null, label: s.changed ? `Open color changes in ${s.changed.title}` : "Open color changes", disabled: s.pending || s.view !== null,
             invoke: () => { if (s.changed) tools.openChanged(s.changed.document); } },

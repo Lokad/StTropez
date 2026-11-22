@@ -118,10 +118,10 @@ test("color controls keep the reference and reviewed Apply from the displayed sn
     const tools: Parameters<typeof documentColorsPanelModel>[0] = { discover: noop, cancel: noop, previousPage: noop, nextPage: noop, disconnect: noop, reconnect: noop,
         bindList: noop, bindValue: noop, setValue: noop, preview: noop, openChanged: noop };
     const state: DocumentColorsSnapshot = { available: true, connected: true, disconnected: false, pending: false, view: "primary", status: "presentations", message: "",
-        count: 1, page: 0, selected: 0, value: "#abc", css: "#abc", presentation: "hex", canPreview: true, canApply: true, reviewKey: 1, apply: () => { calls.push("apply first"); return true; },
+        count: 1, page: 0, selected: 0, value: "#abc", css: "#abc", presentation: "hex", canPreview: true, canApply: true, reviewKey: 1, apply: () => { calls.push("apply first"); return { applied: true } as const; },
         colors: [{ from: 1, to: 5, text: "#abc", label: "#abc", color: { red: 1, green: 1, blue: 1, alpha: 1 }, ordinal: 0, line: 1, column: 2, css: "#abc", inspect: () => calls.push("inspect first") }],
         choices: [{ id: "hex", label: "Hex", select: () => calls.push("hex") }], edits: [], changed: null };
-    const first = documentColorsPanelModel(tools, state), newer = documentColorsPanelModel(tools, { ...state, apply: () => { calls.push("apply next"); return true; } });
+    const first = documentColorsPanelModel(tools, state), newer = documentColorsPanelModel(tools, { ...state, apply: () => { calls.push("apply next"); return { applied: true } as const; } });
     assert.equal(first.results.retentionKey(), newer.results.retentionKey()); first.results.items()[0]!.invoke(); first.presentation.change("hex");
     newer.apply.invoke(); first.apply.invoke(); assert.deepEqual(calls, ["inspect first", "hex", "apply next", "apply first"]);
 });
@@ -147,7 +147,7 @@ test("rename presentation retains its preview name, confirmation action and chan
     const tools: Parameters<typeof renamePanelModel>[0] = { prepare: noop, cancel: noop,
         previousPage: noop, nextPage: noop, disconnect: noop, reconnect: noop, bindName: noop, setName: noop, openChanged: id => { opened.push(id); } };
     let formatted = 0;
-    const preview = (id: number, name: string) => ({ name, count: 1, canApply: true, readPage: () => undefined, confirm: () => { applied.push(id); return true; } });
+    const preview = (id: number, name: string) => ({ name, count: 1, canApply: true, readPage: () => undefined, confirm: () => { applied.push(id); return { applied: true } as const; } });
     const state: HostRenameSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, pending: false, status: "ready", message: "Captured rename",
         name: "firstName", symbol: "symbol", reviewKey: 3, preview: preview(3, "firstName"), canApply: true, count: 1, page: 0,
         locations: Object.freeze([Object.freeze({ ordinal: 0, document: firstId, resource: "source", title: "First", revision: 1, from: 0, to: 6, line: 0, column: 0,

@@ -4,7 +4,7 @@ type RenamePanelTools = Pick<HostRenameTools, "prepare" | "cancel" | "previousPa
 function renameActions(tools: RenamePanelTools, s: HostRenameSnapshot) {
     return [
         { label: "Prepare rename preview", invoke: tools.prepare, disabled: !s.available || s.disconnected || s.pending },
-        { label: "Apply captured rename", reviewKey: s.reviewKey, invoke: s.preview?.confirm ?? (() => false), disabled: !s.canApply },
+        { label: "Apply captured rename", reviewKey: s.reviewKey, invoke: () => s.preview?.confirm(), disabled: !s.canApply },
         { label: "Dismiss rename preview", invoke: tools.cancel, disabled: !s.pending && !s.preview },
         { label: "Previous rename targets", invoke: tools.previousPage, disabled: s.page === 0 || s.status !== "ready" },
         { label: "Next rename targets", invoke: tools.nextPage, disabled: (s.page + 1) * 64 >= s.count || s.status !== "ready" },

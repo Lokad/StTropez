@@ -235,7 +235,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await expect.poll(replies.cancelled).toBe(true);
         const invalidated = await snapshot(page);
         await replies.release();
-        expect(await retired.evaluate(apply => apply())).toBe(false); await retired.dispose();
+        expect(await retired.evaluate(apply => apply())).toEqual({ applied: false, reason: "expired" }); await retired.dispose();
         await settledColorsAndLinks(page);
         const after = await snapshot(page);
         expect(after.bindings.colors.state).toMatchObject({ pending: false, canApply: false, choices: [] });
@@ -255,13 +255,13 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         const old = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.colors.state.apply!);
         await expect(apply).toBeEnabled();
         await preview("#445566"); const beforeOld = await snapshot(page);
-        expect(await old.evaluate(apply => apply())).toBe(false); await old.dispose();
+        expect(await old.evaluate(apply => apply())).toEqual({ applied: false, reason: "expired" }); await old.dispose();
         const format = page.getByRole("combobox", { name: "Color presentation", exact: true });
         const first = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.colors.state.apply!);
         await apply.hover(); await page.mouse.down();
         await format.selectOption("provider-1"); await format.selectOption("provider-0");
         await apply.hover(); await page.mouse.up();
-        expect(await first.evaluate(apply => apply())).toBe(false); await first.dispose();
+        expect(await first.evaluate(apply => apply())).toEqual({ applied: false, reason: "expired" }); await first.dispose();
         await exact(page, current);
         expect((await snapshot(page)).history).toEqual(beforeOld.history);
         await expect(apply).toBeEnabled();
@@ -271,7 +271,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await discover();
         await preview("#445566"); const beforeReadOnly = await snapshot(page);
         await expect(apply).toBeDisabled();
-        expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.colors.state.apply!())).toBe(false);
+        expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.colors.state.apply!())).toEqual({ applied: false, reason: "not-writable" });
         await exact(page, current);
         expect((await snapshot(page)).history).toEqual(beforeReadOnly.history);
         await page.evaluate(() => window.hostFixture.setSourceReadOnly(false));

@@ -1,4 +1,5 @@
 import { Store } from "../core/observable.ts";
+import { reviewApplied, reviewFailed, reviewRefused, type ReviewEditResult } from "./review-edit.ts";
 import type { Observable } from "../core/observable.ts";
 import { mapReplacementSelections } from "../core/selections.ts";
 import { ownsTextSurface } from "../core/workspace.ts";
@@ -15,7 +16,7 @@ export type DocumentColorChoice = LspDocumentColor & Readonly<{ revision: number
 export type ColorPresentationChoice = Readonly<{ label: string; select: () => void }>;
 export type ColorPresentationReview = Readonly<{
     reference: DocumentColorChoice; proposed: LspColor; choice: ColorPresentationChoice;
-    edits: LspColorPresentation["edits"]; canApply: boolean; apply: () => boolean;
+    edits: LspColorPresentation["edits"]; canApply: boolean; apply: () => ReviewEditResult;
 }>;
 export type DocumentColorSnapshot = Readonly<{
     status: "idle" | "discovering" | "ready" | "previewing" | "review" | "applied" | "expired" | "failed" | "disposed";
@@ -64,9 +65,11 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
         j.invalid = true;
         queueMicrotask(() => { if (job === j) { release(); publish("expired"); } });
     }
-    function fail(j: Job, error: unknown) {
-        if (job !== j || j.invalid) return;
-        release(); publish("failed", { message: error instanceof Error ? error.message : String(error) });
+    function fail(j: Job, error: unknown): ReviewEditResult {
+        if (job !== j || j.invalid) return reviewRefused("expired");
+        const message = error instanceof Error ? error.message : String(error);
+        release(); publish("failed", { message });
+        return reviewFailed(message);
     }
     function current(j: Job) {
         return job === j && !j.invalid && available() && ownsTextSurface(workspace, view, tab) && (j.reply?.isCurrent() ?? j.source.isCurrent());
@@ -82,10 +85,11 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
         if (!p.result) { release(); publish("expired"); return; }
         delete j.preview; p.capture.cancel(); publish("ready", { colors: state.get().colors });
     }
-    function apply(review: ColorPresentationReview): boolean {
+    function apply(review: ColorPresentationReview): ReviewEditResult {
         scope.assertWritable();
         const j = job, p = j?.preview;
-        if (state.get().review !== review || !review.canApply || !j || !p || !current(j) || !writable()) return false;
+        if (state.get().review !== review || !j || !p || !current(j)) return reviewRefused("expired");
+        if (!review.canApply || !writable()) return reviewRefused("not-writable");
         const { document, selectionSet } = p.capture;
         try {
             if (!p.capture.commit(() => {
@@ -94,10 +98,10 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
                     selectionSet: mapReplacementSelections(document.buffer.length, selectionSet, review.edits) });
                 if (!result.applied) throw new Error(result.reason);
                 return true;
-            })) return false;
+            })) return reviewRefused("expired");
             const changed = workspace.document(document.id).revision !== document.revision;
-            release(); publish("applied", { changed }); return true;
-        } catch (error) { fail(j, error); return false; }
+            release(); publish("applied", { changed }); return reviewApplied;
+        } catch (error) { return fail(j, error); }
     }
     function select(choice: ColorPresentationChoice, index: number, presentations = state.get().presentations) {
         scope.assertWritable();

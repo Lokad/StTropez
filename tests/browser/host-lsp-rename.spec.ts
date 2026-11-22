@@ -71,6 +71,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP renam
         await preview(page); await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion); await waitForRename(page); await expect(button(page, "Apply captured rename")).toBeDisabled();
         await preview(page); await expect(button(page, "Apply captured rename")).toBeDisabled();
         await expect(page.getByLabel("Rename status", { exact: true })).toContainText("read-only or locked");
+        expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.rename.state.preview!.confirm())).toEqual({ applied: false, reason: "not-writable" });
         // A programmatic click must not bypass the captured permission policy either.
         await button(page, "Apply captured rename").dispatchEvent("click"); await name(page).press("Enter"); await waitForRename(page); await exact(page, raw);
         expect((await snapshot(page)).bindings.rename.state.status).toBe("ready"); expect((await snapshot(page)).history).toEqual(before.history);
@@ -80,7 +81,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP renam
         const retired = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.rename.state.preview!);
         await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
         await select(page, raw.indexOf("catalogue") + 2); await preview(page); await expect(button(page, "Apply captured rename")).toBeEnabled();
-        expect(await retired.evaluate(p => [p.confirm(), p.readPage() === undefined])).toEqual([false, true]); await retired.dispose();
+        expect(await retired.evaluate(p => [p.confirm(), p.readPage() === undefined])).toEqual([{ applied: false, reason: "expired" }, true]); await retired.dispose();
         await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
         for (const mode of ["selection", "typing", "remount"] as const) {
             await select(page, raw.indexOf("catalogue") + 2); await name(page).fill("inventory"); replies.hold(); await button(page, "Prepare rename preview").click(); await expect.poll(replies.waiting).toBe(true); expect((await snapshot(page)).bindings.rename.state.pending).toBe(true);
@@ -94,7 +95,9 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP renam
         }
         await select(page, raw.indexOf("catalogue") + 2); await preview(page); await page.evaluate(() => window.hostFixture.faultIdleRename()); await waitForRename(page); await expect(button(page, "Apply captured rename")).toBeDisabled();
         await button(page, "Reconnect rename provider").click(); await select(page, raw.indexOf("catalogue") + 2); await preview(page); await button(page, "Disconnect rename provider").click(); await input(page).press("Control+End"); await input(page).pressSequentially("local"); await waitForRename(page); await exact(page, raw + "local"); await button(page, "Reconnect rename provider").click(); await select(page, raw.indexOf("catalogue") + 2); await preview(page); await expect(button(page, "Apply captured rename")).toBeEnabled();
-        const count = requests; await select(page, raw.indexOf(";") + 1); await preview(page); expect(requests).toBe(count + 1); expect(lastPosition).toEqual({ line: 1, character: "const catalogue = 1;".length }); expect((await snapshot(page)).bindings.rename.state.count).toBe(0); await exact(page, raw + "local"); await dispose(page);
+        const count = requests; await select(page, raw.indexOf(";") + 1); await preview(page); expect(requests).toBe(count + 1); expect(lastPosition).toEqual({ line: 1, character: "const catalogue = 1;".length }); expect((await snapshot(page)).bindings.rename.state.count).toBe(0);
+        expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.rename.state.preview!.confirm())).toEqual({ applied: false, reason: "no-changes" });
+        await exact(page, raw + "local"); await dispose(page);
     });
     if (coversHost("candidate-hosts", host, "candidate")) test("comparison rename preserves its baseline and primary Save/Run through unmounted-target focus", async ({ page }) => {
         await seed(page); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await waitForRename(page); const working = input(page, "Comparison working source"), before = await snapshot(page), baseline = before.bindings.comparison!.baseline;

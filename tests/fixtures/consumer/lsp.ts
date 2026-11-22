@@ -1,7 +1,7 @@
 import { TextBuffer, Workspace } from "sttropez";
 import type { DocumentId } from "sttropez";
 import { createLspHoverClient, RpcError, type LspHoverClient } from "sttropez/protocol";
-import type { AnchoredOverlay, DiagnosticController, HoverController } from "sttropez/browser";
+import type { AnchoredOverlay, DiagnosticController, HoverController, ReviewEditResult } from "sttropez/browser";
 import { BrowserLspWorkspace, createCodeActionController, createCompletionController, createDiagnosticController, createDocumentColorController, createDocumentLinkController, createHoverController, createNavigationController, createRenameController, createSignatureController, mountAnchoredOverlay, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
 
 const workspace = new Workspace();
@@ -33,9 +33,29 @@ const text = () => { const buffer = workspace.document(source.documentId).buffer
 const position = () => text().indexOf("catalogue") + 2;
 const result = document.getElementById("result")!, status = document.getElementById("status")!, choices = document.getElementById("choices")!;
 let disposed = false;
-const notes: { hover?: string; navigation?: string; renameEdits?: number; actions?: number; resolved?: boolean; signature?: string; linkUri?: string; colorPresentations?: number; colorApplied?: boolean } = {};
+const notes: { hover?: string; navigation?: string; renameEdits?: number; actions?: number; resolved?: boolean; signature?: string; linkUri?: string; colorPresentations?: number; colorApplied?: boolean; lastReview?: ReviewEditResult } = {};
 const command = (label: string, invoke: () => void | Promise<unknown>) => { const button = document.createElement("button"); button.textContent = label;
     button.onclick = () => { void Promise.resolve().then(invoke).catch(error => { result.textContent = String(error); }); }; document.getElementById("controls")!.append(button); return button; };
+function reviewButton<T>(label: string, record?: (value: T) => void) {
+    let button = command(label, () => {}), previous: (() => T) | undefined;
+    button.disabled = true;
+    return (confirm: (() => T) | undefined, canApply: boolean | undefined) => {
+        if (confirm !== previous) {
+            previous = confirm;
+            const next = document.createElement("button");
+            next.textContent = label;
+            next.onclick = confirm ? () => {
+                const value = confirm();
+                record?.(value);
+                return value;
+            } : null;
+            button.replaceWith(next);
+            button = next;
+        }
+        button.disabled = !canApply;
+    };
+}
+const recordReview = (value: ReviewEditResult) => { notes.lastReview = value; };
 choices.onpointerdown = event => event.preventDefault();
 const stop = controller.subscribe(() => {
     const state = controller.getSnapshot(); status.textContent = state.message;
@@ -77,24 +97,23 @@ command("Rename preview", () => {
     editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: offset, head: offset });
     rename.request("inventory");
 });
-const applyRename = command("Apply rename", () => {});
-applyRename.disabled = true;
+const applyRename = reviewButton("Apply rename", recordReview);
 rename.subscribe(() => {
     const state = rename.getSnapshot(), preview = state.preview, page = preview?.readPage();
     notes.renameEdits = preview?.count ?? 0;
-    applyRename.disabled = !preview?.canApply; applyRename.onclick = preview?.confirm ?? null;
+    applyRename(preview?.confirm, preview?.canApply);
     result.textContent = state.status === "applied" ? "Rename applied" : page
         ? page.notes.map(note => note.title + ": " + note.before + " → " + note.insert).join("\n") : state.message;
 });
 command("Code actions", () => { const at = text().indexOf("TODO");
     editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: at, head: at + 4 }); actions.request(); });
 const resolveAction = command("Review lazy action", () => actions.getSnapshot().choices.find(choice => choice.needsResolve)?.select());
-const applyAction = command("Apply reviewed action", () => {});
+const applyAction = reviewButton("Apply reviewed action");
 actions.subscribe(() => {
     const state = actions.getSnapshot(), preview = state.preview, page = preview?.readPage();
     notes.actions = state.choices.length;
     resolveAction.disabled = !state.choices.some(choice => choice.needsResolve);
-    applyAction.disabled = !preview?.canApply; applyAction.onclick = preview?.confirm ?? null;
+    applyAction(preview?.confirm, preview?.canApply);
     notes.resolved = !!preview && !!state.choices[preview.index]?.needsResolve && !!page?.count;
     result.textContent = page?.notes.map(edit => edit.before + " → " + edit.insert).join("\n") || state.message;
 });
@@ -115,12 +134,11 @@ command("Colors", async () => {
     await colors.request(); await colors.getSnapshot().colors[0]?.preview({ red: 0, green: 1, blue: 0, alpha: 1 });
 });
 command("Preview translucent color", () => colors.getSnapshot().colors[0]?.preview({ red: 1 / 255, green: 2 / 255, blue: 3 / 255, alpha: .5 }));
-const applyColor = command("Apply color", () => {});
-applyColor.disabled = true;
+const applyColor = reviewButton("Apply color", recordReview);
 colors.subscribe(() => {
     const state = colors.getSnapshot(), review = state.review;
     notes.colorPresentations = state.presentations.length; notes.colorApplied = state.status === "applied";
-    applyColor.disabled = !review?.canApply; applyColor.onclick = review?.apply ?? null;
+    applyColor(review?.apply, review?.canApply);
     result.textContent = review ? review.edits.map(edit => edit.insert).join("\n") : state.status === "applied" ? "Color applied" : state.message;
 });
 const dispose = () => { if (disposed) return; disposed = true; stop(); controller.dispose(); diagnostics.dispose(); hover.dispose(); navigation.dispose(); rename.dispose(); actions.dispose(); signature.dispose(); links.dispose(); colors.dispose(); provider.dispose(); editor.dispose(); };
@@ -136,7 +154,14 @@ async function probeTypedHover() {
         return hover?.isCurrent() ? hover.text : null;
     } finally { client.dispose(); }
 }
-const bridge = { text, probeTypedHover, select: (at: number) => editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: at, head: at }),
+function confirmRenameWithWriteFailure() {
+    const preview = rename.getSnapshot().preview;
+    if (!preview?.canApply) throw new Error("Expected a writable rename preview");
+    const edit = workspace.editDocuments;
+    workspace.editDocuments = () => { throw new Error("Fixture write failure"); };
+    try { return preview.confirm(); } finally { workspace.editDocuments = edit; }
+}
+const bridge = { text, probeTypedHover, confirmRenameWithWriteFailure, select: (at: number) => editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: at, head: at }),
     state: () => ({ provider: provider.snapshot(), editor: controller.getDiagnostics(), completion: controller.getSnapshot(), history: workspace.observeHistory(source.documentId).getSnapshot(), diagnostics: workspace.diagnostics(), notes, companion: companion.documentId, metrics: editor.getDiagnostics(), errors }),
     showDiagnostic: () => {
         const state = diagnostics.getSnapshot(), first = state.diagnostics[0];

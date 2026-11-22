@@ -457,33 +457,32 @@ Pass `setName(value)` each time the name changes and call `request()` to preview
 caret. Alternatively, `request(name)` sets the name and requests its preview in one call. F2 opens
 the example form. Enter previews a name, then confirms the reviewed edit on the next press.
 
-A ready snapshot contains a `preview` for that exact name and selection. Its `count` covers all
-edits. `readPage(index)` reads up to 64 edits. A read-only or locked target can be reviewed with
-`canApply` false. An unrelated read-only document can stay in the project. Bind the button to
-`preview.confirm`. Changing the name, source selection or captured targets, replacing the request,
-and disposing the editor retire the old preview. Its `confirm()` returns false and its
-`readPage()` returns undefined. Confirming a current, writable preview applies all pages as one
-undo step across the changed files. The applied snapshot lists their identities and titles.
+A ready snapshot contains a `preview` for the captured name and selection. Its `count` covers
+all edits. `readPage(index)` reads up to 64. Give each preview its own Apply button and keep
+that button while paging. A pointer press started on an older preview then cannot confirm a
+replacement on release.
 
 ```ts
-import type { RenameController, RenamePreview } from "sttropez/browser";
+import type { RenamePreview, ReviewEditResult } from "sttropez/browser";
 
-export function bindRenameReview(
-    rename: RenameController,
-    apply: HTMLButtonElement,
-    show: (preview: RenamePreview | null) => void
-) {
-    const render = () => {
-        const { preview } = rename.getSnapshot();
-        apply.disabled = !preview?.canApply;
-        apply.onclick = preview?.confirm ?? null;
-        show(preview);
-    };
-    const stop = rename.subscribe(render);
-    render();
-    return () => { stop(); apply.onclick = null; apply.disabled = true; };
+export function renameButton(preview: RenamePreview, report: (result: ReviewEditResult) => void) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Apply rename";
+    button.disabled = !preview.canApply;
+    button.onclick = () => report(preview.confirm());
+    return button;
 }
 ```
+
+A successful `confirm()` returns `{ applied: true }` and applies the reviewed pages as one undo
+step. The snapshot lists the changed files. On refusal, read `reason`:
+
+- `expired` means the name, capture or request changed, or the editor was disposed. The old
+  preview's `readPage()` returns `undefined`.
+- `not-writable` means a target in this preview is read-only or locked.
+- `no-changes` means the provider supplied no edits.
+- `failed` includes a `message` describing the apply error.
 
 Call `createLspRenameClient(provider).run({ document, project, offset, newName }).result` for a
 workspace edit plan. A null reply gives an empty plan. The server checks language naming rules. Your
@@ -634,17 +633,9 @@ a new target and tooltip while requiring the original range and identity.
 `createDocumentColorController(editor, provider)` discovers colours for a mounted editor.
 Call `request()`, choose a reference from `getSnapshot().colors` and call its `preview(rgba)`.
 The first returned presentation is selected. Another presentation's `select()` creates a new
-review. Bind Apply to the review the user sees.
-
-```ts
-import type { DocumentColorController } from "sttropez/browser";
-
-export function renderApply(controller: DocumentColorController, button: HTMLButtonElement) {
-    const { review } = controller.getSnapshot();
-    button.disabled = !review?.canApply;
-    button.onclick = review?.apply ?? null;
-}
-```
+review. Give each review its own Apply button as in the rename example. Call `review.apply()`
+for that review. It returns `{ applied: true }` on success, or a `ReviewEditResult` with
+`reason` set to `expired`, `not-writable` or `failed`.
 
 Call `dismissPreview()` when the picker value changes. Dismissing a pending provider call ends
 discovery. You can reuse a completed list after dismissing its review or moving the caret.
