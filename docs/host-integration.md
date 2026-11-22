@@ -179,7 +179,9 @@ document identity, revision, length, complete selection set, signal and currentn
 The insertion belongs to the captured view, tab generation, resource permissions, revision, directed
 selections and visible folds. Editing, changing selections, folds or permissions, starting
 composition, typing a navigation or editing key, reconfiguring the language, taking another capture or
-disposing the view expires it. Clicking a toolbar control alone keeps the original target. If an
+disposing the view expires it. Clicking a toolbar button or invoking a host shortcut preserves
+the target until a command changes it. A command can check `editor.activity().pendingInput`
+before reading the document. If an
 observer invalidates the capture, a microtask releases its lease and aborts the signal. Successful
 insertion also aborts the signal when it finishes.
 

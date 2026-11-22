@@ -1069,7 +1069,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (escapeSelection && event.key !== "Tab" && event.key !== "Shift") escapeState(false);
         if (event.defaultPrevented || composing || event.isComposing || event.keyCode === 229) return;
         if (["Shift", "Control", "Meta", "Alt"].includes(event.key)) return;
-        if (hostInsertion) { hostInsertion.cancel(); if (event.key === "Escape") { event.preventDefault(); return; } }
+        if (hostInsertion && event.key === "Escape") { hostInsertion.cancel(); event.preventDefault(); return; }
         if (!captured && registry.handleEditor(event, id => {
             const binding = editorKeyCommand(id);
             if (!binding) return registry.commands.run(id);
@@ -1077,6 +1077,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             return event.defaultPrevented;
         })) return;
         const binding = captured ?? classifyEditingKey(event, apple, !!escapeSelection, pairKey);
+        // Host commands check pending input before capturing a document. Editing and
+        // navigation supersede a host insertion; ordinary typing reaches beforeInput.
+        if (typeof binding === "object") hostInsertion?.cancel();
         if (input.readOnly && event.key !== "Tab") {
             // A read-only textarea suppresses beforeinput for ordinary printable keys.
             const printable = ((!event.ctrlKey && !event.metaKey && !event.altKey) || event.getModifierState("AltGraph"))

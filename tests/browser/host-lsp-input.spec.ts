@@ -19,6 +19,9 @@ async function settled(page: Page): Promise<void> {
     });
 }
 async function select(page: Page, at: number): Promise<void> {
+    // The host's tool panels can scroll the source outside the page. Its popups
+    // only paint while the anchor is visible, even when the input retains focus.
+    await page.getByRole("region", { name: "Primary source", exact: true }).scrollIntoViewIfNeeded();
     await input(page).focus();
     await page.evaluate(at => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: at, head: at }]); }, at);
     await settled(page);

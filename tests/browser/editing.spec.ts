@@ -266,7 +266,10 @@ test("captured host insertion uses the input transform once and expires before l
         const superseded = old.signal.aborted && !old.insert("late");
         return { superseded, next };
     });
-    await page.getByRole("textbox", { name: "Primary source", exact: true }).press("q"); await ready(page);
+    const source = page.getByRole("textbox", { name: "Primary source", exact: true });
+    await source.press("F8");
+    expect(await pending.evaluate(({ next }) => next.isCurrent())).toBe(true);
+    await source.press("q"); await ready(page);
     expect(await pending.evaluate(({ superseded, next }) => ({ superseded, aborted: next.signal.aborted, late: next.insert("late"),
         text: window.editingFixture.range(0, 3), pending: window.editingFixture.snapshot().primary.pendingInput })))
         .toEqual({ superseded: true, aborted: true, late: false, text: "aqc", pending: false });
