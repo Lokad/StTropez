@@ -153,7 +153,13 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
             await expect(next).toBeEnabled(); await next.hover(); await page.mouse.up();
             await oldNext.evaluate(turn => turn()); await oldNext.dispose();
             await expect(button(page, "Previous " + name)).toBeDisabled(); await expect(rows).toHaveCount(64);
-            await next.click();
+            if (kind === "links") {
+                const row = rows.first().getByRole("button"), resolves = methods.filter(method => method === "documentLink/resolve").length;
+                await row.hover(); await page.mouse.down(); await next.evaluate(node => (node as HTMLButtonElement).click());
+                await expect(rows).toHaveCount(7); await row.hover(); await page.mouse.up(); await settledColorsAndLinks(page);
+                expect(methods.filter(method => method === "documentLink/resolve")).toHaveLength(resolves);
+                expect((await snapshot(page)).bindings.links.opened).toBe(0);
+            } else await next.click();
         };
         await turnAfterRefresh("links"); await expect(links.getByRole("listitem")).toHaveCount(7);
         await expect(button(page, "Next module links")).toBeDisabled(); await expect(links.getByRole("button").last()).toBeEnabled();

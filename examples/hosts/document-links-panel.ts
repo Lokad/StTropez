@@ -21,7 +21,7 @@ export function documentLinksPanelModel(tools: DocumentLinksPanelTools, s: Docum
         title: "Module document links", description: documentLinkDescription, status: { label: "Module link status", text: s.message },
         actions: documentLinkActions(tools, s),
         results: { label: "Module link results", bind: tools.bindList, disabled: s.status !== "ready",
-            items: () => s.links.map((link, index) => ({ key: `${link.from}:${index}`, label: documentLinkLabel(link), details: documentLinkDetails(link), available: !!link.target || !!link.resolvable,
+            items: () => s.links.map((link, index) => ({ key: `${s.page}:${index}:${link.from}:${link.to}`, label: documentLinkLabel(link), details: documentLinkDetails(link), available: !!link.target || !!link.resolvable,
                 invoke: link.open } as const)) },
     } as const;
 }
@@ -30,7 +30,7 @@ export function mountDocumentLinksPanel(host: HTMLElement, tools: HostDocumentLi
     const owner = host.ownerDocument, heading = owner.createElement("h2"), description = owner.createElement("p"), status = owner.createElement("output"), controls = owner.createElement("div"), list = owner.createElement("ul");
     host.setAttribute("aria-label", initial.title); heading.textContent = initial.title; description.textContent = initial.description; status.setAttribute("aria-label", initial.status.label); list.setAttribute("aria-label", initial.results.label); list.tabIndex = -1; initial.results.bind(list);
     host.replaceChildren(heading, description, status, controls, list);
-    const rows: { li: HTMLLIElement; button: HTMLButtonElement; text: HTMLParagraphElement }[] = [];
+    const rows: { key: string; li: HTMLLIElement; button: HTMLButtonElement; text: HTMLParagraphElement }[] = [];
     let previous: readonly LinkNote[] | undefined;
     const render = () => {
         const state = tools.state.getSnapshot(), model = documentLinksPanelModel(tools, state);
@@ -40,9 +40,11 @@ export function mountDocumentLinksPanel(host: HTMLElement, tools: HostDocumentLi
             previous = state.links;
             model.results.items().forEach((link, index) => {
                 let row = rows[index];
-                if (!row) {
+                if (row?.key !== link.key) {
                     const li = owner.createElement("li"), button = owner.createElement("button"), text = owner.createElement("p");
-                    li.append(button, text); row = { li, button, text }; rows.push(row); list.append(li);
+                    li.append(button, text);
+                    if (row) row.li.replaceWith(li); else list.append(li);
+                    rows[index] = row = { key: link.key, li, button, text };
                 }
                 row.button.textContent = link.label; row.button.onclick = link.invoke; row.text.textContent = link.details;
             });
