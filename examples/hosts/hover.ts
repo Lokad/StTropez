@@ -22,6 +22,7 @@ export class HostHoverTools {
     private current: Session | undefined;
     private kind: "pointer" | "keyboard" = "pointer";
     private overPopup = false;
+    private popup: HTMLElement | undefined;
     private cancelDismiss: (() => void) | undefined;
     private retired = { posted: 0, received: 0, stale: 0, invalid: 0, failed: 0, cancelled: 0 };
     readonly state = this.cell.observable;
@@ -48,13 +49,17 @@ export class HostHoverTools {
         const current = this.current; this.current = undefined; this.overPopup = false; current?.controller.cancel(); this.publish();
     };
     private queueDismiss(session: Session): void {
-        this.clearDismiss(); if (this.kind !== "pointer" || this.overPopup || session.overTarget) return;
+        this.clearDismiss(); if (this.kind !== "pointer" || this.overPopup || session.overTarget || this.popup?.matches(":focus-within")) return;
         const win = session.editor.element.ownerDocument.defaultView!, id = win.setTimeout(() => { this.cancelDismiss = undefined;
-            if (this.current === session && !this.overPopup && !session.overTarget) this.dismiss(); }, 200);
+            if (this.current === session && !this.overPopup && !session.overTarget && !this.popup?.matches(":focus-within")) this.dismiss(); }, 200);
         this.cancelDismiss = () => win.clearTimeout(id);
     }
     readonly enterPopup = (): void => { this.overPopup = true; this.clearDismiss(); };
     readonly leavePopup = (): void => { this.overPopup = false; if (this.current) this.queueDismiss(this.current); };
+    bindPopup(popup: HTMLElement): () => void {
+        this.popup = popup;
+        return () => { if (this.popup === popup) this.popup = undefined; };
+    }
     private inspect(session: Session, revision: number, offset: number, affinity: Affinity, kind: "pointer" | "keyboard"): boolean {
         if (this.sessions.get(session.id) !== session || !this.allowInspect(kind)) return false;
         this.dismiss(); this.current = session; this.kind = kind; session.revision = revision; session.affinity = affinity; session.offset = offset;
@@ -87,10 +92,11 @@ export class HostHoverTools {
                 { keys: ["Ctrl+k Ctrl+i", "Meta+k Meta+i"] });
             listeners.signal.addEventListener("abort", inspect.dispose, { once: true });
             const close = editor.commands.register({ id: "hover.dismiss", label: "Dismiss hover",
-                enabled: () => this.current === session || session.scheduled, run: () => {
+                enabled: () => (editor.input.matches(":focus") || !!this.popup?.matches(":focus-within"))
+                    && (this.current === session || session.scheduled), run: () => {
                     if (this.current !== session) { cancelPointer(); return false; }
                     const visible = this.cell.get().visible; this.dismiss(); return visible;
-                } }, { keys: ["Escape"], priority: 20 });
+                } }, { keys: ["Escape"], priority: 20, shared: true });
             listeners.signal.addEventListener("abort", close.dispose, { once: true });
         } catch (error) { listeners.abort(); controller.dispose(); throw error; }
         this.sessions.set(id, session);
@@ -135,10 +141,21 @@ export class HostHoverTools {
         editor.element.addEventListener("pointerleave", () => { cancelPointer(); session.overTarget = false; if (this.current === session) this.queueDismiss(session); }, { signal: listeners.signal });
         editor.element.addEventListener("pointerdown", () => { cancelPointer(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
         win.addEventListener("keydown", event => {
+            if (event.key === "Escape" && this.current === session && this.kind === "pointer" && this.cell.get().visible
+                && !event.defaultPrevented && !event.isComposing && event.keyCode !== 229 && !event.ctrlKey && !event.metaKey
+                && !event.altKey && !event.shiftKey && !editor.element.matches(":focus-within") && !this.popup?.matches(":focus-within")) {
+                // A pointer hover can belong to a pane that has never had keyboard focus.
+                // Leave the key and focus with the user's active control.
+                this.dismiss(); return;
+            }
             if (event.key !== "Control" && event.key !== "Meta") return;
+            if (this.popup?.matches(":focus-within")) return;
             cancelPointer(); if (this.current === session && this.kind === "pointer") this.dismiss();
         }, { signal: listeners.signal });
-        editor.input.addEventListener("blur", () => { if (this.current === session && this.kind === "keyboard") this.dismiss(); }, { signal: listeners.signal });
+        editor.input.addEventListener("blur", event => {
+            if (this.current === session && this.kind === "keyboard"
+                && !(event.relatedTarget instanceof Node && this.popup?.contains(event.relatedTarget))) this.dismiss();
+        }, { signal: listeners.signal });
         editor.input.addEventListener("compositionstart", () => { session.cancelTimers(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
         editor.input.addEventListener("beforeinput", () => { cancelPointer(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
         const scroll = () => {

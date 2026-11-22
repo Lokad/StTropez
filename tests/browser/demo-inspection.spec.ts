@@ -37,6 +37,8 @@ test("real type inspection works from Code, keyboard and pointer without changin
     });
     await page.locator("#walkthrough-toggle").focus(); await page.mouse.move(point.x, point.y);
     await expect(hover(page)).toContainText("calculateTotal(items: readonly CartItem[]"); await expect(page.locator("#walkthrough-toggle")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(hover(page)).toBeHidden(); await expect(page.locator("#walkthrough-toggle")).toBeFocused();
     await page.mouse.move(2, 2); await expect(hover(page)).toBeHidden();
     // Blur clears occurrence decorations and schedules paint. Exercise a pointer arriving in
     // that same task, before the next frame, rather than relying on engine timing to hit it.

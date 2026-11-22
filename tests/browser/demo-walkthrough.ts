@@ -144,6 +144,15 @@ export async function runDemoDocumentation(page: Page, url = "/") {
     await expect(hover.locator("pre code").last()).toContainText("applyDiscount(50, 0.1)");
     await expect.poll(() => clearsLine(hover)).toBe(true);
     expect(await hover.evaluate(node => { const box = node.getBoundingClientRect(); return box.top >= 0 && box.bottom <= innerHeight && box.left >= 0 && box.right <= innerWidth; })).toBe(true);
+    const position = await page.locator("#cursor").innerText(), phrase = hover.locator("strong").first();
+    const firstWord = await paintedCharacter(phrase, "percentage discount", 2);
+    await page.mouse.dblclick(firstWord.x, firstWord.y);
+    const selection = () => page.evaluate(() => window.getSelection()?.toString().trim());
+    await expect.poll(selection).toBe("percentage");
+    await page.keyboard.down("Control"); await expect.poll(selection).toBe("percentage"); await page.keyboard.up("Control");
+    await page.keyboard.press("Escape"); await expect(hover).toBeHidden(); await expect(source).toBeFocused();
+    await expect(page.locator("#cursor")).toHaveText(position);
+    await source.press("Control+k"); await source.press("Control+i");
     const opened = page.context().waitForEvent("page"); await hover.getByRole("button", { name: "TypeScript function guide", exact: true }).click();
     const help = await opened; await expect(help).toHaveURL(guide); expect(await help.evaluate(() => window.opener)).toBeNull(); await help.close();
     await source.press("Escape");
