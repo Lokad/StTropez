@@ -140,10 +140,18 @@ for (const host of ["plain", "react"]) {
         await input(page, "Secondary source").evaluate(node => node.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
         await button(page, "Discover domain regions").click(); await expect(status(page)).toContainText("Finish pending typing or composition"); expect((await snapshot(page)).bindings.domain.requested).toBe(0);
         await input(page, "Secondary source").evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })));
-        const cases = ["revision", "permission", "lease", "fold", "selection", "composition", "remount", "replacement"] as const;
-        for (const reason of cases) {
-            await input(page).focus(); const before = await snapshot(page); await button(page, reason === "selection" ? "Insert catalogue import" : "Discover domain regions").click();
+        const cases = [
+            ["discovery", "revision"], ["discovery", "permission"], ["discovery", "lease"], ["discovery", "fold"],
+            ["import", "selection"], ["import", "permission"], ["import", "typing"],
+            ["discovery", "composition"], ["discovery", "remount"], ["import", "remount"], ["discovery", "replacement"]
+        ] as const;
+        for (const [command, reason] of cases) {
+            await input(page).focus(); const before = await snapshot(page);
+            const lateImport = command === "import" && reason === "remount";
+            if (lateImport) await page.evaluate(() => { window.hostFixture.setDomainDelay(300); window.hostFixture.faultDomainNext("late"); });
+            await button(page, command === "import" ? "Insert catalogue import" : "Discover domain regions").click();
             expect((await snapshot(page)).bindings.domain.pending).toBe(true);
+            if (reason === "typing") await input(page, "Secondary source").pressSequentially("x");
             if (reason === "revision") await page.evaluate(() => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: 0, insert: "x" }]); });
             if (reason === "permission") await page.evaluate(() => { window.hostFixture.setSourceReadOnly(true); window.hostFixture.setSourceReadOnly(false); });
             if (reason === "lease") await page.evaluate(() => window.hostFixture.cycleSourceEditLease());
@@ -153,7 +161,18 @@ for (const host of ["plain", "react"]) {
             if (reason === "remount") await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
             if (reason === "replacement") await page.evaluate(() => window.hostFixture.openTransferTarget("unrelated target"));
             await expect.poll(async () => (await snapshot(page)).bindings.domain.pending).toBe(false);
-            const after = await snapshot(page); expect(after.bindings.domain.applied).toBe(before.bindings.domain.applied); expect(after.bindings.domain.provider.cancelled).toBeGreaterThan(before.bindings.domain.provider.cancelled);
+            if (lateImport) {
+                await expect.poll(async () => (await snapshot(page)).bindings.domain.provider.completed).toBe(before.bindings.domain.provider.completed + 1);
+                await page.evaluate(() => window.hostFixture.setDomainDelay(1000));
+            }
+            const after = await snapshot(page);
+            expect(after.bindings.domain.applied).toBe(before.bindings.domain.applied);
+            if (!lateImport) expect(after.bindings.domain.provider.cancelled).toBeGreaterThan(before.bindings.domain.provider.cancelled);
+            if (command === "import") {
+                if (reason === "typing") await input(page, "Secondary source").press("Control+z");
+                else expect(after.history).toEqual(before.history);
+                await exact(page, "x" + region + "tail");
+            }
         }
         expect(await page.evaluate(() => window.hostFixture.transferSnapshot().text)).toBe("unrelated target");
         await input(page).focus(); await page.evaluate(() => window.hostFixture.setSourceReadOnly(true)); await expect(button(page, "Insert catalogue import")).toBeDisabled();

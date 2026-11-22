@@ -1,8 +1,7 @@
 import { onSourceFocus } from "./source-focus.ts";
 import { createFoldRegions, createSelectionSet, FoldIndex } from "../../src/index.ts";
 import type { DocumentId, DocumentView, FoldRange, FoldingSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
-import { captureViewRequest } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, DecorationLayer, TextEditor } from "../../src/browser/index.ts";
+import type { DecorationLayer, TextEditor } from "../../src/browser/index.ts";
 import { FixtureDomainProvider, validateDomainResult } from "../../fixtures/language/domain.ts";
 import type { DomainAnnotation, DomainInput, DomainProvider } from "../../fixtures/language/domain.ts";
 import { HostCell } from "../shared/observable.ts";
@@ -10,7 +9,8 @@ import { HostCell } from "../shared/observable.ts";
 type OwnedFold = { id: string; from: number; to: number };
 type ViewData = { revision: number; owned: Map<string, OwnedFold>; annotations: readonly DomainAnnotation[] };
 type Session = { token: string; id: string; editor: TextEditor; target: TabTarget; layer: DecorationLayer; data: ViewData };
-type Job = { session: Session; input: DomainInput; folds: FoldingSnapshot; capture: CapturedViewRequest | undefined; authority: string; lease: ResourceLease | undefined; abort: AbortController; timeout: number; invalid: boolean };
+type Analysis = { folds: FoldingSnapshot; authority: string; lease: ResourceLease };
+type Job = { session: Session; input: DomainInput; analysis?: Analysis; abort: AbortController; timeout: number; invalid: boolean };
 export type DomainSnapshot = Readonly<{ available: boolean; editable: boolean; view: string | null; token: string | null; revision: number | null;
     status: "idle" | "running" | "ready" | "applied" | "cancelled" | "failed"; message: string; work: number; total: number; pendingView: string | null;
     annotations: readonly DomainAnnotation[]; annotationCount: number; foldCount: number }>;
@@ -23,7 +23,6 @@ export class HostDomainTools {
     private active: Session | undefined;
     private job: Job | undefined;
     private disposed = false;
-    private serial = 0;
     private foldSerial = 0;
     private readonly cell = new HostCell<DomainSnapshot>({ available: false, editable: false, view: null, token: null, revision: null, status: "idle", message: "Focus a candidate source view to use domain commands.", work: 0, total: 0, pendingView: null, annotations: noAnnotations, annotationCount: 0, foldCount: 0 });
     readonly state = this.cell.observable;
@@ -45,8 +44,8 @@ export class HostDomainTools {
         return JSON.stringify([state.state, state.metadata.capabilities.edit.includes("human"), state.metadata.editLock]);
     }
     private editable(session: Session): boolean {
-        const state = this.workspace.resourceForDocument(session.editor.view.documentId).getSnapshot();
-        return state.state === "ready" && state.metadata.capabilities.edit.includes("human") && state.metadata.editLock === null;
+        const state = session.editor.getSnapshot();
+        return !state.disabled && state.readOnlyReason === null;
     }
     private publish(patch: Partial<DomainSnapshot> = {}): void {
         const session = this.active, valid = session && this.available(session), data = valid ? session.data : undefined;
@@ -94,11 +93,10 @@ export class HostDomainTools {
     private current(job: Job): boolean {
         if (job.invalid || this.job !== job) return false;
         try {
-            if (job.capture) return job.capture.isCurrent();
             // Analysis replaces fold metadata, so it needs the exact fold generation but allows selection movement.
             return this.available(job.session) && !job.session.editor.activity().composing && this.canCapture(job.session.editor.view.documentId)
-                && this.workspace.document(job.session.editor.view.documentId).revision === job.input.revision
-                && job.session.editor.view.folding.getSnapshot().generation === job.folds.generation && this.authority(job.session) === job.authority;
+                && (!job.analysis || this.workspace.document(job.session.editor.view.documentId).revision === job.input.revision
+                    && job.session.editor.view.folding.getSnapshot().generation === job.analysis.folds.generation && this.authority(job.session) === job.analysis.authority);
         } catch { return false; }
     }
     private invalidate(job: Job): void {
@@ -108,62 +106,69 @@ export class HostDomainTools {
     }
     private release(job: Job): void {
         if (this.job === job) this.job = undefined;
-        job.invalid = true; job.session.editor.element.ownerDocument.defaultView!.clearTimeout(job.timeout); job.abort.abort(); job.capture?.cancel(); job.lease?.release();
+        job.invalid = true; job.session.editor.element.ownerDocument.defaultView!.clearTimeout(job.timeout); job.abort.abort(); job.analysis?.lease.release();
     }
     readonly cancel = (): void => {
         const job = this.job; if (!job) return; this.release(job); this.metrics.cancelled++;
         this.publish({ status: "cancelled", message: "Captured domain command cancelled; source and results are unchanged." });
     };
-    readonly discover = (): void => this.start("analyze");
-    readonly insertImport = (): void => this.start("import");
-    private start(kind: DomainInput["kind"]): void {
+    readonly discover = (): void => { void this.start("analyze"); };
+    readonly insertImport = (): void => { void this.start("import"); };
+    private async start(kind: DomainInput["kind"]): Promise<void> {
         const session = this.active; if (!this.guard(session)) return;
         if (kind === "import" && !this.editable(session)) { this.publish({ message: "Import insertion requires an editable source." }); return; }
         this.cancel(); this.sync(session);
-        const document = this.workspace.document(session.editor.view.documentId), resource = this.workspace.resourceForDocument(document.id), win = session.editor.element.ownerDocument.defaultView!;
-        const capture = kind === "import" ? captureViewRequest(this.workspace, session.target, session.editor.view, { editOrigin: "human",
-            available: () => this.available(session) && !session.editor.activity().composing && this.canCapture(document.id) }) : undefined;
-        if (kind === "import" && !capture) { this.publish({ message: "The source changed before capture; request a fresh import." }); return; }
-        const job: Job = { session, input: { id: ++this.serial, revision: document.revision, buffer: document.buffer, kind, module: "catalogue" }, folds: session.editor.view.folding.getSnapshot(),
-            capture, authority: this.authority(session), lease: capture ? undefined : this.workspace.acquire(resource.id), abort: new AbortController(), timeout: 0, invalid: false };
+        const document = this.workspace.document(session.editor.view.documentId), win = session.editor.element.ownerDocument.defaultView!;
+        const analysis = kind === "analyze" ? { folds: session.editor.view.folding.getSnapshot(), authority: this.authority(session),
+            lease: this.workspace.acquire(document.resourceId) } : undefined;
+        const input: DomainInput = { id: this.workspace.allocateIdentity(), revision: document.revision, buffer: document.buffer, kind, module: "catalogue" };
+        const job: Job = { session, input, ...(analysis ? { analysis } : {}), abort: new AbortController(), timeout: 0, invalid: false };
         this.job = job; this.metrics.requested++;
-        const changed = () => { if (this.job === job && !this.current(job)) this.invalidate(job); };
-        // Mounted presentation listeners already observe analysis resource/fold/tab changes.
-        capture?.signal.addEventListener("abort", changed, { once: true });
         job.timeout = win.setTimeout(() => { if (this.job === job) { this.release(job); this.publish({ status: "failed", message: "Domain command timed out; source is unchanged." }); } }, 30000);
-        this.publish({ status: "running", message: kind === "analyze" ? `Discovering domain regions in ${session.id}.` : `Preparing a captured import for ${session.id}.`, work: 0, total: document.buffer.length });
-        const progress = (units: number) => { if (this.current(job) && Number.isSafeInteger(units) && units >= this.cell.get().work && units <= document.buffer.length) this.publish({ work: units }); };
-        void Promise.resolve().then(() => this.provider.run(job.input, job.abort.signal, progress)).then(value => {
-            if (!this.current(job)) { this.metrics.stale++; if (this.job === job) this.cancel(); return; }
-            const result = validateDomainResult(value, job.input);
+        const run = (signal: AbortSignal) => {
+            this.publish({ status: "running", message: analysis ? `Discovering domain regions in ${session.id}.` : `Preparing a captured import for ${session.id}.`, work: 0, total: document.buffer.length });
+            signal.throwIfAborted();
+            return this.provider.run(input, signal, units => {
+                if (!signal.aborted && this.current(job) && Number.isSafeInteger(units) && units >= this.cell.get().work && units <= document.buffer.length) this.publish({ work: units });
+            });
+        };
+        const read = (value: unknown) => {
+            const result = validateDomainResult(value, input);
             createFoldRegions(document.buffer, result.folds);
-            if (kind === "import") {
-                if (!job.capture?.commit(() => {
-                    const applied = this.workspace.edit({ documentId: document.id, expectedRevision: job.input.revision, origin: "human",
-                        source: "import", view: session.editor.view, edits: result.edits, history: { kind: "refactor" } });
-                    if (!applied.applied) throw new Error(`Import rejected: ${applied.reason}.`); return true;
-                })) throw new Error("Captured import context changed before application.");
+            return result;
+        };
+        try {
+            if (!analysis) {
+                const outcome = await session.editor.operation({ write: true, signal: job.abort.signal }, async op => {
+                    const { edits } = read(await op.step(run(op.signal)));
+                    if (this.current(job) && op.apply({ edits, source: "import", history: { kind: "refactor" } })) return edits.length;
+                });
+                if (this.job !== job) return;
+                if (outcome.status === "stale" || outcome.value === undefined) { this.metrics.stale++; this.cancel(); return; }
                 this.metrics.applied++; this.release(job);
                 for (const attached of this.sessions.values()) if (attached.editor.view.documentId === document.id) this.sync(attached);
                 session.editor.viewport.revealOffset(session.editor.view.getSnapshot().selection.head);
-                this.publish({ status: "applied", message: result.edits.length ? `Inserted the captured import in ${session.id}.` : "The requested import is already present; source and history are unchanged." });
+                this.publish({ status: "applied", message: outcome.value ? `Inserted the captured import in ${session.id}.` : "The requested import is already present; source and history are unchanged." });
             } else {
-                const owned = new Set([...session.data.owned.values()].map(value => value.id)), existing = job.folds.regions.filter(r => !owned.has(r.id)), ids = new Set(job.folds.regions.map(r => r.id));
+                const value = await run(job.abort.signal);
+                if (!this.current(job)) { this.metrics.stale++; if (this.job === job) this.cancel(); return; }
+                const result = read(value);
+                const owned = new Set([...session.data.owned.values()].map(value => value.id)), existing = analysis.folds.regions.filter(r => !owned.has(r.id)), ids = new Set(analysis.folds.regions.map(r => r.id));
                 const next = new Map<string, OwnedFold>(), ranges: FoldRange[] = [...existing];
                 for (const fold of result.folds) {
                     let id = session.data.owned.get(fold.id)?.id; if (!id) { do { id = `host-domain-${++this.foldSerial}`; } while (ids.has(id)); ids.add(id); }
                     next.set(fold.id, { id, from: fold.from, to: fold.to }); ranges.push({ ...fold, id });
                 }
-                const normalized = createFoldRegions(document.buffer, ranges, job.folds.regions);
-                if (!session.editor.view.folding.setRanges(job.folds, normalized)) throw new Error("Domain fold capture expired.");
+                const normalized = createFoldRegions(document.buffer, ranges, analysis.folds.regions);
+                if (!session.editor.view.folding.setRanges(analysis.folds, normalized)) throw new Error("Domain fold capture expired.");
                 if (!this.available(session)) return;
                 session.data.owned = next; session.data.annotations = result.annotations; this.showAnnotations(session);
                 this.metrics.applied++; this.release(job); this.publish({ status: "ready", message: `Discovered ${result.folds.length} domain regions in ${session.id}.` });
             }
-        }).catch(error => {
+        } catch (error) {
             if (this.job !== job) return; this.metrics.invalid++; this.release(job);
             this.publish({ status: "failed", message: error instanceof Error && error.message.length <= 256 ? error.message : "Invalid domain result; source and prior results are unchanged." });
-        }).finally(() => { if (this.job === job) this.release(job); });
+        } finally { if (this.job === job) this.release(job); }
     }
     readonly collapse = (): void => {
         const session = this.active; if (!this.guard(session)) return; this.cancel(); this.sync(session);

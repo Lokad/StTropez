@@ -440,8 +440,10 @@ Each scan turn reads up to 16,384 UTF-16 units and keeps a 512-unit line prefix.
 regions, 128 nesting levels, 256-unit labels and 65,536 units of reply text. The panel and visible
 annotations show up to 64 indexed entries plus the total. Refresh keeps collapse choices and
 independent manual folds. Conflicting ranges reject the entire refresh. Change a provider fold’s
-bounds to make it manual. Text edits map folds and clear stale notes. An import adds one shared undo
-step.
+bounds to make it manual. Text edits map folds and clear stale notes. Import insertion uses
+`editor.operation` to bind the edit to the requesting view and selection. A source edit,
+read-only transition or remount cancels a pending import. A successful insertion adds one shared
+undo step.
 
 ## Server-free editing fixtures
 
