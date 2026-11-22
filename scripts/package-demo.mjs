@@ -136,7 +136,7 @@ await writeFile(join(hostRoot, "harness-compiler-inputs.txt"), harnessOutput);
 const toolFiles = await Promise.all([...scripts, "package.json", "scripts/measurement.mjs", "scripts/module-specifiers.mjs",
     "scripts/package-host.mjs", "scripts/library-entries.mjs", "scripts/package-react-host.mjs", "scripts/demo-fonts.mjs",
     "examples/demo/provider-server.ts", "examples/demo/samples.ts", "examples/demo/completion-templates.ts",
-    "examples/demo/diagnostics.ts", "examples/demo/action-fixture.ts", "examples/demo/typescript-folds.ts", "src/index.ts",
+    "examples/demo/diagnostics.ts", "examples/demo/action-fixture.ts", "examples/demo/typescript-folds.ts", "examples/demo/document-changes.ts", "src/index.ts",
     "tests/browser/demo-walkthrough.ts", "tests/browser/demo-host-integrations.ts", "tests/helpers/browser-errors.ts", "tests/helpers/painted-character.ts",
 ].map(path => realpath(resolve(project, path))));
 const toolRoots = [demoCompiler, ...compilerRoots, ...await Promise.all([
@@ -146,9 +146,10 @@ const toolRoots = [demoCompiler, ...compilerRoots, ...await Promise.all([
 const harnessInputs = [];
 for (const path of harnessOutput.split(/\r?\n/).filter(Boolean)) {
     const input = await realpath(resolve(hostRoot, path));
-    // The Node provider's fixture types reference core; this is not the isolated consumer
-    // or browser bundle. Both of those graphs are checked separately against restored assets.
+    // The Node provider uses core samples and the protocol's RpcError in document-changes.
+    // The consumer and browser bundle have separate input checks against the restored assets.
     assert.ok(within(hostRoot, input) || toolFiles.includes(input) || within(join(project, "src/core"), input)
+        || within(join(project, "src/protocol"), input)
         || /\.d\.[cm]?ts$/.test(input) && [assetRoot, ...toolRoots].some(root => within(root, input)), `Unexpected demo harness input: ${input}`);
     harnessInputs.push(input);
 }
