@@ -382,8 +382,8 @@ page selects the nearest available row, and paging back restores the preferred r
 Each move returns a new page. Keep a choice in its row's click handler so later paging preserves
 that button's destination. Its `open(present)` calls the host with the captured
 document and range while the choice is current. It returns false after cancellation, replacement,
-a change to the captured documents or a provider restart. The host opens the destination and owns
-its navigation history. A result list can open several choices as the caret moves. Set
+a change to the captured documents or a provider restart. The host opens the destination.
+A result list can open several choices as the caret moves. Set
 `resultLifetime: "view"` for a popup tied to the original selection and folds.
 Without a callback, the controller publishes the result through `getSnapshot()`
 and `subscribe()`. Call `cancel()` to dismiss navigation and `dispose()` to detach it.
@@ -425,10 +425,20 @@ the loader with the request and release a late target even if loading finished a
 replacement, disposal or a provider change. Keep accepted targets until the result or server-edit
 decision ends. Recheck the whole batch once loading finishes.
 
-For Return, save the original view state and all selections. A focus or selection change can expire
-a pending navigation. Once a read-only list is visible, resource and provider checks can keep it
-available as users move between results. Reveal the captured target. Reads preserve history and
-comparison baselines. An immutable comparison reference needs no provider binding.
+Use `createNavigationHistory(workspace)` to let users retrace jumps across editors.
+`history.capture(editor)` saves an origin before a jump or lookup. It returns `undefined` for
+a busy, detached or foreign view. Wrap the code that opens a destination in `origin.visit(() => …)`
+and return true after the reveal succeeds. A changed source revision expires the visit.
+Reuse the origin for choices
+in the same result list to give them one Return point. The history keeps the last 100 origins.
+`getSnapshot()` gives the count and `subscribe()` reports count changes.
+
+`history.back(present)` asks the host to present the original `DocumentView`. Return its editor,
+`undefined` to skip it, or `"busy"` to keep it for a later attempt. Return skips closed views
+and replaced tabs. It restores the selections and scroll and reports `"restored"`, `"empty"` or
+`"busy"`. Pass `{ focus: true }` as the second argument to focus the editor on return.
+Dispose the history with its host.
+[Restoring a view after edits](viewport.md#scrolling-and-saved-views)
 
 ### Rename and workspace edits
 

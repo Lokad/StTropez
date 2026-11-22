@@ -1,4 +1,5 @@
 import { TextBuffer, Workspace } from "../../src/index.ts";
+import { createNavigationHistory } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, DocumentView, SaveReview, SaveTicket, TabId, TextResourceHandle } from "../../src/index.ts";
 import { createBrowserDraftStore } from "../hosts/draft-store.ts";
 import type { DraftStore, StoredDraft } from "../hosts/draft-store.ts";
@@ -26,6 +27,7 @@ function readProject(value: unknown, names: readonly string[]): StoredProject {
 /** The host composes existing workspace/save/storage primitives; it owns no alternative text model. */
 export class DemoProject {
     readonly workspace = new Workspace();
+    readonly navigation = createNavigationHistory(this.workspace);
     private loaded: readonly DemoFile[] = Object.freeze([]);
     get files(): readonly DemoFile[] { return this.loaded; }
     private get editable(): readonly DemoFile[] { return this.loaded.filter(file => !file.readOnly); }
@@ -267,6 +269,7 @@ export class DemoProject {
     }
     dispose(): void {
         if (this.disposed) return; this.disposed = true;
+        this.navigation.dispose();
         void this.recovery.dispose();
         for (const model of this.noteModels.values()) model.dispose(); this.noteModels.clear();
         void this.language.dispose().then(() => { this.languageDisposed = true; if (!this.saving) this.release(); });

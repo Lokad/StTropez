@@ -1,5 +1,5 @@
 import { Workspace, TextBuffer, TextDiff, WordCursor, importText, exportText, anchoredRange, composePositionMaps, createGraphemeCursor } from "sttropez";
-import { editRefusedEvent, inputConflictEvent, createFontAssetController, createFindController, createRegexFindBackend, mountTextComparison, mountTextViewport, mountTextEditor } from "sttropez/browser";
+import { editRefusedEvent, inputConflictEvent, createFontAssetController, createFindController, createNavigationHistory, createRegexFindBackend, mountTextComparison, mountTextViewport, mountTextEditor } from "sttropez/browser";
 import * as browserApi from "sttropez/browser";
 import { fontFixture } from "./font-fixture.js";
 import { WorkspaceCommands } from "sttropez";
@@ -168,6 +168,25 @@ const fixture = { text: () => workspace.document(documentId).text(),
                 || view.getSnapshot().selection.head !== revealed.from) throw new Error("Restored public reveal missed its selected column.");
             if (retired.reveal({ from: 0, to: 1 }, { select: true, focus: true }) !== null || retired.viewport.coordsAt(0) !== undefined)
                 throw new Error("Retired compiled editor still accepted navigation.");
+            const history = createNavigationHistory(model);
+            try {
+                const point = history.capture(editor);
+                if (!point || point.visit(() => false) || history.getSnapshot() || history.capture(retired))
+                    throw new Error("A failed or retired visit entered Return history.");
+                other.focus();
+                if (!point.visit(() => !!editor.reveal({ from: 0, to: 0 }, { select: true })) || history.back(() => "busy") !== "busy"
+                    || history.getSnapshot() !== 1 || history.back(() => editor) !== "restored" || view.getSnapshot().selection.head !== start + 1
+                    || document.activeElement !== other.input)
+                    throw new Error("The restored consumer lost a deferred Return.");
+                const before = peer.getSnapshot().selectionSet;
+                point.visit(() => !!other.reveal({ from: 0, to: 0 }));
+                if (history.back(() => other) !== "empty" || peer.getSnapshot().selectionSet !== before)
+                    throw new Error("Return changed a different view of the same document.");
+                point.visit(() => !!other.reveal({ from: 0, to: 0 }));
+                model.tabs.replace(tab, { kind: "text", documentId: source.documentId });
+                const unexpected = (): never => { throw new Error("Navigation used a replaced tab."); };
+                if (history.back(unexpected) !== "empty" || point.visit(unexpected)) throw new Error("A replaced tab retained an origin.");
+            } finally { history.dispose(); }
         } finally { editor.dispose(); other.dispose(); host.remove(); otherHost.remove(); view.dispose(); peer.dispose(); model.tabs.close(tab); model.releaseResource(source.id, true); }
         if (editor.viewport.coordsAt(0) !== undefined) throw new Error("Released compiled geometry queried a missing source.");
         const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled fold resources leaked.");

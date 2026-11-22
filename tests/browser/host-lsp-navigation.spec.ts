@@ -67,6 +67,36 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await field(page).focus(); await select(page, text.indexOf(";") + 1); await button(page, "Find definition").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(0);
         expect(methods.filter(message => message.method === "textDocument/definition").length).toBe(definitions + 1);
     });
+    if (coversHost("candidate-hosts", host, "candidate")) test("Return retraces two symbol jumps with their selections, scroll and focus", async ({ page }) => {
+        const text = "catalogue;\n" + "// padding\n".repeat(120) + "catalogue;\n";
+        const tail = text.lastIndexOf("catalogue"), primary = field(page), secondary = field(page, "Secondary source");
+        const back = button(page, "Return to navigation origin");
+        const current = async (id: string) => (await snapshot(page)).bindings.views.find(view => view.id === id)!;
+        await seed(page, text, tail + 3);
+        await button(page, "Add navigation companion").click();
+        await page.evaluate(tail => { const f = window.hostFixture;
+            f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 1, head: 1 }, { anchor: tail + 7, head: tail + 3 }], 1);
+        }, tail);
+        await primary.evaluate(input => { input.closest<HTMLElement>(".st-editor")!.scrollTop = 1200; });
+        await expect.poll(async () => (await current("primary")).metrics!.viewport.scrollTop).toBeGreaterThan(1000);
+        const origin = await current("primary");
+        await button(page, "Find definition").click();
+        await results(page).filter({ hasText: "Navigation companion:" }).click();
+        await expect(secondary).toBeFocused();
+        await secondary.press("ArrowLeft"); await secondary.press("ArrowRight"); await waitForNavigation(page);
+        const intermediate = await current("secondary");
+        await button(page, "Find references").click();
+        await results(page).filter({ hasText: /^Primary source:1:1$/ }).click();
+        await expect(primary).toBeFocused(); await waitForNavigation(page);
+        expect((await current("primary")).metrics!.viewport.scrollTop).toBeLessThan(origin.metrics!.viewport.scrollTop);
+        await back.click(); await expect(secondary).toBeFocused();
+        expect((await current("secondary")).selectionSet).toEqual(intermediate.selectionSet);
+        await back.click(); await expect(primary).toBeFocused(); await waitForNavigation(page);
+        const restored = await current("primary");
+        expect(restored.selectionSet).toEqual(origin.selectionSet);
+        expect(restored.metrics!.viewport.scrollTop).toBeCloseTo(origin.metrics!.viewport.scrollTop, 2);
+        await expect(back).toBeDisabled();
+    });
     if (coversHost("candidate-hosts", host, "candidate")) test("malformed navigation, changed authority and pending remount cannot publish stale targets", async ({ page, browserName, browserErrors }) => {
         const replies = await holdLspReplies(page, "textDocument/definition"); await page.reload();
         const text = "const target = 1;\r\ntarget"; await seed(page, text, text.length - 2); const before = await snapshot(page);

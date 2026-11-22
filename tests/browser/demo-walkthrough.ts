@@ -119,7 +119,13 @@ export async function runDemoUnopenedNavigation(page: Page, url = "/") {
     await expect(labels).toHaveValue(submitted + "// edit the loaded module\n"); await expect(labels).toBeFocused();
     await expect(page.locator("#files")).toContainText("labels.ts ●"); await labels.press("Control+z");
     await expect(labels).toHaveValue(submitted!); await expect(page.locator("#files")).not.toContainText("●");
+    await select(page, labels, "options: LabelOptions"); await labels.press("ArrowRight"); await labels.press("ArrowLeft");
+    const intermediate = await labels.evaluate(input => (input as HTMLTextAreaElement).selectionStart);
+    await labels.press("F12"); await expect(main).toBeFocused();
+    await main.press("Alt+ArrowLeft"); await expect(labels).toBeFocused();
+    expect(await labels.evaluate(input => (input as HTMLTextAreaElement).selectionStart)).toBe(intermediate);
     await labels.press("Alt+ArrowLeft"); await expect(main).toBeFocused(); await expect(page.locator("#cursor")).toHaveText(cursor);
+    await expect(page.locator("#navigate-back")).toBeDisabled();
     await select(page, main, "const record: RecordId"); await main.press("ArrowRight"); await main.press("ArrowLeft"); await main.press("F12");
     const declaration = page.getByRole("textbox", { name: "contracts.d.ts", exact: true }); await expect(declaration).toBeVisible();
     await expect(page.locator("#files")).toContainText("contracts.d.ts (read-only)");

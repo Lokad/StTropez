@@ -218,7 +218,7 @@ function paintMetadata(): void {
         ? `TypeScript 5.9.3 · ${panel === "javascript" && !element("workspace").classList.contains("collapsed") ? "syntax & emit" : "syntax"}` : "TypeScript · analyzing…";
     element("analysis-retry").hidden = presentation.status !== "failed" && referencePresentation?.status !== "failed";
     button("save").disabled = project.saving;
-    button("navigate-back").disabled = !locations.some(location => location.project === project);
+    button("navigate-back").disabled = project.navigation.getSnapshot() === 0;
     element("save-conflict").hidden = !project.hasConflict();
     button("conflict-save").disabled = button("conflict-take").disabled = !project.canSaveReviewed();
     button("conflict-review").disabled = project.saving;
@@ -263,17 +263,14 @@ function detachView(): void {
     element("editor").replaceChildren(); element("panel-content").replaceChildren();
     if (metadataFrame !== undefined) cancelAnimationFrame(metadataFrame); metadataFrame = undefined;
 }
-function openLocation(capturedProject: DemoProject, file: DemoFile, capturedEditor: TextEditor, target: DemoSymbolTarget): void {
-    const state = capturedEditor.activity();
-    if (disposed || project !== capturedProject || editor !== capturedEditor || state.disposed || state.composing || state.pendingInput || state.pendingCommand) return;
+function openLocation(capturedProject: DemoProject, capturedEditor: TextEditor, target: DemoSymbolTarget): void {
+    if (disposed || project !== capturedProject || editor !== capturedEditor) return;
     const destination = capturedProject.files.find(file => file.resource.documentId === target.documentId);
     if (!destination || capturedProject.workspace.document(target.documentId).revision !== target.revision) return;
-    const origin = { project: capturedProject, file, revision: capturedProject.workspace.document(file.resource.documentId).revision,
-        view: capturedEditor.captureView() };
-    if (destination !== active) mountFile(destination);
-    if (editor?.view !== destination.view || !editor.reveal(target, { expectedRevision: target.revision, select: true, focus: true })) return;
-    locations.push(origin);
-    if (locations.length > 100) locations.shift();
+    capturedProject.navigation.capture(capturedEditor)?.visit(() => {
+        if (destination !== active) mountFile(destination);
+        return editor?.view === destination.view && !!editor.reveal(target, { expectedRevision: target.revision, select: true, focus: true });
+    });
     renderMetadata();
 }
 function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEditor: TextEditor) {
@@ -286,7 +283,7 @@ function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEd
     };
     try {
         return mountDemoLanguage(capturedProject.workspace, () => capturedProject.files, file, capturedEditor, capturedProject.language,
-            target => openLocation(capturedProject, file, capturedEditor, target), report, element("language-command-status"));
+            target => openLocation(capturedProject, capturedEditor, target), report, element("language-command-status"));
     } catch (error) { report(error); }
 }
 function detachLanguage(): void {
@@ -366,24 +363,23 @@ function mountFile(file: DemoFile, focus = false): void {
         const capturedProject = project, capturedEditor = editor;
         hostIntegrations = mountHostIntegrations(project, file, editor, {
             mode: element("host-paste-mode") as HTMLSelectElement, insert: button("host-insert-table"), annotate: button("host-annotate"), status: element("host-status") },
-            target => openLocation(capturedProject, file, capturedEditor, target));
+            target => openLocation(capturedProject, capturedEditor, target));
     }
     if (element("workspace").classList.contains("collapsed")) setReviewCollapsed?.(true);
     renderMetadata(); renderLanguage(); renderOutput(); if (focus) editor.focus();
 }
 // View IDs are local to a Workspace; each sample owns a separate workspace.
 const savedViews = new Map<DemoFile["view"], ReturnType<TextEditor["captureView"]>>();
-const locations: { project: DemoProject; file: DemoFile; revision: number; view: ReturnType<TextEditor["captureView"]> }[] = [];
 function goBack(): void {
     if (!project || !editor || editor.activity().composing || editor.activity().pendingInput || editor.activity().pendingCommand) return;
-    let index = locations.length - 1; while (index >= 0 && locations[index]!.project !== project) index--; if (index < 0) return;
-    const location = locations.splice(index, 1)[0]!;
-    if (location.file !== active) mountFile(location.file);
-    // Unchanged sources restore the exact directed selection set; edited sources keep their mapped view selections.
-    if (project.workspace.document(location.file.resource.documentId).revision === location.revision) {
-        editor?.restoreView(location.view);
-    }
-    renderMetadata(); editor?.focus();
+    const current = project;
+    current.navigation.back(view => {
+        const origin = current.files.find(file => file.view === view);
+        if (!origin) return;
+        if (origin !== active) mountFile(origin);
+        return editor;
+    }, { focus: true });
+    renderMetadata();
 }
 function selectSample(id: SampleId): void {
     sample.value = id;
