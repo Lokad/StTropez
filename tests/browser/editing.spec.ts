@@ -250,6 +250,26 @@ test("read-only Tab traverses surrounding host controls in both directions", asy
     await source.press("Shift+Tab"); await expect(page.getByRole("button", { name: "Before source", exact: true })).toBeFocused();
 });
 
+test("indent and newline can be rebound while unbound Tab traverses and native line breaks still edit", async ({ page }) => {
+    const input = page.locator("#primary textarea");
+    await page.evaluate(() => {
+        const f = window.editingFixture;
+        f.setText("ab"); f.select("primary", { anchor: 0, head: 0 });
+        const button = document.createElement("button"); button.textContent = "After source";
+        document.querySelector("#primary .st-editor")!.after(button);
+        for (const key of ["Tab", "Shift+Tab", "Enter", "Shift+Enter"]) f.keymap.unbind(key);
+        f.keymap.bind("F7", "indent"); f.keymap.bind("F8", "outdent"); f.keymap.bind("F9", "newline");
+    });
+    const text = () => page.evaluate(() => { const f = window.editingFixture; return f.range(0, f.snapshot().document!.length); });
+    await input.press("Tab"); await expect(page.getByRole("button", { name: "After source" })).toBeFocused();
+    await input.press("Enter"); await input.press("Shift+Enter"); expect(await text()).toBe("ab");
+    await input.press("F7"); expect(await text()).toBe("    ab");
+    await input.press("F8"); expect(await text()).toBe("ab");
+    await input.press("F9"); expect(await text()).toBe("\nab");
+    await input.evaluate(node => node.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertLineBreak", cancelable: true, bubbles: true })));
+    expect(await text()).toBe("\n\nab");
+});
+
 test("Apple caret chords navigate the document and full line beyond native input context", async ({ page }) => {
     await page.addInitScript(() => Object.defineProperty(navigator, "platform", { value: "MacIntel" })); await page.reload(); await ready(page);
     const text = "one\n" + "x".repeat(4000) + "\n" + "tail\n".repeat(1000);

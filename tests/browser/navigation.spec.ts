@@ -270,6 +270,10 @@ test("pending word deletion orders native deletion and typing and respects permi
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", ctrlKey: true, bubbles: true, cancelable: true }));
         if (!window.editingFixture.snapshot().primary.pendingWord) throw new Error("Word command did not yield.");
         window.editingFixture.keymap.unbind("Ctrl+Delete");
+        window.editingFixture.keymap.unbind("Enter");
+        const unbound = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+        input.dispatchEvent(unbound);
+        if (!unbound.defaultPrevented) throw new Error("Unbound Enter reached the native input during deletion.");
         input.dispatchEvent(new InputEvent("beforeinput", { inputType: "deleteWordForward", bubbles: true, cancelable: true }));
         input.setRangeText("!", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { inputType: "insertText", bubbles: true }));
     }); await ready(page);

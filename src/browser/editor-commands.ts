@@ -29,14 +29,18 @@ const edits = {
 
 export const editorCommandLabels = Object.freeze({ undo: "Undo", redo: "Redo", ...paneCommands, ...edits });
 export function editCommand(id: string): id is EditingCommand { return Object.hasOwn(edits, id); }
-export function editorKeyCommand(id: string): KeyBinding | undefined {
+export function editorKeyCommand(id: string, key: string): KeyBinding | undefined {
     if (id === "undo" || id === "redo") return historyKey(id);
-    if (editCommand(id)) return { command: { kind: "language", command: id }, edit: true, text: "", fallback: false };
+    if (editCommand(id)) {
+        const tab = key === "Tab" && (id === "indent" || id === "outdent");
+        return { command: { kind: "language", command: id }, edit: true, text: id === "newline" ? "\n" : tab ? "\t" : "", fallback: id === "newline" };
+    }
     if (Object.hasOwn(paneCommands, id)) return commandKey(id as keyof typeof paneCommands);
     return;
 }
 
 const defaults: readonly (readonly [string, keyof typeof editorCommandLabels])[] = [
+    ["Tab", "indent"], ["Shift+Tab", "outdent"], ["Enter", "newline"], ["Shift+Enter", "newline"],
     ["Mod+z", "undo"], ["Mod+Shift+z", "redo"], ["Ctrl+y", "redo"], ["Mod+a", "select-all"],
     ["Mod+k Mod+c", "add-line-comment"], ["Mod+k Mod+u", "remove-line-comment"], ["Mod+u", "undo-caret"],
     ["Mod+Alt+ArrowUp", "add-caret-above"], ["Mod+Alt+ArrowDown", "add-caret-below"], ["Mod+Shift+k", "delete-lines"],

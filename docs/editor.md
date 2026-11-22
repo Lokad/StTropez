@@ -358,6 +358,9 @@ These and `delete-word-backward` and `delete-word-forward` require an editable p
 Rebinding a shortcut leaves native deletion input available.
 For a non-cancellable native deletion, the input event must match the captured deletion
 unit, direction, revision and selections. A mismatch preserves the document and reports a conflict.
+Tab runs `indent`, Shift+Tab runs `outdent`, and Enter or Shift+Enter runs `newline`.
+Unbinding Tab allows normal focus traversal. Unbinding Enter suppresses that keystroke.
+Native `insertLineBreak` input works independently of these bindings.
 The view commands `select-all`, `select-line`, `select-next-occurrence`, `select-all-occurrences`, `add-caret-above`, `add-caret-below`, `undo-caret`,
 `jump-to-bracket`, `scroll-line-up`, `scroll-line-down`, `scroll-page-up` and
 `scroll-page-down` also work in read-only editors. The text-editing commands are

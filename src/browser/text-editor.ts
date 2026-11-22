@@ -1214,14 +1214,16 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (escapeSelection && event.key !== "Tab" && event.key !== "Shift") escapeState(false);
         if (event.defaultPrevented || composing || event.isComposing || event.keyCode === 229) return;
         if (["Shift", "Control", "Meta", "Alt"].includes(event.key)) return;
+        if (escapeSelection && event.key === "Tab" && !captured) return;
         if (hostInsertion && event.key === "Escape") { hostInsertion.cancel(); event.preventDefault(); return; }
         if (!captured && registry.handleEditor(event, id => {
-            const binding = editorKeyCommand(id);
+            const binding = editorKeyCommand(id, event.key);
             if (!binding) return registry.commands.run(id);
             keydown(event, binding);
             return event.defaultPrevented;
         })) return;
-        const binding = captured ?? classifyEditingKey(event, apple, !!escapeSelection, pairKey);
+        const binding = captured ?? classifyEditingKey(event, apple, pairKey);
+        if (binding === "prevent-native") { event.preventDefault(); return; }
         // Host commands check pending input before capturing a document. Editing and
         // navigation supersede a host insertion; ordinary typing reaches beforeInput.
         if (typeof binding === "object") hostInsertion?.cancel();
@@ -1239,7 +1241,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const command = typeof binding === "object" ? binding.command : undefined;
         if (command?.kind === "command") { if (runCommand(command.command)) event.preventDefault(); return; }
         view.folding.revealSelection(view.folding.getSnapshot());
-        if (command || binding === "escape" || binding === "prevent-navigation") group = undefined;
+        if (command || binding === "escape") group = undefined;
         if (command?.kind === "history") { event.preventDefault(); history(command.direction); return; }
         if (binding === "escape") {
             cancelWord(); commandRunner.cancel(); preferred = undefined;
@@ -1247,12 +1249,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             if (state.selectionSet.ranges.length > 1) { event.preventDefault(); view.setSelection(revision, state.selection); refresh(); }
             escapeState(true); return;
         }
-        if (binding === "tab-escape") return;
         escapeState(false); syncSelection();
         preferred = undefined;
         if (command?.kind === "language" && languageCommand(command.command)) event.preventDefault();
-        // Unhandled command-navigation must not move inside the bounded textarea context.
-        else if (binding === "prevent-navigation") event.preventDefault();
     }
     input.addEventListener("keydown", event => {
         const started = win.performance.now(); keydownEvents++;

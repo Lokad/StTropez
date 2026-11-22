@@ -24,7 +24,7 @@ type KeyCommand = Readonly<{ kind: "history"; direction: "undo" | "redo" }>
     | Readonly<{ kind: "command"; command: ViewCommand | DeletionCommand }>
     | Readonly<{ kind: "language"; command: EditingCommand | Readonly<{ character: string }> }>;
 export type KeyBinding = Readonly<{ command: KeyCommand; text: string; edit: boolean; fallback: boolean }>;
-type EditingKey = KeyBinding | "escape" | "tab-escape" | "prevent-navigation" | undefined;
+type EditingKey = KeyBinding | "escape" | "prevent-native" | undefined;
 const navigationKeys = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"]);
 const bind = (command: KeyCommand, edit = false, text = "", fallback = false): KeyBinding => ({ command, edit, text, fallback });
 
@@ -32,24 +32,16 @@ export const historyKey = (direction: "undo" | "redo"): KeyBinding => bind({ kin
 export const commandKey = (command: ViewCommand | DeletionCommand): KeyBinding => bind({ kind: "command", command }, isDeletionCommand(command));
 
 /** Shared interpretation for immediate execution and captured queued intent; no view/lifecycle authority. */
-export function classifyEditingKey(event: KeyStroke, apple: boolean, escaped: boolean, paired: (key: string) => boolean): EditingKey {
-    const command = (event.ctrlKey || event.metaKey) && !event.altKey, extend = event.shiftKey;
+export function classifyEditingKey(event: KeyStroke, apple: boolean, paired: (key: string) => boolean): EditingKey {
+    const command = (event.ctrlKey || event.metaKey) && !event.altKey;
     if (event.key === "Escape") return "escape";
-    if (event.key === "Tab" && escaped) return "tab-escape";
     const word = !event.metaKey && (event.ctrlKey && !event.altKey || apple && event.altKey && !event.ctrlKey);
     // After unbinding a word shortcut, keep the browser from moving or deleting in the input projection.
-    if (word && ["ArrowLeft", "ArrowRight", "Backspace", "Delete"].includes(event.key)) return "prevent-navigation";
+    if (word && ["ArrowLeft", "ArrowRight", "Backspace", "Delete"].includes(event.key)) return "prevent-native";
     if (!command && !event.altKey) {
-        switch (event.key) {
-            // A removed movement or deletion binding must not retarget the bounded native input.
-            case "ArrowLeft": case "ArrowRight":
-            case "ArrowUp": case "ArrowDown": case "PageUp": case "PageDown":
-            case "Backspace": case "Delete": return "prevent-navigation";
-            case "Tab": return bind({ kind: "language", command: extend ? "outdent" : "indent" }, true, "\t");
-            case "Enter": return bind({ kind: "language", command: "newline" }, true, "\n", true);
-        }
+        if (navigationKeys.has(event.key) || ["Enter", "Backspace", "Delete"].includes(event.key)) return "prevent-native";
         if (paired(event.key)) return bind({ kind: "language", command: { character: event.key } }, true, event.key, true);
     }
-    if (command && navigationKeys.has(event.key)) return "prevent-navigation";
+    if (command && navigationKeys.has(event.key)) return "prevent-native";
     return;
 }
