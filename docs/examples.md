@@ -361,7 +361,10 @@ Both hosts use the [generic fixture server](../fixtures/protocol/fixture-server.
 positions. The development and test reference package is version 3.17.5.
 
 Completion, hover, F12/Shift+F12, F2, Ctrl/Cmd+., signature help, links and colors use the shared
-provider. Select an action and review it before choosing **Apply captured action** or
+provider. Closing an editor releases its link, color, navigation, rename and code-action shortcuts.
+Disposing one of these panels also removes its shortcuts from each open editor.
+
+Select an action and review it before choosing **Apply captured action** or
 **Execute captured action**. If its command was never advertised, the whole choice is disabled.
 Changing actions or preparing another rename while its confirmation button is held requires a fresh click.
 In **Action module**, Enter requests a preview for the source and Escape dismisses it

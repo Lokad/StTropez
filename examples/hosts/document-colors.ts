@@ -1,5 +1,6 @@
 import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
+import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId, Workspace } from "../../src/index.ts";
 import { createDocumentColorController } from "../../src/browser/index.ts";
@@ -147,25 +148,22 @@ export class HostDocumentColors {
             events.abort(); stop(); controller.dispose(); s.layer.dispose(); this.publish();
         };
         try {
-            const command = editor.commands.register({ id: "colors.discover", label: "Discover document colors", enabled: () => !this.disconnected,
+            const register = scopedCommands(editor, events.signal);
+            register({ id: "colors.discover", label: "Discover document colors", enabled: () => !this.disconnected,
                 run: () => { this.active = s; this.start(true); } }, { keys: ["F6"] });
-            events.signal.addEventListener("abort", command.dispose, { once: true });
             const ownsValue = () => (this.owner ?? this.active) === s && !!this.valueField.element?.matches(":focus");
-            const preview = editor.commands.register({ id: "colors.preview", label: "Preview color presentations",
+            register({ id: "colors.preview", label: "Preview color presentations",
                 enabled: () => this.owner === s && ownsValue(), run: this.preview }, { keys: ["Enter"], shared: true, priority: 34, repeat: false });
-            events.signal.addEventListener("abort", preview.dispose, { once: true });
-            const dismiss = editor.commands.register({ id: "colors.dismiss", label: "Dismiss color preview",
+            register({ id: "colors.dismiss", label: "Dismiss color preview",
                 enabled: () => ownsValue() || (this.owner === s && !!this.colorList.element?.matches(":focus-within")),
                 run: () => { this.cancel(); focusSource(editor); } }, { keys: ["Escape"], shared: true, priority: 8 });
-            events.signal.addEventListener("abort", dismiss.dispose, { once: true });
             this.syncSwatches();
         } catch (error) { detach(); throw error; }
-        editor.signal.addEventListener("abort", detach, { once: true, signal: events.signal });
         onSourceFocus(editor, events.signal, () => { this.active = s; this.publish(); });
         editor.onEditIntent(() => {
             if (this.owner?.editor.view.documentId === editor.view.documentId) this.cancel();
         }, events.signal);
-        return detach;
+        return detachWithEditor(editor, events.signal, detach);
     }
     readonly discover = () => this.start(false);
     private start(keyboard: boolean) {

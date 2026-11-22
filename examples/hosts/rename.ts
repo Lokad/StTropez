@@ -1,5 +1,6 @@
 import { createReviewKey } from "./panel-actions.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
+import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId, Workspace } from "../../src/index.ts";
 import { createRenameController } from "../../src/browser/index.ts";
@@ -70,6 +71,7 @@ export class HostRenameTools {
     }
     readonly bindName = this.nameField.bind;
     attach(id: string, _tab: TabId, editor: TextEditor): () => void {
+        if (this.disposed) throw new Error("Rename panel is disposed.");
         const controller = createRenameController(editor, this.backend.provider, {
             documents: () => this.workspace.getSnapshot().documents.filter(doc => doc.language !== null),
             canCapture: this.canCapture, prepareRequest: () => {
@@ -89,11 +91,11 @@ export class HostRenameTools {
         } });
         this.sessions.add(session);
         try {
-            const command = editor.commands.register({ id: "rename.start", label: "Rename symbol", enabled: () => !this.disconnected && this.canCapture(editor.view.documentId),
+            const register = scopedCommands(editor, events.signal);
+            register({ id: "rename.start", label: "Rename symbol", enabled: () => !this.disconnected && this.canCapture(editor.view.documentId),
                 run: () => { if (this.options.open && !this.options.open()) return false; this.active = session; this.prompt(session); return true; } }, { keys: ["F2"] });
-            events.signal.addEventListener("abort", command.dispose, { once: true });
             const ownsField = () => (this.owner ?? this.active) === session && !!this.nameField.element?.matches(":focus");
-            const submit = editor.commands.register({ id: "rename.submit", label: "Preview or apply rename", enabled: ownsField,
+            register({ id: "rename.submit", label: "Preview or apply rename", enabled: ownsField,
                 run: () => {
                     this.setName(this.nameField.element!.value);
                     const state = this.cell.get();
@@ -101,16 +103,14 @@ export class HostRenameTools {
                     if (!state.preview) this.prepareIn(session);
                     else if (state.preview.confirm().applied && this.nameField.element?.matches(":focus")) editor.focus();
                 } }, { keys: ["Enter"], shared: true, priority: 33, repeat: false });
-            events.signal.addEventListener("abort", submit.dispose, { once: true });
-            const dismiss = editor.commands.register({ id: "rename.cancel", label: "Cancel rename", enabled: ownsField,
+            register({ id: "rename.cancel", label: "Cancel rename", enabled: ownsField,
                 run: () => { this.cancel(); editor.focus(); } }, { keys: ["Escape"], shared: true, priority: 9 });
-            events.signal.addEventListener("abort", dismiss.dispose, { once: true });
         } catch (error) { session.stop(); throw error; }
         onSourceFocus(editor, events.signal, () => { this.active = session; this.publish(); });
         editor.onEditIntent(() => {
             if (this.owner && this.owner !== session && this.workspace.document(editor.view.documentId).key.variant === "working") this.cancel();
         }, events.signal);
-        return session.stop;
+        return detachWithEditor(editor, events.signal, session.stop);
     }
     private hint(session: Session) { return navigationSymbol(this.workspace.document(session.editor.view.documentId).buffer, session.editor.view.getSnapshot().selection.head); }
     private prompt(session: Session) {

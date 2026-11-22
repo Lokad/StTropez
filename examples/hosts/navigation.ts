@@ -1,4 +1,5 @@
 import { onSourceFocus } from "./source-focus.ts";
+import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts";
 import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, TabId, TabTarget, Workspace } from "../../src/index.ts";
@@ -11,7 +12,7 @@ import { HostCell } from "../shared/observable.ts";
 
 type Kind = LspNavigationRequest["kind"];
 export type NavigationHostOptions = Readonly<{ provider: LspWorkspace; prepare: (kind: Kind, delay: number, fault?: NavigationFault) => LspPrepare }>;
-type Session = { id: string; target: TabTarget; editor: TextEditor; controller: NavigationController };
+type Session = { id: string; target: TabTarget; editor: TextEditor; controller: NavigationController; detach: () => void };
 type Job = { kind: Kind; symbol: string; origin: Session; returnPoint: NavigationOrigin; sources: Set<DocumentId>; targets: Map<string, Session>;
     timer: number; page: NavigationPage | undefined; followDefinition: boolean };
 export type NavigationNote = Readonly<{ ordinal: number; title: string; line: number; column: number; declaration: boolean; open: () => void }>;
@@ -90,11 +91,12 @@ export class HostNavigationTools {
     readonly disconnect = (): void => { this.cancel(); this.disconnected = true; this.publish({ status: "disconnected", message: "Navigation provider disconnected; local editing remains available." }); };
     readonly reconnect = (): void => { this.cancel(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ status: "idle", message: "Request fresh navigation with current resources." }); };
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
+        if (this.disposed) throw new Error("Navigation panel is disposed.");
         const controller = createNavigationController(editor, this.options.provider, { documents: () => this.workspace.getSnapshot().documents.filter(doc => doc.language !== null),
             canCapture: () => !this.disconnected && !this.disposed && this.canCapture(editor.view.documentId),
             prepareRequest: kind => { const fault = this.fault; this.fault = undefined; return this.options.prepare(kind, this.delay, fault); },
             onDefinition: offset => { this.active = session; editor.focus(); this.start("definition", true, offset); } });
-        const session: Session = { id, target: this.workspace.tabs.capture(tab), editor, controller }, listeners = new AbortController();
+        const session: Session = { id, target: this.workspace.tabs.capture(tab), editor, controller, detach: () => detach() }, listeners = new AbortController();
         this.sessions.add(session);
         const stop = controller.subscribe(() => {
             const job = this.job, state = controller.getSnapshot();
@@ -119,15 +121,14 @@ export class HostNavigationTools {
             this.publish();
         };
         try {
+            const register = scopedCommands(editor, listeners.signal);
             for (const [kind, label, key] of [["definition", "Find definition", "F12"], ["references", "Find references", "Shift+F12"]] as const) {
-                const command = editor.commands.register({ id: "navigation." + kind, label, enabled: () => this.available(session),
+                register({ id: "navigation." + kind, label, enabled: () => this.available(session),
                     run: from => { this.active = session; this.start(kind, from !== "panel"); } }, { keys: [key] });
-                listeners.signal.addEventListener("abort", command.dispose, { once: true });
             }
-            const cancel = editor.commands.register({ id: "navigation.dismiss", label: "Cancel symbol navigation",
+            register({ id: "navigation.dismiss", label: "Cancel symbol navigation",
                 enabled: () => this.job?.origin === session, run: this.cancel }, { keys: ["Escape"], priority: 5 });
-            listeners.signal.addEventListener("abort", cancel.dispose, { once: true });
-            return detach;
+            return detachWithEditor(editor, listeners.signal, detach);
         } catch (error) { detach(); throw error; }
     }
     private requestFromPanel(kind: Kind): void {
@@ -213,5 +214,9 @@ export class HostNavigationTools {
     }
     debug() { return { ...this.metrics, queries: { ...this.queries }, sessions: [...this.sessions].map(s => ({ id: s.id, documentId: s.editor.view.documentId })), subscriptions: this.cell.count(),
         pending: this.cell.get().status === "pending", results: this.job?.page?.count ?? 0, scope: this.job?.sources.size ?? 0, companion: this.companion ?? null, transport: this.job?.origin.controller.getDiagnostics() ?? null, disposed: this.disposed }; }
-    dispose(): void { if (this.disposed) return; this.cancel(); this.history.dispose(); this.disposed = true; this.active = undefined; this.publish(); }
+    dispose(): void {
+        if (this.disposed) return;
+        this.disposed = true; this.history.dispose(); this.cancel();
+        for (const session of this.sessions) session.detach();
+    }
 }

@@ -1,6 +1,7 @@
 import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
 import { createActionPages } from "./action-pages.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
+import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { createCodeActionController } from "../../src/browser/index.ts";
@@ -87,6 +88,7 @@ export class HostActionsTools {
     readonly bindModule = this.moduleField.bind;
     private readonly documents = () => this.workspace.getSnapshot().documents.filter(doc => doc.language !== null);
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
+        if (this.disposed) throw new Error("Code action panel is disposed.");
         const target = this.workspace.tabs.capture(tab), events = new AbortController();
         const { provider, commandPolicy, beforeRequest, beforeResolve } = this.options, review = this.reviewOwner;
         const settings = () => {
@@ -112,19 +114,16 @@ export class HostActionsTools {
             controller.dispose(); this.sessions.delete(s); if (this.active === s) this.active = undefined;
             this.publish();
         }, { once: true });
-        editor.signal.addEventListener("abort", detach, { once: true, signal: events.signal });
         const ownsModule = () => this.moduleField.element?.matches(":focus") === true && (this.panel?.source ?? this.active) === s;
         try {
-            const request = editor.commands.register({ id: "actions.request", label: "Preview module action", enabled: () => this.available(s),
+            const register = scopedCommands(editor, events.signal);
+            register({ id: "actions.request", label: "Preview module action", enabled: () => this.available(s),
                 run: from => { this.active = s; this.start(from !== "panel"); } }, { keys: ["Ctrl+.", "Meta+."] });
-            events.signal.addEventListener("abort", request.dispose, { once: true });
-            const submit = editor.commands.register({ id: "actions.submitModule", label: "Preview the entered module", enabled: ownsModule,
+            register({ id: "actions.submitModule", label: "Preview the entered module", enabled: ownsModule,
                 run: () => editor.commands.run("actions.request", "panel") }, { keys: ["Enter"], shared: true, priority: 35 });
-            events.signal.addEventListener("abort", submit.dispose, { once: true });
-            const close = editor.commands.register({ id: "actions.dismiss", label: "Dismiss action preview", enabled: ownsModule,
+            register({ id: "actions.dismiss", label: "Dismiss action preview", enabled: ownsModule,
                 run: () => { this.cancel(); editor.focus(); } }, { keys: ["Escape"], shared: true, priority: 6 });
-            events.signal.addEventListener("abort", close.dispose, { once: true });
-            return detach;
+            return detachWithEditor(editor, events.signal, detach);
         } catch (error) { detach(); throw error; }
     }
     readonly request = (): void => {

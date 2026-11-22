@@ -1,4 +1,5 @@
 import { createPanelKeyBinding } from "./panel-keys.ts";
+import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts";
 import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import { createWorkingSource } from "./working-source.ts";
@@ -14,7 +15,7 @@ import { HostCell } from "../shared/observable.ts";
 type Alias = Readonly<{ module: string; uri: string }>;
 export type LinkHostOptions = Readonly<{ provider: LspWorkspace;
     prepare: (aliases: readonly Alias[], delay: number, fault?: LinksInput["fault"]) => LspPrepare }>;
-type Session = { id: string; editor: TextEditor; controller: DocumentLinkController };
+type Session = { id: string; editor: TextEditor; controller: DocumentLinkController; detach: () => void };
 type Route = { origin: Session; source: DocumentSnapshot; selections: SelectionSet; documents: Map<string, DocumentSnapshot>;
     targets: Map<DocumentId, Session>; destination?: TextEditor; releaseHistory?: () => void };
 export type LinkNote = ModuleLink & Readonly<{ line: number; column: number; title: string; targetTitle: string | null; resolvable: boolean; open: () => void }>;
@@ -68,6 +69,7 @@ export class HostDocumentLinks {
     }
     readonly bindList = this.linkList.bind;
     attach(id: string, _tab: TabId, editor: TextEditor) {
+        if (this.disposed) throw new Error("Link panel is disposed.");
         const controller = createDocumentLinkController(editor, this.options.provider, {
             documents: () => [...(this.route?.documents.values() ?? [])], canCapture: this.canCapture,
             prepareRequest: () => {
@@ -75,7 +77,7 @@ export class HostDocumentLinks {
                 const fault = this.fault; this.fault = undefined; return this.options.prepare(aliases, this.delay, fault);
             },
         });
-        const session = { id, editor, controller }, events = new AbortController();
+        const session: Session = { id, editor, controller, detach: () => detach() }, events = new AbortController();
         this.sessions.add(session);
         const stop = controller.subscribe(() => { if (this.route?.origin === session) this.render(this.route); });
         const detach = () => {
@@ -87,21 +89,18 @@ export class HostDocumentLinks {
             controller.dispose(); this.publish();
         };
         try {
-            for (const [id, label, key, run, enabled] of [
-                ["links.discover", "Discover module links", "F4", () => { this.active = session; this.start(true); }, () => !this.disconnected],
-                ["links.return", "Return to link origin", "Shift+F4", this.returnToOrigin, () => !!this.route?.destination],
-            ] as const) {
-                const command = editor.commands.register({ id, label, run, enabled }, { keys: [key] });
-                events.signal.addEventListener("abort", command.dispose, { once: true });
-            }
-            const dismiss = editor.commands.register({ id: "links.dismiss", label: "Dismiss module links",
+            const register = scopedCommands(editor, events.signal);
+            register({ id: "links.discover", label: "Discover module links", enabled: () => !this.disconnected,
+                run: () => { this.active = session; this.start(true); } }, { keys: ["F4"] });
+            register({ id: "links.return", label: "Return to link origin", enabled: () => !!this.route?.destination,
+                run: this.returnToOrigin }, { keys: ["Shift+F4"] });
+            register({ id: "links.dismiss", label: "Dismiss module links",
                 enabled: () => this.listEditor() === editor && !!this.linkList.element?.matches(":focus-within"),
                 run: () => {
                     const origin = this.route?.origin;
                     this.cancel();
                     if (origin && this.sessions.has(origin)) origin.editor.focus();
                 } }, { keys: ["Escape"], shared: true, priority: 7 });
-            events.signal.addEventListener("abort", dismiss.dispose, { once: true });
         } catch (error) { detach(); throw error; }
         onSourceFocus(editor, events.signal, () => {
             if (this.active !== session && this.cell.get().status === "resolving" && !this.presenting) this.cancel();
@@ -111,7 +110,7 @@ export class HostDocumentLinks {
             const uri = this.workspace.document(editor.view.documentId).language?.uri;
             if (!this.presenting && uri && this.route?.documents.has(uri)) this.cancel();
         }, events.signal);
-        return detach;
+        return detachWithEditor(editor, events.signal, detach);
     }
     private render(route: Route, page = this.cell.get().page) {
         const state = route.origin.controller.getSnapshot(), status = state.status;
@@ -245,5 +244,9 @@ export class HostDocumentLinks {
     faultNext(value: NonNullable<LinksInput["fault"]>) { this.fault = value; }
     debug() { return { ...this.metrics, state: this.cell.get(), companion: this.companion ?? null,
         sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
-    dispose() { if (!this.disposed) { this.cancel(); this.linkList.dispose(); this.aliases.clear(); this.disposed = true; this.publish(); } }
+    dispose() {
+        if (this.disposed) return;
+        this.disposed = true; this.cancel(); this.linkList.dispose(); this.aliases.clear();
+        for (const session of this.sessions) session.detach();
+    }
 }

@@ -1,4 +1,5 @@
 import type { Affinity, TabId } from "../../src/index.ts";
+import { scopedCommands } from "../shared/editor-attachment.ts";
 import { createHoverController, observePointerDwell } from "../../src/browser/index.ts";
 import type { DocumentationContent, HoverController, HoverDiagnostics, HoverSnapshot, TextEditor } from "../../src/browser/index.ts";
 import type { LspScopeAccess, LspWorkspace } from "../../src/protocol/index.ts";
@@ -94,17 +95,16 @@ export class HostHoverTools {
         const cancelPointer = () => { dwell.cancel(); requested = undefined; };
         session.cancelTimers = cancelPointer;
         try {
-            const inspect = editor.commands.register({ id: "hover.inspect", label: "Inspect type",
+            const register = scopedCommands(editor, listeners.signal);
+            register({ id: "hover.inspect", label: "Inspect type",
                 enabled: () => this.canCapture(editor.view.documentId), run: () => this.inspectCaret(id) },
                 { keys: ["Ctrl+k Ctrl+i", "Meta+k Meta+i"] });
-            listeners.signal.addEventListener("abort", inspect.dispose, { once: true });
-            const close = editor.commands.register({ id: "hover.dismiss", label: "Dismiss hover",
+            register({ id: "hover.dismiss", label: "Dismiss hover",
                 enabled: () => (editor.getSnapshot().focused || !!this.popup?.matches(":focus-within"))
                     && (this.current === session || dwell.isPending()), run: () => {
                     if (this.current !== session) { cancelPointer(); return false; }
                     const visible = this.cell.get().visible; this.dismiss(); return visible;
                 } }, { keys: ["Escape"], priority: 20, shared: true });
-            listeners.signal.addEventListener("abort", close.dispose, { once: true });
         } catch (error) { listeners.abort(); controller.dispose(); throw error; }
         this.sessions.set(id, session);
         const stop = controller.subscribe(() => { if (this.current === session) this.publish(); });

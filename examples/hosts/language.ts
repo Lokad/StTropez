@@ -1,5 +1,6 @@
 import { onSourceFocus } from "./source-focus.ts";
 import { bindFindCommands } from "../shared/find-commands.ts";
+import { scopedCommands } from "../shared/editor-attachment.ts";
 import { createFindController, createRegexFindBackend } from "../../src/browser/index.ts";
 import type { TextEditor, FindController, FindSnapshot } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, DocumentId, FoldRange, FoldRegion, FoldingSnapshot, TabId, TabTarget, Workspace } from "../../src/index.ts";
@@ -115,15 +116,14 @@ export class HostLanguageTools {
         const { editor } = session;
         try {
             this.bindFind(session, listeners.signal);
+            const register = scopedCommands(editor, listeners.signal);
             for (const [id, label, code, apply] of [
                 ["fold.selection", "Fold selected lines", "BracketLeft", () => this.collapseSelection(session)],
                 ["fold.expand-all", "Expand all folds", "BracketRight", () => this.expandRegions(session)]
             ] as const) {
-                const command = editor.commands.register({ id, label,
+                register({ id, label,
                     enabled: () => this.ownsSession(session) && editor.element.isConnected,
-                    run: () => { this.activate(session); apply(); } });
-                listeners.signal.addEventListener("abort", command.dispose, { once: true });
-                for (const mod of ["Ctrl", "Meta"]) editor.keymap.bind(mod + "+Shift+Code:" + code, id);
+                    run: () => { this.activate(session); apply(); } }, { keys: ["Ctrl+Shift+Code:" + code, "Meta+Shift+Code:" + code] });
             }
         } catch (error) { listeners.abort(); throw error; }
     }
@@ -137,15 +137,14 @@ export class HostLanguageTools {
         }, direction => {
             if (this.ownsSession(session)) { this.activate(session); this.runFind(session, { kind: "navigate", direction }); }
         }, () => current() && !!this.queryElement?.matches(":focus"));
-        const replace = session.editor.commands.register({ id: "find.replaceCurrent", label: "Replace current match",
+        const register = scopedCommands(session.editor, signal);
+        register({ id: "find.replaceCurrent", label: "Replace current match",
             enabled: () => current() && !!this.replacementElement?.matches(":focus:enabled"),
             run: () => this.runFind(session, { kind: "replace", text: this.cell.get().replacement }) },
             { keys: ["Enter"], shared: true, priority: 41, repeat: false });
-        signal.addEventListener("abort", replace.dispose, { once: true });
-        const back = session.editor.commands.register({ id: "find.returnToSource", label: "Return to source",
+        register({ id: "find.returnToSource", label: "Return to source",
             enabled: () => current() && !!this.toolsElement?.matches(":focus-within"),
             run: () => { session.find?.cancel(); session.editor.focus(); } }, { keys: ["Escape"], shared: true, priority: -1, repeat: false });
-        signal.addEventListener("abort", back.dispose, { once: true });
     }
     private cancelFindCommand(session?: Session): void {
         if (!session || this.pendingFind?.session === session) this.pendingFind?.stop();
