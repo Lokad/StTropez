@@ -66,6 +66,10 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await page.reload();
         await seed(page); const ranges = [{ anchor: raw.indexOf("TODO") + 4, head: raw.indexOf("TODO") + 1 }, { anchor: raw.length, head: raw.length }]; await page.evaluate(ranges => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, ranges); }, ranges); const before = await snapshot(page);
         await input(page).press("Control+."); await expect(input(page, "Action module")).toBeFocused(); await waitForActions(page); await expect(choices(page)).toHaveCount(9); await expect(edits(page)).toHaveCount(1); await expect(button(page, "Apply captured action")).toBeEnabled();
+        const module = input(page, "Action module"), requested = (await snapshot(page)).bindings.actions.requested;
+        await module.press("Escape"); await expect(input(page)).toBeFocused(); await expect(choices(page)).toHaveCount(0);
+        await module.press("Enter"); await waitForActions(page); await expect(choices(page)).toHaveCount(9);
+        expect((await snapshot(page)).bindings.actions.requested).toBe(requested + 1);
         await choices(page).nth(5).evaluate(node => { node.dataset.retained = "action-choice"; });
         await input(page, "Action module").evaluate(node => { node.dataset.retained = "action-module"; });
         await choices(page).nth(3).click(); await expect(button(page, "Apply captured action")).toBeDisabled(); await expect(page.getByLabel("Code action status", { exact: true })).toContainText("requires another context");

@@ -94,20 +94,30 @@ export class HostNavigationTools {
         const session: Session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor, controller }, listeners = new AbortController(); this.sessions.set(session.token, session);
         const stop = controller.subscribe(() => { const job = this.job; if (job?.ready && !this.current(job)) this.invalidate(job); this.publish(); });
         editor.input.addEventListener("focus", () => { this.active = session; this.publish(); }, { signal: listeners.signal });
-        editor.input.addEventListener("keydown", event => {
-            if (event.defaultPrevented || event.isComposing || editor.activity().composing) return;
-            if (event.key === "F12" && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); event.stopImmediatePropagation(); this.active = session; this.start(event.shiftKey ? "references" : "definition", true); }
-            else if (event.key === "Escape" && this.job) { event.preventDefault(); event.stopImmediatePropagation(); this.cancel(); }
-        }, { capture: true, signal: listeners.signal });
         for (const name of ["compositionstart", "beforeinput", "paste", "cut"] as const) editor.input.addEventListener(name, () => {
             if (!this.presenting && this.job?.sources.has(editor.view.documentId)) this.cancel();
         }, { signal: listeners.signal });
         let detached = false;
-        return () => { if (detached) return; detached = true; if (!this.presenting && this.job) this.cancel(); listeners.abort(); stop(); controller.dispose(); this.sessions.delete(session.token);
+        const detach = () => { if (detached) return; detached = true; if (!this.presenting && this.job) this.cancel(); listeners.abort(); stop(); controller.dispose(); this.sessions.delete(session.token);
             if (this.active === session) this.active = undefined; if (!this.sessions.size) this.dropClient(); this.publish(); };
+        try {
+            for (const [kind, label, key] of [["definition", "Find definition", "F12"], ["references", "Find references", "Shift+F12"]] as const) {
+                const command = editor.commands.register({ id: "navigation." + kind, label, enabled: () => this.available(session),
+                    run: from => { this.active = session; this.start(kind, from !== "panel"); } }, { keys: [key] });
+                listeners.signal.addEventListener("abort", command.dispose, { once: true });
+            }
+            const cancel = editor.commands.register({ id: "navigation.dismiss", label: "Cancel symbol navigation",
+                enabled: () => this.job?.origin === session, run: this.cancel }, { keys: ["Escape"], priority: 5 });
+            listeners.signal.addEventListener("abort", cancel.dispose, { once: true });
+            return detach;
+        } catch (error) { detach(); throw error; }
     }
-    readonly findDefinition = (): void => this.start("definition", false);
-    readonly findReferences = (): void => this.start("references", false);
+    private requestFromPanel(kind: NavigationInput["kind"]): void {
+        if (!this.active?.editor.commands.run("navigation." + kind, "panel"))
+            this.publish({ message: "Focus an available source and finish typing before requesting navigation." });
+    }
+    readonly findDefinition = (): void => this.requestFromPanel("definition");
+    readonly findReferences = (): void => this.requestFromPanel("references");
     private start(kind: NavigationInput["kind"], keyboard: boolean, pointed?: number): void {
         if (this.disconnected) { this.publish({ status: "disconnected", message: "Reconnect the navigation provider before requesting results." }); return; }
         const origin = this.active;

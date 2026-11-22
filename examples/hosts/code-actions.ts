@@ -87,23 +87,34 @@ export class HostActionsTools {
         this.moduleEvents?.abort(); this.moduleEvents = undefined; this.moduleInput = input ?? undefined; if (!input || this.disposed) return;
         const events = new AbortController(); this.moduleEvents = events;
         input.addEventListener("keydown", event => {
-            if (event.defaultPrevented || event.isComposing) return;
-            if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); const origin = this.panel?.source ?? this.active; this.cancel(); if (origin && this.available(origin)) origin.editor.focus(); }
-            else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) { event.preventDefault(); this.request(); }
+            const origin = this.panel?.source ?? this.active;
+            if (origin?.editor.keymap.handle(event)) event.stopPropagation();
         }, { signal: events.signal });
     };
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
         const s = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
         editor.input.addEventListener("focus", () => { this.active = s; this.publish(); }, { signal: events.signal });
-        editor.input.addEventListener("keydown", event => {
-            if (!event.defaultPrevented && !event.isComposing && !editor.activity().composing && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key === ".") {
-                event.preventDefault(); event.stopImmediatePropagation(); this.active = s; this.start(true);
-            }
-        }, { capture: true, signal: events.signal });
         for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.panel && this.panel.source !== s && this.cell.get().token !== null && this.panel.controller.getSnapshot().status !== "executing" && this.workspace.document(editor.view.documentId).key.variant === "working") this.cancel(); }, { signal: events.signal });
-        let detached = false; return () => { if (detached) return; detached = true; if (this.panel?.source === s) this.cancel(); events.abort(); this.sessions.delete(s.token); if (this.active === s) this.active = undefined; this.publish(); };
+        let detached = false;
+        const detach = () => { if (detached) return; detached = true; if (this.panel?.source === s) this.cancel(); events.abort(); this.sessions.delete(s.token); if (this.active === s) this.active = undefined; this.publish(); };
+        const ownsModule = () => this.moduleInput?.matches(":focus") === true && (this.panel?.source ?? this.active) === s;
+        try {
+            const request = editor.commands.register({ id: "actions.request", label: "Preview module action", enabled: () => this.available(s),
+                run: from => { this.active = s; this.start(from !== "panel"); } }, { keys: ["Ctrl+.", "Meta+."] });
+            events.signal.addEventListener("abort", request.dispose, { once: true });
+            const submit = editor.commands.register({ id: "actions.submitModule", label: "Preview the entered module", enabled: ownsModule,
+                run: () => editor.commands.run("actions.request", "panel") }, { keys: ["Enter"], shared: true, priority: 35 });
+            events.signal.addEventListener("abort", submit.dispose, { once: true });
+            const close = editor.commands.register({ id: "actions.dismiss", label: "Dismiss action preview", enabled: ownsModule,
+                run: () => { this.cancel(); editor.focus(); } }, { keys: ["Escape"], shared: true, priority: 6 });
+            events.signal.addEventListener("abort", close.dispose, { once: true });
+            return detach;
+        } catch (error) { detach(); throw error; }
     }
-    readonly request = (): void => this.start(false);
+    readonly request = (): void => {
+        if (!this.active?.editor.commands.run("actions.request", "panel"))
+            this.publish({ message: "Focus an available source and finish typing before requesting a code action." });
+    };
     private start(keyboard: boolean): void {
         const origin = this.active, module = this.cell.get().module;
         if (this.disconnected || !origin || !this.available(origin)) { this.publish({ message: "Focus an available source and reconnect first." }); return; }
