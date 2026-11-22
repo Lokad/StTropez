@@ -222,7 +222,9 @@ text in one undoable edit. You can keep typing while a recovery offer is open. T
 your edits alongside the offered draft. After reload, choose a version to restore or download.
 Restoring one keeps the other versions available. **Keep current files** discards the offered
 versions and checkpoints any unsaved current files in the same write. Reopening clears drafts identical to saved data.
-Storage tokens guard against overwriting a peer’s changes. Notifications name the affected sample.
+If another page has saved the sample, choose **Review saved copy**. **Save my reviewed version**
+writes your working files. **Use reviewed saved files** takes the other page’s version across the
+sample. If any text changes, one Undo restores it. A later local edit or peer save requires a fresh review.
 
 If a saved copy is unreadable, the demo leaves it in storage and opens the sample. Save checks the
 captured token. A failed sample switch releases partial resources and keeps the open project usable.

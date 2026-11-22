@@ -3,6 +3,7 @@ import test from "node:test";
 import { Workspace } from "../src/index.ts";
 import { DemoProject } from "../examples/demo/project.ts";
 import type { DraftStore, StoredDraft } from "../examples/hosts/draft-store.ts";
+import { latch } from "./helpers/latch.ts";
 
 class MemoryStore implements DraftStore {
     row: StoredDraft | null = null;
@@ -19,6 +20,35 @@ class MemoryStore implements DraftStore {
 }
 
 const unusedProvider = async () => { throw new Error("This project fixture never starts a language provider."); };
+
+test("taking a reviewed copy preserves edits and replacement views during the storage read", async () => {
+    const store = new MemoryStore(), recovery = new MemoryStore();
+    const project = await DemoProject.open("pricing", () => true, unusedProvider,
+        name => name === "sttropez-demo-projects-v1" ? store : recovery);
+    try {
+        const files = project.files, workspace = project.workspace, second = files[1]!.resource.documentId;
+        const peer = { token: "peer", value: { version: 1, files: Object.fromEntries(files.map(file => [file.name, "// peer " + file.name])) } };
+        store.row = peer; await project.save(() => {}); assert.equal(project.reviewConflict(), true);
+        const before = files.map(file => workspace.document(file.resource.documentId).buffer);
+        const held = latch<StoredDraft>(); store.read = () => held.promise;
+        const take = project.takeReviewedCopy(() => {}, () => true);
+        workspace.replaceText(second, "// typed during read", { origin: "human", history: "record" });
+        held.resolve(peer); await take;
+        assert.equal(workspace.document(files[0]!.resource.documentId).buffer, before[0]);
+        assert.equal(workspace.document(second).text(), "// typed during read");
+        assert.equal(project.canSaveReviewed(), false); assert.match(project.message, /Review the saved copy again/);
+        project.reviewConflict();
+        const nextRead = latch<StoredDraft>(); store.read = () => nextRead.promise;
+        let current = true;
+        const pending = project.takeReviewedCopy(() => {}, () => current);
+        current = false; nextRead.resolve(peer); await pending;
+        assert.equal(workspace.document(second).text(), "// typed during read"); assert.equal(project.hasConflict(), true);
+        await project.takeReviewedCopy(() => {}, () => true);
+        assert.equal(store.row, peer); assert.equal(store.writes, 0); assert.equal(project.dirty(), false);
+        workspace.replaceText(second, "// after adoption", { origin: "human", history: "record" }); await project.save(() => {});
+        assert.equal(store.writes, 1); assert.equal(project.dirty(), false);
+    } finally { project.dispose(); await project.language.dispose(); }
+});
 
 test("demo startup falls back only for unreadable storage and preserves the stored copy", async t => {
     for (const failure of ["read", "decode"] as const) await t.test(failure, async () => {

@@ -219,7 +219,8 @@ function paintMetadata(): void {
     button("save").disabled = project.saving;
     button("navigate-back").disabled = !locations.some(location => location.project === project);
     element("save-conflict").hidden = !project.hasConflict();
-    button("conflict-save").disabled = !project.canSaveReviewed();
+    button("conflict-save").disabled = button("conflict-take").disabled = !project.canSaveReviewed();
+    button("conflict-review").disabled = project.saving;
     if (reviewLabel) reviewLabel.textContent = project.isReviewingConflict() ? "Other page's saved copy" : "Saved copy";
     const recovery = project.recovery.state.getSnapshot();
     element("recovery-offer").hidden = !recovery.present;
@@ -660,6 +661,16 @@ function onFileAction(id: string, action: () => void): void {
 onFileAction("save", () => { void save(); });
 on("conflict-review", () => { if (project?.reviewConflict()) { setPanel("changes"); renderMetadata(); } });
 onFileAction("conflict-save", () => { void save(true); });
+onFileAction("conflict-take", () => {
+    const captured = project, view = editor, generation = opening;
+    if (!captured || !view) return;
+    const stillOpen = () => !disposed && captured === project && view === editor && generation === opening;
+    void captured.takeReviewedCopy(renderMetadata, stillOpen).then(() => {
+        if (stillOpen() && comparison && active) {
+            const ticket = comparison.controller.beginRefresh(); ticket.complete(captured.baseline(active));
+        }
+    });
+});
 onFileAction("recovery-restore", () => { void project?.recovery.restore(); });
 element("recovery-version").addEventListener("change", event => {
     project?.recovery.selectVersion((event.currentTarget as HTMLSelectElement).selectedIndex);

@@ -737,14 +737,37 @@ export async function runDemoConflict(page: Page, url = "/") {
         const working = peer.getByRole("textbox", { name: "Comparison working source", exact: true });
         await working.press("Control+End"); await working.pressSequentially("\n// Later peer edit");
         const save = peer.getByRole("button", { name: "Save my reviewed version", exact: true }); await expect(save).toBeDisabled();
+        await expect(peer.getByRole("button", { name: "Use reviewed saved files" })).toBeDisabled();
         await peer.getByRole("button", { name: "Review saved copy", exact: true }).click(); await expect(save).toBeEnabled(); await save.click();
         await expect(peer.locator("#status")).toContainText("Saved in this browser"); await expect(peer.locator("#files")).not.toContainText("●");
+        const original = await main.inputValue();
+        await main.press("Control+s"); await page.getByRole("button", { name: "Review saved copy" }).click();
+        const take = page.getByRole("button", { name: "Use reviewed saved files" });
+        const local = page.getByRole("textbox", { name: "Comparison working source", exact: true });
+        await expect(take).toBeEnabled();
+        await working.press("Control+Home"); await peer.keyboard.insertText("// Newer peer save\n"); await working.press("Control+s");
+        await expect(peer.locator("#files")).not.toContainText("●");
+        await take.click(); await expect(page.locator("#status")).toHaveText("The other page saved again. Review the new saved copy.");
+        await expect(local).toHaveValue(original); await expect(take).toBeDisabled();
+        await page.getByRole("button", { name: "Review saved copy" }).click();
+        await expect(page.getByRole("textbox", { name: "Comparison baseline source" })).toHaveValue(/^\/\/ Newer peer save/);
+        await local.focus(); await take.click(); await expect(page.locator("#save-conflict")).toBeHidden();
+        await expect(local).toBeFocused(); await local.press("Control+Home");
+        const workingRows = page.locator(".st-comparison-panes > section").last().locator(".st-viewport-row");
+        await expect(workingRows.first()).toHaveText("// Newer peer save");
+        await expect(page.locator("#files")).not.toContainText("●");
+        await local.press("Control+z"); await local.press("Control+Home"); await expect(workingRows.first()).toHaveText("// Main page saved");
+        await expect(page.locator("#files button")).toHaveText(["main.ts ●", "pricing.ts ●"]);
+        await page.locator('[data-file="pricing.ts"]').click(); await local.press("Control+Home"); await expect(workingRows.first()).toHaveText("export interface CartItem {");
+        await local.press("Control+y"); await local.press("Control+Home"); await expect(workingRows.first()).toHaveText("// Peer helper work");
+        await expect(page.locator("#files")).not.toContainText("●");
         await page.reload(); await expect(page.locator("#editor")).toContainText("// Peer local work"); await expect(page.locator("#editor")).toContainText("// Later peer edit");
         await expect(page.locator("#editor")).not.toContainText("// Main page saved");
         await page.locator('[data-file="pricing.ts"]').click(); await expect(page.locator("#editor")).toContainText("// Peer helper work");
         await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
 
-        return Object.freeze({ concurrentProviderPages: true, projectConflict: true, preservedLocalEdits: true, staleReviewRejected: true, reviewedSave: true, reloadBothFiles: true });
+        return Object.freeze({ concurrentProviderPages: true, projectConflict: true, preservedLocalEdits: true, staleReviewRejected: true,
+            reviewedSave: true, reviewedAdoptionAndUndo: true, reloadBothFiles: true });
     } finally { await peer.close(); }
 }
 /** One real-provider journey shared by source, static and restored-package demos. */
