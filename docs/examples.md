@@ -393,7 +393,7 @@ F4 opens the module links list. Closing another view of the source keeps those l
 Escape dismisses the list and returns focus to its mounted source,
 including while a link resolves. If you Tab away, the resolved link stays in the list until you
 open it. If the destination pane is busy with a paste, the panel explains the delay.
-Click the link again after the paste finishes. Shift+F4 returns to the original document and selection.
+Click the link again after the paste finishes. Shift+F4 restores the original document, selections and scroll position.
 Changing result pages during a press requires a fresh click to open a link on the new page.
 In the F2 name field, Enter previews the rename. A second press applies the reviewed edits.
 In the F6 colour picker, Enter previews the proposed value. **Apply captured color** applies the

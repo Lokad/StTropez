@@ -4,9 +4,9 @@ import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.
 import { presentDocument, unavailablePaneMessage, type LanguageHost } from "./language-host.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import { createWorkingSource } from "./working-source.ts";
-import type { DocumentId, DocumentSnapshot, SelectionSet, TabId } from "../../src/index.ts";
+import type { DocumentId, DocumentSnapshot, TabId } from "../../src/index.ts";
 import { createDocumentLinkController } from "../../src/browser/index.ts";
-import type { DocumentLinkChoice, DocumentLinkController, DocumentLinkSnapshot, TextEditor } from "../../src/browser/index.ts";
+import type { DocumentLinkChoice, DocumentLinkController, DocumentLinkSnapshot, TextEditor, ViewState } from "../../src/browser/index.ts";
 import type { LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import { linkLimits } from "../../fixtures/language/links.ts";
 import type { LinksInput, ModuleLink } from "../../fixtures/language/links.ts";
@@ -17,7 +17,7 @@ type Alias = Readonly<{ module: string; uri: string }>;
 export type LinkHostOptions = Readonly<{ provider: LspWorkspace;
     prepare: (aliases: readonly Alias[], delay: number, fault?: LinksInput["fault"]) => LspPrepare }>;
 type Session = { id: string; editor: TextEditor; controller: DocumentLinkController; detach: () => void };
-type Route = { origin: Session; source: DocumentSnapshot; selections: SelectionSet; documents: Map<string, DocumentSnapshot>;
+type Route = { origin: Session; source: DocumentSnapshot; viewState: ViewState; documents: Map<string, DocumentSnapshot>;
     targets: Map<DocumentId, Session>; destination?: TextEditor; releaseHistory?: () => void };
 export type LinkNote = ModuleLink & Readonly<{ line: number; column: number; title: string; targetTitle: string | null; resolvable: boolean; open: () => void }>;
 export type DocumentLinksSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; requestView: string | null;
@@ -154,19 +154,19 @@ export class HostDocumentLinks {
             if (aliases.has(id) && !targets.has(id)) targets.set(id, session);
         }
         this.release();
-        const route: Route = { origin, source, documents, targets, selections: origin.editor.view.getSnapshot().selectionSet };
+        const route: Route = { origin, source, documents, targets, viewState: origin.editor.captureView() };
         this.route = route; this.metrics.requested++;
         if (!returning) this.publish({ ...initial });
         void origin.controller.request().then(() => {
             const state = origin.controller.getSnapshot();
             if (this.route !== route || state.status !== "ready") return;
-            const head = route.selections.ranges[route.selections.primary]!.head;
+            const head = route.viewState.head;
             const index = state.links.findIndex(link => link.from <= head && head <= link.to);
             if (index >= 0) this.render(route, Math.floor(index / linkLimits.page));
             if (keyboard && origin.editor.getSnapshot().focused) this.linkList.element?.focus();
         });
     }
-    private place(route: Route, doc: DocumentSnapshot, selections?: SelectionSet) {
+    private place(route: Route, doc: DocumentSnapshot, viewState?: ViewState) {
         const live = this.host.workspace.observeDocument(doc.id).getSnapshot();
         if (this.route !== route || live?.revision !== doc.revision || live.buffer !== doc.buffer) return;
         const captured = route.targets.get(doc.id);
@@ -175,10 +175,10 @@ export class HostDocumentLinks {
             const editor = this.host.canCapture(doc.id) && presentDocument(this.host, doc.id, captured && this.sessions.has(captured) ? [captured] : []);
             if (this.route !== route) return;
             if (!editor) { this.publish({ message: unavailablePaneMessage }); return; }
-            const placed = selections ? editor.view.setSelections(doc.revision, selections.ranges, selections.primary)
-                : editor.view.setSelection(doc.revision, { anchor: 0, head: 0 });
+            const placed = viewState ? editor.restoreView(viewState)
+                : editor.reveal({ from: 0, to: 0 }, { expectedRevision: doc.revision, select: true });
             if (!placed) return;
-            editor.viewport.revealOffset(editor.view.getSnapshot().selection.head); editor.focus(); return editor;
+            editor.focus(); return editor;
         } finally { this.presenting = false; }
     }
     private async open(route: Route, item: DocumentLinkChoice, module: string) {
@@ -222,7 +222,7 @@ export class HostDocumentLinks {
     }
     readonly returnToOrigin = () => {
         const route = this.route;
-        if (!route?.destination || !this.place(route, route.source, route.selections)) return;
+        if (!route?.destination || !this.place(route, route.source, route.viewState)) return;
         this.metrics.returned++;
         if (!this.sessions.has(route.origin)) this.start(false, true);
         else this.publish({ message: "Returned to the captured source and selection." });

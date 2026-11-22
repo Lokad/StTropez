@@ -431,12 +431,21 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
     });
     test("F4 links restore complete comparison and secondary selections without taking later form focus", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/documentLink"); await page.reload();
-        const raw = '\ufeffimport "sample-utils";\r\nconst café = "😀";'; await seed(page, raw);
+        const raw = ['\ufeffimport "sample-utils";', 'const café = "😀";', ...Array.from({ length: 180 }, (_, i) => `const row${i} = ${i};`)].join("\r\n");
+        await seed(page, raw);
         await button(page, "Open source review").click(); await button(page, "Add module companion").click(); await settledColorsAndLinks(page);
         const list = page.getByLabel("Module link results", { exact: true }), row = list.getByRole("button").first();
         for (const origin of ["secondary", "comparison"] as const) {
             const source = field(page, origin === "comparison" ? "Comparison working source" : "Secondary source"); await source.focus();
             await page.evaluate(origin => { const f = window.hostFixture; f.selectSourceSet(origin, f.snapshot().source.revision, [{ anchor: 20, head: 9 }, { anchor: f.snapshot().source.length, head: f.snapshot().source.length }]); }, origin);
+            const viewport = source.locator("..");
+            await viewport.evaluate(node => { node.scrollTop = node.scrollHeight / 2; }); await ready(page);
+            const readingLine = () => viewport.evaluate(node => {
+                const top = node.getBoundingClientRect().top;
+                return [...node.querySelectorAll(".st-viewport-row")].find(row => row.getBoundingClientRect().bottom > top + 1)?.textContent;
+            });
+            await expect.poll(readingLine).toMatch(/^const row/);
+            const line = await readingLine();
             const before = await snapshot(page); await source.press("F4"); await settledColorsAndLinks(page); await expect(list).toBeFocused();
             await page.keyboard.press("Tab"); await expect(row).toBeFocused(); await page.keyboard.press("Enter"); await settledColorsAndLinks(page);
             await expect(field(page, "Secondary source")).toBeFocused();
@@ -444,6 +453,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
             // Resolution changes row contents. Subsequent focus/navigation publications retain that resolved row.
             await row.evaluate(node => { node.dataset.retained = "module-link"; });
             await field(page, "Secondary source").press("Shift+F4"); await settledColorsAndLinks(page); await expect(source).toBeFocused();
+            await expect.poll(readingLine).toBe(line);
             await row.click(); await settledColorsAndLinks(page); await expect(field(page, "Secondary source")).toBeFocused();
             await field(page, "Secondary source").press("Shift+F4"); await settledColorsAndLinks(page); await expect(source).toBeFocused();
             const after = await snapshot(page); await expect(row).toHaveAttribute("data-retained", "module-link");
