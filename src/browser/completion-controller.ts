@@ -1,7 +1,6 @@
 import { ProtocolDecodeError, rpcCodes, staleRequest } from "../protocol/wire.ts";
 import { dispatchTypedText, typedTextEvent, type TypedTextDetail } from "./input-events.ts";
 import { codeWordConstituentPattern } from "../core/words.ts";
-import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentViewSnapshot, ResourceLease, ResourceMetadata } from "../core/workspace.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import { planSnippetEdit, planSnippetChoice, snippetChoiceText } from "../core/snippets.ts";
@@ -47,7 +46,7 @@ const word = new RegExp(`^(?:${codeWordConstituentPattern})$`, "u");
 export function createCompletionController(editor: TextEditor, provider: LspWorkspace, options: CompletionControllerOptions = {}): CompletionController {
     const input = editorInput(editor);
     const { workspace, tab: target, view } = editor, documentId = view.documentId, resource = workspace.resourceForDocument(documentId);
-    if (editor.signal.aborted || !ownsTextSurface(workspace, view, target)) throw new Error("LSP provider requires the captured document view.");
+    if (editor.signal.aborted || !workspace.ownsDocumentView(view, target)) throw new Error("LSP provider requires the captured document view.");
     const listeners = new AbortController(), scope = provider.createScope();
     let binding: LspDocument, completion: LspCompletionClient;
     try { binding = scope.attachDocument(documentId); completion = createLspCompletionClient(provider); }
@@ -69,7 +68,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
         notifications.assertWritable(); if (disposed) throw new Error("Completion controller is disposed."); const stop = cell.observable.subscribe(listener);
         const release = () => { stop(); observers.delete(release); }; observers.add(release); return release;
     } });
-    const available = () => !disposed && editor.element.isConnected && !editor.signal.aborted && ownsTextSurface(workspace, view, target);
+    const available = () => !disposed && editor.element.isConnected && !editor.signal.aborted && workspace.ownsDocumentView(view, target);
     const idle = () => { const m = editor.activity(); return !m.composing && !m.pendingInput && !m.pendingCommand && !m.pendingWord && !m.pendingGrapheme && !m.disposed && !editor.getSnapshot().disabled && (options.canCapture?.() ?? true); };
     const authority = resource.metadata.getSnapshot;
     const authorityCurrent = (before: ResourceMetadata) => sameEditAuthority(before, authority());

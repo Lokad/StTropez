@@ -1,7 +1,6 @@
 import { Store } from "../core/observable.ts";
 import { reviewApplied, reviewFailed, reviewRefused, type ReviewEditResult } from "./review-edit.ts";
 import type { Observable } from "../core/observable.ts";
-import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
 import { createLspRenameClient, type LspRenameClient } from "../protocol/lsp-rename.ts";
 import type { LspWorkspaceEdit } from "../protocol/lsp-features.ts";
@@ -34,7 +33,7 @@ const idle: RenameSnapshot = Object.freeze({ name: "", status: "idle", message: 
 /** Review and confirm one provider rename from the captured caret and project. */
 export function createRenameController(editor: TextEditor, provider: LspWorkspace, options: RenameControllerOptions = {}): RenameController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
-    if (editor.signal.aborted || !ownsTextSurface(workspace, view, tab)) throw new Error("Rename requires a live document view.");
+    if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Rename requires a live document view.");
     const scope = workspace.createNotificationScope(), cell = new Store(idle, scope), events = new AbortController(), observers = new Set<() => void>();
     let job: Job | undefined;
     const available = (id: DocumentId) => {

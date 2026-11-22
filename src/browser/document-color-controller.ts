@@ -2,7 +2,6 @@ import { Store } from "../core/observable.ts";
 import { reviewApplied, reviewFailed, reviewRefused, type ReviewEditResult } from "./review-edit.ts";
 import type { Observable } from "../core/observable.ts";
 import { mapReplacementSelections } from "../core/selections.ts";
-import { ownsTextSurface } from "../core/workspace.ts";
 import { decodeLspColor } from "../protocol/lsp-features.ts";
 import type { LspColor, LspColorPresentation, LspDocumentColor } from "../protocol/lsp-features.ts";
 import { createLspColorClient, type LspColorClient } from "../protocol/lsp-language.ts";
@@ -39,7 +38,7 @@ const idle: DocumentColorSnapshot = Object.freeze({ status: "idle", colors: empt
 /** Review one provider color presentation and apply all its edits as one undo command. */
 export function createDocumentColorController(editor: TextEditor, provider: LspWorkspace, options: DocumentColorControllerOptions = {}): DocumentColorController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
-    if (!ownsTextSurface(workspace, view, tab) || editor.signal.aborted) throw new Error("Document colors require a live document view.");
+    if (!workspace.ownsDocumentView(view, tab) || editor.signal.aborted) throw new Error("Document colors require a live document view.");
     const scope = workspace.createNotificationScope(), state = new Store(idle, scope), events = new AbortController(), observers = new Set<() => void>();
     let job: Job | undefined;
     function available() {
@@ -72,7 +71,7 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
         return reviewFailed(message);
     }
     function current(j: Job) {
-        return job === j && !j.invalid && available() && ownsTextSurface(workspace, view, tab) && (j.reply?.isCurrent() ?? j.source.isCurrent());
+        return job === j && !j.invalid && available() && workspace.ownsDocumentView(view, tab) && (j.reply?.isCurrent() ?? j.source.isCurrent());
     }
     function startTimer(j: Job) {
         win.clearTimeout(j.timer); j.timer = win.setTimeout(() => fail(j, new Error("Color provider request timed out.")), 30000);

@@ -1,7 +1,6 @@
 import { Store, type Observable } from "../core/observable.ts";
 import { codeWordConstituentPattern } from "../core/words.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
-import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId } from "../core/workspace.ts";
 import { createLspHighlightClient } from "../protocol/lsp-highlights.ts";
 import type { LspDocumentHighlight } from "../protocol/lsp-highlights.ts";
@@ -22,7 +21,7 @@ export function createLspHighlightController(editor: TextEditor,
     options: Readonly<{ provider: LspWorkspace; delayMs?: number }>): LspHighlightController {
     const { workspace, tab: target, view } = editor, documentId = view.documentId, win = editor.element.ownerDocument.defaultView!;
     const delay = options.delayMs ?? 150;
-    if (editor.signal.aborted || !ownsTextSurface(workspace, view, target)) throw new Error("Invalid highlight view.");
+    if (editor.signal.aborted || !workspace.ownsDocumentView(view, target)) throw new Error("Invalid highlight view.");
     if (!Number.isFinite(delay) || delay < 0) throw new RangeError("Invalid highlight delay.");
     const client = createLspHighlightClient(options.provider), empty: readonly LspDocumentHighlight[] = Object.freeze([]);
     const notifications = workspace.createNotificationScope(), cell = new Store<LspHighlightSnapshot>(Object.freeze({ status: "idle", documentId,
@@ -30,7 +29,7 @@ export function createLspHighlightController(editor: TextEditor,
     const events = new AbortController(), runner = createCooperativeRunner(win); let disposed = false, generation = 0;
     let result: Awaited<ReturnType<typeof client.run>["result"]> | undefined;
     let occurrence: LspDocumentHighlight | undefined;
-    const available = () => !disposed && !editor.activity().disposed && ownsTextSurface(workspace, view, target);
+    const available = () => !disposed && !editor.activity().disposed && workspace.ownsDocumentView(view, target);
     const focused = () => editor.getSnapshot().focused;
     const busy = () => { const state = editor.activity(); return state.composing || state.pendingInput || state.pendingCommand || state.pendingWord || state.pendingGrapheme; };
     const publish = (status: LspHighlightSnapshot["status"], revision = cell.get().revision, caret: number | null = null) => {

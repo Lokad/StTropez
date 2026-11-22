@@ -55,9 +55,8 @@ export class HostActionsTools {
         this.stopReviewOwner = reviewOwner?.state.subscribe(() => this.publish());
     }
     private available(s: Session): boolean {
-        const tab = this.workspace.tabs.resolve(s.target);
-        return !this.disposed && this.sessions.has(s) && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
-            && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
+        return !this.disposed && this.sessions.has(s) && s.editor.element.isConnected && !s.editor.activity().disposed
+            && this.workspace.ownsDocumentView(s.editor.view, s.target) && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
     }
 
     private publish(patch: Partial<ActionsSnapshot> = {}): void {

@@ -5,7 +5,7 @@ import { Store } from "./observable.ts";
 import { validateWorkBudget } from "./kernel-cursor.ts";
 import { mapComparisonHunks } from "./comparison-presentation.ts";
 import type { Observable } from "./observable.ts";
-import { captureTextSurface, ownsTextSurface } from "./workspace.ts";
+import { captureTextSurface } from "./workspace.ts";
 import type { DocumentId, DocumentSnapshot, DocumentView, ResourceLease, TabId, TabTarget, Workspace } from "./workspace.ts";
 import type { SelectionSet } from "./selections.ts";
 
@@ -69,7 +69,7 @@ export function compareText(workspace: Workspace, identity: DocumentId | TabId, 
     let reversionPolicy = resource.metadata.getSnapshot(), reversionPolicyGeneration = 0;
     const pending = new Set<() => void>();
     const publish = (next: ComparisonSnapshot) => { scope.publish(state, Object.freeze(next)); };
-    const live = () => !disposed && state.get().baseline !== null && ownsTextSurface(workspace, view, target)
+    const live = () => !disposed && state.get().baseline !== null && workspace.ownsDocumentView(view, target)
         && resource.getSnapshot().state === "ready" && (!referenceDocument || !!referenceDocument.getSnapshot());
     const canAccept = () => live() && resource.metadata.getSnapshot().capabilities.edit.includes("human") && resource.metadata.getSnapshot().editLock === null;
     function expire(): void {

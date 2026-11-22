@@ -1,6 +1,5 @@
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
-import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
 import { createLspNavigationClient, type LspNavigationClient, type LspNavigationResult, type LspDefinitionPreview } from "../protocol/lsp-navigation.ts";
 import type { LspLocation } from "../protocol/lsp-features.ts";
@@ -71,7 +70,7 @@ function navigationResult(reply: LspNavigationResult, canOpen: () => boolean): N
 /** A passive definition lookup can paint a link. Only an explicit request resolves its target URIs. */
 export function createNavigationController(editor: TextEditor, provider: LspWorkspace, options: NavigationControllerOptions = {}): NavigationController {
     const { workspace, view, tab } = editor;
-    if (editor.signal.aborted || !ownsTextSurface(workspace, view, tab)) throw new Error("Navigation requires a live document view.");
+    if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Navigation requires a live document view.");
     const notifications = workspace.createNotificationScope(), state = new Store(idle, notifications);
     const layer = editor.decorations.add({ name: "definition link", order: 110, minimap: false });
     const events = new AbortController(), subscribers = new Set<() => void>();
@@ -137,7 +136,7 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
         job.stops.push(() => source.signal.removeEventListener("abort", abort));
         try {
             const documents = project(source);
-            if (tab) job.stops.push(workspace.tabs.subscribe(() => { if (!ownsTextSurface(workspace, view, tab)) expire(job); }));
+            if (tab) job.stops.push(workspace.tabs.subscribe(() => { if (!workspace.ownsDocumentView(view, tab)) expire(job); }));
             for (const doc of documents) {
                 const handle = workspace.observeDocument(doc.id), metadata = workspace.resourceForDocument(doc.id).metadata;
                 const permission = metadata.getSnapshot();
@@ -166,7 +165,7 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
             job.reply = reply;
             const result = navigationResult(reply, () => {
                 notifications.assertWritable();
-                return explicit === job && !job.expired && available() && ownsTextSurface(workspace, view, tab)
+                return explicit === job && !job.expired && available() && workspace.ownsDocumentView(view, tab)
                     && (!job.source || job.source.isCurrent()) && reply.isCurrent();
             });
             publish(result.count ? "ready" : "empty", result); return result;

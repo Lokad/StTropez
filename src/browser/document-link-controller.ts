@@ -1,6 +1,5 @@
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
-import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
 import type { LspDocumentLink } from "../protocol/lsp-features.ts";
 import { createLspLinkClient, type LspLinkClient } from "../protocol/lsp-language.ts";
@@ -42,7 +41,7 @@ const idle: DocumentLinkSnapshot = Object.freeze({ status: "idle", links: empty,
 /** Discover links for one editor. Only a current user action hands an opaque target to the host. */
 export function createDocumentLinkController(editor: TextEditor, provider: LspWorkspace, options: DocumentLinkControllerOptions = {}): DocumentLinkController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
-    if (editor.signal.aborted || !ownsTextSurface(workspace, view, tab)) throw new Error("Document links require a live document view.");
+    if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Document links require a live document view.");
     const scope = workspace.createNotificationScope(), state = new Store(idle, scope), events = new AbortController(), observers = new Set<() => void>();
     let job: Job | undefined;
     const available = (id: DocumentId) => {
@@ -64,7 +63,7 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
         queueMicrotask(() => { if (job === j) { release(); publish("expired"); } });
     }
     function captureCurrent(j: Job) {
-        if (job !== j || j.invalid || !ownsTextSurface(workspace, view, tab) || !available(view.documentId)
+        if (job !== j || j.invalid || !workspace.ownsDocumentView(view, tab) || !available(view.documentId)
             || j.capture && !j.capture.isCurrent()) return false;
         if (options.canCapture) for (const id of j.project.documents.keys()) if (!options.canCapture(id)) return false;
         return true;

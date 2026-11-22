@@ -1,6 +1,5 @@
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
-import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentViewSnapshot } from "../core/workspace.ts";
 import { createLspSignatureClient, type LspSignatureClient } from "../protocol/lsp-language.ts";
 import type { LspSignatureContext } from "../protocol/lsp-language.ts";
@@ -30,7 +29,7 @@ const changed = Object.freeze({ triggerKind: 3, isRetrigger: true } as const);
 /** Manual and advertised signature triggers on a single mounted editing surface. */
 export function createSignatureController(editor: TextEditor, provider: LspWorkspace, options: SignatureControllerOptions = {}): SignatureController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
-    if (editor.signal.aborted || !ownsTextSurface(workspace, view, tab)) throw new Error("Signature help requires a live document view.");
+    if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Signature help requires a live document view.");
     const events = new AbortController(), notifications = workspace.createNotificationScope(), cell = new Store(idle, notifications);
     const stops = new Set<() => void>();
     let client: LspSignatureClient | undefined, job: Request | undefined, armed = false, requested = 0, applied = 0;
@@ -39,7 +38,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
     const available = () => {
         const activity = editor.activity();
         return !events.signal.aborted && editor.element.isConnected && !editor.getSnapshot().disabled && !activity.composing
-            && !activity.pendingInput && !activity.pendingCommand && ownsTextSurface(workspace, view, tab) && (options.canCapture?.() ?? true);
+            && !activity.pendingInput && !activity.pendingCommand && workspace.ownsDocumentView(view, tab) && (options.canCapture?.() ?? true);
     };
     function stopTimer() { win.clearTimeout(queued?.timer); queued = undefined; }
     function release() {
@@ -122,7 +121,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
     function typed(event: Event) {
         const detail = (event as CustomEvent<TypedTextDetail>).detail, after = view.getSnapshot();
         if (event.target !== editor.element || detail?.documentId !== view.documentId || detail.revision !== after.revision
-            || detail.selectionSet !== after.selectionSet || typeof detail.text !== "string" || !ownsTextSurface(workspace, view, tab)) return;
+            || detail.selectionSet !== after.selectionSet || typeof detail.text !== "string" || !workspace.ownsDocumentView(view, tab)) return;
         const doc = workspace.document(view.documentId);
         let trigger = "";
         for (const option of provider.queryFeatureOptions("textDocument/signatureHelp", doc)) {

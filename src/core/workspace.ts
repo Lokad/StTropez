@@ -40,12 +40,6 @@ export function captureTextSurface(workspace: Workspace, identity: DocumentId | 
     return { documentId: surface.documentId, resource: workspace.resourceForDocument(surface.documentId), tab };
 }
 
-export function ownsTextSurface(workspace: Workspace, view: DocumentView, target: TabTarget | undefined): boolean {
-    if (!workspace.ownsDocumentView(view)) return false;
-    if (!target) return true;
-    const surface = workspace.tabs.resolve(target)?.surface;
-    return surface?.kind === "text" && surface.documentId === view.documentId;
-}
 export type ResourceKey = Readonly<{ scope: string; resource: string; variant: string }>;
 export type EditOrigin = "human" | "agent" | "host";
 export type Capabilities = Readonly<{ edit: readonly EditOrigin[]; save: boolean }>;
@@ -328,7 +322,12 @@ export class Workspace {
         });
     }
     observeHistory(id: DocumentId): Observable<HistorySnapshot> { return this.requireResource(this.resourceForDocument(id).id).history.observable; }
-    ownsDocumentView(view: DocumentView): boolean { return this.documents.get(view.documentId)?.views.get(view.id)?.handle === view; }
+    ownsDocumentView(view: DocumentView, target?: TabTarget): boolean {
+        if (this.documents.get(view.documentId)?.views.get(view.id)?.handle !== view) return false;
+        if (target === undefined) return true;
+        const surface = this.tabs.resolve(target)?.surface;
+        return surface?.kind === "text" && surface.documentId === view.documentId;
+    }
     createDocumentView(id: DocumentId, initial: Selection | SelectionSet = { anchor: 0, head: 0 }): DocumentView {
         // View registration, like subscribing, may occur during host view attachment in a delivery.
         const document = this.document(id), record = this.documents.get(id)!;

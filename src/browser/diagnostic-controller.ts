@@ -1,7 +1,6 @@
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DecorationLayer } from "./decoration-layers.ts";
-import { ownsTextSurface } from "../core/workspace.ts";
 import type { LspDiagnostics, LspDiagnosticState, LspWorkspace } from "../protocol/index.ts";
 import type { TextEditor } from "./text-editor.ts";
 
@@ -24,7 +23,7 @@ const empty: DiagnosticSnapshot = Object.freeze({ diagnostics: Object.freeze([])
 /** Displays pushed diagnostics for one view, including positions mapped while analysis is pending. */
 export function createDiagnosticController(editor: TextEditor, provider: LspWorkspace, options: DiagnosticControllerOptions = {}): DiagnosticController {
     const { workspace, view, tab } = editor, documentId = view.documentId;
-    if (editor.signal.aborted || !ownsTextSurface(workspace, view, tab)) throw new Error("Diagnostics require a live document view.");
+    if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Diagnostics require a live document view.");
     const scope = provider.createScope();
     let source: Observable<LspDiagnosticState>, layer: DecorationLayer;
     try {
@@ -34,7 +33,7 @@ export function createDiagnosticController(editor: TextEditor, provider: LspWork
     const notifications = workspace.createNotificationScope(options.onError);
     const cell = new Store<DiagnosticSnapshot>(empty, notifications), observers = new Set<() => void>();
     let displayed: LspDiagnostics | null = null, disposed = false, stop: (() => void) | undefined;
-    const available = () => !disposed && !editor.signal.aborted && editor.element.isConnected && ownsTextSurface(workspace, view, tab);
+    const available = () => !disposed && !editor.signal.aborted && editor.element.isConnected && workspace.ownsDocumentView(view, tab);
     const clear = () => {
         displayed = null;
         if (cell.get() !== empty) { layer.clear(); notifications.publish(cell, empty); }

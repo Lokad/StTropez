@@ -5,7 +5,6 @@ import { Store } from "../core/observable.ts";
 import { isFocused } from "./dom-focus.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 import type { Observable } from "../core/observable.ts";
-import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import type { InlineDecoration, TextViewport } from "./viewport.ts";
@@ -31,7 +30,7 @@ export function mountBracketHighlights(workspace: Workspace, target: TabTarget |
     let job: Job | undefined, current: (() => boolean) | undefined, decorations = empty;
     const layer = viewport.decorations.add({ name: "matching brackets", order: 100, minimap: false });
     const focused = () => isFocused(input);
-    const available = () => !disposed && !!limits && !input.disabled && ownsTextSurface(workspace, view, target) && focused();
+    const available = () => !disposed && !!limits && !input.disabled && workspace.ownsDocumentView(view, target) && focused();
     function cursor(buffer: TextBuffer, at: number): BracketMatchCursor {
         const configured = configuration();
         if (configured !== language) { language = configured; matcher = new BracketMatcher(configured); }

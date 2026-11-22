@@ -62,6 +62,10 @@ resource, use `captureResource` and `resolveResource` instead. A save can outliv
 `createResourceKey` for a unique variant. Recreating a released resource under the same key gives it a
 new ID.
 
+`workspace.ownsDocumentView(view)` checks membership in this workspace. Pass a captured tab as
+the second argument to check that it presents the view’s document. Moving the tab preserves the
+match. Closing or replacing it expires the capture, even when the host retains the view.
+
 Resource handles expose `getSnapshot`, `subscribe` and `metadata`. `observeDocument` yields a ready
 text snapshot or `undefined`. `document` requires a ready document. Read ranges from
 `DocumentSnapshot.buffer`. Calling `text()` on the snapshot or `value()` on the ready resource

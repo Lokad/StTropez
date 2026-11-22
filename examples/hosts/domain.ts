@@ -33,9 +33,9 @@ export class HostDomainTools {
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean = () => true,
         provider?: DomainProvider) { this.workspace = workspace; this.canCapture = canCapture; this.provider = provider ?? this.fixture; }
     private available(session: Session): boolean {
-        const tab = this.workspace.tabs.resolve(session.target), editor = session.editor;
+        const { editor } = session;
         return !this.disposed && this.sessions.get(session.token) === session && editor.element.isConnected && !editor.activity().disposed
-            && tab?.surface.kind === "text" && tab.surface.documentId === editor.view.documentId && this.workspace.ownsDocumentView(editor.view)
+            && this.workspace.ownsDocumentView(editor.view, session.target)
             && this.workspace.resourceForDocument(editor.view.documentId).getSnapshot().state === "ready";
     }
     private authority(session: Session): string {

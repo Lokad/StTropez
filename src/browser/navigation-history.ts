@@ -1,6 +1,5 @@
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
-import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
 import type { TextEditor } from "./text-editor.ts";
 import type { ViewState } from "./view-state.ts";
@@ -18,14 +17,14 @@ export function createNavigationHistory(workspace: Workspace): NavigationHistory
     const scope = workspace.createNotificationScope(), depth = new Store(0, scope);
     const entries: Entry[] = [];
     let disposed = false, navigating = false;
-    const owns = (entry: Entry) => ownsTextSurface(workspace, entry.view, entry.tab);
+    const owns = (entry: Entry) => workspace.ownsDocumentView(entry.view, entry.tab);
     function busy(editor: TextEditor) {
         const state = editor.activity();
         return state.composing || state.pendingCommand || state.pendingInput;
     }
     function capture(editor: TextEditor): NavigationOrigin | undefined {
         const { view, tab, signal } = editor;
-        if (disposed || signal.aborted || !editor.element.isConnected || !ownsTextSurface(workspace, view, tab) || busy(editor)) return;
+        if (disposed || signal.aborted || !editor.element.isConnected || !workspace.ownsDocumentView(view, tab) || busy(editor)) return;
         const entry = { view, tab, state: editor.captureView() }, revision = view.getSnapshot().revision;
         return Object.freeze({ visit(open: () => boolean) {
             if (disposed || navigating || signal.aborted || !editor.element.isConnected || !owns(entry)
@@ -55,7 +54,7 @@ export function createNavigationHistory(workspace: Workspace): NavigationHistory
                 if (disposed) return "empty";
                 if (editor === "busy") return "busy";
                 if (editor?.view === entry.view && !editor.signal.aborted && editor.element.isConnected
-                    && owns(entry) && ownsTextSurface(workspace, editor.view, editor.tab)) {
+                    && owns(entry) && workspace.ownsDocumentView(editor.view, editor.tab)) {
                     if (busy(editor)) return "busy";
                     if (editor.restoreView(entry.state)) {
                         entries.pop();

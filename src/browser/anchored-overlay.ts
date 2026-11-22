@@ -1,5 +1,4 @@
 import type { Affinity } from "../core/positions.ts";
-import { ownsTextSurface } from "../core/workspace.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import { rowTextRanges } from "./text-geometry.ts";
 import { clientBox, cssZoom } from "./dom-coordinates.ts";
@@ -89,7 +88,7 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
         frame = undefined;
         if (!anchor) return;
         const document = workspace.observeDocument(view.documentId).getSnapshot();
-        if (!document || document.revision !== anchor.revision || !ownsTextSurface(workspace, view, editor.tab)) { hide(); return; }
+        if (!document || document.revision !== anchor.revision || !workspace.ownsDocumentView(view, editor.tab)) { hide(); return; }
         if (!element.isConnected) { conceal(); return; }
         const box = clientBox(viewport.element, viewport.settings().minimap, viewport.getSnapshot().gutterWidth);
         const visual = win.visualViewport, left = visual?.offsetLeft ?? 0, top = visual?.offsetTop ?? 0;

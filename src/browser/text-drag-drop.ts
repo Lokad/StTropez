@@ -1,4 +1,3 @@
-import { ownsTextSurface } from "../core/workspace.ts";
 import { clientBox } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
 import type { Affinity } from "../core/positions.ts";
@@ -28,7 +27,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
     let armed: Arm | undefined, aim: Aim | undefined, previewFrame: number | undefined;
     let disposed = false, expired = false;
     function current() {
-        if (disposed || !options.available() || !root.isConnected || !ownsTextSurface(workspace, view, tab)) return;
+        if (disposed || !options.available() || !root.isConnected || !workspace.ownsDocumentView(view, tab)) return;
         return workspace.observeDocument(view.documentId).getSnapshot();
     }
     function clearAim(): void {

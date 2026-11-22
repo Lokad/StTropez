@@ -1,4 +1,3 @@
-import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentSnapshot, DocumentView, EditOrigin, ResourceMetadata, TabTarget, Workspace } from "../core/workspace.ts";
 import type { FoldingSnapshot } from "../core/folding.ts";
 import type { SelectionSet } from "../core/selections.ts";
@@ -28,7 +27,7 @@ export function captureViewRequest<T extends TabTarget | undefined>(workspace: W
     options: CapturedViewOptions = {}): CapturedViewRequest<T> | undefined {
     const { editOrigin, available = () => true } = options;
     const capturedTarget = target && Object.freeze({ ...target });
-    if (!ownsTextSurface(workspace, view, capturedTarget) || !available()) return;
+    if (!workspace.ownsDocumentView(view, capturedTarget) || !available()) return;
     const document = workspace.observeDocument(view.documentId).getSnapshot(); if (!document) return;
     const resource = workspace.resourceForDocument(document.id), permission = resource.metadata.getSnapshot();
     if (permission.state !== "ready" || editOrigin !== undefined && (!permission.capabilities.edit.includes(editOrigin) || permission.editLock !== null)) return;
@@ -43,7 +42,7 @@ export function captureViewRequest<T extends TabTarget | undefined>(workspace: W
         if (deferred) queueMicrotask(release); else release();
     };
     const matches = () => {
-        return lease.active() && ownsTextSurface(workspace, view, capturedTarget)
+        return lease.active() && workspace.ownsDocumentView(view, capturedTarget)
             && workspace.observeDocument(document.id).getSnapshot()?.revision === document.revision && view.getSnapshot().selectionSet === selectionSet
             && folding.index.sameProjection(view.folding.getSnapshot().index) && sameEditAuthority(permission, resource.metadata.getSnapshot()) && available();
     };

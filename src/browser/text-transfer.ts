@@ -1,6 +1,5 @@
 import { createSelectionSet, planSelectionEdits } from "../core/selections.ts";
 import { PositionMap } from "../core/positions.ts";
-import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
@@ -14,7 +13,7 @@ export type TextDropResult = Readonly<{ applied: false; reason: string } | {
     applied: true; operation: "move" | "copy" | "noop"; revision: number; offset: number | null }>;
 
 function resolve(workspace: Workspace, tab: TabTarget | undefined, view: DocumentView) {
-    if (!ownsTextSurface(workspace, view, tab)) return;
+    if (!workspace.ownsDocumentView(view, tab)) return;
     const document = workspace.observeDocument(view.documentId).getSnapshot(), metadata = workspace.resourceForDocument(view.documentId).metadata.getSnapshot();
     if (!document || metadata.state !== "ready" || view.getSnapshot().revision !== document.revision) return;
     return { document, metadata };
@@ -65,6 +64,6 @@ export function applyTextDrop(request: TextDropRequest): TextDropResult {
     const revision = result.revisions.find(item => item.documentId === view.documentId)!.revision;
     // Same-document history restores the drag-initiating view; other retained views map normally.
     // The drop view selects the inserted text, independently of whichever view has focus.
-    if (initiator !== view && ownsTextSurface(workspace, view, tab)) view.setSelections(revision, after.ranges, after.primary);
+    if (initiator !== view && workspace.ownsDocumentView(view, tab)) view.setSelections(revision, after.ranges, after.primary);
     return Object.freeze({ applied: true, operation: move ? "move" : "copy", revision, offset: head });
 }

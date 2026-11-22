@@ -1,5 +1,4 @@
 import { LiteralSearch } from "../core/search.ts";
-import { ownsTextSurface } from "../core/workspace.ts";
 import type { TextEditor } from "./text-editor.ts";
 import type { DocumentSnapshot, DocumentView, EditResult, TabTarget, Workspace } from "../core/workspace.ts";
 import { unchangedPositionEdges } from "../core/positions.ts";
@@ -62,7 +61,7 @@ export function createFindController(editor: TextEditor, options: FindController
 export function findForView(workspace: Workspace, target: TabTarget | undefined, editor: FindHost, options: FindControllerOptions = {}, viewport?: TextViewport): FindController {
     const backend = options.regularExpressionBackend, regexDelay = options.regularExpressionDelayMs ?? 80;
     if (!Number.isFinite(regexDelay) || regexDelay < 0 || regexDelay > 1000) throw new RangeError("Invalid regular-expression query delay.");
-    if (editor.activity().disposed || !ownsTextSurface(workspace, editor.view, target)) throw new Error("Find requires the captured document view.");
+    if (editor.activity().disposed || !workspace.ownsDocumentView(editor.view, target)) throw new Error("Find requires the captured document view.");
     const documentId = editor.view.documentId, resource = workspace.resourceForDocument(documentId), lease = workspace.acquire(resource.id), owner = editor.element.ownerDocument, win = owner.defaultView!;
     const scope = workspace.createNotificationScope(), initial = workspace.document(documentId);
     const store = new Store<FindSnapshot>(Object.freeze({ query: "", wholeWord: false, matchCase: true, regularExpression: false, revision: initial.revision, status: "idle", count: 0, scanned: 0, length: initial.buffer.length,
@@ -86,7 +85,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     const disposeBackends = () => { literalBackend.dispose(); backend?.dispose(); };
     let scanMaximum = 0, replaceTransactionMs = 0;
     const sameOwner = (a: DocumentSnapshot, b: DocumentSnapshot) => a.id === b.id && a.resourceId === b.resourceId && a.key === b.key;
-    const valid = () => !disposed && lease.active() && ownsTextSurface(workspace, editor.view, target)
+    const valid = () => !disposed && lease.active() && workspace.ownsDocumentView(editor.view, target)
         && workspace.observeDocument(documentId).getSnapshot() !== undefined && !editor.activity().disposed;
     const publish = (patch: FindPatch) => {
         const previous = store.get(), next = Object.freeze({ ...previous, ...patch });

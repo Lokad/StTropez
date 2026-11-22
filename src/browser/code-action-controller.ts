@@ -1,6 +1,5 @@
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
-import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentSnapshot, TabTarget } from "../core/workspace.ts";
 import { RpcError, applyLspWorkspaceEdit, createLspActionClient, type LspActionResult, previewLspWorkspaceEdit } from "../protocol/index.ts";
 import type { LspCodeAction, LspCommandPolicy, LspCommandReceipt, LspCommandScope, LspPrepare, LspWorkspace, LspWorkspaceEdit, LspWorkspaceEditPreview } from "../protocol/index.ts";
@@ -50,7 +49,7 @@ export type CodeActionController = Observable<CodeActionSnapshot> & Readonly<{
 /** One editor owns the request, lazy resolution and confirmation of its displayed preview. */
 export function createCodeActionController(editor: TextEditor, provider: LspWorkspace, options: CodeActionControllerOptions = {}): CodeActionController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
-    if (editor.signal.aborted || !ownsTextSurface(workspace, view, tab)) throw new Error("Code actions require a live document view.");
+    if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Code actions require a live document view.");
     const scope = workspace.createNotificationScope(options.onError), cell = new Store(empty, scope), observers = new Set<() => void>();
     const client = createLspActionClient(provider, options), events = new AbortController();
     let job: Job | undefined, execution: CodeActionExecution | undefined, disposed = false;

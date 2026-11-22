@@ -2,7 +2,6 @@ import { Store, type Observable } from "../core/observable.ts";
 import { lineContentEnd } from "../core/newlines.ts";
 import { reconcileFoldRanges } from "../core/fold-discovery.ts";
 import type { DiscoveredFold } from "../core/fold-discovery.ts";
-import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
 import type { TextEditor } from "./text-editor.ts";
 import type { FoldRegion } from "../core/folding.ts";
@@ -25,7 +24,7 @@ export type FoldingController = Observable<FoldingStatus> & Readonly<{ refresh: 
 export function createFoldingController(editor: TextEditor, discover: FoldDiscovery,
     options: Readonly<{ delayMs?: number }> = {}): FoldingController {
     const { workspace, tab: target, view } = editor, win = editor.element.ownerDocument.defaultView!;
-    if (editor.signal.aborted || !ownsTextSurface(workspace, view, target)) throw new Error("Invalid fold discovery view.");
+    if (editor.signal.aborted || !workspace.ownsDocumentView(view, target)) throw new Error("Invalid fold discovery view.");
     const delay = options.delayMs ?? 100;
     if (!Number.isFinite(delay) || delay < 0) throw new RangeError("Invalid fold discovery delay.");
     const notifications = workspace.createNotificationScope();
@@ -33,7 +32,7 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
         regions: 0, collapsed: 0, groups: Object.freeze([]), message: "Discovering folds…" }), notifications);
     const listeners = new AbortController(), runner = createCooperativeRunner(win); let disposed = false, generation = 0;
     let job: { generation: number; document: DocumentSnapshot; abort: AbortController; pumping?: boolean; cursor?: FoldDiscoveryCursor } | undefined;
-    const available = () => !disposed && !editor.activity().disposed && ownsTextSurface(workspace, view, target);
+    const available = () => !disposed && !editor.activity().disposed && workspace.ownsDocumentView(view, target);
     const busy = () => { const state = editor.activity(); return state.composing || state.pendingInput || state.pendingCommand; };
     let groupRegions: readonly FoldRegion[] | undefined, groups: readonly string[] = Object.freeze([]);
     const publish = (status: FoldingStatus["status"], message = "") => {

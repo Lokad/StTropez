@@ -1,7 +1,6 @@
 import { CharacterWarnings } from "../core/character-warnings.ts";
 import { graphemeBoundaries } from "../core/graphemes.ts";
 import type { CharacterWarningBatch, CharacterWarningLimits } from "../core/character-warnings.ts";
-import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
 import type { InlineDecoration, PresentedLine, TextViewport } from "./viewport.ts";
 
@@ -17,7 +16,7 @@ export function mountCharacterWarnings(workspace: Workspace, target: TabTarget |
     const documentId = view.documentId, resource = workspace.resourceForDocument(documentId);
     let classifier = initial, disposed = false;
     const rows = new Map<number, Readonly<{ from: number; text: string; decorations: readonly InlineDecoration[] }>>();
-    const available = () => !disposed && ownsTextSurface(workspace, view, target) && resource.getSnapshot().state === "ready";
+    const available = () => !disposed && workspace.ownsDocumentView(view, target) && resource.getSnapshot().state === "ready";
     const handle: CharacterWarningHighlights = Object.freeze({
         query: (from, to, limits) => {
             if (!classifier || !available()) return null;

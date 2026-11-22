@@ -1,7 +1,6 @@
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DocumentationContent } from "../core/documentation.ts";
-import { ownsTextSurface } from "../core/workspace.ts";
 import type { FoldIndex } from "../core/folding.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import { createLspHoverClient } from "../protocol/index.ts";
@@ -33,7 +32,7 @@ type Inspection = { revision: number; selection: SelectionSet; folds: FoldIndex;
 /** A mounted view owns the range, provider reply and diagnostic messages displayed together. */
 export function createHoverController(editor: TextEditor, provider: LspWorkspace, options: HoverControllerOptions = {}): HoverController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
-    if (editor.signal.aborted || !ownsTextSurface(workspace, view, tab)) throw new Error("Hover requires a live document view.");
+    if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Hover requires a live document view.");
     const notifications = workspace.createNotificationScope(options.onError), cell = new Store(idle, notifications);
     const client = createLspHoverClient(provider), calls = editor.latestOperation(), subscribers = new Set<() => void>();
     let inspection: Inspection | undefined, disposed = false;
@@ -61,7 +60,7 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
     function available(): boolean {
         const activity = editor.activity();
         return !disposed && editor.element.isConnected && !editor.getSnapshot().disabled && !activity.composing && !activity.pendingInput
-            && !activity.pendingCommand && ownsTextSurface(workspace, view, tab) && (options.canCapture?.() ?? true);
+            && !activity.pendingCommand && workspace.ownsDocumentView(view, tab) && (options.canCapture?.() ?? true);
     }
     const valid = (current: Inspection) => available() && view.getSnapshot().revision === current.revision
         && view.getSnapshot().selectionSet === current.selection && current.folds.sameProjection(view.folding.getSnapshot().index)

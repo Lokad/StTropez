@@ -216,7 +216,10 @@ const fixture = { text: () => workspace.document(documentId).text(),
                 if (history.back(() => other) !== "empty" || peer.getSnapshot().selectionSet !== before)
                     throw new Error("Return changed a different view of the same document.");
                 point.visit(() => !!other.reveal({ from: 0, to: 0 }));
+                const origin = model.tabs.capture(tab);
+                if (!model.ownsDocumentView(view, origin)) throw new Error("The restored consumer lost its mounted source.");
                 model.tabs.replace(tab, { kind: "text", documentId: source.documentId });
+                if (!model.ownsDocumentView(view) || model.ownsDocumentView(view, origin)) throw new Error("The replaced tab still owns the retained view.");
                 const unexpected = (): never => { throw new Error("Navigation used a replaced tab."); };
                 if (history.back(unexpected) !== "empty" || point.visit(unexpected)) throw new Error("A replaced tab retained an origin.");
             } finally { history.dispose(); }

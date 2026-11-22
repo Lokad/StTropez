@@ -47,9 +47,8 @@ export class HostProjectTools {
         this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.createClient = createClient; this.provider = provider; this.actionEditPolicy = actionEditPolicy;
     }
     private available(s: Session): boolean {
-        const tab = this.workspace.tabs.resolve(s.target);
-        return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
-            && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && this.workspace.observeDocument(s.editor.view.documentId).getSnapshot() !== undefined;
+        return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed
+            && this.workspace.ownsDocumentView(s.editor.view, s.target) && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
     }
     private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
     private publish(patch: Partial<ProjectSnapshot> = {}): void {

@@ -1,7 +1,7 @@
 import { clientBox, cssZoom, minimapWidth } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
 import { Store, type Observable } from "../core/observable.ts";
-import { captureTextSurface, ownsTextSurface } from "../core/workspace.ts";
+import { captureTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentSnapshot, DocumentView, TabId, Workspace } from "../core/workspace.ts";
 import type { Selection } from "../core/history.ts";
 import type { SelectionSet } from "../core/selections.ts";
@@ -162,7 +162,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     const view = options.view ?? workspace.createDocumentView(documentId), owner = host.ownerDocument, browserWindow = owner.defaultView;
     if (!browserWindow) { if (!options.view) view.dispose(); throw new Error("Viewport requires an attached browser document."); }
     const win = browserWindow;
-    const live = () => ownsTextSurface(workspace, view, tab);
+    const live = () => workspace.ownsDocumentView(view, tab);
     const root = owner.createElement("div"), spacer = owner.createElement("div"), layer = owner.createElement("div"), probeHost = owner.createElement("div"), probe = owner.createElement("span"), foldLayer = owner.createElement("div");
     root.className = "st-viewport"; root.tabIndex = 0; root.setAttribute("role", "region"); root.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
     root.style.fontVariantLigatures = settings.fontLigatures ? "normal" : "none";

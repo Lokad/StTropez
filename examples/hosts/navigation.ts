@@ -46,9 +46,9 @@ export class HostNavigationTools {
         this.workspace = workspace; this.history = createNavigationHistory(workspace); this.queryKey = createReviewKey(workspace); this.canCapture = canCapture; this.present = present; this.options = options;
     }
     private available(session: Session): boolean {
-        const tab = this.workspace.tabs.resolve(session.target), editor = session.editor;
-        return !this.disposed && this.sessions.has(session) && editor.element.isConnected && !editor.activity().disposed && this.workspace.ownsDocumentView(editor.view)
-            && tab?.surface.kind === "text" && tab.surface.documentId === editor.view.documentId && this.workspace.observeDocument(editor.view.documentId).getSnapshot() !== undefined;
+        const { editor } = session;
+        return !this.disposed && this.sessions.has(session) && editor.element.isConnected && !editor.activity().disposed
+            && this.workspace.ownsDocumentView(editor.view, session.target) && !!this.workspace.observeDocument(editor.view.documentId).getSnapshot();
     }
     private showPage(job: Job, page: NavigationPage | undefined, patch: Partial<NavigationSnapshot> = {}): readonly NavigationNote[] {
         const titles = new Map(this.workspace.getSnapshot().documents.map(doc => [doc.id, doc.title]));

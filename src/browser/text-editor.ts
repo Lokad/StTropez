@@ -11,7 +11,7 @@ import { createGraphemeCursor } from "../core/graphemes.ts";
 import { createSelectionSet, planSelectionEdits } from "../core/selections.ts";
 import { selectionOccurrences } from "../core/selection-occurrences.ts";
 import type { Affinity } from "../core/positions.ts";
-import { captureTextSurface, ownsTextSurface } from "../core/workspace.ts";
+import { captureTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentView, DocumentViewSnapshot, TabId, TabTarget, Workspace } from "../core/workspace.ts";
 import type { EditKind, Selection } from "../core/history.ts";
 import type { SelectionSet } from "../core/selections.ts";
@@ -136,7 +136,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     const surface = captureTextSurface(workspace, identity), { documentId, resource, tab: target } = surface;
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
     const view = options.view ?? workspace.createDocumentView(documentId);
-    const live = () => ownsTextSurface(workspace, view, target);
+    const live = () => workspace.ownsDocumentView(view, target);
     let setComparisonRows: MountedTextEditor["setComparisonRows"], viewport: TextViewport, navigation: MountedViewport["navigation"], brackets: ReturnType<typeof mountBracketHighlights> | undefined, warnings: ReturnType<typeof mountCharacterWarnings> | undefined;
     try { const mounted = mountViewport(host, workspace, surface, { ...options, view }, foldContainsChange);
         viewport = mounted.viewport; navigation = mounted.navigation; setComparisonRows = mounted.setComparisonRows; }
