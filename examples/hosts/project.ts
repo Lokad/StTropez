@@ -5,6 +5,7 @@ import type { CapturedViewRequest, CodeActionCommand, CodeActionExecution, TextE
 import { createProjectBackend } from "../shared/language/project-backend.ts";
 import type { ProjectBackend } from "../shared/language/project-backend.ts";
 import { ProviderLane } from "../shared/provider-lane.ts";
+import { validateNavigationDocuments } from "../../fixtures/language/navigation.ts";
 import { validateProjectCommand } from "../../fixtures/language/project-commands.ts";
 import type { ProjectCommand, ProjectCommandKind } from "../../fixtures/language/project-commands.ts";
 import { HostCell } from "../shared/observable.ts";
@@ -13,7 +14,7 @@ import type { LspProjectFactory } from "../shared/language/lsp-project-client.ts
 import { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../../src/protocol/index.ts";
 import type { LspWorkspaceEditNote } from "../../src/protocol/index.ts";
 type Session = { token: number; id: string; target: TabTarget; editor: TextEditor };
-type Job = { origin: Session; source: string; input: ProjectCommand; documents: Map<string, DocumentSnapshot>; revisions: Map<string, number>; authority: Map<string, string>;
+type Job = { origin: Session; source: string; documents: Map<string, DocumentSnapshot>; revisions: Map<string, number>; authority: Map<string, string>;
     leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; applied: boolean; capture: CapturedViewRequest | undefined;
     review?: Review; providerCurrent?: () => boolean; externalCancel?: () => void; changes: ProjectSnapshot["changes"] };
 type Review = { key: number; request: LspApplyEdit; context: LspRequestContext; finish: (result: LspApplyEditResult) => void; stop: () => void; timer: number; page: number };
@@ -37,7 +38,6 @@ export class HostProjectTools {
     private registered = false;
     private disconnected = false;
     private disposed = false;
-    private serial = 0;
     private delay = 0;
     private fault: ProjectCommand["fault"];
     private readonly metrics = { requested: 0, serverRequests: 0, applied: 0, rejected: 0, cancelled: 0, failed: 0 };
@@ -233,9 +233,9 @@ export class HostProjectTools {
         const origin = [...this.sessions.values()].find(session => session.editor === intent.editor && this.available(session));
         if (!origin || !this.canRunAction(intent.editor) || !intent.isCurrent()) return undefined;
         const docs = intent.documents, win = intent.editor.element.ownerDocument.defaultView!;
-        const input = validateProjectCommand({ id: ++this.serial, kind: "review", documents: docs.map(doc => ({ document: doc.id, revision: doc.revision, length: doc.buffer.length })), delay: 0 });
+        validateNavigationDocuments(docs.map(doc => ({ document: doc.id, revision: doc.revision, length: doc.buffer.length })));
         const capture = this.capture(origin); if (!capture) return undefined;
-        const job: Job = { origin, input, source: `project:${this.workspace.allocateIdentity()}`, documents: new Map(docs.map(doc => [doc.id, doc])), revisions: new Map(docs.map(doc => [doc.id, doc.revision])), authority: new Map(docs.map(doc => [doc.id, this.authority(doc.id)])),
+        const job: Job = { origin, source: `project:${this.workspace.allocateIdentity()}`, documents: new Map(docs.map(doc => [doc.id, doc])), revisions: new Map(docs.map(doc => [doc.id, doc.revision])), authority: new Map(docs.map(doc => [doc.id, this.authority(doc.id)])),
             leases: [], stops: [], timer: 0, invalid: false, applied: false, capture,
             externalCancel: intent.cancel, providerCurrent: intent.isCurrent, changes: [] };
         this.job = job;
@@ -288,12 +288,12 @@ export class HostProjectTools {
         const docs = this.workspace.getSnapshot().documents.filter(d => d.key.variant === "working");
         if (docs.some(d => !this.canCapture(d.id))) { this.publish({ message: "Finish pending input, navigation, table conversion or composition first." }); return; }
         let input: ProjectCommand;
-        try { input = validateProjectCommand({ id: ++this.serial, kind, documents: docs.map(d => ({ document: d.id, revision: d.revision, length: d.buffer.length })), delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
+        try { input = validateProjectCommand({ kind, documents: docs.map(d => ({ document: d.id, revision: d.revision, length: d.buffer.length })), delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid provider capture." }); return; }
         this.fault = undefined; const win = origin.editor.element.ownerDocument.defaultView!;
         const capture = this.capture(origin);
         if ((!capture)) { this.publish({ message: "The source changed before capture; request fresh provider work." }); return; }
-        const job: Job = { origin, input, source: `project:${this.workspace.allocateIdentity()}`, documents: new Map(docs.map(d => [d.id, d])), revisions: new Map(docs.map(d => [d.id, d.revision])), authority: new Map(docs.map(d => [d.id, this.authority(d.id)])), leases: [], stops: [], timer: 0, invalid: false, applied: false,
+        const job: Job = { origin, source: `project:${this.workspace.allocateIdentity()}`, documents: new Map(docs.map(d => [d.id, d])), revisions: new Map(docs.map(d => [d.id, d.revision])), authority: new Map(docs.map(d => [d.id, this.authority(d.id)])), leases: [], stops: [], timer: 0, invalid: false, applied: false,
             capture, changes: [] };
         this.job = job; this.metrics.requested++;
         try {

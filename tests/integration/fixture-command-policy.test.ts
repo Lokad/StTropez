@@ -52,7 +52,7 @@ test("project expiry before registration prevents dispatch and expiry during reg
     const source = f.workspace.createTextResource({ scope: "project", resource: "source", variant: "working" }, "Source",
         { value: "abc" }, undefined, { language: { uri: "generic:source", languageId: "generic" } });
     const document = f.workspace.document(source.documentId);
-    const input = { kind: "register" as const, id: 1, documents: [{ document: document.id, revision: document.revision, length: 3 }], delay: 0 };
+    const input = { kind: "register" as const, documents: [{ document: document.id, revision: document.revision, length: 3 }], delay: 0 };
     let current = true;
     const request = { snapshots: () => [document], isCurrent: () => current, review: async () => ({ applied: false }) };
     const expired = assert.rejects(client.run(input, request), error => error instanceof RpcError && error.code === -32801);
