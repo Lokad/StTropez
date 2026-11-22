@@ -14,13 +14,11 @@ type Session = { id: string; editor: TextEditor; target: TabTarget; presentation
 type DetachedOwner = Readonly<{ id: string; target: TabTarget; documentId: DocumentId; reference?: ComparisonBaseline }>;
 type FindCommand = Readonly<{ kind: "navigate"; direction: 1 | -1 } | { kind: "replace"; text: string }>;
 
-type SaveShortcut = (event: KeyboardEvent, control: HTMLElement, target: TabTarget, composing: () => boolean) => void;
 type LanguageSnapshot = Readonly<{ readOnlyReference: boolean; view: string | null; provider: ProviderSnapshot | null; providerError: string | null; find: FindSnapshot | null; folds: FoldingSnapshot | null; foldMessage: string; query: string; replacement: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean }>;
 
 /** Host-owned tools follow an explicit mounted view; delayed commands never consult focus later. */
 export class HostLanguageTools {
     private readonly workspace: Workspace;
-    private readonly saveShortcut: SaveShortcut;
     private readonly providerFactory: ProviderFactory;
     private readonly canCapture: (documentId: DocumentId) => boolean;
     private readonly sessions = new Map<string, Session>();
@@ -38,8 +36,8 @@ export class HostLanguageTools {
     readonly replacementRef = (element: HTMLInputElement | null): void => { this.replacementElement = element; };
     readonly toolsRef = (element: HTMLElement | null): void => { if (this.toolsElement !== element) this.cancelFindCommand(); this.toolsElement = element; };
     private retired = { posted: 0, applied: 0, stale: 0, cancelled: 0, invalid: 0, failed: 0, postedUnits: 0 };
-    constructor(workspace: Workspace, saveShortcut: SaveShortcut, options: Readonly<{ providerFactory: ProviderFactory; canCapture?: (documentId: DocumentId) => boolean }>) {
-        this.workspace = workspace; this.saveShortcut = saveShortcut; this.providerFactory = options.providerFactory; this.canCapture = options.canCapture ?? (() => true);
+    constructor(workspace: Workspace, options: Readonly<{ providerFactory: ProviderFactory; canCapture?: (documentId: DocumentId) => boolean }>) {
+        this.workspace = workspace; this.providerFactory = options.providerFactory; this.canCapture = options.canCapture ?? (() => true);
     }
     private publish(): void {
         const previous = this.cell.get(), folds = this.active?.editor.view.folding.getSnapshot() ?? null;
@@ -201,22 +199,20 @@ export class HostLanguageTools {
         if (command.kind === "replace") stops.push(metadata.subscribe(changed));
         changed();
     }
-    private toolsSession(event: KeyboardEvent): { session: Session; control: HTMLElement } | undefined {
+    private toolsSession(event: KeyboardEvent): Session | undefined {
         const root = this.toolsElement, target = event.target, realm = root?.ownerDocument.defaultView, session = this.active;
         if (event.defaultPrevented || event.isComposing || !root?.isConnected || !realm || !(target instanceof realm.HTMLElement) || !root.contains(target) || !session
             || (target.closest("button,input,select,textarea") ?? target).matches(":disabled") || !session.editor.element.isConnected
             || session.editor.activity().disposed || session.editor.activity().composing || !this.workspace.ownsDocumentView(session.editor.view)) return;
         if (!this.ownsSession(session)) return;
-        return { session, control: target };
+        return session;
     }
     readonly keyFromTools = (event: KeyboardEvent): void => {
-        const key = event.key.toLowerCase(), modified = event.ctrlKey || event.metaKey;
-        const save = modified && key === "s";
+        const key = event.key.toLowerCase();
         const replacement = event.target === this.replacementElement, enter = key === "enter" && (replacement || event.target === this.queryElement);
-        const owned = this.toolsSession(event); if (!owned || owned.session.editor.keymap.handle(event)) return;
-        if (save) this.saveShortcut(event, owned.control, owned.session.target, () => owned.session.editor.activity().composing);
-        else if (enter) { event.preventDefault(); if (replacement) this.replaceCurrent(); else if (event.shiftKey) this.previous(); else this.next(); }
-        else if (key === "escape") { event.preventDefault(); owned.session.find?.cancel(); owned.session.editor.focus(); }
+        const session = this.toolsSession(event); if (!session || session.editor.keymap.handle(event)) return;
+        if (enter) { event.preventDefault(); if (replacement) this.replaceCurrent(); else if (event.shiftKey) this.previous(); else this.next(); }
+        else if (key === "escape") { event.preventDefault(); session.find?.cancel(); session.editor.focus(); }
     };
     private detachSession(session: Session, listeners: AbortController): () => void {
         let detached = false;

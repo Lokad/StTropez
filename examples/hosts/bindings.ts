@@ -1,3 +1,4 @@
+import { isSaveKey } from "./save-key.ts";
 import { editRefusedEvent, inputConflictEvent, mountTextEditor, mountTextComparison } from "../../src/browser/index.ts";
 import type { EditRefusedDetail, TextEditor, TextComparison, ViewportSnapshot, ViewRestoreOptions, ViewState } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabId, TabTarget, Workspace } from "../../src/index.ts";
@@ -123,26 +124,21 @@ export class ViewBindings {
                     ...(horizontalAnchor && horizontalAnchor.revision === saved?.revision && { horizontalAnchor: { ...horizontalAnchor, revision } }) });
             } else this.referenceState = undefined;
             const documentId = review.panes.working.view.documentId;
-            review.panes.working.input.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
-            const working = review.panes.working;
-            this.bindSaveShortcut(working.input, this.controller.viewTab("primary"), () => working.activity().composing, listeners.signal);
-            reference.input.addEventListener("keydown", event => this.handleSaveShortcut(event, reference.input, saveTarget, () => reference.activity().composing), { signal: listeners.signal });
+            review.panes.working.element.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
+            this.registerSave(review.panes.working, saveTarget, scope);
+            this.registerSave(reference, saveTarget, scope);
             scope.defer(this.controller.comparisonReference.subscribe(() => this.updateReference()));
             this.reviewScope = scope;
         } catch (error) { scope.rollback(error); }
     };
-    private bindSaveShortcut(input: HTMLTextAreaElement, tabId: TabId, composing: () => boolean, signal: AbortSignal): void {
-        const target = this.controller.workspace.tabs.capture(tabId);
-        input.addEventListener("keydown", event => this.handleSaveShortcut(event, input, target, composing), { signal });
-    }
-    private handleSaveShortcut(event: KeyboardEvent, input: HTMLElement, target: TabTarget, composing: () => boolean): void {
-        if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "s"
-            || event.defaultPrevented || event.isComposing || !input.isConnected
-            || (input.closest("button,input,select,textarea") ?? input).matches(":disabled") || composing()) return;
+    private ownsSaveTarget(target: TabTarget): boolean {
         const tab = this.controller.workspace.tabs.resolve(target);
-        if (tab?.surface.kind !== "text" || tab.surface.documentId !== this.controller.source.documentId) return;
-        event.preventDefault();
-        if (!event.repeat) this.controller.save();
+        return tab?.surface.kind === "text" && tab.surface.documentId === this.controller.source.documentId;
+    }
+    private registerSave(editor: TextEditor, target: TabTarget, scope: CleanupScope): void {
+        scope.defer(editor.commands.register({ id: "source.save", label: "Save source",
+            enabled: () => this.ownsSaveTarget(target), run: () => this.controller.save() },
+            { keys: ["Ctrl+s", "Meta+s"], shared: true, repeat: false }).dispose);
     }
     private beginReference(kind: "refresh" | "accept"): void {
         if (!this.review) return;
@@ -222,7 +218,7 @@ export class ViewBindings {
         const lsp = hostLspFactories(controller.workspace);
         this.lspOwner = lsp.owner;
         const reconnectProvider = () => { void lsp.owner.reconnect().catch(controller.reportError); };
-        this.language = new HostLanguageTools(controller.workspace, (event, field, target, composing) => this.handleSaveShortcut(event, field, target, composing), { canCapture, providerFactory: lsp.provider });
+        this.language = new HostLanguageTools(controller.workspace, { canCapture, providerFactory: lsp.provider });
         this.hover = new HostHoverTools(controller.workspace, kind => { if (kind === "pointer") return !this.signature?.state.getSnapshot().visible; this.signature?.dismiss(); return true; }, { ...lsp.hover, canCapture });
         this.navigation = new HostNavigationTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.navigation, reconnectProvider);
         this.project = new HostProjectTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.project, lsp.owner, undefined, reconnectProvider);
@@ -318,7 +314,13 @@ export class ViewBindings {
                     candidate.element.addEventListener("focusout", () => { feedback.textContent = ""; }, { signal: listeners.signal });
                 }
                 mounted.element.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
-                this.bindSaveShortcut(mounted.element, tabId, () => candidate?.activity().composing ?? false, listeners.signal);
+                const saveTarget = workspace.tabs.capture(tabId);
+                if (candidate) this.registerSave(candidate, saveTarget, scope);
+                else mounted.element.addEventListener("keydown", event => {
+                    if (!isSaveKey(event) || !mounted.element.isConnected || mounted.element.disabled || !this.ownsSaveTarget(saveTarget)) return;
+                    event.preventDefault();
+                    if (!event.repeat) this.controller.save();
+                }, { signal: listeners.signal });
                 const editor: BoundEditor = { ...mounted, dispose: scope.dispose };
                 const state = this.states.get(id)?.get(documentId); if (state) editor.restoreView(state, { selection: "current" });
                 this.mounted.set(id, { editor, documentId, candidate }); this.mounts++;

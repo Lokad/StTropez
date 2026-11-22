@@ -1,6 +1,6 @@
 export type EditorCommand = Readonly<{ id: string; label: string; enabled?: (argument?: unknown) => boolean; run: (argument?: unknown) => void | boolean }>;
 type CommandInfo = Readonly<{ id: string; label: string; enabled: boolean }>;
-type BindingOptions = Readonly<{ shared?: boolean; priority?: number }>;
+type BindingOptions = Readonly<{ shared?: boolean; priority?: number; repeat?: boolean }>;
 export type EditorCommands = Readonly<{
     register: (command: EditorCommand, shortcuts?: BindingOptions & { readonly keys: readonly string[] }) => { dispose(): void };
     run: (id: string, argument?: unknown) => boolean;
@@ -24,7 +24,7 @@ function stroke(text: string, apple: boolean): string {
     return [...modifiers.filter(name => names.includes(name)), key].join("+");
 }
 
-type Binding = Readonly<{ id: string; shared: boolean; priority: number }>;
+type Binding = Readonly<{ id: string; shared: boolean; priority: number; repeat: boolean }>;
 type Strokes = Map<string, readonly Binding[]>;
 /** Bindings belong to one mounted view. Only the prefix of a pending chord retains event-time state. */
 export function createCommandRegistry(apple: boolean, available: () => boolean, chordCurrent: () => () => boolean) {
@@ -88,8 +88,14 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
         if (!group && !pending) return false;
         reset();
         if (!available()) return false;
-        const accept = (group: Strokes, stroke: string) => group.get(stroke)?.some(binding =>
-            (!sharedOnly || binding.shared) && group.get(stroke)?.includes(binding) && execute(binding.id));
+        const accept = (group: Strokes, stroke: string) => group.get(stroke)?.some(binding => {
+            if ((sharedOnly && !binding.shared) || !group.get(stroke)?.includes(binding)) return false;
+            if (event.repeat && !binding.repeat) {
+                const entry = entries.get(binding.id);
+                return !!entry && enabled(entry);
+            }
+            return execute(binding.id);
+        });
         if (pending && pending.event.target === event.target && pending.current()) {
             const suffix = pending.keys.has(key) ? key : physical;
             if (key === "escape" || accept(pending.keys, suffix)) { event.preventDefault(); return true; }
@@ -116,7 +122,7 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
             if (!Number.isFinite(priority)) throw new RangeError("Key binding priority must be finite.");
             if (choices.some(binding => binding.priority === priority) || (last ? group.has("") : group.size && !group.has("")))
                 throw new Error(`Key binding conflicts: ${keys}`);
-            const binding = { id, shared: options?.shared ?? false, priority };
+            const binding = { id, shared: options?.shared ?? false, priority, repeat: options?.repeat ?? true };
             reset(); group.set(last, [...choices, binding].sort((a, b) => b.priority - a.priority)); bindings.set(first, group);
             return { dispose() {
                 const current = bindings.get(first)?.get(last);

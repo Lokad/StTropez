@@ -351,7 +351,8 @@ For a physical key, use its code, as in `Ctrl+Shift+Code:BracketLeft`. A binding
 character produced by the event takes precedence over a physical binding for the same stroke.
 Chords expire after 1.5 seconds or a change of focus, selection or document revision.
 Bindings for the same sequence run in descending `priority` (default 0). A disabled command or one
-that returns `false` lets the next binding try. A handled command consumes the keystroke.
+that returns `false` lets the next binding try. A handled command consumes the keystroke. Bindings repeat by default. Set `repeat: false`
+to consume a held shortcut without invoking its enabled command again.
 Equal priorities for the same sequence and single strokes that conflict with chord prefixes throw.
 `keymap.unbind(keys)` removes all bindings for a sequence. Disposing a binding removes only that registration.
 

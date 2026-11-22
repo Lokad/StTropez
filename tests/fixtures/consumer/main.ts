@@ -154,14 +154,16 @@ const fixture = { text: () => workspace.document(documentId).text(),
                 op.apply({ edits: [{ from: 0, to: 0, insert: "expired" }] });
                 await op.step(new Promise<void>(() => {}));
             });
-            const open = editor.commands.register({ id: "sample.jump", label: "Jump to line", run: () => retired.commands.run("go-to-line") });
+            let jumpCalls = 0;
+            const open = editor.commands.register({ id: "sample.jump", label: "Jump to line", run: () => { jumpCalls++; return retired.commands.run("go-to-line"); } });
             if (!editor.commands.list().some(entry => entry.id === "sample.jump" && entry.enabled)) throw new Error("Restored command missing from menu.");
             let conflict = false;
             try { editor.keymap.bind("Ctrl+g", "sample.jump"); } catch { conflict = true; }
             if (!conflict) throw new Error("A host binding silently replaced the default Go to line shortcut.");
-            const binding = editor.keymap.bind("Alt+j", "sample.jump", { shared: true });
-            const jump = () => new KeyboardEvent("keydown", { key: "j", altKey: true, cancelable: true });
+            const binding = editor.keymap.bind("Alt+j", "sample.jump", { shared: true, repeat: false });
+            const jump = (repeat = false) => new KeyboardEvent("keydown", { key: "j", altKey: true, cancelable: true, repeat });
             if (!editor.keymap.handle(jump())) throw new Error("Restored shared shortcut did not request the host prompt.");
+            if (!editor.keymap.handle(jump(true)) || jumpCalls !== 1) throw new Error("Holding the shared shortcut requested another prompt.");
             editor.dispose();
             editor = mountTextEditor(host, model, tab, options); editor.restoreView(saved); editor.focus(); await wait();
             binding.dispose(); open.dispose();

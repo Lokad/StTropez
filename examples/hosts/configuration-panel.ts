@@ -1,3 +1,4 @@
+import { isSaveKey } from "./save-key.ts";
 import type { HostController, Connection } from "./controller.ts";
 import type { ResourceSnapshot, SnapshotValue } from "../../src/index.ts";
 import { configurationValidation } from "./configuration.ts";
@@ -26,14 +27,14 @@ export function configurationFormModel(controller: Pick<HostController, "setPath
     } } as const;
 }
 
-type SaveKey = Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey" | "repeat" | "defaultPrevented" | "preventDefault" | "stopPropagation">
-    & { isComposing?: boolean; nativeEvent?: Pick<KeyboardEvent, "isComposing"> };
+type SaveKey = KeyboardEvent | (Pick<KeyboardEvent, "defaultPrevented" | "preventDefault" | "stopPropagation"> & { nativeEvent: KeyboardEvent });
 
 /** Scope Save to the host's configuration controls; source commands keep their own target. */
 export function formSaveKey(event: SaveKey, save: Readonly<{ save: () => void }>): void {
-    if (event.defaultPrevented || (!event.ctrlKey && !event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "s") return;
+    const key = "nativeEvent" in event ? event.nativeEvent : event;
+    if (event.defaultPrevented || !isSaveKey(key)) return;
     event.preventDefault(); event.stopPropagation();
-    if (!event.repeat && !event.isComposing && !event.nativeEvent?.isComposing) save.save();
+    if (!key.repeat) save.save();
 }
 
 export function mountConfigurationPanel(host: HTMLElement, controller: HostController): () => void {

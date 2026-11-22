@@ -23,8 +23,19 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     const prior = await snapshot(p), reference = await p.evaluate(() => { const f = window.hostFixture; return f.referenceRange(0, f.snapshot().bindings.comparison!.baseline!.length); }); await field.fill(" captured.csv ");
     await field.evaluate(node => { node.dataset.retained = "configuration-field"; });
     await button(p, "Finish configuration save").evaluate(node => { node.dataset.retained = "configuration-finish"; });
-    // Composition/repeat shortcuts consume the browser Save key without starting a resource write.
-    await field.dispatchEvent("keydown", { key: "s", ctrlKey: true, isComposing: true }); await field.dispatchEvent("keydown", { key: "s", ctrlKey: true, repeat: true });
+    if (!large) {
+        for (const control of [input, field]) {
+            await control.focus();
+            const consumed = await control.evaluate(node => [
+                { keyCode: 229 }, { modifierAltGraph: true }, { isComposing: true }, { repeat: true },
+            ].map(detail => {
+                const key = new KeyboardEvent("keydown", { key: "s", code: "KeyS", ctrlKey: true, bubbles: true, cancelable: true, ...detail });
+                node.dispatchEvent(key); return key.defaultPrevented;
+            }));
+            expect(consumed).toEqual([false, false, false, true]);
+        }
+        expect((await snapshot(p)).pendingSaves).toEqual(prior.pendingSaves);
+    }
     expect((await snapshot(p)).configurationSave.pending).toBe(false); await field.press("Control+s");
     await expect(button(p, "Finish configuration save")).toBeEnabled(); const captured = await p.evaluate(() => window.hostFixture.configurationCapture());
     expect(captured).toMatchObject({ resourceId: prior.configuration.id, value: { path: " captured.csv ", format: "csv" }, expectedServerVersion: null });
