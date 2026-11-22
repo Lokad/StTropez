@@ -108,7 +108,7 @@ test("a document reference follows edits in its source editor and stays read-onl
 
 type Presentation = {
     capture: () => { status: string; revision: number; hunks: number; paints: readonly { revision: number; text: string; color: string }[]; staleRevert: boolean; currentRevert: boolean };
-    release: () => void; dispose: () => void;
+    release: () => void; refresh: () => boolean; dispose: () => void;
 };
 
 test("browser comparison work yields with large requested budgets and cancels its next turn", async ({ page }) => {
@@ -180,7 +180,7 @@ test("review highlights survive every typing paint while exact comparison work i
         const { mountTextComparison } = await import(path + "comparison.js") as typeof import("../../src/browser/comparison.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "paint", variant: "working" }, "Working", { value: "old\n" + "unchanged\n".repeat(4000) });
         const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "working"), host = document.createElement("section");
-        host.id = "held-comparison"; document.body.append(host);
+        host.id = "held-comparison"; host.style.height = "540px"; document.body.append(host);
         const mounted = mountTextComparison(host, workspace, tab, { buffer: TextBuffer.from("new\n" + "unchanged\n".repeat(4000)), version: "one" });
         await new Promise<void>(resolve => { const stop = mounted.controller.subscribe(() => { if (mounted.controller.getSnapshot().status === "ready") { stop(); resolve(); } }); });
         const exact = mounted.hunkAt(0)!; exact.select();
@@ -197,20 +197,38 @@ test("review highlights survive every typing paint while exact comparison work i
             capture: () => { const s = mounted.controller.getSnapshot(); return { status: s.status, revision: s.working!.revision, hunks: s.hunks.length, paints,
                 staleRevert: exact.revert(), currentRevert: mounted.controller.hunkAt(0)?.revert() ?? false }; },
             release: () => { TextDiff.prototype.next = next; },
+            refresh: () => {
+                const ticket = mounted.controller.beginRefresh();
+                try { return ticket.complete({ buffer: TextBuffer.from("replacement reference"), version: "two" }); }
+                finally { ticket.finish(); }
+            },
             dispose: () => { TextDiff.prototype.next = next; mounted.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); },
         };
     });
     try {
+        const root = page.locator("#held-comparison"), preview = root.locator(".st-comparison-preview"), status = root.locator(".st-comparison-controls output");
+        await expect(preview).toBeVisible();
+        const previewText = await preview.innerText(), before = await preview.boundingBox(), initialStatus = await status.boundingBox();
+        const panes = root.locator(".st-comparison-panes"), initialPanes = await panes.boundingBox();
         await page.keyboard.type("Z");
         await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
         const held = await page.evaluate(() => window.comparisonPresentation.capture());
         expect(held).toMatchObject({ status: "running", revision: 1, hunks: 1, staleRevert: false, currentRevert: false });
         expect(held.paints.length).toBeGreaterThan(0);
         for (const paint of held.paints) { expect(paint.text).toBe("oZld"); expect(paint.color).toBe("rgb(36, 98, 70)"); }
-        await expect(page.locator("#held-comparison").getByRole("button", { name: "Use baseline", exact: true })).toBeDisabled();
-        await expect(page.locator("#held-comparison").getByRole("button", { name: "Next change", exact: true })).toBeDisabled();
+        await expect(root.getByRole("button", { name: "Use baseline", exact: true })).toBeDisabled();
+        await expect(root.getByRole("button", { name: "Next change", exact: true })).toBeDisabled();
+        await expect(status).toHaveAttribute("aria-busy", "true");
+        await expect.poll(() => status.evaluate(el => getComputedStyle(el, "::after").visibility)).toBe("visible");
+        await expect(status.locator("span")).toBeHidden();
+        expect(await preview.innerText()).toBe(previewText);
+        expect((await preview.boundingBox())!.height).toBe(before!.height);
+        expect((await panes.boundingBox())!.height).toBe(initialPanes!.height);
+        expect((await status.boundingBox())!.width).toBe(initialStatus!.width);
         await page.evaluate(() => window.comparisonPresentation.release());
-        await expect(page.locator("#held-comparison .st-comparison")).toHaveAttribute("data-status", "ready");
-        await expect(page.locator("#held-comparison .st-comparison-added")).toHaveText("oZld");
+        await expect(root.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
+        await expect(root.locator(".st-comparison-added")).toHaveText("oZld");
+        await expect(preview).toContainText("oZld"); await expect(status.locator("span")).toBeVisible();
+        expect(await preview.evaluate(node => window.comparisonPresentation.refresh() && (node as HTMLElement).hidden)).toBe(true);
     } finally { await page.evaluate(() => window.comparisonPresentation.dispose()); }
 });

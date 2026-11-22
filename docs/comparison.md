@@ -80,6 +80,10 @@ recomputes the hunks. A gap in revision history or a new reference clears those 
 When the diff is ready, StTropez replaces them all at once and enables navigation and reversion.
 A change to the progress count alone doesn't repaint the panes.
 
+While checking an edit, the built-in toolbar keeps the last completed preview in place. A longer
+comparison shows “Updating…”. Previous, Next and Use baseline stay disabled until the new result
+is ready. Changing the reference clears the old preview immediately.
+
 Subscribe to `TextComparison` for a `TextComparisonSnapshot`. Repeated reads return the same
 immutable object until a field changes. Its `comparison` field holds the controller snapshot.
 `selectedHunk` indexes the change at the last focused pane's caret. It is `null` between changes

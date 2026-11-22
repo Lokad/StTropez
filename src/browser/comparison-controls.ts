@@ -15,6 +15,7 @@ export function mountComparisonControls(
         wrapper.append(input, ` ${label}`); controls.append(wrapper); return input;
     };
     const link = checkbox("Link review scrolling"), align = checkbox("Align review rows"), status = owner.createElement("output"); controls.append(status);
+    const message = owner.createElement("span"); status.append(message); status.dataset.pendingLabel = "Updating…";
     const referenceHeading = owner.createElement("h3"), workingHeading = owner.createElement("h3");
     referencePane.prepend(referenceHeading); workingPane.prepend(workingHeading);
     const preview = owner.createElement("div"), referencePreview = owner.createElement("pre"), workingPreview = owner.createElement("pre");
@@ -22,7 +23,7 @@ export function mountComparisonControls(
     preview.append(referencePreview, workingPreview); comparison.element.prepend(controls); comparison.element.append(preview);
     const setText = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text; };
     const visible = (value: string) => value.replaceAll(" ", "·").replaceAll("\t", "⇥").replaceAll("\r", "␍").replaceAll("\n", "↵\n");
-    let rendered: TextComparisonSnapshot | undefined;
+    let rendered: TextComparisonSnapshot | undefined, hasCompletedResult = false;
     function render(): void {
         const current = comparison.getSnapshot(), old = rendered;
         // Cursor counters do not change this control surface or its bounded preview.
@@ -38,10 +39,23 @@ export function mountComparisonControls(
         revert.title = selected === null ? "Place the caret in a change" : `Restore change ${selected + 1} of ${count} from the baseline`;
         setText(referenceHeading, state.baseline ? `Baseline · ${state.baseline.version}` : "Baseline unavailable");
         setText(workingHeading, state.working ? `Working · revision ${state.working.revision}` : "Working unavailable");
+        // A new reference or a break in the edit history cannot reuse the previous preview.
+        // Buttons above already reflect the live command guards, including during a short edit.
+        const retainResult = hasCompletedResult && state.status === "running" && old !== undefined && state.baseline === old.comparison.baseline
+            && state.working?.change != null && (state.generation === old.comparison.generation
+                || state.working.change.previousRevision === old.comparison.working?.revision);
+        controls.toggleAttribute("data-updating", retainResult);
+        align.title = layout.pending ? "Preparing aligned rows" : "";
+        if (retainResult) {
+            status.setAttribute("aria-busy", "true"); preview.title = "Last completed comparison";
+            return;
+        }
+        status.removeAttribute("aria-busy"); preview.removeAttribute("title");
+        hasCompletedResult = state.status === "ready";
         const described = hunk ?? (count === 1 ? state.hunks[0] : undefined);
         const detail = described?.lineEndingOnly ? " · line endings only" : described?.whitespaceOnly ? " · whitespace only" : "";
-        const message = state.status === "ready" ? count ? (hunk ? `Change ${selected! + 1} of ${count}` : count === 1 ? "1 change" : `${count} changes`) + detail : "No changes" : state.failure ?? `Comparison ${state.status}`;
-        setText(status, message + (layout.pending ? " · preparing aligned rows" : layout.status === "failed" ? " · row alignment unavailable" : ""));
+        const result = state.status === "ready" ? count ? (hunk ? `Change ${selected! + 1} of ${count}` : count === 1 ? "1 change" : `${count} changes`) + detail : "No changes" : state.failure ?? `Comparison ${state.status}`;
+        setText(message, result + (layout.status === "failed" ? " · row alignment unavailable" : ""));
         preview.hidden = !hunk;
         if (hunk && state.baseline && state.working) {
             const text = (side: "baseline" | "working") => {

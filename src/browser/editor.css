@@ -99,6 +99,13 @@
 .st-comparison { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: .5rem; color: #d7deea; background: #161b25; }
 .st-comparison-controls { display: flex; flex: none; align-items: center; flex-wrap: wrap; gap: .5rem; padding: .5rem; }
 .st-comparison-controls button { font: inherit; }
+.st-comparison-controls output { display: inline-grid; }
+.st-comparison-controls output > span, .st-comparison-controls output::after { grid-area: 1 / 1; }
+.st-comparison-controls output::after { content: attr(data-pending-label); visibility: hidden; }
+/* Reserve the result's width. A quick edit completes before the busy label or disabled style appears. */
+.st-comparison-controls[data-updating] output > span { visibility: hidden; transition: visibility 0s .15s; }
+.st-comparison-controls[data-updating] output::after { visibility: visible; transition: visibility 0s .15s; }
+.st-comparison-controls[data-updating] button:disabled { transition: opacity 0s .15s, color 0s .15s; }
 .st-comparison-panes { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-auto-rows: minmax(0, 1fr); gap: .5rem; }
 .st-comparison-panes > section { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .st-comparison-panes h3 { font: inherit; margin: 0; padding: .5rem; }
