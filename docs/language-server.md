@@ -1,6 +1,6 @@
 # Language server
 
-Use `LspWorkspace` to share one language-server connection across editor views. The client handles
+Use `BrowserLspWorkspace` to share one language-server connection across editor views. The client handles
 document synchronization and validates replies. You choose the endpoint, authorize access and show the
 results. The WebSocket transport carries [JSON-RPC 2.0](https://www.jsonrpc.org/specification) text
 messages. The client supports the
@@ -14,12 +14,7 @@ language ID. Obtain fresh settings and credentials for each connection attempt.
 
 ```ts
 import type { Workspace } from "sttropez";
-import { openWebSocketTransport } from "sttropez/browser";
-import {
-    LspWorkspace,
-    type LspConnectContext,
-    type LspWorkspaceOptions
-} from "sttropez/protocol";
+import { BrowserLspWorkspace, openWebSocketTransport, type BrowserLspWorkspaceOptions } from "sttropez/browser";
 
 type ConnectionSettings = Readonly<{
     url: string;
@@ -29,39 +24,25 @@ type ConnectionSettings = Readonly<{
 
 export function createLanguageProvider(
     workspace: Workspace,
-    documentInfo: LspWorkspaceOptions["documentInfo"],
-    settings: (context: LspConnectContext) => Promise<ConnectionSettings>,
+    documentInfo: BrowserLspWorkspaceOptions["documentInfo"],
+    settings: (signal: AbortSignal) => Promise<ConnectionSettings>,
     onError: (error: Error) => void
 ) {
-    return new LspWorkspace(workspace, {
+    return new BrowserLspWorkspace(workspace, {
         documentInfo,
         features: ["textDocument/completion", "textDocument/hover"],
         diagnostics: true,
         onError,
-        schedule(delay, callback) {
-            const timer = window.setTimeout(callback, delay);
-            return () => window.clearTimeout(timer);
-        },
-        async connect(context) {
-            const connection = await settings(context);
-            if (context.cancelled) throw new Error("Connection cancelled.");
-            const abort = new AbortController();
-            const stop = context.onCancel(() => abort.abort());
-            try {
-                return await openWebSocketTransport(connection.url, {
-                    ...connection, signal: abort.signal
-                });
-            } finally {
-                stop();
-            }
+        async connect(signal) {
+            const connection = await settings(signal);
+            return openWebSocketTransport(connection.url, { ...connection, signal });
         }
     });
 }
 ```
 
-Creating the provider opens no connection. Supply a scheduler that defers even a zero-delay callback.
-When fetching credentials, honor the cancellation context. The example enables completion, hover and
-diagnostics. `features` starts empty. Opt into diagnostics, workspace edits, incoming edits and
+The example enables completion, hover and diagnostics. `features` starts empty.
+Opt into diagnostics, workspace edits, incoming edits and
 Markdown separately.
 
 Attach completion to an existing mounted editor.
@@ -125,6 +106,13 @@ scope to unregister. Lifecycle, synchronization and reserved methods cannot be o
 ## Contract
 
 ### Transport and session
+
+`BrowserLspWorkspace` opens a connection on demand. Each opening gets a fresh `AbortSignal`.
+Pass it to credential lookup and transport startup. Disconnect, disposal and the opening deadline
+abort a pending factory. The workspace disposes a transport that arrives late. Browser timers
+schedule deferred work. A custom `schedule` must also defer zero-delay callbacks and return a
+cancellation function. The headless `LspWorkspace` takes an explicit scheduler and a protocol
+cancellation context.
 
 `openWebSocketTransport` opens a browser `RpcTransport` with cancellation and a deadline. Send one
 JSON value per ordered text message, without `Content-Length` headers. Binary messages close the
@@ -371,7 +359,7 @@ an error to `onError`.
 
 ## Host responsibilities
 
-Choose the endpoint, TLS/proxy and authentication policy, scheduler and limits. Keep URI mappings
+Choose the endpoint, TLS/proxy and authentication policy, and limits. Keep URI mappings
 stable, validate custom messages and authorize loads, navigation and commands. Show uncertain
 diagnostic freshness and command outcomes. Let the user retry explicitly.
 

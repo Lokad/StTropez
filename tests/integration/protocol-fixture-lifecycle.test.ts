@@ -2,10 +2,47 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import { Workspace } from "../../src/index.ts";
-import { openWebSocketTransport } from "../../src/browser/index.ts";
+import { BrowserLspWorkspace, openWebSocketTransport } from "../../src/browser/index.ts";
+import type { RpcTransport } from "../../src/protocol/index.ts";
 import { FixtureLspWorkspace } from "../../fixtures/protocol/fixture-workspace.ts";
 import { closePackageServer, listenPackageServer } from "../../scripts/package-host.mjs";
 import { withProtocolFixture } from "../helpers/protocol-fixture.ts";
+
+test("a cancelled browser opening releases a late transport and leaves its replacement connected", { timeout: 15000 }, async () => {
+    await withProtocolFixture(async ({ url, defer }) => {
+        const signals: AbortSignal[] = [];
+        let started!: () => void, deliver!: (transport: RpcTransport) => void, released!: () => void;
+        const firstStarted = new Promise<void>(resolve => { started = resolve; });
+        const firstTransport = new Promise<RpcTransport>(resolve => { deliver = resolve; });
+        const firstReleased = new Promise<void>(resolve => { released = resolve; });
+        const provider = new BrowserLspWorkspace(new Workspace(), {
+            documentInfo: () => undefined,
+            connect(signal) {
+                signals.push(signal);
+                if (signals.length === 1) { started(); return firstTransport; }
+                return openWebSocketTransport(url, { signal });
+            },
+        });
+        defer(() => provider.dispose());
+        const cancelled = assert.rejects(provider.connect(), { name: "RpcError" });
+        await firstStarted;
+        const replacement = provider.reconnect();
+        assert.equal(signals[0]!.aborted, true);
+        await cancelled;
+        await replacement;
+        assert.equal(signals.length, 2);
+        assert.notEqual(signals[0], signals[1]);
+        assert.equal(signals[1]!.aborted, false);
+
+        let sends = 0;
+        deliver({ send: () => { sends++; }, subscribe: () => () => {}, dispose: released });
+        await firstReleased;
+        assert.equal(sends, 0);
+        const scope = provider.createScope();
+        assert.deepEqual(await scope.request("fixture/echo", { fresh: true }).result, { fresh: true });
+        await provider.shutdown();
+    });
+});
 
 test("partial protocol setup releases the listener and leases while preserving setup and cleanup failures", { timeout: 15000 }, async t => {
     const primary = new Error("Later client setup failed"), cleanup = new Error("Scope cleanup reported failure"), order: string[] = [];

@@ -1,5 +1,6 @@
 import type { Observable, Workspace } from "../../src/index.ts";
-import { LspWorkspace, LspLineIndex, decodeLspDiagnostics, lspRangeOffsets } from "../../src/protocol/index.ts";
+import { BrowserLspWorkspace } from "../../src/browser/index.ts";
+import { type LspWorkspace, LspLineIndex, decodeLspDiagnostics, lspRangeOffsets } from "../../src/protocol/index.ts";
 import type { LspWorkspaceScope, RpcCall, LspScopeAccess, LspTargetResolver } from "../../src/protocol/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import type { DemoFile } from "./project.ts";
@@ -108,10 +109,9 @@ export class DemoLanguage {
                             index, version: sent?.document.buffer === document.buffer ? sent.version : null, isCurrent: current }, release: lease.release };
                     } catch (error) { lease.release(); throw error; }
                 };
-                owner = new LspWorkspace(this.workspace, {
-                    connect: context => capturedProvider.connect(context),
+                owner = new BrowserLspWorkspace(this.workspace, {
+                    connect: capturedProvider.connect,
                     rootUri: config.rootUri, clientInfo: { name: "StTropez demo" }, markdownDocumentation: true,
-                    schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
                     features: ["textDocument/completion", "textDocument/hover", "textDocument/signatureHelp", "textDocument/definition", "textDocument/references", "textDocument/rename", "textDocument/codeAction", "textDocument/foldingRange", "textDocument/documentHighlight"], diagnostics: false, workspaceEdits: true, applyEdit: true,
                     maxDocumentUnits: 8_000_000, maxTotalUnits: 16_000_000, rpc: { maxMessageUnits: 16 * 1024 * 1024 },
                     documentInfo: document => { const file = this.files.find(file => file.resource.documentId === document.id), info = file && capturedProvider.documents[file.name];

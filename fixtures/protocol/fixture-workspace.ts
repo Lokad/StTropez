@@ -1,18 +1,18 @@
-import { LspWorkspace } from "../../src/protocol/index.ts";
-import type { JsonValue, LspDocumentFeature, LspScopeAccess, LspWorkspaceOptions, LspWorkspaceScope } from "../../src/protocol/index.ts";
+import { BrowserLspWorkspace, type BrowserLspWorkspaceOptions } from "../../src/browser/lsp-workspace.ts";
+import type { JsonValue, LspDocumentFeature, LspScopeAccess, LspWorkspaceScope } from "../../src/protocol/index.ts";
 import type { Workspace } from "../../src/index.ts";
 
 const commandKey = (command: string) => `workspace/executeCommand:${command}`;
 
 /** Development-peer policy travels with its request, never in connection-wide configuration. */
-export class FixtureLspWorkspace extends LspWorkspace {
+export class FixtureLspWorkspace extends BrowserLspWorkspace {
     private readonly preparations = new WeakMap<LspScopeAccess, (method: string, policy: JsonValue, replacePending: boolean) => void>();
     private readonly sendCommand: <T>(command: string, policy: JsonValue | undefined, send: () => T) => T;
 
-    constructor(workspace: Workspace, options: LspWorkspaceOptions) {
+    constructor(workspace: Workspace, options: BrowserLspWorkspaceOptions) {
         let commandPolicy: { command: string; policy: JsonValue } | undefined;
-        super(workspace, { ...options, connect: async context => {
-            const transport = await options.connect(context);
+        super(workspace, { ...options, connect: async signal => {
+            const transport = await options.connect(signal);
             return { subscribe: listener => transport.subscribe(listener), dispose: () => transport.dispose(), send: message => {
                 if (commandPolicy) {
                     const value = JSON.parse(message);

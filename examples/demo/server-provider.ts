@@ -1,5 +1,4 @@
 import { openWebSocketTransport } from "../../src/browser/index.ts";
-import type { LspConnectContext } from "../../src/protocol/index.ts";
 import type { DemoProvider, DemoProviderBootstrap } from "./provider-contract.ts";
 
 /** Local development host, selected explicitly by the demo page. */
@@ -12,10 +11,7 @@ export async function openDemoProvider(sample: string, signal: AbortSignal, name
         || !config.documents || !names.every(name => typeof config.documents[name]?.uri === "string")) throw new Error("Invalid language workspace.");
     const endpoint = new URL(config.endpoint, location.href); endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";
     return Object.freeze({ ...config,
-        connect: (context: LspConnectContext) => {
-            const abort = new AbortController(), stop = context.onCancel(() => abort.abort());
-            return openWebSocketTransport(endpoint.href, { signal: abort.signal, maxMessageUnits: 16 * 1024 * 1024, maxBufferedBytes: 64 * 1024 * 1024 }).finally(stop);
-        },
+        connect: (signal: AbortSignal) => openWebSocketTransport(endpoint.href, { signal, maxMessageUnits: 16 * 1024 * 1024, maxBufferedBytes: 64 * 1024 * 1024 }),
         close: async () => { try { await fetch(config.endpoint, { method: "DELETE", keepalive: true }); } catch { /* Server idle cleanup owns abandoned projects. */ } },
     });
 }

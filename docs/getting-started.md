@@ -345,20 +345,15 @@ language server at the same origin’s `/lsp` WebSocket endpoint. It must speak 
 UTF-16 positions and recognize the URI below.
 
 ```js
-import { createCompletionController, createDiagnosticController, openWebSocketTransport } from "sttropez/browser";
-import { LspWorkspace } from "sttropez/protocol";
+import { BrowserLspWorkspace, createCompletionController, createDiagnosticController, openWebSocketTransport } from "sttropez/browser";
 
 const endpoint = new URL("/lsp", location.href);
 endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";
-const provider = new LspWorkspace(workspace, {
+const provider = new BrowserLspWorkspace(workspace, {
     documentInfo: doc => doc.id === file.documentId
         ? { uri: "file:///tasks.md", languageId: "markdown" } : undefined,
     features: ["textDocument/completion"], diagnostics: true,
-    schedule(ms, callback) {
-        const timer = setTimeout(callback, ms);
-        return () => clearTimeout(timer);
-    },
-    connect: () => openWebSocketTransport(endpoint.href)
+    connect: signal => openWebSocketTransport(endpoint.href, { signal })
 });
 ```
 

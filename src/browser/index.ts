@@ -14,6 +14,7 @@ export type { CharacterWarningHighlights, CharacterWarningCapture } from "./char
 export { createFoldingController } from "./folding-controller.ts";
 export type { FoldDiscovery, FoldDiscoveryBatch, FoldDiscoveryResult, FoldDiscoveryCursor, FoldCommand, FoldingStatus, FoldingController } from "./folding-controller.ts";
 export { openWebSocketTransport } from "./lsp-websocket.ts";
+export { BrowserLspWorkspace, type BrowserLspWorkspaceOptions } from "./lsp-workspace.ts";
 export type { WebSocketTransportOptions } from "./lsp-websocket.ts";
 export { createDiagnosticController } from "./diagnostic-controller.ts";
 export { createCodeActionController } from "./code-action-controller.ts";

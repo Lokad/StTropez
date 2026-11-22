@@ -10,7 +10,6 @@ import type { LspProjectFactory } from "../../examples/shared/language/lsp-proje
 import type { HoverHostOptions } from "../../examples/hosts/hover.ts";
 import type { NavigationHostOptions } from "../../examples/hosts/navigation.ts";
 import type { DocumentId, Workspace } from "../../src/index.ts";
-import type { LspSessionOptions } from "../../src/protocol/index.ts";
 import type { SignatureHostOptions } from "../../examples/hosts/signature.ts";
 import type { LinkHostOptions } from "../../examples/hosts/document-links.ts";
 import type { ColorHostOptions } from "../../examples/hosts/document-colors.ts";
@@ -19,9 +18,8 @@ import { fixtureDocumentUri } from "./document-uri.ts";
 /** Explicit development-host choice. Generic session/feature code has no fixture endpoint policy. */
 export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspace; provider: ProviderFactory; hover: HoverHostOptions; navigation: NavigationHostOptions; rename: RenameHostOptions; actions: ActionHostOptions; project: LspProjectFactory; signature: SignatureHostOptions; links: LinkHostOptions; colors: ColorHostOptions }> {
     const url = new URL("/lsp-fixture", location.href); url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    const connect: LspSessionOptions["connect"] = context => { const abort = new AbortController(), stop = context.onCancel(() => abort.abort()); return openWebSocketTransport(url.href, { signal: abort.signal }).finally(stop); };
     const uri = (workspace: Workspace, id: DocumentId) => fixtureDocumentUri(workspace.resourceForDocument(id).id, id);
-    const connection = new FixtureLspWorkspace(owner, { connect, schedule: (ms, callback) => { const timer = window.setTimeout(callback, ms); return () => window.clearTimeout(timer); },
+    const connection = new FixtureLspWorkspace(owner, { connect: signal => openWebSocketTransport(url.href, { signal }),
         initializationOptions: { fixtureDynamicLanguage: new URLSearchParams(location.search).get("lspSubset") === "dynamic" },
         features: ["textDocument/completion", "textDocument/hover", "textDocument/definition", "textDocument/references", "textDocument/rename", "textDocument/codeAction", "workspace/executeCommand", "textDocument/signatureHelp", "textDocument/documentLink", "textDocument/documentColor", "textDocument/colorPresentation"], diagnostics: true, workspaceEdits: true, applyEdit: true,
         documentInfo: document => document.key.variant === "working" ? { uri: uri(owner, document.id), languageId: "fixture" } : undefined });

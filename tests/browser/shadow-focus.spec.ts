@@ -26,8 +26,8 @@ async function mount(page: Page, language: boolean) {
     await page.goto("/viewport/");
     await page.evaluate(async ({ css, language }) => {
         const path = "/shadow-focus/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
-        const { mountTextEditor, createCompletionController, createLspHighlightController, openWebSocketTransport } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
-        const { LspWorkspace, RpcError } = await import(path + "protocol.js") as typeof import("../../src/protocol/index.ts");
+        const { BrowserLspWorkspace, mountTextEditor, createCompletionController, createLspHighlightController, openWebSocketTransport } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const { RpcError } = await import(path + "protocol.js") as typeof import("../../src/protocol/index.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "focus", resource: "source", variant: "text" }, "Source", { value: "sample sample\ns" });
         const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "source");
         const outer = document.createElement("div"), inner = document.createElement("div"), outside = document.createElement("button");
@@ -44,10 +44,8 @@ async function mount(page: Page, language: boolean) {
         } }; window.shadowFocus = f;
         if (language) {
             const endpoint = new URL("/lsp-fixture", location.href); endpoint.protocol = "ws:";
-            f.provider = new LspWorkspace(workspace, { documentInfo: doc => ({ uri: `focus:${doc.resourceId}`, languageId: "generic" }),
-                connect: context => { const abort = new AbortController(), stop = context.onCancel(() => abort.abort());
-                    return openWebSocketTransport(endpoint.href, { signal: abort.signal }).finally(stop); },
-                schedule: (ms, work) => { const timer = setTimeout(work, ms); return () => clearTimeout(timer); },
+            f.provider = new BrowserLspWorkspace(workspace, { documentInfo: doc => ({ uri: `focus:${doc.resourceId}`, languageId: "generic" }),
+                connect: signal => openWebSocketTransport(endpoint.href, { signal }),
                 features: ["textDocument/completion", "textDocument/documentHighlight"], onError: report });
             f.completion = createCompletionController(editor, f.provider, { onError: report });
             f.highlights = createLspHighlightController(editor, { provider: f.provider, delayMs: 0 });
