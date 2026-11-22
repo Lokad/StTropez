@@ -1,16 +1,44 @@
 import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { holdLspReplies } from "../helpers/lsp-replies.ts";
+import { publishFixtureDiagnostics, sourceDiagnosticUri } from "./fixture-diagnostics.ts";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const primary = (page: Page) => page.getByRole("textbox", { name: "Primary source", exact: true });
 const tooltip = (page: Page) => page.getByRole("tooltip");
 
-async function point(page: Page): Promise<{ x: number; y: number }> {
-    return page.locator('.st-editor:has(> textarea[aria-label="Primary source"]) .st-viewport-row').first().evaluate(row => {
-        const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT), node = walker.nextNode(); if (!node) throw new Error("No rendered source word.");
-        const range = document.createRange(); range.setStart(node, 1); range.setEnd(node, 2); const box = range.getBoundingClientRect(); return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
-    });
+async function point(page: Page, column = 1): Promise<{ x: number; y: number }> {
+    return page.locator('.st-editor:has(> textarea[aria-label="Primary source"]) .st-viewport-row').first().evaluate((row, offset) => {
+        const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            const length = node.textContent!.length;
+            if (offset < length) {
+                const range = document.createRange(); range.setStart(node, offset); range.setEnd(node, offset + 1);
+                const box = range.getBoundingClientRect(); return { x: box.left + box.width / 4, y: box.top + box.height / 2 };
+            }
+            offset -= length;
+        }
+        throw new Error("No rendered text at this column.");
+    }, column);
 }
+
+test("pointer hover uses the latest position when diagnostics divide a symbol", async ({ page }) => {
+    await page.goto("/hosts/plain/?editor=candidate&language=lsp"); await ready(page);
+    await page.evaluate(() => { const f = window.hostFixture, doc = f.snapshot().source; f.editSource(doc.revision, [{ from: 0, to: doc.length, insert: "TODOvalue = other;" }]); });
+    const field = primary(page), warning = page.getByRole("button", { name: /Resolve this placeholder/ }).first();
+    await field.focus(); await field.press("Control+Home"); await field.press("Control+Space"); await expect(warning).toBeVisible(); await field.press("Escape");
+    const uri = await sourceDiagnosticUri(page);
+    await publishFixtureDiagnostics(page, uri, "clear"); await expect(warning).toBeHidden();
+    const move = async (column: number) => { const at = await point(page, column); await page.mouse.move(at.x, at.y); };
+    await move(2); await expect(tooltip(page)).toContainText("TODOvalue Symbol in this source.");
+    const requests = () => page.evaluate(() => window.hostFixture.snapshot().bindings.hover.sessions.find(s => s.id === "primary")!.counters.posted);
+    const initial = await requests();
+    await page.clock.install(); await move(7); await page.clock.runFor(400);
+    await publishFixtureDiagnostics(page, uri, "normal"); await expect(warning).toBeVisible();
+    await expect(tooltip(page)).not.toContainText("Resolve this placeholder.");
+    await move(2); await expect(tooltip(page)).toContainText("Resolve this placeholder.");
+    expect(await requests()).toBe(initial);
+    await move(13); await expect(tooltip(page)).toContainText("other Symbol in this source."); expect(await requests()).toBe(initial + 1);
+});
 for (const host of ["plain", "react"]) {
     test(`${host} keyboard hover keeps complete selections, safe text, input focus and shared history`, async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/hover");

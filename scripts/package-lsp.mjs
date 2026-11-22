@@ -41,6 +41,12 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         const depth = (await state()).history.undoDepth; await button("Apply completion").click(); assert.equal((await state()).history.undoDepth, depth + 1);
         assert.ok((await text()).startsWith("// fixture import\r\nconst sampleValue")); await input.press("Control+z"); assert.equal(await text(), typed);
         await button("Hover").click(); await expect.poll(async () => (await state()).notes.hover).toContain("Fixture consumer+opaque:");
+        const offset = typed.indexOf("TODO") + 1;
+        assert.equal(await page.evaluate(at => window.publicLsp.pointerHover(at), offset), 0);
+        // This provider returns no symbol range. Another position inside the diagnostic needs its own reply.
+        assert.equal(await page.evaluate(at => window.publicLsp.pointerHover(at), offset + 1), 1);
+        const lines = typed.slice(0, offset + 1).split(/\r\n|\r|\n/);
+        await expect.poll(async () => (await state()).notes.hover).toContain(`Fixture consumer+opaque:project/source:${lines.length - 1}:${lines.at(-1)?.length ?? 0}`);
         assert.equal(await page.evaluate(() => window.publicLsp.probeTypedHover()), "Fixture consumer+opaque:project/source:5:6");
         const beforeNavigation = (await state()).diagnostics.leases;
         await button("Definition").click(); await button("Open definition").click();

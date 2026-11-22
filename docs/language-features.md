@@ -278,7 +278,10 @@ remain plain text. A mapped diagnostic reads “Awaiting recheck” until fresh 
 
 Subscribe to the controller and render the ready snapshot’s `content` with `mountDocumentation`.
 The snapshot’s `range` identifies where the same information applies. A point diagnostic matches
-its exact offset. The controller preserves focus and selection. Editing, changing the selection or
+its exact offset. For pointer dwell, call `request(point, "reuse")` to track the new position.
+Inside a current provider range, the controller reuses the symbol reply and shows diagnostics
+for the latest offset as they arrive. The default `request(point)` refreshes the lookup.
+The controller preserves focus and selection. Editing, changing the selection or
 fold projection, and replacing the tab expire the result. `cancel()` dismisses it and `dispose()`
 releases the controller. For a separate analysis service, pass its observable `diagnostics` and
 `diagnosticRevision` snapshot through the `diagnostics` option. The lookup uses the painted revision.

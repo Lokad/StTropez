@@ -64,8 +64,12 @@ export class HostHoverTools {
     }
     private inspect(session: Session, revision: number, offset: number, affinity: Affinity, kind: "pointer" | "keyboard"): boolean {
         if (this.sessions.get(session.id) !== session || !this.allowInspect(kind)) return false;
-        this.dismiss(); this.current = session; this.kind = kind; session.revision = revision; session.affinity = affinity; session.offset = offset;
-        const posted = session.controller.request({ revision, offset, affinity }); if (!posted) { this.current = undefined; this.publish(); } return posted;
+        const reuse = kind === "pointer" && this.kind === kind && this.current === session;
+        if (!reuse) this.dismiss();
+        this.current = session; this.kind = kind; session.revision = revision; session.affinity = affinity; session.offset = offset;
+        const accepted = session.controller.request({ revision, offset, affinity }, reuse ? "reuse" : "refresh");
+        if (!accepted) this.dismiss();
+        return accepted;
     }
     inspectCaret(id: string): boolean {
         const session = this.sessions.get(id); if (!session) return false;
@@ -82,18 +86,12 @@ export class HostHoverTools {
                 const config = { ...settings }; delete settings.fault; return beforeRequest(session, config);
             } }) });
         const listeners = new AbortController(), win = editor.element.ownerDocument.defaultView!;
-        let requested: Readonly<{ revision: number; offset: number }> | undefined;
         const session: Session = { id, editor, controller, settings, revision: -1, affinity: "after", offset: 0, overTarget: false, cancelTimers: () => {} };
-        const dwell = observePointerDwell(editor, point => {
-            const state = controller.getSnapshot(), range = state.range;
-            if (requested?.revision === point.revision && (requested.offset === point.offset && ["pending", "ready", "empty", "failed"].includes(state.status)
-                || state.status === "ready" && range && range.from <= point.offset && point.offset < range.to)) return;
-            if (this.inspect(session, point.revision, point.offset, point.affinity, "pointer")) requested = point;
-        }, { enabled: () => !(this.current && this.kind === "keyboard") && this.allowInspect("pointer"),
-            onMiss: () => { requested = undefined; if (this.current === session) this.dismiss(); } });
+        const dwell = observePointerDwell(editor, point => this.inspect(session, point.revision, point.offset, point.affinity, "pointer"), {
+            enabled: () => !(this.current && this.kind === "keyboard") && this.allowInspect("pointer"),
+            onMiss: () => { if (this.current === session) this.dismiss(); } });
         listeners.signal.addEventListener("abort", dwell.dispose, { once: true });
-        const cancelPointer = () => { dwell.cancel(); requested = undefined; };
-        session.cancelTimers = cancelPointer;
+        session.cancelTimers = dwell.cancel;
         try {
             const register = scopedCommands(editor, listeners.signal);
             register({ id: "hover.inspect", label: "Inspect type",
@@ -102,15 +100,15 @@ export class HostHoverTools {
             register({ id: "hover.dismiss", label: "Dismiss hover",
                 enabled: () => (editor.getSnapshot().focused || !!this.popup?.matches(":focus-within"))
                     && (this.current === session || dwell.isPending()), run: () => {
-                    if (this.current !== session) { cancelPointer(); return false; }
+                    if (this.current !== session) { dwell.cancel(); return false; }
                     const visible = this.cell.get().visible; this.dismiss(); return visible;
                 } }, { keys: ["Escape"], priority: 20, shared: true });
         } catch (error) { listeners.abort(); controller.dispose(); throw error; }
         this.sessions.set(id, session);
         const stop = controller.subscribe(() => { if (this.current === session) this.publish(); });
         editor.element.addEventListener("pointerenter", () => { session.overTarget = true; if (this.current === session) this.clearDismiss(); }, { signal: listeners.signal });
-        editor.element.addEventListener("pointerleave", () => { cancelPointer(); session.overTarget = false; if (this.current === session) this.queueDismiss(session); }, { signal: listeners.signal });
-        editor.element.addEventListener("pointerdown", () => { cancelPointer(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
+        editor.element.addEventListener("pointerleave", () => { dwell.cancel(); session.overTarget = false; if (this.current === session) this.queueDismiss(session); }, { signal: listeners.signal });
+        editor.element.addEventListener("pointerdown", () => { dwell.cancel(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
         win.addEventListener("keydown", event => {
             if (event.key === "Escape" && this.current === session && this.kind === "pointer" && this.cell.get().visible
                 && !event.defaultPrevented && !event.isComposing && event.keyCode !== 229 && !event.ctrlKey && !event.metaKey
@@ -121,18 +119,18 @@ export class HostHoverTools {
             }
             if (event.key !== "Control" && event.key !== "Meta") return;
             if (this.popup?.matches(":focus-within")) return;
-            cancelPointer(); if (this.current === session && this.kind === "pointer") this.dismiss();
+            dwell.cancel(); if (this.current === session && this.kind === "pointer") this.dismiss();
         }, { signal: listeners.signal });
         editor.element.addEventListener("focusout", event => {
             if (this.current === session && this.kind === "keyboard"
                 && !(event.relatedTarget instanceof Node && this.popup?.contains(event.relatedTarget))) this.dismiss();
         }, { signal: listeners.signal });
-        editor.onEditIntent(kind => {
-            if (kind === "compositionstart") session.cancelTimers(); else cancelPointer();
+        editor.onEditIntent(() => {
+            dwell.cancel();
             if (this.current === session) this.dismiss();
         }, listeners.signal);
         const scroll = () => {
-            requested = undefined; if (this.current === session && this.kind === "pointer") this.dismiss();
+            if (this.current === session && this.kind === "pointer") this.dismiss();
         };
         editor.element.addEventListener("scroll", scroll, { capture: true, signal: listeners.signal });
         win.addEventListener("scroll", event => {
@@ -140,7 +138,7 @@ export class HostHoverTools {
             if (target !== win && target !== editor.element.ownerDocument && !(target instanceof Node && target.contains(editor.element))) return;
             scroll();
         }, { capture: true, signal: listeners.signal });
-        win.addEventListener("resize", () => { cancelPointer(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
+        win.addEventListener("resize", () => { dwell.cancel(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
         return detachWithEditor(editor, listeners.signal, () => {
             if (this.sessions.get(id) !== session) return;
             this.sessions.delete(id);

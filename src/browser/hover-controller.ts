@@ -20,7 +20,7 @@ export type HoverSnapshot = Readonly<{
     message: string; revision: number | null; range: Range | null; text: string; content?: DocumentationContent;
 }>;
 export type HoverController = Observable<HoverSnapshot> & Readonly<{
-    request: (anchor?: OverlayPosition) => boolean; cancel: () => void; dispose: () => void;
+    request: (anchor?: OverlayPosition, mode?: "refresh" | "reuse") => boolean; cancel: () => void; dispose: () => void;
     getDiagnostics: () => Readonly<{ connected: boolean; pending: boolean; disposed: boolean; posted: number; received: number;
         stale: number; invalid: number; failed: number; cancelled: number }>;
 }>;
@@ -100,13 +100,24 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
         else if (current.failure) publish({ ...idle, status: "failed", message: current.failure });
         else { release(); publish({ ...idle, status: "empty", message: "No information at this position." }); }
     }
-    function request(anchor?: OverlayPosition): boolean {
+    function request(anchor?: OverlayPosition, mode: "refresh" | "reuse" = "refresh"): boolean {
         notifications.assertWritable();
         if (!available()) return false;
         const selected = view.getSnapshot(), offset = anchor?.offset ?? selected.selection.head;
         const doc = workspace.observeDocument(view.documentId).getSnapshot();
         if (!doc || (anchor && anchor.revision !== doc.revision) || !Number.isSafeInteger(offset) || offset < 0 || offset > doc.buffer.length
             || view.folding.getSnapshot().index.hiddenBy(doc.buffer.lineAt(offset))) return false;
+        if (mode === "reuse" && inspection && valid(inspection)) {
+            if (inspection.offset === offset) return true;
+            const range = inspection.symbol?.range;
+            if (range && range.from <= offset && offset < range.to) {
+                inspection.offset = offset;
+                // Diagnostics can split a provider range today or in a later notification.
+                const shown = cell.get().range;
+                if (!shown || offset < shown.from || offset >= shown.to) render(inspection);
+                return true;
+            }
+        }
         release();
         try {
             const current: Inspection = { revision: doc.revision, selection: selected.selectionSet, folds: view.folding.getSnapshot().index,

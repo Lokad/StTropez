@@ -168,6 +168,11 @@ function confirmWithWriteFailure(kind: "rename" | "action") {
     try { return preview.confirm(); } finally { workspace.editDocuments = edit; }
 }
 const bridge = { text, probeTypedHover, confirmWithWriteFailure, select: (at: number) => editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: at, head: at }),
+    pointerHover: (offset: number) => {
+        const posted = hover.getDiagnostics().posted;
+        if (!hover.request({ revision: workspace.document(source.documentId).revision, offset }, "reuse")) throw new Error("Hover position refused");
+        return hover.getDiagnostics().posted - posted;
+    },
     state: () => ({ provider: provider.snapshot(), editor: controller.getDiagnostics(), completion: controller.getSnapshot(), history: workspace.observeHistory(source.documentId).getSnapshot(), diagnostics: workspace.diagnostics(), notes, companion: companion.documentId, metrics: editor.getDiagnostics(), errors }),
     showDiagnostic: () => {
         const state = diagnostics.getSnapshot(), first = state.diagnostics[0];
