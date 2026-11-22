@@ -950,7 +950,14 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     await scrollAwayAndBack(rename, 1200);
     await expect(rename.getByRole("textbox", { name: "New name", exact: true })).toHaveValue("renamedValue");
     const edits = rename.getByLabel("Rename edits", { exact: true }).locator("li"); await expect(edits).toHaveCount(64);
-    for (let i = 0; i < 18; i++) await rename.getByRole("button", { name: "Next edits", exact: true }).click();
+    const nextEdits = rename.getByRole("button", { name: "Next edits", exact: true });
+    const retainedNext = await nextEdits.elementHandle();
+    if (!retainedNext) throw new Error("The rename preview has no Next edits button.");
+    await rename.getByRole("button", { name: "Preview rename", exact: true }).click();
+    await expect(rename.getByLabel("Rename status", { exact: true })).toContainText("Review 1201 changes.");
+    await retainedNext.evaluate(node => (node as HTMLButtonElement).click()); await retainedNext.dispose();
+    await expect(edits.first()).toContainText("uses.ts · 1:");
+    for (let i = 0; i < 18; i++) await nextEdits.click();
     await expect(edits).toHaveCount(49); await expect(edits.last()).toContainText("uses.ts · 1201:");
     await rename.getByRole("button", { name: "Apply rename", exact: true }).click(); await expect(rename).toBeHidden();
     await expect(page.locator("#editor")).toContainText("const use1199 = renamedValue;");

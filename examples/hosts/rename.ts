@@ -128,12 +128,10 @@ export class HostRenameTools {
         if (this.owner !== s) this.cancel();
         this.owner = s; this.publish({ symbol: this.hint(s) ?? "position" }); s.controller.request(name);
     }
-    private page(delta: number) {
-        const state = this.cell.get(), page = state.page + delta;
-        if (state.preview && this.owner && page >= 0 && page * navigationLimits.page < state.count) this.render(this.owner.controller.getSnapshot(), page);
+    showPage(preview: RenamePreview, page: number) {
+        const state = this.owner?.controller.getSnapshot();
+        if (state?.preview === preview && Number.isSafeInteger(page) && page >= 0 && page * navigationLimits.page < preview.count) this.render(state, page);
     }
-    readonly nextPage = () => this.page(1);
-    readonly previousPage = () => this.page(-1);
     openChanged(document: DocumentId) {
         const s = this.cell.get();
         if (s.pending || s.preview || this.disposed || !s.changes.some(c => c.document === document) || !this.canCapture(document)) return;

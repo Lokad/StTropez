@@ -1,13 +1,20 @@
 import { renderPanelActions } from "./panel-actions.ts";
 import type { HostRenameTools, RenameNote, HostRenameSnapshot } from "./rename.ts";
-type RenamePanelTools = Pick<HostRenameTools, "prepare" | "cancel" | "previousPage" | "nextPage" | "disconnect" | "reconnect" | "bindName" | "setName" | "openChanged">;
+type RenamePanelTools = Pick<HostRenameTools, "prepare" | "cancel" | "showPage" | "disconnect" | "reconnect" | "bindName" | "setName" | "openChanged">;
+export function renamePageActions(tools: Pick<HostRenameTools, "showPage">, s: HostRenameSnapshot, previous: string, next: string) {
+    const { preview, reviewKey, page, count, locations } = s;
+    const action = (label: string, destination: number, enabled: boolean) => ({
+        label, reviewKey, disabled: !preview || !enabled, invoke: () => { if (preview && enabled) tools.showPage(preview, destination); }
+    });
+    const last = locations.at(-1);
+    return [action(previous, page - 1, page > 0), action(next, page + 1, !!last && last.ordinal + 1 < count)];
+}
 function renameActions(tools: RenamePanelTools, s: HostRenameSnapshot) {
     return [
         { label: "Prepare rename preview", invoke: tools.prepare, disabled: !s.available || s.disconnected || s.pending },
         { label: "Apply captured rename", reviewKey: s.reviewKey, invoke: () => s.preview?.confirm(), disabled: !s.canApply },
         { label: "Dismiss rename preview", invoke: tools.cancel, disabled: !s.pending && !s.preview },
-        { label: "Previous rename targets", invoke: tools.previousPage, disabled: s.page === 0 || s.status !== "ready" },
-        { label: "Next rename targets", invoke: tools.nextPage, disabled: (s.page + 1) * 64 >= s.count || s.status !== "ready" },
+        ...renamePageActions(tools, s, "Previous rename targets", "Next rename targets"),
         { label: "Disconnect rename provider", invoke: tools.disconnect, disabled: !s.connected && !s.pending },
         { label: "Reconnect rename provider", invoke: tools.reconnect, disabled: !s.disconnected && s.status !== "failed" }
     ];

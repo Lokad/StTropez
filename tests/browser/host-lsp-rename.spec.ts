@@ -113,6 +113,11 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP renam
         await seed(page, text); const before = await snapshot(page); await preview(page);
         await expect(targets(page)).toHaveCount(64); await expect(button(page, "Previous rename targets")).toBeDisabled();
         expect((await snapshot(page)).bindings.rename.state).toMatchObject({ status: "ready", count: 72, page: 0 });
+        const next = button(page, "Next rename targets"), original = (await snapshot(page)).bindings.rename.state.reviewKey;
+        await next.hover(); await page.mouse.down();
+        await button(page, "Prepare rename preview").evaluate(node => (node as HTMLButtonElement).click());
+        await expect.poll(async () => (await snapshot(page)).bindings.rename.state.reviewKey).not.toBe(original);
+        await expect(next).toBeEnabled(); await page.mouse.up(); await expect(targets(page)).toHaveCount(64);
         await button(page, "Next rename targets").click(); await expect(targets(page)).toHaveCount(8);
         await expect(targets(page).first().locator("..")).toHaveAttribute("start", "65"); await expect(button(page, "Next rename targets")).toBeDisabled();
         expect((await snapshot(page)).bindings.rename.state.locations.map(item => item.ordinal)).toEqual([64, 65, 66, 67, 68, 69, 70, 71]);
