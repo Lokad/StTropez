@@ -1,5 +1,6 @@
 import type { HostNavigationTools, NavigationSnapshot } from "./navigation.ts";
-import { pageActions, renderPanelActions } from "./panel-actions.ts";
+import { pageActions } from "./panel-actions.ts";
+import { createToolPanel } from "./tool-panel.ts";
 type NavigationPanelTools = Pick<HostNavigationTools, "findDefinition" | "findReferences" | "cancel" | "returnToOrigin" | "addCompanion" | "disconnect" | "reconnect" | "setIncludeDeclaration">;
 
 /** Pure presentation of one captured snapshot; list rows are read only when a renderer needs them. */
@@ -26,19 +27,16 @@ export function navigationPanelModel(tools: NavigationPanelTools, state: Navigat
     } as const;
 }
 export function mountNavigationPanel(host: HTMLElement, tools: HostNavigationTools): () => void {
-    const initial = navigationPanelModel(tools, tools.state.getSnapshot());
-    const owner = host.ownerDocument, heading = owner.createElement("h2"), status = owner.createElement("output"), progress = owner.createElement("progress"), notes = owner.createElement("ul"), controls = owner.createElement("div"), label = owner.createElement("label"), include = owner.createElement("input");
-    host.setAttribute("aria-label", initial.title); heading.textContent = initial.title; status.setAttribute("aria-label", initial.status.label);
+    const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => navigationPanelModel(tools, state));
+    const progress = owner.createElement("progress"), notes = owner.createElement("ul"), label = owner.createElement("label"), include = owner.createElement("input");
     progress.setAttribute("aria-label", initial.progress.label); notes.setAttribute("aria-label", initial.results.label); include.type = "checkbox"; label.append(include, initial.declarations.label); include.onchange = () => initial.declarations.change(include.checked);
-    host.replaceChildren(heading, status, progress, label, controls, notes); let previous: typeof initial.results.identity | undefined;
-    const render = () => {
-        const model = navigationPanelModel(tools, tools.state.getSnapshot());
-        status.textContent = model.status.text; progress.hidden = model.progress.hidden; progress.max = model.progress.max; progress.value = model.progress.value; include.checked = model.declarations.checked;
-        renderPanelActions(controls, model.actions);
+    let previous: typeof initial.results.identity | undefined;
+    return mount([progress, label, controls, notes], model => {
+        progress.hidden = model.progress.hidden; progress.max = model.progress.max; progress.value = model.progress.value; include.checked = model.declarations.checked;
         if (previous !== model.results.identity) {
             notes.replaceChildren(...model.results.items().map(note => { const item = owner.createElement("li"), button = owner.createElement("button");
                 button.textContent = note.label; button.onclick = note.invoke; item.append(button); return item; }));
         }
         previous = model.results.identity;
-    }; const stop = tools.state.subscribe(render); render(); return () => { stop(); host.replaceChildren(); };
+    });
 }

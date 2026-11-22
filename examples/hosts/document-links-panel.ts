@@ -1,5 +1,6 @@
 import type { HostDocumentLinks, LinkNote, DocumentLinksSnapshot } from "./document-links.ts";
-import { pageActions, renderPanelActions } from "./panel-actions.ts";
+import { pageActions } from "./panel-actions.ts";
+import { createToolPanel } from "./tool-panel.ts";
 type DocumentLinksPanelTools = Pick<HostDocumentLinks, "discover" | "returnToOrigin" | "cancel" | "addCompanion" | "disconnect" | "reconnect" | "bindList">;
 function documentLinkActions(tools: DocumentLinksPanelTools, s: DocumentLinksSnapshot) {
     return [
@@ -26,16 +27,11 @@ export function documentLinksPanelModel(tools: DocumentLinksPanelTools, s: Docum
     } as const;
 }
 export function mountDocumentLinksPanel(host: HTMLElement, tools: HostDocumentLinks): () => void {
-    const initial = documentLinksPanelModel(tools, tools.state.getSnapshot());
-    const owner = host.ownerDocument, heading = owner.createElement("h2"), description = owner.createElement("p"), status = owner.createElement("output"), controls = owner.createElement("div"), list = owner.createElement("ul");
-    host.setAttribute("aria-label", initial.title); heading.textContent = initial.title; description.textContent = initial.description; status.setAttribute("aria-label", initial.status.label); list.setAttribute("aria-label", initial.results.label); list.tabIndex = -1; initial.results.bind(list);
-    host.replaceChildren(heading, description, status, controls, list);
+    const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => documentLinksPanelModel(tools, state));
+    const list = owner.createElement("ul"); list.setAttribute("aria-label", initial.results.label); list.tabIndex = -1; initial.results.bind(list);
     const rows: { key: string; li: HTMLLIElement; button: HTMLButtonElement; text: HTMLParagraphElement }[] = [];
     let previous: readonly LinkNote[] | undefined;
-    const render = () => {
-        const state = tools.state.getSnapshot(), model = documentLinksPanelModel(tools, state);
-        status.textContent = model.status.text;
-        renderPanelActions(controls, model.actions);
+    return mount([controls, list], (model, state) => {
         if (state.links !== previous) {
             previous = state.links;
             model.results.items().forEach((link, index) => {
@@ -51,6 +47,5 @@ export function mountDocumentLinksPanel(host: HTMLElement, tools: HostDocumentLi
             for (const row of rows.splice(state.links.length)) row.li.remove();
         }
         state.links.forEach((link, index) => { rows[index]!.button.disabled = model.results.disabled || !(link.target || link.resolvable); });
-    };
-    const stop = tools.state.subscribe(render); render(); return () => { stop(); initial.results.bind(null); host.replaceChildren(); };
+    }, () => initial.results.bind(null));
 }
