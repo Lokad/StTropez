@@ -22,6 +22,22 @@ async function setup(page: Page, host: string, text: string): Promise<void> {
     await page.getByRole("checkbox", { name: "Paste tables as CSV", exact: true }).check();
     await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: 0 }]); });
 }
+test("paste during a pending word move keeps the literal text at its destination with CSV enabled", async ({ page }) => {
+    const word = "a".repeat(1000001), original = word + ";end";
+    await setup(page, "plain", original); await input(page).focus();
+    const before = await snapshot(page);
+    await input(page).evaluate(node => {
+        node.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true, bubbles: true, cancelable: true }));
+        const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
+        event.clipboardData!.setData("text/plain", "X\tY"); node.dispatchEvent(event);
+    });
+    await waitForPaste(page); await exact(page, word + "X\tY;end");
+    const after = await snapshot(page);
+    expect(after.history.undoDepth).toBe(before.history.undoDepth + 1);
+    expect(after.bindings.tablePaste.status).toBe("idle");
+    await input(page).press("Control+z"); await waitForPaste(page); await exact(page, original);
+});
+
 for (const host of ["plain", "react"]) {
     for (const large of [false, true]) test(`${host} ${large ? "100k TSV" : "HTML"} table paste keeps all selections, shared undo, reference, Save/Run and remount`, async ({ page }) => {
         test.setTimeout(120000); const original = "AA\r\n" + (large ? "const unchanged = 123;\r\n".repeat(100000) : "middle\r\n") + "ZZ";
@@ -60,6 +76,19 @@ for (const host of ["plain", "react"]) {
     });
     test(`${host} captured table paste survives focus elsewhere and cancels on authority, staged input and remount`, async ({ page }) => {
         await setup(page, host, "source"); const table = "a\tb\r\n".repeat(5000); await input(page).focus();
+        await page.evaluate(() => window.hostFixture.setSourceReadOnly(true));
+        const refused = await input(page).evaluate(node => {
+            let reason: string | undefined;
+            node.closest(".st-editor")!.addEventListener("sttropez-edit-refused", event => {
+                reason = (event as CustomEvent<{ reason: string }>).detail.reason;
+            }, { once: true });
+            const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
+            event.clipboardData!.setData("text/plain", "locked\tpaste"); node.dispatchEvent(event);
+            return reason;
+        });
+        expect(refused).toBe("read-only"); await exact(page, "source");
+        expect((await snapshot(page)).bindings.tablePaste.status).toBe("idle");
+        await page.evaluate(() => window.hostFixture.setSourceReadOnly(false));
         await input(page).evaluate((node, table) => { const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true }); event.clipboardData!.setData("text/plain", table); node.dispatchEvent(event);
             window.hostFixture.setSourceReadOnly(true); window.hostFixture.setSourceReadOnly(false); }, table);
         await waitForPaste(page); await exact(page, "source"); expect((await snapshot(page)).bindings.tablePaste.status).toBe("cancelled");

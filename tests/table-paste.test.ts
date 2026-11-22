@@ -10,19 +10,16 @@ function fixture() {
     const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left"), view = workspace.createDocumentView(source.documentId), peer = workspace.createDocumentView(source.documentId);
     const timers = new Map<number, () => void>(); let serial = 0, composing = false;
     const owner = { defaultView: { performance, setTimeout: (work: () => void) => { timers.set(++serial, work); return serial; }, clearTimeout: (id: number) => timers.delete(id) }, activeElement: null };
-    const input = Object.assign(new EventTarget(), { ownerDocument: owner });
-    const editor = { view, input, element: { ownerDocument: owner, isConnected: true, hasAttribute: (name: string) =>
-        name === "data-read-only" && (!source.metadata.getSnapshot().capabilities.edit.includes("human") || source.metadata.getSnapshot().editLock !== null) },
-        activity: () => ({ composing, disposed: false }), captureView: () => {},
+    const editor = { view, element: { ownerDocument: owner }, registerPasteHandler: () => () => {},
         captureInsertion: () => captureInsertion(workspace, workspace.tabs.capture(tab), view, () => !composing,
             (plan, revision) => workspace.edit({ documentId: source.documentId, expectedRevision: revision, edits: plan.edits, selectionSet: plan.selectionSet, origin: "human", view, history: { kind: "paste" } }).applied, () => {}),
         focus: () => { throw new Error("Table paste must not focus a later editor."); } } as unknown as TextEditor;
-    const tools = new HostTablePaste(workspace), detach = tools.attach("primary", tab, editor); tools.setEnabled(true);
+    const tools = new HostTablePaste(), detach = tools.attach("primary", tab, editor); tools.setEnabled(true);
     const text = () => { const b = workspace.document(source.documentId).buffer; return b.slice(0, b.length); };
-    const paste = (plain: string) => { const event = Object.assign(new Event("paste", { cancelable: true }), { clipboardData: { getData: (type: string) => type === "text/plain" ? plain : "" } }); input.dispatchEvent(event); assert.equal(event.defaultPrevented, true); };
+    const paste = (plain: string) => tools.insertTable("primary", plain);
     const turn = () => { const entry = timers.entries().next().value; if (entry) { timers.delete(entry[0]); entry[1](); } };
     const drain = () => { let steps = 0; while (timers.size) { turn(); if (++steps > 1000) throw new Error("Conversion did not finish."); } };
-    return { workspace, source, tab, view, peer, tools, paste, drain, turn, timers, input, text, detach, setComposing: (value: boolean) => { composing = value; },
+    return { workspace, source, tab, view, peer, tools, paste, drain, turn, timers, text, detach, setComposing: (value: boolean) => { composing = value; },
         finish: () => { detach(); view.dispose(); peer.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); assert.equal(timers.size, 0); assert.deepEqual({ views: workspace.diagnostics().views, leases: workspace.diagnostics().leases, subscriptions: workspace.diagnostics().subscriptions }, { views: 0, leases: 0, subscriptions: 0 }); } };
 }
 test("captured table paste replaces every range in one shared undo transaction without exporting or focusing", () => {
@@ -67,7 +64,6 @@ test("invalid/empty tables, composition and explicit cancellation preserve text 
         f.paste("a\tb\nc"); f.drain(); assert.equal(f.tools.state.getSnapshot().status, "failed"); assert.equal(f.text(), "abc\r\nxyz");
         f.paste(""); f.drain(); assert.equal(f.text(), "abc\r\nxyz"); assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, 0);
         f.setComposing(true); f.paste("a\tb"); f.drain(); assert.equal(f.tools.state.getSnapshot().status, "failed"); f.setComposing(false);
-        f.paste("a\tb"); f.input.dispatchEvent(new Event("compositionstart")); f.drain(); assert.equal(f.tools.state.getSnapshot().status, "cancelled");
         f.paste("a\tb"); f.tools.cancel(); f.drain(); assert.equal(f.text(), "abc\r\nxyz");
     } finally { f.finish(); }
 });

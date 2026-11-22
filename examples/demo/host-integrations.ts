@@ -67,7 +67,7 @@ function mountNotes(model: HostSourceNotes, project: DemoProject, file: DemoFile
 /** The sample composes the public editor hooks; formatting, UI and note content stay in the host. */
 export function mountHostIntegrations(project: DemoProject, file: DemoFile, editor: TextEditor,
     controls: Readonly<{ mode: HTMLSelectElement; insert: HTMLButtonElement; annotate: HTMLButtonElement; status: HTMLElement }>, open: (target: DemoSymbolTarget) => void) {
-    const table = new HostTablePaste(project.workspace), events = new AbortController(), model = project.notesFor(file);
+    const table = new HostTablePaste(), events = new AbortController(), model = project.notesFor(file);
     const stopNotes = mountNotes(model, project, file, editor, open), detach = table.attach("source", file.tab, editor);
     const mode = () => { table.setEnabled(controls.mode.value === "csv"); };
     const renderStatus = () => { controls.status.textContent = table.state.getSnapshot().message; };

@@ -5,7 +5,7 @@ import { fontFixture } from "./font-fixture.js";
 import { WorkspaceCommands } from "sttropez";
 import { createSelectionSet, planSelectionEdits } from "sttropez";
 import type { ResourceVisibility, SaveReview } from "sttropez";
-import type { EditRefusedDetail, FindDiagnostics, FindReason, TextComparisonDiagnostics, InputConflictDetail, LinePrompt, PresentedLine, TextComparisonOptions, TextComparisonSnapshot, TextViewportOptions } from "sttropez/browser";
+import type { CapturedInsertion, EditRefusedDetail, FindDiagnostics, FindReason, TextComparisonDiagnostics, InputConflictDetail, LinePrompt, PresentedLine, TextComparisonOptions, TextComparisonSnapshot, TextViewportOptions } from "sttropez/browser";
 import { JsonRpcConnection } from "sttropez/protocol";
 import { openWebSocketTransport } from "sttropez/browser";
 const workspace = new Workspace();
@@ -63,6 +63,29 @@ const fixture = { text: () => workspace.document(documentId).text(),
             const d = model.document(source.documentId);
             if (d.revision || d.buffer.slice(0, d.buffer.length) !== original || editor.view.getSnapshot().selectionSet !== selections || model.observeHistory(source.documentId).getSnapshot().undoDepth) throw new Error("Compiled canceled/empty clipboard input changed text, complete selections or history.");
             if (d.buffer.readMetrics().textExports) throw new Error("Compiled clipboard boundary exported text.");
+
+            const targets: CapturedInsertion[] = [];
+            const stop = editor.registerPasteHandler({
+                accepts: data => data.types.includes("text/html"),
+                paste: (_data, target) => targets.push(target),
+            });
+            const send = (html: boolean) => {
+                const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
+                const data = event.clipboardData!; data.setData("text/plain", "X");
+                if (html) data.setData("text/html", "<b>X</b>");
+                editor.input.dispatchEvent(event); };
+            editor.input.addEventListener("paste", event => event.preventDefault(), { capture: true, once: true });
+            send(true);
+            if (targets.length || model.document(source.documentId).revision !== d.revision) throw new Error("Claimed paste reached the converter.");
+            send(false);
+            const raw = model.document(source.documentId);
+            if (targets.length || raw.buffer.slice(0, raw.buffer.length) !== "bXore\r\nXd") throw new Error("Declined paste did not retain literal editing.");
+            model.undo({ documentId: raw.id, expectedRevision: raw.revision });
+            send(true); const target = targets[0];
+            if (!target || !target.isCurrent() || target.documentId !== source.documentId || target.selectionSet !== editor.view.getSnapshot().selectionSet)
+                throw new Error("Converted paste did not capture the restored editor selections.");
+            stop(); if (!target.signal.aborted || target.insert("stale") || editor.activity().pendingInput)
+                throw new Error("Detached paste handler kept its insertion.");
         } finally { editor.dispose(); host.remove(); model.tabs.close(tab); model.releaseResource(source.id, true); }
         const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled clipboard resources leaked.");
         return { cancelledOwnership: true, emptyPayloadNoDeletion: true, completeSets: true, noHistory: true, zeroExports: true, events: "synthetic", released: { views, leases, subscriptions } };
@@ -296,6 +319,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             const tab = model.tabs.open({ kind: "text", documentId: source.documentId }, kind), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
             const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored ordered input" }), recovered: string[] = [];
             const typed: TypedTextDetail[] = [];
+            if (kind === "paste-word") editor.registerPasteHandler({ accepts: () => true, paste: (_data, target) => { target.insert("out of order"); } });
             host.addEventListener(typedTextEvent, event => typed.push((event as CustomEvent<TypedTextDetail>).detail));
             editor.input.addEventListener(inputConflictEvent, event => recovered.push((event as CustomEvent<InputConflictDetail>).detail.attemptedText));
             const ready = async () => { for (let turn = 0; ; turn++) { const s = editor.snapshot();

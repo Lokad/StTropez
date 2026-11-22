@@ -21,63 +21,43 @@ export const markTodo: LineDecorator = line => {
 };
 ```
 
-Install this listener while converted paste is selected. Copy the clipboard formats during the
-event, then convert them against the captured insertion target. Choose size and nesting limits for
-the converter and yield during parsing.
+Read the clipboard formats during paste. This host converts HTML asynchronously and leaves
+plain-text paste to the editor.
 
 ```ts
-import type { CapturedInsertion, TextEditor } from "sttropez/browser";
-
-type ClipboardText = Readonly<{ text: string; html: string }>;
+import type { TextEditor } from "sttropez/browser";
 
 export function attachConvertedPaste(
     editor: TextEditor,
-    convert: (input: ClipboardText, signal: AbortSignal) => Promise<string>,
+    convert: (html: string, signal: AbortSignal) => Promise<string>,
     report: (message: string) => void
 ): () => void {
-    const events = new AbortController();
-    let pending: CapturedInsertion | undefined;
-    let disposed = false;
-
-    editor.input.addEventListener("paste", event => {
-        if (event.defaultPrevented || !event.clipboardData) return;
-        event.preventDefault();
-        pending?.cancel();
-        const input = Object.freeze({
-            text: event.clipboardData.getData("text/plain"),
-            html: event.clipboardData.getData("text/html")
-        });
-        if (input.text.length > 1_048_576 || input.html.length > 262_144) {
-            report("Clipboard content exceeds this host's conversion limit.");
-            return;
-        }
-        const capture = editor.captureInsertion("paste");
-        if (!capture) { report("The editor cannot accept converted paste."); return; }
-        pending = capture;
-        void (async () => {
-            let applying = false;
-            try {
-                const text = await convert(input, capture.signal);
-                if (!capture.isCurrent()) return;
-                const insertedUnits = text.length * capture.selectionSet.ranges.length;
-                if (insertedUnits > 4_194_304 || capture.length + insertedUnits > 33_554_432) {
-                    report("Converted text exceeds this host's insertion limit.");
-                    return;
-                }
-                applying = true;
-                report(capture.insert(text) ? "Converted text inserted." : "No text inserted.");
-            } catch (error) {
-                if (!disposed && pending === capture && (applying || !capture.signal.aborted)) {
-                    report(error instanceof Error ? error.message : "Conversion failed.");
-                }
-            } finally {
-                capture.cancel();
-                if (pending === capture) pending = undefined;
+    return editor.registerPasteHandler({
+        accepts: data => data.types.includes("text/html"),
+        paste(data, target) {
+            const html = data.getData("text/html");
+            if (html.length > 262_144) {
+                target.cancel();
+                report("Clipboard HTML exceeds the conversion limit.");
+                return;
             }
-        })();
-    }, { capture: true, signal: events.signal });
-
-    return () => { disposed = true; events.abort(); pending?.cancel(); pending = undefined; };
+            void (async () => {
+                try {
+                    const text = await convert(html, target.signal);
+                    if (!target.isCurrent()) return;
+                    if (text.length * target.selectionSet.ranges.length > 4_194_304) {
+                        report("Converted text exceeds the insertion limit.");
+                        return;
+                    }
+                    target.insert(text);
+                } catch (error) {
+                    if (!target.signal.aborted) report(String(error));
+                } finally {
+                    target.cancel();
+                }
+            })();
+        }
+    });
 }
 ```
 
@@ -170,6 +150,15 @@ Returning a promise throws after the callback has run. Any edits it already made
 result stays on screen, retain its capture. Cancel on dismissal or disposal.
 
 ### Captured insertion and structured paste
+
+`editor.registerPasteHandler({ accepts, paste })` installs one handler for the mount. Its
+synchronous, read-only `accepts(data)` decides which clipboard formats to convert. Return
+`false` to use the editor’s literal paste and line-ending rules. On acceptance,
+`paste(data, target)` receives the clipboard and a single-use insertion. Copy the needed formats before
+the callback returns. Finish the conversion with `target.insert(text)` or `target.cancel()`.
+Unregistering cancels its pending insertion. A read-only source refuses
+paste before consulting the handler. Paste during ordered navigation or input queues literal
+text at the eventual selection. Composition and externally cancelled paste bypass conversion.
 
 `editor.captureInsertion(kind)` returns a `CapturedInsertion`, or `undefined` when the view
 is unavailable, read-only, composing or finishing ordered input/navigation. The history kind

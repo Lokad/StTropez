@@ -212,7 +212,7 @@ export class ViewBindings {
     constructor(controller: HostController, editor: HostEditor = "candidate", mountNative?: NativeEditorMount) {
         if (editor === "native" && !mountNative) throw new Error("The native source control requires a fixture mount.");
         this.controller = controller; this.editor = editor; this.mountNative = mountNative;
-        this.tablePaste = new HostTablePaste(controller.workspace, editor === "candidate");
+        this.tablePaste = new HostTablePaste(editor === "candidate");
         this.domain = new HostDomainTools(controller.workspace, documentId => !this.tablePaste.hasPendingInput(documentId) && !(this.review?.panes.working.view.documentId === documentId && (this.review.panes.working.activity().pendingInput || this.review.panes.working.activity().composing))
             && ![...this.mounted.values()].some(value => { const activity = value.candidate?.activity(); return value.documentId === documentId && (activity?.pendingInput || activity?.composing); }));
         const canCapture = (documentId: DocumentId) => {

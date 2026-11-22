@@ -72,11 +72,15 @@ export type ResolvedEditorSettings = ViewportSettings & Readonly<{ language: Res
 export type EditorRevealRange = Readonly<{ from: number; to: number }>;
 export type EditorRevealOptions = Readonly<{ align?: RevealAlignment; select?: boolean; focus?: boolean; expectedRevision?: number }>;
 export type TextEditorOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; requestLine?: LinePrompt; settings?: EditorSettings }>;
+export type EditorPasteHandler = Readonly<{ accepts: (data: DataTransfer) => boolean;
+    paste: (data: DataTransfer, insertion: CapturedInsertion) => void }>;
+type PasteOwner = { handler: EditorPasteHandler; pending?: CapturedInsertion };
 export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; workspace: Workspace; tab: TabTarget | undefined; signal: AbortSignal; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
     operation: <T>(options: EditorOperationOptions, work: (op: EditorOperation) => T | PromiseLike<T>) => Promise<EditorOperationOutcome<T>>;
     latestOperation: () => EditorOperationLane;
     /** One pending host insertion, invalidated by later editing/selection/authority/lifecycle changes. */
     captureInsertion: (kind?: "paste" | "replace") => CapturedInsertion | undefined;
+    registerPasteHandler: (handler: EditorPasteHandler) => () => void;
     /** One synchronous edit planner per view. Its result still passes Workspace validation/history. */
     registerEditTransform: (transform: TextEditorEditTransform) => () => void;
     configure: (changes: EditorSettings) => boolean;
@@ -151,6 +155,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     let escapeSelection: SelectionSet | undefined;
     let editTransform: TextEditorEditTransform | undefined;
     let hostInsertion: CapturedInsertion | undefined;
+    let pasteOwner: PasteOwner | undefined;
     const escapeState = (value: boolean) => {
         if (!!escapeSelection === value) return;
         escapeSelection = value ? view.getSnapshot().selectionSet : undefined;
@@ -1382,9 +1387,14 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     };
     root.addEventListener("pointerup", stopDrag, { signal: listeners.signal }); root.addEventListener("pointercancel", stopDrag, { signal: listeners.signal });
     root.addEventListener("lostpointercapture", stopDrag, { signal: listeners.signal });
+    function canCaptureInsertion(): boolean {
+        return !disposed && root.isConnected && !readOnly && !input.disabled && !input.readOnly && !composing
+            && !inputQueue.pending && !inputQueue.executing && !rangeCommand && !wordJob && !graphemeJob && !insertion && !drag;
+    }
     for (const type of ["copy", "cut", "paste"] as const) input.addEventListener(type, event => {
         if (event.defaultPrevented) { cancelWord(); group = undefined; if (type !== "copy") stopDrag(); return; }
         if (input.disabled || composing || !event.clipboardData) return;
+        if (type === "paste" && !event.cancelable) return;
         if (type !== "copy" && input.readOnly) { refuseEdit(event); return; }
         if (type === "paste" && (inputQueue.pending || rangeCommand) && !input.disabled && !input.readOnly) {
             event.preventDefault(); stopDrag();
@@ -1395,8 +1405,22 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         event.preventDefault(); cancelWord(); syncSelection(); group = undefined;
         if (type !== "copy") view.folding.revealSelection(view.folding.getSnapshot());
         const selections = view.getSnapshot().selectionSet;
-        if (type === "paste") { const text = event.clipboardData.getData("text/plain"); if (text.length) replaceSelection(text, "paste", undefined, text, copiedLines(event.clipboardData)); }
-        else {
+        if (type === "paste") {
+            hostInsertion?.cancel();
+            const owner = pasteOwner, data = event.clipboardData;
+            if (owner && canCaptureInsertion() && notifications.read(() => owner.handler.accepts(data))) {
+                const capture = editor.captureInsertion();
+                if (!capture) return;
+                if (owner !== pasteOwner) { capture.cancel(); return; }
+                owner.pending = capture;
+                try { owner.handler.paste(data, capture); }
+                catch (error) { capture.cancel(); throw error; }
+                return;
+            }
+            const text = data.getData("text/plain");
+            if (text.length) replaceSelection(text, "paste", undefined, text, copiedLines(data));
+        } else {
+            if (type === "cut") hostInsertion?.cancel();
             const buffer = workspace.document(documentId).buffer;
             if (selections.ranges.every(range => range.anchor === range.head)) {
                 const lines = copyCaretLines(buffer, selections, type === "cut");
@@ -1468,14 +1492,23 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         latestOperation: () => createOperationLane(editor),
         captureInsertion: (kind = "paste") => {
             hostInsertion?.cancel();
-            const available = () => !disposed && root.isConnected && !readOnly && !input.disabled && !input.readOnly && !composing
-                && !inputQueue.pending && !inputQueue.executing && !rangeCommand && !wordJob && !graphemeJob && !insertion && !drag;
-            if (!available()) return;
+            if (!canCaptureInsertion()) return;
             syncSelection(); view.folding.revealSelection(view.folding.getSnapshot());
             let captured: CapturedInsertion | undefined;
-            captured = captureInsertion(workspace, target, view, available, (plan, expected) => apply(plan.edits, plan.selectionSet, kind, { expectedRevision: expected }),
-                () => { if (hostInsertion === captured) hostInsertion = undefined; });
+            captured = captureInsertion(workspace, target, view, canCaptureInsertion, (plan, expected) => apply(plan.edits, plan.selectionSet, kind, { expectedRevision: expected }),
+                () => { if (hostInsertion === captured) hostInsertion = undefined;
+                    if (pasteOwner && pasteOwner.pending === captured) delete pasteOwner.pending; });
             hostInsertion = captured; return captured;
+        },
+        registerPasteHandler(handler: EditorPasteHandler) {
+            notifications.assertWritable();
+            if (disposed || pasteOwner) throw new Error("Editor is disposed or already owns a paste handler.");
+            const owner: PasteOwner = { handler }; pasteOwner = owner;
+            return () => {
+                if (pasteOwner !== owner) return;
+                notifications.assertWritable(); pasteOwner = undefined;
+                const capture = owner.pending; delete owner.pending; capture?.cancel();
+            };
         },
         commands: registry.commands, keymap: registry.keymap,
         settings,
@@ -1523,6 +1556,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             clickedWord = undefined; mousePress = undefined;
             warnings!.dispose();
             hostInsertion?.cancel();
+            pasteOwner = undefined;
             if (inputQueue.executing) inputQueue.recover(inputQueue.executing, "pending-input-detached");
             cancelWord();
             nativeOrder = undefined; wordInput = undefined;

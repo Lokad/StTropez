@@ -8,25 +8,25 @@ import { installHostReferenceProbe } from "./host-reference-probe.mjs";
 import { hostTextEquals } from "./host-scene.mjs";
 /** @typedef {ReturnType<Window["hostFixture"]["snapshot"]>["bindings"]["tablePaste"]} PasteState */
 /** @typedef {Pick<PasteState, "maxTurnMs" | "commitMs" | "conversionToCommitMs" | "work"> & {
- * captureHandlerMs: PasteState["lastCaptureHandlerMs"], dispatchMs: number, eventToReviewReadyMs: number,
+ * hostPasteMs: PasteState["lastHostPasteMs"], dispatchMs: number, eventToReviewReadyMs: number,
  * revision: number, head: number, rows: number[], comparisonRows: number, maxReadUnits: number,
  * inputUnits: number, exports: number, background: number, focused: boolean}} PasteObservation */
 /** @typedef {PasteObservation & {completeActionProxyMs: number}} PastePoint */
 /** @typedef {{iteration: number, warmup: boolean, status: string, paste: PastePoint | null, workflowMs?: number,
  * released?: {views: number, leases: number, subscriptions: number, host: number, pasteSessions: number}}} Workflow */
-const pasteClocks = /** @type {const} */ (["captureHandlerMs", "dispatchMs", "maxTurnMs", "commitMs", "conversionToCommitMs", "eventToReviewReadyMs", "completeActionProxyMs"]);
+const pasteClocks = /** @type {const} */ (["hostPasteMs", "dispatchMs", "maxTurnMs", "commitMs", "conversionToCommitMs", "eventToReviewReadyMs", "completeActionProxyMs"]);
 /** @typedef {{host: string, corpus: string, format: string, sourceUnits: number, tableRows: number, plainUnits: number,
  * htmlUnits: number, warmup: number, measured: number, raw: Workflow[],
  * distributions: Record<typeof pasteClocks[number] | "workflowMs", ReturnType<typeof distribution>> | null}} Group */
 const source = await sourceIdentity(), writer = await createReportWriter("artifacts/bench/host-table-paste", "full");
 const harness = await openHarness(), page = harness.page;
 const report = {
-    schemaVersion: 1, created: new Date().toISOString(), source, environment: {
+    schemaVersion: 2, created: new Date().toISOString(), source, environment: {
         ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode, viewport: { width: 1440, height: 900 }
     },
     status: "running", active: /** @type {{host: string, corpus: string, format: string, iteration: number} | null} */ (null), cases: /** @type {Group[]} */ ([]),
     scope: "One fixed table-paste experiment: both hosts, normal/100k sources, HTML/TSV, two raw warmups and ten measured workflows per group. Normal tables have two rows; large tables have1500. One captured caret, independent source/review views, immutable reference, actual worker reply before the point and20Hz background host traffic. No prior experiment rerun.",
-    clocks: "captureHandlerMs covers only the host capture listener; it excludes candidate cleanup and conversion. dispatchMs wraps complete synchronous synthetic paste dispatch, including all listeners. maxTurnMs covers entire scheduled conversion callbacks, including final assembly, commit/publication and scheduling. commitMs measures the atomic model call including synchronous subscribers; conversionToCommitMs starts after clipboard capture and stops at commit. eventToReviewReadyMs requires exact revision, completed conversion, immutable reference identity, shared live-owner working/reference settlement (complete selections/folds, pending input/commands, caret/scans/drag, comparison alignment/scroll), source revision/reference label and two RAFs; later language replies are excluded. completeActionProxyMs includes automation payload transfer and the same readiness. workflowMs includes setup, fold-free controls, oracles, shared undo and disposal. No OS clipboard, native IME, CPU or physical-display qualification. Historical reports retain their original readiness definition.",
+    clocks: "hostPasteMs covers the host paste callback from reading clipboard formats through scheduling conversion. It excludes the editor's target capture and later conversion turns. dispatchMs wraps complete synchronous synthetic paste dispatch, including all listeners. maxTurnMs covers entire scheduled conversion callbacks, including final assembly, commit/publication and scheduling. commitMs measures the atomic model call including synchronous subscribers; conversionToCommitMs starts after clipboard capture and stops at commit. eventToReviewReadyMs requires exact revision, completed conversion, immutable reference identity, shared live-owner working/reference settlement (complete selections/folds, pending input/commands, caret/scans/drag, comparison alignment/scroll), source revision/reference label and two RAFs; later language replies are excluded. completeActionProxyMs includes automation payload transfer and the same readiness. workflowMs includes setup, fold-free controls, oracles, shared undo and disposal. No OS clipboard, native IME, CPU or physical-display qualification. Historical reports retain their original readiness definition.",
     retention: "All raw warmups and observations are retained. Failed partial workflows and the last active identity are saved without automatic retries."
 };
 const save = () => writer.write(report);
@@ -109,7 +109,7 @@ async function point(payload, expected) {
                 finished = true;
                 clearTimeout(timeout);
                 resolve({
-                    captureHandlerMs: t.lastCaptureHandlerMs, dispatchMs, maxTurnMs: t.maxTurnMs, commitMs: t.commitMs, conversionToCommitMs: t.conversionToCommitMs,
+                    hostPasteMs: t.lastHostPasteMs, dispatchMs, maxTurnMs: t.maxTurnMs, commitMs: t.commitMs, conversionToCommitMs: t.conversionToCommitMs,
                     eventToReviewReadyMs: performance.now() - eventStart, revision: s.source.revision, head: p.selection.head, rows: metrics.map(m => m.viewport.rows),
                     comparisonRows: c.workingViewport.rows + c.referenceViewport.rows, maxReadUnits: Math.max(...metrics.map(m => m.viewport.readUnits), c.workingViewport.readUnits, c.referenceViewport.readUnits),
                     inputUnits: p.metrics.inputUnits, work: t.work, exports: s.source.exports, background: s.activity.background, focused: document.activeElement === input
