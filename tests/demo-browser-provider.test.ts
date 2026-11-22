@@ -5,6 +5,7 @@ import { TextDocument } from "vscode-languageserver-protocol/browser.js";
 import { BrowserLanguageService } from "../examples/demo/browser-language-service.ts";
 import { changeDemoDocument } from "../examples/demo/document-changes.ts";
 import { demoSample } from "../examples/demo/samples.ts";
+import { parseDocumentation } from "../src/core/documentation.ts";
 import type { CompletionList, CompletionItem } from "vscode-languageserver-protocol/browser.js";
 
 test("provider mirrors apply each change against the preceding text and preserve captured versions", () => {
@@ -52,6 +53,31 @@ test("browser TypeScript occurrences distinguish writes and reads in raw UTF-16 
         assert.equal(initialized.capabilities.documentHighlightProvider, true);
         const result = provider.request("textDocument/documentHighlight", { textDocument: { uri }, position: document.positionAt(text.indexOf("value")) }) as { range: { start: { line: number; character: number }; end: { line: number; character: number } }; kind: number }[];
         assert.deepEqual(result.map(item => ({ text: document.getText(item.range), kind: item.kind })), [{ text: "value", kind: 3 }, { text: "value", kind: 3 }, { text: "value", kind: 2 }]);
+    } finally { provider.dispose(); }
+});
+
+test("browser signature help formats JSDoc links in prose and preserves code examples", () => {
+    const provider = new BrowserLanguageService({}, ["main.ts"]), uri = "file:///sttropez/main.ts";
+    const text = ["/** See {@linkcode prices} and {@link prices | the prices}.",
+        " * {@link https://www.typescriptlang.org/docs/ | TS guide}",
+        " * Literal `{@linkcode prices}`.", " * ~~~ts", " * {@linkcode prices}", " * ~~~",
+        " * @param prices Use {@linkcode prices}.", " */", "function total(prices: number[]) {}", "total("].join("\n");
+    try {
+        provider.notify("textDocument/didOpen", { textDocument: { uri, languageId: "typescript", version: 1, text } });
+        const doc = TextDocument.create(uri, "typescript", 1, text);
+        type Markdown = { kind: "markdown"; value: string };
+        const response = provider.request("textDocument/signatureHelp", { textDocument: { uri }, position: doc.positionAt(text.length) }) as
+            { signatures: { documentation: Markdown; parameters: { documentation: Markdown }[] }[] };
+        const signature = response.signatures[0]!;
+        assert.deepEqual(parseDocumentation([signature.documentation]), [
+            { kind: "paragraph", children: [{ kind: "text", value: "See " }, { kind: "code", value: "prices" },
+                { kind: "text", value: " and the prices.\n" }, { kind: "link", target: "https://www.typescriptlang.org/docs/",
+                    title: "https://www.typescriptlang.org/docs/", children: [{ kind: "text", value: "TS guide" }] },
+                { kind: "text", value: "\nLiteral " }, { kind: "code", value: "{@linkcode prices}" }, { kind: "text", value: "." }] },
+            { kind: "code", language: "ts", value: "{@linkcode prices}" },
+        ]);
+        assert.deepEqual(parseDocumentation([signature.parameters[0]!.documentation]), [{ kind: "paragraph", children: [
+            { kind: "text", value: "Use " }, { kind: "code", value: "prices" }, { kind: "text", value: "." }] }]);
     } finally { provider.dispose(); }
 });
 

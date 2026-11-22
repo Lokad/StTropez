@@ -1,5 +1,6 @@
 import ts from "typescript-demo";
 import { typeScriptFoldingRanges } from "./typescript-folds.ts";
+import { typeScriptDocumentation } from "./typescript-documentation.ts";
 import { changeDemoDocument } from "./document-changes.ts";
 import { TextDocument } from "vscode-languageserver-protocol/browser.js";
 import { RpcError } from "../../src/protocol/index.ts";
@@ -141,7 +142,7 @@ export class BrowserLanguageService {
             if (!stored) throw new RpcError(-32801, "Completion is no longer available.");
             const file = this.file(stored.uri), entry = stored.entry;
             const details = this.service.getCompletionEntryDetails(file.path, stored.offset, entry.name, {}, entry.source, {}, entry.data);
-            return { ...p, detail: display(details?.displayParts, Infinity), documentation: display(details?.documentation, Infinity) };
+            return { ...p, detail: display(details?.displayParts, Infinity), documentation: typeScriptDocumentation(details?.documentation, false, Infinity) };
         }
         if (method === "textDocument/codeAction") {
             const p = object(params), file = this.file(object(p.textDocument).uri), at = range(p.range);
@@ -187,7 +188,7 @@ export class BrowserLanguageService {
         }
         if (method === "textDocument/hover") {
             const info = this.service.getQuickInfoAtPosition(file.path, offset);
-            return info ? { contents: [{ language: "typescript", value: display(info.displayParts) }, display(info.documentation)], range: this.span(file, info.textSpan) } : null;
+            return info ? { contents: [{ language: "typescript", value: display(info.displayParts) }, typeScriptDocumentation(info.documentation)], range: this.span(file, info.textSpan) } : null;
         }
         if (method === "textDocument/signatureHelp") {
             const info = this.service.getSignatureHelpItems(file.path, offset, undefined); if (!info) return null;
@@ -195,9 +196,9 @@ export class BrowserLanguageService {
                 let label = display(item.prefixDisplayParts); const separator = display(item.separatorDisplayParts);
                 const parameters = item.parameters.map((parameter, i) => {
                     if (i) label += separator; const from = label.length; label += display(parameter.displayParts);
-                    return { label: [from, label.length], documentation: { kind: "markdown", value: display(parameter.documentation) } };
+                    return { label: [from, label.length], documentation: { kind: "markdown", value: typeScriptDocumentation(parameter.documentation) } };
                 });
-                label += display(item.suffixDisplayParts); return { label, parameters, documentation: { kind: "markdown", value: display(item.documentation) } };
+                label += display(item.suffixDisplayParts); return { label, parameters, documentation: { kind: "markdown", value: typeScriptDocumentation(item.documentation) } };
             }) };
         }
         if (method === "textDocument/definition" || method === "textDocument/references") {

@@ -168,6 +168,7 @@ export async function runDemoDocumentation(page: Page, url = "/") {
     };
     await expect(hover.locator("strong").first()).toHaveText("percentage discount");
     await expect(hover.locator("em").first()).toHaveText("ten percent"); await expect(hover.locator("ul li")).toHaveCount(2);
+    await expect(hover.locator("ul li").first()).toHaveText("Keeps price unchanged.");
     await expect(hover.locator("pre code").last()).toContainText("applyDiscount(50, 0.1)");
     await expect.poll(() => clearsLine(hover)).toBe(true);
     expect(await hover.evaluate(node => { const box = node.getBoundingClientRect(); return box.top >= 0 && box.bottom <= innerHeight && box.left >= 0 && box.right <= innerWidth; })).toBe(true);
@@ -187,6 +188,7 @@ export async function runDemoDocumentation(page: Page, url = "/") {
     const signature = page.getByRole("tooltip", { name: "Signature help", exact: true });
     await expect(signature.getByLabel("Active signature parameter")).toContainText("rate");
     await expect(signature.locator("strong").first()).toHaveText("percentage discount"); await expect(signature.locator("ul li")).toHaveCount(2);
+    await expect(signature.locator("ul li").first()).toHaveText("Keeps price unchanged.");
     await expect(signature.locator(".st-documentation").last().locator("code")).toHaveText(["0", "1"]);
     const overload = signature.getByLabel("Active signature parameter");
     const cursor = page.locator("#cursor"), callPosition = await cursor.innerText();

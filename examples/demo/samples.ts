@@ -146,7 +146,7 @@ for (const quote of shippingQuotes(parcel, "local")) {
         description: "Inspect applyDiscount with Hover or Code → Inspect type. Inside the call, open Code → Signature help and use ↑ or ↓ to switch between the percentage and fixed-amount overloads.",
         files: { "documentation.ts": [
             "/**", " * Apply a **percentage discount** to a price.", " *", " * Use a fraction such as `0.1` for *ten percent*.", " *",
-            " * - Keeps the original price unchanged.", " * - Returns a new discounted value.", " *", " * ```typescript", " * applyDiscount(50, 0.1); // 45", " * ```", " *",
+            " * - Keeps {@linkcode price} unchanged.", " * - Returns a new discounted value.", " *", " * ```typescript", " * applyDiscount(50, 0.1); // 45", " * ```", " *",
             " * [TypeScript function guide](https://www.typescriptlang.org/docs/handbook/2/functions.html)", " *",
             " * @param price The **original price** before the discount.", " * @param rate A fraction between `0` and `1`.", " */",
             "export function applyDiscount(price: number, rate: number): number;",

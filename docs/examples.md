@@ -122,7 +122,8 @@ opens. The last choice appears, and returning to a sample keeps its edits. [Samp
   `sttropez/readDocument` reads known sample files. Save and recovery include editable unopened
   files and exclude declarations marked read-only.
 - **Documentation & help links** and **Diagnostic details** — Inspect JSDoc or a handbook link,
-  then compare a compiler error and a host warning. Related locations page in groups of 16. Opaque
+  then compare a compiler error and a host warning. The static provider displays JSDoc link labels
+  in prose and preserves tags inside code examples. Related locations page in groups of 16. Opaque
   provider data stays hidden and is never executed.
 - **Snippets & lazy completion** — In `templates.ts`, press Ctrl+End, then Ctrl+Space. Tab through
   linked fields, use Alt+Up/Down for choices and Escape to keep the text. Resolution supplies the
