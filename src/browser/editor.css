@@ -77,6 +77,8 @@
 .st-viewport-measure-host { position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; contain: strict; pointer-events: none; }
 .st-viewport-command-measure { position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; contain: strict; visibility: hidden; pointer-events: none; }
 .st-matching-bracket { background: var(--st-bracket-background, #397e8440); outline: 1px solid var(--st-bracket-border, #5cb9b3); outline-offset: -1px; }
+.st-snippet-field { outline: 1px dotted var(--st-snippet-field-border, currentColor); outline-offset: -1px; }
+.st-viewport-row .st-snippet-field[data-ornament="point"]::after { height: 1em; width: .3em; border: 1px dotted var(--st-snippet-field-border, currentColor); }
 .st-character-warning { background: var(--st-character-warning-background, #d89b2430); outline: 1px dotted var(--st-character-warning-border, #e9ad43); }
 .st-viewport .st-viewport-selected { background-color: var(--st-selection, #24496b); padding-block: var(--st-selection-pad-top, 0) var(--st-selection-pad-bottom, 0); }
 .st-viewport-row .st-selected-line-break { display: inline-block; width: 0; height: 1lh; vertical-align: top; }

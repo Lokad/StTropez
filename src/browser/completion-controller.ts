@@ -9,6 +9,7 @@ import type { SnippetStop } from "../core/snippets.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import type { FoldIndex } from "../core/folding.ts";
 import type { TextEditor } from "./text-editor.ts";
+import type { DecorationLayer } from "./decoration-layers.ts";
 import { RpcError, createLspCompletionClient, lspCompletionPlan } from "../protocol/index.ts";
 import type { LspCall, LspCompletion, LspCompletionBatch, LspCompletionResolution, LspCompletions, LspCompletionFallback, LspDocument, LspScopeAccess, LspWorkspace, JsonValue } from "../protocol/index.ts";
 import { Store } from "../core/observable.ts";
@@ -53,6 +54,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     type SnippetSession = { stops: readonly SnippetStop[]; active: number; revision: number; authority: ResourceMetadata;
         indentation: Job["indentation"]; maxUnits: number; primaryGroup: number };
     let snippet: SnippetSession | undefined, snippetChanging = false;
+    let fieldMarkers: DecorationLayer | undefined;
     let publishedSession: SnippetSession | undefined, field: CompletionSnippet | null = null;
     const owner = editor.element.ownerDocument, clock = owner.defaultView!;
     const emptyMessages: readonly string[] = Object.freeze([]);
@@ -101,12 +103,18 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
             const captured = publishedSession = snippet;
             if (captured) {
                 const stop = captured.stops[captured.active]!;
+                fieldMarkers ??= editor.decorations.add({ name: "snippet-fields", order: 25, minimap: false });
+                fieldMarkers.set(captured.revision, captured.stops.flatMap(other => other === stop || other.index === 0 ? []
+                    : other.ranges.map(({ from, to }) => ({ from, to, className: "st-snippet-field" }))));
                 const liveField = () => { notifications.assertWritable(); return !disposed && snippetCurrent(captured) && idle(); };
                 field = Object.freeze({ stop: stop.index, position: captured.active + 1, count: captured.stops.length - 1,
                     choices: stop.choices, choiceIndex: snippetChoiceIndex(captured, stop),
                     move: direction => liveField() && moveSnippet(direction), choose: index => liveField() && chooseSnippet(index),
                     finish: () => { if (!liveField()) return false; cancel(); return true; } });
-            } else field = null;
+            } else {
+                fieldMarkers?.dispose(); fieldMarkers = undefined;
+                field = null;
+            }
         }
         const selected = job?.visible[job.choice]; notifications.publish(cell, Object.freeze({ message, connected: scope.getSnapshot().phase === "ready", pending: !!job && (job.pendingList || !!job.resolution || !!selected?.resolve),
         offerText: selected?.label ?? null, choices: labels, choiceIndex: job?.choice ?? 0, completionAt: (index: number) => completionAt(generation, index),

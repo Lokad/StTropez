@@ -528,22 +528,26 @@ export async function runDemoEditingRules(page: Page, url = "/") {
 /** The labeled template provider shares the public completion/input/history paths. */
 export async function runDemoSnippets(page: Page, url = "/") {
     page.on("dialog", dialog => dialog.accept());
-    await page.goto(url); await page.locator("#sample").selectOption("templates");
+    await page.goto(`${url}${url.includes("?") ? "&" : "?"}sample=templates`);
     const source = page.getByRole("textbox", { name: "templates.ts", exact: true }), editor = page.locator("#editor");
+    const markers = editor.locator(".st-snippet-field");
     const controls = page.getByRole("region", { name: "Snippet controls", exact: true });
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
-    const request = async () => { await source.press("Control+End"); await source.press("Control+Space");
+    const request = async (input = source) => { await input.press("Control+End"); await input.press("Control+Space");
         await expect(page.getByRole("option", { name: "Template · linked placeholders", exact: true })).toBeVisible(); };
     await request(); await expect(page.locator(".demo-completion-count")).toContainText("1 unsupported");
     await source.press("Tab"); await expect(controls).toContainText("Field 1 of 3");
+    await expect(markers).toHaveText(["draft", "0"]); await expect(markers.first()).toHaveCSS("outline-style", "dotted");
     await expect(editor).toContainText("console.log(record)");
     await source.press("Control+z"); await expect(controls).toBeHidden(); await expect(editor).not.toContainText("console.log");
+    await expect(markers).toHaveCount(0);
     await source.press("Control+y"); await expect(editor).toContainText("console.log(record)"); await expect(controls).toBeHidden();
     await page.getByRole("button", { name: "Reset sample", exact: true }).click(); await request(); await source.press("Tab");
     await expect(controls).toContainText("Field 1 of 3"); await source.pressSequentially("entry");
     await expect(editor).toContainText("const entry"); await expect(editor).toContainText("console.log(entry)");
     const previousField = await controls.getByRole("button", { name: "Finish snippet" }).elementHandle();
     await source.press("Tab"); await expect(controls).toContainText("Field 2 of 3");
+    await expect(markers).toHaveText(["entry", "0", "entry"]);
     await previousField!.evaluate(button => button.dispatchEvent(new MouseEvent("click", { bubbles: true }))); await previousField!.dispose();
     await expect(controls).toContainText("Field 2 of 3");
     await source.press("Alt+ArrowDown"); await expect(controls.getByRole("button", { name: "ready", exact: true })).toHaveAttribute("aria-pressed", "true");
@@ -559,6 +563,9 @@ export async function runDemoSnippets(page: Page, url = "/") {
     await source.press("Tab"); await controls.getByRole("button", { name: "archived", exact: true }).click();
     await expect(source).toBeFocused(); await expect(editor).toContainText('state: "archived"');
     await source.press("Tab"); await expect(controls).toContainText("Field 3 of 3");
+    await source.press("Backspace"); await source.press("Shift+Tab");
+    await expect(editor.locator('.st-snippet-field[data-ornament="point"]')).toHaveCount(1);
+    await source.press("Tab");
     await source.evaluate(node => {
         const event = new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: new DataTransfer() });
         event.clipboardData!.setData("text/plain", "42");
@@ -566,6 +573,7 @@ export async function runDemoSnippets(page: Page, url = "/") {
         node.dispatchEvent(event);
     });
     await expect(editor).toContainText("value: 42"); await source.press("Tab"); await expect(controls).toBeHidden();
+    await expect(markers).toHaveCount(0);
     await source.pressSequentially("// Finished"); await expect(editor).toContainText("console.log(項目);// Finished");
     await source.press("Control+z"); await expect(editor).not.toContainText("// Finished");
     await page.getByRole("button", { name: "Reset sample", exact: true }).click(); await request(); await source.press("ArrowDown"); await source.press("Tab");
@@ -575,10 +583,17 @@ export async function runDemoSnippets(page: Page, url = "/") {
     await source.press("Control+z"); await expect(editor).not.toContainText("TemplateRecord"); await expect(controls).toBeHidden();
     await request(); await source.press("ArrowDown"); await source.press("Enter"); await expect(controls).toContainText("Field 1 of 2");
     await source.press("Escape"); await expect(controls).toBeHidden(); await source.pressSequentially("other");
+    await expect(markers).toHaveCount(0);
     await expect(editor).toContainText("const other:"); await expect(editor).toContainText("console.log(result)");
-    await page.getByRole("button", { name: "Reset sample", exact: true }).click(); await request(); await source.press("Tab"); await expect(controls).toBeVisible();
+    await page.getByRole("button", { name: "Reset sample", exact: true }).click();
+    await page.locator('[data-panel="changes"]').click();
+    const panes = page.locator(".st-comparison-panes > section"), working = panes.last().getByRole("textbox");
+    await request(working); await working.press("Tab"); await expect(controls).toBeVisible();
+    await expect(panes.last().locator(".st-snippet-field")).toHaveText(["draft", "0"]);
+    await expect(panes.first().locator(".st-snippet-field")).toHaveCount(0);
     await page.locator('[data-file="types.ts"]').click(); await expect(controls).toBeHidden();
-    await page.locator('[data-file="templates.ts"]').click(); await expect(editor).toContainText("console.log(record)"); await expect(controls).toBeHidden();
+    await page.locator('[data-file="templates.ts"]').click(); await expect(panes.last()).toContainText("console.log(record)"); await expect(controls).toBeHidden();
+    await expect(panes.locator(".st-snippet-field")).toHaveCount(0);
     return Object.freeze({ linkedEdits: true, tabTraversal: true, choices: true, finalCaret: true, syntheticComposition: true, syntheticPaste: true,
         lazyPrimaryAndAdditionalEdits: true, history: true, escapeAndViewLifetime: true, native: "IME and OS clipboard UNVERIFIED" });
 }

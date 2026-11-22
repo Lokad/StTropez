@@ -187,6 +187,10 @@ Enter replaces, Tab inserts and Escape dismisses the choices or active snippet. 
 neither is visible, Escape cancels pending requests and reaches the editor. Escape then Tab or
 Shift+Tab leaves the view.
 
+During a snippet, Tab selects the next field. Other editable fields have a dotted outline,
+including a small marker for an empty field. The final caret stop has no marker. Set
+`--st-snippet-field-border` to change the outline color.
+
 Read `completionAt(index)` from the snapshot that supplied the labels. Only rendered choices
 need handles. `select()` and `accept(mode)` act on that item. Filtering the list expires its
 handles. Diagnostics, selection and detail updates retain the same `choices` array.
