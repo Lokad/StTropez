@@ -20,7 +20,7 @@ separately. Incoming edits and command execution have their own
 | Rename | `createRenameController`, `createLspRenameClient` | `textDocument/rename` |
 | Code actions | `createCodeActionController`, `createLspActionClient` | `textDocument/codeAction` |
 | Document links | `createDocumentLinkController`, `createLspLinkClient` | `textDocument/documentLink` |
-| Document colors | `createLspColorClient` | `textDocument/documentColor` and `textDocument/colorPresentation` |
+| Document colors | `createDocumentColorController`, `createLspColorClient` | `textDocument/documentColor` and `textDocument/colorPresentation` |
 | Occurrences | `createLspHighlightClient`; browser `createLspHighlightController` | `textDocument/documentHighlight` |
 | Folding | [Folding client and discovery controller](folding.md#language-server-discovery) | `textDocument/foldingRange` |
 
@@ -598,6 +598,27 @@ a new target and tooltip while requiring the original range and identity.
 
 ### Document colors
 
+`createDocumentColorController(editor, provider)` discovers colours for a mounted editor.
+Call `request()`, choose a reference from `getSnapshot().colors` and call its `preview(rgba)`.
+The first returned presentation is selected. Another presentation's `select()` creates a new
+review. Bind Apply to the review the user sees.
+
+```ts
+import type { DocumentColorController } from "sttropez/browser";
+
+export function renderApply(controller: DocumentColorController, button: HTMLButtonElement) {
+    const { review } = controller.getSnapshot();
+    button.disabled = !review?.canApply;
+    button.onclick = review?.apply ?? null;
+}
+```
+
+Call `dismissPreview()` when the picker value changes. Dismissing a pending provider call ends
+discovery. You can reuse a completed list after dismissing its review or moving the caret.
+Changing the selected format, source, selection, folds or edit permission invalidates the old
+Apply action. Read-only sources allow review. A successful Apply preserves relative carets inside
+replaced literals and groups all edits into one Undo. Matching text preserves revision and history.
+
 `createLspColorClient(provider).run(document, prepare?)` returns `{ items, isCurrent, presentations }`.
 `decodeLspDocumentColors` validates every range and RGBA value. `decodeLspColor` requires finite
 channels in `[0, 1]`. `presentations(item, rgba, prepare?)` requires an item from the captured list
@@ -608,10 +629,6 @@ edit uses the literal presentation label at the captured color range. An invalid
 overlap or out-of-document edit rejects the batch. Empty choices are unavailable for application.
 Labels need not be color literals; the proposed-color input grammar belongs to the host.
 
-Keep the color client alive while the user previews swatches. When they choose a presentation, check
-the captured revision and permission, map the selections and apply its edits in one undo step. If the
-proposed color or source changes, cancel and ask for new choices. Applying the current color without
-changing the text preserves revision, history and selections.
 
 ### Occurrences
 

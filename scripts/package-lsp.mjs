@@ -79,7 +79,12 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         assert.equal(await oldLink.evaluate(open => open?.(new PointerEvent("click"))), false); await oldLink.dispose();
         assert.equal((await state()).notes.linkUri, undefined); await button("Open link").click(); await expect.poll(async () => (await state()).notes.linkUri).toBe(`consumer+opaque:project/${encodeURIComponent((await state()).companionResource)}`);
         await button("Colors").click(); await expect.poll(async () => (await state()).notes.colorPresentations ?? 0).toBeGreaterThan(0);
-        const beforeColor = await text(), colorDepth = (await state()).history.undoDepth; await button("Apply color").click(); await expect.poll(async () => (await state()).notes.colorApplied).toBe(true);
+        const beforeColor = await text(), colorDepth = (await state()).history.undoDepth;
+        const oldColor = await button("Apply color").evaluateHandle(node => /** @type {HTMLButtonElement} */ (node).onclick?.bind(node));
+        await button("Preview translucent color").click(); await expect(page.locator("#result")).toContainText("rgba(1, 2, 3, 0.5)");
+        assert.equal(await oldColor.evaluate(apply => apply?.(new PointerEvent("click"))), false); await oldColor.dispose();
+        assert.equal(await text(), beforeColor); assert.equal((await state()).history.undoDepth, colorDepth);
+        await button("Apply color").click(); await expect.poll(async () => (await state()).notes.colorApplied).toBe(true);
         assert.equal((await state()).history.undoDepth, colorDepth + 1); assert.equal(await text(), "// color presentation\r\n" + beforeColor.replace("#abc", "rgba(1, 2, 3, 0.5)")); await input.press("Control+z"); assert.equal(await text(), beforeColor);
         const counts = await page.evaluate(() => window.publicLsp.custom("fixture/synchronization", {}));
         assert.ok(counts && typeof counts === "object" && !Array.isArray(counts)

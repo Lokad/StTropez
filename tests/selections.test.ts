@@ -1,3 +1,4 @@
+import { mapReplacementSelections } from "../src/core/selections.ts";
 import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
@@ -176,4 +177,11 @@ test("seeded selection replacements and shared history match an independent stri
     }
     assert.equal(workspace.document(source.documentId).buffer.readMetrics().textExports, 0);
     view.dispose(); workspace.releaseResource(source.id, true);
+});
+
+test("replacement selection mapping retains direction, complete sets and name-relative positions without splitting a surrogate", () => {
+    const before = createSelectionSet(30, [{ anchor: 11, head: 8 }, { anchor: 30, head: 30 }], 0), edits = [{ from: 6, to: 15, insert: "inventory" }];
+    assert.deepEqual(mapReplacementSelections(30, before, edits), before);
+    const short = mapReplacementSelections(30, before, [{ ...edits[0]!, insert: "x" }]); assert.deepEqual(short.ranges.map(r => [r.anchor, r.head]), [[7, 7], [22, 22]]); assert.equal(short.primary, 0);
+    const astral = mapReplacementSelections(10, createSelectionSet(10, [{ anchor: 1, head: 3 }]), [{ from: 0, to: 5, insert: "𐐀name" }]); assert.deepEqual(astral.ranges.map(r => [r.anchor, r.head]), [[0, 3]]);
 });

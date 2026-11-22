@@ -11,14 +11,13 @@ import type { HoverHostOptions } from "../../examples/hosts/hover.ts";
 import type { NavigationHostOptions } from "../../examples/hosts/navigation.ts";
 import type { DocumentId, Workspace } from "../../src/index.ts";
 import type { LspSessionOptions } from "../../src/protocol/index.ts";
-import { lspColorBackend } from "../../examples/shared/language/lsp-language-clients.ts";
 import type { SignatureHostOptions } from "../../examples/hosts/signature.ts";
 import type { LinkHostOptions } from "../../examples/hosts/document-links.ts";
-import type { ColorBackendFactory } from "../../examples/hosts/document-colors.ts";
+import type { ColorHostOptions } from "../../examples/hosts/document-colors.ts";
 import { fixtureDocumentUri } from "./document-uri.ts";
 
 /** Explicit development-host choice. Generic session/feature code has no fixture endpoint policy. */
-export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspace; provider: ProviderFactory; hover: HoverHostOptions; navigation: NavigationHostOptions; rename: RenameHostOptions; actions: ActionHostOptions; project: LspProjectFactory; signature: SignatureHostOptions; links: LinkHostOptions; colors: ColorBackendFactory }> {
+export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspace; provider: ProviderFactory; hover: HoverHostOptions; navigation: NavigationHostOptions; rename: RenameHostOptions; actions: ActionHostOptions; project: LspProjectFactory; signature: SignatureHostOptions; links: LinkHostOptions; colors: ColorHostOptions }> {
     const url = new URL("/lsp-fixture", location.href); url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const connect: LspSessionOptions["connect"] = context => { const abort = new AbortController(), stop = context.onCancel(() => abort.abort()); return openWebSocketTransport(url.href, { signal: abort.signal }).finally(stop); };
     const uri = (workspace: Workspace, id: DocumentId) => fixtureDocumentUri(workspace.resourceForDocument(id).id, id);
@@ -33,10 +32,8 @@ export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspa
         signature: { provider: connection, prepare: (delay, fault) => session => connection.prepareRequest(session, "textDocument/signatureHelp", { delay, ...(fault ? { fault } : {}) }) },
         links: { provider: connection, uri: id => uri(owner, id), prepare: (aliases, delay, fault) => session =>
             connection.prepareRequest(session, "textDocument/documentLink", { aliases: [...aliases], delay, ...(fault ? { fault } : {}) }) },
-        colors: (_clock, changed) => lspColorBackend(owner, connection, changed, {
-            discovery: input => session => connection.prepareRequest(session, "textDocument/documentColor", { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) }),
-            presentation: input => session => connection.prepareRequest(session, "textDocument/colorPresentation", { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) }),
-        }),
+        colors: { provider: connection, prepare: (kind, delay, fault) => session =>
+            connection.prepareRequest(session, kind === "discovery" ? "textDocument/documentColor" : "textDocument/colorPresentation", { delay, ...(fault ? { fault } : {}) }) },
         provider: (editor, options) => createLspProviderController(editor, { ...options, provider: connection,
             beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/completion", configuration, { replacePending: true }) }),
         hover: { provider: connection, beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/hover", configuration) },

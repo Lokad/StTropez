@@ -1,7 +1,7 @@
 import { Workspace } from "sttropez";
-import type { DocumentId, DocumentSnapshot, TextEdit } from "sttropez";
-import { createCodeActionController, createCompletionController, createDiagnosticController, createDocumentLinkController, createHoverController, createNavigationController, createRenameController, createSignatureController, mountAnchoredOverlay, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
-import { LspWorkspace, createLspColorClient } from "sttropez/protocol";
+import type { DocumentId } from "sttropez";
+import { createCodeActionController, createCompletionController, createDiagnosticController, createDocumentColorController, createDocumentLinkController, createHoverController, createNavigationController, createRenameController, createSignatureController, mountAnchoredOverlay, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
+import { LspWorkspace } from "sttropez/protocol";
 
 const workspace = new Workspace();
 const source = workspace.createTextResource({ scope: "consumer", resource: "source", variant: "working" }, "Source", { value: 'const saMORE = 1; // TODO\r\ncatalogue;\r\nlookup("a", );\r\nimport "sample-utils";\r\nconst color = "#abc";' });
@@ -23,7 +23,7 @@ const diagnostics = createDiagnosticController(editor, provider, { autoConnect: 
 const diagnosticHint = document.createElement("aside"); diagnosticHint.id = "diagnostic-hint"; document.body.append(diagnosticHint);
 const hint = mountAnchoredOverlay(editor, diagnosticHint);
 const hover = createHoverController(editor, provider, { diagnostics });
-const signature = createSignatureController(editor, provider), colors = createLspColorClient(provider);
+const signature = createSignatureController(editor, provider), colors = createDocumentColorController(editor, provider);
 const project = () => [workspace.document(source.documentId), workspace.document(companion.documentId)];
 const links = createDocumentLinkController(editor, provider, { documents: project });
 const rename = createRenameController(editor, provider, { documents: project });
@@ -33,7 +33,6 @@ const text = () => { const buffer = workspace.document(source.documentId).buffer
 const position = () => text().indexOf("catalogue") + 2;
 const result = document.getElementById("result")!, status = document.getElementById("status")!, choices = document.getElementById("choices")!;
 let disposed = false;
-let colorPlan: Readonly<{ document: DocumentSnapshot; edits: readonly TextEdit[]; isCurrent: () => boolean }> | undefined;
 const notes: { hover?: string; navigation?: string; renameEdits?: number; actions?: number; resolved?: boolean; signature?: string; linkUri?: string; colorPresentations?: number; colorApplied?: boolean } = {};
 const command = (label: string, invoke: () => void | Promise<unknown>) => { const button = document.createElement("button"); button.textContent = label;
     button.onclick = () => { void Promise.resolve().then(invoke).catch(error => { result.textContent = String(error); }); }; document.getElementById("controls")!.append(button); return button; };
@@ -106,12 +105,18 @@ links.subscribe(() => {
     openLink.disabled = state.status !== "ready" || !link;
     openLink.onclick = link ? () => link.open(uri => { notes.linkUri = uri; result.textContent = uri; }) : null;
 });
-command("Colors", async () => { const document = workspace.document(source.documentId), value = await colors.run(document), choices = await value.presentations(value.items[0]!, { red: 1 / 255, green: 2 / 255, blue: 3 / 255, alpha: .5 });
-    if (!value.isCurrent() || !choices[0]) throw new Error("Color presentation unavailable"); notes.colorPresentations = choices.length; colorPlan = { document, edits: choices[0].edits, isCurrent: value.isCurrent }; result.textContent = `Color choices: ${choices.length}`; });
-command("Apply color", () => { if (!colorPlan?.isCurrent()) throw new Error("Color preview expired"); const metadata = workspace.resourceForDocument(source.documentId).metadata.getSnapshot();
-    if (!metadata.capabilities.edit.includes("host") || !metadata.capabilities.edit.includes("human") || metadata.editLock !== null) throw new Error("Color target unavailable");
-    const applied = workspace.edit({ documentId: source.documentId, expectedRevision: colorPlan.document.revision, edits: colorPlan.edits, origin: "host", view: editor.view, history: { kind: "refactor" } });
-    if (!applied.applied) throw new Error(applied.reason); notes.colorApplied = true; result.textContent = "Color applied"; });
+command("Colors", async () => {
+    await colors.request(); await colors.getSnapshot().colors[0]?.preview({ red: 0, green: 1, blue: 0, alpha: 1 });
+});
+command("Preview translucent color", () => colors.getSnapshot().colors[0]?.preview({ red: 1 / 255, green: 2 / 255, blue: 3 / 255, alpha: .5 }));
+const applyColor = command("Apply color", () => {});
+applyColor.disabled = true;
+colors.subscribe(() => {
+    const state = colors.getSnapshot(), review = state.review;
+    notes.colorPresentations = state.presentations.length; notes.colorApplied = state.status === "applied";
+    applyColor.disabled = !review?.canApply; applyColor.onclick = review?.apply ?? null;
+    result.textContent = review ? review.edits.map(edit => edit.insert).join("\n") : state.status === "applied" ? "Color applied" : state.message;
+});
 const dispose = () => { if (disposed) return; disposed = true; stop(); controller.dispose(); diagnostics.dispose(); hover.dispose(); navigation.dispose(); rename.dispose(); actions.dispose(); signature.dispose(); links.dispose(); colors.dispose(); provider.dispose(); editor.dispose(); };
 const bridge = { text, select: (at: number) => editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: at, head: at }),
     state: () => ({ provider: provider.snapshot(), editor: controller.getDiagnostics(), completion: controller.getSnapshot(), history: workspace.observeHistory(source.documentId).getSnapshot(), diagnostics: workspace.diagnostics(), notes, companion: companion.documentId, companionResource: companion.id, metrics: editor.snapshot(), errors }),

@@ -75,6 +75,24 @@ export function mapSelectionRanges(mapping: PositionMapping, value: SelectionSet
     }), value.primary);
 }
 
+/** Preserve each endpoint's relative offset inside a replacement, including backwards selections. */
+export function mapReplacementSelections(length: number, selections: SelectionSet, edits: readonly TextEdit[]): SelectionSet {
+    const map = (offset: number) => {
+        let delta = 0;
+        for (const edit of edits) {
+            if (offset < edit.from) break;
+            if (offset < edit.to) {
+                let relative = Math.min(offset - edit.from, edit.insert.length);
+                if (relative > 0 && relative < edit.insert.length && /[\ud800-\udbff]/.test(edit.insert[relative - 1]!) && /[\udc00-\udfff]/.test(edit.insert[relative]!)) relative--;
+                return edit.from + delta + relative;
+            }
+            delta += edit.insert.length - (edit.to - edit.from);
+        }
+        return offset + delta;
+    };
+    return createSelectionSet(length + edits.reduce((n, e) => n + e.insert.length - (e.to - e.from), 0), selections.ranges.map(r => ({ ...r, anchor: map(r.anchor), head: map(r.head) })), selections.primary);
+}
+
 /** Plan one original-coordinate replacement per normalized range; text may differ per range. */
 export function planSelectionEdits(length: number, selections: SelectionSet, replacement: string | readonly string[]): SelectionEditPlan {
     const value = createSelectionSet(length, selections.ranges, selections.primary);

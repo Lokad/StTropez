@@ -113,24 +113,17 @@ test("language result callbacks cannot follow a newer view or diagnostic batch w
     assert.equal(first.query.bind, tools.queryRef); assert.equal(first.replacement.bind, tools.replacementRef); assert.equal(first.bind, tools.toolsRef);
 });
 
-test("color presentation retains its confirmation tuple and resource while equivalent rows keep their identity", () => {
-    const inspected: [number | null, number][] = [], applied: [number | null, number | null, string][] = [], opened: DocumentId[] = [];
-    const firstId = "first" as DocumentId, secondId = "second" as DocumentId;
+test("color controls keep the reference and reviewed Apply from the displayed snapshot", () => {
+    const calls: string[] = [];
     const tools: Parameters<typeof documentColorsPanelModel>[0] = { discover: noop, cancel: noop, previousPage: noop, nextPage: noop, disconnect: noop, reconnect: noop,
-        bindList: noop, bindValue: noop, setValue: noop, preview: noop, setPresentation: noop,
-        inspect: (token, ordinal) => { inspected.push([token, ordinal]); }, apply: (token, preview, id) => { applied.push([token, preview, id]); }, openChanged: id => { opened.push(id); } };
-    const state: DocumentColorsSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, pending: false, token: 3, previewToken: 4, view: "primary",
-        status: "presentations", message: "Captured color", work: 1, total: 1, count: 1, page: 0, selected: 0, value: "#abc", css: "rgb(170, 187, 204)", presentation: "hex", canPreview: true, canApply: true,
-        colors: Object.freeze([Object.freeze({ from: 1, to: 5, text: "#abc", label: "#abc", color: Object.freeze({ red: 170 / 255, green: 187 / 255, blue: 204 / 255, alpha: 1 }), ordinal: 0, line: 1, column: 2, css: "rgb(170, 187, 204)" })]),
-        choices: Object.freeze([Object.freeze({ id: "hex", label: "Hex" })]), edits: Object.freeze([]), changed: Object.freeze({ document: firstId, title: "First" }) });
-    const first = documentColorsPanelModel(tools, state), pending = documentColorsPanelModel(tools, { ...state, pending: true, selected: -1, colors: state.colors.map(color => ({ ...color })) });
-    assert.equal(first.results.retentionKey(), pending.results.retentionKey()); assert.equal(first.results.disabled, false); assert.equal(pending.results.disabled, true);
-    assert.equal(first.results.isSelected(0), true); assert.equal(pending.results.isSelected(0), false);
-    const newer = documentColorsPanelModel(tools, { ...state, token: 5, previewToken: 6, presentation: "rgba", changed: { document: secondId, title: "Second" } });
-    assert.notEqual(first.results.retentionKey(), newer.results.retentionKey());
-    newer.results.items()[0]!.invoke(); first.results.items()[0]!.invoke(); newer.apply.invoke(); first.apply.invoke(); newer.changed.invoke(); first.changed.invoke();
-    assert.deepEqual(inspected, [[5, 0], [3, 0]]); assert.deepEqual(applied, [[5, 6, "rgba"], [3, 4, "hex"]]); assert.deepEqual(opened, [secondId, firstId]);
-    assert.equal(first.results.bind, tools.bindList); assert.equal(first.value.bind, tools.bindValue);
+        bindList: noop, bindValue: noop, setValue: noop, preview: noop, openChanged: noop };
+    const state: DocumentColorsSnapshot = { available: true, connected: true, disconnected: false, pending: false, view: "primary", status: "presentations", message: "",
+        count: 1, page: 0, selected: 0, value: "#abc", css: "#abc", presentation: "hex", canPreview: true, canApply: true, apply: () => { calls.push("apply first"); return true; },
+        colors: [{ from: 1, to: 5, text: "#abc", label: "#abc", color: { red: 1, green: 1, blue: 1, alpha: 1 }, ordinal: 0, line: 1, column: 2, css: "#abc", inspect: () => calls.push("inspect first") }],
+        choices: [{ id: "hex", label: "Hex", select: () => calls.push("hex") }], edits: [], changed: null };
+    const first = documentColorsPanelModel(tools, state), newer = documentColorsPanelModel(tools, { ...state, apply: () => { calls.push("apply next"); return true; } });
+    assert.equal(first.results.retentionKey(), newer.results.retentionKey()); first.results.items()[0]!.invoke(); first.presentation.change("hex");
+    newer.apply.invoke(); first.apply.invoke(); assert.deepEqual(calls, ["inspect first", "hex", "apply next", "apply first"]);
 });
 
 test("link rows retain their own action through repaging and resolution", () => {
