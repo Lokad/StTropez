@@ -143,14 +143,24 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         const line = 'import "sample-utils";\r\n#abc;\r\n', text = line.repeat(70) + 'import "missing-utils";';
         await seed(page, text, text.indexOf("#abc") + 2); await button(page, "Add module companion").click(); const before = await snapshot(page);
         const links = page.getByLabel("Module link results", { exact: true }), colors = page.getByLabel("Document color results", { exact: true });
-        await button(page, "Discover module links").click(); await settledColorsAndLinks(page); await expect(links.getByRole("listitem")).toHaveCount(64);
-        await expect(button(page, "Previous module links")).toBeDisabled(); await button(page, "Next module links").click(); await expect(links.getByRole("listitem")).toHaveCount(7);
+        const turnAfterRefresh = async (kind: "links" | "colors") => {
+            const name = kind === "links" ? "module links" : "document colors", rows = (kind === "links" ? links : colors).getByRole("listitem");
+            const discover = button(page, "Discover " + name), next = button(page, "Next " + name);
+            await discover.click(); await settledColorsAndLinks(page); await expect(rows).toHaveCount(64);
+            const oldNext = await page.evaluateHandle(kind => window.hostFixture.snapshot().bindings[kind].state.paging!.next!, kind);
+            await next.hover(); await page.mouse.down();
+            await discover.evaluate(node => (node as HTMLButtonElement).click()); await settledColorsAndLinks(page);
+            await expect(next).toBeEnabled(); await next.hover(); await page.mouse.up();
+            await oldNext.evaluate(turn => turn()); await oldNext.dispose();
+            await expect(button(page, "Previous " + name)).toBeDisabled(); await expect(rows).toHaveCount(64);
+            await next.click();
+        };
+        await turnAfterRefresh("links"); await expect(links.getByRole("listitem")).toHaveCount(7);
         await expect(button(page, "Next module links")).toBeDisabled(); await expect(links.getByRole("button").last()).toBeEnabled();
         await links.getByRole("button").last().click(); await settledColorsAndLinks(page); await expect(links.getByRole("button").last()).toBeDisabled();
         await expect(page.getByLabel("Module link status", { exact: true })).toContainText("No destination for missing-utils");
         expect((await snapshot(page)).bindings.links.opened).toBe(0); await button(page, "Previous module links").click(); await expect(links.getByRole("listitem")).toHaveCount(64);
-        await button(page, "Discover document colors").click(); await settledColorsAndLinks(page); await expect(colors.getByRole("listitem")).toHaveCount(64);
-        await expect(button(page, "Previous document colors")).toBeDisabled(); await button(page, "Next document colors").click(); await expect(colors.getByRole("listitem")).toHaveCount(6);
+        await turnAfterRefresh("colors"); await expect(colors.getByRole("listitem")).toHaveCount(6);
         await expect(button(page, "Next document colors")).toBeDisabled(); await colors.getByRole("button").last().click();
         await expect(button(page, "Preview color presentations")).toBeEnabled();
         expect(await page.locator(".st-document-color").count()).toBeGreaterThan(0); expect(await page.locator(".st-document-color").count()).toBeLessThan(150);

@@ -1,4 +1,4 @@
-import { createReviewKey } from "./panel-actions.ts";
+import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId, Workspace } from "../../src/index.ts";
@@ -15,11 +15,11 @@ type Session = { id: string; editor: TextEditor; controller: DocumentColorContro
 export type ColorNote = ColorReference & Readonly<{ ordinal: number; line: number; column: number; css: string; inspect: () => void }>;
 export type ColorEditNote = Readonly<{ document: string; resource: string; title: string; revision: number; from: number; to: number; insert: string; context: string }>;
 export type DocumentColorsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; view: string | null;
-    status: "idle" | "scan" | "colors" | "presentations" | "applied" | "expired" | "failed"; message: string; count: number; page: number; colors: readonly ColorNote[];
+    status: "idle" | "scan" | "colors" | "presentations" | "applied" | "expired" | "failed"; message: string; count: number; page: number; paging: PanelPaging | null; colors: readonly ColorNote[];
     selected: number; value: string; css: string | null; presentation: string; choices: readonly Readonly<{ id: string; label: string; select: () => void }>[];
     edits: readonly ColorEditNote[]; canPreview: boolean; canApply: boolean; reviewKey: number | null; apply: (() => ReviewEditResult) | null; changed: Readonly<{ document: DocumentId; title: string }> | null }>;
 const initial: DocumentColorsSnapshot = { available: false, connected: false, disconnected: false, pending: false, view: null,
-    status: "idle", message: "Focus a source to discover colors.", count: 0, page: 0, colors: [], selected: -1, value: "", css: null,
+    status: "idle", message: "Focus a source to discover colors.", count: 0, page: 0, paging: null, colors: [], selected: -1, value: "", css: null,
     presentation: "", choices: [], edits: [], canPreview: false, canApply: false, reviewKey: null, apply: null, changed: null };
 
 function focusSource(editor: TextEditor) {
@@ -100,11 +100,15 @@ export class HostDocumentColors {
                 } };
         }) : old.colors;
         const review = state.review, pending = state.status === "previewing";
+        const paging = pending ? null : panelPaging(this.reviewKey(state.colors)!, page, state.colors.length, colorLimits.page, next => {
+            const current = this.cell.get();
+            if (this.owner === s && !current.pending && current.colors === colors) this.render(s, { page: next });
+        });
         const choices = state.presentations.map((choice, i) => ({ id: `provider-${i}`, label: choice.label, select: choice.select }));
         const edits = review?.edits.map(edit => ({ ...edit, document: doc.id, resource: doc.resourceId, title: doc.title.slice(0, 128), revision: doc.revision,
             context: doc.buffer.slice(Math.max(0, edit.from - 32), Math.min(doc.buffer.length, edit.from + 32)) })) ?? [];
         this.publish({ status: state.status === "ready" ? "colors" : "presentations", message: pending ? "Requesting color presentations…" : review ? "Review the edits before applying." : `${state.colors.length} document colors.`,
-            pending, count: state.colors.length, colors, selected, page, value, css: proposed ? rgbaColor(proposed) : null, choices,
+            pending, count: state.colors.length, colors, selected, page, paging, value, css: proposed ? rgbaColor(proposed) : null, choices,
             presentation: review ? choices[state.presentations.indexOf(review.choice)]!.id : "", edits, canPreview: !!reference && !!proposed && !pending,
             canApply: review?.canApply ?? false, reviewKey: this.reviewKey(review), apply: review ? () => {
                 const result = review.apply();
@@ -180,12 +184,6 @@ export class HostDocumentColors {
         try { const editor = [...this.sessions].find(s => s.editor.view.documentId === id)?.editor ?? this.present(id); if (editor) focusSource(editor); }
         catch { this.publish({ message: "The changed color resource is no longer available." }); }
     };
-    private page(delta: number) {
-        const s = this.cell.get(), page = s.page + delta;
-        if (this.owner && page >= 0 && page * colorLimits.page < s.count) this.render(this.owner, { page });
-    }
-    readonly nextPage = () => this.page(1);
-    readonly previousPage = () => this.page(-1);
     setDelay(value: number) { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid color delay."); this.delay = value; }
     faultNext(value: ColorFault) { this.fault = value; }
     debug() { return { ...this.metrics, state: this.cell.get(), sessions: this.sessions.size, subscriptions: this.cell.count(),

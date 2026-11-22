@@ -373,7 +373,8 @@ If you leave the source while F12 is pending, choose the destination in the resu
 The navigation panel also accepts declarations loaded by a host URI resolver. It uses the
 returned document's text and revision to label the result and select its range.
 If the host cannot open the pane, the panel shows the error. You can retry the same result. Return records successful visits.
-If references refresh while you hold Next or Previous, the new list stays on its first page.
+If references, module links or document colors refresh while you hold Next or Previous,
+releasing the button keeps the new list on its selected page.
 
 F4 opens the module links list. Escape dismisses it and returns focus to its mounted source,
 including while a link resolves. If you Tab away, the resolved link stays in the list until you

@@ -1,5 +1,5 @@
 import type { HostNavigationTools, NavigationSnapshot } from "./navigation.ts";
-import { renderPanelActions } from "./panel-actions.ts";
+import { pageActions, renderPanelActions } from "./panel-actions.ts";
 type NavigationPanelTools = Pick<HostNavigationTools, "findDefinition" | "findReferences" | "cancel" | "returnToOrigin" | "addCompanion" | "disconnect" | "reconnect" | "setIncludeDeclaration">;
 
 /** Pure presentation of one captured snapshot; list rows are read only when a renderer needs them. */
@@ -14,8 +14,7 @@ export function navigationPanelModel(tools: NavigationPanelTools, state: Navigat
             { label: "Find references", invoke: tools.findReferences, disabled: !state.available || pending || state.disconnected },
             { label: "Cancel symbol navigation", invoke: tools.cancel, disabled: !state.canCancel },
             { label: "Return to navigation origin", invoke: tools.returnToOrigin, disabled: !state.canReturn },
-            { label: "Previous navigation results", reviewKey: paging?.key, invoke: paging?.previous ?? null, disabled: !paging?.previous },
-            { label: "Next navigation results", reviewKey: paging?.key, invoke: paging?.next ?? null, disabled: !paging?.next },
+            ...pageActions("navigation results", paging),
             { label: "Add navigation companion", invoke: tools.addCompanion, disabled: pending },
             { label: "Disconnect navigation provider", invoke: tools.disconnect, disabled: !state.connected && !pending },
             { label: "Reconnect navigation provider", invoke: tools.reconnect, disabled: !state.disconnected && state.status !== "failed" }

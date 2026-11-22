@@ -1,12 +1,12 @@
 import type { HostDocumentLinks, LinkNote, DocumentLinksSnapshot } from "./document-links.ts";
-type DocumentLinksPanelTools = Pick<HostDocumentLinks, "discover" | "returnToOrigin" | "cancel" | "previousPage" | "nextPage" | "addCompanion" | "disconnect" | "reconnect" | "bindList">;
+import { pageActions, renderPanelActions } from "./panel-actions.ts";
+type DocumentLinksPanelTools = Pick<HostDocumentLinks, "discover" | "returnToOrigin" | "cancel" | "addCompanion" | "disconnect" | "reconnect" | "bindList">;
 function documentLinkActions(tools: DocumentLinksPanelTools, s: DocumentLinksSnapshot) {
     return [
         { label: "Discover module links", invoke: tools.discover, disabled: !s.available || s.disconnected || s.pending },
         { label: "Return to link origin", invoke: tools.returnToOrigin, disabled: !s.canReturn },
         { label: "Dismiss module links", invoke: tools.cancel, disabled: s.requestView === null },
-        { label: "Previous module links", invoke: tools.previousPage, disabled: !s.page || s.status !== "ready" },
-        { label: "Next module links", invoke: tools.nextPage, disabled: (s.page + 1) * 64 >= s.count || s.status !== "ready" },
+        ...pageActions("module links", s.status === "ready" ? s.paging : null),
         { label: "Add module companion", invoke: tools.addCompanion, disabled: s.pending },
         { label: "Disconnect link provider", invoke: tools.disconnect, disabled: !s.connected && !s.pending },
         { label: "Reconnect link provider", invoke: tools.reconnect, disabled: !s.disconnected && s.status !== "failed" }
@@ -29,14 +29,13 @@ export function mountDocumentLinksPanel(host: HTMLElement, tools: HostDocumentLi
     const initial = documentLinksPanelModel(tools, tools.state.getSnapshot());
     const owner = host.ownerDocument, heading = owner.createElement("h2"), description = owner.createElement("p"), status = owner.createElement("output"), controls = owner.createElement("div"), list = owner.createElement("ul");
     host.setAttribute("aria-label", initial.title); heading.textContent = initial.title; description.textContent = initial.description; status.setAttribute("aria-label", initial.status.label); list.setAttribute("aria-label", initial.results.label); list.tabIndex = -1; initial.results.bind(list);
-    const buttons = initial.actions.map(action => { const button = owner.createElement("button"); button.textContent = action.label; controls.append(button); return button; });
     host.replaceChildren(heading, description, status, controls, list);
     const rows: { li: HTMLLIElement; button: HTMLButtonElement; text: HTMLParagraphElement }[] = [];
     let previous: readonly LinkNote[] | undefined;
     const render = () => {
         const state = tools.state.getSnapshot(), model = documentLinksPanelModel(tools, state);
         status.textContent = model.status.text;
-        model.actions.forEach((action, i) => { buttons[i]!.disabled = action.disabled; buttons[i]!.onclick = action.invoke; });
+        renderPanelActions(controls, model.actions);
         if (state.links !== previous) {
             previous = state.links;
             model.results.items().forEach((link, index) => {

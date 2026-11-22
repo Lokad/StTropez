@@ -1,5 +1,5 @@
 import { onSourceFocus } from "./source-focus.ts";
-import { createReviewKey } from "./panel-actions.ts";
+import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { createNavigationController, createNavigationHistory } from "../../src/browser/index.ts";
@@ -15,9 +15,8 @@ type Session = { id: string; target: TabTarget; editor: TextEditor; controller: 
 type Job = { kind: Kind; symbol: string; origin: Session; returnPoint: NavigationOrigin; sources: Set<DocumentId>; targets: Map<string, Session>;
     timer: number; page: NavigationPage | undefined; followDefinition: boolean };
 export type NavigationNote = Readonly<{ ordinal: number; title: string; line: number; column: number; declaration: boolean; open: () => void }>;
-type Paging = Readonly<{ key: number; previous: (() => void) | null; next: (() => void) | null }>;
 export type NavigationSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; canCancel: boolean; status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired" | "disconnected";
-    message: string; work: number; total: number; includeDeclaration: boolean; locations: readonly NavigationNote[]; paging: Paging | null; canReturn: boolean }>;
+    message: string; work: number; total: number; includeDeclaration: boolean; locations: readonly NavigationNote[]; paging: PanelPaging | null; canReturn: boolean }>;
 
 /** Host-owned project navigation; results carry identities, never a future focus target. */
 export class HostNavigationTools {

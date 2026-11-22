@@ -178,7 +178,7 @@ function App() {
 function DocumentColorsTools() {
     const tools = bindings.colors, model = documentColorsPanelModel(tools, useObserved(tools.state));
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
-        <output aria-label={model.status.label}>{model.status.text}</output><div>{model.actions.map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
+        <output aria-label={model.status.label}>{model.status.text}</output><div>{model.actions.map(action => <button key={panelActionKey(action)} disabled={action.disabled} onClick={action.invoke ?? undefined}>{action.label}</button>)}</div>
         <ul ref={model.results.bind} tabIndex={-1} aria-label={model.results.label}>{model.results.items().map(color => <li key={color.key}><span className="host-color-swatch" aria-hidden="true" style={{backgroundColor: color.css}} /><button disabled={model.results.disabled} aria-pressed={model.results.isSelected(color.ordinal)} onClick={color.invoke}>{color.label}</button></li>)}</ul>
         <label>{model.value.label}<input ref={model.value.bind} type="text" maxLength={model.value.maxLength} value={model.value.value} onChange={event => model.value.change(event.currentTarget.value)} /></label><span className="host-color-swatch" aria-hidden="true" style={{backgroundColor: model.value.css}} />
         <button disabled={model.preview.disabled} onClick={model.preview.invoke}>{model.preview.label}</button><label>{model.presentation.label}<select disabled={model.presentation.disabled} value={model.presentation.value} onChange={event => model.presentation.change(event.currentTarget.value)}>{model.presentation.items().map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label>
@@ -189,7 +189,7 @@ function DocumentLinksTools() {
     const tools = bindings.links, model = documentLinksPanelModel(tools, useObserved(tools.state));
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
         <output aria-label={model.status.label}>{model.status.text}</output>
-        <div>{model.actions.map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
+        <div>{model.actions.map(action => <button key={panelActionKey(action)} disabled={action.disabled} onClick={action.invoke ?? undefined}>{action.label}</button>)}</div>
         <ul ref={model.results.bind} tabIndex={-1} aria-label={model.results.label}>{model.results.items().map(link => <li key={link.key}><button disabled={model.results.disabled || !link.available} onClick={link.invoke}>{link.label}</button><p>{link.details}</p></li>)}</ul></section>;
 }
 function ActionsTools() {

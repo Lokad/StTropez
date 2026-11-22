@@ -1,4 +1,5 @@
 import { createPanelKeyBinding } from "./panel-keys.ts";
+import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, DocumentSnapshot, SelectionSet, TabId, Workspace } from "../../src/index.ts";
@@ -18,12 +19,13 @@ type Route = { origin: Session; source: DocumentSnapshot; selections: SelectionS
     targets: Map<DocumentId, Session>; destination?: TextEditor; releaseHistory?: () => void };
 export type LinkNote = ModuleLink & Readonly<{ line: number; column: number; title: string; targetTitle: string | null; resolvable: boolean; open: () => void }>;
 export type DocumentLinksSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; requestView: string | null;
-    status: DocumentLinkSnapshot["status"] | "away"; message: string; count: number; page: number; links: readonly LinkNote[]; canReturn: boolean }>;
+    status: DocumentLinkSnapshot["status"] | "away"; message: string; count: number; page: number; paging: PanelPaging | null; links: readonly LinkNote[]; canReturn: boolean }>;
 const initial: DocumentLinksSnapshot = { available: false, connected: false, disconnected: false, pending: false, requestView: null,
-    status: "idle", message: "Focus a source to discover module links.", count: 0, page: 0, links: [], canReturn: false };
+    status: "idle", message: "Focus a source to discover module links.", count: 0, page: 0, paging: null, links: [], canReturn: false };
 
 /** The sample owns module aliases, pane selection and the route back from an explicitly opened destination. */
 export class HostDocumentLinks {
+    private readonly pageKey;
     private readonly aliases = new Map<string, DocumentId>();
     private readonly sessions = new Set<Session>();
     private active: Session | undefined;
@@ -45,7 +47,7 @@ export class HostDocumentLinks {
     private readonly reconnectProvider: (() => void) | undefined;
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined,
         options: LinkHostOptions, reconnectProvider?: () => void) {
-        this.workspace = workspace; this.canCapture = canCapture; this.present = present;
+        this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.pageKey = createReviewKey(workspace);
         this.options = options; this.reconnectProvider = reconnectProvider;
     }
     private publish(patch: Partial<DocumentLinksSnapshot> = {}) {
@@ -129,7 +131,11 @@ export class HostDocumentLinks {
                 targetTitle: doc?.title.slice(0, 128) ?? null, resolvable: item.canResolve, line: line + 1, column: column + 1,
                 open: () => this.open(route, item, module) };
         });
-        this.publish({ status, pending: false, links, page, count: state.links.length, message: `${state.links.length} module links.` });
+        const paging = panelPaging(this.pageKey(route)!, page, state.links.length, linkLimits.page, next => {
+            const current = this.cell.get();
+            if (this.route === route && current.status === "ready" && current.links === links) this.render(route, next);
+        });
+        this.publish({ status, pending: false, links, page, paging, count: state.links.length, message: `${state.links.length} module links.` });
     }
     readonly discover = () => this.start(false);
     private start(keyboard: boolean, returning = false) {
@@ -220,12 +226,6 @@ export class HostDocumentLinks {
         if (!this.sessions.has(route.origin)) this.start(false, true);
         else this.publish({ message: "Returned to the captured source and selection." });
     };
-    private page(delta: number) {
-        const route = this.route, state = this.cell.get(), page = state.page + delta;
-        if (route && state.status === "ready" && page >= 0 && page * linkLimits.page < state.count) this.render(route, page);
-    }
-    readonly nextPage = () => this.page(1);
-    readonly previousPage = () => this.page(-1);
     setAlias(module: string, document: DocumentId | null) {
         if (!validDomainModule(module) || document && this.workspace.document(document).key.variant !== "working") throw new Error("Choose a bounded module alias and working resource.");
         if (document === (this.aliases.get(module) ?? null)) return;

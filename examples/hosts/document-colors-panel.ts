@@ -1,11 +1,10 @@
 import type { HostDocumentColors, ColorEditNote, ColorNote, DocumentColorsSnapshot } from "./document-colors.ts";
-import { renderPanelButton } from "./panel-actions.ts";
-type DocumentColorsPanelTools = Pick<HostDocumentColors, "discover" | "cancel" | "previousPage" | "nextPage" | "disconnect" | "reconnect" | "bindList" | "bindValue" | "setValue" | "preview" | "openChanged">;
+import { pageActions, renderPanelActions, renderPanelButton } from "./panel-actions.ts";
+type DocumentColorsPanelTools = Pick<HostDocumentColors, "discover" | "cancel" | "disconnect" | "reconnect" | "bindList" | "bindValue" | "setValue" | "preview" | "openChanged">;
 function documentColorActions(tools: DocumentColorsPanelTools, s: DocumentColorsSnapshot) { return [
     { label: "Discover document colors", invoke: tools.discover, disabled: !s.available || s.disconnected || s.pending },
     { label: "Dismiss document colors", invoke: tools.cancel, disabled: s.view === null },
-    { label: "Previous document colors", invoke: tools.previousPage, disabled: !s.page || s.pending },
-    { label: "Next document colors", invoke: tools.nextPage, disabled: (s.page + 1) * 64 >= s.count || s.pending },
+    ...pageActions("document colors", s.paging),
     { label: "Disconnect color provider", invoke: tools.disconnect, disabled: !s.connected && !s.pending },
     { label: "Reconnect color provider", invoke: tools.reconnect, disabled: !s.disconnected && s.status !== "failed" }
 ]; }
@@ -38,10 +37,10 @@ export function mountDocumentColorsPanel(host: HTMLElement, tools: HostDocumentC
     value.type = "text"; value.maxLength = initial.value.maxLength; value.oninput = () => initial.value.change(value.value); label.append(initial.value.label, value); initial.value.bind(value); swatch.className = "host-color-swatch"; swatch.setAttribute("aria-hidden", "true"); preview.textContent = initial.preview.label; preview.onclick = initial.preview.invoke;
     let apply = owner.createElement("button");
     presentationLabel.append(initial.presentation.label, presentation); edits.setAttribute("aria-label", initial.edits.label);
-    const buttons = initial.actions.map(action => { const button = owner.createElement("button"); button.textContent = action.label; controls.append(button); return button; });
     host.replaceChildren(heading, description, status, controls, list, label, swatch, preview, presentationLabel, apply, edits, changed); let choiceKey = "", editsKey = ""; let listKey: readonly ColorNote[] | undefined, resultButtons: { ordinal: number; button: HTMLButtonElement }[] = [];
     const render = () => {
-        const model = documentColorsPanelModel(tools, tools.state.getSnapshot()); status.textContent = model.status.text; for (const [i, action] of model.actions.entries()) { buttons[i]!.disabled = action.disabled; buttons[i]!.onclick = action.invoke; }
+        const model = documentColorsPanelModel(tools, tools.state.getSnapshot()); status.textContent = model.status.text;
+        renderPanelActions(controls, model.actions);
         const nextList = model.results.retentionKey(); if (nextList !== listKey) { listKey = nextList; resultButtons = []; list.replaceChildren(...model.results.items().map(color => { const li = owner.createElement("li"), mark = owner.createElement("span"), button = owner.createElement("button"); mark.className = "host-color-swatch"; mark.style.backgroundColor = color.css; mark.setAttribute("aria-hidden", "true"); button.textContent = color.label; button.onclick = color.invoke; resultButtons.push({ ordinal: color.ordinal, button }); li.append(mark, button); return li; })); }
         for (const { ordinal, button } of resultButtons) { button.disabled = model.results.disabled; button.setAttribute("aria-pressed", String(model.results.isSelected(ordinal))); }
         if (value.value !== model.value.value) value.value = model.value.value; swatch.style.backgroundColor = model.value.css; preview.disabled = model.preview.disabled;

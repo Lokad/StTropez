@@ -117,10 +117,10 @@ test("language result callbacks cannot follow a newer view or diagnostic batch w
 
 test("color controls keep the reference and reviewed Apply from the displayed snapshot", () => {
     const calls: string[] = [];
-    const tools: Parameters<typeof documentColorsPanelModel>[0] = { discover: noop, cancel: noop, previousPage: noop, nextPage: noop, disconnect: noop, reconnect: noop,
+    const tools: Parameters<typeof documentColorsPanelModel>[0] = { discover: noop, cancel: noop, disconnect: noop, reconnect: noop,
         bindList: noop, bindValue: noop, setValue: noop, preview: noop, openChanged: noop };
     const state: DocumentColorsSnapshot = { available: true, connected: true, disconnected: false, pending: false, view: "primary", status: "presentations", message: "",
-        count: 1, page: 0, selected: 0, value: "#abc", css: "#abc", presentation: "hex", canPreview: true, canApply: true, reviewKey: 1, apply: () => { calls.push("apply first"); return { applied: true } as const; },
+        count: 1, page: 0, paging: null, selected: 0, value: "#abc", css: "#abc", presentation: "hex", canPreview: true, canApply: true, reviewKey: 1, apply: () => { calls.push("apply first"); return { applied: true } as const; },
         colors: [{ from: 1, to: 5, text: "#abc", label: "#abc", color: { red: 1, green: 1, blue: 1, alpha: 1 }, ordinal: 0, line: 1, column: 2, css: "#abc", inspect: () => calls.push("inspect first") }],
         choices: [{ id: "hex", label: "Hex", select: () => calls.push("hex") }], edits: [], changed: null };
     const first = documentColorsPanelModel(tools, state), newer = documentColorsPanelModel(tools, { ...state, apply: () => { calls.push("apply next"); return { applied: true } as const; } });
@@ -130,11 +130,11 @@ test("color controls keep the reference and reviewed Apply from the displayed sn
 
 test("link rows retain their own action through repaging and resolution", () => {
     const opened: string[] = [];
-    const tools: Parameters<typeof documentLinksPanelModel>[0] = { discover: noop, returnToOrigin: noop, cancel: noop, previousPage: noop, nextPage: noop, addCompanion: noop,
+    const tools: Parameters<typeof documentLinksPanelModel>[0] = { discover: noop, returnToOrigin: noop, cancel: noop, addCompanion: noop,
         disconnect: noop, reconnect: noop, bindList: noop };
     let formatted = 0;
     const state: DocumentLinksSnapshot = { available: true, connected: true, disconnected: false, pending: false, requestView: "primary",
-        status: "ready", message: "Captured links", count: 1, page: 0, canReturn: false,
+        status: "ready", message: "Captured links", count: 1, page: 0, paging: null, canReturn: false,
         links: [{ from: 8, to: 20, module: "module", tooltip: "Resolve module", target: null, resolvable: true, line: 1, column: 9,
             get title() { formatted++; return "First"; }, targetTitle: null, open: () => { opened.push("first"); } }] };
     const first = documentLinksPanelModel(tools, state); assert.equal(formatted, 0);

@@ -16,6 +16,19 @@ export function createReviewKey(workspace: Workspace) {
 
 type PanelAction = Readonly<{ label: string; reviewKey?: number | null | undefined; disabled: boolean; invoke: (() => void) | null }>;
 
+export type PanelPaging = Readonly<{ key: number; previous: (() => void) | null; next: (() => void) | null }>;
+
+export function panelPaging(key: number, page: number, count: number, size: number, show: (page: number) => void): PanelPaging {
+    return { key, previous: page > 0 ? () => show(page - 1) : null, next: (page + 1) * size < count ? () => show(page + 1) : null };
+}
+
+export function pageActions(subject: string, paging: PanelPaging | null) {
+    return [
+        { label: "Previous " + subject, reviewKey: paging?.key, disabled: !paging?.previous, invoke: paging?.previous ?? null },
+        { label: "Next " + subject, reviewKey: paging?.key, disabled: !paging?.next, invoke: paging?.next ?? null },
+    ];
+}
+
 export function panelActionKey(action: PanelAction): string {
     return action.reviewKey == null ? action.label : `${action.label}:${action.reviewKey}`;
 }
