@@ -717,9 +717,16 @@ export async function runDemoConflict(page: Page, url = "/") {
         await peerMain.press("Control+Home"); await peerMain.pressSequentially("// Peer local work\n");
         await peer.locator('[data-file="pricing.ts"]').click(); await peer.getByRole("textbox", { name: "pricing.ts", exact: true }).press("Control+Home");
         await peer.getByRole("textbox", { name: "pricing.ts", exact: true }).pressSequentially("// Peer helper work\n");
-        await peer.locator('[data-file="main.ts"]').click(); await peerMain.press("Control+s");
+        await peer.locator('[data-file="main.ts"]').click();
+        await peer.setViewportSize({ width: 375, height: 820 });
+        await peerMain.press("Control+Home");
+        const row = peer.locator("#editor .st-viewport-row").filter({ hasText: 'import type { CartItem }' });
+        const point = await paintedCharacter(row, "import", 2);
+        await peerMain.press("Control+s");
         await expect(peer.locator("#save-conflict")).toBeVisible(); await expect(peer.locator("#editor")).toContainText("// Peer local work");
-        await peer.getByRole("button", { name: "Review saved copy", exact: true }).click();
+        await peer.mouse.click(point.x, point.y); await expect(peerMain).toBeFocused(); await expect(peer.locator("#cursor")).toContainText("Ln 3,");
+        const review = peer.getByRole("button", { name: "Review saved copy", exact: true });
+        await review.focus(); await review.press("Enter");
         await expect(peer.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
         await expect(peer.locator(".st-comparison-panes > section").first()).toContainText("// Main page saved");
         await expect(peer.locator(".st-comparison-panes > section").last()).toContainText("// Peer local work");

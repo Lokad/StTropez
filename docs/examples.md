@@ -217,7 +217,7 @@ The demo saves the whole sample in IndexedDB, including files you haven’t open
 current tabs and selection. If you type during a save, the footer reports that the later edits
 are unsaved. Save, Restore draft and Keep current files return
 keyboard focus to the source editor or the last active comparison pane as soon as you activate them.
-**Reset sample** restores the open sample’s original
+Recovery and conflict actions appear below the editor. **Reset sample** restores the open sample’s original
 text in one undoable edit. You can keep typing while a recovery offer is open. The demo checkpoints
 your edits alongside the offered draft. After reload, choose a version to restore or download.
 Restoring one keeps the other versions available. **Keep current files** discards the offered

@@ -63,14 +63,6 @@
         <a href="https://github.com/Lokad/StTropez/blob/master/docs/getting-started.md#add-features-to-a-browser-ide" target="_blank" rel="noopener">Embed these features in your IDE</a>.</aside>
     <nav id="files" aria-label="Project files"></nav>
     <p id="host-status" class="host-integration-status" hidden></p>
-    <section id="recovery-offer" aria-label="Draft recovery" hidden>
-        <span id="recovery-message"></span><select id="recovery-version" aria-label="Recovery version" hidden></select><button id="recovery-restore">Restore draft</button>
-        <button id="recovery-download">Download draft</button><button id="recovery-keep">Keep current files</button>
-    </section>
-    <section id="save-conflict" aria-label="Saved copy changed" hidden>
-        <span>Another page saved this sample.</span><button id="conflict-review">Review saved copy</button>
-        <button id="conflict-save">Save my reviewed version</button><button id="download">Download my changes</button>
-    </section>
     <section id="find-bar" aria-label="Find and replace" hidden>
         <span id="find-target"></span>
         <input id="find-query" aria-label="Find text" placeholder="Find in this file">
@@ -93,6 +85,14 @@
             <div id="panel-content"></div>
         </section>
     </main>
+    <section id="recovery-offer" aria-label="Draft recovery" hidden>
+        <span id="recovery-message"></span><select id="recovery-version" aria-label="Recovery version" hidden></select><button id="recovery-restore">Restore draft</button>
+        <button id="recovery-download">Download draft</button><button id="recovery-keep">Keep current files</button>
+    </section>
+    <section id="save-conflict" aria-label="Saved copy changed" hidden>
+        <span>Another page saved this sample.</span><button id="conflict-review">Review saved copy</button>
+        <button id="conflict-save">Save my reviewed version</button><button id="download">Download my changes</button>
+    </section>
     <footer><output id="status"></output><span id="recovery-status"></span><button id="recovery-retry" hidden>Check recovery</button>
         <span id="cursor"></span><span id="analysis-status"></span><button id="analysis-retry" hidden>Retry</button>
         <output id="language-command-status" aria-label="Language command" hidden></output><span id="language-status"></span><button id="language-retry" hidden>Retry language service</button></footer>
