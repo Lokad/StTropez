@@ -116,7 +116,9 @@ document that fits and keeps a minimum grab height on long files. Style its edge
 `scrollTo({ top, left })` takes logical CSS units. Omit an axis to keep its position. Negative values
 clamp to zero and nonfinite values throw. Large logical extents fit bounded physical scrollbars. Use
 `revealOffset(offset, RevealOptions)` to expand a hidden target and schedule scrolling. Each axis
-accepts `"center"` (default) or `"nearest"`. Nearest keeps a visible caret in place. `affinity` takes
+accepts `"center"` (default) or `"nearest"`. Nearest keeps a visible caret in place.
+Vertical `"center-if-outside"` keeps a fully visible row in place and centers it when it falls outside the viewport.
+`affinity` takes
 `"before"` or `"after"` (default). Ctrl/Meta-wheel passes through to browser zoom.
 
 `revealRange(from, to)` reveals a half-open UTF-16 range and opens folds that cover it.

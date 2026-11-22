@@ -129,6 +129,9 @@ Composition uses the primary input and creates one shared undo command on commit
 composition cancels queued commands. If the revision, selection, permission or target changes, the
 editor sends stale input to host recovery.
 
+Undo and Redo keep a fully visible caret row in place. If the restored caret is off screen, the
+editor centers its row vertically so you can read the surrounding code and continue typing there.
+
 Navigation, deletion, word selection and language planning can take several turns. Type during a move
 and the text goes at its destination. The editor replays queued input in order, preserving modifiers,
 key meaning and event-time undo groups. It checks permission again. Paste and structural commands keep

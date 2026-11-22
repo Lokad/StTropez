@@ -165,6 +165,37 @@ test("Go to line returns typing to the chosen large-file row and cancels when th
     await expect(cursor).toHaveText("Ln 5000, Col 4");
 });
 
+test("off-screen Undo and Redo reveal surrounding code and retain the typing target in source and review", async ({ page, baseURL }) => {
+    const url = new URL(baseURL!); url.searchParams.set("sample", "large");
+    for (const mode of ["source", "review"]) {
+        await page.goto(url.href);
+        if (mode === "review") {
+            await page.locator("#compare").click();
+            await expect(page.locator(".st-comparison-controls output")).toHaveText("No changes");
+        }
+        const pane = mode === "source" ? page.locator("#editor") : page.locator(".st-comparison-panes > section").last();
+        const source = pane.getByRole("textbox"), viewport = pane.locator(".st-viewport");
+        const row = pane.locator('.st-viewport-row[data-line="49999"]'), cursor = page.locator("#cursor");
+        await source.press("Control+g"); const line = page.getByRole("dialog", { name: "Go to line" }).getByRole("spinbutton");
+        await line.fill("50000"); await line.press("Enter");
+        await page.keyboard.insertText("X"); await expect(row).toContainText("X// Row");
+        for (const [jump, history, column] of [["Home", "z", 1], ["End", "y", 2]] as const) {
+            await source.press(`Control+${jump}`); await expect(row).toHaveCount(0);
+            await source.press(`Control+${history}`); await expect(cursor).toHaveText(`Ln 50000, Col ${column}`); await expect(source).toBeFocused();
+            await expect.poll(() => viewport.evaluate(view => {
+                const target = view.querySelector('.st-viewport-row[data-line="49999"]');
+                if (!target) return 0;
+                const bounds = target.getBoundingClientRect(), top = view.getBoundingClientRect().top;
+                return Math.min(bounds.top - top, top + view.clientHeight - bounds.bottom) / view.clientHeight;
+            })).toBeGreaterThan(.35);
+        }
+        await page.keyboard.insertText("Z"); await expect(row).toContainText("XZ// Row");
+        const scroll = await viewport.evaluate(node => { node.scrollTop += 60; return node.scrollTop; });
+        await source.press("Control+z"); await expect(row).toContainText("X// Row");
+        expect(await viewport.evaluate(node => node.scrollTop)).toBe(scroll);
+    }
+});
+
 test("Find toggles regex on the existing query and replaces captured groups in one undo", async ({ page, baseURL }) => {
     await page.goto(baseURL!);
     const query = page.getByRole("textbox", { name: "Find text" }), mode = page.getByRole("button", { name: "Use regular expression" });

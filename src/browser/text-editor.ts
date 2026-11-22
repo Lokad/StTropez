@@ -26,7 +26,7 @@ import type { InputContext } from "./input-context.ts";
 import { editRefusedEvent, inputConflictEvent, type EditRefusedDetail } from "./input-conflict.ts";
 import type { InputConflictDetail } from "./input-conflict.ts";
 import { mountViewport } from "./viewport.ts";
-import type { FoldContainsChange, TextViewport, ViewportSettings } from "./viewport.ts";
+import type { FoldContainsChange, RevealOptions, TextViewport, ViewportSettings } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
 import { lineColumnScanner, lineContentEnd, lineEnding, planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
 import { exportText } from "../core/newlines.ts";
@@ -296,8 +296,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             conflict("command-failed", undefined, expectedRevision, 0, unapplied, cause);
         }
     }
-    function revealCaret(selected = view.getSnapshot().selection): void {
-        viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" });
+    function revealCaret(selected = view.getSnapshot().selection, vertical: NonNullable<RevealOptions["vertical"]> = "nearest"): void {
+        viewport.revealOffset(selected.head, { horizontal: "nearest", vertical, affinity: selected.headAffinity ?? "after" });
     }
     function apply(edits: readonly TextEdit[], selection: Selection | SelectionSet, kind: EditKind, type?: string, expectedRevision = revision, recoveryText?: string, adjustNewlines = false,
         accepted?: (edits: readonly TextEdit[]) => void): boolean {
@@ -387,7 +387,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (!live()) { conflict("expired-view"); refresh(); return; }
         const result = workspace[direction]({ documentId, expectedRevision: revision });
         if (!result.applied && result.reason !== "history-empty") conflict(result.reason);
-        else if (result.applied) revealCaret();
+        else if (result.applied) revealCaret(view.getSnapshot().selection, "center-if-outside");
         refresh();
     }
     const focus = () => { if (!disposed) { input.focus({ preventScroll: true }); scheduleCaret(); } };

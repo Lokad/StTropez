@@ -103,7 +103,7 @@ export type InlineDecoration = Readonly<{ from: number; to: number; className: s
 export type PresentedLine = Readonly<{ documentId: DocumentId; revision: number; line: number; lineStart: number; from: number; to: number; text: string }>;
 export type LineDecorator = (line: PresentedLine) => readonly InlineDecoration[];
 export type LineClass = (line: PresentedLine) => string | undefined;
-export type RevealOptions = Readonly<{ horizontal?: "center" | "nearest"; vertical?: "center" | "nearest"; affinity?: Affinity }>;
+export type RevealOptions = Readonly<{ horizontal?: "center" | "nearest"; vertical?: "center" | "nearest" | "center-if-outside"; affinity?: Affinity }>;
 export type ViewportSettings = Readonly<{ columnRulers: readonly number[]; highlightCurrentLine: boolean;
     fontLigatures: boolean; scrollBeyondLastLine: boolean; minimap: boolean }>;
 export type TextViewportOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; settings?: Partial<ViewportSettings> }>;
@@ -206,7 +206,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     let preparedRows: Readonly<{ revision: number; selectionSet: SelectionSet; element: HTMLDivElement; rows: Map<number, CommandRow> }> | undefined;
     const clearPreparedRows = () => { if (preparedRows) { preparedRows.element.remove(); preparedRows.element.replaceChildren(); preparedRows.rows.clear(); preparedRows = undefined; } };
     let anchor: Readonly<{ revision: number; offset: number; topRemainder: number; leftRemainder: number; aligned?: true }> | undefined;
-    let reveal: Readonly<{ revision: number; foldGeneration: number; offset: number; end?: number; horizontal: "center" | "nearest"; vertical: "center" | "nearest"; affinity: Affinity }> | undefined;
+    let reveal: Readonly<{ revision: number; foldGeneration: number; offset: number; end?: number }> & Required<RevealOptions> | undefined;
     let horizontalAnchor: ViewState["horizontalAnchor"];
     let fragmentPlacement: Readonly<{ revision: number; line: number; from: number; to: number; left: number; shift: number }> | undefined;
     let measuredWidth = 0, measuredFont = "", measuredRevision: number | null = null, spacerWidth = -1;
@@ -563,14 +563,17 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         if (reveal?.revision === document.revision && reveal.foldGeneration === folds.generation) {
             const line = document.buffer.lineAt(reveal.offset);
             const estimated = padding + (reveal.offset - document.buffer.offsetAt(line)) * columnWidth;
+            const rowTop = padding + index.rowAt(line) * lineHeight;
             if (reveal.end !== undefined) {
                 const lastLine = document.buffer.lineAt(Math.max(reveal.offset, reveal.end - 1));
-                top = rangeScroll(padding + index.rowAt(line) * lineHeight, padding + (index.rowAt(lastLine) + 1) * lineHeight, top, height);
+                top = rangeScroll(rowTop, padding + (index.rowAt(lastLine) + 1) * lineHeight, top, height);
                 horizontalEnd = document.buffer.lineAt(reveal.end) === line ? reveal.end : reveal.offset;
                 left = measuredRangeLeft(reveal.offset, horizontalEnd)
                     ?? rangeScroll(estimated, estimated + (horizontalEnd - reveal.offset) * columnWidth, left, width);
             } else {
-                top = reveal.vertical === "nearest" ? expose(padding + index.rowAt(line) * lineHeight, lineHeight, top, height) : Math.max(0, index.rowAt(line) * lineHeight - height / 2);
+                if (reveal.vertical === "nearest") top = expose(rowTop, lineHeight, top, height);
+                else if (reveal.vertical === "center-if-outside") top = rangeScroll(rowTop, rowTop + lineHeight, top, height);
+                else top = Math.max(0, rowTop - padding - height / 2);
                 left = reveal.horizontal === "nearest" ? expose(estimated, 1, left, width) : Math.max(0, estimated - width / 2);
             }
         }
@@ -960,7 +963,9 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         revealOffset: (offset: number, options: RevealOptions = {}) => {
             if (disposed || !live()) return; const document = workspace.document(documentId); document.buffer.lineAt(offset);
             const horizontal = options.horizontal ?? "center", vertical = options.vertical ?? "center", affinity = options.affinity ?? "after";
-            if (![horizontal, vertical].every(value => value === "center" || value === "nearest") || affinity !== "after" && affinity !== "before") throw new RangeError("Invalid reveal options.");
+            if (horizontal !== "center" && horizontal !== "nearest"
+                || vertical !== "center" && vertical !== "nearest" && vertical !== "center-if-outside"
+                || affinity !== "after" && affinity !== "before") throw new RangeError("Invalid reveal options.");
             view.folding.reveal(view.folding.getSnapshot(), offset);
             anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             reveal = { revision: document.revision, foldGeneration: view.folding.getSnapshot().generation, offset, horizontal, vertical, affinity }; schedule();
