@@ -1,15 +1,17 @@
-import { wireLimits, ProtocolDecodeError, rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError } from "./wire.ts";
+import { wireLimits, isLspUri, isLspIdentityPart, ProtocolDecodeError, rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError } from "./wire.ts";
 import type { DocumentId, DocumentLanguage, DocumentSnapshot, ResourceLease, Workspace } from "../core/workspace.ts";
 import { NotificationScope, Store } from "../core/observable.ts";
 import { anchoredRange } from "../core/positions.ts";
 import type { Observable } from "../core/observable.ts";
-import { LspSession } from "./lsp-session.ts";
+import { TextBuffer } from "../core/text-buffer.ts";
+import { LspLineIndex } from "./lsp-positions.ts";
+import { defaultDocumentUnits, LspSession } from "./lsp-session.ts";
 import type { LspClientFeature, LspDocument, LspDocumentCapture, LspDocumentFeature, LspDocumentSnapshot, LspRequestContext, LspSessionOptions, LspSessionSnapshot } from "./lsp-session.ts";
 import type { RpcCall } from "./json-rpc.ts";
 import type { JsonValue } from "./wire.ts";
 import { decodeLspDiagnostics } from "./lsp-features.ts";
 import type { LspDiagnostics } from "./lsp-features.ts";
-import type { LspTargetResolver } from "./lsp-targets.ts";
+import type { LspResolvedTarget, LspTargetResolver, LspTargetContext, ResolveRetainedTarget } from "./lsp-targets.ts";
 
 export type LspScopeAccess = Pick<LspSession, "getSnapshot" | "subscribe" | "flush" | "bindDocument" | "synchronized" | "requestDocument" | "canRequest" | "featureOptions" | "commandNames" | "requestCommand" | "request" | "notify" | "onRequest" | "onNotification" | "snapshotOwnership"> & Readonly<{
     /** Start or join the owner's shared connection; cancellation expires only this scope's wait. */
@@ -31,7 +33,7 @@ export type LspWorkspaceScope = Omit<LspScopeAccess, "getSnapshot" | "subscribe"
     captureBinding: (document: LspDocument) => LspBindingCapture | undefined;
     observeDiagnostics: (document: LspDocument) => Observable<LspDiagnosticState>;
     reserveCommand: () => Readonly<{ isCurrent: () => boolean; release: () => void }>;
-    resolveTarget: LspTargetResolver;
+    resolveTarget: ResolveRetainedTarget;
     /** Route deferred host callback failures through the provider's existing onError policy. */
     reportError: (error: unknown) => void;
 }>;
@@ -46,7 +48,7 @@ export type LspDiagnosticState = Readonly<{ status: "empty" | "current" | "pendi
     isPlacementCurrent: () => boolean }>;
 export type LspWorkspaceSnapshot = LspSessionSnapshot & Readonly<{ commandAvailable: boolean; commandRequiresReconnect: boolean }>;
 export type LspWorkspaceOptions = LspSessionOptions & Readonly<{
-    /** Load an opaque URI on demand, returning a retained immutable target; never open a view here. */
+    /** Authorize an opaque URI and return a project document or read-only contents. */
     resolveTarget?: LspTargetResolver;
     maxScopes?: number;
 }>;
@@ -243,6 +245,69 @@ export class LspWorkspace {
     async reconnect(): Promise<void> { this.disconnect(); await this.connect(); }
     shutdown(): Promise<void> { this.writable(); for (const entry of [...this.documents.values()]) this.synchronize(entry); return this.session.shutdown(); }
 
+    private async loadTarget(uri: string, context: LspTargetContext, scopeCurrent: () => boolean): Promise<LspResolvedTarget | undefined> {
+        const session = this.session.getSnapshot();
+        const connected = () => {
+            const now = this.session.getSnapshot();
+            return scopeCurrent() && now.phase === "ready" && now.epoch === session.epoch && now.registrationGeneration === session.registrationGeneration;
+        };
+        if (!isLspUri(uri)) throw new TypeError("Invalid target URI.");
+        if (!connected() || !context.isCurrent()) throw stale();
+        const source = await this.options.resolveTarget?.(uri, context);
+        if (!source) return;
+        let lease: ResourceLease | undefined, released = false;
+        const release = () => {
+            if (released) return; released = true;
+            try { lease?.release(); } finally {
+                try { void Promise.resolve(source.release?.()).catch(error => this.report(error)); } catch (error) { this.report(error); }
+            }
+        };
+        try {
+            if (!connected() || !context.isCurrent()) throw stale();
+            const limit = this.options.maxDocumentUnits ?? defaultDocumentUnits;
+            let doc: DocumentSnapshot;
+            if ("document" in source) {
+                doc = source.document;
+                if (doc.language?.uri !== uri) throw new TypeError("Resolved document does not match the requested URI.");
+                if (!isLspIdentityPart(doc.language.languageId)) throw new TypeError("Invalid target language ID.");
+                if (this.workspace.document(doc.id) !== doc) throw stale();
+                if (doc.buffer.length > limit) throw new RangeError("LSP target size limit exceeded.");
+                lease = this.workspace.acquire(doc.resourceId);
+            } else {
+                if (context.purpose === "edit") throw new TypeError("An editable target requires a project document.");
+                if (!isLspIdentityPart(source.languageId) || !(typeof source.text === "string" || source.text instanceof TextBuffer)) throw new TypeError("Invalid read-only target.");
+                if (source.text.length > limit) throw new RangeError("LSP target size limit exceeded.");
+                const buffer = typeof source.text === "string" ? TextBuffer.from(source.text) : source.text;
+                const resource = this.workspace.createTextResourceFromBuffer(this.workspace.createResourceKey("lsp", uri), uri, { buffer },
+                    { edit: [], save: false, run: false }, { visibility: "internal", language: { uri, languageId: source.languageId } });
+                lease = this.workspace.acquire(resource.id);
+                this.workspace.releaseResourceWhenUnowned(resource.id);
+                doc = this.workspace.document(resource.documentId);
+            }
+            const documents = this.workspace.observeDocument(doc.id), metadata = this.workspace.resourceForDocument(doc.id).metadata, access = metadata.getSnapshot();
+            const entry = this.uris.get(uri);
+            if (entry && entry.id !== doc.id && this.bindingCurrent(entry)) throw stale();
+            const capture = entry && this.live(entry) ? this.session.synchronized(entry.binding) : undefined;
+            const isCurrent = () => {
+                const now = metadata.getSnapshot(), owner = this.uris.get(uri);
+                return !released && connected() && documents.getSnapshot() === doc && now.capabilities === access.capabilities && now.editLock === access.editLock
+                    && (!owner || owner.id === doc.id) && (!capture || capture.isCurrent());
+            };
+            let interrupt: (() => void) | undefined;
+            const stop = context.onCancel(() => interrupt?.());
+            try {
+                const index = capture?.index ?? await LspLineIndex.create(doc.buffer, () => new Promise<void>((resolve, reject) => {
+                    if (!isCurrent() || !context.isCurrent()) throw stale();
+                    const cancel = this.options.schedule(0, resolve);
+                    interrupt = () => { cancel(); reject(stale()); };
+                }));
+                if (!isCurrent() || !context.isCurrent()) throw stale();
+                const document = Object.freeze({ ...doc.language!, resourceId: doc.resourceId, documentId: doc.id, revision: doc.revision, buffer: doc.buffer });
+                return Object.freeze({ target: Object.freeze({ document, index, version: capture?.version ?? null, isCurrent }), release });
+            } finally { stop(); }
+        } catch (error) { release(); throw error; }
+    }
+
     createScope(): LspWorkspaceScope {
         this.writable(); if (this.scopes.size >= (this.options.maxScopes ?? wireLimits.scopes)) throw new RangeError("Provider scope limit exceeded.");
         const scope: Scope = { active: true, generation: 0, close: () => {}, applyEdit: undefined, incoming: new Set() }, documents = new Map<string, LspDocument>();
@@ -307,15 +372,9 @@ export class LspWorkspace {
                 result => finish(() => { if (isCurrent()) resolve(result); else reject(cancelled()); }), error => finish(() => reject(error)));
         });
         const api: LspWorkspaceScope = Object.freeze({ ...state, reportError: error => this.report(error),
-            resolveTarget: async (uri, context) => {
+            resolveTarget: (uri, context) => {
                 writable(); const generation = scope.generation;
-                if (!context.isCurrent()) throw stale();
-                const result = await this.options.resolveTarget?.(uri, context); if (!result) return undefined;
-                let released = false;
-                const release = () => { if (released) return; released = true;
-                    try { void Promise.resolve(result.release()).catch(error => this.report(error)); } catch (error) { this.report(error); } };
-                if (!current(generation) || !context.isCurrent()) { release(); throw stale(); }
-                return Object.freeze({ target: result.target, release });
+                return this.loadTarget(uri, context, () => current(generation));
             },
             reserveCommand: () => { const intent = reserve(); return Object.freeze({ isCurrent: () => this.commandCurrent(intent),
                 release: () => { if (this.command === intent) this.endCommand(intent, intent.sent); } }); },

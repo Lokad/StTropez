@@ -14,7 +14,7 @@ import { createPackageRequestHandler, listenPackageServer, closePackageServer, c
 import { libraryModules, libraryCss } from "./library-entries.mjs";
 import { attachDemoProvider } from "../examples/demo/provider-server.ts";
 import { demoFontFiles, stageDemoFonts } from "./demo-fonts.mjs";
-import { runDemoWalkthrough, runDemoConflict } from "../tests/browser/demo-walkthrough.ts";
+import { runDemoWalkthrough, runDemoConflict, runDemoUnopenedNavigation } from "../tests/browser/demo-walkthrough.ts";
 import { runDemoHostIntegrations } from "../tests/browser/demo-host-integrations.ts";
 import { captureBrowserErrors } from "../tests/helpers/browser-errors.ts";
 import { sourceIdentity } from "./measurement.mjs";
@@ -222,9 +222,9 @@ if (!prepareOnly) {
             assert.ok(browserServer); const ownedServer = browserServer;
             evidence.measurement = await measureDemo(browser, url, { sourceSha256: source.sha256, packageSha256 }, () => ownedServer.kill());
         }
-        for (const [name, run] of measureOnly ? [] : /** @type {const} */ ([["walkthrough", runDemoWalkthrough], ["conflict", runDemoConflict], ["hostIntegrations", runDemoHostIntegrations]])) {
+        for (const [name, run] of measureOnly ? [] : /** @type {const} */ ([["walkthrough", runDemoWalkthrough], ["unopenedTargets", runDemoUnopenedNavigation], ["conflict", runDemoConflict], ["hostIntegrations", runDemoHostIntegrations]])) {
             const context = await browser.newContext({ viewport: { width: 1200, height: 760 } }), errors = captureBrowserErrors(context);
-            try { journeys[name] = await run(await context.newPage(), url); console.log(`Restored demo ${name} passed (${browserName}).`); }
+            try { journeys[name] = await run(await context.newPage(), url) ?? "passed"; console.log(`Restored demo ${name} passed (${browserName}).`); }
             finally { try { await context.close(); } finally { errors.dispose(); errors.assertClean(); } }
         }
         evidence.journeys = journeys;

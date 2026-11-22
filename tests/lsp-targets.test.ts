@@ -2,24 +2,42 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { clientFixture, protocol, settled } from "./helpers/lsp-client.ts";
 import { latch } from "./helpers/latch.ts";
-import type { LspResolvedTarget, LspTargetContext } from "../src/protocol/index.ts";
-const { createLspNavigationClient, createLspRenameClient, createLspActionClient, LspLineIndex, RpcError, ProtocolDecodeError } = protocol;
+import type { DocumentId } from "../src/index.ts";
+import type { LspTargetSource, LspTargetContext } from "../src/protocol/index.ts";
+const { createLspNavigationClient, createLspRenameClient, createLspActionClient, RpcError, ProtocolDecodeError } = protocol;
 const uri = "host+opaque:unopened%2Fmodule";
 const range = { start: { line: 0, character: 6 }, end: { line: 0, character: 10 } };
 const stale = (error: unknown) => error instanceof RpcError && error.code === -32801;
 const cancelled = (error: unknown) => error instanceof RpcError && error.code === -32800;
-async function retained(f: ReturnType<typeof clientFixture>, addressed = uri) {
-    const document = f.workspace.document(f.other.documentId), lease = f.workspace.acquire(document.resourceId);
-    const metadata = f.other.metadata.getSnapshot(), index = await LspLineIndex.create(document.buffer, settled); let released = 0;
-    return { get released() { return released; }, value: Object.freeze({ target: Object.freeze({
-        document: Object.freeze({ uri: addressed, languageId: "generic", resourceId: document.resourceId, documentId: document.id, revision: document.revision, buffer: document.buffer }), index, version: null,
-        isCurrent: () => !released && f.workspace.document(document.id) === document && f.other.metadata.getSnapshot() === metadata,
-    }), release: () => { released++; lease.release(); } }) satisfies LspResolvedTarget };
+function retained(f: ReturnType<typeof clientFixture>, addressed = uri) {
+    f.workspace.setDocumentLanguage(f.other.documentId, { uri: addressed, languageId: "generic" });
+    let released = 0;
+    const value = { document: f.workspace.document(f.other.documentId), release: () => { released++; } } satisfies LspTargetSource;
+    return { get released() { return released; }, value };
 }
 
+test("read-only target text survives an opened view and cannot supply editable workspace contents", async t => {
+    let releases = 0;
+    const f = clientFixture(t, undefined, async () => ({ text: "first\rline 😀", languageId: "generic", release: () => { releases++; } }));
+    const navigation = createLspNavigationClient(f.provider), rename = createLspRenameClient(f.provider);
+    t.after(() => { navigation.dispose(); rename.dispose(); });
+    const source = f.document(), targetRange = { start: { line: 1, character: 5 }, end: { line: 1, character: 7 } };
+    f.peer.onRequest("textDocument/definition", () => [{ uri, range: targetRange }]);
+    const result = await navigation.run([source], source.id, 0, "definition"), location = result.locations[0]!;
+    const id = location.target.document.documentId as DocumentId, doc = f.workspace.document(id);
+    assert.equal(doc.buffer.slice(location.from, location.to), "😀"); assert.equal(doc.language?.uri, uri);
+    assert.ok(!f.workspace.getSnapshot().documents.includes(doc)); assert.equal(f.sent("textDocument/didOpen").length, 1);
+    const view = f.workspace.createDocumentView(id);
+    navigation.cancel(); await settled(); assert.equal(releases, 1); assert.equal(f.workspace.document(id), doc);
+    assert.deepEqual(f.workspace.edit({ documentId: id, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "!" }] }), { applied: false, reason: "read-only" });
+    view.dispose(); await settled(); assert.throws(() => f.workspace.document(id));
+    f.peer.onRequest("textDocument/rename", () => ({ changes: { [uri]: [{ range, newText: "new" }] } }));
+    await assert.rejects(rename.run([source], source.id, 0, "new"), /requires a project document/); assert.equal(releases, 2);
+});
+
 test("target checks visit the captured project once per pass and retain independent target guards", async t => {
-    const leases: Awaited<ReturnType<typeof retained>>[] = [];
-    const f = clientFixture(t, undefined, async addressed => { const lease = await retained(f, addressed); leases.push(lease); return lease.value; }),
+    const leases: ReturnType<typeof retained>[] = [];
+    const f = clientFixture(t, undefined, async () => { const lease = retained(f); leases.push(lease); return { text: lease.value.document.buffer, languageId: "generic", release: lease.value.release }; }),
         client = createLspNavigationClient(f.provider); t.after(client.dispose);
     const resources = [f.source, ...Array.from({ length: 19 }, (_, i) => f.workspace.createTextResource(
         { scope: "project", resource: `${i}`, variant: "working" }, `Source ${i}`, { value: "source" }, undefined, { language: { uri: `generic:extra/${i}`, languageId: "generic" } }))];
@@ -39,9 +57,9 @@ test("target checks visit the captured project once per pass and retain independ
 });
 
 test("navigation resolves an opaque target once without synchronizing it, and retains its independent revision", async t => {
-    let calls = 0, context: LspTargetContext | undefined, lease: Awaited<ReturnType<typeof retained>> | undefined;
-    const f = clientFixture(t, undefined, async (addressed, captured) => { calls++; context = captured; assert.equal(addressed, uri); lease = await retained(f);
-        return { ...lease.value, target: { ...lease.value.target, isCurrent: () => captured.isCurrent() && lease!.value.target.isCurrent() } }; });
+    let calls = 0, context: LspTargetContext | undefined, lease: ReturnType<typeof retained> | undefined;
+    const f = clientFixture(t, undefined, async (addressed, captured) => { calls++; context = captured; assert.equal(addressed, uri); lease = retained(f);
+        return lease.value; });
     const client = createLspNavigationClient(f.provider); t.after(client.dispose);
     f.peer.onRequest("textDocument/definition", () => [1, 2].map(() => ({ targetUri: uri, targetRange: range, targetSelectionRange: range, originSelectionRange: range })));
     const source = f.document(), preview = await client.prepareDefinition([source], source.id, 6);
@@ -58,9 +76,9 @@ test("navigation resolves an opaque target once without synchronizing it, and re
 });
 
 test("target cancellation and deferred release failures are reported without stopping cleanup", async t => {
-    let context!: LspTargetContext, lease!: Awaited<ReturnType<typeof retained>>;
+    let context!: LspTargetContext, lease!: ReturnType<typeof retained>;
     const f = clientFixture(t, undefined, async (_uri, captured) => {
-        context = captured; context.onCancel(async () => { throw new Error("Target cancellation failure"); }); lease = await retained(f);
+        context = captured; context.onCancel(async () => { throw new Error("Target cancellation failure"); }); lease = retained(f);
         return { ...lease.value, release: async () => { lease.value.release(); throw new Error("Target release failure"); } };
     });
     const client = createLspNavigationClient(f.provider); t.after(client.dispose);
@@ -73,12 +91,12 @@ test("target cancellation and deferred release failures are reported without sto
 });
 
 for (const stop of ["cancel", "dispose", "supersede", "disconnect"] as const) test(`${stop} settles target loading promptly and releases a late host result exactly once`, async t => {
-    const entered = latch<void>(), answer = latch<LspResolvedTarget>(); let cancellations = 0;
+    const entered = latch<void>(), answer = latch<LspTargetSource>(); let cancellations = 0;
     const f = clientFixture(t, undefined, async (_uri, context) => { context.onCancel(() => cancellations++); entered.resolve(); return answer.promise; });
     const client = createLspNavigationClient(f.provider); t.after(client.dispose);
     f.peer.onRequest("textDocument/definition", () => [{ uri, range }]); const source = f.document();
     const pending = client.run([source], source.id, 6, "definition"), rejected = assert.rejects(pending, cancelled); await entered.promise;
-    const lease = await retained(f);
+    const lease = retained(f);
     if (stop === "disconnect") f.provider.disconnect();
     else if (stop === "supersede") { f.peer.onRequest("textDocument/definition", () => []); assert.equal((await client.run([source], source.id, 0, "definition")).isCurrent(), true); }
     else client[stop]();
@@ -87,12 +105,12 @@ for (const stop of ["cancel", "dispose", "supersede", "disconnect"] as const) te
 });
 
 test("source edits and mismatched target identities reject a loaded result without publishing it", async t => {
-    const entered = latch<void>(), answer = latch<LspResolvedTarget>();
+    const entered = latch<void>(), answer = latch<LspTargetSource>();
     const f = clientFixture(t, undefined, async () => { entered.resolve(); return answer.promise; }), client = createLspNavigationClient(f.provider); t.after(client.dispose);
     f.peer.onRequest("textDocument/definition", () => [{ uri, range }]); const source = f.document();
     const pending = client.run([source], source.id, 6, "definition"), rejected = assert.rejects(pending, stale); await entered.promise;
-    const lease = await retained(f); f.edit(); answer.resolve(lease.value); await rejected; await settled(); assert.equal(lease.released, 1);
-    const other = clientFixture(t, undefined, async () => (await retained(other, "wrong:uri")).value), next = createLspNavigationClient(other.provider); t.after(next.dispose);
+    const lease = retained(f); f.edit(); answer.resolve(lease.value); await rejected; await settled(); assert.equal(lease.released, 1);
+    const other = clientFixture(t, undefined, async () => retained(other, "wrong:uri").value), next = createLspNavigationClient(other.provider); t.after(next.dispose);
     other.peer.onRequest("textDocument/definition", () => [{ uri, range }]); const origin = other.document();
     await assert.rejects(next.run([origin], origin.id, 0, "definition"), /does not match/); await settled(); assert.equal(other.workspace.diagnostics().leases, 0);
 });
@@ -108,8 +126,8 @@ test("malformed location and edit tails reject before any host loading", async t
 });
 
 test("rename and resolved actions retain unloaded null-version edit targets through atomic host application", async t => {
-    const purposes: string[] = [], leases: Awaited<ReturnType<typeof retained>>[] = [];
-    const f = clientFixture(t, undefined, async (_uri, context) => { purposes.push(context.purpose); const lease = await retained(f); leases.push(lease); return lease.value; });
+    const purposes: string[] = [], leases: ReturnType<typeof retained>[] = [];
+    const f = clientFixture(t, undefined, async (_uri, context) => { purposes.push(context.purpose); const lease = retained(f); leases.push(lease); return lease.value; });
     const rename = createLspRenameClient(f.provider), actions = createLspActionClient(f.provider); t.after(() => { rename.dispose(); actions.dispose(); });
     const source = f.document(), edit = { documentChanges: [{ textDocument: { uri, version: null }, edits: [{ range: { ...range, end: { line: 0, character: 11 } }, newText: "omega" }] }] };
     f.peer.onRequest("textDocument/rename", () => edit);
@@ -125,7 +143,7 @@ test("rename and resolved actions retain unloaded null-version edit targets thro
 });
 
 test("a closed target cannot satisfy an invented wire version or bypass read-only host authority", async t => {
-    const f = clientFixture(t, undefined, async () => (await retained(f)).value), client = createLspRenameClient(f.provider); t.after(client.dispose);
+    const f = clientFixture(t, undefined, async () => retained(f).value), client = createLspRenameClient(f.provider); t.after(client.dispose);
     const source = f.document();
     f.peer.onRequest("textDocument/rename", () => ({ documentChanges: [{ textDocument: { uri, version: 1 }, edits: [{ range, newText: "new" }] }] }));
     await assert.rejects(client.run([source], source.id, 6, "new"), stale); await settled(); assert.equal(f.workspace.diagnostics().leases, 0);
@@ -139,8 +157,8 @@ test("a closed target cannot satisfy an invented wire version or bypass read-onl
 });
 
 test("server-proposed edits resolve through the same host policy and release targets after the decision", async t => {
-    let context: LspTargetContext | undefined, lease: Awaited<ReturnType<typeof retained>> | undefined;
-    const f = clientFixture(t, undefined, async (_uri, captured) => { context = captured; lease = await retained(f); return lease.value; });
+    let context: LspTargetContext | undefined, lease: ReturnType<typeof retained> | undefined;
+    const f = clientFixture(t, undefined, async (_uri, captured) => { context = captured; lease = retained(f); return lease.value; });
     const client = createLspActionClient(f.provider); t.after(client.dispose); const source = f.document();
     f.peer.onRequest("textDocument/codeAction", () => [{ title: "command", command: "fixture.command" }]);
     f.peer.onRequest("workspace/executeCommand", async () => f.peer.sendRequest("workspace/applyEdit", { edit: { changes: { [uri]: [{ range, newText: "new" }] } } }));

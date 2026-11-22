@@ -18,7 +18,10 @@ test("held target contents cannot load a tab or steal focus after source edits o
     const request = async () => {
         held = false; await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
         await source.press("Control+f"); await page.locator("#find-query").fill("const label = formatLabel");
-        await expect(page.locator("#find-status")).toHaveText("1 of 1"); await page.locator("#find-next").click(); await page.locator("#find-close").click();
+        const status = page.locator("#find-status");
+        await expect(status).toHaveText(/^(1 match|1 of 1)$/);
+        await page.locator("#find-next").click(); await expect(status).toHaveText(/^1 of 1\b/);
+        await page.locator("#find-close").click();
         await source.press("ArrowRight"); await source.press("ArrowLeft"); await source.press("F12"); await expect.poll(() => held).toBe(true);
     };
     await request(); await source.press("Control+End"); await page.keyboard.insertText("// newer source\n"); release!();

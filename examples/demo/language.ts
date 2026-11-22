@@ -1,6 +1,6 @@
 import type { DocumentLanguage, Observable, Workspace } from "../../src/index.ts";
 import { BrowserLspWorkspace } from "../../src/browser/index.ts";
-import { type LspWorkspace, LspLineIndex, createLspFoldingClient, decodeLspDiagnostics, lspRangeOffsets } from "../../src/protocol/index.ts";
+import { type LspWorkspace, createLspFoldingClient, decodeLspDiagnostics, lspRangeOffsets } from "../../src/protocol/index.ts";
 import type { LspWorkspaceScope, RpcCall, LspScopeAccess, LspTargetResolver } from "../../src/protocol/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import type { DemoFile } from "./project.ts";
@@ -108,19 +108,7 @@ export class DemoLanguage {
                         if (!object(response) || response.uri !== uri || typeof response.text !== "string" || response.text.length > 8_000_000) throw new Error("Invalid target contents.");
                         file = this.inventory.load(name, response.text);
                     }
-                    const resource = file.resource, document = this.workspace.document(resource.documentId), metadata = resource.metadata.getSnapshot();
-                    const lease = this.workspace.acquire(resource.id), identity = this.workspace.captureResource(resource.id);
-                    const current = () => this.valid(targetLifecycle) && this.config === capturedProvider && this.workspace.resolveResource(identity) === resource
-                        && this.workspace.document(document.id) === document
-                        && resource.metadata.getSnapshot().capabilities === metadata.capabilities && resource.metadata.getSnapshot().editLock === metadata.editLock;
-                    try {
-                        const index = await LspLineIndex.create(document.buffer, async () => { await new Promise(resolve => setTimeout(resolve, 0)); if (!current() || !context.isCurrent()) throw new Error("The target changed."); });
-                        if (!current() || !context.isCurrent()) throw new Error("The target changed.");
-                        const binding = this.scope!.setDocuments(this.files.map(file => this.workspace.document(file.resource.documentId))).get(document.id);
-                        const sent = binding && this.scope!.synchronized(binding);
-                        return { target: { document: { uri, languageId: "typescript", resourceId: resource.id, documentId: document.id, revision: document.revision, buffer: document.buffer },
-                            index, version: sent?.document.buffer === document.buffer ? sent.version : null, isCurrent: current }, release: lease.release };
-                    } catch (error) { lease.release(); throw error; }
+                    return { document: this.workspace.document(file.resource.documentId) };
                 };
                 owner = new BrowserLspWorkspace(this.workspace, {
                     connect: capturedProvider.connect,

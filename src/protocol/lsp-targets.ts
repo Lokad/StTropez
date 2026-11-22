@@ -1,17 +1,21 @@
 import { cancelledRequest, staleRequest } from "./wire.ts";
 import type { LspDocumentSnapshot } from "./lsp-session.ts";
 import type { LspEditTarget } from "./lsp-features.ts";
+import type { DocumentSnapshot } from "../core/workspace.ts";
+import type { TextBuffer } from "../core/text-buffer.ts";
 
 export type LspTargetContext = Readonly<{ purpose: "navigation" | "edit"; source: LspDocumentSnapshot | null;
     isCurrent: () => boolean; onCancel: (listener: () => void) => () => void }>;
-/** The host retains the exact resource/buffer until release; loading grants no edit authority. */
+/** A project document, or read-only contents without a project resource. */
+export type LspTargetSource = Readonly<({ document: DocumentSnapshot } | { text: string | TextBuffer; languageId: string }) & { release?: () => void }>;
+export type LspTargetResolver = (uri: string, context: LspTargetContext) => Promise<LspTargetSource | undefined>;
 export type LspResolvedTarget = Readonly<{ target: LspEditTarget; release: () => void }>;
-export type LspTargetResolver = (uri: string, context: LspTargetContext) => Promise<LspResolvedTarget | undefined>;
+export type ResolveRetainedTarget = (uri: string, context: LspTargetContext) => Promise<LspResolvedTarget | undefined>;
 type Lifetime = Omit<LspTargetContext, "purpose"> & Readonly<{ reportError: (error: unknown) => void }>;
 const stale = () => staleRequest("Captured LSP target loading expired.");
 
 /** Shared by read results, text edits and server edit requests. No URI I/O occurs here. */
-export function createLspTargets(captured: ReadonlyMap<string, LspEditTarget>, resolve: LspTargetResolver, lifetime: Lifetime) {
+export function createLspTargets(captured: ReadonlyMap<string, LspEditTarget>, resolve: ResolveRetainedTarget, lifetime: Lifetime) {
     const targets = new Map(captured), captures = [...captured.values()], resolved = new Map<string, LspEditTarget>(),
         leases = new Set<LspResolvedTarget>(), listeners = new Set<() => void>();
     let disposed = false, stop = () => {}, reject!: (error: Error) => void;

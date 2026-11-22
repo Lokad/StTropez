@@ -401,10 +401,15 @@ validated locations within the host's input limits. The host owns paging and exp
 Navigation, rename, actions and incoming edits share `LspWorkspaceOptions.resolveTarget(uri,
 context)` for missing targets. Wire structure is validated before loading. `LspTargetContext`
 identifies navigation/editing, the captured source (null for server edits), source/provider
-currentness and cancellation. Return `LspResolvedTarget` containing an exact `LspEditTarget` and
-idempotent `release`, or undefined for an unavailable URI. The target's line index must use its
-captured buffer, with an independent currentness guard. A closed target has `version: null`;
-its local revision must not substitute for an unknown wire version.
+currentness and cancellation. Return `undefined` to decline. For project files return
+`{ document: workspace.document(id) }` after loading the text or buffer. The snapshot must
+belong to this workspace and carry the requested URI. For a read-only navigation target, return
+`{ text, languageId }`, where `text` is a string or a `TextBuffer`. The workspace retains these
+contents in an internal read-only resource while the result or an opened view needs them.
+
+The provider builds the UTF-16 index, checks the resource and its edit permissions, and uses a
+wire version only for a matching synchronized document. Either form accepts an optional
+`release()` callback for host-owned I/O resources.
 
 Authorize each URI before loading its contents. You can load a definition target without mounting a
 view or sending `didOpen`. Reading the file grants no permission to edit it or follow a link. Cancel

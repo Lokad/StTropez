@@ -13,7 +13,7 @@ export type { LspCodeAction, LspCodeActions } from "./lsp-code-actions.ts";
 export type { LspCommand } from "./lsp-command-value.ts";
 export { LspWorkspace } from "./lsp-workspace.ts";
 export type { LspWorkspaceOptions, LspWorkspaceScope, LspScopeAccess, LspPrepare, LspBindingCapture, LspDiagnosticState, LspWorkspaceSnapshot } from "./lsp-workspace.ts";
-export type { LspTargetContext, LspResolvedTarget, LspTargetResolver } from "./lsp-targets.ts";
+export type { LspTargetContext, LspTargetSource, LspTargetResolver } from "./lsp-targets.ts";
 export { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "./lsp-workspace-edit.ts";
 export type { LspWorkspaceEditOptions, LspWorkspaceEditNote, LspWorkspaceEditPreview } from "./lsp-workspace-edit.ts";
 export { createLspCommandRunner } from "./lsp-command.ts";

@@ -16,6 +16,7 @@ const providers = { "textDocument/completion": "completionProvider", "textDocume
     "textDocument/rename": "renameProvider", "textDocument/codeAction": "codeActionProvider", "workspace/executeCommand": "executeCommandProvider",
     "textDocument/signatureHelp": "signatureHelpProvider", "textDocument/documentLink": "documentLinkProvider", "textDocument/documentColor": "colorProvider", "textDocument/colorPresentation": "colorProvider",
     "textDocument/foldingRange": "foldingRangeProvider", "textDocument/documentHighlight": "documentHighlightProvider" } as const;
+export const defaultDocumentUnits = 3 * 1024 * 1024;
 export type LspFeature = keyof typeof providers;
 export type LspClientFeature = LspFeature | "textDocument/publishDiagnostics";
 export type LspDocumentFeature = Exclude<LspFeature, "workspace/executeCommand">;
@@ -113,7 +114,7 @@ export class LspSession {
             ...(options.rpc ? { rpc: Object.freeze({ ...options.rpc }) } : {}) });
         this.initializeBase = jsonSnapshot({ processId: null, rootUri: options.rootUri ?? null,
             ...(options.clientInfo ? { clientInfo: options.clientInfo } : {}), initializationOptions: options.initializationOptions ?? null }) as Readonly<Record<string, JsonValue>>;
-        this.maxDocuments = options.maxDocuments ?? 100; this.maxDocumentUnits = options.maxDocumentUnits ?? 3 * 1024 * 1024; this.maxTotalUnits = options.maxTotalUnits ?? 16 * 1024 * 1024;
+        this.maxDocuments = options.maxDocuments ?? 100; this.maxDocumentUnits = options.maxDocumentUnits ?? defaultDocumentUnits; this.maxTotalUnits = options.maxTotalUnits ?? 16 * 1024 * 1024;
         if (![this.maxDocuments, this.maxDocumentUnits, this.maxTotalUnits].every(value => integer(value) && value > 0)) throw new RangeError("Invalid LSP document limits.");
         this.scope = new NotificationScope(error => this.report(error));
         this.store = new Store(this.snapshot("disconnected", null), this.scope);

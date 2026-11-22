@@ -290,9 +290,8 @@ ignores its reply, releases loaded targets and keeps synchronization bindings. P
 the next project omits the file, the client or host closes it, or a request fails. Releasing a
 completed wire call leaves later calls alone.
 
-Target lookup starts in the captured project. To load a missing URI, supply `resolveTarget` and a
-release callback. The host authorizes each load. Recheck the project and loaded targets after
-awaiting the result. See [target loading](language-features.md#navigation-and-target-loading).
+Target lookup starts in the captured project. Supply `resolveTarget` to authorize a missing URI and return its document or read-only contents.
+The provider retains the resource and checks its identity after loading. See [target loading](language-features.md#navigation-and-target-loading).
 
 ### Commands and edit decisions
 
