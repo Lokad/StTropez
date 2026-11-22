@@ -10,6 +10,17 @@ const button = (page: Page, name: string) => page.getByRole("button", { name, ex
 const choices = (page: Page) => page.getByRole("list", { name: "Provider code actions", exact: true }).getByRole("button");
 const edits = (page: Page) => page.getByRole("list", { name: "Proposed action edits", exact: true }).locator("li");
 const raw = "// 😀 TODO\r\nconst catalogue = 1;\r\ncatalogue;", marker = "// fixture action\r\n";
+async function releaseAfterReplacement(page: Page, kind: "choices" | "edits", replace: () => Promise<void>) {
+    const label = "action " + kind, next = button(page, "Next " + label);
+    const old = await page.evaluateHandle(kind => {
+        const state = window.hostFixture.snapshot().bindings.actions.state;
+        return (kind === "choices" ? state.choicePaging : state.editPaging)!.next!;
+    }, kind);
+    await next.hover(); await page.mouse.down(); await replace();
+    await expect(next).toBeEnabled(); await next.hover(); await page.mouse.up();
+    await old.evaluate(callback => callback()); await old.dispose();
+    await expect(button(page, "Previous " + label)).toBeDisabled();
+}
 const header = "// provider review\r\n", footer = "\r\n// end provider review";
 async function faultCommand(page: Page, fault: "malformed" | "failure" | "ack") {
     await page.evaluate(fault => {
@@ -116,23 +127,31 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await exact(page, text); expect(after.history).toEqual(before.history); expect(after.source.revision).toBe(before.source.revision);
         expect(after.source.exports).toBe(0); await dispose(page);
     });
-    if (coversHost("plain-candidate", host, "candidate")) test("a complete 65-action list pages to the last captured choice and applies one undoable edit", async ({ page }) => {
+    if (coversHost("candidate-hosts", host, "candidate")) test("a complete 65-action list pages to the last captured choice and applies one undoable edit", async ({ page }) => {
         await page.routeWebSocket("**/lsp-fixture", client => {
-            const server = client.connectToServer(), ids = new Set<number>();
-            client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "textDocument/codeAction") ids.add(value.id); server.send(message); });
+            const server = client.connectToServer(), requests = new Map<number, string>();
+            client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "textDocument/codeAction") requests.set(value.id, value.params.textDocument.uri); server.send(message); });
             server.onMessage(message => {
-                const value = JSON.parse(message.toString());
-                if (ids.delete(value.id) && Array.isArray(value.result)) {
-                    value.result = Array.from({ length: 65 }, (_, index) => ({ ...value.result[1], title: `Review option ${index + 1}` })); client.send(JSON.stringify(value));
-                } else client.send(message);
+                const value = JSON.parse(message.toString()), uri = requests.get(value.id);
+                if (!uri) { client.send(message); return; }
+                requests.delete(value.id);
+                const at = { line: 0, character: 0 }, range = { start: at, end: at };
+                value.result = Array.from({ length: 65 }, (_, index) => ({ title: `Review option ${index + 1}`, kind: "refactor.rewrite",
+                    edit: { changes: { [uri]: [{ range, newText: `// choice ${index + 1}\r\n` }] } } }));
+                client.send(JSON.stringify(value));
             });
         });
         await page.reload(); await waitForActions(page); await seed(page); await preview(page);
         await expect(choices(page)).toHaveCount(16);
+        await releaseAfterReplacement(page, "choices", async () => {
+            await button(page, "Preview module action").evaluate(node => (node as HTMLButtonElement).click());
+            await waitForActions(page);
+        });
+        await expect(choices(page).first()).toContainText("Review option 1 ·");
         for (let i = 0; i < 4; i++) await button(page, "Next action choices").click();
         await expect(choices(page)).toHaveCount(1); await expect(choices(page)).toContainText("Review option 65");
         await choices(page).click(); await expect(choices(page)).toHaveAttribute("aria-pressed", "true");
-        await button(page, "Apply captured action").click(); await waitForActions(page); await exact(page, marker + raw);
+        await button(page, "Apply captured action").click(); await waitForActions(page); await exact(page, "// choice 65\r\n" + raw);
         await input(page).press("Control+z"); await waitForActions(page); await exact(page, raw); await dispose(page);
     });
     if (coversHost("candidate-hosts", host, "candidate")) test("multi-resource action confirmation preserves comparison baselines, unmounted targets and captured Save/Run", async ({ page }) => {
@@ -332,7 +351,12 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await button(page, "Save source").click(); await working.press("Control+End"); await working.pressSequentially(" later"); await waitForActions(page); await page.evaluate(() => window.hostFixture.finishSave()); await waitForActions(page); await exact(page, expected + " later"); expect((await snapshot(page)).source.dirty).toBe(true); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline); expect((await snapshot(page)).source.exports).toBe(0); expect((await snapshot(page)).bindings.views.every(view => !view.metrics || view.metrics.inputUnits <= 4096 && view.metrics.viewport.rows < 100)).toBe(true); await dispose(page);
     });
     if (coversHost("plain-candidate", host, "candidate")) test("100k-line resolved actions page bounded previews and apply every edit as one undo command", async ({ page }) => {
-        test.setTimeout(90000); const text = "// 😀 TODO\r\n" + "const unchanged = 123;\r\n".repeat(99_999) + "// TODO\r\n".repeat(70); await seed(page, text); const before = await snapshot(page); await preview(page); await choices(page).nth(2).click(); await waitForActions(page); expect((await snapshot(page)).bindings.actions.state.editCount).toBe(71); await expect(edits(page)).toHaveCount(64); await button(page, "Next action edits").click(); await expect(edits(page)).toHaveCount(7); await button(page, "Apply captured action").click(); await waitForActions(page); await exact(page, text.replaceAll("TODO", "DONE"));
+        test.setTimeout(90000); const text = "// 😀 TODO\r\n" + "const unchanged = 123;\r\n".repeat(99_999) + "// TODO\r\n".repeat(70); await seed(page, text); const before = await snapshot(page); await preview(page); await choices(page).nth(2).click(); await waitForActions(page); expect((await snapshot(page)).bindings.actions.state.editCount).toBe(71); await expect(edits(page)).toHaveCount(64);
+        await releaseAfterReplacement(page, "edits", async () => {
+            await choices(page).nth(1).evaluate(node => (node as HTMLButtonElement).click());
+            await choices(page).nth(2).evaluate(node => (node as HTMLButtonElement).click()); await waitForActions(page);
+        });
+        await expect(edits(page)).toHaveCount(64); await button(page, "Next action edits").click(); await expect(edits(page)).toHaveCount(7); await button(page, "Apply captured action").click(); await waitForActions(page); await exact(page, text.replaceAll("TODO", "DONE"));
         await input(page).press("Control+z"); await waitForActions(page); await exact(page, text); await input(page).press("Control+Shift+z"); await waitForActions(page); await exact(page, text.replaceAll("TODO", "DONE")); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1); expect((await snapshot(page)).source.exports).toBe(0); expect((await snapshot(page)).bindings.views.every(v => v.metrics!.inputUnits <= 4096 && v.metrics!.viewport.rows < 100)).toBe(true); await dispose(page);
     });
 });

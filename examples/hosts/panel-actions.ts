@@ -26,7 +26,7 @@ export function pageActions(subject: string, paging: PanelPaging | null) {
     return [
         { label: "Previous " + subject, reviewKey: paging?.key, disabled: !paging?.previous, invoke: paging?.previous ?? null },
         { label: "Next " + subject, reviewKey: paging?.key, disabled: !paging?.next, invoke: paging?.next ?? null },
-    ];
+    ] as const;
 }
 
 export function panelActionKey(action: PanelAction): string {

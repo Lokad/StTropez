@@ -35,7 +35,7 @@ test("held target contents cannot load a tab or steal focus after source edits o
 });
 
 test("an action preview includes a newly resolved module and applies one guarded undo unit", async ({ page }) => {
-
+    let generation = 0;
     await page.routeWebSocket("**/demo-provider/*", client => {
         const server = client.connectToServer(), requests = new Map<number, string>();
         client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "textDocument/codeAction") requests.set(value.id, value.params.textDocument.uri); server.send(message); });
@@ -43,7 +43,10 @@ test("an action preview includes a newly resolved module and applies one guarded
             const value = JSON.parse(message.toString()), uri = requests.get(value.id); if (!uri) { client.send(message); return; }
             requests.delete(value.id);
             const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } };
-            client.send(JSON.stringify({ jsonrpc: "2.0", id: value.id, result: [{ title: "Add captured module notes", kind: "quickfix", edit: { changes: {
+            const batch = ++generation;
+            const singleFile = Array.from({ length: 16 }, (_, i) => ({ title: `Local note ${i + 1} (request ${batch})`, kind: "refactor.rewrite",
+                edit: { changes: { [uri]: [{ range, newText: `// local note ${i + 1}\n` }] } } }));
+            client.send(JSON.stringify({ jsonrpc: "2.0", id: value.id, result: [...singleFile, { title: "Add captured module notes", kind: "quickfix", edit: { changes: {
                 [uri]: [{ range, newText: "// main note\n" }], [uri.replace(/main\.ts$/, "labels.ts")]: [{ range, newText: "// module note\n" }],
             } } }] }));
         });
@@ -54,7 +57,13 @@ test("an action preview includes a newly resolved module and applies one guarded
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     const main = page.getByRole("textbox", { name: "main.ts", exact: true }); await main.press("Control+Home"); await main.press("Control+.");
     const popup = page.getByRole("region", { name: "Quick fixes", exact: true });
-    await expect(popup.getByRole("button", { name: "Add captured module notes", exact: true })).toBeVisible();
+    const next = popup.getByRole("button", { name: "Next fixes" });
+    await expect(popup.getByRole("button", { name: "Local note 1 (request 1)", exact: true })).toBeVisible();
+    await next.hover(); await page.mouse.down(); await main.press("Control+.");
+    await expect(popup.getByRole("button", { name: "Local note 1 (request 2)", exact: true })).toBeVisible();
+    await next.hover(); await page.mouse.up();
+    await expect(popup.getByRole("button", { name: "Previous fixes" })).toBeDisabled();
+    await next.click(); await popup.getByRole("button", { name: "Add captured module notes", exact: true }).click();
     await expect(popup.locator("ins")).toHaveText(["// main note\n", "// module note\n"]);
     await popup.getByRole("button", { name: "Apply fix", exact: true }).click(); await expect(popup).toBeHidden();
     await expect(page.locator("#editor")).toContainText("// main note");

@@ -1,15 +1,14 @@
-import { renderPanelActions } from "./panel-actions.ts";
+import { pageActions, renderPanelActions } from "./panel-actions.ts";
+import { actionChoicePageSize, actionEditPageSize } from "./action-pages.ts";
 import type { HostActionsTools, ActionNote, ActionChoice, ActionsSnapshot } from "./code-actions.ts";
-type ActionsPanelTools = Pick<HostActionsTools, "request" | "cancel" | "moveChoicePage" | "previousPage" | "nextPage" | "disconnect" | "reconnect" | "bindModule" | "setModule" | "openChangedDocument">;
+type ActionsPanelTools = Pick<HostActionsTools, "request" | "cancel" | "disconnect" | "reconnect" | "bindModule" | "setModule" | "openChangedDocument">;
 function actionsControls(tools: ActionsPanelTools, s: ActionsSnapshot) {
     return [
         { label: "Preview module action", invoke: tools.request, disabled: !s.available || s.disconnected || s.pending },
         { label: s.command ? "Execute captured action" : "Apply captured action", reviewKey: s.reviewKey, invoke: () => s.confirm?.(), disabled: !s.canApply },
         { label: "Dismiss action preview", invoke: tools.cancel, disabled: !s.active },
-        ...([{ label: "Previous action choices", invoke: () => tools.moveChoicePage(-1), disabled: s.pending || s.choicePage === 0 },
-            { label: "Next action choices", invoke: () => tools.moveChoicePage(1), disabled: s.pending || (s.choicePage + 1) * 16 >= s.choices.length },
-            { label: "Previous action edits", invoke: () => tools.previousPage(), disabled: s.pending || s.page === 0 },
-            { label: "Next action edits", invoke: () => tools.nextPage(), disabled: s.pending || (s.page + 1) * 64 >= s.editCount }]),
+        ...pageActions("action choices", s.choicePaging),
+        ...pageActions("action edits", s.editPaging),
         { label: "Disconnect action provider", invoke: tools.disconnect, disabled: !s.connected && !s.pending },
         { label: "Reconnect action provider", invoke: tools.reconnect, disabled: !s.disconnected && !s.reconnectRequired && s.status !== "failed" }
     ];
@@ -24,12 +23,12 @@ export function actionsPanelModel(tools: ActionsPanelTools, s: ActionsSnapshot) 
         title: "Code actions", description: actionsDescription, status: { label: "Code action status", text: s.message },
         module: { label: "Action module ", value: s.module, maxLength: 64, bind: tools.bindModule, change: (value: string) => tools.setModule(value) },
         actions: actionsControls(tools, s),
-        choices: { enabled: true, label: "Provider code actions", identity: s.choices, page: s.choicePage, start: s.choicePage * 16 + 1,
+        choices: { enabled: true, label: "Provider code actions", identity: s.choices, page: s.choicePage, start: s.choicePage * actionChoicePageSize + 1,
             disabled: s.pending, isSelected: (index: number) => s.choice === index,
-            items: () => s.choices.slice(s.choicePage * 16, (s.choicePage + 1) * 16).map(choice => ({ key: choice.index, label: actionChoiceLabel(choice),
+            items: () => s.choices.slice(s.choicePage * actionChoicePageSize, (s.choicePage + 1) * actionChoicePageSize).map(choice => ({ key: choice.index, label: actionChoiceLabel(choice),
                 invoke: () => choice.select() } as const)) },
         preview: { label: "Captured action title", text: s.title },
-        edits: { label: "Proposed action edits", identity: s.edits, start: s.page * 64 + 1, items: () => s.edits.map(actionTarget) },
+        edits: { label: "Proposed action edits", identity: s.edits, start: s.page * actionEditPageSize + 1, items: () => s.edits.map(actionTarget) },
         changes: { label: "Action changed resources", identity: s.changes, disabled: s.active,
             items: () => s.changes.map(change => ({ key: change.document,
                 label: `Open action changes in ${change.title}`, invoke: () => tools.openChangedDocument(change.document) } as const)) },

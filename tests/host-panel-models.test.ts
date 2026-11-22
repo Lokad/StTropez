@@ -168,8 +168,8 @@ test("action controls invoke the choice and confirmation supplied by their snaps
         active: true, confirm: () => { applied.push(9); }, module: "module", status: "ready", message: "Captured action", title: "Action", disabled: null, command: null, edits: Object.freeze([]),
         changed: Object.freeze({ document: firstId, title: "First" }), changes: Object.freeze([Object.freeze({ document: firstId, title: "First" })]),
         choices: Object.freeze([Object.freeze({ index: 0, title: "First action", kind: null, preferred: false, disabled: null, needsResolve: false, select: () => { selected.push(9); } })]),
-        choice: 0, choicePage: 0, resolving: false, page: 0, editCount: 0 });
-    const tools: Parameters<typeof actionsPanelModel>[0] = { request: noop, cancel: noop, moveChoicePage: noop, previousPage: noop, nextPage: noop, disconnect: noop,
+        choice: 0, choicePage: 0, choicePaging: null, editPaging: null, resolving: false, page: 0, editCount: 0 });
+    const tools: Parameters<typeof actionsPanelModel>[0] = { request: noop, cancel: noop, disconnect: noop,
         reconnect: noop, bindModule: noop, setModule: noop, openChangedDocument: id => { opened.push(id); } };
     const first = actionsPanelModel(tools, state), oldChoice = first.choices.items()[0]!;
     const current = { ...state, confirm: () => { applied.push(10); }, choices: [{ ...state.choices[0]!, select: () => { selected.push(10); } }],
@@ -177,8 +177,8 @@ test("action controls invoke the choice and confirmation supplied by their snaps
     const newer = actionsPanelModel(tools, current), newChoice = newer.choices.items()[0]!;
     assert.notEqual(first.choices.identity, newer.choices.identity);
     oldChoice.invoke(); newChoice.invoke(); assert.deepEqual(selected, [9, 10]);
-    newer.actions.find(action => action.label === "Apply captured action")!.invoke();
-    first.actions.find(action => action.label === "Apply captured action")!.invoke(); assert.deepEqual(applied, [10, 9]);
+    newer.actions.find(action => action.label === "Apply captured action")!.invoke!();
+    first.actions.find(action => action.label === "Apply captured action")!.invoke!(); assert.deepEqual(applied, [10, 9]);
     newer.changes.items()[0]!.invoke(); first.changes.items()[0]!.invoke(); assert.deepEqual(opened, [secondId, firstId]);
     assert.equal(first.module.bind, tools.bindModule);
 });

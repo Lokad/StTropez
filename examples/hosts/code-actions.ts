@@ -1,10 +1,11 @@
-import { createReviewKey } from "./panel-actions.ts";
+import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
+import { createActionPages } from "./action-pages.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { createCodeActionController } from "../../src/browser/index.ts";
-import type { CodeActionChoice, CodeActionController, CodeActionPreview, TextEditor } from "../../src/browser/index.ts";
-import type { LspCommandPolicy, LspScopeAccess, LspWorkspace, LspWorkspaceEditPreview } from "../../src/protocol/index.ts";
+import type { CodeActionChoice, CodeActionController, TextEditor } from "../../src/browser/index.ts";
+import type { LspCommandPolicy, LspScopeAccess, LspWorkspace } from "../../src/protocol/index.ts";
 import { validDomainModule } from "../../fixtures/language/domain.ts";
 import type { ActionInput } from "../../fixtures/language/actions.ts";
 import { HostCell } from "../shared/observable.ts";
@@ -19,10 +20,9 @@ export type ActionNote = Readonly<{ document: string; resource: string; title: s
 type ActionChange = Readonly<{ document: DocumentId; title: string }>;
 export type ActionsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; pending: boolean; canApply: boolean; confirm: (() => void) | null; reviewKey: number | null; active: boolean; module: string;
     status: "idle" | "pending" | "ready" | "expired" | "failed" | "applied" | "executed"; message: string; title: string; disabled: string | null; command: string | null;
-    edits: readonly ActionNote[]; changed: ActionChange | null; changes: readonly ActionChange[]; choices: readonly ActionChoice[]; choice: number | null; choicePage: number; resolving: boolean; page: number; editCount: number }>;
+    edits: readonly ActionNote[]; changed: ActionChange | null; changes: readonly ActionChange[]; choices: readonly ActionChoice[]; choice: number | null; choicePage: number; choicePaging: PanelPaging | null; editPaging: PanelPaging | null; resolving: boolean; page: number; editCount: number }>;
 
-type Panel = { source: Session; settings: ActionSettings; stop: () => void;
-    preview: CodeActionPreview | null; page: number; choicePage: number; edits: LspWorkspaceEditPreview | undefined };
+type Panel = { source: Session; settings: ActionSettings; stop: () => void; pages: ReturnType<typeof createActionPages> };
 /** Routes the shared host sidebar to its originating editor and supplies fixture and command policy. */
 export class HostActionsTools {
     private readonly workspace: Workspace;
@@ -43,7 +43,7 @@ export class HostActionsTools {
     private delay = 0;
     private fault: ActionSettings["fault"];
     private requested = 0;
-    private readonly cell = new HostCell<ActionsSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, pending: false, canApply: false, confirm: null, reviewKey: null, active: false, module: "sample-utils", status: "idle", message: "Focus a candidate source to preview a module-import action.", title: "", disabled: null, command: null, edits: [], changed: null, changes: [], choices: [], choice: null, choicePage: 0, resolving: false, page: 0, editCount: 0 });
+    private readonly cell = new HostCell<ActionsSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, pending: false, canApply: false, confirm: null, reviewKey: null, active: false, module: "sample-utils", status: "idle", message: "Focus a candidate source to preview a module-import action.", title: "", disabled: null, command: null, edits: [], changed: null, changes: [], choices: [], choice: null, choicePage: 0, choicePaging: null, editPaging: null, resolving: false, page: 0, editCount: 0 });
     readonly state = this.cell.observable;
 
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean,
@@ -62,10 +62,7 @@ export class HostActionsTools {
     private publish(patch: Partial<ActionsSnapshot> = {}): void {
         const panel = this.panel, state = panel?.source.controller.getSnapshot(), preview = state?.preview;
         const status = state?.status, provider = this.options.provider.getSnapshot();
-        if (panel && panel.preview !== (preview ?? null)) {
-            panel.preview = preview ?? null; panel.page = 0; panel.edits = preview?.readPage();
-            if (state?.choice != null) panel.choicePage = Math.floor(state.choice / 16);
-        }
+        const pages = panel?.pages();
         if (provider.phase === "disconnected" && (status === "expired" || status === "failed")) this.disconnected = true;
         const active = !!status && ["pending", "resolving", "ready", "executing"].includes(status);
         const changes = state?.changes ?? [];
@@ -76,8 +73,8 @@ export class HostActionsTools {
             title: preview?.title ?? (state?.choice != null ? state.choices[state.choice]?.title : "") ?? "",
             message: state?.message ?? this.cell.get().message, command: preview?.command ?? null, choices: state?.choices ?? [], choice: state?.choice ?? null,
             canApply: !!preview?.canApply && (!preview.command || !!this.reviewOwner?.canRunAction(panel!.source.editor)), confirm: preview?.confirm ?? null, reviewKey: this.reviewKey(preview),
-            disabled: preview?.disabled ?? null, page: panel?.page ?? 0, editCount: panel?.edits?.count ?? 0, edits: panel?.edits?.notes ?? [],
-            choicePage: panel?.choicePage ?? 0,
+            disabled: preview?.disabled ?? null, page: pages?.edits?.page ?? 0, editCount: pages?.edits?.count ?? 0, edits: pages?.edits?.notes ?? [],
+            choicePage: pages?.choicePage ?? 0, choicePaging: pages?.choicePaging ?? null, editPaging: pages?.editPaging ?? null,
             changes, changed: changes.find(c => c.document === panel?.source.editor.view.documentId) ?? changes[0] ?? null, ...patch });
     }
     readonly cancel = (): void => {
@@ -146,21 +143,9 @@ export class HostActionsTools {
         this.fault = undefined;
         if (!validDomainModule(module)) { this.publish({ status: "failed", message: "Choose a valid module identifier." }); return; }
         const controller = origin.controller;
-        this.panel = { source: origin, settings, stop: controller.subscribe(() => this.publish()), page: 0, choicePage: 0, edits: undefined, preview: null };
+        this.panel = { source: origin, settings, stop: controller.subscribe(() => this.publish()), pages: createActionPages(controller, this.reviewKey, () => this.publish()) };
         this.requested++; controller.request();
         if (keyboard && this.moduleField.element && this.cell.get().pending) { this.moduleField.element.focus(); this.moduleField.element.select(); }
-    }
-    private goToPage(direction: -1 | 1): void {
-        const panel = this.panel; if (!panel?.preview || !panel.edits) return;
-        const page = panel.page + direction; if (page < 0 || page * 64 >= panel.edits.count) return;
-        panel.edits = panel.preview.readPage(page); panel.page = page; this.publish();
-    }
-    nextPage(): void { this.goToPage(1); }
-    previousPage(): void { this.goToPage(-1); }
-    moveChoicePage(direction: -1 | 1): void {
-        const panel = this.panel; if (!panel) return;
-        const state = panel.source.controller.getSnapshot(), page = panel.choicePage + direction;
-        if (state.status === "ready" && page >= 0 && page * 16 < state.choices.length) { panel.choicePage = page; this.publish(); }
     }
     readonly openChanged = (): void => {
         const changed = this.cell.get().changed; if (changed) this.openChangedDocument(changed.document);

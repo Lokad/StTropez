@@ -3,7 +3,8 @@ import { createCodeActionController } from "../../src/browser/index.ts";
 import type { CodeActionPreview, TextEditor } from "../../src/browser/index.ts";
 import type { LspCodeAction, LspWorkspace } from "../../src/protocol/index.ts";
 import { HostProjectTools } from "../hosts/project.ts";
-import { createReviewKey, renderPanelButton } from "../hosts/panel-actions.ts";
+import { createReviewKey, pageActions, renderPanelActions, renderPanelButton } from "../hosts/panel-actions.ts";
+import { actionChoicePageSize, actionEditPageSize, createActionPages } from "../hosts/action-pages.ts";
 import { demoCommandPolicy } from "./action-commands.ts";
 import { projectReviewNote } from "./action-fixture.ts";
 import type { DemoFile } from "./project.ts";
@@ -23,9 +24,9 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     let apply = document.createElement("button");
     heading.textContent = `Quick fixes in ${file.name}`; status.setAttribute("aria-label", "Quick-fix status"); edits.setAttribute("aria-label", "Quick-fix edits");
     apply.textContent = "Apply fix"; close.textContent = "Cancel fix"; apply.disabled = true;
-    const previous = document.createElement("button"), next = document.createElement("button"), pages = document.createElement("div"); previous.textContent = "Previous edits"; next.textContent = "Next edits"; pages.append(previous, next);
-    const previousChoices = document.createElement("button"), nextChoices = document.createElement("button"), choicePages = document.createElement("div"), choiceCount = document.createElement("span");
-    previousChoices.textContent = "Previous fixes"; nextChoices.textContent = "Next fixes"; choicePages.append(previousChoices, choiceCount, nextChoices);
+    const pages = document.createElement("div"), choicePages = document.createElement("div"), choiceCount = document.createElement("span");
+    let previousChoices = document.createElement("button"), nextChoices = document.createElement("button");
+    choicePages.append(previousChoices, choiceCount, nextChoices);
     popup.append(heading, status, choices, choicePages, edits, pages, apply, close); document.body.append(popup);
     scope.defer(() => { apply.onclick = null; });
     const idle = () => { const state = editor.activity(); return !disposed && valid() && !state.composing && !state.pendingInput && !state.pendingCommand; };
@@ -61,29 +62,28 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
         if (!idle()) return; dismissOther(); editor.focus(); position();
         commandAction = false; popup.hidden = false; tools.request();
     };
-    let oldChoices: unknown, oldChoicePage = -1, choicePage = 0, editPage = 0, shown: CodeActionPreview | null = null;
+    const readPages = createActionPages(tools, reviewKey, render);
+    let oldChoices: unknown, oldChoicePage = -1;
     function render(): void {
         const state = tools.getSnapshot(), preview = state.preview;
-        if (shown !== preview) {
-            shown = preview; editPage = 0;
-            if (preview) choicePage = Math.floor(preview.index / 16);
-        }
-        if (!state.choices.length) choicePage = 0;
-        const page = preview?.readPage(editPage);
+        const { choicePage, choicePaging, editPaging, edits: page } = readPages();
         if (state.status === "ready") commandAction = !!preview?.command;
         if (!popup.hidden) position();
         status.textContent = state.status === "expired" ? "The code or selection changed. Request fixes again."
             : state.status === "ready" ? state.choices.length ? preview?.command ? state.message : "Choose a small fix to apply it. Broader changes stay here for review before Apply." : "No quick fix at this position."
                 : state.message;
         if (oldChoices !== state.choices || oldChoicePage !== choicePage) {
-            oldChoices = state.choices; oldChoicePage = choicePage; choices.replaceChildren(...state.choices.slice(choicePage * 16, (choicePage + 1) * 16).map(choice => {
+            oldChoices = state.choices; oldChoicePage = choicePage; choices.replaceChildren(...state.choices.slice(choicePage * actionChoicePageSize, (choicePage + 1) * actionChoicePageSize).map(choice => {
                 const button = document.createElement("button"); button.textContent = choice.title; button.disabled = choice.disabled !== null; button.title = choice.disabled ?? ""; button.dataset.choice = String(choice.index);
                 button.addEventListener("click", () => choice.select(direct)); return button;
             }));
         }
-        choicePages.hidden = state.choices.length <= 16; previousChoices.disabled = state.status !== "ready" || choicePage === 0; nextChoices.disabled = state.status !== "ready" || (choicePage + 1) * 16 >= state.choices.length;
-        choiceCount.textContent = `${choicePage * 16 + 1}–${Math.min((choicePage + 1) * 16, state.choices.length)} of ${state.choices.length}`;
+        choicePages.hidden = state.choices.length <= actionChoicePageSize;
+        const [back, forward] = pageActions("fixes", choicePaging);
+        previousChoices = renderPanelButton(previousChoices, back); nextChoices = renderPanelButton(nextChoices, forward);
+        choiceCount.textContent = `${choicePage * actionChoicePageSize + 1}–${Math.min((choicePage + 1) * actionChoicePageSize, state.choices.length)} of ${state.choices.length}`;
         for (const button of choices.querySelectorAll<HTMLButtonElement>("[data-choice]")) button.dataset.chosen = String(Number(button.dataset.choice) === state.choice);
+        edits.start = (page?.page ?? 0) * actionEditPageSize + 1;
         edits.replaceChildren(...(page?.notes ?? []).map(at => {
             const item = document.createElement("li"), before = document.createElement("del"), after = document.createElement("ins");
             before.textContent = at.before ?? at.context; after.textContent = at.insert + ((at.insertUnits ?? at.insert.length) > at.insert.length ? "…" : "");
@@ -91,18 +91,16 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
         }));
         apply = renderPanelButton(apply, { label: preview?.command ? "Run action" : "Apply fix", reviewKey: reviewKey(preview),
             disabled: !canApply(preview), invoke: preview?.confirm ?? null });
-        const count = page?.count ?? 0;
-        pages.hidden = count <= 64; previous.disabled = editPage === 0; next.disabled = (editPage + 1) * 64 >= count;
+        pages.hidden = !editPaging;
+        renderPanelActions(pages, pageActions("edits", editPaging));
         if (state.status === "applied" && !commandAction) queueMicrotask(() => { if (!disposed && tools.getSnapshot() === state) { dismiss(); editor.focus(); } });
     }
     scope.defer(tools.subscribe(render));
-    scope.defer(commands.state.subscribe(() => { if (shown?.command) render(); }));
+    scope.defer(commands.state.subscribe(() => { if (tools.getSnapshot().preview?.command) render(); }));
     scope.defer(editor.viewport.onRender(() => { if (!popup.hidden) position(); }));
     popup.addEventListener("pointerdown", event => { if (event.target === apply) event.preventDefault(); }, { signal: events.signal });
     choices.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });
     close.addEventListener("click", () => { dismiss(); editor.focus(); }, { signal: events.signal });
-    previous.addEventListener("click", () => { editPage--; render(); }, { signal: events.signal }); next.addEventListener("click", () => { editPage++; render(); }, { signal: events.signal });
-    previousChoices.addEventListener("click", () => { choicePage--; render(); }, { signal: events.signal }); nextChoices.addEventListener("click", () => { choicePage++; render(); }, { signal: events.signal });
     const bind = bindPopupCommands(scope, editor, popup, 35);
     bind("quickfix.dismiss", "Dismiss quick fixes", "Escape", () => { dismiss(); editor.focus(); });
     bind("quickfix.apply", "Apply selected fix", "Enter", () => {

@@ -197,7 +197,7 @@ function ActionsTools() {
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
         <output aria-label={model.status.label}>{model.status.text}</output>
         <label>{model.module.label}<input ref={model.module.bind} type="text" maxLength={model.module.maxLength} value={model.module.value} onChange={event => model.module.change(event.currentTarget.value)} /></label>
-        <div>{model.actions.map(action => <button key={panelActionKey(action)} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        <div>{model.actions.map(action => <button key={panelActionKey(action)} onClick={action.invoke ?? undefined} disabled={action.disabled}>{action.label}</button>)}</div>
         {model.choices.enabled && <ol aria-label={model.choices.label} start={model.choices.start}>{model.choices.items().map(choice => <li key={choice.key}><button disabled={model.choices.disabled} aria-pressed={model.choices.isSelected(choice.key)} onClick={choice.invoke}>{choice.label}</button></li>)}</ol>}
         <p aria-label={model.preview.label}>{model.preview.text}</p><ol aria-label={model.edits.label} start={model.edits.start}>{model.edits.items().map((text, i) => <li key={i}><pre>{text}</pre></li>)}</ol>
         <div aria-label={model.changes.label}>{model.changes.items().map(change => <button key={change.key} disabled={model.changes.disabled} onClick={change.invoke}>{change.label}</button>)}</div></section>;
