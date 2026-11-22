@@ -275,6 +275,9 @@ configuration or reviewing a saved version. The hosts share a
 **Finish remote review** let you choose when the simulated service replies. Reload resets the service.
 Recovery checkpoints survive it.
 
+In **Find source**, Enter selects the next match and Shift+Enter selects the previous one.
+Enter in **Replacement** replaces the current match once per press. Escape returns to the source pane.
+
 ### Editing, review and captured services
 
 1. Edit **Primary source** and undo from **Secondary source**. Both views share text and history

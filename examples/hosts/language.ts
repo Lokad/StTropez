@@ -129,6 +129,7 @@ export class HostLanguageTools {
         } catch (error) { listeners.abort(); throw error; }
     }
     private bindFind(session: Session, signal: AbortSignal): void {
+        const current = () => this.active === session && this.ownsSession(session);
         bindFindCommands(session.editor, signal, replace => {
             if (!this.ownsSession(session)) return;
             this.cancelFindCommand(); this.activate(session); this.ensureFind();
@@ -136,7 +137,16 @@ export class HostLanguageTools {
             field?.focus(); field?.select();
         }, direction => {
             if (this.ownsSession(session)) { this.activate(session); this.runFind(session, { kind: "navigate", direction }); }
-        });
+        }, () => current() && !!this.queryElement?.matches(":focus"));
+        const replace = session.editor.commands.register({ id: "find.replaceCurrent", label: "Replace current match",
+            enabled: () => current() && !!this.replacementElement?.matches(":focus:enabled"),
+            run: () => this.runFind(session, { kind: "replace", text: this.cell.get().replacement }) },
+            { keys: ["Enter"], shared: true, priority: 41, repeat: false });
+        signal.addEventListener("abort", replace.dispose, { once: true });
+        const back = session.editor.commands.register({ id: "find.returnToSource", label: "Return to source",
+            enabled: () => current() && !!this.toolsElement?.matches(":focus-within"),
+            run: () => { session.find?.cancel(); session.editor.focus(); } }, { keys: ["Escape"], shared: true, priority: -1, repeat: false });
+        signal.addEventListener("abort", back.dispose, { once: true });
     }
     private cancelFindCommand(session?: Session): void {
         if (!session || this.pendingFind?.session === session) this.pendingFind?.stop();
@@ -208,11 +218,7 @@ export class HostLanguageTools {
         return session;
     }
     readonly keyFromTools = (event: KeyboardEvent): void => {
-        const key = event.key.toLowerCase();
-        const replacement = event.target === this.replacementElement, enter = key === "enter" && (replacement || event.target === this.queryElement);
-        const session = this.toolsSession(event); if (!session || session.editor.keymap.handle(event)) return;
-        if (enter) { event.preventDefault(); if (replacement) this.replaceCurrent(); else if (event.shiftKey) this.previous(); else this.next(); }
-        else if (key === "escape") { event.preventDefault(); session.find?.cancel(); session.editor.focus(); }
+        this.toolsSession(event)?.editor.keymap.handle(event);
     };
     private detachSession(session: Session, listeners: AbortController): () => void {
         let detached = false;

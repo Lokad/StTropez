@@ -1,4 +1,4 @@
-import { ready, test, expect } from "./fixtures.ts";
+import { ready, test, expect, expectPanelKeyReserved } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const text = (page: Page) => page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length));
@@ -20,12 +20,18 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
         const wholeWord = page.getByRole("checkbox", { name: "Whole word", exact: true }), status = page.getByLabel("Find status", { exact: true });
         await query.fill("cat"); await expect(status).toContainText(`${original.split("cat").length - 1} matches · ready`);
         await wholeWord.check(); await expect(status).toContainText("3 matches · ready"); await replacement.fill("dog");
+        await expectPanelKeyReserved(replacement, "Enter");
+        await replacement.dispatchEvent("keydown", { key: "Enter", repeat: true });
+        expect(await text(page)).toBe(original);
+        await query.focus(); await expectPanelKeyReserved(query, "Escape");
+        const selection = () => page.evaluate(() => window.hostFixture.snapshot().bindings.views.find(view => view.id === "primary")!.selection);
+        const prior = await selection(); await query.dispatchEvent("keydown", { key: "Enter", repeat: true });
+        expect(await selection()).toEqual(prior); await query.press("Enter"); await expect(query).toBeFocused();
+        await expect.poll(selection).not.toEqual(prior);
+        const next = await selection(); await query.press("Shift+Enter"); await expect.poll(selection).not.toEqual(next);
         const middle = original.indexOf("cat\r"), embedded = original.indexOf("scatter") + 1, before = await snapshot(page);
         await page.evaluate(from => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: from, head: from + 3 }); }, embedded); await ready(page);
-        await page.getByRole("button", { name: "Replace current", exact: true }).click();
-        expect(await text(page)).toBe(original); expect((await snapshot(page)).source.revision).toBe(before.source.revision);
-        expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: middle, head: middle + 3 });
-        await page.getByRole("button", { name: "Replace current", exact: true }).click(); await expect(status).toHaveText("Replaced 1 match.");
+        await replacement.press("Enter"); await expect(status).toHaveText("Replaced 1 match.");
         const changed = original.slice(0, middle) + "dog" + original.slice(middle + 3);
         expect(await text(page)).toBe(changed); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
         await secondary(page).press("Control+z"); expect(await text(page)).toBe(original);

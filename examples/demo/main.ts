@@ -483,19 +483,14 @@ function bindPaneCommands(target: TextEditor): void {
     });
     target.signal.addEventListener("abort", stop, { once: true });
     target.element.addEventListener("focusin", () => setActivePane(target), { signal: target.signal });
+    const ownsFind = () => activePane === target && !findBar.hidden;
     bindFindCommands(target, target.signal, replace => {
         setActivePane(target); openFind(replace);
     }, direction => {
         if (!findQuery.value) return false;
         setActivePane(target, true); find?.next(direction, { whenReady: true });
         return true;
-    });
-    const ownsFind = () => activePane === target && !findBar.hidden;
-    for (const [key, direction, label] of [["Enter", "next", "Select next match"], ["Shift+Enter", "previous", "Select previous match"]] as const) {
-        target.commands.register({ id: "find.query." + direction, label,
-            enabled: () => ownsFind() && document.activeElement === findQuery,
-            run: () => { target.commands.run("find." + direction); } }, { keys: [key], shared: true, priority: 40, repeat: false });
-    }
+    }, () => ownsFind() && document.activeElement === findQuery);
     target.commands.register({ id: "find.replaceCurrent", label: "Replace current match",
         enabled: from => ownsFind() && (from === "button" ? !button("replace-current").disabled : document.activeElement === replacement),
         run: () => { if (!button("replace-current").disabled) find?.replaceCurrent(replacementText()); } },
