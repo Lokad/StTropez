@@ -402,20 +402,24 @@ export async function runDemoFoldingBoundaries(page: Page, url = "/") {
     const status = page.locator(".st-comparison-controls output");
     await expect(status).toHaveText(/1 change|Change 1 of 1/);
     for (const pane of [left, right]) {
-        const changedComment = pane.locator(".demo-token-comment:is(.st-comparison-added, .st-comparison-removed)");
-        await expect(changedComment).toHaveText(pane === left ? "draft" : "reviewed");
-        const contrast = await changedComment.evaluate(span => {
+        // Analysis can replace a token between two Playwright calls. Read the current
+        // word and both painted backgrounds together from the mounted pane.
+        await expect.poll(() => pane.evaluate((root, word) => {
+            const span = root.querySelector(".demo-token-comment:is(.st-comparison-added, .st-comparison-removed)");
+            const row = span?.closest(".st-viewport-row");
+            if (!span || !row || span.textContent !== word) return 0;
             const luminance = (rgb: string) => {
-                const [r, g, b] = rgb.match(/\d+/g)!.slice(0, 3).map(part => {
+                const channels = /^rgb\((\d+), (\d+), (\d+)\)$/.exec(rgb);
+                if (!channels) return NaN;
+                const [r, g, b] = channels.slice(1).map(part => {
                     const v = Number(part) / 255;
                     return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4;
                 });
                 return .2126 * r! + .7152 * g! + .0722 * b!;
             };
             const ink = luminance(getComputedStyle(span).color);
-            return [span, span.closest(".st-viewport-row")!].map(el => (ink + .05) / (luminance(getComputedStyle(el).backgroundColor) + .05));
-        });
-        expect(Math.min(...contrast)).toBeGreaterThanOrEqual(4.5);
+            return Math.min(...[span, row].map(el => (ink + .05) / (luminance(getComputedStyle(el).backgroundColor) + .05)));
+        }, pane === left ? "draft" : "reviewed")).toBeGreaterThanOrEqual(4.5);
         const toggles = pane.locator(".st-fold-button");
         await expect(toggles).toHaveCount(2);
         await toggles.first().click(); await toggles.last().click();
