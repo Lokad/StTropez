@@ -13,7 +13,7 @@ type Kind = LspNavigationRequest["kind"];
 export type NavigationHostOptions = Readonly<{ provider: LspWorkspace; prepare: (kind: Kind, delay: number, fault?: NavigationFault) => LspPrepare }>;
 type Session = { id: string; target: TabTarget; editor: TextEditor; controller: NavigationController };
 type Job = { kind: Kind; origin: Session; returnPoint: NavigationOrigin; sources: Set<DocumentId>; targets: Map<string, Session>;
-    timer: number; page: NavigationPage | undefined };
+    timer: number; page: NavigationPage | undefined; followDefinition: boolean };
 export type NavigationNote = NavigationLocation & Readonly<{ ordinal: number; title: string; line: number; column: number; open: () => void }>;
 type Paging = Readonly<{ key: number; previous: (() => void) | null; next: (() => void) | null }>;
 export type NavigationSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; syncedDocuments: number; view: string | null; requestView: string | null; status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired" | "disconnected";
@@ -95,6 +95,9 @@ export class HostNavigationTools {
             this.publish();
         });
         onSourceFocus(editor, listeners.signal, () => { this.active = session; this.publish(); });
+        const leaveSource = () => { if (this.job?.origin === session) this.job.followDefinition = false; };
+        editor.element.addEventListener("focusout", leaveSource, { signal: listeners.signal });
+        editor.element.ownerDocument.defaultView!.addEventListener("blur", leaveSource, { signal: listeners.signal });
         editor.onEditIntent(() => {
             if (!this.presenting && this.job?.sources.has(editor.view.documentId)) this.cancel();
         }, listeners.signal);
@@ -139,7 +142,8 @@ export class HostNavigationTools {
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Unsupported navigation capture." }); return; }
         const targets = new Map<string, Session>(); for (const s of this.sessions) if (this.available(s) && !targets.has(s.editor.view.documentId)) targets.set(s.editor.view.documentId, s); targets.set(document.id, origin);
         const returnPoint = this.history.capture(origin.editor); if (!returnPoint) return;
-        const job: Job = { kind, origin, returnPoint, sources, targets, timer: 0, page: undefined };
+        const job: Job = { kind, origin, returnPoint, sources, targets, timer: 0, page: undefined,
+            followDefinition: keyboard && kind === "definition" && origin.editor.getSnapshot().focused };
         this.job = job; this.metrics.requested++; const win = origin.editor.element.ownerDocument.defaultView!;
         try {
             // The panel deadline also bounds host preparation and loading a target after the RPC reply.
@@ -151,7 +155,7 @@ export class HostNavigationTools {
                 if (this.job !== job || origin.controller.getSnapshot().result !== result) return;
                 win.clearTimeout(job.timer); this.metrics.applied++;
                 const rows = this.showPage(job, result.pageFor(), { status: result.count ? "ready" : "empty", message: `${result.count} ${kind === "definition" ? "definition" : "reference"} locations for ${symbol}.`, work: total });
-                if (keyboard && kind === "definition" && result.count === 1 && origin.editor.getSnapshot().focused) rows[0]!.open();
+                if (job.followDefinition && result.count === 1 && origin.editor.getSnapshot().focused) rows[0]!.open();
             }).catch(error => { if (this.job !== job) return; this.queries.failed++; this.metrics.failed++; this.clear("failed", error instanceof Error ? error.message : "Navigation failed; source is unchanged."); });
         } catch (error) { this.metrics.failed++; this.clear("failed", error instanceof Error ? error.message : "Navigation is unavailable."); }
     }

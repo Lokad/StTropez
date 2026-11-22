@@ -48,6 +48,11 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await expect(field(page, "Configuration path")).toBeFocused(); await expect(results(page)).toHaveText(["Navigation companion:1:7 · declaration"]);
         expect((await snapshot(page)).bindings.navigation.transport?.version).toBe("LSP3.17");
         const companion = (await snapshot(page)).bindings.navigation.companion!; expect((await snapshot(page)).bindings.views.every(view => view.documentId !== companion)).toBe(true);
+        replies.hold(); await field(page).press("F12"); await expect.poll(replies.waiting).toBe(true);
+        await field(page, "Configuration path").focus(); await field(page).focus();
+        await replies.release(); await waitForNavigation(page);
+        await expect(field(page)).toBeFocused(); await expect(button(page, "Return to navigation origin")).toBeDisabled();
+        await expect(results(page)).toHaveText(["Navigation companion:1:7 · declaration"]);
         await results(page).first().evaluate(node => { node.dataset.retained = "navigation-row"; });
         await results(page).first().click(); await waitForNavigation(page); await expect(field(page, "Secondary source")).toBeFocused(); expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")!.documentId).toBe(companion);
         await button(page, "Return to navigation origin").click(); await waitForNavigation(page); await expect(field(page)).toBeFocused(); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "primary")!.selectionSet);

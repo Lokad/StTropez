@@ -368,6 +368,7 @@ and returns focus to that editor.
 
 Closing the review keeps F12 and Shift+F12 requests from the primary editor usable.
 A request made in the review itself expires when that pane closes.
+If you leave the source while F12 is pending, choose the destination in the results panel to open it.
 The navigation panel also accepts declarations loaded by a host URI resolver. It uses the
 returned document's text and revision to label the result and select its range.
 If references refresh while you hold Next or Previous, the new list stays on its first page.
