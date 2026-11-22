@@ -147,7 +147,7 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         apply = renderPanelButton(apply, { label: "Apply rename", reviewKey: state.reviewKey, disabled: !state.canApply, invoke: state.preview?.confirm ?? null });
         preview.disabled = state.pending || !state.name.trim();
         targets.replaceChildren(...state.locations.map(at => { const item = document.createElement("li"), before = document.createElement("del"), after = document.createElement("ins"), code = document.createElement("code");
-            before.textContent = at.before ?? state.symbol; after.textContent = at.after ?? state.name; code.append(before, " → ", after); item.append(`${at.title} · ${at.line + 1}:${at.column + 1} `, code); return item; }));
+            before.textContent = at.before; after.textContent = at.after; code.append(before, " → ", after); item.append(`${at.title} · ${at.line + 1}:${at.column + 1} `, code); return item; }));
         const actions = renamePageActions(rename, state, "Previous edits", "Next edits");
         renderPanelActions(pages, actions); pages.hidden = actions.every(action => action.disabled);
         if (state.status === "applied") queueMicrotask(() => { if (!disposed && rename.state.getSnapshot() === state) closeRename(true); });

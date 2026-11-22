@@ -1,7 +1,9 @@
 import { pageActions } from "./panel-actions.ts";
 import { createToolPanel } from "./tool-panel.ts";
 import { actionChoicePageSize, actionEditPageSize } from "./action-pages.ts";
-import type { HostActionsTools, ActionNote, ActionChoice, ActionsSnapshot } from "./code-actions.ts";
+import type { CodeActionChoice } from "../../src/browser/index.ts";
+import type { LspWorkspaceEditNote } from "../../src/protocol/index.ts";
+import type { HostActionsTools, ActionsSnapshot } from "./code-actions.ts";
 type ActionsPanelTools = Pick<HostActionsTools, "request" | "cancel" | "disconnect" | "reconnect" | "bindModule" | "setModule" | "openChangedDocument">;
 function actionsControls(tools: ActionsPanelTools, s: ActionsSnapshot) {
     return [
@@ -15,8 +17,8 @@ function actionsControls(tools: ActionsPanelTools, s: ActionsSnapshot) {
     ];
 }
 export const actionsDescription = "Choose a provider action and review its captured edits or advertised command, then confirm. Commands run after their edits; any further provider edits require a decision in Workspace provider. Some choices load a preview when selected. This sample uses lexical/import policies, not general type or scope resolution.";
-export const actionChoiceLabel = (choice: ActionChoice): string => `${choice.title}${choice.kind ? ` · ${choice.kind}` : ""}${choice.preferred ? " · preferred" : ""}${choice.disabled ? ` · ${choice.disabled}` : choice.needsResolve ? " · Load preview" : ""}`;
-export const actionTarget = (at: ActionNote): string => `${at.title} · ${at.resource} · ${at.document} @ revision ${at.revision} · [${at.from},${at.to})\nInsert ${JSON.stringify(at.insert)}${at.insertUnits !== undefined && at.insertUnits > at.insert.length ? `… (${at.insertUnits} UTF-16 units)` : ""}\nContext: ${at.context}`;
+export const actionChoiceLabel = (choice: CodeActionChoice): string => `${choice.title}${choice.kind ? ` · ${choice.kind}` : ""}${choice.preferred ? " · preferred" : ""}${choice.disabled ? ` · ${choice.disabled}` : choice.needsResolve ? " · Load preview" : ""}`;
+export const actionTarget = (at: LspWorkspaceEditNote): string => `${at.title} · ${at.resource} · ${at.document} @ revision ${at.revision} · [${at.from},${at.to})\nInsert ${JSON.stringify(at.insert)}${at.insertUnits > at.insert.length ? `… (${at.insertUnits} UTF-16 units)` : ""}\nContext: ${at.context}`;
 
 /** Choices and confirmations belong to the displayed preview. */
 export function actionsPanelModel(tools: ActionsPanelTools, s: ActionsSnapshot) {

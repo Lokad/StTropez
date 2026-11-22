@@ -150,12 +150,14 @@ test("rename presentation retains its preview name, confirmation action and chan
         showPage: noop, disconnect: noop, reconnect: noop, bindName: noop, setName: noop, openChanged: id => { opened.push(id); } };
     let formatted = 0;
     const preview = (id: number, name: string) => ({ name, count: 1, canApply: true, readPage: () => undefined, confirm: () => { applied.push(id); return { applied: true } as const; } });
+    const locations = (after: string) => Object.freeze([Object.freeze({ ordinal: 0, document: firstId, resource: "source", title: "First", revision: 1,
+        from: 0, to: 6, line: 0, column: 0, before: "symbol", after, get context() { formatted++; return "symbol"; } })]);
     const state: HostRenameSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, pending: false, status: "ready", message: "Captured rename",
-        name: "firstName", symbol: "symbol", reviewKey: 3, preview: preview(3, "firstName"), canApply: true, count: 1, page: 0,
-        locations: Object.freeze([Object.freeze({ ordinal: 0, document: firstId, resource: "source", title: "First", revision: 1, from: 0, to: 6, line: 0, column: 0,
-            get context() { formatted++; return "symbol"; } })]), changes: Object.freeze([Object.freeze({ document: firstId, title: "First" })]) });
-    const first = renamePanelModel(tools, state), renamed = renamePanelModel(tools, { ...state, name: "secondName", preview: preview(4, "secondName"), changes: [{ document: secondId, title: "Second" }] });
-    assert.equal(formatted, 0); assert.equal(first.targets.identity, renamed.targets.identity);
+        name: "firstName", reviewKey: 3, preview: preview(3, "firstName"), canApply: true, count: 1, page: 0, locations: locations("firstName"),
+        changes: Object.freeze([Object.freeze({ document: firstId, title: "First" })]) });
+    const first = renamePanelModel(tools, state), renamed = renamePanelModel(tools, { ...state, name: "secondName", preview: preview(4, "secondName"),
+        locations: locations("secondName"), changes: [{ document: secondId, title: "Second" }] });
+    assert.equal(formatted, 0); assert.notEqual(first.targets.identity, renamed.targets.identity);
     assert.match(first.targets.items()[0]!.text, /symbol → firstName/); assert.match(renamed.targets.items()[0]!.text, /symbol → secondName/);
     renamed.actions.find(action => action.label === "Apply captured rename")!.invoke(); first.actions.find(action => action.label === "Apply captured rename")!.invoke();
     renamed.changes.items()[0]!.invoke(); first.changes.items()[0]!.invoke();

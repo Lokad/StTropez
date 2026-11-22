@@ -6,7 +6,7 @@ import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { createCodeActionController } from "../../src/browser/index.ts";
 import type { CodeActionChoice, CodeActionController, CodeActionPreview, TextEditor } from "../../src/browser/index.ts";
-import type { LspCommandPolicy, LspScopeAccess, LspWorkspace } from "../../src/protocol/index.ts";
+import type { LspCommandPolicy, LspScopeAccess, LspWorkspace, LspWorkspaceEditNote } from "../../src/protocol/index.ts";
 import { validDomainModule } from "../../fixtures/language/domain.ts";
 import type { ActionInput } from "../../fixtures/language/actions.ts";
 import { HostCell } from "../shared/observable.ts";
@@ -16,12 +16,10 @@ type ActionSettings = Pick<ActionInput, "module" | "delay" | "fault">;
 export type ActionHostOptions = Readonly<{ provider: LspWorkspace; commandPolicy?: LspCommandPolicy;
     beforeRequest?: (scope: LspScopeAccess, config: ActionSettings) => Promise<unknown>;
     beforeResolve?: (scope: LspScopeAccess, config: ActionSettings) => Promise<unknown> }>;
-export type ActionChoice = CodeActionChoice;
-export type ActionNote = Readonly<{ document: string; resource: string; title: string; revision: number; from: number; to: number; insert: string; context: string; before?: string; insertUnits?: number }>;
 type ActionChange = Readonly<{ document: DocumentId; title: string }>;
 export type ActionsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; pending: boolean; canApply: boolean; confirm: CodeActionPreview["confirm"] | null; reviewKey: number | null; active: boolean; module: string;
     status: "idle" | "pending" | "ready" | "expired" | "failed" | "applied" | "executed"; message: string; title: string; disabled: string | null; command: string | null;
-    edits: readonly ActionNote[]; changed: ActionChange | null; changes: readonly ActionChange[]; choices: readonly ActionChoice[]; choice: number | null; choicePage: number; choicePaging: PanelPaging | null; editPaging: PanelPaging | null; resolving: boolean; page: number; editCount: number }>;
+    edits: readonly LspWorkspaceEditNote[]; changed: ActionChange | null; changes: readonly ActionChange[]; choices: readonly CodeActionChoice[]; choice: number | null; choicePage: number; choicePaging: PanelPaging | null; editPaging: PanelPaging | null; resolving: boolean; page: number; editCount: number }>;
 
 type Panel = { source: Session; settings: ActionSettings; stop: () => void; pages: ReturnType<typeof createActionPages> };
 /** Routes the shared host sidebar to its originating editor and supplies fixture and command policy. */

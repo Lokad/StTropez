@@ -20,7 +20,7 @@ function renameActions(tools: RenamePanelTools, s: HostRenameSnapshot) {
     ];
 }
 export const renameDescription = "Enter a new name and request its provider edit preview, then review the captured changes before applying. Changing the name requires a fresh preview. This fixture returns lexical replacements and a source comment; it does not resolve scopes or types. Long edit text is explicitly abbreviated.";
-export function renameTarget(at: RenameNote, symbol: string, name: string): string { return `${at.title} · ${at.resource} · ${at.document} @ revision ${at.revision} · ${at.line + 1}:${at.column + 1} [${at.from},${at.to}) · ${at.before ?? symbol} → ${at.after ?? (name || "(enter name)")}\n${at.context}`; }
+export function renameTarget(at: RenameNote): string { return `${at.title} · ${at.resource} · ${at.document} @ revision ${at.revision} · ${at.line + 1}:${at.column + 1} [${at.from},${at.to}) · ${at.before} → ${at.after}\n${at.context}`; }
 
 /** One captured preview supplies both renderers; formatting stays lazy for retained lists. */
 export function renamePanelModel(tools: RenamePanelTools, s: HostRenameSnapshot) {
@@ -29,7 +29,7 @@ export function renamePanelModel(tools: RenamePanelTools, s: HostRenameSnapshot)
         name: { label: "New identifier ", value: s.name, maxLength: 256, bind: tools.bindName, change: (value: string) => tools.setName(value) },
         actions: renameActions(tools, s),
         targets: { label: "Captured rename targets", identity: s.locations, start: s.page * 64 + 1,
-            items: () => s.locations.map(at => ({ key: at.ordinal, text: renameTarget(at, s.symbol, s.name) } as const)) },
+            items: () => s.locations.map(at => ({ key: at.ordinal, text: renameTarget(at) } as const)) },
         changes: { label: "Renamed resources", identity: s.changes, disabled: s.pending || !!s.preview,
             items: () => s.changes.map(change => ({ key: change.document, label: `Open renamed changes in ${change.title}`,
                 invoke: () => tools.openChanged(change.document) } as const)) },
@@ -41,10 +41,10 @@ export function mountRenamePanel(host: HTMLElement, tools: HostRenameTools): () 
     name.maxLength = initial.name.maxLength; name.type = "text"; name.value = initial.name.value; name.oninput = () => initial.name.change(name.value); label.append(initial.name.label, name);
     initial.name.bind(name);
     targets.setAttribute("aria-label", initial.targets.label); changes.setAttribute("aria-label", initial.changes.label);
-    let previousTargets: unknown, previousChanges: unknown, previousName: string | undefined;
+    let previousTargets: unknown, previousChanges: unknown;
     return mount([label, controls, targets, changes], model => {
         if (name.value !== model.name.value) name.value = model.name.value;
-        if (previousTargets !== model.targets.identity || previousName !== model.name.value) { previousTargets = model.targets.identity; previousName = model.name.value; targets.start = model.targets.start;
+        if (previousTargets !== model.targets.identity) { previousTargets = model.targets.identity; targets.start = model.targets.start;
             targets.replaceChildren(...model.targets.items().map(at => { const li = owner.createElement("li"); li.textContent = at.text; return li; })); }
         if (previousChanges !== model.changes.identity) { previousChanges = model.changes.identity; changes.replaceChildren(...model.changes.items().map(change => { const li = owner.createElement("li"), button = owner.createElement("button"); button.textContent = change.label; button.onclick = change.invoke; li.append(button); return li; })); }
         for (const button of changes.querySelectorAll("button")) button.disabled = model.changes.disabled;

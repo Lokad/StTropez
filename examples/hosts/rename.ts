@@ -5,19 +5,19 @@ import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId, Workspace } from "../../src/index.ts";
 import { createRenameController } from "../../src/browser/index.ts";
 import type { RenameController, RenamePreview, RenameSnapshot, TextEditor } from "../../src/browser/index.ts";
-import type { LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
+import type { LspPrepare, LspWorkspace, LspWorkspaceEditNote } from "../../src/protocol/index.ts";
 import { navigationLimits, navigationSymbol } from "../../fixtures/language/navigation.ts";
 import type { NavigationFault } from "../../fixtures/language/navigation.ts";
 import { HostCell } from "../shared/observable.ts";
 
 export type RenameHostOptions = Readonly<{ provider: LspWorkspace; prepare?: (delay: number, fault?: NavigationFault) => LspPrepare }>;
 type Session = { id: string; editor: TextEditor; controller: RenameController; stop: () => void };
-export type RenameNote = Readonly<{ ordinal: number; document: string; resource: string; title: string; revision: number; from: number; to: number; line: number; column: number; context: string; before?: string; after?: string }>;
+export type RenameNote = Omit<LspWorkspaceEditNote, "insert" | "insertUnits"> & Readonly<{ ordinal: number; line: number; column: number; after: string }>;
 export type HostRenameSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; status: RenameSnapshot["status"];
-    message: string; name: string; symbol: string; preview: RenamePreview | null; reviewKey: number | null; canApply: boolean; count: number; page: number; locations: readonly RenameNote[];
+    message: string; name: string; preview: RenamePreview | null; reviewKey: number | null; canApply: boolean; count: number; page: number; locations: readonly RenameNote[];
     changes: RenameSnapshot["changes"] }>;
 const initial: HostRenameSnapshot = { available: false, connected: false, disconnected: false, pending: false, status: "idle",
-    message: "Focus a source and prepare a rename preview.", name: "", symbol: "", preview: null, reviewKey: null, canApply: false, count: 0, page: 0, locations: [], changes: [] };
+    message: "Focus a source and prepare a rename preview.", name: "", preview: null, reviewKey: null, canApply: false, count: 0, page: 0, locations: [], changes: [] };
 
 /** The host owns the name field, paging and opening changed files. Each pane owns its rename preview. */
 export class HostRenameTools {
@@ -117,7 +117,7 @@ export class HostRenameTools {
         this.cancel(); this.owner = session;
         const hint = this.hint(session);
         session.controller.setName(hint ?? "");
-        this.publish({ name: hint ?? "", symbol: hint ?? "position", message: "Enter a name, then preview its changes." });
+        this.publish({ name: hint ?? "", message: "Enter a name, then preview its changes." });
         this.nameField.element?.focus(); this.nameField.element?.select();
     }
     readonly prepare = () => this.prepareIn(this.active);
@@ -126,7 +126,7 @@ export class HostRenameTools {
         if (!s || this.disconnected || !this.canCapture(s.editor.view.documentId)) return;
         if (!name || /[\u0000-\u001f\u007f]/.test(name)) { this.prompt(s); return; }
         if (this.owner !== s) this.cancel();
-        this.owner = s; this.publish({ symbol: this.hint(s) ?? "position" }); s.controller.request(name);
+        this.owner = s; s.controller.request(name);
     }
     showPage(preview: RenamePreview, page: number) {
         const state = this.owner?.controller.getSnapshot();

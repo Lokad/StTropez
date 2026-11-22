@@ -88,7 +88,7 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
         edits.start = (page?.page ?? 0) * actionEditPageSize + 1;
         edits.replaceChildren(...(page?.notes ?? []).map(at => {
             const item = document.createElement("li"), before = document.createElement("del"), after = document.createElement("ins");
-            before.textContent = at.before ?? at.context; after.textContent = at.insert + ((at.insertUnits ?? at.insert.length) > at.insert.length ? "…" : "");
+            before.textContent = at.before; after.textContent = at.insert + (at.insertUnits > at.insert.length ? "…" : "");
             item.append(`${at.title} `, before, " → ", after); return item;
         }));
         apply = renderPanelButton(apply, { label: preview?.command ? "Run action" : "Apply fix", reviewKey: reviewKey(preview),
