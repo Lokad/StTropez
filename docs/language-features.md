@@ -399,6 +399,9 @@ comparison baselines. An immutable comparison reference needs no provider bindin
 
 ### Rename and workspace edits
 
+In the examples, F2 opens the name field. Enter requests a preview. After reviewing the edits,
+press Enter again to apply them and return to the source. Changing the name invalidates the preview.
+
 Call `createLspRenameClient(provider).run(project, originId, offset, newName, prepare?)` for a
 workspace edit plan. A null reply gives an empty plan. The server checks language naming rules. Your
 host sets the name field’s input limits.

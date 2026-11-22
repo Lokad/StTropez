@@ -105,9 +105,10 @@ export async function runDemoUnopenedNavigation(page: Page, url = "/") {
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await select(page, main, "export interface LabelOptions"); await main.press("ArrowRight"); await main.press("ArrowLeft"); await main.press("F2");
     const rename = page.getByRole("dialog", { name: "Rename symbol", exact: true });
-    await rename.getByRole("textbox", { name: "New name", exact: true }).fill("DisplayOptions"); await rename.getByRole("button", { name: "Preview rename", exact: true }).click();
+    const nameField = rename.getByRole("textbox", { name: "New name", exact: true });
+    await nameField.fill("DisplayOptions"); await nameField.press("Enter");
     await expect(rename.getByLabel("Rename status")).toContainText("Review 3 changes");
-    await rename.getByRole("button", { name: "Apply rename", exact: true }).click(); await expect(rename).toBeHidden();
+    await expect(nameField).toBeFocused(); await page.keyboard.press("Enter"); await expect(rename).toBeHidden(); await expect(main).toBeFocused();
     await expect(page.locator("#editor")).toContainText("export interface DisplayOptions");
     await page.locator('#files [data-file="labels.ts"]').click(); await expect(page.locator("#editor")).toContainText("options: DisplayOptions");
     await labels.press("Control+z"); await expect(page.locator("#editor")).toContainText("options: LabelOptions");
@@ -699,7 +700,7 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     const rename = page.getByRole("dialog", { name: "Rename symbol", exact: true });
     await rename.getByRole("textbox", { name: "New name", exact: true }).fill("renamedValue");
     await rename.getByRole("button", { name: "Preview rename", exact: true }).click();
-    await expect(rename.getByLabel("Rename status", { exact: true })).toHaveText("Review 1201 changes before applying.");
+    await expect(rename.getByLabel("Rename status", { exact: true })).toContainText("Review 1201 changes.");
     await rename.getByRole("textbox", { name: "New name", exact: true }).focus();
     await scrollAwayAndBack(rename, 1200);
     await expect(rename.getByRole("textbox", { name: "New name", exact: true })).toHaveValue("renamedValue");

@@ -13,6 +13,7 @@ import type { LspRenameFactory } from "../shared/language/lsp-rename-client.ts";
 import { HostCell } from "../shared/observable.ts";
 
 type Session = { token: number; id: string; target: TabTarget; editor: TextEditor };
+type RenameOptions = Readonly<{ reconnectProvider?: () => void; open?: () => boolean }>;
 type Job = { origin: Session; capture: RenameCapture; viewCapture: CapturedViewRequest; documents: Map<string, DocumentSnapshot>; authority: Map<string, string>;
     leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; workspaceEdit?: LspWorkspaceEdit; name?: string };
 export type RenameNote = Readonly<{ ordinal: number; document: string; resource: string; title: string; revision: number; from: number; to: number; line: number; column: number; context: string; before?: string; after?: string }>;
@@ -39,8 +40,10 @@ export class HostRenameTools {
     private readonly metrics = { requested: 0, applied: 0, expired: 0, failed: 0, cancelled: 0 };
     private readonly cell = new HostCell<RenameSnapshot>({ available: false, connected: false, disconnected: false, pending: false, status: "idle", message: "Focus a source and prepare a rename preview.", name: "", symbol: "", token: null, canApply: false, work: 0, total: 0, count: 0, page: 0, locations: [], changes: [] });
     readonly state = this.cell.observable;
-    private readonly reconnectProvider: (() => void) | undefined;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined, backendFactory: LspRenameFactory, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider;
+    private readonly options: RenameOptions;
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined,
+        backendFactory: LspRenameFactory, options: RenameOptions = {}) {
+        this.options = options;
         this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backendFactory = backendFactory;
     }
     private validName(name: string): boolean { return (name.length > 0 && name.length <= 256 && !/[\u0000-\u001f\u007f]/.test(name)); }
@@ -96,7 +99,7 @@ export class HostRenameTools {
     }
     readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.release(); this.publish({ status: "idle", message: "Rename preview dismissed; source is unchanged.", locations: [], work: 0, total: 0, page: 0 }); };
     readonly disconnect = (): void => { this.cancel(); this.lane.drop(); this.disconnected = true; this.publish({ message: "Rename provider disconnected; local editing remains available." }); };
-    readonly reconnect = (): void => { this.cancel(); this.lane.drop(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ message: "Prepare a fresh rename preview." }); };
+    readonly reconnect = (): void => { this.cancel(); this.lane.drop(); this.disconnected = false; this.options.reconnectProvider?.(); this.publish({ message: "Prepare a fresh rename preview." }); };
     setName(value: string): void { const name = value.slice(0, 256); if (name === this.cell.get().name) return;
         if (this.job) { this.metrics.cancelled++; this.release(); this.publish({ status: "idle", locations: [], work: 0, total: 0, page: 0, message: "Name changed; request a fresh provider preview." }); }
         this.publish({ name }); }
@@ -106,30 +109,36 @@ export class HostRenameTools {
         if (!input || this.disposed) return;
         const events = new AbortController(); this.nameEvents = events;
         input.addEventListener("keydown", event => {
-            if (event.defaultPrevented || event.isComposing) return;
-            if ((event.key === "Enter") && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) { event.preventDefault(); this.prepare(); return; }
+            if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+            if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+                event.preventDefault();
+                if (event.repeat) return;
+                this.setName(input.value);
+                const state = this.cell.get(), origin = this.job?.origin;
+                if (state.pending || state.status === "pending") return;
+                if (state.status !== "ready") { this.prepare(); return; }
+                if (!state.canApply) return;
+                this.apply(state.token);
+                if (origin && this.cell.get().status === "applied" && this.active === origin && this.available(origin)) origin.editor.focus();
+                return;
+            }
             const origin = this.job?.origin ?? this.active;
             if (event.key !== "Escape" || !origin) return;
             event.preventDefault(); event.stopPropagation(); this.cancel(); if (this.available(origin)) origin.editor.focus();
         }, { signal: events.signal });
     };
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const s: Session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
+        const s: Session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor }, events = new AbortController();
+        const start = editor.commands.register({ id: "rename.start", label: "Rename symbol", enabled: () => this.available(s),
+            run: () => { if (this.options.open && !this.options.open()) return false; this.active = s; this.start(true); return true; } }, { keys: ["F2"] });
+        events.signal.addEventListener("abort", start.dispose, { once: true });
+        this.sessions.set(s.token, s);
         editor.input.addEventListener("focus", () => { this.active = s; this.publish(); }, { signal: events.signal });
-        editor.input.addEventListener("keydown", event => {
-            if (event.defaultPrevented || event.isComposing || editor.activity().composing) return;
-            if (event.key === "F2" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) { event.preventDefault(); event.stopImmediatePropagation(); this.active = s; this.start(true); }
-        }, { capture: true, signal: events.signal });
         for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.job?.documents.has(editor.view.documentId)) this.cancel(); }, { signal: events.signal });
         let detached = false;
         return () => { if (detached) return; detached = true; if (this.job?.origin === s) this.cancel(); events.abort(); this.sessions.delete(s.token); if (this.active === s) this.active = undefined; if (!this.sessions.size) this.lane.drop(); this.publish(); };
     }
     readonly prepare = (): void => this.start(false);
-    /** A host command names the mounted source explicitly, including after an async mount. */
-    begin(id: string): void {
-        const source = [...this.sessions.values()].find(session => session.id === id);
-        if (!source) return; this.active = source; this.start(true);
-    }
     private start(keyboard: boolean): void {
         const origin = this.active;
         if (this.disconnected || !origin || !this.available(origin)) { this.publish({ message: "Focus an available source and reconnect first." }); return; }
@@ -172,7 +181,9 @@ export class HostRenameTools {
                     job.stops.push(this.workspace.observeDocument(document.id).subscribe(changed), this.workspace.resourceForDocument(document.id).metadata.subscribe(changed));
                 }
                 job.ready = true; win.clearTimeout(job.timer); this.showPage(0);
-                this.publish({ status: "ready", message: `Preview ${this.editCount(job)} provider edits for this new name. Review the captured targets before applying.`, work: total });
+                const count = this.editCount(job);
+                this.publish({ status: "ready", message: count ? `Review ${count} ${count === 1 ? "change" : "changes"}. Press Enter in the name field to apply.`
+                    : "No edits for this name.", work: total });
             }).catch(error => { if (this.job !== job) return; this.release(); this.lane.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Rename provider failed; source is unchanged.", locations: [] }); });
 
         } catch (error) { this.release(); this.lane.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Rename unavailable.", locations: [] }); }

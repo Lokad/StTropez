@@ -96,7 +96,8 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         }).catch(error => { if (query === captured && captured.current()) showNavigation(captured,
             error instanceof Error ? `Cannot open this location: ${error.message}` : "This location is unavailable in the sample."); });
     }
-    const rename = new HostRenameTools(workspace, () => idle(), id => id === file.resource.documentId && valid() ? editor : undefined, () => createLspRenameClient({ provider }));
+    const rename = new HostRenameTools(workspace, () => idle(), id => id === file.resource.documentId && valid() ? editor : undefined,
+        () => createLspRenameClient({ provider }), { open: beginRename });
     scope.defer(() => rename.dispose());
     const heading = document.createElement("h2"), status = document.createElement("p"), label = document.createElement("label"), name = document.createElement("input");
     heading.textContent = `Rename in ${file.name}`; status.setAttribute("aria-label", "Rename status"); name.maxLength = 256; label.append("New name ", name);
@@ -110,24 +111,24 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         renameOverlay.hide(); previous?.cancel(); rename.cancel(); if (focus && valid()) editor.focus();
     };
     scope.defer(() => closeRename(false));
-    const beginRename = () => {
-        if (!idle()) return;
+    function beginRename() {
+        if (!idle()) return false;
         dismissOther(); cancelNavigation(); closeRename(false);
-        const source = captureSource(idle); if (!source) return;
+        const source = captureSource(idle); if (!source) return false;
         renameSource = source;
         source.signal.addEventListener("abort", () => {
             if (renameSource === source) closeRename(rename.state.getSnapshot().status === "applied" || renamePopup.contains(document.activeElement));
         }, { once: true });
         // F2 gives the name field focus immediately, including before the first placement frame.
-        renamePopup.hidden = false; renameOverlay.show(sourceAnchor(source)); rename.begin("source");
-    };
+        renamePopup.hidden = false; renameOverlay.show(sourceAnchor(source)); return true;
+    }
     name.addEventListener("input", () => rename.setName(name.value), { signal: events.signal });
     preview.addEventListener("click", rename.prepare, { signal: events.signal }); cancel.addEventListener("click", () => closeRename(true), { signal: events.signal });
     previous.addEventListener("click", rename.previousPage, { signal: events.signal }); next.addEventListener("click", rename.nextPage, { signal: events.signal });
     rename.bindName(name); scope.defer(() => rename.bindName(null));
     scope.defer(rename.state.subscribe(() => {
         const state = rename.state.getSnapshot();
-        status.textContent = state.status === "pending" ? "Preparing rename preview…" : state.status === "ready" ? `Review ${state.count} changes before applying.`
+        status.textContent = state.status === "pending" ? "Preparing rename preview…" : state.status === "ready" ? state.message
             : state.status === "expired" ? "The code or selection changed. Preview again." : state.status === "failed" ? state.message : "Enter a name, then preview its changes.";
         if (name.value !== state.name) name.value = state.name;
         apply.disabled = !state.canApply; apply.onclick = () => rename.apply(state.token); preview.disabled = state.pending || !state.name.trim();
@@ -141,7 +142,6 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     editor.input.addEventListener("keydown", event => {
         if (event.defaultPrevented || event.isComposing || editor.activity().composing || event.ctrlKey || event.metaKey || event.altKey) return;
         if (event.key === "F12") { event.preventDefault(); event.stopImmediatePropagation(); request(event.shiftKey ? "references" : "definition"); }
-        else if (event.key === "F2" && !event.shiftKey) { event.preventDefault(); event.stopImmediatePropagation(); beginRename(); }
         else if (event.key === "Escape" && query) { event.preventDefault(); event.stopImmediatePropagation(); cancelNavigation(); }
         else if (event.key === "Escape" && renameSource) { event.preventDefault(); event.stopImmediatePropagation(); closeRename(true); }
         else if (query?.result?.locations.length && !popup.hidden && !event.shiftKey) {
@@ -164,6 +164,6 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         scope.defer(file.resource.metadata.subscribe(changed));
     }
     editor.input.addEventListener("blur", () => queueMicrotask(() => { if (!disposed) changed(); }), { signal: events.signal });
-    return Object.freeze({ definition: () => request("definition"), references: () => request("references"), rename: beginRename,
+    return Object.freeze({ definition: () => request("definition"), references: () => request("references"), rename: () => editor.commands.run("rename.start"),
         dismiss: () => { cancelNavigation(); closeRename(false); }, isOpen: () => !!query || !!renameSource });
 }

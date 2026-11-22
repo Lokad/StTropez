@@ -57,7 +57,8 @@ test("real rename previews a captured name, rejects an old name and shares one u
     await name.fill("cartTotal"); await name.press("Enter"); await expect(apply).toBeEnabled();
     await name.fill("basketTotal"); await expect(apply).toBeDisabled();
     await name.press("Enter"); await expect(apply).toBeEnabled(); await expect(dialog.getByLabel("Rename edits")).toContainText("basketTotal");
-    await apply.click(); await expect(dialog).toBeHidden(); await expect(pricing).toBeFocused();
+    await name.dispatchEvent("keydown", { key: "Enter", repeat: true }); await expect(apply).toBeEnabled();
+    await expect(name).toBeFocused(); await page.keyboard.press("Enter"); await expect(dialog).toBeHidden(); await expect(pricing).toBeFocused();
     await expect(page.locator("#editor")).toContainText("export function basketTotal(");
     await page.locator('[data-file="main.ts"]').click(); await expect(page.locator("#editor")).toContainText("basketTotal(cart, 0.1)");
     await source.press("Control+z"); await expect(page.locator("#editor")).toContainText("calculateTotal(cart, 0.1)");

@@ -228,7 +228,7 @@ export class ViewBindings {
         this.colors = new HostDocumentColors(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.colors, reconnectProvider);
         this.links = new HostDocumentLinks(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.links, reconnectProvider);
         this.actions = new HostActionsTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.actions, this.project, reconnectProvider);
-        this.rename = new HostRenameTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.rename, reconnectProvider);
+        this.rename = new HostRenameTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.rename, { reconnectProvider });
         this.signature = new HostSignatureTools(controller.workspace, canCapture, () => this.hover.dismiss(), lsp.signature, reconnectProvider);
         this.tools = [this.language, this.hover, this.tablePaste, this.domain, this.navigation, this.project,
             this.signature, this.rename, this.actions, this.links, this.colors];

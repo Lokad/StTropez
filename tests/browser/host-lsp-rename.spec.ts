@@ -41,7 +41,8 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP renam
         const initialize = requests.find(r => r.method === "initialize" && r.params.capabilities.textDocument.rename)!; expect(initialize.params.capabilities.workspace.workspaceEdit.documentChanges).toBe(true);
         const remote = await page.evaluate(uri => window.hostFixture.providerCustom("fixture/document", { uri, from: 0, to: 0 }), request.params.textDocument.uri) as { version: number };
         expect(responses.at(-1).documentChanges.find((change: any) => change.textDocument.uri === request.params.textDocument.uri).textDocument.version).toBe(remote.version);
-        const expected = marker + raw.replace("const catalogue", "const café").replace("\r\ncatalogue;", "\r\ncafé;"); await button(page, "Apply captured rename").click(); await waitForRename(page); await exact(page, expected);
+        const expected = marker + raw.replace("const catalogue", "const café").replace("\r\ncatalogue;", "\r\ncafé;");
+        await expect(name(page)).toBeFocused(); await page.keyboard.press("Enter"); await waitForRename(page); await exact(page, expected); await expect(input(page)).toBeFocused();
         const companion = before.bindings.navigation.companion!; expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe("const café = 1;\r\ncafé;\r\n"); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
         await button(page, "Open renamed changes in Navigation companion").evaluate(node => { node.dataset.retained = "rename-resource"; });
         await input(page).press("Control+End"); await input(page).pressSequentially("H"); await waitForRename(page); await input(page, "Secondary source").press("Control+z"); await waitForRename(page); await exact(page, expected);
@@ -59,12 +60,14 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP renam
         await preview(page); await expect(button(page, "Apply captured rename")).toBeDisabled();
         await expect(page.getByLabel("Rename status", { exact: true })).toContainText("read-only or locked");
         // A programmatic click must not bypass the captured permission policy either.
-        await button(page, "Apply captured rename").dispatchEvent("click"); await waitForRename(page); await exact(page, raw);
+        await button(page, "Apply captured rename").dispatchEvent("click"); await name(page).press("Enter"); await waitForRename(page); await exact(page, raw);
         expect((await snapshot(page)).bindings.rename.state.status).toBe("ready"); expect((await snapshot(page)).history).toEqual(before.history);
         expect(await targets(page).count()).toBeGreaterThan(0);
         expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe("const catalogue = 1;\r\ncatalogue;\r\n"); await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
         for (const mode of ["selection", "typing", "remount"] as const) {
             await select(page, raw.indexOf("catalogue") + 2); await name(page).fill("inventory"); replies.hold(); await button(page, "Prepare rename preview").click(); await expect.poll(replies.waiting).toBe(true); expect((await snapshot(page)).bindings.rename.state.pending).toBe(true);
+            const token = (await snapshot(page)).bindings.rename.state.token;
+            await name(page).press("Enter"); expect((await snapshot(page)).bindings.rename.state.token).toBe(token);
             if (mode === "selection") await select(page, raw.indexOf("catalogue") + 3);
             else if (mode === "typing") { await input(page).press("Control+End"); await input(page).pressSequentially("x"); await waitForRename(page); await input(page).press("Control+z"); }
             else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
