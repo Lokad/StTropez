@@ -56,7 +56,7 @@ notice.
 | `setQuery(query, { preview: true })` | Once the search finishes, marks a visible match or reveals the next one from the source selection. Preserves focus and the selection. |
 | `setFlags(flags)` | Patches supplied flags and restarts only when a value changes |
 | `next(direction?)` | Selects a match in the captured view; direction is `1` by default or `-1` |
-| `next(direction, { whenReady: true })` | Accepts one navigation request while the search finishes. The latest direction wins. Changing the query, revision, focus or selection invalidates the request. |
+| `next(direction, { whenReady: true })` | Accepts one navigation request while the search finishes. The latest direction wins. Changing the query, revision, focus, selection or visible folds cancels the request. |
 | `replaceCurrent(text)` | Replaces the selected match, or the next match if none is selected, then selects the following match |
 | `replaceAll(text, options?)` | Plans a replacement from a completed index and commits one history command |
 | `cancel()` | Clears the index; later typing does not resume the cancelled search |
@@ -70,7 +70,7 @@ match inside a fold opens that fold.
 Preview prefers a painted match at or after the start of the selection, then any other painted
 match. If all matches are offscreen, it reveals the next one and wraps at the end of the file.
 The next forward navigation selects the preview. Losing focus, scrolling, starting a new query
-or changing the selection or document abandons a pending preview. After explicit navigation,
+or changing the selection, document or visible folds abandons a pending preview. After explicit navigation,
 `wrappedTo` reports `"start"`, `"end"` or `null`. The `current` index starts at zero.
 A match inside a line ending appears at the end of the row and keeps its original UTF-16 offsets.
 `matchesIn(from, to, capture?)` returns frozen, unclipped UTF-16 ranges intersecting `[from, to)`.
@@ -181,7 +181,7 @@ split a surrogate pair. Boundary checks can inspect context outside the requeste
 Literal replacement inserts its argument literally, including `$&`, `$1` and raw newlines.
 Replace Current uses a matching selection (an indexed match for whole-word search), or replaces
 the next match in one press. It selects the following match once the updated index is ready,
-provided the view, query, selections and focus are current. Navigation and replacement refuse active
+provided the view, query, selections, visible folds and focus are current. Navigation and replacement refuse active
 composition. You can search a read-only view. Replacement also needs edit permission and an unlocked resource.
 
 Find leaves keyboard focus in the control that invoked it. Enter and Shift+Enter can therefore

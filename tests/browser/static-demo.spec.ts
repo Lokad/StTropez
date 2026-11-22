@@ -6,7 +6,7 @@ import { checkDemoLigatures } from "./demo-ligatures.ts";
 import { runDemoDiagnosticRetention } from "./demo-diagnostics.ts";
 import { demoSample } from "../../examples/demo/samples.ts";
 import { paintedCharacter } from "../helpers/painted-character.ts";
-import type { Locator } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 function copyOutput(reader: Locator) {
     return reader.evaluate(node => {
@@ -383,8 +383,7 @@ test("the Find toolbar follows generated output and both Changes panes", async (
     await workingInput.press("Shift+F3"); await expect.poll(offset).toBe(first); await expect(query).toBeHidden();
 });
 
-test("a pending regex search allows large-file scrolling and typing and expires on file change", async ({ page, baseURL }) => {
-    // Hold the first actual match page for each large-file revision, then deliver both after switching documents.
+async function holdRegexMatches(page: Page) {
     type Probe = { pending: (() => void)[]; holding: boolean };
     type ProbeWindow = typeof window & { regexProbe: Probe };
     await page.addInitScript(() => {
@@ -401,44 +400,70 @@ test("a pending regex search allows large-file scrolling and typing and expires 
             }
         };
     });
+    return {
+        waiting: () => page.evaluate(() => (window as ProbeWindow).regexProbe.pending.length),
+        setHolding: (hold: boolean) => page.evaluate(hold => { (window as ProbeWindow).regexProbe.holding = hold; }, hold),
+        release: () => page.evaluate(() => {
+            const probe = (window as ProbeWindow).regexProbe;
+            probe.holding = false;
+            for (const deliver of probe.pending.splice(0)) deliver();
+        }),
+    };
+}
+
+test("a fold made while F3 waits for regex results stays closed until the next F3", async ({ page, baseURL }) => {
+    const gate = await holdRegexMatches(page);
+    await page.goto(baseURL!); await page.getByRole("button", { name: "pricing.ts", exact: true }).click();
+    const source = page.getByRole("textbox", { name: "pricing.ts", exact: true }), fold = page.locator("#editor .st-fold-button").first();
+    await expect(fold).toBeVisible({ timeout: 30000 });
+    await source.press("Control+Home"); await source.press("Control+f"); await page.locator("#find-regex").click();
+    await page.locator("#find-query").fill("name: string"); await expect.poll(gate.waiting).toBe(1);
+    await source.press("F3"); await source.press("Control+Shift+BracketLeft");
+    await expect(fold).toHaveAttribute("aria-expanded", "false");
+    await gate.release(); await expect(page.locator("#find-status")).toHaveText("1 match");
+    await page.evaluate(() => new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+    await expect(fold).toHaveAttribute("aria-expanded", "false"); await expect(page.locator("#cursor")).toHaveText("Ln 1, Col 1");
+    await source.press("F3"); await expect(fold).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator("#cursor")).toHaveText("Ln 2, Col 17"); await expect(source).toBeFocused();
+    expect(await source.evaluate(node => { const field = node as HTMLTextAreaElement; return field.value.slice(field.selectionStart, field.selectionEnd); })).toBe("name: string");
+});
+
+test("a pending regex search allows large-file scrolling and typing and expires on file change", async ({ page, baseURL }) => {
+    const gate = await holdRegexMatches(page);
     await page.goto(baseURL!); await page.locator("#sample").selectOption("large");
     const source = page.getByRole("textbox", { name: "large.ts", exact: true }), viewport = page.locator("#editor .st-viewport");
-    const held = () => page.evaluate(() => (window as ProbeWindow).regexProbe.pending.length);
     await source.press("Control+f"); await page.locator("#find-regex").click();
     const query = page.locator("#find-query");
     await query.fill("Row 75000:");
-    await expect.poll(held, { timeout: 15000 }).toBe(1);
+    await expect.poll(gate.waiting, { timeout: 15000 }).toBe(1);
     await viewport.evaluate(root => { root.scrollTop = root.scrollHeight / 3; });
     const chosenScroll = await viewport.evaluate(root => root.scrollTop);
-    await page.evaluate(() => { const probe = (window as ProbeWindow).regexProbe; probe.holding = false; probe.pending.shift()!(); });
+    await gate.release();
     await expect(page.locator("#find-status")).toHaveText("1 match");
     await expect(query).toBeFocused(); expect(await viewport.evaluate(root => root.scrollTop)).toBe(chosenScroll);
     await viewport.evaluate(root => { root.scrollTop = root.scrollHeight / 2; });
     await expect(viewport.locator('.st-viewport-row[data-line="50003"]')).toContainText("Row 50004:");
-    await page.evaluate(() => { (window as ProbeWindow).regexProbe.holding = true; });
-    await query.fill("Row (?:5|50004):"); await expect.poll(held, { timeout: 15000 }).toBe(1);
+    await gate.setHolding(true);
+    await query.fill("Row (?:5|50004):"); await expect.poll(gate.waiting, { timeout: 15000 }).toBe(1);
     await query.press("Enter");
-    await page.evaluate(() => { const probe = (window as ProbeWindow).regexProbe; probe.holding = false; probe.pending.shift()!(); });
+    await gate.release();
     await expect(page.locator("#cursor")).toContainText("Ln 50004,"); await expect(query).toBeFocused();
-    await page.evaluate(() => { (window as ProbeWindow).regexProbe.holding = true; });
+    await gate.setHolding(true);
     await query.fill(String.raw`\brow(?= \d| ")`);
-    await expect.poll(held, { timeout: 15000 }).toBe(1);
+    await expect.poll(gate.waiting, { timeout: 15000 }).toBe(1);
     await viewport.evaluate(root => { root.scrollTop = root.scrollHeight / 2; });
     const middle = viewport.locator('.st-viewport-row[data-line="50000"]');
     await expect(middle).toHaveText("// Row 50001: try editing or searching here.");
     await middle.click(); await source.press("End"); await source.press("!");
     await expect(middle).toHaveText("// Row 50001: try editing or searching here.!");
-    await expect.poll(held, { timeout: 15000 }).toBe(2);
+    await expect.poll(gate.waiting, { timeout: 15000 }).toBe(2);
     await source.press("F3");
-    await page.evaluate(() => { (window as ProbeWindow).regexProbe.holding = false; });
+    await gate.setHolding(false);
     await page.locator("#sample").selectOption("host");
     await expect(page.getByRole("textbox", { name: "workflow.rules", exact: true })).toBeVisible();
     await expect(page.locator("#find-status")).toHaveText("2 matches");
-    await page.evaluate(async () => {
-        const probe = (window as ProbeWindow).regexProbe;
-        for (const deliver of probe.pending.splice(0)) deliver();
-        await new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done())));
-    });
+    await gate.release();
+    await page.evaluate(() => new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
     await expect(page.locator("#find-status")).toHaveText("2 matches");
     await expect(page.locator("#editor .st-search-match")).toHaveText(["row", "row"]);
     await expect(page.locator("#cursor")).toHaveText("Ln 1, Col 1");

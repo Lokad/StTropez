@@ -138,8 +138,8 @@ test("preview keeps the selection, replacement advances, and edits cancel a pend
     } finally { f.dispose(); }
 });
 
-test("only the latest deferred Find direction acts on an unchanged selection and query", () => {
-    const f = fixture("cat dog cat");
+test("deferred Find follows the latest direction until the selection, query or visible folds change", () => {
+    const f = fixture("cat\ndog\ncat");
     try {
         f.find.setQuery("cat");
         assert.equal(f.find.next(1, { whenReady: true }), true);
@@ -149,6 +149,22 @@ test("only the latest deferred Find direction acts on an unchanged selection and
         f.select(2); f.drain(); assert.equal(f.view.getSnapshot().selection.head, 2);
         f.find.setQuery("cat"); f.find.next(1, { whenReady: true });
         f.find.setQuery("dog"); f.drain(); assert.equal(f.find.getSnapshot().current, null);
+        const folds = f.view.folding;
+        f.select(0); f.find.setQuery("dog"); f.find.next(1, { whenReady: true });
+        folds.setRanges(folds.getSnapshot(), [{ id: "block", from: 0, to: 8, collapsed: false }]);
+        f.drain(); assert.equal(f.view.getSnapshot().selection.anchor, 4, "new expanded fold metadata preserves a pending command");
+        for (const preview of [true, false]) {
+            f.select(0); f.find.setQuery("dog", { preview });
+            if (!preview) f.find.next(1, { whenReady: true });
+            folds.setCollapsed(folds.getSnapshot(), ["block"], true);
+            folds.setCollapsed(folds.getSnapshot(), ["block"], false);
+            f.drain(); assert.equal(f.find.getSnapshot().current, null); assert.equal(f.view.getSnapshot().selection.head, 0);
+        }
+        assert.equal(f.find.next(), true); assert.equal(f.view.getSnapshot().selection.head, 7);
+        f.select(0); f.find.setQuery("cat"); f.drain();
+        assert.equal(f.find.replaceCurrent("kitten"), true);
+        folds.setCollapsed(folds.getSnapshot(), ["block"], true);
+        f.drain(); assert.equal(f.view.getSnapshot().selection.head, 6, "a fold keeps the caret after the replacement");
     } finally { f.dispose(); }
 });
 

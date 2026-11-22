@@ -406,18 +406,28 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         planReplacement(state, replacement, undefined, options?.focusEditor);
     };
     // Disabling the command button can clear activeElement without a new focus choice.
-    const focusChanged = () => { focusGeneration++; advanceAfterReplace = undefined; pendingNext = undefined; };
+    const cancelNavigation = () => { advanceAfterReplace = undefined; pendingNext = undefined; };
+    const focusChanged = () => { focusGeneration++; cancelNavigation(); };
     owner.addEventListener("focusin", focusChanged);
     const window = viewport?.element.ownerDocument.defaultView;
     window?.addEventListener("blur", focusChanged);
     const compositionStarted = () => {
-        advanceAfterReplace = undefined; pendingNext = undefined;
+        cancelNavigation();
         if (store.get().status !== "replacing") return;
         stop(); publish({ status: "ready", reason: "composition-active", message: "Replacement cancelled for composition." });
     };
     const editIntent = editor.onEditIntent(kind => { if (kind === "compositionstart") compositionStarted(); });
+    const folds = editor.view.folding;
+    let projection = folds.getSnapshot().index;
+    const stopFolds = folds.subscribe(() => {
+        const next = folds.getSnapshot().index;
+        if ((pendingNext || pendingPreview || advanceAfterReplace) && !projection.sameProjection(next)) {
+            cancelNavigation(); cancelPreview();
+        }
+        projection = next;
+    });
     const subscriptions = [() => owner.removeEventListener("focusin", focusChanged), () => window?.removeEventListener("blur", focusChanged),
-        editIntent.dispose, workspace.observeDocument(documentId).subscribe(() => {
+        editIntent.dispose, stopFolds, workspace.observeDocument(documentId).subscribe(() => {
         const current = workspace.observeDocument(documentId).getSnapshot();
         if (current && sameOwner(observed, current) && current.revision === observed.revision && current.buffer === observed.buffer) return;
         if (store.get().status === "cancelled" && valid()) { observed = workspace.document(documentId); publish({ revision: observed.revision, length: observed.buffer.length }); }
