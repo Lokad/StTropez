@@ -166,9 +166,9 @@ export class HostDocumentColors {
         } catch (error) { detach(); throw error; }
         editor.signal.addEventListener("abort", detach, { once: true, signal: events.signal });
         onSourceFocus(editor, events.signal, () => { this.active = s; this.publish(); });
-        for (const type of ["beforeinput", "compositionstart", "paste", "cut"]) editor.input.addEventListener(type, () => {
+        editor.onEditIntent(() => {
             if (this.owner?.editor.view.documentId === editor.view.documentId) this.cancel();
-        }, { signal: events.signal });
+        }, events.signal);
         return detach;
     }
     readonly discover = () => this.start(false);

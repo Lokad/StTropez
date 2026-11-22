@@ -148,7 +148,7 @@ export class HostProjectTools {
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
         const session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor }, events = new AbortController(); this.sessions.set(session.token, session);
         onSourceFocus(editor, events.signal, () => { this.active = session; this.publish(); });
-        for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.job?.documents.has(editor.view.documentId)) this.cancel(); }, { signal: events.signal });
+        editor.onEditIntent(() => { if (this.job?.documents.has(editor.view.documentId)) this.cancel(); }, events.signal);
         let detached = false;
         return () => { if (detached) return; detached = true; if (this.job?.origin === session) this.cancel(); events.abort(); this.sessions.delete(session.token);
             if (this.active === session) this.active = undefined; if (!this.sessions.size) this.drop(); this.publish(); };

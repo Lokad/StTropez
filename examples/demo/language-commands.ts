@@ -60,8 +60,8 @@ export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, o
         enabled: () => !!intent, run: () => { const waiting = intent?.stage === "waiting"; clear(); return waiting; } },
         { keys: ["Escape"], priority: 50 }).dispose);
     const events = new AbortController(); scope.defer(() => events.abort());
-    for (const name of ["blur", "beforeinput", "compositionstart"] as const)
-        editor.input.addEventListener(name, () => { if (intent) clear(); }, { signal: events.signal });
+    scope.defer(editor.subscribe(() => { if (intent && !editor.getSnapshot().focused) clear(); }));
+    editor.onEditIntent(() => { if (intent) clear(); }, events.signal);
     editor.element.ownerDocument.defaultView!.addEventListener("blur", () => { if (intent) clear(); }, { signal: events.signal });
     return {
         ready() {

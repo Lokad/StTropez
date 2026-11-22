@@ -164,8 +164,7 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
         // A pending decoder reports its own error. Disconnects and withdrawn capabilities cancel the request immediately.
         if (!j.preview || j.preview.result || connection.phase !== "ready" || connection.registrationGeneration !== j.registration) expire(j);
     });
-    const interrupt = () => { if (job) cancel(); };
-    for (const event of ["beforeinput", "compositionstart", "paste", "cut"]) editor.input.addEventListener(event, interrupt, { signal: events.signal });
+    editor.onEditIntent(() => { if (job) cancel(); }, events.signal);
     function dispose() {
         if (events.signal.aborted) return;
         scope.assertWritable(); events.abort(); stop(); release(); editor.signal.removeEventListener("abort", dispose);

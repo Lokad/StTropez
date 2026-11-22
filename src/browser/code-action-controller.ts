@@ -192,7 +192,7 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
     const stopClient = client.subscribe(() => {
         if (job?.batch && (provider.getSnapshot().phase !== "ready" || cell.get().status !== "resolving" && !job.batch.isCurrent())) expire(job);
     });
-    for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (job) cancel(); }, { signal: events.signal });
+    editor.onEditIntent(() => { if (job) cancel(); }, events.signal);
     function dispose(): void {
         if (disposed) return;
         scope.assertWritable(); cancel(); disposed = true; events.abort(); stopClient(); client.dispose();

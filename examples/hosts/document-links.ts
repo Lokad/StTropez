@@ -111,10 +111,10 @@ export class HostDocumentLinks {
             if (this.active !== session && this.cell.get().status === "resolving" && !this.presenting) this.cancel();
             this.active = session; this.publish();
         });
-        for (const type of ["beforeinput", "compositionstart", "paste", "cut"]) editor.input.addEventListener(type, () => {
+        editor.onEditIntent(() => {
             const uri = this.workspace.document(editor.view.documentId).language?.uri;
             if (!this.presenting && uri && this.route?.documents.has(uri)) this.cancel();
-        }, { signal: events.signal });
+        }, events.signal);
         return detach;
     }
     private render(route: Route, page = this.cell.get().page) {

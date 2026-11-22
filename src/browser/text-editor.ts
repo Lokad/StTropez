@@ -74,6 +74,8 @@ export type EditorRevealOptions = Readonly<{ align?: RevealAlignment; select?: b
 export type TextEditorOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; requestLine?: LinePrompt; settings?: EditorSettings }>;
 export type EditorPasteHandler = Readonly<{ accepts: (data: DataTransfer) => boolean;
     paste: (data: DataTransfer, insertion: CapturedInsertion) => void }>;
+const editIntents = ["beforeinput", "compositionstart", "paste", "cut"] as const;
+export type EditorEditIntent = typeof editIntents[number];
 type PasteOwner = { handler: EditorPasteHandler; pending?: CapturedInsertion };
 export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; workspace: Workspace; tab: TabTarget | undefined; signal: AbortSignal; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
     operation: <T>(options: EditorOperationOptions, work: (op: EditorOperation) => T | PromiseLike<T>) => Promise<EditorOperationOutcome<T>>;
@@ -81,6 +83,8 @@ export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HT
     /** One pending host insertion, invalidated by later editing/selection/authority/lifecycle changes. */
     captureInsertion: (kind?: "paste" | "replace") => CapturedInsertion | undefined;
     registerPasteHandler: (handler: EditorPasteHandler) => () => void;
+    /** Observe native editing gestures on this pane before they reach its editing handlers. */
+    onEditIntent: (listener: (kind: EditorEditIntent) => void, signal?: AbortSignal) => { dispose(): void };
     /** One synchronous edit planner per view. Its result still passes Workspace validation/history. */
     registerEditTransform: (transform: TextEditorEditTransform) => () => void;
     configure: (changes: EditorSettings) => boolean;
@@ -1499,6 +1503,12 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 () => { if (hostInsertion === captured) hostInsertion = undefined;
                     if (pasteOwner && pasteOwner.pending === captured) delete pasteOwner.pending; });
             hostInsertion = captured; return captured;
+        },
+        onEditIntent(listener, signal) {
+            const lifetime = signal ? AbortSignal.any([listeners.signal, signal]) : listeners.signal;
+            const notify = (event: Event) => listener(event.type as EditorEditIntent);
+            for (const kind of editIntents) input.addEventListener(kind, notify, { capture: true, signal: lifetime });
+            return { dispose() { for (const kind of editIntents) input.removeEventListener(kind, notify, true); } };
         },
         registerPasteHandler(handler: EditorPasteHandler) {
             notifications.assertWritable();

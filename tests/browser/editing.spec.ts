@@ -2,6 +2,30 @@ import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { recordTypedText } from "../helpers/typed-text.ts";
 
+test("edit intents belong to the source pane and expire with their observer or mount", async ({ page }) => {
+    const result = await page.evaluate(() => {
+        const f = window.editingFixture, primary = document.querySelector<HTMLTextAreaElement>("#primary textarea")!;
+        const secondary = document.querySelector<HTMLTextAreaElement>("#secondary textarea")!;
+        const field = document.createElement("textarea"); document.body.append(field);
+        const kinds: string[] = [], abort = new AbortController(); let compositionAtStart: boolean | undefined;
+        const registration = f.onEditIntent(kind => {
+            kinds.push(kind);
+            if (kind === "compositionstart") compositionAtStart = f.snapshot().primary.composing;
+        });
+        const cut = (node: HTMLElement) => node.dispatchEvent(new ClipboardEvent("cut", { bubbles: true, cancelable: true }));
+        cut(field); cut(secondary); cut(primary);
+        primary.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true }));
+        primary.dispatchEvent(new CompositionEvent("compositionstart"));
+        primary.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertCompositionText", data: "a", isComposing: true }));
+        primary.dispatchEvent(new CompositionEvent("compositionend"));
+        registration.dispose(); cut(primary);
+        f.onEditIntent(kind => kinds.push("aborted " + kind), abort.signal); abort.abort(); cut(primary);
+        f.onEditIntent(kind => kinds.push("disposed " + kind)); f.dispose(); cut(primary);
+        field.remove(); return { kinds, compositionAtStart };
+    });
+    expect(result).toEqual({ kinds: ["cut", "paste", "compositionstart", "beforeinput"], compositionAtStart: false });
+});
+
 test("an async editor operation applies once and releases every expired or failed request", async ({ page }) => {
     const result = await page.evaluate(async () => {
         const f = window.editingFixture; f.setText("abc");

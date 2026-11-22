@@ -123,7 +123,7 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
     }
     function cancel() { scope.assertWritable(); if (!events.signal.aborted) { release(); publish({}); } }
     const stop = provider.subscribe(() => { const j = job; if (j?.edit && !j.edit.isCurrent()) expire(j); });
-    for (const event of ["beforeinput", "compositionstart", "paste", "cut"]) editor.input.addEventListener(event, () => { if (job) cancel(); }, { signal: events.signal });
+    editor.onEditIntent(() => { if (job) cancel(); }, events.signal);
     function dispose() {
         if (events.signal.aborted) return;
         scope.assertWritable(); events.abort(); stop(); release(); editor.signal.removeEventListener("abort", dispose);

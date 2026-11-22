@@ -100,7 +100,7 @@ export function ownInputRecovery(
 ): () => void {
     const documentId = editor.view.documentId;
     const listeners = new AbortController();
-    editor.input.addEventListener(inputConflictEvent, event => {
+    editor.element.addEventListener(inputConflictEvent, event => {
         validateAndRetain(documentId, (event as CustomEvent<unknown>).detail);
     }, { signal: listeners.signal });
     return () => {
@@ -235,6 +235,12 @@ before removing their nodes. Keep project-level document and recovery services a
 
 ### Accepted typing
 
+Use `editor.onEditIntent(listener, signal?)` to dismiss a preview when source editing begins.
+The listener receives `"beforeinput"`, `"compositionstart"`, `"paste"` or `"cut"` before that pane
+handles the native event. A single gesture can produce several events or leave the text unchanged.
+Other panes and host fields have their own input. Call the registration’s `dispose()` to unsubscribe.
+Aborting the supplied signal or disposing the editor also removes the listener.
+
 Listen for `typedTextEvent` on `editor.element` to react to character input after it succeeds.
 Its frozen `TypedTextDetail` carries the input text, document ID, revision and complete selection
 set at acceptance. An auto-pair reports the character the user typed. Typing over its closing
@@ -253,10 +259,9 @@ It bubbles within the same DOM root. Its frozen `EditRefusedDetail` contains `do
 lease reports `"edit-locked"` on an otherwise editable view. Input that was already pending
 when permission changed follows the recovery path below.
 
-Listen for `inputConflictEvent` (`sttropez-conflict`) on `editor.input` when the editor cannot apply
-input, history or a command. The development textarea fixture dispatches the same event on
-`editor.element`. The event bubbles within its root, cannot be cancelled and stops at a shadow
-boundary. Attaching to the input works even in a closed shadow root.
+Listen for `inputConflictEvent` (`sttropez-conflict`) on `editor.element` when the editor cannot
+apply input, history or a command. The event bubbles to the editor root, including in a closed
+shadow tree. The development textarea fixture exposes the same event.
 
 `InputConflictDetail` contains `documentId`, `expectedRevision`, `reason` and `attemptedText`,
 with optional `contextFrom`, `attemptedEdit` and `cause`. Offsets refer to UTF-16 model units

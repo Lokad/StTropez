@@ -123,12 +123,14 @@ export class HostHoverTools {
             if (this.popup?.matches(":focus-within")) return;
             cancelPointer(); if (this.current === session && this.kind === "pointer") this.dismiss();
         }, { signal: listeners.signal });
-        editor.input.addEventListener("blur", event => {
+        editor.element.addEventListener("focusout", event => {
             if (this.current === session && this.kind === "keyboard"
                 && !(event.relatedTarget instanceof Node && this.popup?.contains(event.relatedTarget))) this.dismiss();
         }, { signal: listeners.signal });
-        editor.input.addEventListener("compositionstart", () => { session.cancelTimers(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
-        editor.input.addEventListener("beforeinput", () => { cancelPointer(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
+        editor.onEditIntent(kind => {
+            if (kind === "compositionstart") session.cancelTimers(); else cancelPointer();
+            if (this.current === session) this.dismiss();
+        }, listeners.signal);
         const scroll = () => {
             requested = undefined; if (this.current === session && this.kind === "pointer") this.dismiss();
         };

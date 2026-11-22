@@ -109,7 +109,10 @@ export class HostActionsTools {
             } }), ...(review && { runCommand: command => review.beginAction({ ...command, editor }) }) });
         const s = { id, target, editor, controller, events }; this.sessions.add(s);
         onSourceFocus(editor, events.signal, () => { this.active = s; this.publish(); });
-        for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.panel && this.panel.source !== s && this.cell.get().token !== null && this.panel.source.controller.getSnapshot().status !== "executing" && this.workspace.document(editor.view.documentId).key.variant === "working") this.cancel(); }, { signal: events.signal });
+        editor.onEditIntent(() => {
+            if (this.panel && this.panel.source !== s && this.cell.get().token !== null && this.panel.source.controller.getSnapshot().status !== "executing"
+                && this.workspace.document(editor.view.documentId).key.variant === "working") this.cancel();
+        }, events.signal);
         const detach = () => events.abort();
         events.signal.addEventListener("abort", () => {
             if (this.panel?.source === s) this.cancel();

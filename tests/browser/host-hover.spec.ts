@@ -73,6 +73,10 @@ for (const host of ["plain", "react"]) {
         expect(await form.evaluate(node => node.ownerDocument.activeElement === node)).toBe(true); expect((await snapshot(page)).source.exports).toBe(0);
         const posted = (await snapshot(page)).bindings.hover.sessions.find(s => s.id === "primary")!.counters;
         expect(posted).toMatchObject({ received: 1, transport: "lsp3.17" });
+        await tooltip(page).evaluate(node => node.focus({ preventScroll: true }));
+        await primary(page).evaluate(node => node.focus({ preventScroll: true })); await expect(tooltip(page)).toBeVisible();
+        await tooltip(page).evaluate(node => node.focus({ preventScroll: true }));
+        await form.evaluate(node => node.focus({ preventScroll: true })); await expect(tooltip(page)).toBeHidden();
         replies.hold(); await page.evaluate(() => { const f = window.hostFixture; f.setSourceReadOnly(false); f.inspectSymbol("primary"); }); await expect.poll(replies.waiting).toBe(true);
         await page.evaluate(() => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: 0, insert: "human" }]); });
         await expect(tooltip(page)).toBeHidden(); await expect.poll(replies.cancelled).toBe(true); await replies.release(); await expect(tooltip(page)).toBeHidden();

@@ -15,9 +15,13 @@ export function mountHoverPanel(host: HTMLElement, tools: HostHoverTools, option
     }, { signal: listeners.signal });
     popup.addEventListener("focusout", event => {
         const anchor = tools.popupAnchor();
-        if (anchor && event.relatedTarget instanceof Node && !popup.contains(event.relatedTarget)
-            && event.relatedTarget !== anchor.editor.input && event.relatedTarget !== previousFocus)
-            tools.dismiss();
+        if (!anchor || !(event.relatedTarget instanceof Node) || popup.contains(event.relatedTarget) || event.relatedTarget === previousFocus) return;
+        const shown = tools.state.getSnapshot();
+        // The destination receives focus after focusout. It may be this editor inside a shadow root.
+        queueMicrotask(() => {
+            if (!listeners.signal.aborted && tools.state.getSnapshot() === shown && !anchor.editor.getSnapshot().focused
+                && !popup.matches(":focus-within")) tools.dismiss();
+        });
     }, { signal: listeners.signal });
     popup.addEventListener("keydown", event => {
         const anchor = tools.popupAnchor(), origin = previousFocus;

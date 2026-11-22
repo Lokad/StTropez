@@ -193,7 +193,7 @@ export class HostLanguageTools {
         origin.addEventListener(sourceFocused ? "focusout" : "blur", stop, { signal: listeners.signal });
         origin.addEventListener("input", stop, { signal: listeners.signal });
         origin.addEventListener("compositionstart", stop, { signal: listeners.signal });
-        editor.input.addEventListener("compositionstart", stop, { signal: listeners.signal });
+        editor.onEditIntent(kind => { if (kind === "compositionstart") stop(); }, listeners.signal);
         clock.addEventListener("blur", stop, { signal: listeners.signal });
         stops.push(find.subscribe(changed), this.workspace.observeDocument(editor.view.documentId).subscribe(changed), editor.view.subscribe(changed), this.workspace.tabs.subscribe(changed));
         if (command.kind === "replace") stops.push(metadata.subscribe(changed));

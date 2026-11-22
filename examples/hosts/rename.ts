@@ -111,9 +111,9 @@ export class HostRenameTools {
             events.signal.addEventListener("abort", dismiss.dispose, { once: true });
         } catch (error) { session.stop(); throw error; }
         onSourceFocus(editor, events.signal, () => { this.active = session; this.publish(); });
-        for (const event of ["beforeinput", "compositionstart", "paste", "cut"]) editor.input.addEventListener(event, () => {
+        editor.onEditIntent(() => {
             if (this.owner && this.owner !== session && this.workspace.document(editor.view.documentId).key.variant === "working") this.cancel();
-        }, { signal: events.signal });
+        }, events.signal);
         return session.stop;
     }
     private hint(session: Session) { return navigationSymbol(this.workspace.document(session.editor.view.documentId).buffer, session.editor.view.getSnapshot().selection.head); }

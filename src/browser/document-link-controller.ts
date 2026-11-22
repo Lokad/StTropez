@@ -127,8 +127,7 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
     }
     function cancel() { scope.assertWritable(); if (!events.signal.aborted) { release(); publish("idle"); } }
     const stop = provider.subscribe(() => { if (job?.reply && !job.reply.isCurrent()) expire(job); });
-    const interrupt = () => { if (job) cancel(); };
-    for (const event of ["beforeinput", "compositionstart", "paste", "cut"]) editor.input.addEventListener(event, interrupt, { signal: events.signal });
+    editor.onEditIntent(() => { if (job) cancel(); }, events.signal);
     function dispose() {
         if (events.signal.aborted) return;
         scope.assertWritable(); events.abort(); stop(); release(); editor.signal.removeEventListener("abort", dispose);

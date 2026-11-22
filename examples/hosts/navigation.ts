@@ -82,9 +82,9 @@ export class HostNavigationTools {
             this.publish();
         });
         onSourceFocus(editor, listeners.signal, () => { this.active = session; this.publish(); });
-        for (const name of ["compositionstart", "beforeinput", "paste", "cut"] as const) editor.input.addEventListener(name, () => {
+        editor.onEditIntent(() => {
             if (!this.presenting && this.job?.sources.has(editor.view.documentId)) this.cancel();
-        }, { signal: listeners.signal });
+        }, listeners.signal);
         let detached = false;
         const detach = () => { if (detached) return; detached = true; if (!this.presenting && this.job) this.cancel(); listeners.abort(); stop(); controller.dispose(); this.sessions.delete(session.token);
             if (this.active === session) this.active = undefined; this.publish(); };

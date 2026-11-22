@@ -74,9 +74,9 @@ export class HostDomainTools {
         const changed = () => { this.sync(session); if (this.job?.session === session && !this.current(this.job)) this.invalidate(this.job); };
         const stops = [this.workspace.observeDocument(editor.view.documentId).subscribe(changed), editor.view.folding.subscribe(changed), this.workspace.tabs.subscribe(changed), this.workspace.resourceForDocument(editor.view.documentId).metadata.subscribe(changed)];
         onSourceFocus(editor, listeners.signal, () => { this.active = session; this.sync(session); });
-        for (const event of ["compositionstart", "beforeinput", "paste", "cut"] as const) editor.input.addEventListener(event, () => {
+        editor.onEditIntent(() => {
             if (this.job?.session.editor.view.documentId === editor.view.documentId) this.cancel();
-        }, { signal: listeners.signal });
+        }, listeners.signal);
         this.sync(session); this.showAnnotations(session); let detached = false;
         return () => { if (detached) return; detached = true; if (this.job?.session === session) this.cancel(); listeners.abort(); stops.forEach(stop => stop()); this.sessions.delete(token);
             layer.dispose(); if (this.active === session) { this.active = undefined; this.publish(); } };
