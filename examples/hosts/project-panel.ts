@@ -1,10 +1,10 @@
 import type { HostProjectTools, ProjectSnapshot } from "./project.ts";
 import { actionTarget } from "./actions-panel.ts";
-type ProjectPanelTools = Pick<HostProjectTools, "register" | "unregister" | "requestEdits" | "requestStatus" | "cancel" | "confirmReview" | "declineReview" | "previousReviewPage" | "nextReviewPage" | "disconnect" | "reconnect" | "openChanged">;
+type ProjectPanelTools = Pick<HostProjectTools, "register" | "unregister" | "requestEdits" | "requestStatus" | "cancel" | "disconnect" | "reconnect" | "openChanged">;
 
 /** Captured decisions and lazy bounded lists shared by both host renderers. */
 export function projectPanelModel(tools: ProjectPanelTools, s: ProjectSnapshot) {
-    const unavailable = !s.available || s.disconnected || s.pending, review = s.review;
+    const unavailable = !s.available || s.disconnected || s.pending, review = s.review, reviewKey = review?.key;
     return {
         title: "Workspace provider", status: { label: "Workspace provider status", text: s.message },
         actions: [
@@ -13,14 +13,14 @@ export function projectPanelModel(tools: ProjectPanelTools, s: ProjectSnapshot) 
             { label: "Request provider review edits", invoke: tools.requestEdits, disabled: unavailable || !s.registered || s.reconnectRequired },
             { label: "Request provider workspace status", invoke: tools.requestStatus, disabled: unavailable || s.reconnectRequired },
             { label: "Cancel workspace provider request", invoke: tools.cancel, disabled: !s.pending },
-            ...([{ label: "Apply captured provider edits", invoke: () => tools.confirmReview(review?.token ?? null), disabled: !review?.canApply },
-                { label: "Decline captured provider edits", invoke: () => tools.declineReview(review?.token ?? null), disabled: !review },
-                { label: "Previous provider edits", invoke: () => tools.previousReviewPage(), disabled: !review || review.page === 0 },
-                { label: "Next provider edits", invoke: () => tools.nextReviewPage(), disabled: !review || (review.page + 1) * 64 >= review.count }]),
+            { label: "Apply captured provider edits", reviewKey, invoke: () => review?.apply(), disabled: !review?.canApply },
+            { label: "Decline captured provider edits", reviewKey, invoke: () => review?.decline(), disabled: !review },
+            { label: "Previous provider edits", reviewKey, invoke: () => review?.previousPage(), disabled: !review || review.page === 0 },
+            { label: "Next provider edits", reviewKey, invoke: () => review?.nextPage(), disabled: !review || (review.page + 1) * 64 >= review.count },
             { label: "Disconnect workspace provider", invoke: tools.disconnect, disabled: !s.connected && !s.pending },
             { label: "Reconnect workspace provider", invoke: tools.reconnect, disabled: !s.disconnected && !s.reconnectRequired && s.status !== "failed" }
         ],
-        review: { enabled: true, visible: review !== null, identity: review, titleLabel: "Provider edit review", title: review?.label ?? "",
+        review: { enabled: true, visible: review !== null, key: review?.key, identity: review, titleLabel: "Provider edit review", title: review?.label ?? "",
             label: "Captured provider edits", start: (review?.page ?? 0) * 64 + 1, items: () => review?.notes.map(actionTarget) ?? [] },
         changes: { label: "Provider changed resources", description: "Last applied provider edits", visible: s.changes.length > 0, disabled: s.pending,
             identity: s.changes, items: () => s.changes.map(change => ({ key: change.document, label: `Open provider changes in ${change.title}`,
@@ -32,12 +32,20 @@ export function mountProjectPanel(host: HTMLElement, tools: HostProjectTools): (
     const owner = host.ownerDocument, heading = owner.createElement("h2"), status = owner.createElement("output"), controls = owner.createElement("div"), changed = owner.createElement("ul"), description = owner.createElement("p");
     host.setAttribute("aria-label", initial.title); heading.textContent = initial.title; status.setAttribute("aria-label", initial.status.label);
     const previewTitle = owner.createElement("p"), preview = owner.createElement("ol"); previewTitle.setAttribute("aria-label", initial.review.titleLabel); preview.setAttribute("aria-label", initial.review.label);
-    const buttons = initial.actions.map(action => { const button = owner.createElement("button"); button.textContent = action.label; button.onclick = action.invoke; controls.append(button); return button; });
+    const buttonFor = (label: string) => { const button = owner.createElement("button"); button.textContent = label; return button; };
+    const buttons = initial.actions.map(action => buttonFor(action.label)); controls.append(...buttons);
+    let renderedReview = initial.review.key;
     description.textContent = initial.changes.description; changed.setAttribute("aria-label", initial.changes.label);
     host.replaceChildren(heading, status, controls, ...(initial.review.enabled ? [previewTitle, preview] : []), description, changed); let previous: ProjectSnapshot["changes"] | undefined, previousReview: unknown;
     const render = () => {
         const model = projectPanelModel(tools, tools.state.getSnapshot()); status.textContent = model.status.text;
-        for (const [i, action] of model.actions.entries()) { buttons[i]!.disabled = action.disabled; buttons[i]!.onclick = action.invoke; }
+        for (const [i, action] of model.actions.entries()) {
+            if ("reviewKey" in action && action.reviewKey !== renderedReview) {
+                const next = buttonFor(action.label); buttons[i]!.replaceWith(next); buttons[i] = next;
+            }
+            buttons[i]!.disabled = action.disabled; buttons[i]!.onclick = action.invoke;
+        }
+        renderedReview = model.review.key;
         previewTitle.hidden = !model.review.visible; previewTitle.textContent = model.review.title;
         if (previousReview !== model.review.identity) { previousReview = model.review.identity; preview.start = model.review.start; preview.replaceChildren(...model.review.items().map(text => { const li = owner.createElement("li"), pre = owner.createElement("pre"); pre.textContent = text; li.append(pre); return li; })); }
         if (previous !== model.changes.identity) { previous = model.changes.identity; changed.replaceChildren(...model.changes.items().map(change => { const item = owner.createElement("li"), button = owner.createElement("button");

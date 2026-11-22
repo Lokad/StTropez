@@ -65,16 +65,25 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP serve
         await button(page, "Save source").click(); await page.evaluate(() => window.hostFixture.finishSave()); await done(page);
         expect((await snapshot(page)).source.dirty).toBe(false); await exact(page, expected);  await dispose(page);
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("decline, stale decision tokens and project authority or view changes cannot apply a partial batch", async ({ page }) => {
+    if (coversHost("candidate-hosts", host, "candidate")) test("a held Apply, stale review handles and authority changes cannot apply a replacement batch", async ({ page }) => {
         await seed(page); await button(page, "Add navigation companion").click(); await register(page); const before = await snapshot(page), companion = before.bindings.navigation.companion!;
         // The held-request journey owns focus when review arrives after a form change.
-        await request(page); const old = (await snapshot(page)).bindings.project.state.review!.token; await button(page, "Decline captured provider edits").click(); await done(page); await exact(page, raw);
-        await select(page); await request(page); const current = (await snapshot(page)).bindings.project.state.review!.token; expect(current).not.toBe(old); await page.evaluate(token => window.hostFixture.confirmProjectReview(token), old); expect((await snapshot(page)).bindings.project.state.review!.token).toBe(current); await exact(page, raw);
-        await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion); await done(page); await expect(button(page, "Apply captured provider edits")).toBeDisabled(); await select(page); await register(page); await request(page); await expect(button(page, "Apply captured provider edits")).toBeDisabled(); await page.evaluate(() => { const f = window.hostFixture; f.confirmProjectReview(f.snapshot().bindings.project.state.review!.token); }); await done(page); await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history); await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
+        await request(page);
+        const apply = button(page, "Apply captured provider edits");
+        const old = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.project.state.review!);
+        await apply.hover(); await page.mouse.down();
+        await button(page, "Decline captured provider edits").evaluate(node => (node as HTMLButtonElement).click());
+        await done(page); await exact(page, raw);
+        await button(page, "Request provider review edits").evaluate(node => (node as HTMLButtonElement).click());
+        await expect(apply).toBeEnabled();
+        await apply.hover(); await page.mouse.up(); await editors(page);
+        await old.evaluate(review => review.apply());
+        await expect(apply).toBeEnabled(); await exact(page, raw);
+        await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion); await done(page); await expect(button(page, "Apply captured provider edits")).toBeDisabled(); await select(page); await register(page); await request(page); await expect(button(page, "Apply captured provider edits")).toBeDisabled(); await page.evaluate(() => { const f = window.hostFixture; f.snapshot().bindings.project.state.review!.apply(); }); await done(page); await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history); await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
         for (const mode of ["selection", "typing", "remount"] as const) {
-            await select(page); if (!(await snapshot(page)).bindings.project.registered) await register(page); await request(page); const token = (await snapshot(page)).bindings.project.state.review!.token;
+            await select(page); if (!(await snapshot(page)).bindings.project.registered) await register(page); await request(page); const captured = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.project.state.review!);
             if (mode === "selection") await select(page, 8); else if (mode === "typing") { await input(page).press("Control+End"); await input(page).pressSequentially("x"); await editors(page); await input(page).press("Control+z"); } else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
-            await done(page); await page.evaluate(token => window.hostFixture.confirmProjectReview(token), token); await exact(page, raw);
+            await done(page); await captured.evaluate(review => review.apply()); await exact(page, raw);
         }
         expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth); await dispose(page);
     });
@@ -96,7 +105,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP serve
             }
             if ((await snapshot(page)).bindings.project.state.status === "failed") { await button(page, "Reconnect workspace provider").click(); await select(page); await register(page); }
         }
-        await request(page); const token = (await snapshot(page)).bindings.project.state.review!.token; await control(page, "fixture/cancelApply"); await done(page); expect((await snapshot(page)).bindings.project.state.review).toBeNull(); await page.evaluate(token => window.hostFixture.confirmProjectReview(token), token); await exact(page, raw);
+        await request(page); const captured = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.project.state.review!); await control(page, "fixture/cancelApply"); await done(page); expect((await snapshot(page)).bindings.project.state.review).toBeNull(); await captured.evaluate(review => review.apply()); await exact(page, raw);
         await request(page); await control(page, "fixture/reviewRegistration", { registered: false }); await done(page); await exact(page, raw); expect((await snapshot(page)).bindings.project.registered).toBe(false); await button(page, "Reconnect workspace provider").click(); await select(page); const count = executions; await register(page); expect(executions).toBe(count);
         await request(page); await control(page, "fixture/disconnect"); await done(page); await exact(page, raw); await button(page, "Reconnect workspace provider").click(); await select(page); await register(page);
         await page.evaluate(() => window.hostFixture.faultProjectNext("ack")); await request(page); await button(page, "Apply captured provider edits").click(); await done(page); await exact(page, header + raw + footer); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1); await expect(page.getByLabel("Workspace provider status", { exact: true })).toContainText("undo");

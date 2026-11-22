@@ -365,9 +365,10 @@ In the F2 name field, Enter previews the rename. A second press applies the revi
 In the F6 colour picker, Enter previews the proposed value. Choose **Apply captured color** to apply it.
 
 An action’s initial edit gets its own undo step. For later edits, open **Workspace provider** and
-choose **Apply captured provider edits** or **Decline captured provider edits**. If the command then
-fails, the initial edit stays in history. Reconnect leaves it there. The same panel lets you register
-and unregister review commands and request workspace status.
+choose **Apply captured provider edits** or **Decline captured provider edits**. If another review
+arrives while a button is held, it takes a fresh press to decide that review. The initial edit
+stays in history if the command fails or reconnects. The panel also manages review command
+registration and workspace status.
 [Code actions and commands](language-features.md#code-actions-and-commands)
 
 Remounting keeps selection and scroll by resource. React uses stable controller observables and refs.

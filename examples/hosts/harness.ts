@@ -82,7 +82,6 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         setNavigationDelay: (delay: number) => bindings.navigation.setDelay(delay), faultNavigationNext: (fault: "malformed" | "failure") => bindings.navigation.faultNext(fault),
         releaseNavigationCompanion: () => bindings.navigation.releaseCompanion(),
         setProjectDelay: (value: number) => bindings.project.setDelay(value), faultProjectNext: (value: "malformed" | "failure" | "ack") => bindings.project.faultNext(value),
-        confirmProjectReview: (token: number | null) => bindings.project.confirmReview(token), declineProjectReview: (token: number | null) => bindings.project.declineReview(token),
         setSignatureDelay: (value: number) => bindings.signature.setDelay(value), faultSignatureNext: (value: "malformed" | "failure" | "markup") => bindings.signature.faultNext(value), requestSignature: bindings.signature.inspect,
         setColorsDelay: (value: number) => bindings.colors.setDelay(value), faultColorsNext: (value: "malformed" | "failure" | "incomplete" | "markup") => bindings.colors.faultNext(value), requestColors: bindings.colors.discover, previewColor: bindings.colors.preview,
         setLinksDelay: (value: number) => bindings.links.setDelay(value), faultLinksNext: (value: "malformed" | "failure" | "incomplete" | "markup") => bindings.links.faultNext(value), requestLinks: bindings.links.discover, setLinkAlias: (module: string, document: DocumentId | null) => bindings.links.setAlias(module, document),
@@ -129,7 +128,6 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; sett
     setNavigationDelay: (delay: number) => void; faultNavigationNext: (fault: "malformed" | "failure") => void;
     releaseNavigationCompanion: () => boolean;
     setProjectDelay: (value: number) => void; faultProjectNext: (value: "malformed" | "failure" | "ack") => void;
-    confirmProjectReview: (token: number | null) => void; declineProjectReview: (token: number | null) => void;
     setSignatureDelay: (value: number) => void; faultSignatureNext: (value: "malformed" | "failure" | "markup") => void; requestSignature: () => void;
     setColorsDelay: (value: number) => void; faultColorsNext: (value: "malformed" | "failure" | "incomplete" | "markup") => void; requestColors: () => void; previewColor: () => void;
     setLinksDelay: (value: number) => void; faultLinksNext: (value: "malformed" | "failure" | "incomplete" | "markup") => void; requestLinks: () => void; setLinkAlias: (module: string, document: DocumentId | null) => void; editLinkTarget: (id: DocumentId, revision: number, edits: readonly TextEdit[]) => unknown;

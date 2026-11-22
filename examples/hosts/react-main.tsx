@@ -214,7 +214,7 @@ function ProjectTools() {
     const tools = bindings.project, model = projectPanelModel(tools, useObserved(tools.state));
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2>
         <output aria-label={model.status.label}>{model.status.text}</output>
-        <div>{model.actions.map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        <div>{model.actions.map(action => <button key={"reviewKey" in action ? action.label + ":" + action.reviewKey : action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
         {model.review.visible && <><p aria-label={model.review.titleLabel}>{model.review.title}</p><ol aria-label={model.review.label} start={model.review.start}>{model.review.items().map((text, index) => <li key={index}><pre>{text}</pre></li>)}</ol></>}
         {model.changes.visible && <p>{model.changes.description}</p>}
         <ul aria-label={model.changes.label}>{model.changes.items().map(change => <li key={change.key}><button disabled={model.changes.disabled} onClick={change.invoke}>{change.label}</button></li>)}</ul></section>;

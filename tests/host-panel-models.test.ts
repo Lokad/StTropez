@@ -200,20 +200,23 @@ test("navigation presentation keeps a captured target while a newer snapshot sup
     assert.equal(state.token, 7); assert.equal(state.first, 0);
 });
 
-test("project presentation retains review tokens and resource identities across newer results", () => {
-    const decisions: (number | null)[] = [], opened: DocumentId[] = [], firstId = "first" as DocumentId, secondId = "second" as DocumentId;
+test("project presentation keeps decisions, edit pages and resources tied to the displayed review", () => {
+    const decisions: number[] = [], opened: DocumentId[] = [], firstId = "first" as DocumentId, secondId = "second" as DocumentId;
     const tools: Parameters<typeof projectPanelModel>[0] = { register: noop, unregister: noop, requestEdits: noop, requestStatus: noop, cancel: noop,
-        confirmReview: token => { decisions.push(token); }, declineReview: token => { decisions.push(token); }, previousReviewPage: noop, nextReviewPage: noop,
         disconnect: noop, reconnect: noop, openChanged: id => { opened.push(id); } };
+    const review = (key: number) => Object.freeze({ key, label: "Captured review", count: 130, page: 1, notes: Object.freeze([]), canApply: true,
+        apply: () => { decisions.push(key); }, decline: () => { decisions.push(key); },
+        nextPage: () => { decisions.push(key); }, previousPage: () => { decisions.push(key); } });
     const state: ProjectSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, reconnectRequired: false, registered: true, pending: true,
         status: "pending", message: "Review captured changes", view: "primary", changes: Object.freeze([Object.freeze({ document: firstId, title: "First" })]),
-        review: Object.freeze({ token: 5, label: "Captured review", count: 0, page: 0, notes: Object.freeze([]), canApply: true }) });
+        review: review(5) });
     const first = projectPanelModel(tools, state), statusOnly = projectPanelModel(tools, { ...state, pending: false, message: "Ready" });
     assert.equal(first.changes.identity, statusOnly.changes.identity); assert.equal(first.review.identity, statusOnly.review.identity);
-    const newer = projectPanelModel(tools, { ...state, changes: [{ document: secondId, title: "Second" }], review: { ...state.review!, token: 6 } });
+    const newer = projectPanelModel(tools, { ...state, changes: [{ document: secondId, title: "Second" }], review: review(6) });
     const invoke = (model: typeof first, label: string) => model.actions.find(action => action.label === label)!.invoke();
     invoke(newer, "Apply captured provider edits"); invoke(first, "Apply captured provider edits"); invoke(first, "Decline captured provider edits");
+    invoke(first, "Next provider edits"); invoke(newer, "Previous provider edits");
     newer.changes.items()[0]!.invoke(); first.changes.items()[0]!.invoke();
-    assert.deepEqual(decisions, [6, 5, 5]); assert.deepEqual(opened, [secondId, firstId]);
-    assert.equal(state.review!.token, 5); assert.equal(state.changes[0]!.document, firstId);
+    assert.deepEqual(decisions, [6, 5, 5, 5, 6]); assert.deepEqual(opened, [secondId, firstId]);
+    assert.equal(state.review!.key, 5); assert.equal(state.changes[0]!.document, firstId);
 });
