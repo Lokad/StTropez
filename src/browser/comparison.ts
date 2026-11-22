@@ -133,9 +133,9 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         return !busy(working) && !busy(referenceEditor()) && !alignment.snapshot().pending;
     });
     let active = working;
-    function caretPosition(comparison: ComparisonSnapshot) {
-        const side = active === working ? "working" : "baseline";
-        const { head, anchor } = active.view.getSnapshot().selection;
+    function caretPosition(comparison: ComparisonSnapshot, pane: TextEditor) {
+        const side = pane === working ? "working" : "baseline";
+        const { head, anchor } = pane.view.getSnapshot().selection;
         const next = partitionPoint(comparison.hunks.length, i => comparison.hunks[i]![side].from <= head);
         const range = comparison.hunks[next - 1]?.[side];
         // A selected hunk ends at its exclusive boundary. A collapsed caret there is between changes.
@@ -148,7 +148,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     function captureState(): TextComparisonSnapshot {
         const comparison = controller.getSnapshot(), ready = !disposed && comparison.status === "ready";
         const canNavigate = ready && comparison.hunks.length > 0 && !!referenceViewport() && epoch === comparison.baseline?.epoch && !composing();
-        const selectedHunk = ready && epoch === comparison.baseline?.epoch && comparison.hunks.length ? caretPosition(comparison).selected : null;
+        const selectedHunk = ready && epoch === comparison.baseline?.epoch && comparison.hunks.length ? caretPosition(comparison, active).selected : null;
         const metadata = comparison.working ? workspace.resource(comparison.working.resourceId).metadata.getSnapshot() : undefined;
         const canRevert = canNavigate && selectedHunk !== null && !working.input.readOnly && !working.input.disabled
             && metadata?.capabilities.edit.includes("human") === true && metadata.editLock === null;
@@ -225,14 +225,15 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         });
         reference.revealOffset(hunk.baseline.from); working.viewport.revealOffset(hunk.working.from); render(); return true;
     }
-    function navigateHunk(direction: -1 | 1): boolean {
+    function navigateFrom(pane: TextEditor, direction: -1 | 1): boolean {
         stateScope.assertWritable();
         const current = stateStore.get();
         if (!current.canNavigate || direction !== 1 && direction !== -1) return false;
-        const { next, selected } = caretPosition(current.comparison), count = current.comparison.hunks.length;
+        const { next, selected } = caretPosition(current.comparison, pane), count = current.comparison.hunks.length;
         const index = direction === 1 ? next % count : ((selected ?? next) + count - 1) % count;
         return selectHunk(current.comparison.generation, index);
     }
+    const navigateHunk = (direction: -1 | 1) => navigateFrom(active, direction);
     function revertSelectedHunk(shown = stateStore.get()): boolean {
         stateScope.assertWritable();
         const current = stateStore.get();
@@ -275,10 +276,11 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
             const stop = editor.view.subscribe(() => { if (active === editor && !disposed) publishState(); });
             editor.signal.addEventListener("abort", stop, { once: true });
             editor.element.addEventListener("focusin", () => { active = editor; publishState(); }, { signal: editor.signal });
-            editor.input.addEventListener("keydown", event => {
-                if (event.key === "F7" && !event.defaultPrevented && !event.isComposing && event.keyCode !== 229
-                    && !event.altKey && !event.metaKey && !event.ctrlKey && navigateHunk(event.shiftKey ? -1 : 1)) event.preventDefault();
-            }, { signal: editor.signal });
+            for (const [id, label, key, direction] of [
+                ["comparison.nextChange", "Next change", "F7", 1],
+                ["comparison.previousChange", "Previous change", "Shift+F7", -1],
+            ] as const) editor.commands.register({ id, label, enabled: () => stateStore.get().canNavigate,
+                run: () => navigateFrom(editor, direction) }, { keys: [key] });
         }
         const review: TextComparison = Object.freeze({ element: root, controller, panes: editors, activePane: () => active, ...stateStore.observable, navigateHunk, revertSelectedHunk, hunkAt, setScrollLinked, setRowsAligned,
             getDiagnostics: () => Object.freeze({ generation: measuredGeneration, steps, advances, maxStepMs, totalStepMs, scrollLinked: scroll.snapshot().linked, pendingScroll: scroll.snapshot().pending, rowsAligned: alignment.snapshot().enabled, alignment: alignment.snapshot(), disposed }), dispose });

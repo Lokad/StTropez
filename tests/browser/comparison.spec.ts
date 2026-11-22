@@ -33,6 +33,26 @@ for (const custom of [false, true]) test(`${custom ? "host" : "built-in"} review
     await page.mouse.up(); await ready(page);
     expect(await page.evaluate(n => window.comparisonFixture.range(0, n), work.length)).toBe(work);
     await rows("baseline").nth(1).click({ position: { x: 6, y: 8 } });
+    if (!custom) {
+        const reserved = await reference.evaluate(node => {
+            const event = new KeyboardEvent("keydown", { key: "F7", bubbles: true, cancelable: true, modifierAltGraph: true });
+            return node.dispatchEvent(event);
+        });
+        expect(reserved).toBe(true); await expect(status).toContainText(/change 2 of 3/i);
+        await page.evaluate(() => {
+            const keys = window.comparisonFixture.review.panes.reference.keymap;
+            keys.unbind("F7"); keys.bind("Alt+j", "comparison.nextChange");
+        });
+        await next.hover(); await expect(next).toHaveAttribute("title", /Alt\+j/);
+        await reference.press("F7"); await expect(status).toContainText(/change 2 of 3/i);
+        await reference.press("Alt+j"); await expect(status).toContainText(/change 3 of 3/i);
+        await reference.press("Shift+F7"); await expect(status).toContainText(/change 2 of 3/i);
+        await expect(reference).toBeFocused();
+        await working.press("Control+Home");
+        expect(await page.evaluate(() => window.comparisonFixture.review.panes.reference.commands.run("comparison.nextChange"))).toBe(true);
+        await expect(working).toBeFocused(); await expect(status).toContainText(/change 3 of 3/i);
+        await rows("baseline").nth(1).click({ position: { x: 6, y: 8 } });
+    }
     await restore.click(); await ready(page);
     expect(await page.evaluate(n => window.comparisonFixture.range(0, n), work.length)).toBe(work.replace("new 2", "old 2"));
     await expect(working).toBeFocused();

@@ -153,7 +153,9 @@ validate the budget and return the current progress.
 
 Call `review.navigateHunk(1)` for the next change or `review.navigateHunk(-1)` for the previous
 one. Both start at the active caret, wrap at either end and select the change in both panes.
-Inside an editor, F7 moves forward and Shift+F7 moves back.
+Each pane registers `comparison.nextChange` (F7) and `comparison.previousChange` (Shift+F7).
+The command starts at that pane’s caret and leaves focus in place. Hosts can rebind either shortcut on
+the pane’s keymap. The built-in toolbar uses the last active pane.
 
 `review.revertSelectedHunk()` restores the change at the active caret and focuses the working pane.
 If a button press or host confirmation spans multiple events, capture `review.getSnapshot()` at

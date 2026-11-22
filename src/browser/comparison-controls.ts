@@ -2,14 +2,22 @@ import type { TextComparison, TextComparisonSnapshot } from "./comparison.ts";
 
 /** Optional presentation. Pane ownership and command validation stay with the comparison. */
 export function mountComparisonControls(
-    comparison: Pick<TextComparison, "element" | "getSnapshot" | "subscribe" | "navigateHunk" | "revertSelectedHunk" | "setScrollLinked" | "setRowsAligned">,
+    comparison: Pick<TextComparison, "element" | "activePane" | "getSnapshot" | "subscribe" | "revertSelectedHunk" | "setScrollLinked" | "setRowsAligned">,
     referencePane: HTMLElement, workingPane: HTMLElement
 ): () => void {
     const owner = comparison.element.ownerDocument, controls = owner.createElement("div"), listeners = new AbortController();
     controls.className = "st-comparison-controls";
     const button = (label: string) => { const result = owner.createElement("button"); result.type = "button"; result.textContent = label; controls.append(result); return result; };
     const previous = button("Previous change"), next = button("Next change"), revert = button("Use baseline");
-    previous.title = "Previous change (Shift+F7)"; next.title = "Next change (F7)";
+    function bindNavigation(control: HTMLButtonElement, id: string): void {
+        const hint = () => { control.title = comparison.activePane().keymap.getShortcuts(id).join(" or "); };
+        const options = { signal: listeners.signal };
+        control.addEventListener("pointerenter", hint, options);
+        control.addEventListener("focus", hint, options);
+        control.addEventListener("click", () => comparison.activePane().commands.run(id), options);
+        hint();
+    }
+    bindNavigation(previous, "comparison.previousChange"); bindNavigation(next, "comparison.nextChange");
     const checkbox = (label: string) => {
         const wrapper = owner.createElement("label"), input = owner.createElement("input"); input.type = "checkbox";
         wrapper.append(input, ` ${label}`); controls.append(wrapper); return input;
@@ -65,8 +73,6 @@ export function mountComparisonControls(
             setText(referencePreview, text("baseline")); setText(workingPreview, text("working"));
         } else { setText(referencePreview, ""); setText(workingPreview, ""); }
     }
-    previous.addEventListener("click", () => comparison.navigateHunk(-1), { signal: listeners.signal });
-    next.addEventListener("click", () => comparison.navigateHunk(1), { signal: listeners.signal });
     let press: TextComparisonSnapshot | null | undefined;
     revert.addEventListener("pointerdown", () => { press = comparison.getSnapshot(); }, { signal: listeners.signal });
     revert.addEventListener("keydown", event => { if (!event.repeat && (event.key === " " || event.key === "Enter")) press = comparison.getSnapshot(); }, { signal: listeners.signal });
