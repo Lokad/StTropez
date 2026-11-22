@@ -2,15 +2,13 @@ import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, CodeActionCommand, CodeActionExecution, TextEditor } from "../../src/browser/index.ts";
-import { createProjectBackend } from "../shared/language/project-backend.ts";
-import type { ProjectBackend } from "../shared/language/project-backend.ts";
 import { ProviderLane } from "../shared/provider-lane.ts";
 import { validateNavigationDocuments } from "../../fixtures/language/navigation.ts";
 import { validateProjectCommand } from "../../fixtures/language/project-commands.ts";
 import type { ProjectCommand, ProjectCommandKind } from "../../fixtures/language/project-commands.ts";
 import { HostCell } from "../shared/observable.ts";
 import type { LspApplyEdit, LspApplyEditResult, LspCommandScope, LspRequestContext, LspWorkspaceEdit, LspWorkspace } from "../../src/protocol/index.ts";
-import type { LspProjectFactory } from "../shared/language/lsp-project-client.ts";
+import type { LspProjectClient, LspProjectFactory } from "../shared/language/lsp-project-client.ts";
 import { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../../src/protocol/index.ts";
 import type { LspWorkspaceEditNote } from "../../src/protocol/index.ts";
 type Session = { token: number; id: string; target: TabTarget; editor: TextEditor };
@@ -32,8 +30,8 @@ export class HostProjectTools {
     private readonly sessions = new Map<number, Session>();
     private active: Session | undefined;
     private job: Job | undefined;
-    private readonly lane = new ProviderLane<ProjectBackend>(backend => this.connectionChanged(backend));
-    private readonly backendFactory: LspProjectFactory | undefined;
+    private readonly lane = new ProviderLane<LspProjectClient>(client => this.connectionChanged(client));
+    private readonly createClient: LspProjectFactory | undefined;
     private readonly provider: LspWorkspace | undefined;
     private readonly actionEditPolicy: ProjectActionEditPolicy | undefined;
     private registered = false;
@@ -44,9 +42,9 @@ export class HostProjectTools {
     private readonly metrics = { requested: 0, serverRequests: 0, applied: 0, rejected: 0, cancelled: 0, failed: 0 };
     private readonly cell = new HostCell<ProjectSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, registered: false, pending: false, status: "idle", message: "Focus a candidate source to use workspace provider commands.", view: null, changes: [], review: null });
     readonly state = this.cell.observable;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined, backendFactory?: LspProjectFactory, provider?: LspWorkspace, actionEditPolicy?: ProjectActionEditPolicy, reconnectProvider?: () => void) {
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined, createClient?: LspProjectFactory, provider?: LspWorkspace, actionEditPolicy?: ProjectActionEditPolicy, reconnectProvider?: () => void) {
         this.reconnectProvider = reconnectProvider;
-        this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backendFactory = backendFactory; this.provider = provider; this.actionEditPolicy = actionEditPolicy;
+        this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.createClient = createClient; this.provider = provider; this.actionEditPolicy = actionEditPolicy;
     }
     private available(s: Session): boolean {
         const tab = this.workspace.tabs.resolve(s.target);
@@ -73,16 +71,16 @@ export class HostProjectTools {
         return null;
     }
     private drop(): void { this.registered = false; this.lane.drop(); }
-    private connectionChanged(backend: ProjectBackend): void {
-        const state = backend.snapshot(), job = this.job; this.registered = state.registered;
+    private connectionChanged(client: LspProjectClient): void {
+        const state = client.snapshot(), job = this.job; this.registered = state.registered;
         if (job?.externalCancel) {
-            if (!state.connected && !state.busy) queueMicrotask(() => { if (this.lane.value === backend) { this.drop(); this.publish(); } });
+            if (!state.connected && !state.busy) queueMicrotask(() => { if (this.lane.value === client) { this.drop(); this.publish(); } });
             this.publish(); return;
         }
-        if (!state.connected && !state.busy || job && !backend.isCurrent()) {
+        if (!state.connected && !state.busy || job && !client.isCurrent()) {
             if (!state.connected) this.disconnected = true;
             if (job) job.invalid = true;
-            queueMicrotask(() => { if (this.lane.value !== backend) return; this.cancel(); this.drop(); this.publish({ status: "failed", message: job?.applied ? "Provider connection or capability changed after application; the edit remains available to undo." : "Provider connection or capability changed; reconnect and request fresh work." }); });
+            queueMicrotask(() => { if (this.lane.value !== client) return; this.cancel(); this.drop(); this.publish({ status: "failed", message: job?.applied ? "Provider connection or capability changed after application; the edit remains available to undo." : "Provider connection or capability changed; reconnect and request fresh work." }); });
         }
         this.publish(); return;
     }
@@ -284,7 +282,7 @@ export class HostProjectTools {
     }
     private start(kind: ProjectCommandKind): void {
         const origin = this.active;
-        if (!this.backendFactory || this.disconnected || this.job || !origin || !this.available(origin)) { this.publish({ message: "Focus an available source and reconnect or finish pending work first." }); return; }
+        if (!this.createClient || this.disconnected || this.job || !origin || !this.available(origin)) { this.publish({ message: "Focus an available source and reconnect or finish pending work first." }); return; }
         if (kind === "register" ? this.registered : kind !== "status" && !this.registered) { this.publish({ message: "Register the review command before using it; unregister before registering again." }); return; }
         const docs = this.workspace.getSnapshot().documents.filter(d => d.key.variant === "working");
         if (docs.some(d => !this.canCapture(d.id))) { this.publish({ message: "Finish pending input, navigation, table conversion or composition first." }); return; }
@@ -300,9 +298,9 @@ export class HostProjectTools {
         try {
             job.timer = win.setTimeout(() => { if (this.job === job) { this.cancel(); this.publish({ status: "failed", message: "Workspace provider timed out; any applied edit remains available to undo." }); } }, (120000));
             this.publish({ status: "pending", message: `Waiting for captured provider ${kind}.` });
-            const backend = this.lane.acquire(notify => createProjectBackend(this.backendFactory!, notify));
-            job.providerCurrent = backend.isCurrent;
-            void backend.run({ input, scope: this.commandScope(job) }).then(result => {
+            const client = this.lane.acquire(this.createClient);
+            job.providerCurrent = client.isCurrent;
+            void client.run(input, this.commandScope(job)).then(result => {
                 if (this.job !== job) return; this.release(job); this.registered = result.registered;
                 this.publish({ status: result.applied ? "ready" : "rejected", message: !result.applied && job.applied ? `Earlier provider edits remain applied and undoable. ${result.reason}` : result.reason });
             }).catch(error => {

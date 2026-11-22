@@ -1,22 +1,20 @@
-import type { LspScopeAccess, LspWorkspace } from "../../../src/protocol/index.ts";
+import type { LspCommandScope, LspScopeAccess, LspWorkspace } from "../../../src/protocol/index.ts";
 import type { ProjectCommand } from "../../../fixtures/language/project-commands.ts";
 import { createLspCommandRunner } from "../../../src/protocol/index.ts";
-import type { LspCommandScope } from "../../../src/protocol/index.ts";
 
-export type LspProjectScope = LspCommandScope;
 export type LspProjectOptions = Readonly<{ provider: LspWorkspace; reviewCommand: string; statusCommand: string;
     beforeRequest?: (session: LspScopeAccess, input: ProjectCommand) => Promise<unknown> }>;
 export type LspProjectClient = ReturnType<typeof createLspProjectClient>;
-export type LspProjectFactory = () => LspProjectClient;
+export type LspProjectFactory = (changed: () => void) => LspProjectClient;
 
 /** One explicit command scope; incoming edit requests can only enter that scope's captured review. */
-export function createLspProjectClient(options: LspProjectOptions) {
-    const listeners = new Set<() => void>(); let disposed = false, busy = false;
-    const changed = () => { for (const listener of [...listeners]) listener(); };
+export function createLspProjectClient(options: LspProjectOptions, onChange?: () => void) {
+    let disposed = false, busy = false;
+    const changed = () => { if (!disposed) onChange?.(); };
     const session = options.provider.createScope();
     const runner = createLspCommandRunner(session, changed);
-    return Object.freeze({ subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
-        run: async (input: ProjectCommand, scope: LspProjectScope) => {
+    return Object.freeze({
+        run: async (input: ProjectCommand, scope: LspCommandScope) => {
             if (disposed || busy) throw new Error("Workspace provider is unavailable."); busy = true;
             try {
                 await session.ensureConnected();
@@ -32,5 +30,5 @@ export function createLspProjectClient(options: LspProjectOptions) {
         isCurrent: () => !disposed && runner.isCurrent(),
         faultIdle: () => { if (disposed || busy || session.getSnapshot().phase !== "ready") return false; options.provider.disconnect(); return true; },
         snapshot: () => Object.freeze({ connected: session.getSnapshot().phase === "ready", busy, disposed, version: "LSP3.17", epoch: session.getSnapshot().epoch, registered: session.commandNames().includes(options.reviewCommand), ...runner.snapshot(), protocol: session.snapshotOwnership() }),
-        dispose: () => { if (disposed) return; disposed = true; runner.dispose(); listeners.clear(); session.dispose(); } });
+        dispose: () => { if (disposed) return; disposed = true; runner.dispose(); session.dispose(); } });
 }

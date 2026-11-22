@@ -6,7 +6,6 @@ export const reviewHeader = "// provider review\r\n", reviewFooter = "\r\n// end
 export type ProjectCommandKind = "register" | "unregister" | "review" | "status";
 export type ProjectCommand = Readonly<{ kind: ProjectCommandKind; documents: readonly NavigationDocument[]; delay: number; fault?: "malformed" | "failure" | "ack" }>;
 export type ServerEdit = Readonly<{ document: string; revision: number; edits: readonly TextEdit[] }>;
-export type ProjectOutcome = Readonly<{ applied: boolean; reason: string }>;
 const record = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object";
 export function validateProjectCommand(v: unknown): ProjectCommand {
     if (!record(v) || !["register", "unregister", "review", "status"].includes(v.kind as string)

@@ -42,12 +42,12 @@ export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspa
                 if (!session.commandNames().includes("fixture.review")) await session.request("fixture/reviewRegistration", { registered: true }).result;
             },
             beforeResolve: (session, configuration) => connection.prepareRequest(session, "codeAction/resolve", configuration) },
-        project: () => createLspProjectClient({ provider: connection, reviewCommand: "fixture.review", statusCommand: "fixture.status",
+        project: changed => createLspProjectClient({ provider: connection, reviewCommand: "fixture.review", statusCommand: "fixture.status",
             beforeRequest: (session, input) => {
                 const policy = { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) };
                 return input.kind === "register" || input.kind === "unregister"
                     ? session.request("fixture/reviewRegistration", { registered: input.kind === "register", _fixture: policy }).result
                     : connection.prepareCommand(session, input.kind === "review" ? "fixture.review" : "fixture.status", policy);
-            } }),
+            } }, changed),
     });
 }

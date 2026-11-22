@@ -1,10 +1,3 @@
-/** Feature requests keep their own inputs/results while sharing provider ownership. */
-export type ProviderBackend<Request, Result, Snapshot> = Readonly<{
-    run: (request: Request) => Promise<Result>;
-    cancel: () => void; dispose: () => void; faultIdle: () => boolean;
-    snapshot: () => Snapshot;
-}>;
-
 /** One lazy backend lifetime. Retired backends cannot publish into a replacement. */
 export class ProviderLane<T extends Readonly<{ dispose: () => void }>> {
     private owner: { value: T | undefined } | undefined;
