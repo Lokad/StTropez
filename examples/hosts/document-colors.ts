@@ -115,18 +115,18 @@ export class HostDocumentColors {
     };
     readonly disconnect = () => { this.disconnected = true; this.cancel(); };
     readonly reconnect = () => { this.disconnected = false; this.cancel(); this.reconnectProvider?.(); };
+    private readonly handlePanelKey = (event: KeyboardEvent) => {
+        if ((this.owner ?? this.active)?.editor.keymap.handle(event)) event.stopPropagation();
+    };
     readonly bindList = (list: HTMLElement | null) => {
         this.listEvents?.abort(); this.list = list ?? undefined; if (!list || this.disposed) return;
         const events = new AbortController(); this.listEvents = events;
-        list.addEventListener("keydown", e => { if (e.defaultPrevented || e.isComposing || e.key !== "Escape") return;
-            e.preventDefault(); e.stopPropagation(); const s = this.owner; this.cancel(); if (s) focusSource(s.editor); }, { signal: events.signal });
+        list.addEventListener("keydown", this.handlePanelKey, { signal: events.signal });
     };
     readonly bindValue = (input: HTMLInputElement | null) => {
         this.fieldEvents?.abort(); this.valueInput = input ?? undefined; if (!input || this.disposed) return;
         const events = new AbortController(); this.fieldEvents = events;
-        input.addEventListener("keydown", e => { if (e.defaultPrevented || e.isComposing) return;
-            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); const s = this.owner ?? this.active; this.cancel(); if (s) focusSource(s.editor); }
-            else if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) { e.preventDefault(); this.preview(); } }, { signal: events.signal });
+        input.addEventListener("keydown", this.handlePanelKey, { signal: events.signal });
     };
     setValue(value: string) {
         if (value === this.cell.get().value) return;
@@ -154,6 +154,14 @@ export class HostDocumentColors {
             const command = editor.commands.register({ id: "colors.discover", label: "Discover document colors", enabled: () => !this.disconnected,
                 run: () => { this.active = s; this.start(true); } }, { keys: ["F6"] });
             events.signal.addEventListener("abort", command.dispose, { once: true });
+            const ownsValue = () => (this.owner ?? this.active) === s && !!this.valueInput?.matches(":focus");
+            const preview = editor.commands.register({ id: "colors.preview", label: "Preview color presentations",
+                enabled: () => this.owner === s && ownsValue(), run: this.preview }, { keys: ["Enter"], shared: true, priority: 34, repeat: false });
+            events.signal.addEventListener("abort", preview.dispose, { once: true });
+            const dismiss = editor.commands.register({ id: "colors.dismiss", label: "Dismiss color preview",
+                enabled: () => ownsValue() || (this.owner === s && !!this.list?.matches(":focus-within")),
+                run: () => { this.cancel(); focusSource(editor); } }, { keys: ["Escape"], shared: true, priority: 8 });
+            events.signal.addEventListener("abort", dismiss.dispose, { once: true });
             this.syncSwatches();
         } catch (error) { detach(); throw error; }
         editor.signal.addEventListener("abort", detach, { once: true, signal: events.signal });

@@ -69,16 +69,8 @@ export class HostRenameTools {
         this.nameEvents?.abort(); this.input = input ?? undefined;
         if (!input || this.disposed) return;
         const events = new AbortController(); this.nameEvents = events;
-        input.addEventListener("keydown", e => {
-            if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
-            const origin = this.owner ?? this.active;
-            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.cancel(); origin?.editor.focus(); }
-            if (e.key !== "Enter" || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
-            e.preventDefault(); if (e.repeat) return; this.setName(input.value);
-            const state = this.cell.get();
-            if (state.pending) return;
-            if (!state.preview) this.prepare();
-            else if (state.preview.confirm() && origin === this.active) origin?.editor.focus();
+        input.addEventListener("keydown", event => {
+            if ((this.owner ?? this.active)?.editor.keymap.handle(event)) event.stopPropagation();
         }, { signal: events.signal });
     };
     attach(id: string, _tab: TabId, editor: TextEditor): () => void {
@@ -102,8 +94,21 @@ export class HostRenameTools {
         this.sessions.add(session);
         try {
             const command = editor.commands.register({ id: "rename.start", label: "Rename symbol", enabled: () => !this.disconnected && this.canCapture(editor.view.documentId),
-                run: () => { if (this.options.open && !this.options.open()) return false; this.active = session; this.prompt(); return true; } }, { keys: ["F2"] });
+                run: () => { if (this.options.open && !this.options.open()) return false; this.active = session; this.prompt(session); return true; } }, { keys: ["F2"] });
             events.signal.addEventListener("abort", command.dispose, { once: true });
+            const ownsField = () => (this.owner ?? this.active) === session && !!this.input?.matches(":focus");
+            const submit = editor.commands.register({ id: "rename.submit", label: "Preview or apply rename", enabled: ownsField,
+                run: () => {
+                    this.setName(this.input!.value);
+                    const state = this.cell.get();
+                    if (state.pending) return;
+                    if (!state.preview) this.prepareIn(session);
+                    else if (state.preview.confirm() && this.input?.matches(":focus")) editor.focus();
+                } }, { keys: ["Enter"], shared: true, priority: 33, repeat: false });
+            events.signal.addEventListener("abort", submit.dispose, { once: true });
+            const dismiss = editor.commands.register({ id: "rename.cancel", label: "Cancel rename", enabled: ownsField,
+                run: () => { this.cancel(); editor.focus(); } }, { keys: ["Escape"], shared: true, priority: 9 });
+            events.signal.addEventListener("abort", dismiss.dispose, { once: true });
         } catch (error) { session.stop(); throw error; }
         onSourceFocus(editor, events.signal, () => { this.active = session; this.publish(); });
         for (const event of ["beforeinput", "compositionstart", "paste", "cut"]) editor.input.addEventListener(event, () => {
@@ -112,19 +117,21 @@ export class HostRenameTools {
         return session.stop;
     }
     private hint(session: Session) { return navigationSymbol(this.workspace.document(session.editor.view.documentId).buffer, session.editor.view.getSnapshot().selection.head); }
-    private prompt() {
-        if (!this.active) return;
-        this.cancel(); const hint = this.hint(this.active);
+    private prompt(session: Session) {
+        this.cancel(); this.owner = session;
+        const hint = this.hint(session);
+        session.controller.setName(hint ?? "");
         this.publish({ name: hint ?? "", symbol: hint ?? "position", message: "Enter a name, then preview its changes." });
         this.input?.focus(); this.input?.select();
     }
-    readonly prepare = () => {
-        const s = this.active, name = this.cell.get().name;
+    readonly prepare = () => this.prepareIn(this.active);
+    private prepareIn(s: Session | undefined) {
+        const name = this.cell.get().name;
         if (!s || this.disconnected || !this.canCapture(s.editor.view.documentId)) return;
-        if (!name || /[\u0000-\u001f\u007f]/.test(name)) { this.prompt(); return; }
+        if (!name || /[\u0000-\u001f\u007f]/.test(name)) { this.prompt(s); return; }
         if (this.owner !== s) this.cancel();
         this.owner = s; this.publish({ symbol: this.hint(s) ?? "position" }); s.controller.request(name);
-    };
+    }
     private page(delta: number) {
         const state = this.cell.get(), page = state.page + delta;
         if (state.preview && this.owner && page >= 0 && page * navigationLimits.page < state.count) this.render(this.owner.controller.getSnapshot(), page);

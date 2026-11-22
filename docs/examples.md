@@ -352,7 +352,9 @@ In **Action module**, Enter requests a preview for the source and Escape dismiss
 and returns focus to that editor.
 
 F4 opens the module links list. Escape dismisses the list and returns focus to its source if that
-editor is still mounted. After following a link, Shift+F4 restores the original document and selection.
+editor is mounted. After following a link, Shift+F4 restores the original document and selection.
+In the F2 name field, Enter previews the rename. A second press applies the reviewed edits.
+In the F6 colour picker, Enter previews the proposed value. Choose **Apply captured color** to apply it.
 
 An action’s initial edit gets its own undo step. For later edits, open **Workspace provider** and
 choose **Apply captured provider edits** or **Decline captured provider edits**. If the command then

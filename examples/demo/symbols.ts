@@ -146,9 +146,12 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         if (state.status === "applied") queueMicrotask(() => { if (!disposed && rename.state.getSnapshot() === state) closeRename(true); });
     }));
     popup.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });
-    renamePopup.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); closeRename(true); } }, { capture: true, signal: events.signal });
-    scope.defer(editor.commands.register({ id: "rename.dismiss", label: "Dismiss rename", enabled: () => !!renameSource,
-        run: () => closeRename(true) }, { keys: ["Escape"], priority: 39 }).dispose);
+    renamePopup.addEventListener("keydown", event => {
+        if (event.target !== name && editor.keymap.handle(event)) event.stopPropagation();
+    }, { signal: events.signal });
+    scope.defer(editor.commands.register({ id: "rename.dismiss", label: "Dismiss rename",
+        enabled: () => !!renameSource && (editor.getSnapshot().focused || renamePopup.matches(":focus-within")),
+        run: () => closeRename(true) }, { keys: ["Escape"], priority: 39, shared: true }).dispose);
     const bind = bindPopupCommands(scope, editor, popup, 36);
     bind("locations.dismiss", "Close locations", "Escape", () => { cancelNavigation(); editor.focus(); });
     const move = (direction: -1 | 1) => {

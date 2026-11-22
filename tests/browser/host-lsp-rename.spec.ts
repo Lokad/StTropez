@@ -1,4 +1,4 @@
-import { ready, isolatedTest as test, expect } from "./fixtures.ts";
+import { ready, isolatedTest as test, expect, expectPanelKeyReserved } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { coversHost } from "./host-cases.ts";
 import { holdLspReplies } from "../helpers/lsp-replies.ts";
@@ -27,10 +27,14 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP renam
         await seed(page, raw + " "); await seed(page, raw + "  "); await seed(page); await button(page, "Add navigation companion").click();
         const ranges = [{ anchor: raw.indexOf("catalogue") + 4, head: raw.indexOf("catalogue") + 2 }, { anchor: raw.length, head: raw.length }];
         await page.evaluate(ranges => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, ranges); }, ranges); const before = await snapshot(page);
-        await input(page).press("F2"); await expect(name(page)).toBeFocused(); await expect(name(page)).toHaveValue("catalogue"); await name(page).press("Escape"); await expect(input(page)).toBeFocused();
+        await input(page).press("F2"); await expect(name(page)).toHaveValue("catalogue");
+        await expectPanelKeyReserved(name(page), "Escape"); await name(page).press("Escape"); await expect(input(page)).toBeFocused();
         await name(page).evaluate(node => { node.dataset.retained = "rename-name"; });
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(v => v.id === "primary")!.selectionSet);
-        await input(page).press("F2"); await name(page).fill("discarded"); await name(page).press("Enter"); await waitForRename(page); await expect(targets(page)).toHaveCount(5); await exact(page, raw);
+        await input(page).press("F2"); await input(page, "Secondary source").focus();
+        await name(page).fill("discarded"); await name(page).press("Enter"); await waitForRename(page);
+        expect((await snapshot(page)).bindings.rename.capture?.view).toBe("primary");
+        await expect(targets(page)).toHaveCount(5); await exact(page, raw);
         await name(page).fill("café"); await expect(button(page, "Apply captured rename")).toBeDisabled(); await expect(targets(page)).toHaveCount(0); await name(page).press("Enter"); await waitForRename(page);
         await expect(targets(page)).toHaveCount(5); await expect(targets(page).filter({ hasText: "// fixture rename" })).toHaveCount(1); expect((await snapshot(page)).history).toEqual(before.history);
         await expect(name(page)).toHaveAttribute("data-retained", "rename-name");
@@ -42,7 +46,8 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP renam
         const remote = await page.evaluate(uri => window.hostFixture.providerCustom("fixture/document", { uri, from: 0, to: 0 }), request.params.textDocument.uri) as { version: number };
         expect(responses.at(-1).documentChanges.find((change: any) => change.textDocument.uri === request.params.textDocument.uri).textDocument.version).toBe(remote.version);
         const expected = marker + raw.replace("const catalogue", "const café").replace("\r\ncatalogue;", "\r\ncafé;");
-        await expect(name(page)).toBeFocused(); await page.keyboard.press("Enter"); await waitForRename(page); await exact(page, expected); await expect(input(page)).toBeFocused();
+        await expectPanelKeyReserved(name(page), "Enter"); await exact(page, raw);
+        await page.keyboard.press("Enter"); await waitForRename(page); await exact(page, expected); await expect(input(page)).toBeFocused();
         const companion = before.bindings.navigation.companion!; expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe("const café = 1;\r\ncafé;\r\n"); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
         await button(page, "Open renamed changes in Navigation companion").evaluate(node => { node.dataset.retained = "rename-resource"; });
         await input(page).press("Control+End"); await input(page).pressSequentially("H"); await waitForRename(page); await input(page, "Secondary source").press("Control+z"); await waitForRename(page); await exact(page, expected);

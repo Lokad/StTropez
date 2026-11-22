@@ -369,6 +369,9 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await page.keyboard.press("Tab"); await page.keyboard.press("Enter"); await expect(value).toBeFocused(); await page.keyboard.type("rgba(1,2,3,.5)");
         await expect(value).toHaveValue("rgba(1,2,3,.5)"); await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
         await expect(row).toHaveAttribute("data-retained", "color-result"); await expect(value).toHaveAttribute("data-retained", "color-value");
+        await expectPanelKeyReserved(value, "Enter");
+        await value.dispatchEvent("keydown", { key: "Enter", repeat: true });
+        expect((await snapshot(page)).bindings.colors.previews).toBe(before.bindings.colors.previews);
         await page.keyboard.press("Enter"); await settledColorsAndLinks(page); await expect(row).toHaveAttribute("data-retained", "color-result");
         await expect(page.getByRole("combobox", { name: "Color presentation", exact: true }).getByRole("option")).toHaveText(["rgba(1, 2, 3, 0.5)"]);
         await page.keyboard.press("Tab"); await expect(button(page, "Preview color presentations")).toBeFocused();
@@ -376,7 +379,8 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await page.keyboard.press("Tab"); await expect(button(page, "Apply captured color")).toBeFocused(); await exact(page, raw);
         await page.keyboard.press("Enter"); await settledColorsAndLinks(page); await exact(page, expected); await expect(working).toBeFocused();
         expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline);
-        await working.press("F6"); await settledColorsAndLinks(page); await page.keyboard.press("Escape"); await expect(working).toBeFocused();
+        await working.press("F6"); await settledColorsAndLinks(page); await expectPanelKeyReserved(colors, "Escape");
+        await page.keyboard.press("Escape"); await expect(working).toBeFocused();
         expect((await snapshot(page)).bindings.colors.state.view).toBeNull(); expect((await snapshot(page)).source.exports).toBe(0); await disposeColorsAndLinks(page);
     });
     for (const mode of ["selection", "typing", "target", "authority", "alias", "remount"] as const)

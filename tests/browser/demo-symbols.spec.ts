@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.ts";
+import { test, expect, expectPanelKeyReserved } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { holdDemoFolds } from "./demo-folding-gate.ts";
 
@@ -61,7 +61,9 @@ test("real rename previews a captured name, rejects an old name and shares one u
     const apply = dialog.getByRole("button", { name: "Apply rename", exact: true }); await expect(apply).toBeEnabled();
     await releaseFolds(); await expect(page.locator("#editor .st-fold-button").first()).toBeVisible(); await expect(apply).toBeEnabled();
     await expect(dialog.getByLabel("Rename edits")).toContainText("main.ts"); await expect(dialog.getByLabel("Rename edits")).toContainText("pricing.ts");
-    await dialog.getByRole("button", { name: "Cancel rename", exact: true }).click();
+    const cancel = dialog.getByRole("button", { name: "Cancel rename", exact: true });
+    await cancel.focus(); await expectPanelKeyReserved(cancel, "Escape");
+    await cancel.press("Escape");
     await expect(dialog).toBeHidden(); await expect(pricing).toBeFocused(); await expect(page.locator("#files")).not.toContainText("●");
     await pricing.press("F2"); await expect(name).toHaveValue("calculateTotal"); await expect(apply).toBeDisabled();
     await name.fill("cartTotal"); await name.press("Enter"); await expect(apply).toBeEnabled();
