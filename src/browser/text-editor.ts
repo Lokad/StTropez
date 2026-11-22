@@ -82,7 +82,7 @@ export type TextEditor = Readonly<{ element: HTMLDivElement; input: HTMLTextArea
     /** Returns whether the command was accepted; long selections finish asynchronously. */
     commands: EditorCommands; keymap: EditorKeymap;
     reveal: (target: BufferPosition | EditorRevealRange, options?: EditorRevealOptions) => EditorRevealRange | null;
-    focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void;
+    focus: () => void; captureView: () => ViewState; restoreView: TextViewport["restoreView"];
     /** Immutable activity capture, reused while its fields are unchanged. Does not collect metrics. */
     activity: () => TextEditorActivity;
     snapshot: () => TextEditorActivity & Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number; maxQueuedInputTurnMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number; navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number; lastWordSelectionMs: number; maxWordSelectionTurnMs: number; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; queuedInputUnits: number; wordScanSteps: number; maxWordScanStepMs: number; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number }>;
@@ -1471,7 +1471,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         },
         reveal,
         captureView: () => { syncSelection(); return viewport.captureView(); },
-        restoreView: (state: ViewState) => { viewport.restoreView(state); refresh(); },
+        restoreView: (state, options) => { const result = viewport.restoreView(state, options); if (result) refresh(); return result; },
         snapshot: () => Object.freeze({ ...activity(), inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, maxQueuedInputTurnMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs,
             dragScrollFrames, maxDragScrollStepMs, commits, conflicts, queuedInputUnits: inputQueue.pending?.units ?? 0, wordScanSteps, maxWordScanStepMs, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves }),
         dispose: () => {

@@ -21,7 +21,7 @@ export function createActivationSession(original: string, selection: Selection, 
             const changed = selection && (selection.anchor !== current.anchor || selection.head !== current.head);
             if (changed) view.setSelection(workspace.document(source.documentId).revision, selection);
             editor = mountTextEditor(host, workspace, tab, { ariaLabel: shared?.label ?? "Activated source", view, readOnly }); mounts++;
-            if (viewState) editor.restoreView({ ...viewState, ...view.getSnapshot().selection, selectionSet: view.getSnapshot().selectionSet });
+            if (viewState) editor.restoreView(viewState, { selection: "current" });
             if (changed || !viewState) editor.viewport.revealOffset(view.getSnapshot().selection.head);
             find = createFindController(editor, { regularExpressionBackend: createRegexFindBackend({ clock: host.ownerDocument.defaultView!,
                 createWorker: () => { workers++; return new Worker(new URL("./regex-worker.js", import.meta.url), { type: "module" }); } }) });

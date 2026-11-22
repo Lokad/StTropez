@@ -127,11 +127,21 @@ axis. If the range exceeds the viewport, it exposes the start. For multiline ran
 the starting column and the full span of rows. Pass `"start"`, `"center"` or `"nearest"`
 to set vertical placement. The selection stays in place.
 
-Save `captureView()` by document and view ID to restore selections, scroll and folds. `restoreView()`
-checks scroll and anchor values before changing anything. Restoring a view cancels any reveal waiting for its next paint. On the same revision, its anchors keep the
-same text in place on both axes. A new, empty view of that document and revision can take the captured
-folds. A view with newer folds keeps them. [Folding](folding.md) ·
-[Aligned panes and linked scrolling](comparison.md)
+Save `captureView()` by document and view. `restoreView(state, options?)` cancels a pending reveal
+and restores the scroll and selection together. A closed mount or a capture from another document returns `null`.
+
+On the captured revision, restore uses the saved selection set, or `anchor` and `head` for older
+snapshots. After an edit, a retained view keeps its live selections. A fresh view maps the saved
+selection through the last edit when it connects the two revisions. Otherwise it clamps the saved
+endpoints to the new length. Pass `{ selection: "current" }` to keep the mounted view’s selection
+even when the revision is unchanged.
+
+The returned `ViewRestoreResult.selection` is `"captured"`, `"current"`, `"mapped"` or `"clamped"`.
+`horizontalAnchorRestored` and `verticalAnchorRestored` report which anchors could be placed.
+An anchor can follow the last edit; a horizontal caret anchor can also follow the retained caret.
+When an anchor expires, the saved scroll position applies within the viewport’s current bounds.
+`foldsRestored` is true when a fresh view takes fold definitions from the same document and revision.
+Existing folds stay with their view. [Folding](folding.md) · [Aligned panes and linked scrolling](comparison.md)
 
 ### Geometry and readiness
 

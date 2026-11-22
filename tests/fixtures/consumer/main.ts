@@ -152,7 +152,9 @@ const fixture = { text: () => workspace.document(documentId).text(),
             const fresh = model.createDocumentView(source.documentId), freshHost = document.createElement("div"); freshHost.style.height = "180px"; document.body.append(freshHost);
             const restored = mountTextEditor(freshHost, model, tab, { view: fresh });
             try {
-                restored.restoreView(saved); restored.viewport.flush(); if (fresh.folding.getSnapshot().index.visibleLineCount !== 2) throw new Error("Compiled fresh view did not restore captured folds.");
+                const report = restored.restoreView(saved); restored.viewport.flush();
+                if (!report?.foldsRestored || report.selection !== "captured" || fresh.folding.getSnapshot().index.visibleLineCount !== 2)
+                    throw new Error("Compiled fresh view did not restore captured folds and selection.");
                 const current = fresh.folding.getSnapshot(); fresh.folding.setCollapsed(current, "body", false); restored.restoreView(saved);
                 if (fresh.folding.getSnapshot().index.collapsedCount) throw new Error("A stale capture overwrote newer fold state.");
             } finally { restored.dispose(); fresh.dispose(); freshHost.remove(); }

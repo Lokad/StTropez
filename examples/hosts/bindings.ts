@@ -1,5 +1,5 @@
 import { editRefusedEvent, inputConflictEvent, mountTextEditor, mountTextComparison } from "../../src/browser/index.ts";
-import type { EditRefusedDetail, TextEditor, TextComparison, ViewportSnapshot, ViewState } from "../../src/browser/index.ts";
+import type { EditRefusedDetail, TextEditor, TextComparison, ViewportSnapshot, ViewRestoreOptions, ViewState } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../shared/language/presentation.ts";
@@ -25,7 +25,7 @@ import type { InstructionViewState } from "./instruction-widget.ts";
 export type HostEditor = "native" | "candidate";
 export type NativeEditorMount = (host: HTMLElement, workspace: Workspace, tabId: TabId,
     options: Readonly<{ ariaLabel?: string; view?: DocumentView }>) => Readonly<{ element: HTMLTextAreaElement; view: DocumentView;
-        captureView: () => ViewState; restoreView: (state: ViewState) => void; dispose: () => void }>;
+        captureView: () => ViewState; restoreView: (state: ViewState, options?: ViewRestoreOptions) => void; dispose: () => void }>;
 type BoundEditor = ReturnType<NativeEditorMount> & Readonly<{ metrics: () => null | ReturnType<TextEditor["snapshot"]> & Readonly<{ viewport: ViewportSnapshot }> }>;
 type ViewTool = Readonly<{ attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void }>;
 export function hostEditor(): HostEditor { return new URLSearchParams(location.search).get("editor") === "candidate" ? "candidate" : "native"; }
@@ -111,7 +111,7 @@ export class ViewBindings {
             reference.decorations.addProvider({ name: "syntax", order: 0, provide: referencePresentation.decorate });
             scope.defer(this.language.attachReferenceFind("reference", reference, referencePresentation, () => review.controller.getSnapshot().baseline, saveTarget));
             const state = this.states.get("comparison")?.get(view.documentId);
-            if (state) review.panes.working.restoreView(this.restoreState(state, view));
+            if (state) review.panes.working.restoreView(state, { selection: "current" });
             if (this.referenceState?.baseline.buffer === baseline.buffer && this.referenceState.baseline.version === baseline.version) {
                 // The new private document holds the same immutable bytes. Translate only anchors
                 // captured at the saved revision, including an anchor inside aligned-row padding.
@@ -267,15 +267,6 @@ export class ViewBindings {
         const states = this.states.get(id) ?? new Map<DocumentId, ViewState>();
         states.set(documentId, state); this.states.set(id, states);
     }
-    private restoreState(state: ViewState, view: DocumentView): ViewState {
-        const { selection, selectionSet } = view.getSnapshot(), at = state.horizontalAnchor;
-        // A caret anchor can follow the host-owned selection mapped during detach.
-        // Other viewport anchors retain their original revision and validation rules.
-        const followsCaret = at && at.offset === state.head && at.affinity === (state.headAffinity ?? "after");
-        return { ...state, ...selection, selectionSet, ...(followsCaret ? { horizontalAnchor: { ...at,
-            revision: this.controller.workspace.document(view.documentId).revision,
-            offset: selection.head, affinity: selection.headAffinity ?? "after" } } : {}) };
-    }
     private presentNavigationDocument(documentId: DocumentId): TextEditor | undefined {
         if (this.editor !== "candidate") return;
         const previous = this.mounted.get("secondary"), host = previous?.editor.element.closest<HTMLDivElement>(".editor-host"), activity = previous?.candidate?.activity();
@@ -328,7 +319,7 @@ export class ViewBindings {
                 mounted.element.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
                 this.bindSaveShortcut(mounted.element, tabId, () => candidate?.activity().composing ?? false, listeners.signal);
                 const editor: BoundEditor = { ...mounted, dispose: scope.dispose };
-                const state = this.states.get(id)?.get(documentId); if (state) editor.restoreView(this.restoreState(state, view));
+                const state = this.states.get(id)?.get(documentId); if (state) editor.restoreView(state, { selection: "current" });
                 this.mounted.set(id, { editor, documentId, candidate }); this.mounts++;
             } catch (error) { scope.rollback(error); }
         };

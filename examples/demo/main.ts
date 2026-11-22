@@ -339,8 +339,8 @@ function mountFile(file: DemoFile, focus = false): void {
     syntaxLayer = editor.decorations.addProvider({ name: "syntax", order: 0, provide: project.sample.id === "host" ? hostDecorations : presentation.decorate });
     diagnosticsLayer = editor.decorations.add({ name: "diagnostics", order: 40 });
     element("character-warning-details").replaceChildren();
-    if (savedViews.has(file.view)) editor.restoreView({ ...savedViews.get(file.view)!, ...file.view.getSnapshot().selection,
-        selectionSet: file.view.getSnapshot().selectionSet });
+    const saved = savedViews.get(file.view);
+    if (saved) editor.restoreView(saved, { selection: "current" });
     folding = mountDemoFolding(project, editor, () => editingConfiguration().tabSize!);
     stopFolding = foldMenu.bind(editor, folding, comparison ? "Your changes" : "Source");
     viewListeners = new AbortController();

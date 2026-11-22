@@ -9,10 +9,10 @@ import { captureNativeInsertion, resolveNativeInsertion } from "../src/browser/i
 import type { NativeInsertionTarget } from "../src/browser/input-target.ts";
 import { inputConflictEvent } from "../src/browser/input-conflict.ts";
 import type { InputConflictDetail } from "../src/browser/input-conflict.ts";
-import type { ViewState } from "../src/browser/view-state.ts";
+import type { ViewRestoreOptions, ViewState } from "../src/browser/view-state.ts";
 
 export type TextareaEditor = Readonly<{ element: HTMLTextAreaElement; view: DocumentView;
-    captureView: () => ViewState; restoreView: (state: ViewState) => void; dispose: () => void }>;
+    captureView: () => ViewState; restoreView: (state: ViewState, options?: ViewRestoreOptions) => void; dispose: () => void }>;
 type Projection = Readonly<{ text: string; mapping: PositionMapping; hasCR: boolean }>;
 const projections = new WeakMap<TextBuffer, WeakRef<Projection>>();
 function project(text: string): Projection {
@@ -148,9 +148,11 @@ export function mountTextareaEditor(host: HTMLElement, workspace: Workspace, tab
     return Object.freeze({ element: input, view,
         captureView: () => { syncSelection(); const { selection, selectionSet } = view.getSnapshot();
             return Object.freeze({ ...selection, selectionSet, scrollTop: input.scrollTop, scrollLeft: input.scrollLeft }); },
-        restoreView: (state: ViewState) => {
-            if (state.selectionSet) view.setSelections(revision, state.selectionSet.ranges, state.selectionSet.primary);
-            else view.setSelection(revision, state);
+        restoreView: (state: ViewState, options: ViewRestoreOptions = {}) => {
+            if (options.selection !== "current") {
+                if (state.selectionSet) view.setSelections(revision, state.selectionSet.ranges, state.selectionSet.primary);
+                else view.setSelection(revision, state);
+            }
             refresh(); input.scrollTop = state.scrollTop; input.scrollLeft = state.scrollLeft;
         }, dispose: () => {
             if (destroyed) return; syncSelection(); destroyed = true; insertion = undefined;

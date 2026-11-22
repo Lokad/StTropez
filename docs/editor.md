@@ -27,11 +27,7 @@ export function attachSource(
         }
     });
     try {
-        if (saved) {
-            const current = view.getSnapshot();
-            editor.restoreView({ ...saved, ...current.selection,
-                selectionSet: current.selectionSet });
-        }
+        if (saved) editor.restoreView(saved, { selection: "current" });
         return editor;
     } catch (error) {
         editor.dispose();
@@ -494,8 +490,8 @@ change. Working and reference views require their own snapshot's lexical context
 
 `captureView()` first synchronizes the native selection, then returns an immutable `ViewState`.
 `restoreView()` uses the complete selection set when present and falls back to anchor and head. If you
-retained the view while it was detached, combine its current mapped selections with the saved scroll
-position. After an edit, the viewport scrolls just enough to show the primary caret on both axes. Host
+retained the view while it was detached, pass `{ selection: "current" }` to restore scroll with its
+current carets. After an edit, the viewport scrolls just enough to show the primary caret on both axes. Host
 navigation can ask to center it. [Restoring scroll and folds](viewport.md#scrolling-and-saved-views)
 
 `activity()` returns a cached immutable `TextEditorActivity` without layout reads or a flush. It

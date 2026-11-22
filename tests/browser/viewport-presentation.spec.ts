@@ -70,6 +70,51 @@ test("document mounts own Find, fold discovery and pending insertions across a r
     expect(await fixture.evaluate(f => f.finish())).toMatchObject({ text: "one\n  ok\nend", ranges: 0, tabs: 0, views: 0, leases: 0, subscriptions: 0 });
 });
 
+test("remounting after edits uses the retained selection, maps a fresh view or clamps older captures", async ({ page }) => {
+    const result = await page.evaluate(async () => {
+        const path = "/presentation-fixture/";
+        const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const workspace = new Workspace();
+        const file = workspace.createTextResource({ scope: "test", resource: "restore", variant: "working" }, "Source", { value: "left\nmiddle\nright" });
+        const id = file.documentId, view = workspace.createDocumentView(id);
+        const host = document.createElement("main"); host.style.height = "160px"; document.body.append(host);
+        let editor = mountTextEditor(host, workspace, id, { view });
+        try {
+            view.setSelections(0, [{ anchor: 1, head: 1 }, { anchor: 16, head: 13 }], 1);
+            editor.viewport.flush();
+            const capture = editor.captureView();
+            const saved = { ...capture, horizontalAnchor: { revision: 0, offset: 13, affinity: "before" as const, left: 15 } };
+            editor.dispose();
+            workspace.edit({ documentId: id, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 5, insert: "" }] });
+            editor = mountTextEditor(host, workspace, id);
+            let observedTop: number | undefined;
+            const stop = editor.view.subscribe(() => { observedTop = editor.viewport.captureView().scrollTop; });
+            const mapped = editor.restoreView({ ...saved, scrollTop: 17 }), first = editor.view.getSnapshot().selectionSet;
+            stop();
+            editor.dispose();
+            workspace.edit({ documentId: id, expectedRevision: 1, origin: "host", edits: [{ from: 2, to: 12, insert: "" }] });
+            editor = mountTextEditor(host, workspace, id);
+            const clamped = editor.restoreView(saved), second = editor.view.getSnapshot().selectionSet;
+            const wrong = { ...saved, folding: { ...saved.folding!, documentId: workspace.createTextResource(
+                { scope: "test", resource: "other", variant: "working" }, "Other", { value: "" }).documentId } };
+            const foreign = editor.restoreView(wrong);
+            editor.dispose();
+            editor = mountTextEditor(host, workspace, id, { view });
+            const live = view.getSnapshot().selectionSet, kept = editor.restoreView(saved);
+            const retained = live === view.getSnapshot().selectionSet;
+            const here = editor.captureView(); view.setSelection(2, { anchor: 1, head: 1 });
+            const exact = editor.restoreView(here, { selection: "current" });
+            return { observedTop, mapped: mapped?.selection, mappedAnchors: [mapped?.verticalAnchorRestored, mapped?.horizontalAnchorRestored],
+                droppedAnchors: [clamped?.verticalAnchorRestored, clamped?.horizontalAnchorRestored], first: first.ranges.map(r => [r.anchor, r.head]), primary: first.primary,
+                clamped: clamped?.selection, second: second.ranges.map(r => [r.anchor, r.head]), foreign, kept: kept?.selection,
+                retained, sameRevision: exact?.selection, caret: view.getSnapshot().selection.head };
+        } finally { editor.dispose(); view.dispose(); host.remove(); }
+    });
+    expect(result).toEqual({ observedTop: 17, mapped: "mapped", mappedAnchors: [true, true], droppedAnchors: [false, false], first: [[0, 0], [11, 8]], primary: 1, clamped: "clamped", second: [[1, 1], [2, 2]],
+        foreign: null, kept: "current", retained: true, sameRevision: "current", caret: 1 });
+});
+
 test("revealing a source range in a read-only editor aligns the painted rows and preserves the caller's focus", async ({ page }) => {
     const result = await page.evaluate(async () => {
         const path = "/presentation-fixture/";

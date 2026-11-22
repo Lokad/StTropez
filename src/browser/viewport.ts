@@ -5,7 +5,8 @@ import type { DocumentId, DocumentSnapshot, DocumentView, TabId, Workspace } fro
 import type { Selection } from "../core/history.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
-import type { ViewState } from "./view-state.ts";
+import { selectionToRestore } from "./view-state.ts";
+import type { ViewRestoreOptions, ViewRestoreResult, ViewState } from "./view-state.ts";
 import { scrollAxis } from "./scroll.ts";
 import type { ScrollAxis } from "./scroll.ts";
 import { rowGeometry } from "./text-geometry.ts";
@@ -13,7 +14,7 @@ import type { CaretRectangle } from "./text-geometry.ts";
 import type { Affinity } from "../core/positions.ts";
 import { unchangedPositionEdges } from "../core/positions.ts";
 import { createFoldRegions, FoldIndex } from "../core/folding.ts";
-import type { FoldVersion } from "../core/folding.ts";
+import type { FoldingSnapshot, FoldVersion } from "../core/folding.ts";
 import { sameSelectionSet } from "../core/selections.ts";
 import { partitionPoint } from "../core/bound-search.ts";
 import { applyDecorationProperties, decorationParts } from "./decoration-parts.ts";
@@ -57,7 +58,7 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     bindInput: (focus: () => void) => ViewportInputBinding;
     settings: () => ViewportSettings;
     configure: (changes: Partial<ViewportSettings>) => boolean;
-    captureView: () => ViewState; restoreView: (state: ViewState) => void;
+    captureView: () => ViewState; restoreView: (state: ViewState, options?: ViewRestoreOptions) => ViewRestoreResult | null;
     scrollTo: (position: Readonly<{ top?: number; left?: number }>) => void;
     coordsAt: (offset: number, affinity?: Affinity) => CaretRectangle | undefined;
     rowBounds: (line: number) => RenderedRowBounds | undefined;
@@ -365,9 +366,12 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         } else if (!current) { anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined; }
         schedule();
     };
+    let restoredFolds: FoldingSnapshot | undefined;
     const foldsChanged = () => {
         clearPreparedRows();
         const folds = view.folding.getSnapshot(), documentAdvanced = folds.revision !== observedFoldRevision; observedFoldRevision = folds.revision;
+        const restored = folds === restoredFolds; restoredFolds = undefined;
+        if (restored) { schedule(); return; }
         if (documentAdvanced) {
             if (reveal) reveal = { ...reveal, foldGeneration: folds.generation };
             schedule(); return;
@@ -955,25 +959,43 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
                 ...(vertical ? { verticalAnchor: Object.freeze(vertical) } : {}),
                 folding: Object.freeze({ documentId, viewId: view.id, revision: folds.revision, generation: folds.generation, regions: folds.regions }),
                 ...(horizontalAnchor ? { horizontalAnchor: Object.freeze({ ...horizontalAnchor }) } : {}) }); },
-        restoreView: (state: ViewState) => {
-            if (disposed || !live()) return; const document = workspace.document(documentId), value = state.horizontalAnchor, vertical = state.verticalAnchor;
+        restoreView: (state, options = {}) => {
+            if (disposed || !live() || resource.getSnapshot().state !== "ready") return null;
+            const document = workspace.document(documentId), saved = state.folding;
+            if (saved && saved.documentId !== documentId) return null;
+            let value = state.horizontalAnchor, vertical = state.verticalAnchor;
             validateScroll({ top: state.scrollTop, left: state.scrollLeft });
             if (value && (!Number.isSafeInteger(value.revision) || value.revision < 0 || !Number.isSafeInteger(value.offset) || value.offset < 0
                 || !Number.isFinite(value.left) || value.left < 0 || value.affinity !== "before" && value.affinity !== "after")) throw new RangeError("Invalid horizontal view anchor.");
             if (value?.revision === document.revision && value.offset > document.buffer.length) throw new RangeError("Horizontal view anchor is outside the document.");
             if (vertical && (!Number.isSafeInteger(vertical.revision) || vertical.revision < 0 || !Number.isSafeInteger(vertical.offset) || vertical.offset < 0 || !Number.isFinite(vertical.topRemainder) || vertical.aligned !== undefined && vertical.aligned !== true)) throw new RangeError("Invalid vertical view anchor.");
             if (vertical?.revision === document.revision && vertical.offset > document.buffer.length) throw new RangeError("Vertical view anchor is outside the document.");
-            const folds = view.folding.getSnapshot(), saved = state.folding;
-            const restoreFolds = saved && saved.documentId === documentId && saved.revision === document.revision && saved.viewId !== view.id && folds.generation === 0 && !folds.regions.length;
+            const selected = selectionToRestore(document, view, state, options), folds = view.folding.getSnapshot();
+            const restoreFolds = !!saved && saved.revision === document.revision && saved.viewId !== view.id && folds.generation === 0 && !folds.regions.length;
             if (restoreFolds) createFoldRegions(document.buffer, saved.regions);
-            if (state.selectionSet) { if (!sameSelectionSet(state.selectionSet, view.getSnapshot().selectionSet)) view.setSelections(document.revision, state.selectionSet.ranges, state.selectionSet.primary); }
-            else if (state.anchor !== view.getSnapshot().selection.anchor || state.head !== view.getSnapshot().selection.head
-                || state.anchorAffinity !== view.getSnapshot().selection.anchorAffinity || state.headAffinity !== view.getSnapshot().selection.headAffinity) view.setSelection(document.revision, state);
-            if (restoreFolds) view.folding.setRanges(folds, saved.regions);
-            reveal = undefined;
-            setScroll({ top: state.scrollTop, left: state.scrollLeft });
-            if (value?.revision === document.revision) horizontalAnchor = { ...value };
-            if (vertical?.revision === document.revision) anchor = { ...vertical, leftRemainder: left - (vertical.offset - document.buffer.offsetAt(document.buffer.lineAt(vertical.offset))) * columnWidth };
+            if (value && selected.source === "current" && value.offset === state.head && value.affinity === (state.headAffinity ?? "after")
+                && (!saved || value.revision === saved.revision)) {
+                const primary = selected.set.ranges[selected.set.primary]!;
+                value = { ...value, revision: document.revision, offset: primary.head, affinity: primary.headAffinity ?? "after" };
+            } else if (value && value.revision !== document.revision) {
+                value = document.change?.previousRevision === value.revision
+                    ? { ...value, revision: document.revision, offset: document.change.mapping.map(value.offset, value.affinity).offset } : undefined;
+            }
+            if (vertical && vertical.revision !== document.revision) {
+                vertical = document.change?.previousRevision === vertical.revision
+                    ? { ...vertical, revision: document.revision, offset: document.change.mapping.map(vertical.offset, "before").offset } : undefined;
+            }
+            notifications.batch(() => {
+                if (!sameSelectionSet(selected.set, view.getSnapshot().selectionSet)) view.setSelections(document.revision, selected.set.ranges, selected.set.primary);
+                if (restoreFolds) view.folding.setRanges(view.folding.getSnapshot(), saved.regions);
+                if (view.folding.getSnapshot() !== folds) restoredFolds = view.folding.getSnapshot();
+                reveal = undefined;
+                setScroll({ top: state.scrollTop, left: state.scrollLeft });
+                if (value) horizontalAnchor = { ...value };
+                if (vertical) anchor = { ...vertical, leftRemainder: left - (vertical.offset - document.buffer.offsetAt(document.buffer.lineAt(vertical.offset))) * columnWidth };
+            });
+            return Object.freeze({ selection: selected.source, foldsRestored: restoreFolds,
+                horizontalAnchorRestored: !!value, verticalAnchorRestored: !!vertical });
         },
         revealOffset: (offset: number, options: RevealOptions = {}) => {
             if (disposed || !live()) return; const document = workspace.document(documentId); document.buffer.lineAt(offset);
