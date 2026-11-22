@@ -27,7 +27,9 @@ export type HostEditor = "native" | "candidate";
 export type NativeEditorMount = (host: HTMLElement, workspace: Workspace, tabId: TabId,
     options: Readonly<{ ariaLabel?: string; view?: DocumentView }>) => Readonly<{ element: HTMLTextAreaElement; view: DocumentView;
         captureView: () => ViewState; restoreView: (state: ViewState, options?: ViewRestoreOptions) => void; dispose: () => void }>;
-type BoundEditor = ReturnType<NativeEditorMount> & Readonly<{ metrics: () => null | ReturnType<TextEditor["snapshot"]> & Readonly<{ viewport: ViewportSnapshot }> }>;
+type BoundEditor = Omit<ReturnType<NativeEditorMount>, "element"> & Readonly<{
+    element: HTMLElement; metrics: () => null | ReturnType<TextEditor["snapshot"]> & Readonly<{ viewport: ViewportSnapshot }>;
+}>;
 type ViewTool = Readonly<{ attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void }>;
 export function hostEditor(): HostEditor { return new URLSearchParams(location.search).get("editor") === "candidate" ? "candidate" : "native"; }
 
@@ -290,7 +292,7 @@ export class ViewBindings {
                 const surface = id === "primary" && this.editor === "candidate" ? host.ownerDocument.createElement("div") : host;
                 if (surface !== host) { surface.className = "host-instruction-source"; host.append(surface); scope.defer(() => surface.remove()); }
                 const candidate = this.editor === "candidate" ? mountTextEditor(surface, workspace, tabId, { ariaLabel, view, requestLine: linePrompt(surface.ownerDocument) }) : undefined;
-                const mounted: BoundEditor = candidate ? { element: candidate.input, view, captureView: candidate.captureView,
+                const mounted: BoundEditor = candidate ? { element: candidate.element, view, captureView: candidate.captureView,
                     restoreView: candidate.restoreView, dispose: candidate.dispose,
                     metrics: () => ({ ...candidate.snapshot(), viewport: candidate.viewport.snapshot() }) }
                     : { ...this.mountNative!(host, workspace, tabId, { ariaLabel, view }), metrics: () => null };
@@ -317,7 +319,7 @@ export class ViewBindings {
                 const saveTarget = workspace.tabs.capture(tabId);
                 if (candidate) this.registerSave(candidate, saveTarget, scope);
                 else mounted.element.addEventListener("keydown", event => {
-                    if (!isSaveKey(event) || !mounted.element.isConnected || mounted.element.disabled || !this.ownsSaveTarget(saveTarget)) return;
+                    if (!isSaveKey(event) || !mounted.element.isConnected || mounted.element.matches(":disabled") || !this.ownsSaveTarget(saveTarget)) return;
                     event.preventDefault();
                     if (!event.repeat) this.controller.save();
                 }, { signal: listeners.signal });

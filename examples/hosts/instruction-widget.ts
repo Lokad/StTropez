@@ -1,4 +1,4 @@
-import { isPrimaryShortcut } from "../shared/host-shortcuts.ts";
+import { isPrimaryShortcut, isUnmodifiedShortcut } from "../shared/host-shortcuts.ts";
 import { exportText, textDifference } from "../../src/index.ts";
 import type { TabId } from "../../src/index.ts";
 import type { TextEditor } from "../../src/browser/index.ts";
@@ -38,7 +38,7 @@ export function mountInstructionWidget(host: HTMLElement, lane: HTMLElement, edi
         for (const field of fields) { memory.fields[field.key] = { start: field.node.selectionStart, end: field.node.selectionEnd, direction: field.node.selectionDirection, scrollTop: field.node.scrollTop };
             if (field.capture) recover(field, "instruction-form-detached"); }
         fieldListeners?.abort(); observer.unobserve(panel); panel.remove(); panel = undefined; fields = []; visible = false;
-        if (restore && focused) { editor.input.focus({ preventScroll: true }); memory.focus = undefined; }
+        if (restore && focused) { editor.focus(); memory.focus = undefined; }
     };
     const mount = () => {
         if (panel) return; fieldListeners = new AbortController(); const signal = fieldListeners.signal;
@@ -54,7 +54,9 @@ export function mountInstructionWidget(host: HTMLElement, lane: HTMLElement, edi
             node.addEventListener("compositionend", () => { field.composing = false; if (!field.ignored) commit(field); else { field.capture = undefined; sync(); } }, { signal });
             node.addEventListener("blur", () => { groupField = undefined; if (!field.composing && field.capture) commit(field); }, { signal });
             node.addEventListener("keydown", event => {
-                if (event.key === "Escape") { if (event.isComposing || field.composing) return; event.preventDefault(); event.stopPropagation(); editor.focus(); return; }
+                if (event.key === "Escape" && isUnmodifiedShortcut(event) && !field.composing) {
+                    event.preventDefault(); event.stopPropagation(); editor.focus(); return;
+                }
                 const command = isPrimaryShortcut(event), key = event.key.toLowerCase();
                 if (!command || !["s", "z", "y"].includes(key) || key === "s" && event.shiftKey) return; event.preventDefault(); event.stopPropagation();
                 if (event.repeat || event.isComposing || field.composing || fields.some(f => !!f.capture)) return; groupField = undefined;
@@ -65,7 +67,7 @@ export function mountInstructionWidget(host: HTMLElement, lane: HTMLElement, edi
         const controls = owner.createElement("div");
         const button = (name: string, invoke: () => void) => { const b = owner.createElement("button"); b.textContent = name; b.addEventListener("click", invoke, { signal }); controls.append(b); return b; };
         copy = button("Capture instruction copy", model.captureCopy); finish = button("Finish instruction copy", model.finishCopy); cancel = button("Cancel instruction copy", model.cancelCopy);
-        button("Close instruction form", () => { model.clear(); editor.input.focus({ preventScroll: true }); }); panel.append(controls); lane.append(panel); observer.observe(panel);
+        button("Close instruction form", () => { model.clear(); editor.focus(); }); panel.append(controls); lane.append(panel); observer.observe(panel);
         sync();
         for (const field of fields) { const old = memory.fields[field.key]; if (old) { field.node.setSelectionRange(old.start, old.end, old.direction); field.node.scrollTop = old.scrollTop; }
             if (memory.focus === field.key && owner.activeElement === owner.body) field.node.focus({ preventScroll: true }); } memory.focus = undefined;

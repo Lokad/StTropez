@@ -412,7 +412,7 @@ form editing; missing/invalid field values stay editable.
 
 Change a field, then undo from the source editor. Each field edit replaces just the known value.
 Unknown members, number spelling, whitespace, order and unchanged escapes survive. Ctrl/Cmd+S saves
-the source, and Escape returns focus to it. The form follows its rendered row, hides when that row is
+the source. Plain Escape returns focus to it after composition ends. The form follows its rendered row, hides when that row is
 folded or offscreen and suspends in a narrow layout. Field values and selections survive a remount.
 Stale input goes to recovery.
 

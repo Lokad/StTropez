@@ -1,4 +1,4 @@
-import { ready, test, expect, expectUnmountedSourceHost } from "./fixtures.ts";
+import { ready, test, expect, expectPanelKeyReserved, expectUnmountedSourceHost } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { hostTextEquals } from "../../scripts/host-scene.mjs";
 const snap = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
@@ -87,7 +87,9 @@ for (const host of ["plain", "react"]) test(`${host} anchored instruction stays 
     await source(p).focus(); await invoke("Reopen primary source"); await waitForInstruction(p); await expect(field).toHaveValue("café😀.csv"); await expect(field).toBeFocused();
     expect(await field.evaluate(node => { const f = node as HTMLTextAreaElement; return [f.selectionStart, f.selectionEnd, f.selectionDirection]; })).toEqual([1, 4, "backward"]);
     expect((await snap(p)).bindings.views.find(v => v.id === "primary")?.selectionSet).toEqual(before.bindings.views.find(v => v.id === "primary")?.selectionSet);
-    await field.focus(); await field.press("Escape"); await expect(source(p)).toBeFocused(); await source(p).press("Control+End"); await source(p).pressSequentially(" source edit"); await waitForInstruction(p); await exact(p, original + " source edit");
-    await source(p).press("Control+z"); await waitForInstruction(p); await exact(p, original); expect((await snap(p)).history).toEqual({ undoDepth: before.history.undoDepth, redoDepth: 1 });
+    await field.focus(); await expectPanelKeyReserved(field, "Escape");
+    await field.press("Escape"); await expect(source(p)).toBeFocused(); await source(p).press("Control+End"); await source(p).pressSequentially(" source edit"); await waitForInstruction(p); await exact(p, original + " source edit");
+    await source(p).press("Control+z"); await waitForInstruction(p); await exact(p, original + " source");
+    await source(p).press("Control+z"); await waitForInstruction(p); await exact(p, original); expect((await snap(p)).history).toEqual({ undoDepth: before.history.undoDepth, redoDepth: 2 });
     await p.evaluate(() => window.hostFixture.dispose()); expect((await snap(p)).diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 });
 });
