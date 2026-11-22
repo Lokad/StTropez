@@ -972,8 +972,15 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     await nextEdits.focus(); await nextEdits.hover(); await page.mouse.down();
     await nextEdits.press("Enter"); await expect(edits.first()).toContainText("uses.ts · 65:");
     await page.mouse.up(); await expect(edits.first()).toContainText("uses.ts · 65:");
-    for (let i = 1; i < 18; i++) await nextEdits.click();
+    const list = rename.getByRole("list", { name: "Rename edits" });
+    await expect(list).toHaveJSProperty("start", 65);
+    await expect(edits.first()).toBeInViewport({ ratio: 1 }); await expect(nextEdits).toBeInViewport({ ratio: 1 });
+    await list.focus(); await list.press("End"); await expect(edits.last()).toBeInViewport({ ratio: 1 });
+    await rename.getByRole("button", { name: "Previous edits", exact: true }).click();
+    await expect(list).toHaveJSProperty("start", 1); await expect(edits.first()).toBeInViewport({ ratio: 1 });
+    for (let i = 0; i < 18; i++) await nextEdits.click();
     await expect(edits).toHaveCount(49); await expect(edits.last()).toContainText("uses.ts · 1201:");
+    await expect(list).toHaveJSProperty("start", 1153);
     await rename.getByRole("button", { name: "Apply rename", exact: true }).click(); await expect(rename).toBeHidden();
     await expect(page.locator("#editor")).toContainText("const use1199 = renamedValue;");
     await source.press("Control+Home"); await expect(page.locator("#editor")).toContainText("const renamedValue = 1;");

@@ -115,7 +115,9 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     const preview = document.createElement("button"), cancel = document.createElement("button"), targets = document.createElement("ol"), pages = document.createElement("div");
     let apply = renderPanelButton(document.createElement("button"), { label: "Apply rename", disabled: true, invoke: null });
     preview.textContent = "Preview rename"; cancel.textContent = "Cancel rename"; targets.setAttribute("aria-label", "Rename edits");
-    renamePopup.append(heading, label, status, preview, apply, cancel, targets, pages);
+    const controls = document.createElement("div");
+    controls.append(preview, apply, cancel); targets.tabIndex = 0;
+    renamePopup.append(heading, label, status, controls, pages, targets);
     let renameSource: CapturedViewRequest | undefined;
     const closeRename = (focus: boolean) => {
         const previous = renameSource; renameSource = undefined;
@@ -138,6 +140,7 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     name.addEventListener("input", () => rename.setName(name.value), { signal: events.signal });
     preview.addEventListener("click", rename.prepare, { signal: events.signal }); cancel.addEventListener("click", () => closeRename(true), { signal: events.signal });
     rename.bindName(name); scope.defer(() => rename.bindName(null));
+    let displayed = rename.state.getSnapshot().locations;
     scope.defer(rename.state.subscribe(() => {
         const state = rename.state.getSnapshot();
         status.textContent = state.status === "pending" ? "Preparing rename preview…" : state.status === "ready" ? state.message
@@ -145,13 +148,21 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         if (name.value !== state.name) name.value = state.name;
         apply = renderPanelButton(apply, { label: "Apply rename", reviewKey: state.reviewKey, disabled: !state.canApply, invoke: state.preview?.confirm ?? null });
         preview.disabled = state.pending || !state.name.trim();
-        targets.replaceChildren(...state.locations.map(at => { const item = document.createElement("li"), before = document.createElement("del"), after = document.createElement("ins"), code = document.createElement("code");
-            before.textContent = at.before; after.textContent = at.after; code.append(before, " → ", after); item.append(`${at.title} · ${at.line + 1}:${at.column + 1} `, code); return item; }));
+        if (displayed !== state.locations) {
+            displayed = state.locations; targets.start = (displayed[0]?.ordinal ?? 0) + 1;
+            targets.replaceChildren(...displayed.map(at => {
+                const item = document.createElement("li"), before = document.createElement("del"), after = document.createElement("ins"), code = document.createElement("code");
+                before.textContent = at.before; after.textContent = at.after; code.append(before, " → ", after);
+                item.append(`${at.title} · ${at.line + 1}:${at.column + 1} `, code); return item;
+            }));
+            targets.scrollTop = 0;
+        }
         renderPanelActions(pages, pageActions("edits", state.paging)); pages.hidden = !state.paging;
         if (state.status === "applied") queueMicrotask(() => { if (!disposed && rename.state.getSnapshot() === state) closeRename(true); });
     }));
     popup.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });
     renamePopup.addEventListener("keydown", event => {
+        if (event.target === targets && ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) return;
         if (event.target !== name && editor.keymap.handle(event)) event.stopPropagation();
     }, { signal: events.signal });
     scope.defer(editor.commands.register({ id: "rename.dismiss", label: "Dismiss rename",
