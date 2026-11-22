@@ -90,6 +90,8 @@ test("language result callbacks cannot follow a newer view or diagnostic batch w
     const chosen: number[] = [], inserted: string[] = [], diagnostics: number[] = [];
     const state: Snapshot = Object.freeze({ readOnlyReference: false, view: "primary", providerError: null, find: null, folds: null, foldMessage: "Captured folds", query: "sa", replacement: "sample", wholeWord: false, matchCase: true, regularExpression: false,
         provider: Object.freeze({ message: "Captured offer", connected: true, pending: false, offerText: "sample", choices: Object.freeze(["sample"]),
+            choiceIndex: 0, completionDetail: "", completionIncomplete: false, resolving: false, snippet: null, omittedCompletions: [],
+            diagnosticsPending: false, unversionedDiagnostics: [],
             completionAt: (index: number) => ({ label: "sample", select: () => { chosen.push(index); return true; },
                 accept: (mode: "insert" | "replace") => { inserted.push(mode); return true; } }),
             diagnostics: Object.freeze([Object.freeze({ from: 5, to: 9, message: "First diagnostic", select: () => { diagnostics.push(5); return true; } })]), diagnosticRevision: 1 }) });

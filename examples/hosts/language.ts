@@ -3,23 +3,23 @@ import { bindFindCommands } from "../shared/find-commands.ts";
 import { createFindController, createRegexFindBackend } from "../../src/browser/index.ts";
 import type { TextEditor, FindController, FindSnapshot } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, DocumentId, FoldRange, FoldRegion, FoldingSnapshot, TabId, TabTarget, Workspace } from "../../src/index.ts";
-import type { ProviderController, ProviderFactory, ProviderSnapshot } from "../shared/language/provider-contract.ts";
+import type { LspProviderController, LspProviderFactory } from "../shared/language/lsp-provider-controller.ts";
 import { completionPageSize } from "../shared/language/completion-list.ts";
 import type { JsonValue } from "../../src/protocol/index.ts";
 import { EditingPresentation } from "../shared/language/presentation.ts";
 import { HostCell } from "../shared/observable.ts";
 
 type Session = { id: string; editor: TextEditor; target: TabTarget; presentation: EditingPresentation;
-    provider?: ProviderController; stopProvider?: () => void; providerError?: string; reference?: () => ComparisonBaseline | null; find?: FindController; stopFind?: () => void; initialized: boolean };
+    provider?: LspProviderController; stopProvider?: () => void; providerError?: string; reference?: () => ComparisonBaseline | null; find?: FindController; stopFind?: () => void; initialized: boolean };
 type DetachedOwner = Readonly<{ id: string; target: TabTarget; documentId: DocumentId; reference?: ComparisonBaseline }>;
 type FindCommand = Readonly<{ kind: "navigate"; direction: 1 | -1 } | { kind: "replace"; text: string }>;
 
-type LanguageSnapshot = Readonly<{ readOnlyReference: boolean; view: string | null; provider: ProviderSnapshot | null; providerError: string | null; find: FindSnapshot | null; folds: FoldingSnapshot | null; foldMessage: string; query: string; replacement: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean }>;
+type LanguageSnapshot = Readonly<{ readOnlyReference: boolean; view: string | null; provider: ReturnType<LspProviderController["getSnapshot"]> | null; providerError: string | null; find: FindSnapshot | null; folds: FoldingSnapshot | null; foldMessage: string; query: string; replacement: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean }>;
 
 /** Host-owned tools follow an explicit mounted view; delayed commands never consult focus later. */
 export class HostLanguageTools {
     private readonly workspace: Workspace;
-    private readonly providerFactory: ProviderFactory;
+    private readonly providerFactory: LspProviderFactory;
     private readonly canCapture: (documentId: DocumentId) => boolean;
     private readonly sessions = new Map<string, Session>();
     private active: Session | undefined;
@@ -35,8 +35,8 @@ export class HostLanguageTools {
     readonly queryRef = (element: HTMLInputElement | null): void => { this.queryElement = element; };
     readonly replacementRef = (element: HTMLInputElement | null): void => { this.replacementElement = element; };
     readonly toolsRef = (element: HTMLElement | null): void => { if (this.toolsElement !== element) this.cancelFindCommand(); this.toolsElement = element; };
-    private retired = { posted: 0, applied: 0, stale: 0, cancelled: 0, invalid: 0, failed: 0, postedUnits: 0 };
-    constructor(workspace: Workspace, options: Readonly<{ providerFactory: ProviderFactory; canCapture?: (documentId: DocumentId) => boolean }>) {
+    private retired = { posted: 0, applied: 0, stale: 0, cancelled: 0, invalid: 0, failed: 0 };
+    constructor(workspace: Workspace, options: Readonly<{ providerFactory: LspProviderFactory; canCapture?: (documentId: DocumentId) => boolean }>) {
         this.workspace = workspace; this.providerFactory = options.providerFactory; this.canCapture = options.canCapture ?? (() => true);
     }
     private publish(): void {
@@ -73,7 +73,7 @@ export class HostLanguageTools {
     clearRetainedView(): void { this.cancelFindCommand(); this.detachedOwner = undefined; }
     private attachProvider(session: Session): void {
         const { editor } = session;
-        let provider: ProviderController;
+        let provider: LspProviderController;
         try { provider = this.providerFactory(editor, { autoConnect: false, canCapture: () => this.canCapture(editor.view.documentId),
             getPageSize: () => completionPageSize(this.toolsElement?.querySelector<HTMLElement>('[role="listbox"]')) }); }
         catch (error) {
@@ -231,7 +231,7 @@ export class HostLanguageTools {
                 this.stopFolds?.(); this.stopFolds = undefined;
             }
             session.stopProvider?.(); listeners.abort(); session.stopFind?.(); session.find?.dispose();
-            const counts = session.provider?.snapshot(); if (counts) for (const key of Object.keys(this.retired) as (keyof typeof this.retired)[]) this.retired[key] += counts[key] ?? 0;
+            const counts = session.provider?.getDiagnostics(); if (counts) for (const key of Object.keys(this.retired) as (keyof typeof this.retired)[]) this.retired[key] += counts[key];
             session.provider?.dispose(); session.presentation.clear(); this.sessions.delete(session.id);
             if (this.active === session) this.active = undefined; this.publish();
         };
@@ -304,10 +304,10 @@ export class HostLanguageTools {
         this.cell.set({ ...this.cell.get(), foldMessage: "All folds expanded." });
     }
     customRequest(method: string, params: JsonValue): Promise<JsonValue> {
-        const provider = this.active?.provider; if (!provider?.customRequest) return Promise.reject(new Error("The active provider has no custom-message extension.")); return provider.customRequest(method, params);
+        const provider = this.active?.provider; if (!provider) return Promise.reject(new Error("No active language provider.")); return provider.customRequest(method, params);
     }
     setDelay(value: number): void { this.active?.provider?.setDelay(value); }
     faultNext(value: "malformed" | "failure"): void { this.active?.provider?.faultNext(value); }
     debug() { return { active: this.active?.id ?? null, navigationPending: this.pendingFind?.kind === "navigate", findCommandPending: this.pendingFind?.kind ?? null, subscriptions: this.cell.count(), referenceFind: [...this.sessions.values()].filter(s => s.reference).map(s => ({ id: s.id, documentId: s.editor.view.documentId, viewId: s.editor.view.id, find: s.find?.getSnapshot() ?? null })), sessions: [...this.sessions.values()].flatMap(s => s.provider ? [{ id: s.id, documentId: s.editor.view.documentId,
-        viewId: s.editor.view.id, foldRegions: s.editor.view.folding.getSnapshot().regions.length, collapsedFolds: s.editor.view.folding.getSnapshot().index.collapsedCount, provider: s.provider.snapshot(), presentation: s.presentation.snapshot() }] : []), retired: { ...this.retired } }; }
+        viewId: s.editor.view.id, foldRegions: s.editor.view.folding.getSnapshot().regions.length, collapsedFolds: s.editor.view.folding.getSnapshot().index.collapsedCount, provider: s.provider.getDiagnostics(), presentation: s.presentation.snapshot() }] : []), retired: { ...this.retired } }; }
 }

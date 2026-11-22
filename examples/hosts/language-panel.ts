@@ -13,8 +13,8 @@ function languageActions(tools: LanguagePanelTools, state: LanguageSnapshot): re
     const found = !!state.find?.count && (state.find.status === "ready" || state.find.status === "searching" && state.find.retained);
     return [
         { label: "Request completion", invoke: tools.request, disabled: !providerAvailable },
-        { label: "Insert completion", invoke: capturedCommand(tools, state, () => state.provider?.completionAt(state.provider.choiceIndex ?? 0)?.accept("insert")), disabled: !offered || !!state.provider?.pending, keepEditorFocus: true },
-        { label: "Replace completion", invoke: capturedCommand(tools, state, () => state.provider?.completionAt(state.provider.choiceIndex ?? 0)?.accept("replace")), disabled: !offered || !!state.provider?.pending, keepEditorFocus: true },
+        { label: "Insert completion", invoke: capturedCommand(tools, state, () => state.provider?.completionAt(state.provider.choiceIndex)?.accept("insert")), disabled: !offered || !!state.provider?.pending, keepEditorFocus: true },
+        { label: "Replace completion", invoke: capturedCommand(tools, state, () => state.provider?.completionAt(state.provider.choiceIndex)?.accept("replace")), disabled: !offered || !!state.provider?.pending, keepEditorFocus: true },
         { label: "Cancel request", invoke: tools.cancel, disabled: !providerAvailable },
         { label: "Disconnect provider", invoke: tools.disconnect, disabled: !state.provider?.connected },
         { label: "Reconnect provider", invoke: tools.reconnect, disabled: !available || state.readOnlyReference },

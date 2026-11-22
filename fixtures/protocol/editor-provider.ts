@@ -1,8 +1,7 @@
 import { openWebSocketTransport } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import { FixtureLspWorkspace } from "./fixture-workspace.ts";
-import { createLspProviderController } from "../../examples/shared/language/lsp-provider-controller.ts";
-import type { ProviderFactory } from "../../examples/shared/language/provider-contract.ts";
+import { createLspProviderController, type LspProviderFactory } from "../../examples/shared/language/lsp-provider-controller.ts";
 import type { RenameHostOptions } from "../../examples/hosts/rename.ts";
 import type { ActionHostOptions } from "../../examples/hosts/code-actions.ts";
 import { createLspProjectClient } from "../../examples/shared/language/lsp-project-client.ts";
@@ -15,7 +14,7 @@ import type { LinkHostOptions } from "../../examples/hosts/document-links.ts";
 import type { ColorHostOptions } from "../../examples/hosts/document-colors.ts";
 
 /** Explicit development-host choice. Generic session/feature code has no fixture endpoint policy. */
-export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspace; provider: ProviderFactory; hover: HoverHostOptions; navigation: NavigationHostOptions; rename: RenameHostOptions; actions: ActionHostOptions; project: LspProjectFactory; signature: SignatureHostOptions; links: LinkHostOptions; colors: ColorHostOptions }> {
+export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspace; provider: LspProviderFactory; hover: HoverHostOptions; navigation: NavigationHostOptions; rename: RenameHostOptions; actions: ActionHostOptions; project: LspProjectFactory; signature: SignatureHostOptions; links: LinkHostOptions; colors: ColorHostOptions }> {
     const url = new URL("/lsp-fixture", location.href); url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const connection = new FixtureLspWorkspace(owner, { connect: signal => openWebSocketTransport(url.href, { signal }),
         initializationOptions: { fixtureDynamicLanguage: new URLSearchParams(location.search).get("lspSubset") === "dynamic" },
