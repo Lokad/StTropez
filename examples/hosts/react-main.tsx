@@ -229,7 +229,7 @@ function NavigationTools() {
     const tools = bindings.navigation, model = navigationPanelModel(tools, useObserved(tools.state));
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2>
         <output aria-label={model.status.label}>{model.status.text}</output>
-        <progress aria-label={model.progress.label} hidden={model.progress.hidden} max={model.progress.max} value={model.progress.value} />
+        <progress aria-label={model.progress.label} hidden={model.progress.hidden} />
         <label><input type="checkbox" checked={model.declarations.checked} onChange={event => model.declarations.change(event.currentTarget.checked)} />{model.declarations.label}</label>
         <div>{model.actions.map(action => <button key={panelActionKey(action)} onClick={action.invoke ?? undefined} disabled={action.disabled}>{action.label}</button>)}</div>
         <ul aria-label={model.results.label}>{model.results.items().map(note => <li key={note.key}><button onClick={note.invoke}>{note.label}</button></li>)}</ul></section>;

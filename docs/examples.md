@@ -378,8 +378,9 @@ If the color result changes while **Open** is pressed, click the new result to o
 Closing the review keeps F12 and Shift+F12 requests from the primary editor usable.
 A request made in the review itself expires when that pane closes.
 If you leave the source while F12 is pending, choose the destination in the results panel to open it.
-The navigation panel also accepts declarations loaded by a host URI resolver. It uses the
-returned document's text and revision to label the result and select its range.
+The navigation panel shows a waiting indicator during a definition or reference request.
+For declarations loaded by a host URI resolver, it uses the returned document's text and
+revision to label the result and select its range.
 If the host cannot open the pane, the panel shows the error. You can retry the same result. Return records successful visits.
 F12 can open a file in the same secondary pane that requested it. The new pane focuses the
 definition and selects its name. Return skips the replaced tab.

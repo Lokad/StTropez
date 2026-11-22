@@ -44,7 +44,11 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 3, head: 3 }, { anchor: 22, head: 22 }]); });
         await moveEditorIntoShadow(field(page));
         const before = await snapshot(page); replies.hold(); await field(page).press("F12"); await expect.poll(replies.waiting).toBe(true);
+        const progress = page.getByLabel("Symbol navigation progress", { exact: true });
+        await expect(progress).toBeVisible();
+        expect(await progress.evaluate(node => (node as HTMLProgressElement).position)).toBe(-1);
         await field(page, "Configuration path").focus(); await replies.release(); await waitForNavigation(page);
+        await expect(progress).toBeHidden();
         await expect(field(page, "Configuration path")).toBeFocused(); await expect(results(page)).toHaveText(["Navigation companion:1:7 · declaration"]);
         expect((await snapshot(page)).bindings.navigation.transport?.version).toBe("LSP3.17");
         const companion = (await snapshot(page)).bindings.navigation.companion!; expect((await snapshot(page)).bindings.views.every(view => view.documentId !== companion)).toBe(true);

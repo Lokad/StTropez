@@ -18,7 +18,7 @@ type Job = { kind: Kind; symbol: string; origin: Session; returnPoint: Navigatio
     timer: number; page: NavigationPage | undefined; followDefinition: boolean };
 export type NavigationNote = Readonly<{ ordinal: number; title: string; line: number; column: number; declaration: boolean; open: () => void }>;
 export type NavigationSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; canCancel: boolean; status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired" | "disconnected";
-    message: string; work: number; total: number; includeDeclaration: boolean; locations: readonly NavigationNote[]; paging: PanelPaging | null; canReturn: boolean }>;
+    message: string; includeDeclaration: boolean; locations: readonly NavigationNote[]; paging: PanelPaging | null; canReturn: boolean }>;
 
 /** Host-owned project navigation; results carry identities, never a future focus target. */
 export class HostNavigationTools {
@@ -33,7 +33,7 @@ export class HostNavigationTools {
     private delay = 0;
     private fault: NavigationFault | undefined;
     private disconnected = false;
-    private readonly cell = new HostCell<NavigationSnapshot>({ available: false, connected: false, disconnected: false, canCancel: false, status: "idle", message: "Focus a candidate source to navigate symbols.", work: 0, total: 0, includeDeclaration: true, locations: [], paging: null, canReturn: false });
+    private readonly cell = new HostCell<NavigationSnapshot>({ available: false, connected: false, disconnected: false, canCancel: false, status: "idle", message: "Focus a candidate source to navigate symbols.", includeDeclaration: true, locations: [], paging: null, canReturn: false });
     readonly state = this.cell.observable;
     private readonly metrics = { requested: 0, applied: 0, cancelled: 0, expired: 0, failed: 0 };
     private readonly queries = { completed: 0, failed: 0 };
@@ -70,7 +70,7 @@ export class HostNavigationTools {
         this.queries.completed++; this.metrics.applied++;
         const label = job.kind === "definition" ? "definition" : "reference";
         const locations = this.showPage(job, result.pageFor(), { status: result.count ? "ready" : "empty",
-            message: `${result.count} ${label} locations for ${job.symbol}.`, work: this.cell.get().total });
+            message: `${result.count} ${label} locations for ${job.symbol}.` });
         if (job.followDefinition && result.count === 1) {
             // Presenting a pane can write to the workspace. Finish controller notification first.
             queueMicrotask(() => { if (job.followDefinition && editor.getSnapshot().focused) locations[0]!.open(); });
@@ -84,7 +84,7 @@ export class HostNavigationTools {
     private clear(status: NavigationSnapshot["status"], message: string): void {
         const job = this.job; this.job = undefined;
         if (job) { job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.origin.controller.cancel(); }
-        this.publish({ status, message, work: 0, total: 0, locations: [], paging: null });
+        this.publish({ status, message, locations: [], paging: null });
     }
     readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.clear("idle", "Symbol navigation dismissed."); };
     readonly disconnect = (): void => { this.cancel(); this.disconnected = true; this.publish({ status: "disconnected", message: "Navigation provider disconnected; local editing remains available." }); };
@@ -144,10 +144,8 @@ export class HostNavigationTools {
         this.cancel(); const offset = pointed ?? origin.editor.view.getSnapshot().selection.head, document = this.host.workspace.document(origin.editor.view.documentId), symbol = navigationSymbol(document.buffer, offset) ?? "position";
         const documents = this.host.workspace.getSnapshot().documents.filter(doc => doc.language !== null), sources = new Set(documents.map(doc => doc.id));
         if (!sources.has(document.id)) { this.publish({ status: "failed", message: "This source is outside the host navigation scope." }); return; }
-        let total: number;
         try {
-            const project = validateNavigationDocuments(documents.map(doc => ({ document: doc.id, revision: doc.revision, length: doc.buffer.length })));
-            total = project.reduce((sum, doc) => sum + doc.length, 0);
+            validateNavigationDocuments(documents.map(doc => ({ document: doc.id, revision: doc.revision, length: doc.buffer.length })));
         }
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Unsupported navigation capture." }); return; }
         const targets = new Map<string, Session>(); for (const s of this.sessions) if (this.available(s) && !targets.has(s.editor.view.documentId)) targets.set(s.editor.view.documentId, s); targets.set(document.id, origin);
@@ -159,7 +157,7 @@ export class HostNavigationTools {
             // The panel deadline also bounds host preparation and loading a target after the RPC reply.
             job.timer = win.setTimeout(() => { if (this.job === job) { this.metrics.failed++; this.clear("failed", "Navigation timed out; source is unchanged."); } }, 30000);
             const { includeDeclaration } = this.cell.get();
-            this.publish({ status: "pending", message: `Finding ${kind === "definition" ? "definitions" : "references"} of ${symbol} from ${origin.id}.`, work: 0, total });
+            this.publish({ status: "pending", message: `Finding ${kind === "definition" ? "definitions" : "references"} of ${symbol} from ${origin.id}.` });
             void origin.controller.request(kind, offset, includeDeclaration).catch(error => {
                 if (this.job !== job) return;
                 this.queries.failed++; this.metrics.failed++; this.clear("failed", error instanceof Error ? error.message : "Navigation failed; source is unchanged.");

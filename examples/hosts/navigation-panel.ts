@@ -8,7 +8,7 @@ export function navigationPanelModel(tools: NavigationPanelTools, state: Navigat
     const pending = state.status === "pending", paging = state.paging;
     return {
         title: "Symbol navigation", status: { label: "Symbol navigation status", text: state.message },
-        progress: { label: "Symbol navigation progress", hidden: !pending, max: Math.max(1, state.total), value: state.work },
+        progress: { label: "Symbol navigation progress", hidden: !pending },
         declarations: { label: "Include declarations in references", checked: state.includeDeclaration, change: (value: boolean) => tools.setIncludeDeclaration(value) },
         actions: [
             { label: "Find definition", invoke: tools.findDefinition, disabled: !state.available || pending || state.disconnected },
@@ -32,7 +32,7 @@ export function mountNavigationPanel(host: HTMLElement, tools: HostNavigationToo
     progress.setAttribute("aria-label", initial.progress.label); notes.setAttribute("aria-label", initial.results.label); include.type = "checkbox"; label.append(include, initial.declarations.label); include.onchange = () => initial.declarations.change(include.checked);
     let previous: typeof initial.results.identity | undefined;
     return mount([progress, label, controls, notes], model => {
-        progress.hidden = model.progress.hidden; progress.max = model.progress.max; progress.value = model.progress.value; include.checked = model.declarations.checked;
+        progress.hidden = model.progress.hidden; include.checked = model.declarations.checked;
         if (previous !== model.results.identity) {
             notes.replaceChildren(...model.results.items().map(note => { const item = owner.createElement("li"), button = owner.createElement("button");
                 button.textContent = note.label; button.onclick = note.invoke; item.append(button); return item; }));

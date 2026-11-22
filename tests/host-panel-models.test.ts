@@ -191,7 +191,7 @@ test("navigation presentation keeps a captured target while a newer snapshot sup
         addCompanion: noop, disconnect: noop, reconnect: noop, setIncludeDeclaration: noop };
     let formatted = 0;
     const state: NavigationSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, canCancel: true,
-        paging: { key: 7, previous: null, next: noop }, status: "ready", message: "Captured results", work: 1, total: 1, includeDeclaration: true, canReturn: false,
+        paging: { key: 7, previous: null, next: noop }, status: "ready", message: "Captured results", includeDeclaration: true, canReturn: false,
         locations: Object.freeze([Object.freeze({ declaration: true, ordinal: 0,
             get title() { formatted++; return "First"; }, line: 1, column: 3, open: () => { opened.push([7, 0]); } })]) });
     const first = navigationPanelModel(tools, state), statusOnly = navigationPanelModel(tools, { ...state, message: "Origin focused", canReturn: true });
