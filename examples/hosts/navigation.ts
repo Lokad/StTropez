@@ -3,21 +3,21 @@ import { createReviewKey } from "./panel-actions.ts";
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { createNavigationController, createNavigationHistory } from "../../src/browser/index.ts";
-import type { NavigationChoice, NavigationController, NavigationDestination, NavigationHistory, NavigationOrigin, NavigationPage, TextEditor } from "../../src/browser/index.ts";
+import type { NavigationChoice, NavigationController, NavigationDestination, NavigationHistory, NavigationOrigin, NavigationPage, NavigationResult, TextEditor } from "../../src/browser/index.ts";
 import type { LspNavigationRequest, LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import { navigationSymbol, validateNavigationDocuments } from "../../fixtures/language/navigation.ts";
-import type { NavigationFault, NavigationLocation } from "../../fixtures/language/navigation.ts";
+import type { NavigationFault } from "../../fixtures/language/navigation.ts";
 import { HostCell } from "../shared/observable.ts";
 
 type Kind = LspNavigationRequest["kind"];
 export type NavigationHostOptions = Readonly<{ provider: LspWorkspace; prepare: (kind: Kind, delay: number, fault?: NavigationFault) => LspPrepare }>;
 type Session = { id: string; target: TabTarget; editor: TextEditor; controller: NavigationController };
-type Job = { kind: Kind; origin: Session; returnPoint: NavigationOrigin; sources: Set<DocumentId>; targets: Map<string, Session>;
+type Job = { kind: Kind; symbol: string; origin: Session; returnPoint: NavigationOrigin; sources: Set<DocumentId>; targets: Map<string, Session>;
     timer: number; page: NavigationPage | undefined; followDefinition: boolean };
-export type NavigationNote = NavigationLocation & Readonly<{ ordinal: number; title: string; line: number; column: number; open: () => void }>;
+export type NavigationNote = Readonly<{ ordinal: number; title: string; line: number; column: number; declaration: boolean; open: () => void }>;
 type Paging = Readonly<{ key: number; previous: (() => void) | null; next: (() => void) | null }>;
-export type NavigationSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; syncedDocuments: number; view: string | null; requestView: string | null; status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired" | "disconnected";
-    message: string; work: number; total: number; includeDeclaration: boolean; locations: readonly NavigationNote[]; count: number; truncated: boolean; paging: Paging | null; canReturn: boolean }>;
+export type NavigationSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; canCancel: boolean; status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired" | "disconnected";
+    message: string; work: number; total: number; includeDeclaration: boolean; locations: readonly NavigationNote[]; paging: Paging | null; canReturn: boolean }>;
 
 /** Host-owned project navigation; results carry identities, never a future focus target. */
 export class HostNavigationTools {
@@ -36,7 +36,7 @@ export class HostNavigationTools {
     private fault: NavigationFault | undefined;
     private readonly options: NavigationHostOptions;
     private disconnected = false;
-    private readonly cell = new HostCell<NavigationSnapshot>({ available: false, connected: false, disconnected: false, syncedDocuments: 0, view: null, requestView: null, status: "idle", message: "Focus a candidate source to navigate symbols.", work: 0, total: 0, includeDeclaration: true, locations: [], count: 0, truncated: false, paging: null, canReturn: false });
+    private readonly cell = new HostCell<NavigationSnapshot>({ available: false, connected: false, disconnected: false, canCancel: false, status: "idle", message: "Focus a candidate source to navigate symbols.", work: 0, total: 0, includeDeclaration: true, locations: [], paging: null, canReturn: false });
     readonly state = this.cell.observable;
     private readonly metrics = { requested: 0, applied: 0, cancelled: 0, expired: 0, failed: 0 };
     private readonly queries = { completed: 0, failed: 0 };
@@ -56,8 +56,7 @@ export class HostNavigationTools {
             const { document } = choice, { line, column } = document.buffer.positionAt(choice.from);
             const id = document.documentId as DocumentId, title = (titles.get(id) ?? document.uri).slice(0, 128);
             job.sources.add(id);
-            return { document: id, revision: document.revision, from: choice.from, to: choice.to, declaration: job.kind === "definition",
-                ordinal: choice.index, title, line: line + 1, column: column + 1, open: () => this.open(job, choice, title) };
+            return { ordinal: choice.index, title, line: line + 1, column: column + 1, declaration: job.kind === "definition", open: () => this.open(job, choice, title) };
         }) ?? [];
         const turn = (move: (() => NavigationPage) | null) => move && (() => {
             if (this.job?.page === page) this.showPage(job, move());
@@ -66,16 +65,27 @@ export class HostNavigationTools {
         job.page = page; this.publish({ ...patch, locations, paging });
         return locations;
     }
+    private ready(job: Job, result: NavigationResult): void {
+        const { editor } = job.origin;
+        editor.element.ownerDocument.defaultView!.clearTimeout(job.timer);
+        this.queries.completed++; this.metrics.applied++;
+        const label = job.kind === "definition" ? "definition" : "reference";
+        const locations = this.showPage(job, result.pageFor(), { status: result.count ? "ready" : "empty",
+            message: `${result.count} ${label} locations for ${job.symbol}.`, work: this.cell.get().total });
+        if (job.followDefinition && result.count === 1) {
+            // Presenting a pane can write to the workspace. Finish controller notification first.
+            queueMicrotask(() => { if (job.followDefinition && editor.getSnapshot().focused) locations[0]!.open(); });
+        }
+    }
     private publish(patch: Partial<NavigationSnapshot> = {}): void {
-        const job = this.job, page = job?.page;
-        const transport = job?.origin.controller.getDiagnostics();
-        this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && this.available(this.active), connected: !!transport?.connected, disconnected: this.disconnected, syncedDocuments: transport?.documents.length ?? 0, view: this.active?.id ?? null, requestView: job?.origin.id ?? null,
-            count: page?.count ?? 0, canReturn: this.history.getSnapshot() > 0 });
+        this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && this.available(this.active),
+            connected: !!this.job && this.options.provider.getSnapshot().phase === "ready", disconnected: this.disconnected,
+            canCancel: !!this.job, canReturn: this.history.getSnapshot() > 0 });
     }
     private clear(status: NavigationSnapshot["status"], message: string): void {
         const job = this.job; this.job = undefined;
         if (job) { job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.origin.controller.cancel(); }
-        this.publish({ status, message, work: 0, total: 0, truncated: false, locations: [], paging: null });
+        this.publish({ status, message, work: 0, total: 0, locations: [], paging: null });
     }
     readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.clear("idle", "Symbol navigation dismissed."); };
     readonly disconnect = (): void => { this.cancel(); this.disconnected = true; this.publish({ status: "disconnected", message: "Navigation provider disconnected; local editing remains available." }); };
@@ -88,9 +98,10 @@ export class HostNavigationTools {
         const session: Session = { id, target: this.workspace.tabs.capture(tab), editor, controller }, listeners = new AbortController();
         this.sessions.add(session);
         const stop = controller.subscribe(() => {
-            const job = this.job;
-            if (job?.origin === session && controller.getSnapshot().status === "expired") {
-                queueMicrotask(() => { if (this.job === job) { this.metrics.expired++; this.clear("expired", "Captured navigation changed; request fresh results."); } });
+            const job = this.job, state = controller.getSnapshot();
+            if (job?.origin === session) {
+                if (state.result) { this.ready(job, state.result); return; }
+                if (state.status === "expired") queueMicrotask(() => { if (this.job === job) { this.metrics.expired++; this.clear("expired", "Captured navigation changed; request fresh results."); } });
             }
             this.publish();
         });
@@ -142,21 +153,18 @@ export class HostNavigationTools {
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Unsupported navigation capture." }); return; }
         const targets = new Map<string, Session>(); for (const s of this.sessions) if (this.available(s) && !targets.has(s.editor.view.documentId)) targets.set(s.editor.view.documentId, s); targets.set(document.id, origin);
         const returnPoint = this.history.capture(origin.editor); if (!returnPoint) return;
-        const job: Job = { kind, origin, returnPoint, sources, targets, timer: 0, page: undefined,
+        const job: Job = { kind, symbol, origin, returnPoint, sources, targets, timer: 0, page: undefined,
             followDefinition: keyboard && kind === "definition" && origin.editor.getSnapshot().focused };
         this.job = job; this.metrics.requested++; const win = origin.editor.element.ownerDocument.defaultView!;
         try {
             // The panel deadline also bounds host preparation and loading a target after the RPC reply.
             job.timer = win.setTimeout(() => { if (this.job === job) { this.metrics.failed++; this.clear("failed", "Navigation timed out; source is unchanged."); } }, 30000);
             const { includeDeclaration } = this.cell.get();
-            this.publish({ status: "pending", message: `Finding ${kind === "definition" ? "definitions" : "references"} of ${symbol} from ${origin.id}.`, work: 0, total, truncated: false });
-            void origin.controller.request(kind, offset, includeDeclaration).then(result => {
-                this.queries.completed++;
-                if (this.job !== job || origin.controller.getSnapshot().result !== result) return;
-                win.clearTimeout(job.timer); this.metrics.applied++;
-                const rows = this.showPage(job, result.pageFor(), { status: result.count ? "ready" : "empty", message: `${result.count} ${kind === "definition" ? "definition" : "reference"} locations for ${symbol}.`, work: total });
-                if (job.followDefinition && result.count === 1 && origin.editor.getSnapshot().focused) rows[0]!.open();
-            }).catch(error => { if (this.job !== job) return; this.queries.failed++; this.metrics.failed++; this.clear("failed", error instanceof Error ? error.message : "Navigation failed; source is unchanged."); });
+            this.publish({ status: "pending", message: `Finding ${kind === "definition" ? "definitions" : "references"} of ${symbol} from ${origin.id}.`, work: 0, total });
+            void origin.controller.request(kind, offset, includeDeclaration).catch(error => {
+                if (this.job !== job) return;
+                this.queries.failed++; this.metrics.failed++; this.clear("failed", error instanceof Error ? error.message : "Navigation failed; source is unchanged.");
+            });
         } catch (error) { this.metrics.failed++; this.clear("failed", error instanceof Error ? error.message : "Navigation is unavailable."); }
     }
     private place(job: Job, at: NavigationDestination): boolean {
@@ -171,9 +179,16 @@ export class HostNavigationTools {
         } finally { this.presenting = false; }
     }
     private open(job: Job, choice: NavigationChoice, title: string): void {
-        choice.open(at => {
-            if (job.returnPoint.visit(() => this.place(job, at))) this.publish({ message: `Opened a captured ${job.kind} location in ${title}.` });
-        });
+        try {
+            choice.open(at => {
+                if (job.returnPoint.visit(() => this.place(job, at))) this.publish({ message: `Opened a captured ${job.kind} location in ${title}.` });
+            });
+        } catch (error) {
+            if (this.job === job) {
+                this.metrics.failed++;
+                this.publish({ message: error instanceof Error ? error.message : "The host could not open the destination." });
+            }
+        }
     }
     readonly returnToOrigin = (): void => {
         if (this.active && !this.canCapture(this.active.editor.view.documentId)) return;
@@ -198,6 +213,6 @@ export class HostNavigationTools {
         try { this.workspace.releaseDocument(this.companion); this.companion = undefined; this.publish(); return true; } catch { return false; }
     }
     debug() { return { ...this.metrics, queries: { ...this.queries }, sessions: [...this.sessions].map(s => ({ id: s.id, documentId: s.editor.view.documentId })), subscriptions: this.cell.count(),
-        pending: this.cell.get().status === "pending", results: this.cell.get().count, scope: this.job?.sources.size ?? 0, companion: this.companion ?? null, transport: this.job?.origin.controller.getDiagnostics() ?? null, disposed: this.disposed }; }
+        pending: this.cell.get().status === "pending", results: this.job?.page?.count ?? 0, scope: this.job?.sources.size ?? 0, companion: this.companion ?? null, transport: this.job?.origin.controller.getDiagnostics() ?? null, disposed: this.disposed }; }
     dispose(): void { if (this.disposed) return; this.cancel(); this.history.dispose(); this.disposed = true; this.active = undefined; this.publish(); }
 }

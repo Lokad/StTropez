@@ -12,7 +12,7 @@ export function navigationPanelModel(tools: NavigationPanelTools, state: Navigat
         actions: [
             { label: "Find definition", invoke: tools.findDefinition, disabled: !state.available || pending || state.disconnected },
             { label: "Find references", invoke: tools.findReferences, disabled: !state.available || pending || state.disconnected },
-            { label: "Cancel symbol navigation", invoke: tools.cancel, disabled: state.requestView === null },
+            { label: "Cancel symbol navigation", invoke: tools.cancel, disabled: !state.canCancel },
             { label: "Return to navigation origin", invoke: tools.returnToOrigin, disabled: !state.canReturn },
             { label: "Previous navigation results", reviewKey: paging?.key, invoke: paging?.previous ?? null, disabled: !paging?.previous },
             { label: "Next navigation results", reviewKey: paging?.key, invoke: paging?.next ?? null, disabled: !paging?.next },

@@ -186,9 +186,9 @@ test("navigation presentation keeps a captured target while a newer snapshot sup
     const tools: Parameters<typeof navigationPanelModel>[0] = { findDefinition: noop, findReferences: noop, cancel: noop, returnToOrigin: noop,
         addCompanion: noop, disconnect: noop, reconnect: noop, setIncludeDeclaration: noop };
     let formatted = 0;
-    const state: NavigationSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, syncedDocuments: 1, view: "primary", requestView: "primary",
-        paging: { key: 7, previous: null, next: noop }, status: "ready", message: "Captured results", work: 1, total: 1, includeDeclaration: true, count: 70, truncated: false, canReturn: false,
-        locations: Object.freeze([Object.freeze({ document: "first", revision: 1, from: 2, to: 5, declaration: true, ordinal: 0,
+    const state: NavigationSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, canCancel: true,
+        paging: { key: 7, previous: null, next: noop }, status: "ready", message: "Captured results", work: 1, total: 1, includeDeclaration: true, canReturn: false,
+        locations: Object.freeze([Object.freeze({ declaration: true, ordinal: 0,
             get title() { formatted++; return "First"; }, line: 1, column: 3, open: () => { opened.push([7, 0]); } })]) });
     const first = navigationPanelModel(tools, state), statusOnly = navigationPanelModel(tools, { ...state, message: "Origin focused", canReturn: true });
     assert.equal(formatted, 0, "status presentation does not format the retained result list");

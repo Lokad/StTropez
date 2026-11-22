@@ -34,10 +34,11 @@ test("the navigation panel opens a declaration loaded by the host resolver and r
         const url = new URL("/lsp-fixture", location.href); url.protocol = "ws:";
         const provider = new BrowserLspWorkspace(ws, { connect: signal => openWebSocketTransport(url.href, { signal }),
             resolveTarget: async uri => uri === "library:types" ? { text: "// declarations\ntype Currency = string", languageId: "generic" } : undefined });
-        let destination: typeof editor | undefined;
-        const host = new HostNavigationTools(ws, () => true, id =>
-            destination = mountTextEditor(document.getElementById("destination")!, ws, id, { ariaLabel: "Declaration" }),
-            { provider, prepare: () => async () => {} });
+        let destination: typeof editor | undefined, attempts = 0;
+        const host = new HostNavigationTools(ws, () => true, id => {
+            if (++attempts === 1) throw new Error("Declaration pane is unavailable.");
+            return destination = mountTextEditor(document.getElementById("destination")!, ws, id, { ariaLabel: "Declaration" });
+        }, { provider, prepare: () => async () => {} });
         const detach = host.attach("source", tab, editor), removePanel = mountNavigationPanel(document.getElementById("panel")!, host);
         editor.focus();
         return async () => {
@@ -50,6 +51,9 @@ test("the navigation panel opens a declaration loaded by the host resolver and r
     await page.getByRole("button", { name: "Find definition", exact: true }).click();
     const row = page.getByRole("button", { name: "library:types:2:6 · declaration", exact: true });
     await expect(row).toBeVisible(); await row.click();
+    await expect(page.getByLabel("Symbol navigation status", { exact: true })).toHaveText("Declaration pane is unavailable.");
+    await expect(page.getByRole("button", { name: "Return to navigation origin" })).toBeDisabled();
+    await row.click();
     const target = page.getByRole("textbox", { name: "Declaration" });
     await expect(target).toBeFocused(); await expect(target).toHaveAttribute("readonly", "");
     expect(await target.evaluate(node => { const field = node as HTMLTextAreaElement; return field.value.slice(field.selectionStart, field.selectionEnd); })).toBe("Currency");

@@ -371,6 +371,7 @@ A request made in the review itself expires when that pane closes.
 If you leave the source while F12 is pending, choose the destination in the results panel to open it.
 The navigation panel also accepts declarations loaded by a host URI resolver. It uses the
 returned document's text and revision to label the result and select its range.
+If the host cannot open the pane, the panel shows the error. You can retry the same result. Return records successful visits.
 If references refresh while you hold Next or Previous, the new list stays on its first page.
 
 F4 opens the module links list. Escape dismisses the list and returns focus to its source if that
