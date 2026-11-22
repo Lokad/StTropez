@@ -19,7 +19,7 @@ export { createDiagnosticController } from "./diagnostic-controller.ts";
 export { createCodeActionController } from "./code-action-controller.ts";
 export { createHoverController } from "./hover-controller.ts";
 export { createNavigationController } from "./navigation-controller.ts";
-export type { NavigationController, NavigationControllerOptions, NavigationSnapshot, NavigationResult } from "./navigation-controller.ts";
+export type { NavigationController, NavigationControllerOptions, NavigationSnapshot, NavigationResult, NavigationChoice, NavigationDestination } from "./navigation-controller.ts";
 export type { HoverController, HoverControllerOptions, HoverDiagnostics, HoverSnapshot } from "./hover-controller.ts";
 export type { CodeActionController, CodeActionControllerOptions, CodeActionSnapshot, CodeActionChoice, CodeActionPreview, CodeActionCommand, CodeActionExecution } from "./code-action-controller.ts";
 export type { DiagnosticController, DiagnosticControllerOptions, DiagnosticSnapshot, EditorDiagnostic } from "./diagnostic-controller.ts";

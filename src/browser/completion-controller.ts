@@ -10,6 +10,7 @@ import type { TextBuffer } from "../core/text-buffer.ts";
 import type { FoldIndex } from "../core/folding.ts";
 import type { TextEditor } from "./text-editor.ts";
 import type { DecorationLayer } from "./decoration-layers.ts";
+import { sameEditAuthority } from "./captured-view.ts";
 import { RpcError, createLspCompletionClient, lspCompletionPlan } from "../protocol/index.ts";
 import type { LspCall, LspCompletion, LspCompletionBatch, LspCompletionResolution, LspCompletions, LspCompletionFallback, LspDocument, LspScopeAccess, LspWorkspace, JsonValue } from "../protocol/index.ts";
 import { Store } from "../core/observable.ts";
@@ -68,12 +69,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     const available = () => !disposed && editor.element.isConnected && !editor.signal.aborted && ownsTextSurface(workspace, view, target);
     const idle = () => { const m = editor.activity(); return !m.composing && !m.pendingInput && !m.pendingCommand && !m.pendingWord && !m.pendingGrapheme && !m.disposed && !editor.input.disabled && (options.canCapture?.() ?? true); };
     const authority = resource.metadata.getSnapshot;
-    const authorityCurrent = (before: ResourceMetadata) => {
-        const after = authority(), left = before.capabilities.edit, right = after.capabilities.edit;
-        return before === after || before.state === after.state
-            && (left === right || left.length === right.length && left.every((origin, index) => origin === right[index]))
-            && before.editLock?.owner === after.editLock?.owner && before.editLock?.origin === after.editLock?.origin;
-    };
+    const authorityCurrent = (before: ResourceMetadata) => sameEditAuthority(before, authority());
     const indentationCurrent = (before: Job["indentation"]) => { const after = editor.settings().language; return before.tabSize === after.tabSize && before.insertSpaces === after.insertSpaces; };
     const current = (captured: Job) => job === captured && !captured.cancelled && available() && idle() && indentationCurrent(captured.indentation) && workspace.document(documentId).revision === captured.revision && workspace.document(documentId).buffer === captured.buffer
         && editor.view.getSnapshot().selectionSet === captured.selections && captured.foldIndex.sameProjection(editor.view.folding.getSnapshot().index) && authorityCurrent(captured.authority) && captured.lease.active();

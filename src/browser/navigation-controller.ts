@@ -1,28 +1,53 @@
 import { Store } from "../core/observable.ts";
+import type { Observable } from "../core/observable.ts";
 import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
 import { createLspNavigationClient } from "../protocol/lsp-navigation.ts";
+import type { LspLocation } from "../protocol/lsp-features.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
-import { captureViewRequest } from "./captured-view.ts";
+import { captureViewRequest, sameEditAuthority } from "./captured-view.ts";
 import { bindDefinitionPointer } from "./definition-pointer.ts";
 import type { DefinitionHit } from "./definition-pointer.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 type Client = ReturnType<typeof createLspNavigationClient>;
 type Preview = Awaited<ReturnType<Client["prepareDefinition"]>>;
-export type NavigationResult = Awaited<ReturnType<Client["run"]>>;
+type Reply = Awaited<ReturnType<Client["run"]>>;
+export type NavigationDestination = Omit<LspLocation, "target"> & Readonly<{ document: LspLocation["target"]["document"] }>;
+export type NavigationChoice = NavigationDestination & Readonly<{ open: (present: (destination: NavigationDestination) => void) => boolean }>;
+export type NavigationResult = Readonly<{ count: number; locationAt: (index: number) => NavigationChoice | undefined }>;
 type Kind = "definition" | "references";
 export type NavigationControllerOptions = Readonly<{
     documents?: () => readonly DocumentSnapshot[]; canCapture?: () => boolean;
+    /** A view-bound chooser expires when its source caret or folded projection changes. */
+    resultLifetime?: "document" | "view";
     prepareRequest?: (kind: Kind) => LspPrepare | undefined;
     /** Handle a modifier click through the host's usual definition command. Call request synchronously to reuse its lookup. */
     onDefinition?: (offset: number) => void;
 }>;
-export type NavigationSnapshot = Readonly<{ status: "idle" | "pending" | "ready" | "empty" | "failed" | "disposed"; result: NavigationResult | null }>;
+export type NavigationSnapshot = Readonly<{ status: "idle" | "pending" | "ready" | "empty" | "expired" | "failed" | "disposed"; result: NavigationResult | null }>;
+export type NavigationController = Observable<NavigationSnapshot> & Readonly<{
+    request: (kind?: Kind, offset?: number, includeDeclaration?: boolean) => Promise<NavigationResult>;
+    cancel: () => void; dispose: () => void; getDiagnostics: () => ReturnType<Client["snapshot"]> | null;
+}>;
 const idle: NavigationSnapshot = Object.freeze({ status: "idle", result: null });
 
+function navigationResult(reply: Reply, canOpen: () => boolean): NavigationResult {
+    return Object.freeze({ count: reply.locations.length, locationAt(index: number) {
+        if (!Number.isSafeInteger(index)) return;
+        const location = reply.locations[index];
+        if (!location) return;
+        const { target, from, to, originRange, targetRange } = location;
+        const destination = Object.freeze({ document: target.document, from, to, originRange, targetRange });
+        return Object.freeze({ ...destination, open(present: (at: NavigationDestination) => void) {
+            if (!canOpen()) return false;
+            present(destination); return true;
+        } });
+    } });
+}
+
 /** A passive definition lookup can paint a link. Only an explicit request resolves its target URIs. */
-export function createNavigationController(editor: TextEditor, provider: LspWorkspace, options: NavigationControllerOptions = {}) {
+export function createNavigationController(editor: TextEditor, provider: LspWorkspace, options: NavigationControllerOptions = {}): NavigationController {
     const { workspace, view, tab } = editor;
     if (editor.signal.aborted || !ownsTextSurface(workspace, view, tab)) throw new Error("Navigation requires a live document view.");
     const notifications = workspace.createNotificationScope(), state = new Store(idle, notifications);
@@ -36,11 +61,23 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
     const capture = () => captureViewRequest(workspace, tab, view, { available });
     type Source = NonNullable<ReturnType<typeof capture>>;
     type Hover = { hit: DefinitionHit; client: Client; source: Source; reply: Promise<Preview>; result?: Preview };
-    let hover: Hover | undefined, activation: Hover | undefined, explicit: Client | undefined, origin: Source | undefined;
+    type Request = { client: Client; source?: Source; stops: (() => void)[]; expired: boolean; reply?: Reply };
+    let hover: Hover | undefined, activation: Hover | undefined, explicit: Request | undefined;
     const publish = (status: NavigationSnapshot["status"], result: NavigationResult | null = null) => notifications.publish(state, Object.freeze({ status, result }));
     const release = (job?: Hover) => { job?.source.cancel(); job?.client.dispose(); };
     const leave = () => { if (hover) { const old = hover; hover = undefined; layer.clear(); release(old); } };
-    const clearExplicit = () => { const client = explicit, source = origin; explicit = undefined; origin = undefined; source?.cancel(); client?.dispose(); };
+    const clearExplicit = () => {
+        const job = explicit; explicit = undefined;
+        if (!job) return;
+        for (const stop of job.stops.splice(0)) stop();
+        job.source?.cancel(); delete job.source; delete job.reply; job.client.dispose();
+    };
+    const expire = (job: Request) => {
+        if (explicit !== job || job.expired) return;
+        job.expired = true;
+        // A document observer cannot release the request's resource leases during delivery.
+        queueMicrotask(() => { if (explicit === job) { clearExplicit(); publish("expired"); } });
+    };
     const cancel = () => { if (!events.signal.aborted) { notifications.assertWritable(); leave(); clearExplicit(); publish("idle"); } };
     const project = (source: Source) => options.documents?.() ?? [source.document];
     const inside = (offset: number, range: Readonly<{ from: number; to: number }>) => offset >= range.from && offset < range.to;
@@ -70,25 +107,48 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
         if (prepared) activation = undefined;
         leave(); clearExplicit();
         const source = prepared?.source ?? capture();
-        if (!source || !source.isCurrent()) { release(prepared); throw new Error("Navigation source is unavailable."); }
-        const client = prepared?.client ?? createLspNavigationClient(provider); explicit = client; origin = source;
-        const abort = () => { if (origin === source) { clearExplicit(); publish("idle"); } };
+        if (!source || !source.isCurrent()) { release(prepared); publish("expired"); throw new Error("Navigation source is unavailable."); }
+        const client = prepared?.client ?? createLspNavigationClient(provider);
+        const job: Request = { client, source, stops: [], expired: false }; explicit = job;
+        const abort = () => { if (job.source) expire(job); };
         source.signal.addEventListener("abort", abort, { once: true });
+        job.stops.push(() => source.signal.removeEventListener("abort", abort));
         try {
+            const documents = project(source);
+            if (tab) job.stops.push(workspace.tabs.subscribe(() => { if (!ownsTextSurface(workspace, view, tab)) expire(job); }));
+            for (const doc of documents) {
+                const handle = workspace.observeDocument(doc.id), metadata = workspace.resourceForDocument(doc.id).metadata;
+                const permission = metadata.getSnapshot();
+                const changed = () => {
+                    const current = handle.getSnapshot(), access = metadata.getSnapshot();
+                    if (current?.revision !== doc.revision || current.buffer !== doc.buffer || !sameEditAuthority(permission, access)) expire(job);
+                };
+                job.stops.push(handle.subscribe(changed), metadata.subscribe(changed)); changed();
+            }
+            if (job.expired) throw new Error("Navigation project changed.");
             publish("pending");
-            let result: NavigationResult;
+            let reply: Reply;
             if (prepared) {
-                const reply = await prepared.reply;
-                if (!source.isCurrent() || !reply.isCurrent()) throw new Error("Definition link expired.");
-                result = reply.originRange && !inside(offset, reply.originRange) && offset !== prepared.hit.offset
-                    ? await client.run(project(source), source.document.id, offset, kind, includeDeclaration, options.prepareRequest?.(kind))
-                    : await reply.resolve();
-            } else result = await client.run(project(source), source.document.id, offset, kind, includeDeclaration, options.prepareRequest?.(kind));
-            if (explicit !== client || !source.isCurrent() || !result.isCurrent()) throw new Error("Navigation source changed.");
-            origin = undefined; source.cancel(); publish(result.locations.length ? "ready" : "empty", result); return result;
+                const preview = await prepared.reply;
+                if (!source.isCurrent() || !preview.isCurrent()) { expire(job); throw new Error("Definition link expired."); }
+                reply = preview.originRange && !inside(offset, preview.originRange) && offset !== prepared.hit.offset
+                    ? await client.run(documents, source.document.id, offset, kind, includeDeclaration, options.prepareRequest?.(kind))
+                    : await preview.resolve();
+            } else reply = await client.run(documents, source.document.id, offset, kind, includeDeclaration, options.prepareRequest?.(kind));
+            if (explicit !== job || job.expired || !source.isCurrent() || !reply.isCurrent()) {
+                expire(job); throw new Error("Navigation source changed.");
+            }
+            if (options.resultLifetime !== "view") { delete job.source; source.cancel(); }
+            job.reply = reply;
+            const result = navigationResult(reply, () => {
+                notifications.assertWritable();
+                return explicit === job && !job.expired && available() && ownsTextSurface(workspace, view, tab)
+                    && (!job.source || job.source.isCurrent()) && reply.isCurrent();
+            });
+            publish(result.count ? "ready" : "empty", result); return result;
         } catch (error) {
-            if (explicit === client) { clearExplicit(); publish("failed"); } throw error;
-        } finally { source.signal.removeEventListener("abort", abort); }
+            if (explicit === job) { clearExplicit(); publish(job.expired ? "expired" : "failed"); } throw error;
+        }
     }
     bindDefinitionPointer(editor, inspect, leave, hit => {
         if (!matches(hover, hit)) inspect(hit);
@@ -101,9 +161,9 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
     }, events.signal);
     editor.input.addEventListener("compositionstart", cancel, { signal: events.signal });
     const stop = provider.subscribe(() => {
-        const job = hover, result = state.get().result;
+        const job = hover, request = explicit;
         if (job?.result && !job.result.isCurrent()) queueMicrotask(() => { if (hover === job) leave(); });
-        if (result && !result.isCurrent()) queueMicrotask(() => { if (state.get().result === result) { clearExplicit(); publish("idle"); } });
+        if (request?.reply && !request.reply.isCurrent()) expire(request);
     });
     function dispose() {
         if (events.signal.aborted) return;
@@ -115,6 +175,5 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
         if (events.signal.aborted) throw new Error("Navigation controller is disposed.");
         const stop = state.observable.subscribe(listener), unsubscribe = () => { stop(); subscribers.delete(unsubscribe); };
         subscribers.add(unsubscribe); return unsubscribe;
-    }, getDiagnostics: () => explicit?.snapshot() ?? null });
+    }, getDiagnostics: () => explicit?.client.snapshot() ?? null });
 }
-export type NavigationController = ReturnType<typeof createNavigationController>;

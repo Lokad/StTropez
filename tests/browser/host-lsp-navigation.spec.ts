@@ -51,6 +51,14 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await button(page, "Return to navigation origin").click(); await waitForNavigation(page); await expect(field(page)).toBeFocused(); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "primary")!.selectionSet);
         await expect(results(page).first()).toHaveAttribute("data-retained", "navigation-row");
         await button(page, "Find references").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(3);
+        const sameList = results(page).filter({ hasText: "Navigation companion:" });
+        await expect(sameList).toHaveCount(2);
+        for (const [row, from] of [[0, 6], [1, "const catalogue = 1;\r\n".length]] as const) {
+            await sameList.nth(row).click(); await expect(field(page, "Secondary source")).toBeFocused();
+            expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")!.selection)
+                .toMatchObject({ anchor: from, head: from + "catalogue".length });
+        }
+        await button(page, "Return to navigation origin").click(); await expect(field(page)).toBeFocused();
         await page.getByRole("checkbox", { name: "Include declarations in references", exact: true }).uncheck(); await button(page, "Find references").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(2);
         expect((await snapshot(page)).source.id).toBe(before.source.id); expect((await snapshot(page)).source.revision).toBe(before.source.revision); expect((await snapshot(page)).history).toEqual(before.history);
         expect(methods.some(message => message.method === "textDocument/definition" && JSON.stringify(message.params?.position) === JSON.stringify({ line: 0, character: 3 }))).toBe(true); expect(linkedResponses).toBeGreaterThan(0);

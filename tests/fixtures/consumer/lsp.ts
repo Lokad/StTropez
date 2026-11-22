@@ -52,7 +52,20 @@ hover.subscribe(() => {
     if (state.status === "ready") { notes.hover = state.text; result.textContent = state.text; }
 });
 command("Definition", async () => { const value = await navigation.request("definition", position());
-    if (value.isCurrent()) { notes.navigation = value.locations[0]?.target.document.documentId; result.textContent = `Definition targets: ${value.locations.length}`; } });
+    result.textContent = `Definition targets: ${value.count}`;
+    const choice = value.locationAt(0); if (!choice) return;
+    const open = document.createElement("button"); open.textContent = "Open definition";
+    open.onclick = () => {
+        const current = choice.open(at => { notes.navigation = at.document.documentId; });
+        open.textContent = current ? "Opened definition" : "Expired definition";
+    };
+    result.append(open); });
+command("Edit companion", () => {
+    const doc = workspace.document(companion.documentId);
+    const changed = workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "host",
+        edits: [{ from: doc.buffer.length, to: doc.buffer.length, insert: "\n" }] });
+    if (!changed.applied) throw new Error(changed.reason);
+});
 command("Rename preview", async () => { plan = await rename.run(project(), source.documentId, position(), "inventory");
     const preview = previewLspWorkspaceEdit(plan, id => workspace.document(id as DocumentId).title);
     notes.renameEdits = preview.count; result.textContent = `Rename edits: ${notes.renameEdits}\n${preview.notes.map(note => `${note.title}: ${note.before} → ${note.insert}`).join("\n")}`; });

@@ -39,6 +39,15 @@ test("real definition and reference navigation open the captured file and range 
     await expect(locations).toContainText("No definition in this sample.");
     await locations.getByRole("button", { name: "Close locations" }).press("Escape");
     await expect(locations).toBeHidden(); await expect(source).toBeFocused();
+    await symbol(page); await source.press("Shift+F12");
+    const pricingChoice = locations.getByRole("button", { name: /^pricing.ts ·/ });
+    await expect(pricingChoice).toBeVisible();
+    const previousChoice = await pricingChoice.elementHandle();
+    await source.pressSequentially("x"); await expect(locations).toBeHidden();
+    const selection = () => source.evaluate(node => { const input = node as HTMLTextAreaElement; return [input.selectionStart, input.selectionEnd]; });
+    const before = await selection();
+    await previousChoice!.evaluate(node => (node as HTMLButtonElement).click()); await previousChoice!.dispose();
+    await expect(source).toBeFocused(); expect(await selection()).toEqual(before);
 });
 
 test("real rename previews a captured name, rejects an old name and shares one undo across files", async ({ page }) => {

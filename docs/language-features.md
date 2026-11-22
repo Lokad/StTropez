@@ -360,8 +360,13 @@ the gesture. Alt+click stays available for multiple carets.
 Supply the project with `options.documents`. A host that opens tabs or shows a chooser handles
 `options.onDefinition(offset)` by calling `controller.request("definition", offset)` during the
 callback. This reuses the hover reply. F12 and reference commands can call the same controller
-at the caret. Each result contains the validated locations and an `isCurrent()` check for
-delayed choices. Without a callback, the controller publishes the result through `getSnapshot()`
+at the caret. Read `result.count` and call `result.locationAt(index)` for each displayed row.
+Keep that choice in the row's click handler. Its `open(present)` calls the host with the captured
+document and range while the choice is current. It returns false after cancellation, replacement,
+a change to the captured documents or a provider restart. The host opens the destination and owns
+its navigation history. A result list can open several choices as the caret moves. Set
+`resultLifetime: "view"` for a popup tied to the original selection and folds.
+Without a callback, the controller publishes the result through `getSnapshot()`
 and `subscribe()`. Call `cancel()` to dismiss navigation and `dispose()` to detach it.
 
 `createLspNavigationClient(provider).run(project, originId, offset, kind, includeDeclaration?,

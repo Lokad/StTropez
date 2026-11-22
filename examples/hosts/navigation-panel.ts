@@ -1,5 +1,5 @@
 import type { HostNavigationTools, NavigationSnapshot } from "./navigation.ts";
-type NavigationPanelTools = Pick<HostNavigationTools, "findDefinition" | "findReferences" | "cancel" | "returnToOrigin" | "previousPage" | "nextPage" | "addCompanion" | "disconnect" | "reconnect" | "setIncludeDeclaration" | "open">;
+type NavigationPanelTools = Pick<HostNavigationTools, "findDefinition" | "findReferences" | "cancel" | "returnToOrigin" | "previousPage" | "nextPage" | "addCompanion" | "disconnect" | "reconnect" | "setIncludeDeclaration">;
 
 /** Pure presentation of one captured snapshot; list rows are read only when a renderer needs them. */
 export function navigationPanelModel(tools: NavigationPanelTools, state: NavigationSnapshot) {
@@ -22,7 +22,7 @@ export function navigationPanelModel(tools: NavigationPanelTools, state: Navigat
         results: { label: "Navigation results", identity: `${token}:${state.page}:${state.count}:${state.status}`,
             items: () => state.locations.map(note => ({ key: `${token}:${note.ordinal}`,
                 label: `${note.title}:${note.line}:${note.column}${note.declaration ? " · declaration" : ""}`,
-                invoke: () => { if (token !== null) tools.open(token, note.ordinal); } } as const)) },
+                invoke: note.open } as const)) },
     } as const;
 }
 export function mountNavigationPanel(host: HTMLElement, tools: HostNavigationTools): () => void {

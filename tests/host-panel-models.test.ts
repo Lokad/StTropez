@@ -192,17 +192,16 @@ test("action controls invoke the choice and confirmation supplied by their snaps
 test("navigation presentation keeps a captured target while a newer snapshot supplies another page", () => {
     const opened: [number, number][] = [];
     const tools: Parameters<typeof navigationPanelModel>[0] = { findDefinition: noop, findReferences: noop, cancel: noop, returnToOrigin: noop,
-        previousPage: noop, nextPage: noop, addCompanion: noop, disconnect: noop, reconnect: noop, setIncludeDeclaration: noop,
-        open: (token, ordinal) => { opened.push([token, ordinal]); } };
+        previousPage: noop, nextPage: noop, addCompanion: noop, disconnect: noop, reconnect: noop, setIncludeDeclaration: noop };
     let formatted = 0;
     const state: NavigationSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, syncedDocuments: 1, view: "primary", requestView: "primary",
         token: 7, status: "ready", message: "Captured results", work: 1, total: 1, includeDeclaration: true, count: 70, truncated: false, page: 0, canReturn: false,
         locations: Object.freeze([Object.freeze({ document: "first", revision: 1, from: 2, to: 5, declaration: true, ordinal: 0,
-            get title() { formatted++; return "First"; }, line: 1, column: 3 })]) });
+            get title() { formatted++; return "First"; }, line: 1, column: 3, open: () => { opened.push([7, 0]); } })]) });
     const first = navigationPanelModel(tools, state), statusOnly = navigationPanelModel(tools, { ...state, message: "Origin focused", canReturn: true });
     assert.equal(formatted, 0, "status presentation does not format the retained result list");
     assert.equal(statusOnly.results.identity, first.results.identity);
-    const newer = navigationPanelModel(tools, { ...state, token: 8, page: 1, locations: [{ ...state.locations[0]!, ordinal: 64 }] });
+    const newer = navigationPanelModel(tools, { ...state, token: 8, page: 1, locations: [{ ...state.locations[0]!, ordinal: 64, open: () => { opened.push([8, 64]); } }] });
     newer.results.items()[0]!.invoke(); first.results.items()[0]!.invoke();
     assert.deepEqual(opened, [[8, 64], [7, 0]], "old rows never resolve through the newer result page");
     assert.notEqual(newer.results.identity, first.results.identity);

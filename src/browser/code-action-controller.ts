@@ -4,7 +4,7 @@ import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentSnapshot, TabTarget } from "../core/workspace.ts";
 import { RpcError, applyLspWorkspaceEdit, createLspActionClient, previewLspWorkspaceEdit } from "../protocol/index.ts";
 import type { LspCodeAction, LspCommandPolicy, LspCommandReceipt, LspCommandScope, LspPrepare, LspWorkspace, LspWorkspaceEdit, LspWorkspaceEditPreview } from "../protocol/index.ts";
-import { captureViewRequest } from "./captured-view.ts";
+import { captureViewRequest, sameEditAuthority } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import type { TextEditor } from "./text-editor.ts";
 
@@ -99,12 +99,11 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
         j.documents.set(doc.id, doc);
         if (doc.id === view.documentId) return;
         const metadata = workspace.resourceForDocument(doc.id).metadata;
-        const authority = () => { const m = metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); };
-        const permission = authority(), lease = workspace.acquire(doc.resourceId);
+        const permission = metadata.getSnapshot(), lease = workspace.acquire(doc.resourceId);
         j.stops.push(lease.release, workspace.observeDocument(doc.id).subscribe(() => {
             const next = workspace.observeDocument(doc.id).getSnapshot();
             if (next?.revision !== doc.revision || next.buffer !== doc.buffer) expire(j);
-        }), metadata.subscribe(() => { if (authority() !== permission) expire(j); }));
+        }), metadata.subscribe(() => { if (!sameEditAuthority(permission, metadata.getSnapshot())) expire(j); }));
     }
     function retainEdits(j: Job, actions: readonly LspCodeAction[]): void {
         for (const action of actions) for (const change of action.edit?.documents ?? []) {

@@ -1,5 +1,5 @@
 import { ownsTextSurface } from "../core/workspace.ts";
-import type { DocumentSnapshot, DocumentView, EditOrigin, TabTarget, Workspace } from "../core/workspace.ts";
+import type { DocumentSnapshot, DocumentView, EditOrigin, ResourceMetadata, TabTarget, Workspace } from "../core/workspace.ts";
 import type { FoldingSnapshot } from "../core/folding.ts";
 import type { SelectionSet } from "../core/selections.ts";
 
@@ -16,6 +16,13 @@ export type CapturedViewRequest<T extends TabTarget | undefined = TabTarget> = R
     commit: (operation: () => boolean) => boolean;
 }>;
 
+export function sameEditAuthority(before: ResourceMetadata, after: ResourceMetadata): boolean {
+    const left = before.capabilities.edit, right = after.capabilities.edit;
+    return before === after || before.state === after.state
+        && (left === right || left.length === right.length && left.every((origin, index) => origin === right[index]))
+        && before.editLock?.owner === after.editLock?.owner && before.editLock?.origin === after.editLock?.origin;
+}
+
 /** One retained view context. Observable interruptions latch even if the original state returns. */
 export function captureViewRequest<T extends TabTarget | undefined>(workspace: Workspace, target: T, view: DocumentView,
     options: CapturedViewOptions = {}): CapturedViewRequest<T> | undefined {
@@ -26,8 +33,7 @@ export function captureViewRequest<T extends TabTarget | undefined>(workspace: W
     const resource = workspace.resourceForDocument(document.id), permission = resource.metadata.getSnapshot();
     if (permission.state !== "ready" || editOrigin !== undefined && (!permission.capabilities.edit.includes(editOrigin) || permission.editLock !== null)) return;
     const selectionSet = view.getSnapshot().selectionSet, folding = view.folding.getSnapshot();
-    const authority = () => { const state = resource.metadata.getSnapshot(); return JSON.stringify([state.state, state.capabilities.edit, state.editLock]); };
-    const capturedAuthority = authority(), lease = workspace.acquire(resource.id), abort = new AbortController();
+    const lease = workspace.acquire(resource.id), abort = new AbortController();
     let active = true; const stops: (() => void)[] = [];
     const detach = () => { active = false; for (const stop of stops.splice(0)) stop(); };
     const release = () => { try { lease.release(); } finally { abort.abort(); } };
@@ -39,7 +45,7 @@ export function captureViewRequest<T extends TabTarget | undefined>(workspace: W
     const matches = () => {
         return lease.active() && ownsTextSurface(workspace, view, capturedTarget)
             && workspace.observeDocument(document.id).getSnapshot()?.revision === document.revision && view.getSnapshot().selectionSet === selectionSet
-            && folding.index.sameProjection(view.folding.getSnapshot().index) && authority() === capturedAuthority && available();
+            && folding.index.sameProjection(view.folding.getSnapshot().index) && sameEditAuthority(permission, resource.metadata.getSnapshot()) && available();
     };
     const isCurrent = () => {
         if (!active) return false;

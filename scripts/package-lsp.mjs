@@ -30,7 +30,14 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         const depth = (await state()).history.undoDepth; await button("Apply completion").click(); assert.equal((await state()).history.undoDepth, depth + 1);
         assert.ok((await text()).startsWith("// fixture import\r\nconst sampleValue")); await input.press("Control+z"); assert.equal(await text(), typed);
         await button("Hover").click(); await expect.poll(async () => (await state()).notes.hover).toContain("Fixture consumer+opaque:");
-        await button("Definition").click(); await expect.poll(async () => (await state()).notes.navigation).toBe((await state()).companion);
+        const beforeNavigation = (await state()).diagnostics.leases;
+        await button("Definition").click(); await button("Open definition").click();
+        await expect.poll(async () => (await state()).notes.navigation).toBe((await state()).companion);
+        const priorChoice = await button("Opened definition").elementHandle(); assert.ok(priorChoice);
+        await button("Edit companion").click();
+        await priorChoice.evaluate(node => /** @type {HTMLButtonElement} */ (node).click()); assert.equal(await priorChoice.textContent(), "Expired definition");
+        await priorChoice.dispose(); assert.equal(await text(), typed);
+        await expect.poll(async () => (await state()).diagnostics.leases).toBeLessThanOrEqual(beforeNavigation);
         await button("Rename preview").click(); await expect.poll(async () => (await state()).notes.renameEdits ?? 0).toBeGreaterThan(1);
         const history = (await state()).history.undoDepth; await button("Apply rename").click(); await expect(page.locator("#result")).toHaveText("Rename applied");
         assert.equal((await state()).history.undoDepth, history + 1); assert.ok((await text()).includes("inventory")); await input.press("Control+z"); assert.equal(await text(), typed);
@@ -68,8 +75,14 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         assert.ok(counts && typeof counts === "object" && !Array.isArray(counts)
             && "initialize" in counts && "failures" in counts && "documents" in counts, "Expected synchronization counters");
         assert.equal(counts.initialize, 1); assert.deepEqual(counts.failures, []);
-        assert.ok(Array.isArray(counts.documents) && counts.documents.every(document => document && typeof document === "object"
-            && !Array.isArray(document) && "open" in document && document.open === 1));
+        assert.ok(Array.isArray(counts.documents)); assert.equal(counts.documents.length, 2);
+        const companionUri = `consumer+opaque:project/${encodeURIComponent((await state()).companionResource)}`;
+        const lifetimes = Object.fromEntries(counts.documents.map(document => {
+            assert.ok(document && typeof document === "object" && !Array.isArray(document));
+            return [document.uri === companionUri ? "companion" : "source", { open: document.open, close: document.close }];
+        }));
+        // Expiring navigation closes the unopened companion. Rename opens it again.
+        assert.deepEqual(lifetimes, { source: { open: 1, close: 0 }, companion: { open: 2, close: 1 } });
         await page.evaluate(() => { window.publicLsp.stopCompletion(); window.publicLsp.diagnostics.request(); });
         await expect(marker).toHaveText("TODO");
         await button("Hover").click(); await expect.poll(async () => (await state()).notes.hover).toContain("Resolve this placeholder.");
