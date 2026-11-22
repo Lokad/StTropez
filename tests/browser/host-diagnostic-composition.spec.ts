@@ -74,8 +74,9 @@ for (const host of ["plain", "react"] as const) for (const phase of ["ordinary",
             // Cancellation retains the diagnostics; the same command now works without a new request.
             await diagnostic(page).click();
         } else if (phase === "commit") {
-            // Text edits expire diagnostics. A fresh worker request remains usable after composition.
-            await expect(diagnostic(page)).toHaveCount(0); await request(page); await diagnostic(page).click();
+            // LSP may publish the replacement before the next paint.
+            await expect(diagnostic(page)).toHaveText((todo + 2) + ": Resolve this placeholder.");
+            await diagnostic(page).click();
         }
         await ready(page); const edited = await snapshot(page);
         expect(selection(edited)).toMatchObject({ anchor: todo + groups * 2, head: todo + groups * 2 + 4 });

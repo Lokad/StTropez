@@ -1,7 +1,7 @@
 import type { HostLanguageTools } from "./language.ts";
 import { revealCompletionRow } from "../shared/language/completion-list.ts";
 type LanguageSnapshot = ReturnType<HostLanguageTools["state"]["getSnapshot"]>;
-type LanguagePanelTools = Pick<HostLanguageTools, "state" | "toolsRef" | "queryRef" | "replacementRef" | "keyFromTools" | "request" | "cancel" | "disconnect" | "reconnect" | "next" | "previous" | "replaceCurrent" | "replaceAll" | "cancelFind" | "foldSelection" | "expandFolds" | "focusEditor" | "selectDiagnostic" | "setQuery" | "setReplacement" | "setWholeWord" | "setMatchCase" | "setRegularExpression">;
+type LanguagePanelTools = Pick<HostLanguageTools, "state" | "toolsRef" | "queryRef" | "replacementRef" | "keyFromTools" | "request" | "cancel" | "disconnect" | "reconnect" | "next" | "previous" | "replaceCurrent" | "replaceAll" | "cancelFind" | "foldSelection" | "expandFolds" | "focusEditor" | "setQuery" | "setReplacement" | "setWholeWord" | "setMatchCase" | "setRegularExpression">;
 const capturedCommand = (tools: Pick<LanguagePanelTools, "state">, state: LanguageSnapshot, invoke: () => void) => () => {
     if (tools.state.getSnapshot() === state) invoke();
 };
@@ -50,7 +50,7 @@ export function languagePanelModel(tools: LanguagePanelTools, state: LanguageSna
         detail: { label: "Completion detail", text: state.provider?.completionDetail ?? "" },
         diagnosticStatus: { label: "Diagnostic status", text: state.provider?.diagnosticsPending ? "Diagnostics pending analysis." : "" },
         diagnostics: { label: "Source diagnostics", items: () => (state.provider?.diagnostics ?? []).map((diagnostic, index) => ({ key: `${diagnostic.from}:${diagnostic.to}:${index}`,
-            label: `${diagnostic.from}: ${diagnostic.message}`, invoke: capturedCommand(tools, state, () => tools.selectDiagnostic(index)) } as const)) },
+            label: `${diagnostic.from}: ${diagnostic.message}`, invoke: capturedCommand(tools, state, diagnostic.select) } as const)) },
         uncertain: { label: "Unversioned diagnostics", items: () => state.provider?.unversionedDiagnostics ?? [] },
         query: { label: "Find source", value: state.query, bind: tools.queryRef, change: tools.setQuery, disabled: false },
         replacement: { label: "Replacement", value: state.replacement, bind: tools.replacementRef, change: tools.setReplacement, disabled: state.readOnlyReference },
@@ -70,7 +70,7 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
     for (const [element, model] of [[status, initial.status], [detail, initial.detail], [diagnosticStatus, initial.diagnosticStatus], [findStatus, initial.find], [foldStatus, initial.folds]] as const) element.setAttribute("aria-label", model.label);
     const choices = owner.createElement("ul"), diagnostics = owner.createElement("ul"), uncertain = owner.createElement("ul"), nav = owner.createElement("div");
     choices.setAttribute("role", "listbox"); choices.setAttribute("aria-label", initial.choices.label); diagnostics.setAttribute("aria-label", initial.diagnostics.label); uncertain.setAttribute("aria-label", initial.uncertain.label);
-    choices.addEventListener("pointerdown", event => event.preventDefault(), { signal: listeners.signal });
+    for (const list of [choices, diagnostics]) list.addEventListener("pointerdown", event => event.preventDefault(), { signal: listeners.signal });
     const fields = [initial.query, initial.replacement].map(model => {
         const label = owner.createElement("label"), field = owner.createElement("input"); label.append(model.label, field); model.bind(field);
         field.addEventListener("input", () => model.change(field.value), { signal: listeners.signal }); return { label, field };

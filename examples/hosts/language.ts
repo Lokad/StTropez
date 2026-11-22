@@ -297,7 +297,6 @@ export class HostLanguageTools {
         session.editor.viewport.revealOffset(session.editor.view.getSnapshot().selection.head, { horizontal: "nearest", vertical: "nearest" }); session.editor.focus();
         this.cell.set({ ...this.cell.get(), foldMessage: "All folds expanded." });
     }
-    selectDiagnostic(index: number): void { this.active?.provider?.selectDiagnostic(index); }
     customRequest(method: string, params: JsonValue): Promise<JsonValue> {
         const provider = this.active?.provider; if (!provider?.customRequest) return Promise.reject(new Error("The active provider has no custom-message extension.")); return provider.customRequest(method, params);
     }

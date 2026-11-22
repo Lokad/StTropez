@@ -20,7 +20,6 @@ export function createLspProviderController(editor: TextEditor, options: LspProv
     const cell = new HostCell(read()), update = () => cell.set(read());
     const stopCompletion = controller.subscribe(update), stopDiagnostics = diagnostics.subscribe(update);
     return Object.freeze({ ...controller, ...cell.observable,
-        selectDiagnostic: (index: number) => diagnostics.getSnapshot().diagnostics[index]?.select() ?? false,
         disconnect: () => { controller.cancel(); options.provider.disconnect(); },
         setDelay: (value: number) => { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid fixture delay."); delay = value; },
         faultNext: (value: "malformed" | "failure") => { fault = value; },
