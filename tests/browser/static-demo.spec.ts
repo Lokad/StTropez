@@ -581,31 +581,35 @@ test("language commands pressed during startup follow the original caret and rep
     type HeldWorker = Window & { languageGate?: Gate };
     await page.addInitScript(() => {
         const gate: Gate = { completions: 0 }; (window as HeldWorker).languageGate = gate;
-        Worker.prototype.postMessage = new Proxy(Worker.prototype.postMessage, { apply(send, worker, args) {
-            if (args[0]?.start === true && Array.isArray(args[0].names)) {
-                gate.release = () => Reflect.apply(send, worker, args); return;
-            }
-            const request = typeof args[0] === "string" && JSON.parse(args[0]);
-            if (request?.method === "textDocument/completion") {
-                gate.completions++;
-                if (gate.holdCompletion) {
-                    gate.holdCompletion = false;
-                    const hold = (event: MessageEvent) => {
-                        if (typeof event.data !== "string") return;
-                        const reply = JSON.parse(event.data);
-                        if (reply.id !== request.id || !("result" in reply)) return;
-                        event.stopImmediatePropagation(); worker.removeEventListener("message", hold, true);
-                        gate.deliverCompletion = () => {
-                            const items = Array.isArray(reply.result) ? reply.result : reply.result?.items;
-                            if (!items?.some((item: { label: string }) => item.label === "calculateTotal")) throw new Error("Expected the original source's completion.");
-                            worker.dispatchEvent(new MessageEvent("message", { data: event.data }));
-                        };
+        window.Worker = class extends Worker {
+            constructor(url: string | URL, options?: WorkerOptions) {
+                super(url, options);
+                if (!new URL(url, document.baseURI).pathname.endsWith("/demo-language-worker.js")) return;
+                let heldId: number | undefined;
+                this.addEventListener("message", event => {
+                    if (heldId === undefined || typeof event.data !== "string") return;
+                    const reply = JSON.parse(event.data);
+                    if (reply.id !== heldId || !("result" in reply)) return;
+                    event.stopImmediatePropagation(); heldId = undefined;
+                    gate.deliverCompletion = () => {
+                        const items = Array.isArray(reply.result) ? reply.result : reply.result?.items;
+                        if (!items?.some((item: { label: string }) => item.label === "calculateTotal")) throw new Error("Expected the original source's completion.");
+                        this.dispatchEvent(new MessageEvent("message", { data: event.data }));
                     };
-                    worker.addEventListener("message", hold, true);
-                }
+                }, { capture: true });
+                this.postMessage = new Proxy(this.postMessage, { apply(send, worker, args) {
+                    if (args[0]?.start === true && Array.isArray(args[0].names)) {
+                        gate.release = () => Reflect.apply(send, worker, args); return;
+                    }
+                    const request = typeof args[0] === "string" && JSON.parse(args[0]);
+                    if (request?.method === "textDocument/completion") {
+                        gate.completions++;
+                        if (gate.holdCompletion) { gate.holdCompletion = false; heldId = request.id; }
+                    }
+                    return Reflect.apply(send, worker, args);
+                } });
             }
-            return Reflect.apply(send, worker, args);
-        } });
+        };
     });
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     const message = page.getByLabel("Language command", { exact: true });
@@ -661,6 +665,7 @@ test("language commands pressed during startup follow the original caret and rep
     await page.evaluate(() => { (window as HeldWorker).languageGate!.holdCompletion = true; });
     await source.press("Control+Space"); await release();
     await page.waitForFunction(() => !!(window as HeldWorker).languageGate!.deliverCompletion);
+    await expect(completions).toBeHidden();
     await page.locator('[data-file="pricing.ts"]').click();
     await pricing.press("Control+Home"); await pricing.press("Control+Shift+Space");
     await expect(message).toHaveText("No signature at this position.");
