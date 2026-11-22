@@ -32,7 +32,8 @@ export class HostActionsTools {
     private active: Session | undefined;
     private panel: Panel | undefined;
     private readonly stopReviewOwner: (() => void) | undefined;
-    private readonly moduleField = createPanelKeyBinding<HTMLInputElement>(() => (this.panel?.source ?? this.active)?.editor);
+    private get moduleSource() { return this.panel && this.cell.get().active ? this.panel.source : this.active; }
+    private readonly moduleField = createPanelKeyBinding<HTMLInputElement>(() => this.moduleSource?.editor);
 
     private disposed = false;
     private disconnected = false;
@@ -95,7 +96,7 @@ export class HostActionsTools {
                 this.fault = undefined; return beforeResolve(session, resolveSettings);
             } }), ...(review && { runCommand: command => review.beginAction({ ...command, editor }) }) });
         const s = { id, target, editor, controller };
-        const ownsModule = () => this.moduleField.focused && (this.panel?.source ?? this.active) === s;
+        const ownsModule = () => this.moduleField.focused && this.moduleSource === s;
         return attachPanelSession(this.sessions, s, (signal, register) => {
             onSourceFocus(editor, signal, () => { this.active = s; this.publish(); });
             editor.onEditIntent(() => {
@@ -118,7 +119,7 @@ export class HostActionsTools {
         });
     }
     readonly request = (): void => {
-        if (!this.active?.editor.commands.run("actions.request", "panel"))
+        if (!this.moduleSource?.editor.commands.run("actions.request", "panel"))
             this.publish({ message: "Focus an available source and finish typing before requesting a code action." });
     };
     private start(keyboard: boolean): void {
