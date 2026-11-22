@@ -26,7 +26,6 @@ export class HostLanguageTools {
     private detachedOwner: DetachedOwner | undefined;
     private stopFolds: (() => void) | undefined;
     private pendingFind: { kind: FindCommand["kind"]; session: Session; stop: () => void } | undefined;
-    private foldSerial = 0;
     private readonly cell = new HostCell<LanguageSnapshot>({ readOnlyReference: false, view: null, provider: null, providerError: null, find: null, folds: null, foldMessage: "", query: "", replacement: "", wholeWord: false, matchCase: true, regularExpression: false });
     readonly state = this.cell.observable;
     private queryElement: HTMLInputElement | null = null;
@@ -272,7 +271,10 @@ export class HostLanguageTools {
             if (first === last && !existing) return selection;
             const from = existing && first === last ? existing.from : document.buffer.offsetAt(first);
             const to = existing && first === last ? existing.to : last + 1 < document.buffer.lineCount ? document.buffer.offsetAt(last + 1) : document.buffer.length;
-            let id = existing?.id; if (!id) { do { id = `selection-fold-${++this.foldSerial}`; } while (ids.has(id)); ids.add(id); }
+            let id = existing?.id;
+            if (!id) {
+                do { id = `selection-fold-${this.workspace.allocateIdentity()}`; } while (ids.has(id));
+            }
             const at = ranges.findIndex(r => r.id === id); if (at < 0) ranges.push({ id, from, to, collapsed: true }); else ranges[at] = { id, from, to, collapsed: true };
             count++; const head = document.buffer.offsetAt(document.buffer.lineAt(from)); return { anchor: head, head };
         });
@@ -285,7 +287,10 @@ export class HostLanguageTools {
     }
     private expandRegions(session: Session): void {
         const folds = session.editor.view.folding, current = folds.getSnapshot();
-        if (!folds.setRanges(current, current.regions.map(r => ({ ...r, collapsed: false })))) return;
+        if (current.index.collapsedCount) {
+            const ids = current.regions.filter(region => region.collapsed).map(region => region.id);
+            if (!folds.setCollapsed(current, ids, false)) return;
+        }
         session.editor.viewport.revealOffset(session.editor.view.getSnapshot().selection.head, { horizontal: "nearest", vertical: "nearest" }); session.editor.focus();
         this.cell.set({ ...this.cell.get(), foldMessage: "All folds expanded." });
     }

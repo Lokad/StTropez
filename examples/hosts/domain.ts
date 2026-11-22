@@ -1,5 +1,5 @@
 import { onSourceFocus } from "./source-focus.ts";
-import { createFoldRegions, createSelectionSet, FoldIndex } from "../../src/index.ts";
+import { createFoldRegions } from "../../src/index.ts";
 import type { DocumentId, DocumentView, FoldRange, FoldingSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import type { DecorationLayer, TextEditor } from "../../src/browser/index.ts";
 import { FixtureDomainProvider, validateDomainResult } from "../../fixtures/language/domain.ts";
@@ -23,7 +23,6 @@ export class HostDomainTools {
     private active: Session | undefined;
     private job: Job | undefined;
     private disposed = false;
-    private foldSerial = 0;
     private readonly cell = new HostCell<DomainSnapshot>({ available: false, editable: false, view: null, token: null, revision: null, status: "idle", message: "Focus a candidate source view to use domain commands.", work: 0, total: 0, pendingView: null, annotations: noAnnotations, annotationCount: 0, foldCount: 0 });
     readonly state = this.cell.observable;
     readonly fixture = new FixtureDomainProvider();
@@ -156,7 +155,10 @@ export class HostDomainTools {
                 const owned = new Set([...session.data.owned.values()].map(value => value.id)), existing = analysis.folds.regions.filter(r => !owned.has(r.id)), ids = new Set(analysis.folds.regions.map(r => r.id));
                 const next = new Map<string, OwnedFold>(), ranges: FoldRange[] = [...existing];
                 for (const fold of result.folds) {
-                    let id = session.data.owned.get(fold.id)?.id; if (!id) { do { id = `host-domain-${++this.foldSerial}`; } while (ids.has(id)); ids.add(id); }
+                    let id = session.data.owned.get(fold.id)?.id;
+                    if (!id) {
+                        do { id = `host-domain-${this.workspace.allocateIdentity()}`; } while (ids.has(id));
+                    }
                     next.set(fold.id, { id, from: fold.from, to: fold.to }); ranges.push({ ...fold, id });
                 }
                 const normalized = createFoldRegions(document.buffer, ranges, analysis.folds.regions);
@@ -172,14 +174,10 @@ export class HostDomainTools {
     }
     readonly collapse = (): void => {
         const session = this.active; if (!this.guard(session)) return; this.cancel(); this.sync(session);
-        const document = this.workspace.document(session.editor.view.documentId), current = session.editor.view.folding.getSnapshot(), owned = new Set([...session.data.owned.values()].map(r => r.id));
-        const ranges = current.regions.map(r => owned.has(r.id) ? { ...r, collapsed: true } : r), index = new FoldIndex(document.buffer.lineCount, ranges), selected = session.editor.view.getSnapshot().selectionSet;
-        const selections = createSelectionSet(document.buffer.length, selected.ranges.map(range => {
-            const a = index.hiddenBy(document.buffer.lineAt(range.anchor)), h = index.hiddenBy(document.buffer.lineAt(range.head));
-            return a || h ? { anchor: a ? document.buffer.offsetAt(a.lineFrom) : range.anchor, head: h ? document.buffer.offsetAt(h.lineFrom) : range.head } : range;
-        }), selected.primary);
-        session.editor.view.setSelections(document.revision, selections.ranges, selections.primary);
-        if (session.editor.view.folding.setRanges(current, ranges)) this.publish({ message: "Discovered domain regions collapsed; manual fold state is preserved." });
+        const folds = session.editor.view.folding, ids = Array.from(session.data.owned.values(), region => region.id);
+        if (!ids.length || folds.setCollapsed(folds.getSnapshot(), ids, true, { moveHiddenCarets: true })) {
+            this.publish({ message: "Discovered domain regions collapsed; manual fold state is preserved." });
+        }
         session.editor.focus();
     };
     reveal(token: string, revision: number, id: string): void {
