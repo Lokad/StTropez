@@ -133,8 +133,9 @@ count toward three. A multiline import can also fold on its own. Folds hide comp
 Closing delimiters on their own line, and lines shared with the next branch, statement or comment,
 stay visible.
 
-In **Changes**, each pane has its own syntax coloring and folds. The saved file has its own
-compiler worker. The Code menu targets the last source pane you clicked or focused. Hidden-line
+The footer shows the caret position in the last focused editor, including generated JavaScript
+and the saved copy. In **Changes**, each pane has its own syntax coloring and folds. The saved file
+has its own compiler worker. The Code menu targets the last source pane you clicked or focused. Hidden-line
 counts distinguish folds from alignment gaps. Find and navigation reveal hidden targets. See
 [folding](folding.md) and [comparison](comparison.md).
 

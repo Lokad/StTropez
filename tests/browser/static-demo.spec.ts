@@ -27,6 +27,8 @@ test("dragging across emitted JavaScript copies both lines and preserves the sel
     await expect(reader).toBeFocused(); await expect(reader).toHaveJSProperty("readOnly", true);
     const selected = "Rates are in cents. The base charge covers the first kilogram.\nconst services";
     expect(await copyOutput(reader)).toBe(selected);
+    const outputLine = Number(await rows.filter({ hasText: "const services = [" }).getAttribute("data-line")) + 1;
+    await expect(page.locator("#cursor")).toHaveText(`Ln ${outputLine}, Col 15`);
     const status = page.locator("#status");
     await reader.press("Delete"); await expect(status).toHaveText("Generated JavaScript is read-only. Edit the TypeScript source.");
     await reader.pressSequentially("X"); expect(await copyOutput(reader)).toBe(selected);
@@ -34,6 +36,7 @@ test("dragging across emitted JavaScript copies both lines and preserves the sel
     await source.press("Control+Home"); await page.keyboard.insertText("const recompiled = true;\n");
     await expect(rows.first()).toHaveText("const recompiled = true;");
     expect(await copyOutput(reader)).toBe(selected); await expect(source).toBeFocused();
+    await expect(page.locator("#cursor")).toHaveText("Ln 2, Col 1");
     const oldInput = await reader.elementHandle();
     await page.getByRole("button", { name: "Problems", exact: true }).click(); await expect(reader).toHaveCount(0);
     expect(await oldInput!.evaluate(node => node.dispatchEvent(new ClipboardEvent("copy", { clipboardData: new DataTransfer(), cancelable: true })))).toBe(true);
@@ -81,10 +84,16 @@ test("Go to line returns typing to the chosen large-file row and cancels when th
     await page.locator("#compare").click();
     const saved = page.getByRole("textbox", { name: "Comparison baseline source", exact: true });
     await saved.press("Control+g"); await line.fill("20"); await line.press("Enter"); await expect(saved).toBeFocused();
+    const cursor = page.locator("#cursor");
+    await expect(cursor).toHaveText("Ln 20, Col 1");
+    await saved.press("ArrowRight"); await expect(cursor).toHaveText("Ln 20, Col 2");
+    await page.getByRole("textbox", { name: "Comparison working source", exact: true }).focus();
+    await expect(cursor).toHaveText("Ln 5000, Col 4");
     await saved.press("Control+g"); await expect(line).toHaveValue("20");
     // A host can change files while its own prompt is open.
     await page.locator('[data-panel="javascript"]').evaluate(button => (button as HTMLButtonElement).click());
     await expect(dialog).toHaveCount(0); await expect(source).toBeVisible();
+    await expect(cursor).toHaveText("Ln 5000, Col 4");
 });
 
 test("Find toggles regex on the existing query and replaces captured groups in one undo", async ({ page, baseURL }) => {

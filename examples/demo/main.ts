@@ -31,12 +31,12 @@ const pageOptions = new URL(location.href).searchParams;
 const openProvider = selectDemoProvider(pageOptions.get("provider") ?? document.documentElement.dataset.demoProvider ?? "browser");
 for (const choice of sampleChoices) { const option = document.createElement("option"); option.value = choice.id; option.textContent = choice.title; sample.append(option); }
 let project: DemoProject | undefined, active: DemoFile | undefined, editor: TextEditor | undefined;
-let comparison: TextComparison | undefined, find: FindController | undefined, findTarget: TextEditor | undefined;
+let comparison: TextComparison | undefined, find: FindController | undefined, activePane: TextEditor | undefined;
 const foldMenu = mountDemoFoldMenu(codeMenu, () => comparison?.activePane() ?? editor);
 let output: ReturnType<typeof mountDemoOutput> | undefined;
 let panel: "javascript" | "problems" | "changes" = "javascript", disposed = false, opening = 0;
 let metadataFrame: number | undefined;
-let stopWorkspace: (() => void) | undefined, stopRecovery: (() => void) | undefined, stopView: (() => void) | undefined, stopFind: (() => void) | undefined;
+let stopWorkspace: (() => void) | undefined, stopRecovery: (() => void) | undefined, stopFind: (() => void) | undefined;
 let stopLanguage: (() => void) | undefined, languageView: ReturnType<typeof mountDemoLanguage> | undefined;
 let languageViewFailure: Readonly<{ error: unknown }> | undefined;
 let stopReference: (() => void) | undefined;
@@ -80,7 +80,7 @@ function renderOutput(): void {
         else {
             host.replaceChildren();
             output = mountDemoOutput(host, text, { minimap: field("view-minimap").checked, fontLigatures: field("view-ligatures").checked });
-            watchFindFocus(output.editor);
+            bindPaneCommands(output.editor);
         }
     } else if (!output) {
         // Keep the last completed output for this view while the footer reports pending/failed analysis.
@@ -192,18 +192,23 @@ function renderLanguage(): void {
     }
     renderProblems();
 }
+function scheduleMetadata(): void {
+    if (metadataFrame === undefined) metadataFrame = requestAnimationFrame(() => { metadataFrame = undefined; paintMetadata(); });
+}
 function renderMetadata(): void {
     if (!project || !active || disposed) return;
-    if (metadataFrame === undefined) metadataFrame = requestAnimationFrame(() => { metadataFrame = undefined; paintMetadata(); });
+    scheduleMetadata();
     // Capture every revision immediately. Deferring this with the DOM would skip position
     // maps and lose provisional colors when several edits arrive before one frame.
     presentation.update(project.workspace.document(active.resource.documentId), hostLanguage());
 }
 function paintMetadata(): void {
     if (!project || !active || disposed) return;
-    const current = project.workspace.document(active.resource.documentId), selection = active.view.getSnapshot().selection;
-    const line = current.buffer.lineAt(selection.head), column = selection.head - current.buffer.offsetAt(line);
-    element("cursor").textContent = `Ln ${line + 1}, Col ${column + 1}`;
+    if (activePane) {
+        const buffer = activePane.workspace.document(activePane.view.documentId).buffer, { head } = activePane.view.getSnapshot().selection;
+        const line = buffer.lineAt(head);
+        element("cursor").textContent = `Ln ${line + 1}, Col ${head - buffer.offsetAt(line) + 1}`;
+    }
     element("status").textContent = project.message;
     element("analysis-status").textContent = hostLanguage() ? "Host colors & editing rules" : referencePresentation?.status === "failed" ? "Saved-copy analysis unavailable" : presentation.status === "failed" ? "Analysis unavailable" : presentation.status === "ready"
         ? `TypeScript 5.9.3 · ${panel === "javascript" && !element("workspace").classList.contains("collapsed") ? "syntax & emit" : "syntax"}` : "TypeScript · analyzing…";
@@ -242,10 +247,9 @@ function detachView(): void {
     stopReferenceFolding?.(); stopReferenceFolding = undefined; referenceFolding?.dispose(); referenceFolding = undefined;
     stopReference?.(); stopReference = undefined;
     referencePresentation?.dispose(); referencePresentation = undefined;
-    releaseFind(); findTarget = undefined;
+    releaseFind(); activePane = undefined;
     output?.dispose(); output = undefined;
     detachLanguage();
-    stopView?.(); stopView = undefined;
     viewListeners?.abort(); viewListeners = undefined;
     syntaxLayer = undefined; diagnosticsLayer = undefined; paintedDiagnostics = undefined;
     if (comparison) comparison.dispose(); else editor?.dispose();
@@ -345,10 +349,9 @@ function mountFile(file: DemoFile, focus = false): void {
         if (event.isComposing || editor?.activity().composing || event.defaultPrevented) return;
         if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.key === "ArrowLeft") { event.preventDefault(); goBack(); return; }
     }, { signal: viewListeners.signal });
-    watchFindFocus(editor);
-    if (comparison) watchFindFocus(comparison.panes.reference);
-    useFindTarget(editor);
-    stopView = file.view.subscribe(renderMetadata);
+    bindPaneCommands(editor);
+    if (comparison) bindPaneCommands(comparison.panes.reference);
+    setActivePane(editor);
     languageView = attachLanguage(project, file, editor);
     if (project.sample.id === "host") {
         const capturedProject = project, capturedEditor = editor;
@@ -452,13 +455,18 @@ function setPanel(next: typeof panel): void {
     for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.setAttribute("aria-pressed", String(tab.dataset.panel === panel));
     mountFile(active, true);
 }
-function watchFindFocus(target: TextEditor): void {
-    target.element.addEventListener("focusin", () => useFindTarget(target), { signal: target.signal });
+function bindPaneCommands(target: TextEditor): void {
+    const stop = target.view.subscribe(() => {
+        if (target === editor) renderMetadata();
+        else if (target === activePane) scheduleMetadata();
+    });
+    target.signal.addEventListener("abort", stop, { once: true });
+    target.element.addEventListener("focusin", () => setActivePane(target), { signal: target.signal });
     bindFindCommands(target, target.signal, replace => {
-        useFindTarget(target); openFind(replace);
+        setActivePane(target); openFind(replace);
     }, direction => {
         if (!field("find-query").value) return false;
-        useFindTarget(target, true); find?.next(direction, { whenReady: true });
+        setActivePane(target, true); find?.next(direction, { whenReady: true });
         return true;
     });
     target.commands.register({ id: "find.close", label: "Close Find", enabled: () => !element("find-bar").hidden, run: closeFind });
@@ -467,9 +475,10 @@ function watchFindFocus(target: TextEditor): void {
 function releaseFind(): void {
     stopFind?.(); stopFind = undefined; find?.dispose(); find = undefined;
 }
-function useFindTarget(target: TextEditor, repeat = false): void {
-    if (findTarget === target && find) return;
-    releaseFind(); findTarget = target;
+function setActivePane(target: TextEditor, repeat = false): void {
+    if (activePane === target && find) return;
+    if (activePane !== target) { activePane = target; scheduleMetadata(); }
+    releaseFind();
     const visible = !element("find-bar").hidden;
     if (!visible && !repeat) return;
     const current = createFindController(target, { highlightMatches: visible, regularExpressionBackend: createRegexFindBackend({
@@ -515,19 +524,19 @@ function selectedFindQuery(source: TextEditor, regex: boolean): string | undefin
 }
 function openFind(replace = false): void {
     const bar = element("find-bar"), query = field("find-query");
-    if (!findTarget) return;
+    if (!activePane) return;
     if (bar.hidden) {
-        query.value = selectedFindQuery(findTarget, findFlags().regularExpression) ?? query.value;
+        query.value = selectedFindQuery(activePane, findFlags().regularExpression) ?? query.value;
         releaseFind();
     }
     bar.hidden = false; element("replace-controls").hidden = !replace;
-    useFindTarget(findTarget);
-    const target = replace && findTarget === editor && !active?.readOnly ? field("replacement") : query;
+    setActivePane(activePane);
+    const target = replace && activePane === editor && !active?.readOnly ? field("replacement") : query;
     target.focus(); target.select();
 }
 function closeFind(): void {
     element("find-bar").hidden = true;
-    releaseFind(); findTarget?.focus();
+    releaseFind(); activePane?.focus();
 }
 const on = (id: string, action: () => void) => element(id).addEventListener("click", action, { signal: listeners.signal });
 element("panel-content").addEventListener(editRefusedEvent, () => {
@@ -535,8 +544,8 @@ element("panel-content").addEventListener(editRefusedEvent, () => {
     project.message = "Generated JavaScript is read-only. Edit the TypeScript source.";
     element("status").textContent = project.message;
 }, { signal: listeners.signal });
-on("find-toggle", () => { findTarget?.commands.run("find.open"); });
-on("find-close", () => { findTarget?.commands.run("find.close"); });
+on("find-toggle", () => { activePane?.commands.run("find.open"); });
+on("find-close", () => { activePane?.commands.run("find.close"); });
 for (const toggle of element("find-options").querySelectorAll("button")) {
     on(toggle.id, () => {
         toggle.setAttribute("aria-pressed", String(toggle.getAttribute("aria-pressed") !== "true"));
@@ -545,7 +554,7 @@ for (const toggle of element("find-options").querySelectorAll("button")) {
     });
 }
 on("replace-toggle", () => { element("replace-controls").hidden = !element("replace-controls").hidden; });
-on("find-next", () => { findTarget?.commands.run("find.next"); }); on("find-previous", () => { findTarget?.commands.run("find.previous"); });
+on("find-next", () => { activePane?.commands.run("find.next"); }); on("find-previous", () => { activePane?.commands.run("find.previous"); });
 on("replace-current", () => { find?.replaceCurrent(field("replacement").value); });
 on("replace-all", () => { find?.replaceAll(field("replacement").value, { focusEditor: true }); });
 on("compare", () => setPanel("changes")); on("analysis-retry", () => { presentation.retry(); referencePresentation?.retry(); referenceFolding?.refresh(); });
@@ -598,7 +607,7 @@ on("language-retry", () => {
 on("panel-collapse", () => {
     if (panel === "changes") setPanel("javascript");
     const collapsed = element("workspace").classList.toggle("collapsed"); element("panel-collapse").textContent = collapsed ? "Show" : "Hide";
-    if (collapsed && editor && output && findTarget === output.editor) useFindTarget(editor);
+    if (collapsed && editor && output && activePane === output.editor) setActivePane(editor);
     presentation.setEmit(!collapsed && panel === "javascript");
 });
 on("walkthrough-toggle", () => { element("walkthrough").hidden = !element("walkthrough").hidden; });
@@ -642,12 +651,12 @@ on("download", () => {
 for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.addEventListener("click", () => setPanel(tab.dataset.panel as typeof panel), { signal: listeners.signal });
 field("find-query").addEventListener("input", () => find?.setQuery(field("find-query").value, { preview: true }), { signal: listeners.signal });
 element("find-bar").addEventListener("keydown", event => {
-    if (event.isComposing || event.keyCode === 229 || event.defaultPrevented || findTarget?.keymap.handle(event)) return;
-    if (event.key === "Enter" && event.target === field("find-query")) { event.preventDefault(); findTarget?.commands.run(event.shiftKey ? "find.previous" : "find.next"); }
+    if (event.isComposing || event.keyCode === 229 || event.defaultPrevented || activePane?.keymap.handle(event)) return;
+    if (event.key === "Enter" && event.target === field("find-query")) { event.preventDefault(); activePane?.commands.run(event.shiftKey ? "find.previous" : "find.next"); }
     else if (event.key === "Enter" && event.target === field("replacement")) { event.preventDefault(); button("replace-current").click(); }
 }, { signal: listeners.signal });
 for (const controls of document.querySelectorAll<HTMLElement>("header, #files, #panels")) {
-    controls.addEventListener("keydown", event => { findTarget?.keymap.handle(event); }, { signal: listeners.signal });
+    controls.addEventListener("keydown", event => { activePane?.keymap.handle(event); }, { signal: listeners.signal });
 }
 sample.addEventListener("change", () => { void openSample(sample.value as SampleId); }, { signal: listeners.signal });
 element("files").addEventListener("click", event => {
