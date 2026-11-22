@@ -134,7 +134,13 @@ Closing delimiters on their own line, and lines shared with the next branch, sta
 stay visible.
 
 The footer shows the caret position in the last focused editor, including generated JavaScript
-and the saved copy. In **Changes**, each pane has its own syntax coloring and folds. The saved file
+and the saved copy. On narrow screens the output sits below the source. Use **Hide** to give
+the editor more room, or choose **JavaScript**, **Problems** or **Changes** to open that panel.
+In the file and panel button strips, Left and Right move focus. Enter or Space opens the choice.
+
+In **Changes**, **Hide** leaves the working file open for editing.
+**Show** returns to the same review. Typing while the saved copy is hidden updates the diff,
+and saving locally compares against the new saved copy. Each pane has its own syntax coloring and folds. The saved file
 has its own compiler worker. The Code menu targets the last source pane you clicked or focused. Hidden-line
 counts distinguish folds from alignment gaps. Find and navigation reveal hidden targets. See
 [folding](folding.md) and [comparison](comparison.md).

@@ -12,6 +12,7 @@ import type { SampleId } from "./samples.ts";
 import { mountDemoLanguage } from "./language-view.ts";
 import type { DemoSymbolTarget } from "./symbols.ts";
 import { mountDemoOutput } from "./output.ts";
+import { reviewLayout } from "./review-layout.ts";
 import { initializeDemoFolds, mountDemoFolding, outlineFolds } from "./folding.ts";
 import { mountDemoFoldMenu } from "./fold-menu.ts";
 import { canOpenDemoHelp } from "./diagnostics.ts";
@@ -34,6 +35,7 @@ let project: DemoProject | undefined, active: DemoFile | undefined, editor: Text
 let comparison: TextComparison | undefined, find: FindController | undefined, activePane: TextEditor | undefined;
 const foldMenu = mountDemoFoldMenu(codeMenu, () => comparison?.activePane() ?? editor);
 let output: ReturnType<typeof mountDemoOutput> | undefined;
+let setReviewCollapsed: ReturnType<typeof reviewLayout> | undefined;
 let panel: "javascript" | "problems" | "changes" = "javascript", disposed = false, opening = 0;
 let metadataFrame: number | undefined;
 let stopWorkspace: (() => void) | undefined, stopRecovery: (() => void) | undefined, stopFind: (() => void) | undefined;
@@ -253,7 +255,8 @@ function detachView(): void {
     viewListeners?.abort(); viewListeners = undefined;
     syntaxLayer = undefined; diagnosticsLayer = undefined; paintedDiagnostics = undefined;
     if (comparison) comparison.dispose(); else editor?.dispose();
-    comparison = undefined; editor = undefined; reviewLabel = undefined;
+    comparison = undefined; editor = undefined; reviewLabel = undefined; setReviewCollapsed = undefined;
+    element("panel-content").classList.remove("demo-working-only");
     element("editor").replaceChildren(); element("panel-content").replaceChildren();
     if (metadataFrame !== undefined) cancelAnimationFrame(metadataFrame); metadataFrame = undefined;
 }
@@ -305,6 +308,7 @@ function mountFile(file: DemoFile, focus = false): void {
         const hint = document.createElement("span"); hint.className = "demo-review-hint";
         hint.textContent = "Fold each pane independently. Shaded gaps keep matching lines aligned.";
         labels.append(savedLabel, workingLabel, hint); surface.prepend(labels);
+        setReviewCollapsed = reviewLayout(surface, comparison);
         editor = comparison.panes.working;
         const reference = comparison.panes.reference, plain = hostLanguage();
         let tokens: DecorationProvider | undefined;
@@ -359,6 +363,7 @@ function mountFile(file: DemoFile, focus = false): void {
             mode: element("host-paste-mode") as HTMLSelectElement, insert: button("host-insert-table"), annotate: button("host-annotate"), status: element("host-status") },
             target => openLocation(capturedProject, file, capturedEditor, target));
     }
+    if (element("workspace").classList.contains("collapsed")) setReviewCollapsed?.(true);
     renderMetadata(); renderLanguage(); renderOutput(); if (focus) editor.focus();
 }
 // View IDs are local to a Workspace; each sample owns a separate workspace.
@@ -449,10 +454,19 @@ async function openSample(id: SampleId): Promise<void> {
     mountFile(next.files.find(file => file.name === activeFiles.get(id)) ?? next.files[0]!);
 }
 function setPanel(next: typeof panel): void {
-    if (!active || editor?.activity().composing) return; panel = next;
+    if (!active || editor?.activity().composing) return;
+    const samePanel = panel === next; panel = next;
+    const wasCollapsed = element("workspace").classList.contains("collapsed");
     element("workspace").classList.remove("collapsed"); element("panel-collapse").textContent = "Hide";
     presentation.setEmit(panel === "javascript");
     for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.setAttribute("aria-pressed", String(tab.dataset.panel === panel));
+    if (samePanel && comparison && project) {
+        const shown = comparison.getSnapshot().comparison.baseline, requested = project.baseline(active);
+        if (shown?.buffer === requested.buffer && shown.version === requested.version) {
+            (wasCollapsed ? setReviewCollapsed?.(false) : comparison.activePane())?.focus(); return;
+        }
+    }
+    if (samePanel && !comparison) { renderOutput(); editor?.focus(); return; }
     mountFile(active, true);
 }
 function bindPaneCommands(target: TextEditor): void {
@@ -605,9 +619,10 @@ on("language-retry", () => {
     }, () => { /* Connection failure is reported by the captured project. */ });
 });
 on("panel-collapse", () => {
-    if (panel === "changes") setPanel("javascript");
+    if (editor?.activity().composing) return;
     const collapsed = element("workspace").classList.toggle("collapsed"); element("panel-collapse").textContent = collapsed ? "Show" : "Hide";
-    if (collapsed && editor && output && activePane === output.editor) setActivePane(editor);
+    if (setReviewCollapsed) setReviewCollapsed(collapsed).focus();
+    else if (collapsed && editor && output && activePane === output.editor) editor.focus();
     presentation.setEmit(!collapsed && panel === "javascript");
 });
 on("walkthrough-toggle", () => { element("walkthrough").hidden = !element("walkthrough").hidden; });
@@ -649,6 +664,19 @@ on("download", () => {
     download(project.download(), `${project.sample.id}-changes.json`);
 });
 for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.addEventListener("click", () => setPanel(tab.dataset.panel as typeof panel), { signal: listeners.signal });
+for (const strip of [element("files"), element("panels")]) {
+    strip.addEventListener("keydown", event => {
+        if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey
+            || !(event.target instanceof HTMLButtonElement) || !event.target.matches("[data-file], [data-panel]")) return;
+        const key = event.key;
+        if (key !== "ArrowLeft" && key !== "ArrowRight" && key !== "Home" && key !== "End") return;
+        const tabs = [...strip.querySelectorAll<HTMLButtonElement>("[data-file], [data-panel]")];
+        const index = tabs.indexOf(event.target);
+        const next = key === "Home" ? 0 : key === "End" ? tabs.length - 1
+            : (index + tabs.length + (key === "ArrowRight" ? 1 : -1)) % tabs.length;
+        event.preventDefault(); tabs[next]!.focus();
+    }, { signal: listeners.signal });
+}
 field("find-query").addEventListener("input", () => find?.setQuery(field("find-query").value, { preview: true }), { signal: listeners.signal });
 element("find-bar").addEventListener("keydown", event => {
     if (event.isComposing || event.keyCode === 229 || event.defaultPrevented || activePane?.keymap.handle(event)) return;

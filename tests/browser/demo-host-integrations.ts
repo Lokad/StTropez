@@ -146,7 +146,13 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
     await expect(panes.last().locator('.st-fold-button[aria-expanded="false"]')).toHaveCount(0);
     await expect(workingFold).toHaveAttribute("aria-expanded", "true");
     await workingFold.click(); await expect(workingFold).toHaveAttribute("aria-expanded", "false"); await expect(inventory).toContainText("folded");
-    await expect(notes).toHaveCount(2); await page.locator('[data-panel="javascript"]').click();
+    await expect(notes).toHaveCount(2);
+    const toggle = page.locator("#panel-collapse");
+    await toggle.click(); await expect(savedFold).toBeHidden(); await expect(workingFold).toBeVisible();
+    await expect.poll(() => panes.last().locator(".st-viewport").evaluate(node => node.clientHeight)).toBeGreaterThan(100);
+    await toggle.click(); await expect(savedFold).toHaveAttribute("aria-expanded", "false");
+    await expect(workingFold).toHaveAttribute("aria-expanded", "false");
+    await page.locator('[data-panel="javascript"]').click();
 
     // Offscreen notes disappear and reappear at mapped positions without entering source text.
     await source.press("Control+Home"); await paste(source, "# padding\n".repeat(200));

@@ -73,6 +73,75 @@ test("resizing Changes keeps both editors and the selected change preview within
     }
 });
 
+test("hiding Changes keeps the review panes and resumes from edits made while hidden", async ({ page, baseURL }) => {
+    const url = new URL(baseURL!); url.searchParams.set("sample", "shipping"); await page.goto(url.href);
+    const source = page.getByRole("region", { name: "Source code" }).getByRole("textbox");
+    const original = Array.from({ length: 120 }, (_, i) => `// row ${i} ${"abcdef ".repeat(24)}`).join("\n");
+    await source.press("Control+a"); await page.keyboard.insertText(original);
+    await page.getByRole("button", { name: "Save locally", exact: true }).click();
+    await source.press("Control+a"); await page.keyboard.insertText(original.replace("row 20 ", "row twenty ").replace("row 40 ", "row forty "));
+    await source.press("Control+Home"); await page.getByRole("button", { name: "Changes", exact: true }).click();
+    const next = page.getByRole("button", { name: "Next change", exact: true });
+    const panes = page.locator(".st-comparison-panes .st-viewport"), status = page.locator(".st-comparison-controls output");
+    const working = page.getByRole("textbox", { name: "Comparison working source" }), saved = page.getByRole("textbox", { name: "Comparison baseline source" });
+    const toggle = page.locator("#panel-collapse");
+    await next.click(); await saved.focus(); await expect(status).toHaveText("Change 1 of 2");
+    const originalInput = await working.elementHandle();
+    await panes.evaluateAll(nodes => { nodes[0]!.scrollLeft = 160; nodes[1]!.scrollLeft = 820; });
+    const positions = () => panes.evaluateAll(nodes => nodes.map(node => [node.scrollLeft, node.scrollTop]));
+    await expect.poll(positions).toMatchObject([[160, expect.any(Number)], [820, expect.any(Number)]]);
+    const before = await positions();
+    await toggle.click(); await expect(working).toBeFocused(); await expect(saved).toBeHidden(); await expect(next).toBeHidden();
+    await toggle.click(); await expect(saved).toBeFocused(); await expect(status).toHaveText("Change 1 of 2");
+    await expect.poll(positions).toEqual(before);
+    await next.click(); await expect(status).toHaveText("Change 2 of 2");
+    await toggle.click(); await expect(working).toBeFocused();
+    await working.press("Control+End"); await page.keyboard.insertText("\n// typed while hidden");
+    await toggle.click(); await expect(working).toBeFocused(); await expect(status).toHaveText(/3 of 3|3 changes/);
+    await expect(working).toHaveValue(/typed while hidden$/);
+    expect(await originalInput!.evaluate(input => input.isConnected)).toBe(true); await originalInput!.dispose();
+    await next.click(); await expect(status).toHaveText("Change 1 of 3");
+    await toggle.click(); await page.getByRole("button", { name: "Save locally", exact: true }).click();
+    await expect(status).toHaveText("No changes");
+    await page.locator("#compare").click();
+    await expect(status).toBeVisible(); await expect(status).toHaveText("No changes"); await expect(next).toBeDisabled();
+});
+
+test("narrow layouts keep JavaScript, Problems and review reachable from the keyboard", async ({ page, baseURL }) => {
+    await page.goto(baseURL!);
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    const reader = page.getByRole("textbox", { name: "JavaScript output", exact: true });
+    const tabs = page.locator("#panels"), js = tabs.locator('[data-panel="javascript"]'), problems = tabs.locator('[data-panel="problems"]');
+    const changes = tabs.getByRole("button", { name: "Changes", exact: true }), toggle = tabs.locator("#panel-collapse");
+    const cursor = page.locator("#cursor");
+    await source.press("Control+Home"); await source.press("ArrowRight"); await expect(cursor).toHaveText("Ln 1, Col 2");
+    for (const width of [850, 375]) {
+        await page.setViewportSize({ width, height: 820 });
+        await expect(source).toBeFocused(); await expect(cursor).toHaveText("Ln 1, Col 2");
+        await expect.poll(() => page.evaluate(() => {
+            const reachable = (el: Element) => {
+                const b = el.getBoundingClientRect();
+                return b.height >= 20 && b.width > 0 && el.contains(document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2));
+            };
+            return document.documentElement.scrollWidth <= innerWidth
+                && [...document.querySelectorAll("#panels button, #editor .st-viewport, .demo-output")].every(reachable);
+        })).toBe(true);
+    }
+    await reader.press("Control+Home"); await reader.press("ArrowDown"); await expect(cursor).toHaveText("Ln 2, Col 1");
+    await page.setViewportSize({ width: 1280, height: 820 }); await expect(reader).toBeFocused();
+    await page.setViewportSize({ width: 375, height: 820 }); await expect(cursor).toHaveText("Ln 2, Col 1");
+    await toggle.click(); await expect(source).toBeFocused(); await expect(cursor).toHaveText("Ln 1, Col 2");
+    await js.focus(); await js.press("ArrowRight"); await expect(problems).toBeFocused(); await problems.press("Enter");
+    await expect(problems).toHaveAttribute("aria-pressed", "true"); await expect(page.locator("#panel-content")).toContainText(/problem|diagnostic/i);
+    await problems.focus(); await problems.press("End"); await expect(changes).toBeFocused(); await changes.press("Space");
+    const working = page.getByRole("textbox", { name: "Comparison working source" });
+    await expect(working).toBeFocused(); await toggle.click(); await page.keyboard.insertText("x"); await expect(working).toHaveValue(/^ixmport/);
+    await js.click(); await expect(reader).toBeVisible(); await expect(source).toHaveValue(/^ixmport/);
+    const files = page.locator("#files [data-file]");
+    await files.first().focus(); await files.first().press("End"); await expect(files.last()).toBeFocused();
+    await files.last().press("Enter"); await expect(files.last()).toHaveAttribute("aria-pressed", "true");
+});
+
 test("Go to line returns typing to the chosen large-file row and cancels when the source view closes", async ({ page, baseURL }) => {
     await page.goto(baseURL!); await page.locator("#sample").selectOption("large");
     const source = page.getByRole("textbox", { name: "large.ts", exact: true });
