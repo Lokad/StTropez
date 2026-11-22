@@ -301,9 +301,10 @@ test("custom host controls observe captured selection, alignment, authority and 
     })).toBe(true); await ready(page);
     expect(await beforeRefresh.evaluate(hunk => hunk.select())).toBe(false);
     await later.click();
-    expect(await input.evaluate(element => {
-        const f = window.comparisonFixture, state = f.review.getSnapshot(), input = element as HTMLTextAreaElement;
-        input.readOnly = true; const applied = f.review.hunkAt(state.selectedHunk!)!.revert(); input.readOnly = false; return applied;
+    expect(await page.evaluate(() => {
+        const f = window.comparisonFixture, hunk = f.review.hunkAt(f.review.getSnapshot().selectedHunk!)!;
+        f.readOnly(true);
+        try { return hunk.revert(); } finally { f.readOnly(false); }
     })).toBe(false);
     await restore.click(); await ready(page);
     await page.getByRole("button", { name: "Undo working edit", exact: true }).click(); await ready(page);
