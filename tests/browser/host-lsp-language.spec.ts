@@ -450,6 +450,9 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         expect((await snapshot(page)).bindings.links.opened).toBe(0);
         await row.click(); await expect(secondary).toBeFocused();
         expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")?.documentId).toBe(before.bindings.links.companion);
+        const mounted = (await snapshot(page)).bindings.mounts;
+        await row.click(); await expect(secondary).toBeFocused();
+        expect((await snapshot(page)).bindings.mounts).toBe(mounted);
         await secondary.press("Shift+F4"); await expect(field(page)).toBeFocused(); await exact(page, raw);
         await disposeColorsAndLinks(page);
     });

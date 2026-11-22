@@ -277,13 +277,15 @@ export class ViewBindings {
         states.set(documentId, state); this.states.set(id, states);
     }
     private presentNavigationDocument(documentId: DocumentId): TextEditor | undefined {
-        if (this.editor !== "candidate") return;
-        const previous = this.mounted.get("secondary"), host = previous?.editor.element.closest<HTMLDivElement>(".editor-host"), activity = previous?.candidate?.activity();
-        if (!previous || !host?.isConnected || activity?.composing || activity?.pendingInput || activity?.pendingCommand) return;
-        const workspace = this.controller.workspace, target = workspace.tabs.capture(this.controller.viewTab("secondary"));
-        if (!workspace.tabs.resolve(target) || !workspace.observeDocument(documentId).getSnapshot()) return;
+        const editor = this.mounted.get("secondary")?.candidate;
+        if (!editor?.tab) return;
+        const host = editor.element.closest<HTMLDivElement>(".editor-host"), activity = editor.activity();
+        if (!host?.isConnected || activity.disposed || activity.composing || activity.pendingInput || activity.pendingCommand) return;
+        const { workspace, tab } = editor;
+        if (!workspace.ownsDocumentView(editor.view, tab) || !workspace.observeDocument(documentId).getSnapshot()) return;
+        if (editor.view.documentId === documentId) return editor;
         // Explicit host lifecycle: replace this captured pane synchronously; React owns only its stable ref.
-        this.detach("secondary"); workspace.tabs.replace(target.id, { kind: "text", documentId }); this.secondary(host);
+        this.detach("secondary"); workspace.tabs.replace(tab.id, { kind: "text", documentId }); this.secondary(host);
         return this.mounted.get("secondary")?.candidate;
     }
     private ref(id: "primary" | "secondary", ariaLabel: string): (host: HTMLDivElement | null) => void {
