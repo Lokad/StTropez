@@ -5,7 +5,7 @@ function actionsControls(tools: ActionsPanelTools, s: ActionsSnapshot) {
     return [
         { label: "Preview module action", invoke: tools.request, disabled: !s.available || s.disconnected || s.pending },
         { label: s.command ? "Execute captured action" : "Apply captured action", reviewKey: s.reviewKey, invoke: () => s.confirm?.(), disabled: !s.canApply },
-        { label: "Dismiss action preview", invoke: tools.cancel, disabled: s.token === null },
+        { label: "Dismiss action preview", invoke: tools.cancel, disabled: !s.active },
         ...([{ label: "Previous action choices", invoke: () => tools.moveChoicePage(-1), disabled: s.pending || s.choicePage === 0 },
             { label: "Next action choices", invoke: () => tools.moveChoicePage(1), disabled: s.pending || (s.choicePage + 1) * 16 >= s.choices.length },
             { label: "Previous action edits", invoke: () => tools.previousPage(), disabled: s.pending || s.page === 0 },
@@ -24,13 +24,13 @@ export function actionsPanelModel(tools: ActionsPanelTools, s: ActionsSnapshot) 
         title: "Code actions", description: actionsDescription, status: { label: "Code action status", text: s.message },
         module: { label: "Action module ", value: s.module, maxLength: 64, bind: tools.bindModule, change: (value: string) => tools.setModule(value) },
         actions: actionsControls(tools, s),
-        choices: { enabled: true, label: "Provider code actions", identity: s.choices, pageKey: `${s.token}:${s.choicePage}`, start: s.choicePage * 16 + 1,
+        choices: { enabled: true, label: "Provider code actions", identity: s.choices, page: s.choicePage, start: s.choicePage * 16 + 1,
             disabled: s.pending, isSelected: (index: number) => s.choice === index,
             items: () => s.choices.slice(s.choicePage * 16, (s.choicePage + 1) * 16).map(choice => ({ key: choice.index, label: actionChoiceLabel(choice),
                 invoke: () => choice.select() } as const)) },
         preview: { label: "Captured action title", text: s.title },
         edits: { label: "Proposed action edits", identity: s.edits, start: s.page * 64 + 1, items: () => s.edits.map(actionTarget) },
-        changes: { label: "Action changed resources", identity: s.changes, disabled: s.token !== null,
+        changes: { label: "Action changed resources", identity: s.changes, disabled: s.active,
             items: () => s.changes.map(change => ({ key: change.document,
                 label: `Open action changes in ${change.title}`, invoke: () => tools.openChangedDocument(change.document) } as const)) },
     } as const;
@@ -43,10 +43,10 @@ export function mountActionsPanel(host: HTMLElement, tools: HostActionsTools): (
     module.type = "text"; module.maxLength = initial.module.maxLength; module.value = initial.module.value; module.oninput = () => initial.module.change(module.value); label.append(initial.module.label, module); initial.module.bind(module);
     title.setAttribute("aria-label", initial.preview.label); edits.setAttribute("aria-label", initial.edits.label);
     host.replaceChildren(heading, description, status, label, controls, ...(initial.choices.enabled ? [choices] : []), title, edits, changes); let previous: unknown, previousChoices: unknown, previousChanges: unknown;
-    let choiceButtons: { key: number; button: HTMLButtonElement }[] = [], previousChoicePage: string | undefined;
+    let choiceButtons: { key: number; button: HTMLButtonElement }[] = [], previousChoicePage: number | undefined;
     const render = () => { const model = actionsPanelModel(tools, tools.state.getSnapshot()); status.textContent = model.status.text; if (module.value !== model.module.value) module.value = model.module.value; title.textContent = model.preview.text;
         renderPanelActions(controls, model.actions);
-        if (previousChoices !== model.choices.identity || previousChoicePage !== model.choices.pageKey) { previousChoices = model.choices.identity; previousChoicePage = model.choices.pageKey; choiceButtons = []; choices.start = model.choices.start; choices.replaceChildren(...model.choices.items().map(choice => { const li = owner.createElement("li"), button = owner.createElement("button"); button.textContent = choice.label; button.onclick = choice.invoke; choiceButtons.push({ key: choice.key, button }); li.append(button); return li; })); }
+        if (previousChoices !== model.choices.identity || previousChoicePage !== model.choices.page) { previousChoices = model.choices.identity; previousChoicePage = model.choices.page; choiceButtons = []; choices.start = model.choices.start; choices.replaceChildren(...model.choices.items().map(choice => { const li = owner.createElement("li"), button = owner.createElement("button"); button.textContent = choice.label; button.onclick = choice.invoke; choiceButtons.push({ key: choice.key, button }); li.append(button); return li; })); }
         for (const { key, button } of choiceButtons) { button.disabled = model.choices.disabled; button.setAttribute("aria-pressed", String(model.choices.isSelected(key))); }
         if (previous !== model.edits.identity) { previous = model.edits.identity; edits.start = model.edits.start; edits.replaceChildren(...model.edits.items().map(text => { const li = owner.createElement("li"), pre = owner.createElement("pre"); pre.textContent = text; li.append(pre); return li; })); }
         if (previousChanges !== model.changes.identity) { previousChanges = model.changes.identity; changes.replaceChildren(...model.changes.items().map(change => { const button = owner.createElement("button"); button.textContent = change.label; button.onclick = change.invoke; return button; })); }

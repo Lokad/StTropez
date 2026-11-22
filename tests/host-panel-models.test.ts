@@ -163,17 +163,17 @@ test("rename presentation retains its preview name, confirmation action and chan
 test("action controls invoke the choice and confirmation supplied by their snapshot", () => {
     const selected: number[] = [], applied: number[] = [], opened: DocumentId[] = [], firstId = "first" as DocumentId, secondId = "second" as DocumentId;
     const state: ActionsSnapshot = Object.freeze({ reviewKey: 1, available: true, connected: true, disconnected: false, reconnectRequired: false, pending: false, canApply: true,
-        token: 9, confirm: () => { applied.push(9); }, module: "module", status: "ready", message: "Captured action", title: "Action", disabled: null, work: 1, total: 1, command: null, edits: Object.freeze([]),
+        active: true, confirm: () => { applied.push(9); }, module: "module", status: "ready", message: "Captured action", title: "Action", disabled: null, command: null, edits: Object.freeze([]),
         changed: Object.freeze({ document: firstId, title: "First" }), changes: Object.freeze([Object.freeze({ document: firstId, title: "First" })]),
         choices: Object.freeze([Object.freeze({ index: 0, title: "First action", kind: null, preferred: false, disabled: null, needsResolve: false, select: () => { selected.push(9); } })]),
         choice: 0, choicePage: 0, resolving: false, page: 0, editCount: 0 });
     const tools: Parameters<typeof actionsPanelModel>[0] = { request: noop, cancel: noop, moveChoicePage: noop, previousPage: noop, nextPage: noop, disconnect: noop,
         reconnect: noop, bindModule: noop, setModule: noop, openChangedDocument: id => { opened.push(id); } };
     const first = actionsPanelModel(tools, state), oldChoice = first.choices.items()[0]!;
-    const current = { ...state, token: 10, confirm: () => { applied.push(10); }, choices: [{ ...state.choices[0]!, select: () => { selected.push(10); } }],
+    const current = { ...state, confirm: () => { applied.push(10); }, choices: [{ ...state.choices[0]!, select: () => { selected.push(10); } }],
         changed: { document: secondId, title: "Second" }, changes: [{ document: secondId, title: "Second" }] };
     const newer = actionsPanelModel(tools, current), newChoice = newer.choices.items()[0]!;
-    assert.notEqual(first.choices.pageKey, newer.choices.pageKey);
+    assert.notEqual(first.choices.identity, newer.choices.identity);
     oldChoice.invoke(); newChoice.invoke(); assert.deepEqual(selected, [9, 10]);
     newer.actions.find(action => action.label === "Apply captured action")!.invoke();
     first.actions.find(action => action.label === "Apply captured action")!.invoke(); assert.deepEqual(applied, [10, 9]);
