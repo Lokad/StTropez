@@ -1,5 +1,5 @@
 import type { Affinity, TabId } from "../../src/index.ts";
-import { scopedCommands } from "../shared/editor-attachment.ts";
+import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts";
 import { createHoverController, observePointerDwell } from "../../src/browser/index.ts";
 import type { DocumentationContent, HoverController, HoverDiagnostics, HoverSnapshot, TextEditor } from "../../src/browser/index.ts";
 import type { LspScopeAccess, LspWorkspace } from "../../src/protocol/index.ts";
@@ -141,12 +141,14 @@ export class HostHoverTools {
             scroll();
         }, { capture: true, signal: listeners.signal });
         win.addEventListener("resize", () => { cancelPointer(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
-        let detached = false;
-        return () => {
-            if (detached) return; detached = true; if (this.current === session) this.dismiss(); session.cancelTimers(); listeners.abort(); stop();
+        return detachWithEditor(editor, listeners.signal, () => {
+            if (this.sessions.get(id) !== session) return;
+            this.sessions.delete(id);
+            if (this.current === session) this.dismiss();
+            session.cancelTimers(); listeners.abort(); stop();
             const counts = controller.getDiagnostics(); for (const name of Object.keys(this.retired) as (keyof typeof this.retired)[]) this.retired[name] += counts[name];
-            controller.dispose(); this.sessions.delete(id);
-        };
+            controller.dispose();
+        });
     }
     setDelay(id: string, value: number): void {
         if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid hover delay.");

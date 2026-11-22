@@ -1,4 +1,5 @@
 import { onSourceFocus } from "./source-focus.ts";
+import { detachWithEditor } from "../shared/editor-attachment.ts";
 import type { DocumentId, TabId } from "../../src/index.ts";
 import { createSignatureController } from "../../src/browser/index.ts";
 import type { SignatureController, SignatureSnapshot, TextEditor } from "../../src/browser/index.ts";
@@ -54,6 +55,7 @@ export class HostSignatureTools {
     readonly disconnect = () => { this.disconnected = true; for (const s of this.sessions) s.controller.cancel(); this.publish("Signature provider disconnected."); };
     readonly reconnect = () => { this.disconnected = false; this.reconnectProvider?.(); this.publish(); };
     attach(_id: string, _tab: TabId, editor: TextEditor): () => void {
+        if (this.disposed) throw new Error("Signature panel is disposed.");
         const controller = createSignatureController(editor, this.options.provider, {
             canCapture: () => !this.disconnected && this.canCapture(editor.view.documentId),
             beforeRequest: () => { this.active = session; this.beforeRequest(); },
@@ -73,7 +75,7 @@ export class HostSignatureTools {
         } };
         this.sessions.add(session);
         onSourceFocus(editor, focusEvents.signal, () => { this.active = session; this.publish(); });
-        return session.stop;
+        return detachWithEditor(editor, focusEvents.signal, session.stop);
     }
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid signature delay."); this.delay = value; }
     faultNext(value: NonNullable<SignatureInput["fault"]>): void { this.fault = value; }

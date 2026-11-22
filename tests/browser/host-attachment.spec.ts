@@ -101,7 +101,8 @@ test("language shortcuts follow their panel and editor through attachment failur
             for (const [feature, discover, shortcut, priority] of [
                 ["links", "links.discover", "F4", 7], ["colors", "colors.discover", "F6", 8],
                 ["navigation", "navigation.definition", "F12", 5], ["rename", "rename.start", "F2", 9],
-                ["actions", "actions.request", "Ctrl+.", 6],
+                ["actions", "actions.request", "Ctrl+.", 6], ["signature", "signature.request", "Ctrl+Shift+Space", 10],
+                ["hover", "hover.inspect", "Ctrl+k Ctrl+i", 20],
             ] as const) {
                 const panel = bindings[feature], first = mountTextEditor(host, controller.workspace, tab);
                 const conflict = first.commands.register({ id: "host.escape", label: "Host Escape", run() {} }, { keys: ["Escape"], priority });
@@ -116,13 +117,15 @@ test("language shortcuts follow their panel and editor through attachment failur
                 const afterEditor = sessions();
                 const next = mountTextEditor(host, controller.workspace, tab);
                 try {
-                    panel.attach("primary", tab, next); detach();
+                    const detachNext = panel.attach("primary", tab, next); detach();
                     const remounted = next.keymap.getShortcuts(discover);
-                    panel.dispose();
                     let reattached = false;
-                    try { panel.attach("primary", tab, next); reattached = true; } catch (error) {
-                        if (!String(error).includes("panel is disposed")) throw error;
-                    }
+                    if ("dispose" in panel) {
+                        panel.dispose();
+                        try { panel.attach("primary", tab, next); reattached = true; } catch (error) {
+                            if (!String(error).includes("panel is disposed")) throw error;
+                        }
+                    } else detachNext();
                     results.push({ feature, shortcut, rollback, afterEditor, remounted, reattached, afterPanel: owned(next), sessions: sessions() });
                 } finally { next.dispose(); }
             }
@@ -130,8 +133,10 @@ test("language shortcuts follow their panel and editor through attachment failur
         return results;
     });
     for (const result of results) {
+        const shortcuts: string[] = [result.shortcut];
+        if (result.shortcut.startsWith("Ctrl")) shortcuts.push(result.shortcut.replaceAll("Ctrl", "Meta"));
         expect.soft(result, result.feature).toMatchObject({ rollback: { refused: true, commands: [], sessions: 0, escape: true },
-            afterEditor: 0, remounted: result.feature === "actions" ? ["Ctrl+.", "Meta+."] : [result.shortcut],
+            afterEditor: 0, remounted: shortcuts,
             reattached: false, afterPanel: [], sessions: 0 });
     }
 });
