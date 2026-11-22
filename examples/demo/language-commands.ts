@@ -1,5 +1,4 @@
-import { captureViewRequest } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, TextEditor } from "../../src/browser/index.ts";
+import type { TextEditor } from "../../src/browser/index.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 
 const shortcuts = {
@@ -25,30 +24,36 @@ export function bindPopupCommands(scope: CleanupScope, editor: TextEditor, popup
 
 /** Keep one explicit request at its original caret while the project starts TypeScript. */
 export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, output: HTMLElement,
-    execute: (command: Command, menu: boolean) => void) {
-    type Intent = { command: Command; menu: boolean; capture: CapturedViewRequest<TextEditor["tab"]>; stage: "waiting" | "request" | "message" };
-    let intent: Intent | undefined, phase: "starting" | "ready" | "failed" = "starting";
+    execute: (command: Command, menu: boolean) => void, reportError: (error: unknown) => void) {
+    type Feedback = (command: "complete" | "signature", message: string, finished: boolean) => void;
+    const lane = editor.latestOperation(); scope.defer(lane.dispose);
+    let phase: "starting" | "ready" | "failed" = "starting";
+    let resume: (() => void) | undefined, receive: Feedback | undefined;
     const show = (message: string) => { output.textContent = message; output.hidden = !message; };
-    const clear = () => {
-        const previous = intent; intent = undefined; show("");
-        // A provider can report a result inside a workspace notification.
-        if (previous) queueMicrotask(previous.capture.cancel);
-    };
-    scope.defer(clear);
     const run = (command: Command, menu = true) => {
-        clear();
+        lane.cancel();
         if (menu) editor.focus();
-        if (phase === "failed") return;
+        if (phase === "failed" || !editor.getSnapshot().focused) return;
         if (phase === "ready" && command !== "complete" && command !== "signature") { execute(command, menu); return; }
-        const capture = captureViewRequest(editor.workspace, editor.tab, editor.view, { available: () => {
-            const state = editor.activity();
-            return editor.getSnapshot().focused && !state.pendingInput && !state.pendingCommand && !state.composing && !state.disposed;
-        } });
-        if (!capture) return;
-        const next: Intent = intent = { command, menu, capture, stage: phase === "starting" ? "waiting" : "request" };
-        capture.signal.addEventListener("abort", () => { if (intent === next) { intent = undefined; show(""); } }, { once: true });
-        if (next.stage === "waiting") show(shortcuts[command][0] + " when TypeScript is ready…");
-        else execute(command, menu);
+        void lane.run({}, async op => {
+            op.signal.addEventListener("abort", () => { resume = undefined; receive = undefined; show(""); }, { once: true });
+            if (phase === "starting") {
+                show(shortcuts[command][0] + " when TypeScript is ready…");
+                await op.step(new Promise<void>(ready => { resume = ready; }));
+                show("");
+            }
+            if (command !== "complete" && command !== "signature") { execute(command, menu); return; }
+            // Keep an empty-result message at its originating caret until the user leaves it.
+            await new Promise<void>(done => {
+                op.signal.addEventListener("abort", () => done(), { once: true });
+                receive = (feature, message, finished) => {
+                    if (feature !== command) return;
+                    show(message);
+                    if (finished) { receive = undefined; if (!message) done(); }
+                };
+                execute(command, menu);
+            });
+        }).catch(reportError);
     };
     for (const command of Object.keys(shortcuts) as Command[]) {
         const [label, ...keys] = shortcuts[command];
@@ -57,27 +62,15 @@ export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, o
             run: from => run(command, from === "menu") }, { keys, priority: 50 }).dispose);
     }
     scope.defer(editor.commands.register({ id: "demo.language.dismiss", label: "Dismiss language request",
-        enabled: () => !!intent, run: () => { const waiting = intent?.stage === "waiting"; clear(); return waiting; } },
+        enabled: () => !!resume || !!receive || !output.hidden, run: () => { const waiting = !!resume; lane.cancel(); return waiting; } },
         { keys: ["Escape"], priority: 50 }).dispose);
     const events = new AbortController(); scope.defer(() => events.abort());
-    scope.defer(editor.subscribe(() => { if (intent && !editor.getSnapshot().focused) clear(); }));
-    editor.onEditIntent(() => { if (intent) clear(); }, events.signal);
-    editor.element.ownerDocument.defaultView!.addEventListener("blur", () => { if (intent) clear(); }, { signal: events.signal });
+    scope.defer(editor.subscribe(() => { if (!editor.getSnapshot().focused) lane.cancel(); }));
+    editor.onEditIntent(lane.cancel, events.signal);
+    editor.element.ownerDocument.defaultView!.addEventListener("blur", lane.cancel, { signal: events.signal });
     return {
-        ready() {
-            phase = "ready";
-            const next = intent;
-            if (next?.stage !== "waiting" || !next.capture.isCurrent()) return;
-            next.stage = "request"; show("");
-            if (next.command !== "complete" && next.command !== "signature") clear();
-            execute(next.command, next.menu);
-        },
-        failed() { phase = "failed"; clear(); },
-        feedback(command: "complete" | "signature", message: string, finished: boolean) {
-            if (intent?.command !== command || intent.stage !== "request" || !intent.capture.isCurrent()) return;
-            if (finished && !message) { clear(); return; }
-            if (finished) intent.stage = "message";
-            show(message);
-        },
+        ready() { phase = "ready"; const start = resume; resume = undefined; start?.(); },
+        failed() { phase = "failed"; lane.cancel(); },
+        feedback: (...args: Parameters<Feedback>) => receive?.(...args),
     };
 }

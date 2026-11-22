@@ -53,7 +53,7 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
                 case "references": symbols?.references(); break;
                 case "quickfix": actions?.request(); break;
             }
-        });
+        }, reportError);
         const valid = () => !disposed && editor.element.isConnected && !editor.activity().disposed && workspace.tabs.resolve(target)?.surface.kind === "text";
         const render = () => {
             const state = controller?.getSnapshot();

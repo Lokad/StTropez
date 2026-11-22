@@ -103,9 +103,9 @@ offer **Go to line**. Editing commands are disabled in both read-only panes.
 | Occurrences | Place the caret on a symbol to shade its occurrences. Browser-provider writes also have an outline; the pinned local server reports reads for the sample's variable declarations and assignments. |
 
 While TypeScript starts, the footer shows the last language command you requested.
-It runs when the service is ready if focus and the caret are in their original positions. Editing,
-moving the caret, switching panes or pressing Escape cancels the request. The footer also
-reports when an explicit completion or signature request has no results.
+Editing, moving the caret, switching panes or pressing Escape cancels it. Otherwise it runs
+when the service is ready. An empty completion or signature result appears in the footer.
+Switching files clears that feedback, even if the previous file replies later.
 
 In the references and quick-fix lists, Up and Down move the choice, including from a
 focused result button. Enter in the source opens the chosen location or confirms a ready

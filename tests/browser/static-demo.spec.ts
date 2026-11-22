@@ -577,7 +577,7 @@ test("host language, structured/literal insertion and mapped notes share editing
 import { runDemoUnopenedNavigation, runDemoActions } from "./demo-walkthrough.ts";
 
 test("language commands pressed during startup follow the original caret and report empty results", async ({ page, baseURL }) => {
-    type Gate = { release?: () => void; completions: number };
+    type Gate = { release?: () => void; completions: number; holdCompletion?: boolean; deliverCompletion?: () => void };
     type HeldWorker = Window & { languageGate?: Gate };
     await page.addInitScript(() => {
         const gate: Gate = { completions: 0 }; (window as HeldWorker).languageGate = gate;
@@ -585,7 +585,25 @@ test("language commands pressed during startup follow the original caret and rep
             if (args[0]?.start === true && Array.isArray(args[0].names)) {
                 gate.release = () => Reflect.apply(send, worker, args); return;
             }
-            if (typeof args[0] === "string" && JSON.parse(args[0]).method === "textDocument/completion") gate.completions++;
+            const request = typeof args[0] === "string" && JSON.parse(args[0]);
+            if (request?.method === "textDocument/completion") {
+                gate.completions++;
+                if (gate.holdCompletion) {
+                    gate.holdCompletion = false;
+                    const hold = (event: MessageEvent) => {
+                        if (typeof event.data !== "string") return;
+                        const reply = JSON.parse(event.data);
+                        if (reply.id !== request.id || !("result" in reply)) return;
+                        event.stopImmediatePropagation(); worker.removeEventListener("message", hold, true);
+                        gate.deliverCompletion = () => {
+                            const items = Array.isArray(reply.result) ? reply.result : reply.result?.items;
+                            if (!items?.some((item: { label: string }) => item.label === "calculateTotal")) throw new Error("Expected the original source's completion.");
+                            worker.dispatchEvent(new MessageEvent("message", { data: event.data }));
+                        };
+                    };
+                    worker.addEventListener("message", hold, true);
+                }
+            }
             return Reflect.apply(send, worker, args);
         } });
     });
@@ -638,6 +656,20 @@ test("language commands pressed during startup follow the original caret and rep
     const pricing = page.getByRole("textbox", { name: "pricing.ts", exact: true });
     await expect(pricing).toBeFocused(); await release();
     await expect(message).toBeHidden(); await expect(rename).toBeHidden(); await expect(pricing).toBeFocused();
+
+    await open();
+    await page.evaluate(() => { (window as HeldWorker).languageGate!.holdCompletion = true; });
+    await source.press("Control+Space"); await release();
+    await page.waitForFunction(() => !!(window as HeldWorker).languageGate!.deliverCompletion);
+    await page.locator('[data-file="pricing.ts"]').click();
+    await pricing.press("Control+Home"); await pricing.press("Control+Shift+Space");
+    await expect(message).toHaveText("No signature at this position.");
+    await page.evaluate(() => {
+        (window as HeldWorker).languageGate!.deliverCompletion!();
+        return new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+    });
+    await expect(pricing).toBeFocused(); await expect(completions).toBeHidden();
+    await expect(message).toHaveText("No signature at this position.");
 });
 
 test("broader project actions retain preview, stale recovery and atomic multi-file history", async ({ page, baseURL }) => { await runDemoActions(page, baseURL!); });
