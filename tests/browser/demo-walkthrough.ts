@@ -740,14 +740,21 @@ export async function runDemoConflict(page: Page, url = "/") {
         await working.press("Control+End"); await working.pressSequentially("\n// Later peer edit");
         const save = peer.getByRole("button", { name: "Save my reviewed version", exact: true }); await expect(save).toBeDisabled();
         await expect(peer.getByRole("button", { name: "Use reviewed saved files" })).toBeDisabled();
-        await peer.getByRole("button", { name: "Review saved copy", exact: true }).click(); await expect(save).toBeEnabled(); await save.click();
+        await review.click(); await expect(save).toBeEnabled();
+        // Hold the choice while the recovery notice settles and the narrow footer wraps.
+        const saveBox = (await save.boundingBox())!;
+        await peer.mouse.move(saveBox.x + saveBox.width / 2, saveBox.y + saveBox.height / 2);
+        await peer.mouse.down();
+        await expect(peer.locator("#recovery-status")).toContainText("Recovery draft captured");
+        await peer.mouse.up();
         await expect(peer.locator("#status")).toContainText("Saved in this browser"); await expect(peer.locator("#files")).not.toContainText("●");
         const original = await main.inputValue();
         await main.press("Control+s"); await page.getByRole("button", { name: "Review saved copy" }).click();
         const take = page.getByRole("button", { name: "Use reviewed saved files" });
         const local = page.getByRole("textbox", { name: "Comparison working source", exact: true });
         await expect(take).toBeEnabled();
-        await working.press("Control+Home"); await peer.keyboard.insertText("// Newer peer save\n"); await working.press("Control+s");
+        await working.press("Control+Home"); await peer.keyboard.insertText("// Newer peer save\n");
+        await expect(peer.locator("#files")).toContainText("●"); await working.press("Control+s");
         await expect(peer.locator("#files")).not.toContainText("●");
         await take.click(); await expect(page.locator("#status")).toHaveText("The other page saved again. Review the new saved copy.");
         await expect(local).toHaveValue(original); await expect(take).toBeDisabled();

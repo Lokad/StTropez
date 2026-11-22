@@ -143,6 +143,7 @@ button.demo-source-note { pointer-events: auto; cursor: pointer; text-decoration
     .toolbar { justify-content: flex-start; gap: 4px; }
     .intro { padding: 8px 12px; }
     #files { padding-inline: 10px; overflow-x: auto; flex-shrink: 0; }
+    #status { flex-basis: 100%; }
 }
 @media (max-height: 480px) {
     header, .intro, footer { padding-block: 4px; }
