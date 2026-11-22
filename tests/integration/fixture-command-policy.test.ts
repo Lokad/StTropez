@@ -6,6 +6,7 @@ import { Workspace } from "../../src/index.ts";
 import { openWebSocketTransport } from "../../src/browser/index.ts";
 import { RpcError } from "../../src/protocol/index.ts";
 import type { JsonValue } from "../../src/protocol/index.ts";
+import { createLspProjectClient } from "../../examples/shared/language/lsp-project-client.ts";
 import { latch } from "../helpers/latch.ts";
 
 const cancelled = (error: unknown) => error instanceof RpcError && error.code === -32800;
@@ -32,12 +33,39 @@ function fixture({ url, defer }: ProtocolFixture) {
     });
     defer(() => owner.dispose());
     const first = owner.createScope(), second = owner.createScope();
-    return { owner, first, second, sent, transitions, holdNext() {
+    return { workspace, owner, first, second, sent, transitions, holdNext() {
         assert.equal(intercept, undefined); const entered = latch<void>(); let deliver: (() => void) | undefined;
         intercept = forward => { deliver = forward; entered.resolve(); };
         return { entered: entered.promise, release: () => { const forward = deliver; deliver = undefined; forward?.(); } };
     } };
 }
+
+test("project expiry before registration prevents dispatch and expiry during registration discards its receipt", { timeout: 15000 }, t => withProtocolFixture(async environment => {
+    const f = fixture(environment), connectedScope = f.owner.createScope();
+    const flushing = latch<void>(), resume = latch<void>();
+    t.mock.method(f.owner, "createScope", () => ({ ...connectedScope, flush: async () => {
+        await connectedScope.flush(); flushing.resolve(); await resume.promise;
+    } }));
+    const client = createLspProjectClient({ provider: f.owner, reviewCommand: "fixture.review", statusCommand: "fixture.status",
+        beforeRequest: session => session.request("fixture/reviewRegistration", { registered: true }).result });
+    environment.defer(() => client.dispose());
+    const source = f.workspace.createTextResource({ scope: "project", resource: "source", variant: "working" }, "Source",
+        { value: "abc" }, undefined, { language: { uri: "generic:source", languageId: "generic" } });
+    const document = f.workspace.document(source.documentId);
+    const input = { kind: "register" as const, id: 1, documents: [{ document: document.id, revision: document.revision, length: 3 }], delay: 0 };
+    let current = true;
+    const request = { snapshots: () => [document], isCurrent: () => current, review: async () => ({ applied: false }) };
+    const expired = assert.rejects(client.run(input, request), error => error instanceof RpcError && error.code === -32801);
+    await flushing.promise; current = false; resume.resolve(); await expired;
+    assert.equal(f.sent.filter(packet => packet.method === "fixture/reviewRegistration").length, 0);
+    current = true;
+    const acknowledgement = f.holdNext();
+    const late = assert.rejects(client.run(input, request), error => error instanceof RpcError && error.code === -32801);
+    await acknowledgement.entered; current = false; acknowledgement.release(); await late;
+    const fresh = await client.run(input, { ...request, isCurrent: () => true });
+    assert.equal(fresh.registered, true);
+    assert.deepEqual(f.transitions, ["client/registerCapability"]);
+}));
 
 test("fixture review registration serializes acknowledgements, bounds pending work and distinguishes queued from dispatched cancellation", { timeout: 15000 }, async () => withProtocolFixture(async context => {
     const f = fixture(context), register = (registered: boolean) => f.first.request("fixture/reviewRegistration", { registered });

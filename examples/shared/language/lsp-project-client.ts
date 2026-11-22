@@ -1,4 +1,3 @@
-import { RpcError } from "../../../src/protocol/index.ts";
 import type { LspScopeAccess, LspWorkspace } from "../../../src/protocol/index.ts";
 import type { ProjectCommand } from "../../../fixtures/language/project-commands.ts";
 import { createLspCommandRunner } from "../../../src/protocol/index.ts";
@@ -20,8 +19,9 @@ export function createLspProjectClient(options: LspProjectOptions) {
         run: async (input: ProjectCommand, scope: LspProjectScope) => {
             if (disposed || busy) throw new Error("Workspace provider is unavailable."); busy = true;
             try {
-                await session.ensureConnected(); if (!scope.isCurrent()) throw new RpcError(-32801, "Captured project changed."); await runner.sync(scope);
-                if (options.beforeRequest) await options.beforeRequest(session, input); if (!scope.isCurrent()) throw new RpcError(-32801, "Captured project changed.");
+                await session.ensureConnected();
+                const prepare = options.beforeRequest;
+                await runner.sync(scope, prepare && (connection => prepare(connection, input)));
                 if (input.kind === "register" || input.kind === "unregister") { const registered = session.commandNames().includes(options.reviewCommand); return Object.freeze({ registered, applied: registered === (input.kind === "register"), reason: registered ? "Provider review command registered for this connection." : "Provider review command is not registered." }); }
                 const receipt = await runner.run(input.kind === "review" ? options.reviewCommand : options.statusCommand, [], scope, input.kind === "review");
                 const result = input.kind === "status" ? { applied: true, reason: "Provider workspace status received." } : receipt.decision ?? { applied: false, failureReason: "Provider returned without requesting an edit decision." };

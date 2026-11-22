@@ -302,7 +302,11 @@ the scoped decision handler. Supply captured project snapshots, `isCurrent`, opt
 and an explicit asynchronous review callback. Use `run` for advertised commands or `runAuthorized`
 with a host-approved exact invocation route. Advertisement alone does not authorize execution.
 
-Before preparation or synchronization, the runner copies the arguments and reserves the shared command
+Use `runner.sync(scope, prepare)` for a custom provider request that needs synchronized documents.
+The runner checks the project and its established connection before synchronization, before calling
+`prepare` and after it returns. A failed check reports LSP `ContentModified`.
+
+For `run` and `runAuthorized`, the runner copies the arguments and reserves the shared command
 lane. A competing command or a lane waiting for reconnect cannot apply a preparation edit. Only the
 active server command receives incoming edit requests. The runner refuses unsolicited or overlapping
 requests. Host command handlers use their captured `applyEdit` callback under the same checks. Before
