@@ -112,8 +112,9 @@ opens. The last choice appears, and returning to a sample keeps its edits. [Samp
 - **Large file · 100,000 lines** — Scroll to the middle, edit a row, search and undo. Both source
   and output render visible rows.
 - **Completion catalogue · 1,200 fields** — Type `catalogue.` and press Up for the final member,
-  or type `item119` to filter. The popup shows up to 16 rows, your position, the total and whether
-  the provider returned a partial list.
+  or type `item119` to filter. Scroll the full list and click a member to insert it. Arrow keys
+  bring the keyboard choice back into view. The popup keeps up to 16 rows in the DOM and shows
+  the selected member’s detail below them.
 - **Project-wide results · 1,200 uses** — Browse 300 type errors and 1,201 symbol locations in
   pages of 64. Rename applies the entire validated edit.
 - **Unopened files & navigation** — From `main.ts`, follow a definition into `labels.ts` or

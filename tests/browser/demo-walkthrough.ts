@@ -585,7 +585,7 @@ export async function runDemoSnippets(page: Page, url = "/") {
 
 /** Complete provider lists stay navigable while the host bounds rendered rows. */
 export async function runDemoCompletionCatalogue(page: Page, url = "/") {
-    await page.goto(url); await page.locator("#sample").selectOption("catalogue");
+    await page.goto(`${url}${url.includes("?") ? "&" : "?"}sample=catalogue`);
     const source = page.getByRole("textbox", { name: "catalogue.ts", exact: true });
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await source.press("Control+End"); await source.pressSequentially("catalogue.");
@@ -621,6 +621,28 @@ export async function runDemoCompletionCatalogue(page: Page, url = "/") {
     await expect(cursor).toHaveText(originalCursor); await expect(source).toBeFocused();
     await source.press("PageUp"); await source.press("PageUp");
     await expect(popup.getByRole("option", { name: "item0000", exact: true })).toHaveAttribute("aria-selected", "true");
+    const list = popup.locator(".demo-completion-choices"), hovered = popup.getByRole("option", { name: "item0002", exact: true });
+    await page.mouse.move(0, 0);
+    const background = () => hovered.evaluate(row => getComputedStyle(row).backgroundColor), normal = await background();
+    await hovered.hover(); await expect.poll(background).not.toBe(normal);
+    await page.mouse.wheel(0, 1600);
+    await expect.poll(async () => Number((await popup.getByRole("option").last().textContent())!.slice(4))).toBeGreaterThan(15);
+    await expect(popup.locator(".demo-completion-count")).toContainText("1 of 1200");
+    await source.press("ArrowDown");
+    const second = popup.getByRole("option", { name: "item0001", exact: true });
+    await expect(second).toHaveAttribute("aria-selected", "true"); await expect(popup.locator("pre")).toContainText("item0001:");
+    await expect.poll(() => second.evaluate(row => {
+        const box = row.getBoundingClientRect(), list = row.parentElement!.getBoundingClientRect();
+        return box.top >= list.top - 1 && box.bottom <= list.bottom + 1;
+    })).toBe(true);
+    await source.press("Enter"); await expect(source).toHaveValue(/catalogue\.item0001$/);
+    await source.press("Control+z"); await source.press("Control+Space");
+    await expect(popup.getByRole("option", { name: "item0000", exact: true })).toBeVisible();
+    await list.evaluate(el => { el.scrollTop = el.scrollHeight; });
+    await popup.getByRole("option", { name: "item1199", exact: true }).click();
+    await expect(source).toBeFocused(); await expect(source).toHaveValue(/catalogue\.item1199$/);
+    await source.press("Control+z"); await source.press("Control+Space");
+    await expect(popup.getByRole("option", { name: "item0000", exact: true })).toBeVisible();
     await source.press("ArrowUp");
     await expect(page.getByRole("option", { name: "item1199", exact: true })).toHaveAttribute("aria-selected", "true");
     await source.press("PageDown");

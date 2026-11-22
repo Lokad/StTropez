@@ -10,7 +10,8 @@ import type { DemoSymbolTarget } from "./symbols.ts";
 import { mountDemoActions } from "./actions.ts";
 import { mountLanguageCommands } from "./language-commands.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
-import { completionPageSize, revealCompletionRow } from "../shared/language/completion-list.ts";
+import { completionPageSize } from "../shared/language/completion-list.ts";
+import { mountCompletionList } from "./completion-list.ts";
 
 /** Contextual completion UI around the public editor controller. It never changes text itself. */
 export function mountDemoLanguage(workspace: Workspace, files: () => readonly DemoFile[], file: DemoFile, editor: TextEditor, language: DemoLanguage,
@@ -28,13 +29,11 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         popup.append(count, choices, detail); document.body.append(popup);
         const completionOverlay = mountAnchoredOverlay(editor, popup, { priority: 1 });
         scope.defer(completionOverlay.dispose);
-        const revealChoice = () => revealCompletionRow(choices.querySelector('[aria-selected="true"]'));
-        const resizeChoices = new ResizeObserver(revealChoice);
-        resizeChoices.observe(choices); scope.defer(() => resizeChoices.disconnect());
+        const renderChoices = mountCompletionList(choices, listeners.signal);
         const snippetPanel = document.createElement("div"); scope.defer(() => snippetPanel.remove());
         snippetPanel.className = "demo-snippet"; snippetPanel.hidden = true;
         snippetPanel.setAttribute("role", "region"); snippetPanel.setAttribute("aria-label", "Snippet controls"); document.body.append(snippetPanel);
-        let controller: CompletionController | undefined, renderedChoices: readonly string[] | undefined, renderedIndex = -1;
+        let controller: CompletionController | undefined;
         let renderedSnippet: CompletionSnippet | undefined;
         let inspection: ReturnType<typeof mountDemoInspection> | undefined;
         let symbols: ReturnType<typeof mountDemoSymbols> | undefined;
@@ -68,20 +67,10 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
                     const node = button(value || "Empty value", () => snippet.choose(index)); node.setAttribute("aria-pressed", String(index === snippet.choiceIndex)); return node;
                 }), button("Previous field", () => snippet.move(-1)), button("Next field", () => snippet.move(1)), button("Finish snippet", snippet.finish));
             }
-            if (!valid() || !state?.choices.length || state.offerText === null) { completionOverlay.hide(); return; }
+            if (!valid() || !state?.choices.length || state.offerText === null) { renderChoices(); completionOverlay.hide(); return; }
             count.textContent = `${state.choiceIndex + 1} of ${state.choices.length}${state.completionIncomplete ? " · partial list" : ""}${state.omittedCompletions.length ? ` · ${state.omittedCompletions.length} unsupported` : ""} · type to filter`;
             count.title = state.omittedCompletions.map(item => `${item.label}: ${item.reason}`).join("\n");
-            if (renderedChoices !== state.choices || renderedIndex !== state.choiceIndex) {
-                renderedChoices = state.choices; renderedIndex = state.choiceIndex;
-                const first = Math.max(0, state.choiceIndex - 7), last = Math.min(state.choices.length, first + 16);
-                choices.replaceChildren(...state.choices.slice(first, last).map((label, offset) => {
-                    const option = document.createElement("button"); option.textContent = label; option.type = "button";
-                    option.setAttribute("role", "option"); option.setAttribute("aria-selected", String(first + offset === state.choiceIndex));
-                    const choice = state.completionAt(first + offset);
-                    option.onclick = () => choice?.accept("replace"); return option;
-                }));
-                revealChoice();
-            }
+            renderChoices(state);
             detail.textContent = state.resolving ? "Loading details…" : state.completionDetail;
             const selection = editor.view.getSnapshot().selection;
             completionOverlay.show({ revision: workspace.document(editor.view.documentId).revision, offset: selection.head,
