@@ -1,6 +1,6 @@
 import type { Observable, Workspace } from "../../src/index.ts";
 import { BrowserLspWorkspace } from "../../src/browser/index.ts";
-import { type LspWorkspace, LspLineIndex, decodeLspDiagnostics, lspRangeOffsets } from "../../src/protocol/index.ts";
+import { type LspWorkspace, LspLineIndex, createLspFoldingClient, decodeLspDiagnostics, lspRangeOffsets } from "../../src/protocol/index.ts";
 import type { LspWorkspaceScope, RpcCall, LspScopeAccess, LspTargetResolver } from "../../src/protocol/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import type { DemoFile } from "./project.ts";
@@ -23,6 +23,7 @@ export class DemoLanguage {
     readonly state: Observable<State> = this.cell.observable;
     private owner: LspWorkspace | undefined;
     private scope: LspWorkspaceScope | undefined;
+    private folds: ReturnType<typeof createLspFoldingClient> | undefined;
     private config: DemoProvider | undefined;
     private opening: Promise<LspWorkspace> | undefined;
     private abort: AbortController | undefined;
@@ -59,21 +60,27 @@ export class DemoLanguage {
         this.publish({ checking: this.active, diagnostics: this.diagnostics.diagnostics });
     }
     private valid(lifecycle: number): boolean { return !this.disposed && this.active && lifecycle === this.lifecycle; }
-    get connectedProvider(): LspWorkspace | undefined {
-        return this.active && this.owner?.getSnapshot().phase === "ready" ? this.owner : undefined;
+    get preparedProvider(): LspWorkspace | undefined { return this.active ? this.owner : undefined; }
+    get foldingClient() { return this.owner?.getSnapshot().phase === "ready" ? this.folds : undefined; }
+    async connect(): Promise<LspWorkspace> {
+        const opening = this.prepare(), lifecycle = this.lifecycle;
+        const owner = await opening;
+        if (this.owner !== owner || !this.valid(lifecycle)) throw new Error("Language startup was cancelled.");
+        if (owner.getSnapshot().phase === "ready") return owner;
+        this.publish({ status: "starting", message: "Starting TypeScript…", checking: true });
+        try {
+            await owner.connect();
+            if (!this.valid(lifecycle)) throw new Error("Language startup was cancelled.");
+            this.publish({ status: "ready", message: "Language service ready." }); this.schedule(); return owner;
+        } catch (error) {
+            if (this.valid(lifecycle)) this.publish({ status: "failed", checking: false, message: "TypeScript could not connect. Retry to start a new service." });
+            throw error;
+        }
     }
-    connect(): Promise<LspWorkspace> {
+    prepare(): Promise<LspWorkspace> {
         if (this.disposed) return Promise.reject(new Error("Language project is disposed."));
         this.active = true;
-        if (this.owner) {
-            const owner = this.owner, lifecycle = this.lifecycle;
-            if (owner.getSnapshot().phase === "ready") return Promise.resolve(owner);
-            this.publish({ status: "starting", message: "Starting TypeScript…", checking: true });
-            return owner.connect().then(() => {
-                if (!this.valid(lifecycle)) throw new Error("Language startup was cancelled.");
-                this.publish({ status: "ready", message: "Language service ready." }); this.schedule(); return owner;
-            }).catch(error => { if (this.valid(lifecycle)) this.publish({ status: "failed", checking: false, message: "TypeScript could not reconnect. Retry to start a new service." }); throw error; });
-        }
+        if (this.owner) return Promise.resolve(this.owner);
         if (this.opening) return this.opening;
         const lifecycle = ++this.lifecycle, abort = new AbortController(); this.abort = abort;
         this.publish({ status: "starting", message: "Starting TypeScript…", checking: true });
@@ -112,22 +119,23 @@ export class DemoLanguage {
                 owner = new BrowserLspWorkspace(this.workspace, {
                     connect: capturedProvider.connect,
                     rootUri: config.rootUri, clientInfo: { name: "StTropez demo" }, markdownDocumentation: true,
-                    features: ["textDocument/completion", "textDocument/hover", "textDocument/signatureHelp", "textDocument/definition", "textDocument/references", "textDocument/rename", "textDocument/codeAction", "textDocument/foldingRange", "textDocument/documentHighlight"], diagnostics: false, workspaceEdits: true, applyEdit: true,
+                    diagnostics: false, workspaceEdits: true, applyEdit: true,
                     maxDocumentUnits: 8_000_000, maxTotalUnits: 16_000_000, rpc: { maxMessageUnits: 16 * 1024 * 1024 },
                     documentInfo: document => { const file = this.files.find(file => file.resource.documentId === document.id), info = file && capturedProvider.documents[file.name];
                         return info && { uri: info.uri, languageId: "typescript" }; }, resolveTarget,
                 });
                 abort.signal.addEventListener("abort", () => owner?.dispose(), { once: true });
                 const scope = owner.createScope(); scope.setDocuments(this.files.map(file => this.workspace.document(file.resource.documentId)));
-                await owner.connect();
-                if (!this.valid(lifecycle)) throw new Error("Language startup was cancelled.");
-                this.owner = owner; this.scope = scope; this.config = config;
-                this.stopProvider = owner.subscribe(() => {
-                    if (owner!.getSnapshot().phase === "disconnected" && this.active) {
+                const folds = createLspFoldingClient(owner);
+                const stopProvider = owner.subscribe(() => {
+                    const connection = owner!.getSnapshot();
+                    if (connection.phase === "disconnected" && connection.epoch > 0 && this.active) {
                         this.invalidate(true); this.publish({ status: "failed", checking: false, message: "TypeScript disconnected. Editing is available; retry to reconnect." });
                     }
                 });
-                this.publish({ status: "ready", message: "Language service ready." }); this.schedule(); return owner;
+                this.owner = owner; this.scope = scope; this.config = config;
+                this.folds = folds; this.stopProvider = stopProvider;
+                return owner;
             } catch (error) {
                 owner?.dispose(); if (config) await this.remove(config);
                 if (this.valid(lifecycle)) this.publish({ status: "failed", checking: false, message: error instanceof Error ? error.message : "TypeScript is unavailable." });
@@ -137,7 +145,7 @@ export class DemoLanguage {
         this.opening = work; return work;
     }
     private schedule(): void {
-        if (!this.active || !this.scope || this.disposed) return;
+        if (!this.active || this.owner?.getSnapshot().phase !== "ready" || this.disposed) return;
         if (this.timer) clearTimeout(this.timer);
         this.timer = setTimeout(() => { this.timer = undefined; void this.check(); }, 180);
     }
@@ -201,15 +209,16 @@ export class DemoLanguage {
         this.active = false; this.lifecycle++; this.abort?.abort(); this.abort = undefined; this.opening = undefined;
         this.invalidate(true); this.owner?.disconnect(); this.publish({ status: "suspended", checking: false, message: "Language service is idle." });
     }
-    retry(): Promise<LspWorkspace> {
+    resetProvider(): void {
+        this.folds?.dispose(); this.folds = undefined;
         this.stopProvider?.(); this.stopProvider = undefined; this.scope?.dispose(); this.scope = undefined; this.owner?.dispose(); this.owner = undefined;
-        if (this.config) void this.remove(this.config); this.config = undefined; this.suspend(); return this.connect();
+        if (this.config) void this.remove(this.config); this.config = undefined; this.suspend();
     }
     private remove(config: DemoProvider): Promise<void> { return config.close(); }
     dispose(): Promise<void> {
         if (this.disposal) return this.disposal;
         const opening = this.opening, config = this.config;
-        this.suspend(); this.disposed = true; this.stopWorkspace(); this.stopProvider?.(); this.diagnostics.update([]);
+        this.suspend(); this.disposed = true; this.stopWorkspace(); this.stopProvider?.(); this.folds?.dispose(); this.folds = undefined; this.diagnostics.update([]);
         this.scope?.dispose(); this.owner?.dispose();
         this.scope = undefined; this.owner = undefined; this.config = undefined;
         // Public request/scope cancellation releases retention through microtasks. Finish startup

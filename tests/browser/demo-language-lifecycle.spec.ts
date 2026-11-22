@@ -22,6 +22,9 @@ test("language mounting releases partial owners, preserves failures and rejects 
         const { mountDemoLanguage } = await import(path + "language.js") as typeof import("../../examples/demo/language-view.ts");
         const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const project = await DemoProject.open("pricing", () => true, selectDemoProvider("server"));
+        const prepared = await project.language.prepare();
+        if (prepared.getSnapshot().phase !== "disconnected" || project.language.state.getSnapshot().status !== "starting")
+            throw new Error("Preparing language controls must keep the initial connection pending.");
         const provider = await project.language.connect();
         if (project.language.state.getSnapshot().checking) await new Promise<void>(resolve => {
             const stop = project.language.state.subscribe(() => { if (!project.language.state.getSnapshot().checking) { stop(); resolve(); } });
@@ -42,8 +45,8 @@ test("language mounting releases partial owners, preserves failures and rejects 
                 let view: ReturnType<typeof mountDemoLanguage> | undefined, injected = false, cleaned = false;
                 let release: ((provider: Awaited<ReturnType<typeof project.language.connect>>) => void) | undefined;
                 // This view is still connecting; only the project used by the other cases is ready.
-                const delayed = Object.create(project.language, { connectedProvider: { value: undefined } }) as typeof project.language;
-                if (point === "late") delayed.connect = () => new Promise(resolve => { release = resolve; });
+                const delayed = Object.create(project.language, { preparedProvider: { value: undefined } }) as typeof project.language;
+                if (point === "late") delayed.prepare = () => new Promise(resolve => { release = resolve; });
                 Element.prototype.append = function (...nodes) {
                     append.apply(this, nodes);
                     const marker = point === "sync" ? "demo-snippet" : "demo-actions";

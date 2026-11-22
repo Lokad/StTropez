@@ -21,9 +21,10 @@ export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspa
     const uri = (workspace: Workspace, id: DocumentId) => fixtureDocumentUri(workspace.resourceForDocument(id).id, id);
     const connection = new FixtureLspWorkspace(owner, { connect: signal => openWebSocketTransport(url.href, { signal }),
         initializationOptions: { fixtureDynamicLanguage: new URLSearchParams(location.search).get("lspSubset") === "dynamic" },
-        features: ["textDocument/completion", "textDocument/hover", "textDocument/definition", "textDocument/references", "textDocument/rename", "textDocument/codeAction", "workspace/executeCommand", "textDocument/signatureHelp", "textDocument/documentLink", "textDocument/documentColor", "textDocument/colorPresentation"], diagnostics: true, workspaceEdits: true, applyEdit: true,
+        workspaceEdits: true, applyEdit: true,
         documentInfo: document => document.key.variant === "working" ? { uri: uri(owner, document.id), languageId: "fixture" } : undefined });
     // These initial working resources belong to the host's open project, including unmounted targets.
+    connection.retainFeatures("workspace/executeCommand");
     connection.createScope().setDocuments(owner.getSnapshot().documents.filter(document => document.key.variant === "working"));
     return Object.freeze({
         owner: connection,

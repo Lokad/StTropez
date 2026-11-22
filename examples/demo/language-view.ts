@@ -78,6 +78,10 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         };
         snippetPanel.addEventListener("pointerdown", event => event.preventDefault(), { signal: listeners.signal });
         popup.addEventListener("pointerdown", event => event.preventDefault(), { signal: listeners.signal });
+        const failMount = (error: unknown) => {
+            disposed = true;
+            try { scope.rollback(error); } catch (failure) { reportError(failure); }
+        };
         const attach = (provider: LspWorkspace) => {
             if (!valid()) return;
             try {
@@ -106,15 +110,15 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
                     });
                 symbols = mountDemoSymbols(scope, workspace, files, file, editor, provider, valid, () => { controller?.cancel(); inspection?.dismiss(); actions?.dismiss(); }, open);
                 actions = mountDemoActions(scope, workspace, file, editor, provider, language, valid, () => { controller?.cancel(); inspection?.dismiss(); symbols?.dismiss(); });
-                scope.defer(controller.subscribe(render)); controller.connect(); render(); commands.ready();
-            } catch (error) {
-                disposed = true;
-                try { scope.rollback(error); } catch (failure) { reportError(failure); }
-            }
+                scope.defer(controller.subscribe(render));
+                const ready = () => { if (valid()) { controller!.connect(); render(); commands.ready(); } };
+                if (provider.getSnapshot().phase === "ready") ready();
+                else void language.connect().then(ready, () => { if (!disposed) commands.failed(); }).catch(failMount);
+            } catch (error) { failMount(error); }
         };
-        const connected = language.connectedProvider;
-        if (connected) attach(connected);
-        else void language.connect().then(attach, () => { if (!disposed) commands.failed(); });
+        const prepared = language.preparedProvider;
+        if (prepared) attach(prepared);
+        else void language.prepare().then(attach, () => { if (!disposed) commands.failed(); });
         return Object.freeze({ run: commands.run, dispose });
     } catch (error) { disposed = true; return scope.rollback(error); }
 }

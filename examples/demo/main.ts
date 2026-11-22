@@ -642,11 +642,9 @@ on("language-retry", () => {
     const mountFailed = languageViewFailure !== undefined;
     detachLanguage();
     if (mountFailed) { languageView = attachLanguage(captured, file, view); renderLanguage(); return; }
-    const retry = captured.language.retry();
+    captured.language.resetProvider();
     languageView = attachLanguage(captured, file, view);
-    void retry.then(() => {
-        if (!disposed && project === captured && editor === view) folding?.refresh();
-    }, () => { /* Connection failure is reported by the captured project. */ });
+    folding?.refresh();
 });
 on("panel-collapse", () => {
     if (editor?.activity().composing) return;

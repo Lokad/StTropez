@@ -6,7 +6,7 @@ import { validateActionInput } from "../../fixtures/language/actions.ts";
 import type { ActionInput } from "../../fixtures/language/actions.ts";
 import { HostCell } from "../shared/observable.ts";
 import type { HostProjectTools } from "./project.ts";
-type Session = { token: number; id: string; target: TabTarget; editor: TextEditor };
+type Session = { events: AbortController; id: string; target: TabTarget; editor: TextEditor; controller: CodeActionController };
 export type ActionHostOptions = Readonly<{ provider: LspWorkspace; commandPolicy?: LspCommandPolicy;
     beforeRequest?: (scope: LspScopeAccess, config: Pick<ActionInput, "module" | "delay" | "fault">) => Promise<unknown>;
     beforeResolve?: (scope: LspScopeAccess, config: Pick<ActionInput, "module" | "delay" | "fault">) => Promise<unknown> }>;
@@ -17,7 +17,7 @@ export type ActionsSnapshot = Readonly<{ available: boolean; connected: boolean;
     status: "idle" | "pending" | "ready" | "expired" | "failed" | "applied" | "executed"; message: string; title: string; disabled: string | null; work: number; total: number; command: string | null;
     edits: readonly ActionNote[]; changed: ActionChange | null; changes: readonly ActionChange[]; choices: readonly ActionChoice[]; choice: number | null; choicePage: number; resolving: boolean; page: number; editCount: number }>;
 
-type Panel = { source: Session; input: ActionInput; controller: CodeActionController; stop: () => void;
+type Panel = { source: Session; input: ActionInput; stop: () => void;
     preview: CodeActionPreview | null; page: number; choicePage: number; edits: LspWorkspaceEditPreview | undefined };
 /** Routes the shared host sidebar to its originating editor and supplies fixture and command policy. */
 export class HostActionsTools {
@@ -27,7 +27,7 @@ export class HostActionsTools {
     private readonly options: ActionHostOptions;
     private readonly reviewOwner: HostProjectTools | undefined;
     private readonly reconnectProvider: (() => void) | undefined;
-    private readonly sessions = new Map<number, Session>();
+    private readonly sessions = new Set<Session>();
     private active: Session | undefined;
     private panel: Panel | undefined;
     private readonly stopReviewOwner: (() => void) | undefined;
@@ -51,12 +51,12 @@ export class HostActionsTools {
     }
     private available(s: Session): boolean {
         const tab = this.workspace.tabs.resolve(s.target);
-        return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
+        return !this.disposed && this.sessions.has(s) && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
             && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
     }
 
     private publish(patch: Partial<ActionsSnapshot> = {}): void {
-        const panel = this.panel, state = panel?.controller.getSnapshot(), preview = state?.preview;
+        const panel = this.panel, state = panel?.source.controller.getSnapshot(), preview = state?.preview;
         const status = state?.status, provider = this.options.provider.getSnapshot();
         if (panel && panel.preview !== (preview ?? null)) {
             panel.preview = preview ?? null; panel.page = 0; panel.edits = preview?.readPage();
@@ -77,8 +77,8 @@ export class HostActionsTools {
             changes, changed: changes.find(c => c.document === panel?.source.editor.view.documentId) ?? changes[0] ?? null, ...patch });
     }
     readonly cancel = (): void => {
-        const panel = this.panel; this.panel = undefined; panel?.stop(); panel?.controller.dispose();
-        this.publish(panel ? { message: panel.controller.getSnapshot().message || "Action preview dismissed." } : {});
+        const panel = this.panel; this.panel = undefined; panel?.stop(); panel?.source.controller.cancel();
+        this.publish(panel ? { message: panel.source.controller.getSnapshot().message || "Action preview dismissed." } : {});
     };
     readonly disconnect = (): void => { this.disconnected = true; this.cancel(); this.publish({ message: "Action provider disconnected; local editing remains available." }); };
     readonly reconnect = (): void => { this.disconnected = false; this.cancel(); this.reconnectProvider?.(); this.publish({ message: "Preview a fresh action with current source." }); };
@@ -91,12 +91,31 @@ export class HostActionsTools {
             if (origin?.editor.keymap.handle(event)) event.stopPropagation();
         }, { signal: events.signal });
     };
+    private readonly documents = () => this.workspace.getSnapshot().documents.filter(doc => doc.key.variant === "working");
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const s = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
+        const target = this.workspace.tabs.capture(tab), events = new AbortController();
+        const { provider, commandPolicy, beforeRequest, beforeResolve } = this.options, review = this.reviewOwner;
+        const input = () => {
+            const panel = this.panel;
+            if (panel?.source.editor !== editor) throw new Error("The action panel has closed.");
+            return panel.input;
+        };
+        const controller = createCodeActionController(editor, provider, { documents: this.documents, canCapture: this.canCapture,
+            ...(commandPolicy && { commandPolicy }), ...(beforeRequest && { prepareRequest: session => beforeRequest(session, input()) }),
+            ...(beforeResolve && { prepareResolve: session => {
+                const settings = { module: input().module, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) };
+                this.fault = undefined; return beforeResolve(session, settings);
+            } }), ...(review && { runCommand: command => review.beginAction({ ...command, editor }) }) });
+        const s = { id, target, editor, controller, events }; this.sessions.add(s);
         editor.input.addEventListener("focus", () => { this.active = s; this.publish(); }, { signal: events.signal });
-        for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.panel && this.panel.source !== s && this.cell.get().token !== null && this.panel.controller.getSnapshot().status !== "executing" && this.workspace.document(editor.view.documentId).key.variant === "working") this.cancel(); }, { signal: events.signal });
-        let detached = false;
-        const detach = () => { if (detached) return; detached = true; if (this.panel?.source === s) this.cancel(); events.abort(); this.sessions.delete(s.token); if (this.active === s) this.active = undefined; this.publish(); };
+        for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.panel && this.panel.source !== s && this.cell.get().token !== null && this.panel.source.controller.getSnapshot().status !== "executing" && this.workspace.document(editor.view.documentId).key.variant === "working") this.cancel(); }, { signal: events.signal });
+        const detach = () => events.abort();
+        events.signal.addEventListener("abort", () => {
+            if (this.panel?.source === s) this.cancel();
+            controller.dispose(); this.sessions.delete(s); if (this.active === s) this.active = undefined;
+            this.publish();
+        }, { once: true });
+        editor.signal.addEventListener("abort", detach, { once: true, signal: events.signal });
         const ownsModule = () => this.moduleInput?.matches(":focus") === true && (this.panel?.source ?? this.active) === s;
         try {
             const request = editor.commands.register({ id: "actions.request", label: "Preview module action", enabled: () => this.available(s),
@@ -118,9 +137,8 @@ export class HostActionsTools {
     private start(keyboard: boolean): void {
         const origin = this.active, module = this.cell.get().module;
         if (this.disconnected || !origin || !this.available(origin)) { this.publish({ message: "Focus an available source and reconnect first." }); return; }
-        const documents = () => this.workspace.getSnapshot().documents.filter(doc => doc.key.variant === "working");
         const doc = this.workspace.document(origin.editor.view.documentId), range = origin.editor.view.getSnapshot().selection;
-        if (doc.key.variant !== "working" || documents().some(doc => !this.canCapture(doc.id))) {
+        if (doc.key.variant !== "working" || this.documents().some(doc => !this.canCapture(doc.id))) {
             this.publish({ message: "Finish pending input, navigation, table conversion or composition in the captured project first." }); return;
         }
         this.cancel();
@@ -129,14 +147,8 @@ export class HostActionsTools {
             from: Math.min(range.anchor, range.head), to: Math.max(range.anchor, range.head), module, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: String(error) }); return; }
         this.fault = undefined;
-        const { provider, commandPolicy, beforeRequest, beforeResolve } = this.options, review = this.reviewOwner;
-        const controller = createCodeActionController(origin.editor, provider, { documents, canCapture: this.canCapture,
-            ...(commandPolicy && { commandPolicy }), ...(beforeRequest && { prepareRequest: session => beforeRequest(session, input) }),
-            ...(beforeResolve && { prepareResolve: session => {
-                const settings = { module, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }; this.fault = undefined;
-                return beforeResolve(session, settings);
-            } }), ...(review && { runCommand: command => review.beginAction({ ...command, editor: origin.editor }) }) });
-        this.panel = { source: origin, input, controller, stop: controller.subscribe(() => this.publish()), page: 0, choicePage: 0, edits: undefined, preview: null };
+        const controller = origin.controller;
+        this.panel = { source: origin, input, stop: controller.subscribe(() => this.publish()), page: 0, choicePage: 0, edits: undefined, preview: null };
         this.requested++; controller.request();
         if (keyboard && this.moduleInput && this.cell.get().pending) { this.moduleInput.focus(); this.moduleInput.select(); }
     }
@@ -149,7 +161,7 @@ export class HostActionsTools {
     previousPage(): void { this.goToPage(-1); }
     moveChoicePage(direction: -1 | 1): void {
         const panel = this.panel; if (!panel) return;
-        const state = panel.controller.getSnapshot(), page = panel.choicePage + direction;
+        const state = panel.source.controller.getSnapshot(), page = panel.choicePage + direction;
         if (state.status === "ready" && page >= 0 && page * 16 < state.choices.length) { panel.choicePage = page; this.publish(); }
     }
     readonly openChanged = (): void => {
@@ -170,5 +182,5 @@ export class HostActionsTools {
     }
     debug() { return { requested: this.requested, state: this.cell.get(), capture: this.panel && this.cell.get().token !== null ? { view: this.panel.source.id, input: this.panel.input } : null,
         transport: this.panel ? "lsp3.17" : null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
-    dispose(): void { if (this.disposed) return; this.cancel(); this.bindModule(null); this.stopReviewOwner?.(); this.disposed = true; this.active = undefined; this.publish(); }
+    dispose(): void { if (this.disposed) return; this.cancel(); this.bindModule(null); this.stopReviewOwner?.(); this.disposed = true; for (const session of this.sessions) session.events.abort(); this.active = undefined; this.publish(); }
 }
