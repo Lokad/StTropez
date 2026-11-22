@@ -1,5 +1,5 @@
 import { onSourceFocus } from "./source-focus.ts";
-import { openChangedFile, type ChangedFile, type LanguageHost } from "./language-host.ts";
+import { isMountedEditor, openChangedFile, type ChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, CodeActionCommand, CodeActionExecution, TextEditor } from "../../src/browser/index.ts";
@@ -48,8 +48,7 @@ export class HostProjectTools {
         this.host = host; this.createClient = createClient; this.provider = provider; this.actionEditPolicy = actionEditPolicy;
     }
     private available(s: Session): boolean {
-        return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed
-            && this.host.workspace.ownsDocumentView(s.editor.view, s.target) && !!this.host.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
+        return !this.disposed && this.sessions.get(s.token) === s && isMountedEditor(this.host.workspace, s.editor, s.target);
     }
     private authority(id: DocumentId): string { const m = this.host.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
     private publish(patch: Partial<ProjectSnapshot> = {}): void {

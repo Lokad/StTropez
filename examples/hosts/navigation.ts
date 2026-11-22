@@ -1,4 +1,4 @@
-import { presentDocument, type LanguageHost } from "./language-host.ts";
+import { captureDestinationPanes, isMountedEditor, presentDocument, type LanguageHost } from "./language-host.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
@@ -14,7 +14,7 @@ import { HostCell } from "../shared/observable.ts";
 type Kind = LspNavigationRequest["kind"];
 export type NavigationHostOptions = Readonly<{ provider: LspWorkspace; prepare: (kind: Kind, delay: number, fault?: NavigationFault) => LspPrepare }>;
 type Session = { id: string; target: TabTarget; editor: TextEditor; controller: NavigationController };
-type Job = { kind: Kind; symbol: string; origin: Session; returnPoint: NavigationOrigin; sources: Set<DocumentId>; targets: Map<string, Session>;
+type Job = { kind: Kind; symbol: string; origin: Session; returnPoint: NavigationOrigin; sources: Set<DocumentId>; targets: Map<DocumentId, Session>;
     timer: number; page: NavigationPage | undefined; followDefinition: boolean };
 export type NavigationNote = Readonly<{ ordinal: number; title: string; line: number; column: number; declaration: boolean; open: () => void }>;
 export type NavigationSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; canCancel: boolean; status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired" | "disconnected";
@@ -45,9 +45,7 @@ export class HostNavigationTools {
         this.queryKey = createReviewKey(host.workspace);
     }
     private available(session: Session): boolean {
-        const { editor } = session;
-        return !this.disposed && this.sessions.has(session) && editor.element.isConnected && !editor.activity().disposed
-            && this.host.workspace.ownsDocumentView(editor.view, session.target) && !!this.host.workspace.observeDocument(editor.view.documentId).getSnapshot();
+        return !this.disposed && this.sessions.has(session) && isMountedEditor(this.host.workspace, session.editor, session.target);
     }
     private showPage(job: Job, page: NavigationPage | undefined, patch: Partial<NavigationSnapshot> = {}): readonly NavigationNote[] {
         const titles = new Map(this.host.workspace.getSnapshot().documents.map(doc => [doc.id, doc.title]));
@@ -144,7 +142,7 @@ export class HostNavigationTools {
             validateNavigationDocuments(documents.map(doc => ({ document: doc.id, revision: doc.revision, length: doc.buffer.length })));
         }
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Unsupported navigation capture." }); return; }
-        const targets = new Map<string, Session>(); for (const s of this.sessions.keys()) if (this.available(s) && !targets.has(s.editor.view.documentId)) targets.set(s.editor.view.documentId, s); targets.set(document.id, origin);
+        const targets = captureDestinationPanes(origin, this.sessions.keys(), sources);
         const returnPoint = this.history.capture(origin.editor); if (!returnPoint) return;
         const job: Job = { kind, symbol, origin, returnPoint, sources, targets, timer: 0, page: undefined,
             followDefinition: keyboard && kind === "definition" && origin.editor.getSnapshot().focused };

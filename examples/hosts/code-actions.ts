@@ -3,7 +3,7 @@ import { createActionPages } from "./action-pages.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { onSourceFocus } from "./source-focus.ts";
-import { openChangedFile, type ChangedFile, type LanguageHost } from "./language-host.ts";
+import { isMountedEditor, openChangedFile, type ChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, TabId, TabTarget } from "../../src/index.ts";
 import { createCodeActionController } from "../../src/browser/index.ts";
 import type { CodeActionChoice, CodeActionController, CodeActionPreview, TextEditor } from "../../src/browser/index.ts";
@@ -49,8 +49,7 @@ export class HostActionsTools {
         this.stopReviewOwner = reviewOwner?.state.subscribe(() => this.publish());
     }
     private available(s: Session): boolean {
-        return !this.disposed && this.sessions.has(s) && s.editor.element.isConnected && !s.editor.activity().disposed
-            && this.host.workspace.ownsDocumentView(s.editor.view, s.target) && !!this.host.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
+        return !this.disposed && this.sessions.has(s) && isMountedEditor(this.host.workspace, s.editor, s.target);
     }
 
     private publish(patch: Partial<ActionsSnapshot> = {}): void {

@@ -382,6 +382,7 @@ If you leave the source while F12 is pending, choose the destination in the resu
 The navigation panel shows a waiting indicator during a definition or reference request.
 For declarations loaded by a host URI resolver, it uses the returned document's text and
 revision to label the result and select its range.
+Closing a pane outside the language project leaves a pending definition lookup active.
 Opening another result in the same destination reuses its editor. If the host cannot open the
 pane, the panel shows the error. You can retry the same result. Return records successful visits.
 F12 can open a file in the same secondary pane that requested it. The new pane focuses the

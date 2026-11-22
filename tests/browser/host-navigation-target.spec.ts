@@ -3,7 +3,7 @@ import { basename } from "node:path";
 import { test, expect } from "./fixtures.ts";
 import type { LanguageHost } from "../../examples/hosts/language-host.ts";
 
-test("the navigation panel opens a declaration loaded by the host resolver and returns to the source", async ({ page }) => {
+test("links and definitions retry a failed presentation and keep the requesting source", async ({ page }) => {
     const path = "/navigation-target/";
     const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/index.ts",
         host: "examples/hosts/navigation.ts", panel: "examples/hosts/navigation-panel.ts",
@@ -53,7 +53,12 @@ test("the navigation panel opens a declaration loaded by the host resolver and r
             destination?.dispose();
             return destination = mountTextEditor(document.getElementById("destination")!, ws, id, { ariaLabel: label });
         } };
-        const host = new HostNavigationTools(panes, { provider, prepare: () => async () => {} });
+        const notes = ws.createTextResource({ scope: "host", resource: "notes", variant: "working" }, "Notes", { value: "Plain text" });
+        const notesTab = ws.tabs.open({ kind: "text", documentId: notes.documentId }, "Notes");
+        const notesEditor = mountTextEditor(document.body.appendChild(document.createElement("div")), ws, notesTab, { ariaLabel: "Notes" });
+        // The host closes an unrelated, non-language pane while the declaration lookup is in flight.
+        const host = new HostNavigationTools(panes, { provider, prepare: () => async () => { notesEditor.dispose(); } });
+        host.attach("notes", notesTab, notesEditor);
         const links = new HostDocumentLinks(panes, { provider, prepare: () => async () => {} });
         links.setAlias("currency", module.documentId);
         links.attach("source", tab, editor);
@@ -78,6 +83,7 @@ test("the navigation panel opens a declaration loaded by the host resolver and r
     await expect(page.getByRole("textbox", { name: "Main", exact: true })).toBeFocused();
     await page.getByRole("button", { name: "Find definition", exact: true }).click();
     const row = page.getByRole("button", { name: "library:types:2:6 · declaration", exact: true });
+    await expect(page.getByRole("textbox", { name: "Notes", exact: true })).toHaveCount(0);
     await expect(row).toBeVisible(); await row.click();
     await expect(page.getByLabel("Symbol navigation status", { exact: true })).toHaveText("Declaration pane is unavailable.");
     await expect(page.getByRole("button", { name: "Return to navigation origin" })).toBeDisabled();

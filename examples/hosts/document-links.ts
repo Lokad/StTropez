@@ -1,7 +1,7 @@
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.ts";
-import { presentDocument, unavailablePaneMessage, type LanguageHost } from "./language-host.ts";
+import { captureDestinationPanes, presentDocument, unavailablePaneMessage, type LanguageHost } from "./language-host.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, DocumentSnapshot, TabId } from "../../src/index.ts";
@@ -143,11 +143,7 @@ export class HostDocumentLinks {
             if (!target.language) return;
             documents.set(target.language.uri, target);
         }
-        const targets = new Map<DocumentId, Session>([[source.id, origin]]);
-        for (const session of this.sessions.keys()) {
-            const id = session.editor.view.documentId;
-            if (aliases.has(id) && !targets.has(id)) targets.set(id, session);
-        }
+        const targets = captureDestinationPanes(origin, this.sessions.keys(), aliases);
         this.release();
         const route: Route = { origin, source, documents, targets, viewState: origin.editor.captureView() };
         this.route = route; this.metrics.requested++;
