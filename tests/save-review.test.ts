@@ -108,6 +108,28 @@ test("adopting a saved buffer publishes the revision, authority and mapped view 
     assert.equal(saved.readMetrics().textExports, 0); view.dispose();
 });
 
+test("reviewed documents adopt together, reject a stale participant and share Undo", () => {
+    const { workspace, source, edit } = fixture(); edit("local");
+    const helper = workspace.createTextResource({ scope: "review", resource: "helper", variant: "working" }, "Helper", { value: "helper", serverVersion: "v0" });
+    const first = { resourceId: source.id, expectedRevision: 1, text: "remote", serverVersion: "v2" };
+    const second = { resourceId: helper.id, expectedRevision: 0, text: "remote helper", serverVersion: "v2" };
+    const options = { history: "record" as const };
+    const original = source.getSnapshot(), undo = workspace.observeHistory(source.documentId).getSnapshot();
+    assert.deepEqual(workspace.adoptSavedDocuments([first, { ...second, expectedRevision: 1 }], options), { applied: false, reason: "stale-revision" });
+    const lease = workspace.acquire(helper.id, { preventReload: true });
+    assert.deepEqual(workspace.adoptSavedDocuments([first, second], options), { applied: false, reason: "not-ready" }); lease.release();
+    assert.equal(source.getSnapshot(), original); assert.equal(workspace.observeHistory(source.documentId).getSnapshot(), undo);
+    const observed: string[][] = [];
+    const stop = workspace.subscribe(() => observed.push([source, helper].map(file => workspace.document(file.documentId).text())));
+    assert.equal(workspace.adoptSavedDocuments([first, second], options).applied, true); stop();
+    assert.deepEqual(observed, [["remote", "remote helper"]]);
+    assert.equal(workspace.undo({ documentId: helper.documentId, expectedRevision: 1 }).applied, true);
+    assert.deepEqual([source, helper].map(file => [workspace.document(file.documentId).text(), file.metadata.getSnapshot().serverVersion, file.metadata.getSnapshot().dirty]),
+        [["local", "v2", true], ["helper", "v2", true]]);
+    assert.equal(workspace.redo({ documentId: source.documentId, expectedRevision: 3 }).applied, true);
+    for (const file of [source, helper]) assert.equal(file.metadata.getSnapshot().dirty, false);
+});
+
 test("saved text respects outstanding saves, reload reservations and dirty read-only work", () => {
     const { workspace, source, edit } = fixture();
     const next = { text: "replacement", serverVersion: "v2", history: "reset" as const };

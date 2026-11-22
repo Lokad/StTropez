@@ -644,30 +644,47 @@ export class Workspace {
 
     /** Install an authoritative text version and its saved baseline in one publication. */
     adoptSaved(id: ResourceId, version: Readonly<{ text: string | TextBuffer; serverVersion: string | null; history: "record" | "reset"; source?: string }>): EditResult {
+        const result = this.adoptSavedDocuments([{ resourceId: id, text: version.text, serverVersion: version.serverVersion }], version);
+        return result.applied ? { applied: true, revision: result.revisions[0]!.revision } : result;
+    }
+    /** Install related saved versions together. Undo restores the previous working text across the batch. */
+    adoptSavedDocuments(versions: readonly Readonly<{ resourceId: ResourceId; text: string | TextBuffer; serverVersion: string | null; expectedRevision?: number }>[],
+        options: Readonly<{ history: "record" | "reset"; source?: string }>): BatchEditResult {
         this.scope.assertWritable();
-        const record = this.records.get(id);
-        if (!record?.documentId) return { applied: false, reason: "missing-document" };
-        const state = record.state.get();
-        if (!record.buffer || state.state !== "ready" || record.saveReservations || record.reloadReservations) return { applied: false, reason: "not-ready" };
-        if (record.editLease) return { applied: false, reason: "edit-locked" };
-        if (state.metadata.dirty && !state.metadata.capabilities.edit.includes("host")) return { applied: false, reason: "read-only" };
-        if (version.serverVersion !== null && typeof version.serverVersion !== "string"
-            || version.source !== undefined && typeof version.source !== "string"
-            || version.history !== "record" && version.history !== "reset") throw new TypeError("Invalid saved text version.");
-        const before = record.buffer, { buffer, mapping, changedUnits: units } = replaceDocumentBuffer(before, version.text);
-        // Reset may install a caller's equal buffer. Recorded undo entries need their exact after-buffer.
-        const after = version.history === "reset" && typeof version.text !== "string" ? version.text : buffer;
-        const text = this.prepareText(record, after, mapping, undefined, { ...state.metadata, serverVersion: version.serverVersion,
-            dirty: false, saveStatus: "idle", failure: null });
-        if (version.history === "reset") this.history.forget(record.documentId);
-        else if (units) this.history.record([{ documentId: record.documentId, before, after, mapping, units,
-            initiatingView: null, selections: historySelections(text) }], "host", "canonical");
-        else this.history.seal(record.documentId);
-        record.savedBuffer = after;
-        const changed = new Set<Store<unknown>>();
-        this.commitText(text, "host", "canonical", ++this.nextTransaction, changed, version.source);
+        if (!versions.length) throw new RangeError("At least one saved document is required.");
+        if ((options.source !== undefined && typeof options.source !== "string") || (options.history !== "record" && options.history !== "reset"))
+            throw new TypeError("Invalid saved text options.");
+        const documents = new Set<DocumentId>(), prepared: PreparedText[] = [], history: HistoryChange[] = [];
+        for (const version of versions) {
+            const record = this.records.get(version.resourceId);
+            if (!record?.documentId) return { applied: false, reason: "missing-document" };
+            if (documents.has(record.documentId)) throw new Error("A saved document may appear only once.");
+            documents.add(record.documentId);
+            const state = record.state.get();
+            if (!record.buffer || state.state !== "ready" || record.saveReservations || record.reloadReservations) return { applied: false, reason: "not-ready" };
+            if (version.expectedRevision !== undefined && version.expectedRevision !== state.revision) return { applied: false, reason: "stale-revision" };
+            if (record.editLease) return { applied: false, reason: "edit-locked" };
+            if (state.metadata.dirty && !state.metadata.capabilities.edit.includes("host")) return { applied: false, reason: "read-only" };
+            if (version.serverVersion !== null && typeof version.serverVersion !== "string") throw new TypeError("Invalid saved text version.");
+            const before = record.buffer, { buffer, mapping, changedUnits: units } = replaceDocumentBuffer(before, version.text);
+            // Reset may install an equal buffer. Recorded undo entries need their exact after-buffer.
+            const after = options.history === "reset" && typeof version.text !== "string" ? version.text : buffer;
+            const text = this.prepareText(record, after, mapping, undefined, { ...state.metadata, serverVersion: version.serverVersion,
+                dirty: false, saveStatus: "idle", failure: null });
+            prepared.push(text);
+            if (units && options.history === "record") history.push({ documentId: record.documentId, before, after, mapping, units,
+                initiatingView: null, selections: historySelections(text) });
+        }
+        for (const id of documents) { if (options.history === "reset") this.history.forget(id); else this.history.seal(id); }
+        if (history.length) this.history.record(history, "host", "canonical");
+        const changed = new Set<Store<unknown>>(), transaction = ++this.nextTransaction;
+        const revisions = prepared.map(text => {
+            text.record.savedBuffer = text.buffer;
+            this.commitText(text, "host", "canonical", transaction, changed, options.source);
+            return Object.freeze({ documentId: text.record.documentId!, revision: text.state.revision });
+        });
         this.syncHistory(changed); this.publish(changed);
-        return { applied: true, revision: text.state.revision };
+        return Object.freeze({ applied: true, revisions: Object.freeze(revisions) });
     }
 
     /** Captures content now, retains ownership while queued, and enforces one writer per resource. */

@@ -369,6 +369,12 @@ value undoable. `"reset"` clears history. An equal adoption advances the revisio
 when recording. Pending saves, reload reservations, edit locks and unready documents refuse adoption.
 A clean read-only document can receive a saved version. Replacing a dirty document requires host edit permission.
 
+Use `workspace.adoptSavedDocuments(versions, { history: "record" })` when a saved revision spans
+several files. Each entry supplies `resourceId`, `text` and `serverVersion`. Include the reviewed
+`expectedRevision` to reject a later local edit. All entries must pass before the workspace publishes
+any changes. One Undo from a changed file restores every changed file’s working text against its new
+saved baseline. A batch with `history: "reset"` clears history for the supplied documents.
+
 Use one `WorkspaceCommands` coordinator for related saves. `captureSave(resource, review?)` fixes
 the content and revision immediately. Pass the ticket to `commands.save(ticket, port)`. A queued
 save submits that captured content with the latest known saved server version as its write
