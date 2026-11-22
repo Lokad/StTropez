@@ -63,6 +63,38 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP renam
         expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe("const café = 1;\r\ncafé;\r\n");
         expect((await snapshot(page)).source.exports).toBe(0); await dispose(page); await expect.poll(() => closed).toBe(opened);
     });
+    if (coversHost("plain-candidate", host, "candidate")) test("opening a rename target preserves a pending paste and rejects a released file", async ({ page }) => {
+        await seed(page); await button(page, "Add navigation companion").click();
+        const original = (await snapshot(page)).bindings.navigation.companion!;
+        await preview(page); await button(page, "Apply captured rename").click();
+        const open = button(page, "Open renamed changes in Navigation companion");
+        await expect(open).toBeVisible();
+        const secondary = input(page, "Secondary source");
+        await page.getByRole("checkbox", { name: "Paste tables as CSV" }).check();
+        await secondary.press("Control+End");
+        const paste = await open.evaluate(node => {
+            const source = document.activeElement as HTMLTextAreaElement;
+            const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
+            event.clipboardData!.setData("text/plain", "one\ttwo"); source.dispatchEvent(event);
+            const pending = window.hostFixture.snapshot().bindings.tablePaste.pending;
+            (node as HTMLButtonElement).click();
+            return { pending, keptPane: source.isConnected };
+        });
+        expect(paste).toEqual({ pending: true, keptPane: true });
+        await expect.poll(async () => (await snapshot(page)).bindings.tablePaste.status).toBe("applied");
+        expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toMatch(/"one","two"$/);
+        await secondary.press("Control+z");
+        await input(page).press("Control+z"); await exact(page, raw);
+        expect(await page.evaluate(() => window.hostFixture.releaseNavigationCompanion())).toBe(true);
+        await button(page, "Add navigation companion").click();
+        const before = await snapshot(page); expect(before.bindings.navigation.companion).not.toBe(original);
+        await open.focus(); await open.press("Enter");
+        await expect(page.getByLabel("Rename status", { exact: true })).toContainText("no longer available");
+        await expect(open).toBeFocused();
+        const after = await snapshot(page);
+        expect(after.bindings.views.map(view => [view.viewId, view.documentId])).toEqual(before.bindings.views.map(view => [view.viewId, view.documentId]));
+        expect(after.history).toEqual(before.history); await dispose(page);
+    });
     if (coversHost("candidate-hosts", host, "candidate")) test("malformed targets, authority changes, cancelled captures and reconnect leave editing available", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/rename"); await page.reload();
         let requests = 0, lastPosition: unknown; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method === "textDocument/rename") { requests++; lastPosition = value.params.position; } }));

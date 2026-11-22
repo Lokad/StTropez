@@ -187,7 +187,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         expect((await snapshot(page)).source.exports).toBe(0); await disposeColorsAndLinks(page);
     });
     test("secondary-resource color edits and explicit reveal keep primary Save and Run identity", async ({ page }) => {
-        const text = 'import "sample-utils";', original = 'const color = "#abc";\r\nexport const value = 1;\r\n', expected = original.replace("#abc", "#112233");
+        const text = 'import "sample-utils";\r\nconst accent = "#abc";', original = 'const color = "#abc";\r\nexport const value = 1;\r\n', expected = original.replace("#abc", "#112233");
         await seed(page, text, 10); await button(page, "Add module companion").click(); const companion = (await snapshot(page)).bindings.links.companion!;
         await page.evaluate(id => { const f = window.hostFixture, document = f.navigationDocument(id); f.editLinkTarget(id, document.revision, [{ from: 0, to: 0, insert: 'const color = "#abc";\r\n' }]); }, companion);
         await button(page, "Discover module links").click(); await settledColorsAndLinks(page); await page.getByLabel("Module link results", { exact: true }).getByRole("button").click();
@@ -195,12 +195,28 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await button(page, "Discover document colors").click(); await settledColorsAndLinks(page); expect((await snapshot(page)).bindings.colors.state.view).toBe("secondary");
         await field(page, "Proposed color").fill("#112233"); await button(page, "Preview color presentations").click(); await settledColorsAndLinks(page);
         await button(page, "Apply captured color").click(); await settledColorsAndLinks(page); expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(expected); await exact(page, text);
-        await field(page).focus(); await button(page, "Open color changes in Module companion").click(); await expect(field(page, "Secondary source")).toBeFocused();
+        const open = button(page, "Open color changes in Module companion"), secondary = field(page, "Secondary source");
+        const oldEditor = await secondary.elementHandle();
+        await button(page, "Toggle views").click(); await expect(secondary).toHaveCount(0);
+        await open.click(); await expect(page.getByLabel("Document color status", { exact: true })).toContainText("source pane");
+        await button(page, "Toggle views").click(); await open.click(); await expect(secondary).toBeFocused();
+        expect(await oldEditor!.evaluate(node => node.isConnected)).toBe(false); await oldEditor!.dispose();
+        expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")!.documentId).toBe(companion);
         await field(page, "Secondary source").press("Control+z"); await settledColorsAndLinks(page); expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(original);
         await field(page, "Secondary source").press("Control+Shift+z"); await settledColorsAndLinks(page); expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(expected);
         await button(page, "Run captured inputs").click(); expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(text); await page.evaluate(() => window.hostFixture.finishRun());
         await button(page, "Save source").click(); await page.evaluate(() => window.hostFixture.finishSave()); await settledColorsAndLinks(page);
-        await exact(page, text); expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(expected); await disposeColorsAndLinks(page);
+        await exact(page, text); expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(expected);
+        await open.hover(); await page.mouse.down();
+        await field(page).focus(); await button(page, "Discover document colors").press("Enter"); await settledColorsAndLinks(page);
+        await field(page, "Proposed color").fill("#445566");
+        await button(page, "Preview color presentations").press("Enter"); await settledColorsAndLinks(page);
+        await button(page, "Apply captured color").press("Enter"); await settledColorsAndLinks(page);
+        const replacement = page.getByRole("button", { name: /^Open color changes in / });
+        await expect(replacement).not.toHaveText("Open color changes in Module companion");
+        await secondary.focus(); await replacement.hover(); await page.mouse.up();
+        await expect(secondary).toBeFocused();
+        await replacement.click(); await expect(field(page)).toBeFocused(); await disposeColorsAndLinks(page);
     });
     test("provider color presentations preview every edit and preserve complete selections through shared history", async ({ page }) => {
         const methods: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value.method); }));

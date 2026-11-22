@@ -1,5 +1,6 @@
 import { onSourceFocus } from "./source-focus.ts";
-import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
+import { openChangedFile, type LanguageHost } from "./language-host.ts";
+import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, CodeActionCommand, CodeActionExecution, TextEditor } from "../../src/browser/index.ts";
 import { ProviderLane } from "../shared/provider-lane.ts";
@@ -23,9 +24,7 @@ export type ProjectSnapshot = Readonly<{ available: boolean; connected: boolean;
     status: "idle" | "pending" | "ready" | "rejected" | "failed" | "cancelled"; message: string; view: string | null; changes: readonly Readonly<{ document: DocumentId; title: string }>[]; review: ProjectReview | null }>;
 /** Local protocol owner. Server edits use the workspace's existing atomic shared-history transaction. */
 export class HostProjectTools {
-    private readonly workspace: Workspace;
-    private readonly canCapture: (id: DocumentId) => boolean;
-    private readonly present: (id: DocumentId) => TextEditor | undefined;
+    private readonly host: LanguageHost;
     private changes: ProjectSnapshot["changes"] = [];
     private readonly sessions = new Map<number, Session>();
     private active: Session | undefined;
@@ -42,15 +41,14 @@ export class HostProjectTools {
     private readonly metrics = { requested: 0, serverRequests: 0, applied: 0, rejected: 0, cancelled: 0, failed: 0 };
     private readonly cell = new HostCell<ProjectSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, registered: false, pending: false, status: "idle", message: "Focus a candidate source to use workspace provider commands.", view: null, changes: [], review: null });
     readonly state = this.cell.observable;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined, createClient?: LspProjectFactory, provider?: LspWorkspace, actionEditPolicy?: ProjectActionEditPolicy, reconnectProvider?: () => void) {
-        this.reconnectProvider = reconnectProvider;
-        this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.createClient = createClient; this.provider = provider; this.actionEditPolicy = actionEditPolicy;
+    constructor(host: LanguageHost, createClient?: LspProjectFactory, provider?: LspWorkspace, actionEditPolicy?: ProjectActionEditPolicy) {
+        this.host = host; this.createClient = createClient; this.provider = provider; this.actionEditPolicy = actionEditPolicy;
     }
     private available(s: Session): boolean {
         return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed
-            && this.workspace.ownsDocumentView(s.editor.view, s.target) && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
+            && this.host.workspace.ownsDocumentView(s.editor.view, s.target) && !!this.host.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
     }
-    private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
+    private authority(id: DocumentId): string { const m = this.host.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
     private publish(patch: Partial<ProjectSnapshot> = {}): void {
         const job = this.job, review = job?.review;
         const preview = job && review ? Object.freeze({ ...this.reviewActions(review.key, review.page), label: review.request.label ?? "Provider workspace edit",
@@ -64,7 +62,7 @@ export class HostProjectTools {
         if (!this.current(job) || !edit.isCurrent()) return "Captured edit revision or provider changed.";
         for (const change of edit.documents) {
             if (!change.edits.length) continue;
-            const { capabilities, editLock } = this.workspace.resourceForDocument(change.target.document.documentId as DocumentId).metadata.getSnapshot();
+            const { capabilities, editLock } = this.host.workspace.resourceForDocument(change.target.document.documentId as DocumentId).metadata.getSnapshot();
             if (editLock || !capabilities.edit.includes("human") || !capabilities.edit.includes("host")) return "An edit target is read-only or locked.";
         }
         return null;
@@ -88,15 +86,15 @@ export class HostProjectTools {
         try {
             if (!job.capture.isCurrent() || job.providerCurrent && !job.providerCurrent()) return false;
             for (const { document, authority } of job.documents.values()) {
-                if (this.workspace.observeDocument(document.id).getSnapshot()?.revision !== document.revision
-                    || this.authority(document.id) !== authority || !this.canCapture(document.id)) return false;
+                if (this.host.workspace.observeDocument(document.id).getSnapshot()?.revision !== document.revision
+                    || this.authority(document.id) !== authority || !this.host.canCapture(document.id)) return false;
             }
         } catch { return false; }
         return true;
     }
     private capture(origin: Session): CapturedViewRequest | undefined {
-        return captureViewRequest(this.workspace, origin.target, origin.editor.view,
-            { available: () => this.available(origin) && this.canCapture(origin.editor.view.documentId) });
+        return captureViewRequest(this.host.workspace, origin.target, origin.editor.view,
+            { available: () => this.available(origin) && this.host.canCapture(origin.editor.view.documentId) });
     }
     private changed(job: Job, followUp = queueMicrotask): void {
         if (this.job === job && !this.current(job)) {
@@ -110,19 +108,19 @@ export class HostProjectTools {
         const id = document.id, participant = { document, authority: this.authority(id) };
         job.documents.set(id, participant);
         if (id === job.capture.document.id) return;
-        job.leases.push(this.workspace.acquire(document.resourceId));
-        job.stops.push(this.workspace.onDocumentChange(id, (change, followUp) => {
+        job.leases.push(this.host.workspace.acquire(document.resourceId));
+        job.stops.push(this.host.workspace.onDocumentChange(id, (change, followUp) => {
             if (change.source !== job.source) this.changed(job, followUp);
         }));
-        job.stops.push(this.workspace.resourceForDocument(id).metadata.subscribe(() => {
-            const current = this.workspace.observeDocument(id).getSnapshot();
+        job.stops.push(this.host.workspace.resourceForDocument(id).metadata.subscribe(() => {
+            const current = this.host.workspace.observeDocument(id).getSnapshot();
             if (this.authority(id) !== participant.authority || !current?.change && current?.revision !== participant.document.revision) this.changed(job);
         }));
     }
     private captureJob(origin: Session, documents: readonly DocumentSnapshot[]): Job | undefined {
         const capture = this.capture(origin);
         if (!capture) return;
-        const job: Job = { origin, source: `project:${this.workspace.allocateIdentity()}`, capture, documents: new Map(),
+        const job: Job = { origin, source: `project:${this.host.workspace.allocateIdentity()}`, capture, documents: new Map(),
             leases: [], stops: [], timer: 0, invalid: false, applied: false, changes: [] };
         this.job = job;
         try {
@@ -138,7 +136,7 @@ export class HostProjectTools {
     private renewAfterEdit(job: Job): void {
         const previous = job.capture;
         try {
-            for (const participant of job.documents.values()) participant.document = this.workspace.document(participant.document.id);
+            for (const participant of job.documents.values()) participant.document = this.host.workspace.document(participant.document.id);
             const capture = this.capture(job.origin);
             if (capture) { job.capture = capture; this.watchCapture(job, capture); } else job.invalid = true;
         } catch { job.invalid = true; }
@@ -154,10 +152,9 @@ export class HostProjectTools {
         this.publish({ status: "cancelled", message: job.applied ? "Provider work cancelled after application; the edit remains available to undo." : "Provider work cancelled; source is unchanged." });
     };
     readonly disconnect = (): void => { this.cancel(); this.drop(); this.disconnected = true; this.publish({ status: "idle", message: "Workspace provider disconnected; local editing remains available." }); };
-    private readonly reconnectProvider: (() => void) | undefined;
-    readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ status: "idle", message: "Register again with current working snapshots." }); };
+    readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.host.reconnect?.(); this.publish({ status: "idle", message: "Register again with current working snapshots." }); };
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor }, events = new AbortController(); this.sessions.set(session.token, session);
+        const session = { token: this.host.workspace.allocateIdentity(), id, target: this.host.workspace.tabs.capture(tab), editor }, events = new AbortController(); this.sessions.set(session.token, session);
         onSourceFocus(editor, events.signal, () => { this.active = session; this.publish(); });
         editor.onEditIntent(() => { if (this.job?.documents.has(editor.view.documentId)) this.cancel(); }, events.signal);
         let detached = false;
@@ -175,9 +172,9 @@ export class HostProjectTools {
         // retains them through this decision; the command retains them until its final receipt.
         for (const change of request.edit.documents) {
             const target = change.target.document; if (job.documents.has(target.documentId)) continue;
-            const document = this.workspace.getSnapshot().documents.find(document => document.id === target.documentId);
+            const document = this.host.workspace.getSnapshot().documents.find(document => document.id === target.documentId);
             if (!document || document.resourceId !== target.resourceId || document.revision !== target.revision || document.buffer !== target.buffer
-                || !change.target.isCurrent() || !this.canCapture(document.id)) return Promise.resolve({ applied: false, failureReason: "A resolved edit target changed." });
+                || !change.target.isCurrent() || !this.host.canCapture(document.id)) return Promise.resolve({ applied: false, failureReason: "A resolved edit target changed." });
             this.retainDocument(job, document);
         }
         if (policy) {
@@ -188,7 +185,7 @@ export class HostProjectTools {
             } catch (error) { return Promise.resolve({ applied: false, failureReason: error instanceof Error ? error.message : "Host edit policy failed." }); }
         }
         return new Promise(resolve => {
-            const review: Review = { key: this.workspace.allocateIdentity(), request, context, finish: resolve, stop: () => {}, timer: 0, page: 0 }; job.review = review;
+            const review: Review = { key: this.host.workspace.allocateIdentity(), request, context, finish: resolve, stop: () => {}, timer: 0, page: 0 }; job.review = review;
             review.stop = context.onCancel(() => { if (this.finishReview(job, review, { applied: false, failureReason: "Provider edit request cancelled or invalidated." })) this.publish({ message: "Provider edit request cancelled; no pending decision remains." }); });
             review.timer = job.origin.editor.element.ownerDocument.defaultView!.setTimeout(() => { if (this.finishReview(job, review, { applied: false, failureReason: "Provider edit review timed out." })) this.publish({ message: "Provider edit review timed out without application." }); }, 90000);
             this.publish({ message: "Review every captured provider edit, then apply or decline the batch." });
@@ -199,7 +196,7 @@ export class HostProjectTools {
         if (refusal) throw new Error(refusal);
         // Resolved targets check the originating view during final validation. Keep its capture
         // alive through the synchronous write, then capture the resulting revisions and selection.
-        const changed = applyLspWorkspaceEdit(this.workspace, edit, { origin: "host", source: job.source, requiredOrigins: ["human"], view: job.origin.editor.view });
+        const changed = applyLspWorkspaceEdit(this.host.workspace, edit, { origin: "host", source: job.source, requiredOrigins: ["human"], view: job.origin.editor.view });
         if (changed.length) {
             job.applied = true; this.metrics.applied++;
             const all = new Map(job.changes.map(change => [change.document, change]));
@@ -271,20 +268,14 @@ export class HostProjectTools {
     readonly requestStatus = (): void => this.start("status");
     openChanged(document: DocumentId): void {
         if (this.disposed || this.job || !this.changes.some(c => c.document === document)) return;
-        try {
-            if (!this.workspace.observeDocument(document).getSnapshot() || !this.canCapture(document)) { this.publish({ message: "Finish pending input or reopen an available changed resource." }); return; }
-            const mounted = [...this.sessions.values()].find(s => s.editor.view.documentId === document && this.available(s));
-            const editor = mounted?.editor ?? this.present(document);
-            if (!editor || editor.view.documentId !== document) { this.publish({ message: "The changed resource cannot be presented in an available candidate pane." }); return; }
-            editor.focus(); this.publish({ message: "Opened the captured changed resource. Undo/redo applies in a participating source view." });
-        } catch { this.publish({ message: "The captured changed resource is no longer available." }); }
+        this.publish({ message: openChangedFile(this.host, document, this.sessions.values()) });
     }
     private start(kind: ProjectCommandKind): void {
         const origin = this.active;
         if (!this.createClient || this.disconnected || this.job || !origin || !this.available(origin)) { this.publish({ message: "Focus an available source and reconnect or finish pending work first." }); return; }
         if (kind === "register" ? this.registered : kind !== "status" && !this.registered) { this.publish({ message: "Register the review command before using it; unregister before registering again." }); return; }
-        const docs = this.workspace.getSnapshot().documents.filter(d => d.key.variant === "working");
-        if (docs.some(d => !this.canCapture(d.id))) { this.publish({ message: "Finish pending input, navigation, table conversion or composition first." }); return; }
+        const docs = this.host.workspace.getSnapshot().documents.filter(d => d.key.variant === "working");
+        if (docs.some(d => !this.host.canCapture(d.id))) { this.publish({ message: "Finish pending input, navigation, table conversion or composition first." }); return; }
         let input: ProjectCommand;
         try { input = validateProjectCommand({ kind, documents: docs.map(d => ({ document: d.id, revision: d.revision, length: d.buffer.length })), delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid provider capture." }); return; }

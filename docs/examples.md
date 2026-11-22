@@ -370,6 +370,11 @@ Changing actions or preparing another rename while its confirmation button is he
 In **Action module**, Enter requests a preview for the source and Escape dismisses it
 and returns focus to that editor.
 
+After applying a code action, rename, color change or provider edit, use **Open** to focus the changed file.
+The result survives hiding and showing the source views. If no pane is available, show the
+views or finish the pending input and click **Open** again. Color changes also reveal the caret.
+If the color result changes while **Open** is pressed, click the new result to open its file.
+
 Closing the review keeps F12 and Shift+F12 requests from the primary editor usable.
 A request made in the review itself expires when that pane closes.
 If you leave the source while F12 is pending, choose the destination in the results panel to open it.

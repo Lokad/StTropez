@@ -14,7 +14,7 @@ export function createReviewKey(workspace: Workspace) {
     };
 }
 
-type PanelAction = Readonly<{ label: string; reviewKey?: number | null | undefined; disabled: boolean; invoke: (() => void) | null }>;
+type PanelAction = Readonly<{ label: string; reviewKey?: number | string | null | undefined; disabled: boolean; invoke: (() => void) | null }>;
 
 export type PanelPaging = Readonly<{ key: number; previous: (() => void) | null; next: (() => void) | null }>;
 

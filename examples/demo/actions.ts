@@ -31,7 +31,7 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     scope.defer(() => { apply.onclick = null; });
     const idle = () => { const state = editor.activity(); return !disposed && valid() && !state.composing && !state.pendingInput && !state.pendingCommand; };
     const present = (id: string) => id === file.resource.documentId && valid() ? editor : undefined;
-    const commands = new HostProjectTools(workspace, () => idle(), present, undefined, provider, request =>
+    const commands = new HostProjectTools({ workspace, canCapture: idle, present }, undefined, provider, request =>
         request.edit.documents.length === 1 && request.edit.documents[0]!.target.document.documentId === file.resource.documentId
         && request.edit.documents[0]!.edits.length === 1 && request.edit.documents[0]!.edits.every(edit => edit.insert === projectReviewNote
             && edit.from === edit.to && edit.from === request.edit.documents[0]!.target.document.buffer.length) ? "apply" : "decline");

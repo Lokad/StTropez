@@ -16,7 +16,7 @@ test("a command acknowledges a batch with a newly resolved companion and undoes 
     const view = workspace.createDocumentView(source.documentId);
     const editor = { workspace, tab: workspace.tabs.capture(tab), view, ...editorState(), activity: () => ({ disposed: false }),
         element: Object.assign(new EventTarget(), { isConnected: true, ownerDocument: { defaultView: globalThis } }) } as unknown as TextEditor;
-    const host = new HostProjectTools(workspace, () => true, () => editor, undefined, provider, () => "apply");
+    const host = new HostProjectTools({ workspace, canCapture: () => true, present: () => editor }, undefined, provider, () => "apply");
     const stop = host.attach("source", tab, editor), session = provider.createScope(), runner = createLspCommandRunner(session);
     try {
         await session.ensureConnected();

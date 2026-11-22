@@ -108,8 +108,8 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
             });
         }).catch(reportError);
     }
-    const rename = new HostRenameTools(workspace, () => idle(), id => id === file.resource.documentId && valid() ? editor : undefined,
-        { provider }, { open: beginRename });
+    const rename = new HostRenameTools({ workspace, canCapture: idle, present: id => id === file.resource.documentId && valid() ? editor : undefined },
+        { provider, open: beginRename });
     scope.defer(() => rename.dispose());
     const heading = document.createElement("h2"), status = document.createElement("p"), label = document.createElement("label"), name = document.createElement("input");
     heading.textContent = `Rename in ${file.name}`; status.setAttribute("aria-label", "Rename status"); name.maxLength = 256; label.append("New name ", name);

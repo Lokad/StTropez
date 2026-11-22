@@ -2,7 +2,8 @@ import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts";
 import { onSourceFocus } from "./source-focus.ts";
-import type { DocumentId, TabId, Workspace } from "../../src/index.ts";
+import { openChangedFile, type LanguageHost } from "./language-host.ts";
+import type { DocumentId, TabId } from "../../src/index.ts";
 import { createDocumentColorController } from "../../src/browser/index.ts";
 import type { ColorPresentationChoice, DecorationLayer, DocumentColorChoice, DocumentColorController, ReviewEditResult, TextEditor } from "../../src/browser/index.ts";
 import type { LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
@@ -46,14 +47,11 @@ export class HostDocumentColors {
     private readonly metrics = { requested: 0, previews: 0, applied: 0, unchanged: 0 };
     private readonly cell = new HostCell(initial);
     readonly state = this.cell.observable;
-    private readonly workspace: Workspace;
-    private readonly canCapture: (id: DocumentId) => boolean;
-    private readonly present: (id: DocumentId) => TextEditor | undefined;
+    private readonly host: LanguageHost;
     private readonly options: ColorHostOptions;
-    private readonly reconnectProvider: (() => void) | undefined;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined, options: ColorHostOptions, reconnectProvider?: () => void) {
-        this.reviewKey = createReviewKey(workspace);
-        this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.options = options; this.reconnectProvider = reconnectProvider;
+    constructor(host: LanguageHost, options: ColorHostOptions) {
+        this.reviewKey = createReviewKey(host.workspace);
+        this.host = host; this.options = options;
     }
     private publish(patch: Partial<DocumentColorsSnapshot> = {}) {
         this.cell.set({ ...this.cell.get(), ...patch, view: this.owner?.id ?? null, available: !!this.active && !this.disposed,
@@ -63,7 +61,7 @@ export class HostDocumentColors {
         const s = this.owner, colors = s?.controller.getSnapshot().colors;
         for (const pane of this.sessions) {
             if (colors?.length && s?.editor.view.documentId === pane.editor.view.documentId
-                && colors[0]!.revision === this.workspace.observeDocument(pane.editor.view.documentId).getSnapshot()?.revision) {
+                && colors[0]!.revision === this.host.workspace.observeDocument(pane.editor.view.documentId).getSnapshot()?.revision) {
                 if (pane.painted === colors) continue;
                 pane.layer.set(colors[0]!.revision, colors.map(c => ({ from: c.from, to: c.to, className: "st-document-color", before: "host-inline-swatch",
                     properties: { "--swatch-color": rgbaColor(c.color) } }))); pane.painted = colors;
@@ -72,7 +70,7 @@ export class HostDocumentColors {
     }
     private render(s: Session, patch: Partial<Pick<DocumentColorsSnapshot, "page" | "value" | "selected">> = {}) {
         if (this.owner !== s) return;
-        const state = s.controller.getSnapshot(), old = this.cell.get(), doc = this.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
+        const state = s.controller.getSnapshot(), old = this.cell.get(), doc = this.host.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
         const fresh = this.displayed !== state.colors;
         if (fresh) { this.displayed = state.colors; queueMicrotask(() => this.syncSwatches()); }
         if (!doc) { this.owner = undefined; this.publish({ ...initial, status: "expired", message: "The source closed." }); return; }
@@ -123,7 +121,7 @@ export class HostDocumentColors {
         this.syncSwatches(); this.publish({ ...initial, message: "Color preview dismissed." });
     };
     readonly disconnect = () => { this.disconnected = true; this.cancel(); };
-    readonly reconnect = () => { this.disconnected = false; this.cancel(); this.reconnectProvider?.(); };
+    readonly reconnect = () => { this.disconnected = false; this.cancel(); this.host.reconnect?.(); };
     readonly bindList = this.colorList.bind;
     readonly bindValue = this.valueField.bind;
     setValue(value: string) {
@@ -134,7 +132,7 @@ export class HostDocumentColors {
     }
     attach(id: string, _tab: TabId, editor: TextEditor) {
         if (this.disposed) throw new Error("Color panel is disposed.");
-        const controller = createDocumentColorController(editor, this.options.provider, { canCapture: () => this.canCapture(editor.view.documentId),
+        const controller = createDocumentColorController(editor, this.options.provider, { canCapture: () => this.host.canCapture(editor.view.documentId),
             prepareRequest: kind => { const fault = this.fault; this.fault = undefined; return this.options.prepare(kind, this.delay, fault); } });
         let layer: DecorationLayer;
         try { layer = editor.decorations.add({ name: "document colors", order: 35 }); }
@@ -169,19 +167,18 @@ export class HostDocumentColors {
     readonly discover = () => this.start(false);
     private start(keyboard: boolean) {
         const s = this.active;
-        if (!s || this.disconnected || !this.canCapture(s.editor.view.documentId) || this.workspace.document(s.editor.view.documentId).key.variant !== "working") return;
+        if (!s || this.disconnected || !this.host.canCapture(s.editor.view.documentId) || this.host.workspace.document(s.editor.view.documentId).key.variant !== "working") return;
         this.cancel(); this.owner = s; this.metrics.requested++;
         void s.controller.request().then(() => { if (keyboard && this.owner === s && s.controller.getSnapshot().status === "ready" && s.editor.getSnapshot().focused) this.colorList.element?.focus(); });
     }
     readonly preview = () => {
         const s = this.owner, state = this.cell.get(), proposed = parseColor(state.value), reference = s?.controller.getSnapshot().colors[state.selected];
-        if (!s || !reference || !proposed || state.pending || !this.canCapture(s.editor.view.documentId)) return;
+        if (!s || !reference || !proposed || state.pending || !this.host.canCapture(s.editor.view.documentId)) return;
         this.metrics.previews++; void reference.preview(proposed);
     };
     readonly openChanged = (id: DocumentId) => {
-        if (this.disposed || this.owner || this.cell.get().changed?.document !== id || !this.canCapture(id)) return;
-        try { const editor = [...this.sessions].find(s => s.editor.view.documentId === id)?.editor ?? this.present(id); if (editor) focusSource(editor); }
-        catch { this.publish({ message: "The changed color resource is no longer available." }); }
+        if (this.disposed || this.owner || this.cell.get().changed?.document !== id) return;
+        this.publish({ message: openChangedFile(this.host, id, this.sessions, focusSource) });
     };
     setDelay(value: number) { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid color delay."); this.delay = value; }
     faultNext(value: ColorFault) { this.fault = value; }

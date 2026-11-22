@@ -183,7 +183,7 @@ function DocumentColorsTools() {
         <label>{model.value.label}<input ref={model.value.bind} type="text" maxLength={model.value.maxLength} value={model.value.value} onChange={event => model.value.change(event.currentTarget.value)} /></label><span className="host-color-swatch" aria-hidden="true" style={{backgroundColor: model.value.css}} />
         <button disabled={model.preview.disabled} onClick={model.preview.invoke}>{model.preview.label}</button><label>{model.presentation.label}<select disabled={model.presentation.disabled} value={model.presentation.value} onChange={event => model.presentation.change(event.currentTarget.selectedIndex)}>{model.presentation.choices.map((choice, i) => <option key={i} value={`provider-${i}`}>{choice.label}</option>)}</select></label>
         <button key={panelActionKey(model.apply)} disabled={model.apply.disabled} onClick={model.apply.invoke}>{model.apply.label}</button><ol aria-label={model.edits.label}>{model.edits.items.map((text,i) => <li key={i}><pre>{text}</pre></li>)}</ol>
-        {model.changed.visible && <button disabled={model.changed.disabled} onClick={model.changed.invoke}>{model.changed.label}</button>}</section>;
+        {model.changed.visible && <button key={panelActionKey(model.changed)} disabled={model.changed.disabled} onClick={model.changed.invoke}>{model.changed.label}</button>}</section>;
 }
 function DocumentLinksTools() {
     const tools = bindings.links, model = documentLinksPanelModel(tools, useObserved(tools.state));

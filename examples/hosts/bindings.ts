@@ -230,12 +230,14 @@ export class ViewBindings {
         const reconnectProvider = () => { void lsp.owner.reconnect().catch(controller.reportError); };
         this.language = new HostLanguageTools(controller.workspace, { canCapture, providerFactory: lsp.provider });
         this.hover = new HostHoverTools(kind => { if (kind === "pointer") return !this.signature?.state.getSnapshot().visible; this.signature?.dismiss(); return true; }, { ...lsp.hover, canCapture });
-        this.navigation = new HostNavigationTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.navigation, reconnectProvider);
-        this.project = new HostProjectTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.project, lsp.owner, undefined, reconnectProvider);
-        this.colors = new HostDocumentColors(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.colors, reconnectProvider);
-        this.links = new HostDocumentLinks(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.links, reconnectProvider);
-        this.actions = new HostActionsTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.actions, this.project, reconnectProvider);
-        this.rename = new HostRenameTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.rename, { reconnectProvider });
+        const present = (document: DocumentId) => this.presentNavigationDocument(document);
+        const languageHost = { workspace: controller.workspace, canCapture, present, reconnect: reconnectProvider };
+        this.navigation = new HostNavigationTools(controller.workspace, canCapture, present, lsp.navigation, reconnectProvider);
+        this.project = new HostProjectTools(languageHost, lsp.project, lsp.owner);
+        this.colors = new HostDocumentColors(languageHost, lsp.colors);
+        this.links = new HostDocumentLinks(controller.workspace, canCapture, present, lsp.links, reconnectProvider);
+        this.actions = new HostActionsTools(languageHost, lsp.actions, this.project);
+        this.rename = new HostRenameTools(languageHost, lsp.rename);
         this.signature = new HostSignatureTools(canCapture, () => this.hover.dismiss(), lsp.signature, reconnectProvider);
         this.tools = [this.language, this.hover, this.tablePaste, this.domain, this.navigation, this.project,
             this.signature, this.rename, this.actions, this.links, this.colors];
