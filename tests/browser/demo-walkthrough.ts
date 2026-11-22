@@ -122,9 +122,15 @@ export async function runDemoUnopenedNavigation(page: Page, url = "/") {
     await select(page, labels, "options: LabelOptions"); await labels.press("ArrowRight"); await labels.press("ArrowLeft");
     const intermediate = await labels.evaluate(input => (input as HTMLTextAreaElement).selectionStart);
     await labels.press("F12"); await expect(main).toBeFocused();
+    const reservedBack = await main.evaluate(node => {
+        const event = new KeyboardEvent("keydown", { key: "ArrowLeft", altKey: true, keyCode: 229, bubbles: true, cancelable: true });
+        node.dispatchEvent(event); return event.defaultPrevented;
+    });
+    expect(reservedBack).toBe(false); await expect(main).toBeFocused();
     await main.press("Alt+ArrowLeft"); await expect(labels).toBeFocused();
     expect(await labels.evaluate(input => (input as HTMLTextAreaElement).selectionStart)).toBe(intermediate);
-    await labels.press("Alt+ArrowLeft"); await expect(main).toBeFocused(); await expect(page.locator("#cursor")).toHaveText(cursor);
+    await page.locator("#code-menu summary").click(); await page.getByRole("button", { name: "Back to previous location" }).click();
+    await expect(main).toBeFocused(); await expect(page.locator("#cursor")).toHaveText(cursor);
     await expect(page.locator("#navigate-back")).toBeDisabled();
     await select(page, main, "const record: RecordId"); await main.press("ArrowRight"); await main.press("ArrowLeft"); await main.press("F12");
     const declaration = page.getByRole("textbox", { name: "contracts.d.ts", exact: true }); await expect(declaration).toBeVisible();
@@ -331,7 +337,7 @@ export async function runDemoFolding(page: Page, url = "/") {
     await expect(page.locator("#language-status")).toHaveText("Host outline · no language server");
     await expect(page.locator("#folding-status")).toContainText("7 folds");
     await page.locator("#code-menu summary").click();
-    await expect(page.locator("#fold")).toHaveAttribute("title", "Ctrl+Shift+[ / Meta+Shift+[");
+    await expect(page.locator("#fold")).toHaveAttribute("title", "Ctrl+Shift+[ or Meta+Shift+[");
     await page.locator("#fold-group").selectOption("regions"); await page.locator("#fold-group-collapse").click();
     await expect(page.locator('#editor .st-fold-button[aria-expanded="false"]')).toHaveCount(1);
     await expect(page.locator('#editor .st-viewport-row[data-line="8"]')).toHaveCount(0);
@@ -513,7 +519,7 @@ export async function runDemoEditingRules(page: Page, url = "/") {
     await source.press("Control+Home"); await source.press("ArrowDown"); await source.press("End");
     await expect(page.locator("#editor .st-matching-bracket")).toHaveCount(0);
     await source.pressSequentially('"'); await expect(source).toHaveValue('/*\n[comment]"\n*/\n');
-    await replace("a\nb\n"); await source.press("Control+a"); await menu("Indent selection");
+    await replace("a\nb\n"); await source.press("Control+a"); await menu("Indent lines");
     await expect(source).toHaveValue("  a\n  b\n"); await source.press("Control+z");
     await indentation("4");
     await source.press("Tab"); await expect(source).toHaveValue("    a\n    b\n"); await source.press("Control+z");
@@ -524,7 +530,18 @@ export async function runDemoEditingRules(page: Page, url = "/") {
     expect(await page.locator(".st-comparison .st-editor").evaluateAll(nodes => nodes.map(node => getComputedStyle(node).tabSize))).toEqual(["4", "4"]);
     await page.getByRole("textbox", { name: "Comparison working source", exact: true }).press("Control+z");
     await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toHaveValue("a\nb\n");
+    await page.getByRole("textbox", { name: "Comparison baseline source", exact: true }).focus();
+    await page.locator("#code-menu summary").click();
+    const comment = page.locator("#line-comment");
+    await comment.evaluate(node => (node as HTMLButtonElement).click());
+    await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toHaveValue("a\nb\n");
+    await expect(comment).toBeDisabled(); await page.locator("#code-menu summary").click();
     await page.getByRole("button", { name: "JavaScript", exact: true }).click();
+    const generated = page.getByRole("textbox", { name: "JavaScript output", exact: true });
+    await generated.focus(); await menu("Go to line");
+    const line = page.getByRole("dialog", { name: "Go to line" }).getByRole("spinbutton");
+    await line.fill("2"); await line.press("Enter");
+    await expect(generated).toBeFocused(); await expect(page.locator("#cursor")).toHaveText("Ln 2, Col 1");
     // Reading and removing the outer comment on every row takes several planning turns.
     await replace("// // pending\n".repeat(4096));
     await expect(page.locator("#recovery-status")).toHaveText("Recovery draft captured in this browser.");

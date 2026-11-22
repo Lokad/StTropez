@@ -119,6 +119,6 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         const prepared = language.preparedProvider;
         if (prepared) attach(prepared);
         else void language.prepare().then(attach, () => { if (!disposed) commands.failed(); });
-        return Object.freeze({ run: commands.run, dispose });
+        return Object.freeze({ dispose });
     } catch (error) { disposed = true; return scope.rollback(error); }
 }

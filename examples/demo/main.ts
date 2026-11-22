@@ -16,6 +16,7 @@ import { mountDemoOutput } from "./output.ts";
 import { reviewLayout } from "./review-layout.ts";
 import { initializeDemoFolds, mountDemoFolding, outlineFolds } from "./folding.ts";
 import { mountDemoFoldMenu } from "./fold-menu.ts";
+import { mountCodeMenuCommands } from "./code-menu.ts";
 import { canOpenDemoHelp } from "./diagnostics.ts";
 import { hostConfiguration, hostDecorations, mountHostIntegrations } from "./host-integrations.ts";
 import { inspectCharacters } from "./character-warnings.ts";
@@ -27,6 +28,7 @@ const field = (id: string) => element(id) as HTMLInputElement;
 const findQuery = element("find-query") as HTMLTextAreaElement, replacement = element("replacement") as HTMLTextAreaElement;
 const button = (id: string) => element(id) as HTMLButtonElement;
 const codeMenu = element("code-menu") as HTMLDetailsElement;
+const languageButtons = codeMenu.querySelectorAll<HTMLButtonElement>('[data-command^="demo.language."]');
 const projects = new Map<SampleId, DemoProject>(), activeFiles = new Map<SampleId, string>();
 const pendingProjects = new Map<SampleId, Promise<DemoProject>>();
 const listeners = new AbortController(), sample = element("sample") as HTMLSelectElement;
@@ -36,6 +38,7 @@ for (const choice of sampleChoices) { const option = document.createElement("opt
 let project: DemoProject | undefined, active: DemoFile | undefined, editor: TextEditor | undefined;
 let comparison: TextComparison | undefined, find: FindController | undefined, activePane: TextEditor | undefined;
 const foldMenu = mountDemoFoldMenu(codeMenu, () => comparison?.activePane() ?? editor);
+const renderCodeMenu = mountCodeMenuCommands(codeMenu, () => activePane, () => editor, listeners.signal);
 let output: ReturnType<typeof mountDemoOutput> | undefined;
 let setReviewCollapsed: ReturnType<typeof reviewLayout> | undefined;
 let panel: "javascript" | "problems" | "changes" = "javascript", disposed = false, opening = 0;
@@ -136,7 +139,7 @@ function renderProblems(): void {
             problem.source, ...(!confirmed ? ["Awaiting recheck"] : []), ...(problem.tags ?? []).flatMap(tag => tag === 1 ? ["Unnecessary"] : tag === 2 ? ["Deprecated"] : [])].filter(Boolean).join(" · ");
         if (captured.files.some(file => file.resource.documentId === problem.documentId && !file.readOnly)) {
             const fixes = document.createElement("button"); fixes.textContent = "Check quick fixes"; fixes.disabled = !confirmed;
-            fixes.onclick = () => { if (open(problem)) languageView?.run("quickfix"); };
+            fixes.onclick = () => { if (open(problem)) editor?.commands.run("demo.language.quickfix", "menu"); };
             metadata.append(" · ", fixes);
         }
         const href = problem.codeDescription?.href;
@@ -172,10 +175,9 @@ function renderLanguage(): void {
     if (!project || disposed) return;
     const plain = hostLanguage();
     element("host-controls").hidden = element("host-status").hidden = project.sample.id !== "host";
-    for (const id of ["complete", "inspect-type", "signature", "definition", "references", "rename", "quickfix"]) {
-        button(id).disabled = plain || languageViewFailure !== undefined; button(id).hidden = plain;
-    }
+    for (const control of languageButtons) control.hidden = plain || languageViewFailure !== undefined;
     button("block-comment").hidden = plain;
+    renderCodeMenu();
     if (plain) {
         element("language-status").textContent = project.sample.id === "host" ? "Host language · no language server" : "Host outline · no language server"; element("language-retry").hidden = true;
         document.querySelector<HTMLButtonElement>('[data-panel="problems"]')!.textContent = "Problems";
@@ -209,6 +211,7 @@ function renderMetadata(): void {
 }
 function paintMetadata(): void {
     if (!project || !active || disposed) return;
+    renderCodeMenu();
     if (activePane) {
         const buffer = activePane.workspace.document(activePane.view.documentId).buffer, { head } = activePane.view.getSnapshot().selection;
         const { line, column } = buffer.positionAt(head);
@@ -219,7 +222,7 @@ function paintMetadata(): void {
         ? `TypeScript 5.9.3 · ${panel === "javascript" && !element("workspace").classList.contains("collapsed") ? "syntax & emit" : "syntax"}` : "TypeScript · analyzing…";
     element("analysis-retry").hidden = presentation.status !== "failed" && referencePresentation?.status !== "failed";
     button("save").disabled = project.saving;
-    button("navigate-back").disabled = project.navigation.getSnapshot() === 0;
+    button("navigate-back").disabled = !activePane?.commands.get("demo.back", "menu")?.enabled;
     element("save-conflict").hidden = !project.hasConflict();
     button("conflict-save").disabled = button("conflict-take").disabled = !project.canSaveReviewed();
     button("conflict-review").disabled = project.saving;
@@ -351,10 +354,6 @@ function mountFile(file: DemoFile, focus = false): void {
         element("status").textContent = project.message;
     }, { signal: viewListeners.signal });
     viewListeners.signal.addEventListener("abort", editor.subscribe(scheduleMetadata), { once: true });
-    editor.element.addEventListener("keydown", event => {
-        if (event.isComposing || editor?.getSnapshot().composing || event.defaultPrevented) return;
-        if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.key === "ArrowLeft") { event.preventDefault(); goBack(); return; }
-    }, { signal: viewListeners.signal });
     bindPaneCommands(editor);
     if (comparison) bindPaneCommands(comparison.panes.reference);
     setActivePane(editor);
@@ -472,6 +471,11 @@ function setPanel(next: typeof panel): void {
     mountFile(active, true);
 }
 function bindPaneCommands(target: TextEditor): void {
+    const apple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+    // Option+Left moves by word on Apple keyboards. The menu can restore a location there.
+    target.commands.register({ id: "demo.back", label: "Back to previous location",
+        enabled: from => from !== "menu" || !!project?.navigation.getSnapshot(), run: goBack },
+        { keys: apple ? [] : ["Alt+ArrowLeft"], repeat: false });
     const stop = target.view.subscribe(() => {
         if (target === editor) renderMetadata();
         else if (target === activePane) scheduleMetadata();
@@ -587,11 +591,6 @@ on("find-next", () => { activePane?.commands.run("find.next"); }); on("find-prev
 on("replace-current", () => { find?.replaceCurrent(replacementText()); });
 on("replace-all", () => { find?.replaceAll(replacementText(), { focusEditor: true }); });
 on("compare", () => setPanel("changes")); on("analysis-retry", () => { presentation.retry(); referencePresentation?.retry(); referenceFolding?.refresh(); });
-on("inspect-type", () => languageView?.run("inspect"));
-for (const id of ["complete", "signature", "definition", "references", "rename", "quickfix"] as const)
-    on(id, () => languageView?.run(id));
-on("navigate-back", goBack);
-on("go-to-line", () => { editor?.focus(); editor?.commands.run("go-to-line"); });
 on("inspect-characters", () => { if (editor && project) inspectCharacters(editor, project.workspace, element("character-warning-details")); });
 field("character-warnings").addEventListener("change", () => {
     const enabled = field("character-warnings").checked;
@@ -603,9 +602,6 @@ for (const id of ["view-rulers", "view-current-line", "view-ligatures", "view-tr
     editor?.configure(settings); comparison?.panes.reference.configure(settings);
     output?.editor.configure({ minimap: settings.minimap, fontLigatures: settings.fontLigatures });
 }, { signal: listeners.signal });
-for (const command of ["line-comment", "block-comment", "indent", "outdent"] as const) on(command, () => {
-    if (editor?.commands.run(command === "indent" ? "indent-lines" : command)) editor.focus();
-});
 indentation.addEventListener("change", () => {
     editor?.configure({ language: editingConfiguration() });
     comparison?.panes.reference.configure({ language: editingConfiguration(referencePresentation?.editing) }); folding?.refresh(); referenceFolding?.refresh();

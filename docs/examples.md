@@ -86,12 +86,15 @@ Escape returns to the search pane. F3 and Shift+F3 continue the last query with 
 
 ### Language tools and samples
 
+The Code menu follows the last focused editor. The saved copy and generated JavaScript
+offer **Go to line**. Editing commands are disabled in both read-only panes.
+
 | Action | Workflow |
 | --- | --- |
-| Completion | Type an identifier/member prefix, press Ctrl+Space or choose **Complete**. Arrows select; Enter, Tab or a click accepts an applicable item; Escape dismisses. |
+| Completion | Type an identifier or member prefix, press Ctrl+Space or choose **Show completions**. Arrows select a result. Enter, Tab or a click accepts it. Escape closes the list. |
 | Type inspection | Hover over a symbol, or use **Inspect type** / Ctrl+K, Ctrl+I at the caret. A plain click keeps typing focus. Select tooltip text to copy it or follow a help link. Escape closes the tooltip and preserves the source caret. |
-| Signature help | Type a provider trigger or use **Signature help** / Ctrl+Shift+Space. Argument movement updates the active parameter; overload controls choose another signature. |
-| Definition and references | F12 / Shift+F12 request locations. Each result shows its file, line, column and an excerpt with the symbol highlighted. **Back to previous location** / Alt+Left restores the captured source selection and view. |
+| Signature help | Type a provider trigger or use **Show signature help** / Ctrl+Shift+Space. Moving between arguments updates the active parameter. The overload controls choose another signature. |
+| Definition and references | F12 / Shift+F12 request locations. Each result shows its file, line, column and an excerpt with the symbol highlighted. **Back to previous location** restores the source selection and view. Alt+Left also returns on Windows and Linux. Option+Left moves by word on Apple platforms. |
 | Rename | F2 / **Rename symbol** captures the source and previews the proposed name. Changing the name requires another preview; Apply creates one shared undo command for the validated files. |
 | Quick fix | Press Ctrl+. in the source or choose **Check quick fixes** on a problem. Both request actions for that range. Clicking an edit-only quick fix applies it directly if it touches only the current file, uses at most four edits and totals at most 256 replaced or inserted UTF-16 units. Broader changes require confirmation of the displayed preview. Changing choices retires its Apply action. Enter applies a ready fix. With no applicable fix, Enter inserts a newline. |
 | Problems | Choose a current diagnostic to open its named file and range. Related locations expand on demand; help links require an explicit click and the demo's HTTPS TypeScript-documentation policy. |

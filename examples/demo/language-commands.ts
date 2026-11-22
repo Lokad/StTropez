@@ -53,8 +53,8 @@ export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, o
     for (const command of Object.keys(shortcuts) as Command[]) {
         const [label, ...keys] = shortcuts[command];
         scope.defer(editor.commands.register({ id: "demo.language." + command, label,
-            enabled: () => phase === "starting" || phase === "ready" && command !== "rename" && command !== "inspect",
-            run: () => run(command, false) }, { keys, priority: 50 }).dispose);
+            enabled: from => phase === "starting" || phase === "ready" && (from === "menu" || command !== "rename" && command !== "inspect"),
+            run: from => run(command, from === "menu") }, { keys, priority: 50 }).dispose);
     }
     scope.defer(editor.commands.register({ id: "demo.language.dismiss", label: "Dismiss language request",
         enabled: () => !!intent, run: () => { const waiting = intent?.stage === "waiting"; clear(); return waiting; } },
@@ -64,7 +64,6 @@ export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, o
         editor.input.addEventListener(name, () => { if (intent) clear(); }, { signal: events.signal });
     editor.element.ownerDocument.defaultView!.addEventListener("blur", () => { if (intent) clear(); }, { signal: events.signal });
     return {
-        run,
         ready() {
             phase = "ready";
             const next = intent;
