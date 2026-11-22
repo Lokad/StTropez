@@ -1,5 +1,6 @@
 import { ready,test,expect} from "./fixtures.ts";
 import type {Page} from "@playwright/test";
+import { commandBudget } from "../../src/browser/cooperative-runner.ts";
 
 const snapshot=(page:Page)=>page.evaluate(()=>window.hostFixture.snapshot());
 
@@ -44,7 +45,9 @@ for(const host of ["plain","react"])for(const kind of ["many-carets","long-word"
         const inputReady=kind==="many-carets"?30000:5000;
         await page.goto(`/hosts/${host}/?editor=candidate`);await page.evaluate(text=>{const f=window.hostFixture;f.editSource(f.snapshot().source.revision,[{from:0,to:f.snapshot().source.length,insert:text}]);},original);
         for(const name of ["Open source review","Capture review acceptance","Finish review acceptance"])await page.getByRole("button",{name,exact:true}).click();await ready(page);
-        const input=page.getByRole("textbox",{name:view==="primary"?"Primary source":"Comparison working source",exact:true});await input.focus();await page.evaluate(({view,heads})=>{const f=window.hostFixture;f.selectSourceSet(view,f.snapshot().source.revision,heads.map(head=>({anchor:head,head})),heads.length-1);},{view,heads});await ready(page);const before=await snapshot(page);
+        const input=page.getByRole("textbox",{name:view==="primary"?"Primary source":"Comparison working source",exact:true});await input.focus();
+        await page.waitForFunction(view => window.hostFixture.snapshot().bindings.language.sessions.some(s => s.id === view && s.provider.connected), view);
+        await page.evaluate(({view,heads})=>{const f=window.hostFixture;f.selectSourceSet(view,f.snapshot().source.revision,heads.map(head=>({anchor:head,head})),heads.length-1);},{view,heads});await ready(page);const before=await snapshot(page);
         const captured=await input.evaluate((node,{kind,data,mode})=>{const input=node as HTMLTextAreaElement,f=window.hostFixture;input.dispatchEvent(new KeyboardEvent("keydown",{key:kind==="many-carets"?"ArrowDown":"ArrowRight",ctrlKey:kind==="long-word",bubbles:true,cancelable:true}));
             let prevented=false;for(const fragment of [data.slice(0,2),data.slice(2)]){
                 if(mode.startsWith("paste")){const event=new ClipboardEvent("paste",{clipboardData:new DataTransfer(),bubbles:true,cancelable:true});event.clipboardData!.setData("text/plain",fragment);input.dispatchEvent(event);prevented=event.defaultPrevented;continue;}
@@ -98,7 +101,8 @@ for(const host of ["plain","react"])test(`${host} queued editing, brackets, hist
         key("ArrowRight",true);type("ab");key("Backspace");key("(");key(")");key("Tab");type("z");key("z",true);type("Q");
     });await ready(page);await exact(page,original.slice(0,1000001)+"a()    Q;end");expect((await snapshot(page)).inputRecovery).toHaveLength(0);
     // Span more than one command turn by work count, without relying on a slow machine.
-    const lines=Array<string>(4096).fill("row").join("\r\n");await page.evaluate(lines=>{const f=window.hostFixture;f.editSource(f.snapshot().source.revision,[{from:0,to:f.snapshot().source.length,insert:lines}]);f.selectSourceSet("primary",f.snapshot().source.revision,[{anchor:0,head:lines.length}]);},lines);await ready(page);
+    const lineCount = commandBudget.languageUnits * commandBudget.languageCalls + 1;
+    const lines=Array<string>(lineCount).fill("row").join("\r\n");await page.evaluate(lines=>{const f=window.hostFixture;f.editSource(f.snapshot().source.revision,[{from:0,to:f.snapshot().source.length,insert:lines}]);f.selectSourceSet("primary",f.snapshot().source.revision,[{anchor:0,head:lines.length}]);},lines);await ready(page);
     const before=await snapshot(page);expect(await input.evaluate(node=>{const input=node as HTMLTextAreaElement;input.dispatchEvent(new KeyboardEvent("keydown",{key:"Tab",bubbles:true,cancelable:true}));return !input.dispatchEvent(new InputEvent("beforeinput",{inputType:"insertText",data:"done",bubbles:true,cancelable:true}));})).toBe(true);await ready(page);
     await exact(page,"    done");expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth+2);await input.press("Control+z");await ready(page);await exact(page,lines.split("\r\n").map(line=>"    "+line).join("\r\n"));await input.press("Control+z");await ready(page);await exact(page,lines);
     await page.evaluate(()=>window.hostFixture.dispose());expect((await snapshot(page)).diagnostics).toMatchObject({views:0,leases:0,subscriptions:0});
