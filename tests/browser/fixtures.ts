@@ -4,7 +4,7 @@ import { captureBrowserErrors } from "../helpers/browser-errors.ts";
 
 export { expect };
 
-export async function expectPanelKeyReserved(control: Locator, key: "Escape" | "Enter") {
+export async function expectPanelKeyReserved(control: Locator, key: "Escape" | "Enter" | "ArrowRight") {
     const consumed = await control.evaluate((node, key) => [
         { keyCode: 229 }, { modifierAltGraph: true }, { isComposing: true }, { shiftKey: true },
     ].map(detail => {

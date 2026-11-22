@@ -1,4 +1,4 @@
-import { isSaveKey } from "../shared/save-key.ts";
+import { isSaveKey } from "../shared/host-shortcuts.ts";
 import { editRefusedEvent, inputConflictEvent, mountTextEditor, mountTextComparison } from "../../src/browser/index.ts";
 import type { EditRefusedDetail, TextEditor, TextComparison, ViewportSnapshot, ViewRestoreOptions, ViewState } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabId, TabTarget, Workspace } from "../../src/index.ts";

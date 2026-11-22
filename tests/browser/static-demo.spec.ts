@@ -1,5 +1,5 @@
 import { latch } from "../helpers/latch.ts";
-import { expect, test } from "./fixtures.ts";
+import { expect, expectPanelKeyReserved, test } from "./fixtures.ts";
 import { runDemoHostIntegrations } from "./demo-host-integrations.ts";
 import { dragBundleScrollbars, hoverString, selectInsideString } from "./demo-minified.ts";
 import { checkDemoLigatures } from "./demo-ligatures.ts";
@@ -131,7 +131,8 @@ test("narrow layouts keep JavaScript, Problems and review reachable from the key
     await page.setViewportSize({ width: 1280, height: 820 }); await expect(reader).toBeFocused();
     await page.setViewportSize({ width: 375, height: 820 }); await expect(cursor).toHaveText("Ln 2, Col 1");
     await toggle.click(); await expect(source).toBeFocused(); await expect(cursor).toHaveText("Ln 1, Col 2");
-    await js.focus(); await js.press("ArrowRight"); await expect(problems).toBeFocused(); await problems.press("Enter");
+    await js.focus(); await expectPanelKeyReserved(js, "ArrowRight");
+    await js.press("ArrowRight"); await expect(problems).toBeFocused(); await problems.press("Enter");
     await expect(problems).toHaveAttribute("aria-pressed", "true"); await expect(page.locator("#panel-content")).toContainText(/problem|diagnostic/i);
     await problems.focus(); await problems.press("End"); await expect(changes).toBeFocused(); await changes.press("Space");
     const working = page.getByRole("textbox", { name: "Comparison working source" });
@@ -235,6 +236,8 @@ test("Find toggles regex on the existing query and replaces captured groups in o
     const selected = () => source.evaluate(node => { const input = node as HTMLTextAreaElement; return input.value.slice(input.selectionStart, input.selectionEnd); });
     await page.keyboard.press("Enter"); await expect.poll(selected).toBe("quantity: 2"); await expect(query).toBeFocused();
     await expect(status).toHaveText("1 of 2");
+    await query.dispatchEvent("keydown", { key: "Enter", repeat: true });
+    await expect(status).toHaveText("1 of 2");
     await page.keyboard.press("Shift+Enter"); await expect.poll(selected).toBe("quantity: 4"); await expect(query).toBeFocused();
     await expect(status).toHaveText("2 of 2 · Wrapped to end");
     await query.press("Enter"); await expect(status).toHaveText("1 of 2 · Wrapped to start");
@@ -295,8 +298,14 @@ test("multiline Find and Replace preserves line breaks, regex captures and one-s
     await query.press("Control+a"); await page.keyboard.insertText("item 4\nend");
     await expect(query).toHaveValue("item 4\nend"); await expect(status).toHaveText("1 of 1");
     await query.press("Enter"); await expect(query).toBeFocused();
-    await query.press("Control+h"); await replacement.fill("last"); await replacement.press("Control+Enter");
+    await query.press("Control+h"); await replacement.fill("lastREMOVE");
+    await replacement.evaluate(node => (node as HTMLTextAreaElement).setSelectionRange(4, 10));
+    await replacement.press("Control+Enter");
+    await replacement.dispatchEvent("keydown", { key: "Enter", ctrlKey: true, repeat: true });
     await page.keyboard.insertText("line"); await expect(replacement).toHaveValue("last\nline");
+    await expectPanelKeyReserved(replacement, "Enter");
+    await replacement.dispatchEvent("keydown", { key: "Enter", repeat: true });
+    await expect(source).toHaveValue(original); await expect(replacement).toHaveValue("last\nline");
     await replacement.press("Enter"); await expect(source).toHaveValue("start\nitem 2\nend\nstart\nlast\nline");
     await replacement.press("Escape"); await source.press("Control+z"); await expect(source).toHaveValue(original);
     await source.press("Control+h"); await page.locator("#find-regex").click();
@@ -332,6 +341,10 @@ test("the Find toolbar follows generated output and both Changes panes", async (
     const reader = output.getByRole("textbox"), source = page.locator("#editor");
     await reader.focus(); await open.click(); await query.fill("const cart =");
     await expect(label).toHaveText("JavaScript output · read-only"); await expect(status).toHaveText("1 of 1");
+    const codeSummary = page.locator("#code-menu summary");
+    await codeSummary.click(); await codeSummary.press("Escape");
+    await codeSummary.dispatchEvent("keydown", { key: "Escape", repeat: true });
+    await expect(codeSummary).toBeFocused(); await expect(query).toBeVisible();
     await expect(output.locator(".st-search-match").first()).toBeVisible(); await expect(source.locator(".st-search-match")).toHaveCount(0);
     await query.press("Control+h"); await expect(query).toBeFocused(); await expect(replace).toBeVisible();
     await expect(replace).toBeDisabled(); await expect(replaceAll).toBeDisabled();
@@ -355,6 +368,10 @@ test("the Find toolbar follows generated output and both Changes panes", async (
     await expect(query).toHaveValue('import { calculateTotal } from "./pricing";\nimport type { CartItem } from "./pricing";');
     await expect(saved.locator(".st-search-match").first()).toBeVisible(); await expect(working.locator(".st-search-match")).toHaveCount(0);
     await page.locator("#replace-toggle").click(); await expect(replaceAll).toBeDisabled();
+    const readOnlyReplacement = page.locator("#replacement");
+    await readOnlyReplacement.fill("keep the saved copy"); await readOnlyReplacement.press("Enter");
+    await expect(readOnlyReplacement).toHaveValue("keep the saved copy");
+    await expect(working.getByRole("textbox")).not.toHaveValue(/keep the saved copy/);
     await query.press("F3"); await expect(query).toBeFocused(); await expect(status).toHaveText("1 of 1 · Wrapped to start");
     await working.getByRole("textbox").focus(); await expect(label).toBeEmpty(); await expect(replaceAll).toBeEnabled();
     await expect(saved.locator(".st-search-match")).toHaveCount(0); await expect(working.locator(".st-search-match").first()).toBeVisible();
@@ -485,7 +502,10 @@ test("view controls survive file switches and saved-reference replacement in bot
     await expect(source).toHaveCSS("font-variant-ligatures", "normal");
     await expect.poll(() => source.evaluate(element => element.scrollHeight)).toBeGreaterThan(initialHeight);
     expect(await mounted!.evaluate(element => element.isConnected)).toBe(true);
-    await page.locator("#view-menu summary").press("Escape"); await expect(page.locator("#view-menu")).not.toHaveAttribute("open", "");
+    const viewOption = page.locator("#view-minimap"); await viewOption.focus();
+    await expectPanelKeyReserved(viewOption, "Escape"); await expect(page.locator("#view-menu")).toHaveAttribute("open", "");
+    await viewOption.press("Escape"); await expect(page.locator("#view-menu")).not.toHaveAttribute("open", "");
+    await expect(page.locator("#view-menu summary")).toBeFocused();
     await input.press("Control+Home"); await page.keyboard.type("// View controls\n");
     await page.getByRole("button", { name: "Compare", exact: true }).click();
     const panes = page.locator(".st-comparison-panes > section"), left = panes.first(), right = panes.last();

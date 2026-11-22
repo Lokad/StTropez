@@ -70,7 +70,9 @@ In Shopping cart, open **Find** and enter `quantity:\s*(\d+)`. Choose **Use regu
 Under **Replace…**, use `quantity: $1 + 1` and choose **Replace all**. Open Changes to see both
 edits. One undo restores both quantities. **Match case** and **Match whole word** work with
 literal text and regular expressions. The query and search options follow the active file while Find is open.
-Paste multiple lines into either field, or press Ctrl/Cmd+Enter to insert a line break.
+Paste multiple lines into either field, or press Ctrl/Cmd+Enter to replace the selected field text
+with a line break. Enter in the replacement field replaces the current match. Holding Enter
+in either field performs its action once.
 In regex replacements, `\n` starts a new line and `\\` inserts one backslash.
 Opening Find picks up a selection of up to 4,096 UTF-16 units and escapes it in regex mode.
 An empty or oversized selection keeps the previous query. For a selection containing carriage

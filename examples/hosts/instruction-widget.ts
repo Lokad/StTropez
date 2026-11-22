@@ -1,4 +1,4 @@
-import { isPrimaryShortcut } from "../shared/save-key.ts";
+import { isPrimaryShortcut } from "../shared/host-shortcuts.ts";
 import { exportText, textDifference } from "../../src/index.ts";
 import type { TabId } from "../../src/index.ts";
 import type { TextEditor } from "../../src/browser/index.ts";

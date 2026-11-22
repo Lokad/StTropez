@@ -1,4 +1,4 @@
-import { isSaveKey } from "../shared/save-key.ts";
+import { isSaveKey, isUnmodifiedShortcut } from "../shared/host-shortcuts.ts";
 import { mountTextEditor, mountTextComparison, createFindController, createRegexFindBackend, createFoldingController, editRefusedEvent } from "../../src/browser/index.ts";
 import type { EditRefusedDetail, TextEditor, FindController, FindSnapshot, TextComparison, FoldingController, DecorationLayer, DecorationProvider } from "../../src/browser/index.ts";
 import { discoverIndentationFolds } from "../../src/index.ts";
@@ -25,6 +25,7 @@ import "./style.css";
 
 const element = (id: string) => document.getElementById(id)!;
 const field = (id: string) => element(id) as HTMLInputElement;
+const findBar = element("find-bar");
 const findQuery = element("find-query") as HTMLTextAreaElement, replacement = element("replacement") as HTMLTextAreaElement;
 const button = (id: string) => element(id) as HTMLButtonElement;
 const codeMenu = element("code-menu") as HTMLDetailsElement;
@@ -489,8 +490,25 @@ function bindPaneCommands(target: TextEditor): void {
         setActivePane(target, true); find?.next(direction, { whenReady: true });
         return true;
     });
-    target.commands.register({ id: "find.close", label: "Close Find", enabled: () => !element("find-bar").hidden, run: closeFind });
-    target.keymap.bind("Escape", "find.close", { shared: true });
+    const ownsFind = () => activePane === target && !findBar.hidden;
+    for (const [key, direction, label] of [["Enter", "next", "Select next match"], ["Shift+Enter", "previous", "Select previous match"]] as const) {
+        target.commands.register({ id: "find.query." + direction, label,
+            enabled: () => ownsFind() && document.activeElement === findQuery,
+            run: () => { target.commands.run("find." + direction); } }, { keys: [key], shared: true, priority: 40, repeat: false });
+    }
+    target.commands.register({ id: "find.replaceCurrent", label: "Replace current match",
+        enabled: from => ownsFind() && (from === "button" ? !button("replace-current").disabled : document.activeElement === replacement),
+        run: () => { if (!button("replace-current").disabled) find?.replaceCurrent(replacementText()); } },
+        { keys: ["Enter"], shared: true, priority: 41, repeat: false });
+    target.commands.register({ id: "find.insertLineBreak", label: "Insert a line break in Find or Replace",
+        enabled: () => ownsFind() && (document.activeElement === findQuery || document.activeElement === replacement),
+        run: () => {
+            const input = document.activeElement === findQuery ? findQuery : replacement;
+            input.setRangeText("\n", input.selectionStart, input.selectionEnd, "end");
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+        } }, { keys: ["Ctrl+Enter", "Meta+Enter"], shared: true, priority: 40, repeat: false });
+    target.commands.register({ id: "find.close", label: "Close Find", enabled: ownsFind, run: closeFind });
+    target.keymap.bind("Escape", "find.close", { shared: true, repeat: false });
 }
 function releaseFind(): void {
     stopFind?.(); stopFind = undefined; find?.dispose(); find = undefined;
@@ -499,7 +517,7 @@ function setActivePane(target: TextEditor, repeat = false): void {
     if (activePane === target && find) return;
     if (activePane !== target) { activePane = target; scheduleMetadata(); }
     releaseFind();
-    const visible = !element("find-bar").hidden;
+    const visible = !findBar.hidden;
     if (!visible && !repeat) return;
     const current = createFindController(target, { highlightMatches: visible, regularExpressionBackend: createRegexFindBackend({
         clock: window, createWorker: () => new Worker(new URL("regex-worker.js", document.baseURI), { type: "module" }),
@@ -544,20 +562,19 @@ function selectedFindQuery(source: TextEditor, regex: boolean): string | undefin
     return query.length <= limit ? query : undefined;
 }
 function openFind(replace = false): void {
-    const bar = element("find-bar");
     if (!activePane) return;
-    if (bar.hidden) {
+    if (findBar.hidden) {
         findQuery.value = selectedFindQuery(activePane, findFlags().regularExpression) ?? findQuery.value;
         sizeFindField(findQuery);
         releaseFind();
     }
-    bar.hidden = false; showReplacement(replace);
+    findBar.hidden = false; showReplacement(replace);
     setActivePane(activePane);
     const target = replace && activePane === editor && !active?.readOnly ? replacement : findQuery;
     target.focus(); target.select();
 }
 function closeFind(): void {
-    element("find-bar").hidden = true;
+    findBar.hidden = true;
     releaseFind(); activePane?.focus();
 }
 function showReplacement(show: boolean): void {
@@ -588,7 +605,7 @@ for (const toggle of element("find-options").querySelectorAll("button")) {
 }
 on("replace-toggle", () => showReplacement(Boolean(element("replace-controls").hidden)));
 on("find-next", () => { activePane?.commands.run("find.next"); }); on("find-previous", () => { activePane?.commands.run("find.previous"); });
-on("replace-current", () => { find?.replaceCurrent(replacementText()); });
+on("replace-current", () => { activePane?.commands.run("find.replaceCurrent", "button"); });
 on("replace-all", () => { find?.replaceAll(replacementText(), { focusEditor: true }); });
 on("compare", () => setPanel("changes")); on("analysis-retry", () => { presentation.retry(); referencePresentation?.retry(); referenceFolding?.refresh(); });
 on("inspect-characters", () => { if (editor && project) inspectCharacters(editor, project.workspace, element("character-warning-details")); });
@@ -628,7 +645,9 @@ for (const menu of [codeMenu, element("view-menu") as HTMLDetailsElement]) {
     window.addEventListener("scroll", position, { signal: listeners.signal });
     document.addEventListener("pointerdown", event => { if (!menu.contains(event.target as Node)) menu.open = false; }, { signal: listeners.signal });
     menu.addEventListener("keydown", event => {
-        if (event.key === "Escape" && menu.open) { event.preventDefault(); menu.open = false; summary.focus(); }
+        if (menu.open && event.key === "Escape" && isUnmodifiedShortcut(event)) {
+            event.preventDefault(); menu.open = false; summary.focus();
+        }
     }, { signal: listeners.signal });
 }
 on("language-retry", () => {
@@ -698,7 +717,7 @@ on("download", () => {
 for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.addEventListener("click", () => setPanel(tab.dataset.panel as typeof panel), { signal: listeners.signal });
 for (const strip of [element("files"), element("panels")]) {
     strip.addEventListener("keydown", event => {
-        if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey
+        if (!isUnmodifiedShortcut(event)
             || !(event.target instanceof HTMLButtonElement) || !event.target.matches("[data-file], [data-panel]")) return;
         const key = event.key;
         if (key !== "ArrowLeft" && key !== "ArrowRight" && key !== "Home" && key !== "End") return;
@@ -713,18 +732,8 @@ findQuery.addEventListener("input", () => {
     sizeFindField(findQuery); find?.setQuery(findQuery.value, { preview: true });
 }, { signal: listeners.signal });
 replacement.addEventListener("input", () => sizeFindField(replacement), { signal: listeners.signal });
-element("find-bar").addEventListener("keydown", event => {
-    if (event.isComposing || event.keyCode === 229 || event.defaultPrevented || activePane?.keymap.handle(event)) return;
-    if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey
-        && (event.target === findQuery || event.target === replacement)) {
-        event.preventDefault();
-        const input = event.target as HTMLTextAreaElement;
-        input.setRangeText("\n", input.selectionStart, input.selectionEnd, "end");
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        return;
-    }
-    if (event.key === "Enter" && event.target === findQuery) { event.preventDefault(); activePane?.commands.run(event.shiftKey ? "find.previous" : "find.next"); }
-    else if (event.key === "Enter" && event.target === replacement) { event.preventDefault(); button("replace-current").click(); }
+findBar.addEventListener("keydown", event => {
+    activePane?.keymap.handle(event);
 }, { signal: listeners.signal });
 for (const controls of document.querySelectorAll<HTMLElement>("header, #files, #panels")) {
     controls.addEventListener("keydown", event => { activePane?.keymap.handle(event); }, { signal: listeners.signal });
