@@ -1,5 +1,5 @@
 import { createPanelKeyBinding } from "./panel-keys.ts";
-import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts";
+import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.ts";
 import { presentDocument, unavailablePaneMessage, type LanguageHost } from "./language-host.ts";
 import { onSourceFocus } from "./source-focus.ts";
@@ -16,7 +16,7 @@ import { HostCell } from "../shared/observable.ts";
 type Alias = Readonly<{ module: string; uri: string }>;
 export type LinkHostOptions = Readonly<{ provider: LspWorkspace;
     prepare: (aliases: readonly Alias[], delay: number, fault?: LinksInput["fault"]) => LspPrepare }>;
-type Session = { id: string; editor: TextEditor; controller: DocumentLinkController; detach: () => void };
+type Session = { id: string; editor: TextEditor; controller: DocumentLinkController };
 type Route = { origin: Session; source: DocumentSnapshot; viewState: ViewState; documents: Map<string, DocumentSnapshot>;
     targets: Map<DocumentId, Session>; destination?: TextEditor; releaseHistory?: () => void };
 export type LinkNote = ModuleLink & Readonly<{ line: number; column: number; title: string; targetTitle: string | null; resolvable: boolean; open: () => void }>;
@@ -29,7 +29,7 @@ const initial: DocumentLinksSnapshot = { available: false, connected: false, dis
 export class HostDocumentLinks {
     private readonly pageKey;
     private readonly aliases = new Map<string, DocumentId>();
-    private readonly sessions = new Set<Session>();
+    private readonly sessions = new Map<Session, () => void>();
     private active: Session | undefined;
     private route: Route | undefined;
     private companion: DocumentId | undefined;
@@ -74,19 +74,10 @@ export class HostDocumentLinks {
                 const fault = this.fault; this.fault = undefined; return this.options.prepare(aliases, this.delay, fault);
             },
         });
-        const session: Session = { id, editor, controller, detach: () => detach() }, events = new AbortController();
-        this.sessions.add(session);
-        const stop = controller.subscribe(() => { if (this.route?.origin === session) this.render(this.route); });
-        const detach = () => {
-            if (!this.sessions.delete(session)) return;
-            if (this.active === session) this.active = undefined;
-            stop(); events.abort();
-            const route = this.route;
-            if (!this.presenting && route && (route.targets.get(editor.view.documentId) === session || route.destination === editor)) this.cancel();
-            controller.dispose(); this.publish();
-        };
-        try {
-            const register = scopedCommands(editor, events.signal);
+        const session = { id, editor, controller };
+        return attachPanelSession(this.sessions, session, (signal, register) => {
+            const stop = controller.subscribe(() => { if (this.route?.origin === session) this.render(this.route); });
+            signal.addEventListener("abort", stop, { once: true });
             register({ id: "links.discover", label: "Discover module links", enabled: () => !this.disconnected,
                 run: () => { this.active = session; this.start(true); } }, { keys: ["F4"] });
             register({ id: "links.return", label: "Return to link origin", enabled: () => !!this.route?.destination,
@@ -98,16 +89,20 @@ export class HostDocumentLinks {
                     this.cancel();
                     if (origin && this.sessions.has(origin)) origin.editor.focus();
                 } }, { keys: ["Escape"], shared: true, priority: 7 });
-        } catch (error) { detach(); throw error; }
-        onSourceFocus(editor, events.signal, () => {
-            if (this.active !== session && this.cell.get().status === "resolving" && !this.presenting) this.cancel();
-            this.active = session; this.publish();
+            onSourceFocus(editor, signal, () => {
+                if (this.active !== session && this.cell.get().status === "resolving" && !this.presenting) this.cancel();
+                this.active = session; this.publish();
+            });
+            editor.onEditIntent(() => {
+                const uri = this.host.workspace.document(editor.view.documentId).language?.uri;
+                if (!this.presenting && uri && this.route?.documents.has(uri)) this.cancel();
+            }, signal);
+        }, () => {
+            if (this.active === session) this.active = undefined;
+            const route = this.route;
+            if (!this.presenting && route && (route.targets.get(editor.view.documentId) === session || route.destination === editor)) this.cancel();
+            this.publish();
         });
-        editor.onEditIntent(() => {
-            const uri = this.host.workspace.document(editor.view.documentId).language?.uri;
-            if (!this.presenting && uri && this.route?.documents.has(uri)) this.cancel();
-        }, events.signal);
-        return detachWithEditor(editor, events.signal, detach);
     }
     private render(route: Route, page = this.cell.get().page) {
         const state = route.origin.controller.getSnapshot(), status = state.status;
@@ -149,7 +144,7 @@ export class HostDocumentLinks {
             documents.set(target.language.uri, target);
         }
         const targets = new Map<DocumentId, Session>([[source.id, origin]]);
-        for (const session of this.sessions) {
+        for (const session of this.sessions.keys()) {
             const id = session.editor.view.documentId;
             if (aliases.has(id) && !targets.has(id)) targets.set(id, session);
         }
@@ -245,6 +240,6 @@ export class HostDocumentLinks {
     dispose() {
         if (this.disposed) return;
         this.disposed = true; this.cancel(); this.linkList.dispose(); this.aliases.clear();
-        for (const session of this.sessions) session.detach();
+        for (const detach of this.sessions.values()) detach();
     }
 }

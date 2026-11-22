@@ -1,7 +1,7 @@
 import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.ts";
 import { formatEditNote } from "./edit-review.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
-import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts";
+import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import { openChangedFile, type ChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, TabId } from "../../src/index.ts";
@@ -14,7 +14,7 @@ import { HostCell } from "../shared/observable.ts";
 
 export type ColorHostOptions = Readonly<{ provider: LspWorkspace;
     prepare: (kind: "discovery" | "presentation", delay: number, fault?: ColorFault) => LspPrepare }>;
-type Session = { id: string; editor: TextEditor; controller: DocumentColorController; layer: DecorationLayer; detach: () => void; painted?: readonly DocumentColorChoice[] };
+type Session = { id: string; editor: TextEditor; controller: DocumentColorController; layer: DecorationLayer; painted?: readonly DocumentColorChoice[] };
 export type ColorNote = ColorReference & Readonly<{ ordinal: number; line: number; column: number; css: string; inspect: () => void }>;
 export type DocumentColorsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; view: string | null;
     status: "idle" | "scan" | "colors" | "presentations" | "applied" | "expired" | "failed"; message: string; count: number; page: number; paging: PanelPaging | null; colors: readonly ColorNote[];
@@ -32,7 +32,7 @@ function focusSource(editor: TextEditor) {
 
 /** The host owns the picker, swatches, preview list and focus after confirmation. */
 export class HostDocumentColors {
-    private readonly sessions = new Set<Session>();
+    private readonly sessions = new Map<Session, () => void>();
     private readonly reviewKey;
     private active: Session | undefined;
     private owner: Session | undefined;
@@ -60,7 +60,7 @@ export class HostDocumentColors {
     }
     private syncSwatches() {
         const s = this.owner, colors = s?.controller.getSnapshot().colors;
-        for (const pane of this.sessions) {
+        for (const pane of this.sessions.keys()) {
             if (colors?.length && s?.editor.view.documentId === pane.editor.view.documentId
                 && colors[0]!.revision === this.host.workspace.observeDocument(pane.editor.view.documentId).getSnapshot()?.revision) {
                 if (pane.painted === colors) continue;
@@ -135,17 +135,9 @@ export class HostDocumentColors {
         let layer: DecorationLayer;
         try { layer = editor.decorations.add({ name: "document colors", order: 35 }); }
         catch (error) { controller.dispose(); throw error; }
-        const s: Session = { id, editor, controller, layer, detach: () => detach() }, events = new AbortController();
-        this.sessions.add(s);
-        const stop = controller.subscribe(() => this.render(s));
-        const detach = () => {
-            if (!this.sessions.delete(s)) return;
-            if (this.active === s) this.active = undefined;
-            if (this.owner === s) this.cancel();
-            events.abort(); stop(); controller.dispose(); s.layer.dispose(); this.publish();
-        };
-        try {
-            const register = scopedCommands(editor, events.signal);
+        const s: Session = { id, editor, controller, layer };
+        return attachPanelSession(this.sessions, s, (signal, register) => {
+            controller.subscribe(() => this.render(s));
             register({ id: "colors.discover", label: "Discover document colors", enabled: () => !this.disconnected,
                 run: () => { this.active = s; this.start(true); } }, { keys: ["F6"] });
             const ownsValue = () => (this.owner ?? this.active) === s && this.valueField.focused;
@@ -155,12 +147,17 @@ export class HostDocumentColors {
                 enabled: () => ownsValue() || (this.owner === s && this.colorList.focused),
                 run: () => { this.cancel(); focusSource(editor); } }, { keys: ["Escape"], shared: true, priority: 8 });
             this.syncSwatches();
-        } catch (error) { detach(); throw error; }
-        onSourceFocus(editor, events.signal, () => { this.active = s; this.publish(); });
-        editor.onEditIntent(() => {
-            if (this.owner?.editor.view.documentId === editor.view.documentId) this.cancel();
-        }, events.signal);
-        return detachWithEditor(editor, events.signal, detach);
+            onSourceFocus(editor, signal, () => { this.active = s; this.publish(); });
+            editor.onEditIntent(() => {
+                if (this.owner?.editor.view.documentId === editor.view.documentId) this.cancel();
+            }, signal);
+        }, () => {
+            try {
+                if (this.active === s) this.active = undefined;
+                if (this.owner === s) this.cancel();
+                else this.publish();
+            } finally { layer.dispose(); }
+        });
     }
     readonly discover = () => this.start(false);
     private start(keyboard: boolean) {
@@ -176,11 +173,11 @@ export class HostDocumentColors {
     };
     readonly openChanged = (id: DocumentId) => {
         if (this.disposed || this.owner || this.cell.get().changed?.document !== id) return;
-        this.publish({ message: openChangedFile(this.host, id, this.sessions, focusSource) });
+        this.publish({ message: openChangedFile(this.host, id, this.sessions.keys(), focusSource) });
     };
     setDelay(value: number) { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid color delay."); this.delay = value; }
     faultNext(value: ColorFault) { this.fault = value; }
     debug() { return { ...this.metrics, state: this.cell.get(), sessions: this.sessions.size, subscriptions: this.cell.count(),
-        decoratedViews: [...this.sessions].filter(s => !!s.painted).length, disposed: this.disposed }; }
-    dispose() { if (!this.disposed) { this.disposed = true; this.cancel(); this.colorList.dispose(); this.valueField.dispose(); for (const s of this.sessions) s.detach(); } }
+        decoratedViews: [...this.sessions.keys()].filter(s => !!s.painted).length, disposed: this.disposed }; }
+    dispose() { if (!this.disposed) { this.disposed = true; this.cancel(); this.colorList.dispose(); this.valueField.dispose(); for (const detach of this.sessions.values()) detach(); } }
 }

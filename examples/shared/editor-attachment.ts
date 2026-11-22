@@ -1,4 +1,5 @@
 import type { TextEditor } from "../../src/browser/index.ts";
+import { CleanupScope } from "./cleanup-scope.ts";
 
 /** Use the same teardown when the pane closes before its host feature. */
 export function detachWithEditor(editor: TextEditor, signal: AbortSignal, detach: () => void) {
@@ -14,4 +15,20 @@ export function scopedCommands(editor: TextEditor, signal: AbortSignal) {
         const command = editor.commands.register(...args);
         signal.addEventListener("abort", command.dispose, { once: true, signal: editor.signal });
     };
+}
+
+/** A failed mount and either teardown order release the same pane and controller. */
+export function attachPanelSession<S extends { editor: TextEditor; controller: { dispose(): void } }>(
+    sessions: Map<S, () => void>, session: S,
+    bind: (signal: AbortSignal, register: ReturnType<typeof scopedCommands>) => void, retire: () => void,
+) {
+    const scope = new CleanupScope(), events = new AbortController();
+    scope.defer(session.controller.dispose);
+    scope.defer(retire);
+    scope.defer(() => { sessions.delete(session); events.abort(); });
+    sessions.set(session, scope.dispose);
+    try {
+        bind(events.signal, scopedCommands(session.editor, events.signal));
+        return detachWithEditor(session.editor, events.signal, scope.dispose);
+    } catch (error) { return scope.rollback(error); }
 }

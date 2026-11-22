@@ -1,7 +1,7 @@
 import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
 import { editPageSize, editPaging } from "./edit-review.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
-import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts";
+import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import { openChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, TabId } from "../../src/index.ts";
@@ -13,7 +13,7 @@ import type { NavigationFault } from "../../fixtures/language/navigation.ts";
 import { HostCell } from "../shared/observable.ts";
 
 export type RenameHostOptions = Readonly<{ provider: LspWorkspace; open?: () => boolean; prepare?: (delay: number, fault?: NavigationFault) => LspPrepare }>;
-type Session = { id: string; editor: TextEditor; controller: RenameController; stop: () => void };
+type Session = { id: string; editor: TextEditor; controller: RenameController };
 export type RenameNote = Omit<LspWorkspaceEditNote, "insert" | "insertUnits"> & Readonly<{ ordinal: number; line: number; column: number; after: string }>;
 export type HostRenameSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; status: RenameSnapshot["status"];
     message: string; name: string; preview: RenamePreview | null; reviewKey: number | null; canApply: boolean; count: number; page: number; locations: readonly RenameNote[];
@@ -23,7 +23,7 @@ const initial: HostRenameSnapshot = { available: false, connected: false, discon
 
 /** The host owns the name field, paging and opening changed files. Each pane owns its rename preview. */
 export class HostRenameTools {
-    private readonly sessions = new Set<Session>();
+    private readonly sessions = new Map<Session, () => void>();
     private active: Session | undefined;
     private owner: Session | undefined;
     private readonly host: LanguageHost;
@@ -81,20 +81,12 @@ export class HostRenameTools {
                 const fault = this.fault; this.fault = undefined; return this.options.prepare?.(this.delay, fault);
             },
         });
-        const events = new AbortController();
-        const session: Session = { id, editor, controller, stop: () => {
-            if (!this.sessions.delete(session)) return;
-            if (this.active === session) this.active = undefined;
-            if (this.owner === session) this.cancel();
-            events.abort(); stop(); controller.dispose(); this.publish();
-        } };
-        const stop = controller.subscribe(() => { if (this.owner === session) {
-            const state = controller.getSnapshot(); if (state.status === "pending") this.requested++;
-            this.render(state);
-        } });
-        this.sessions.add(session);
-        try {
-            const register = scopedCommands(editor, events.signal);
+        const session = { id, editor, controller };
+        return attachPanelSession(this.sessions, session, (signal, register) => {
+            controller.subscribe(() => { if (this.owner === session) {
+                const state = controller.getSnapshot(); if (state.status === "pending") this.requested++;
+                this.render(state);
+            } });
             register({ id: "rename.start", label: "Rename symbol", enabled: () => !this.disconnected && this.host.canCapture(editor.view.documentId),
                 run: () => { if (this.options.open && !this.options.open()) return false; this.active = session; this.prompt(session); return true; } }, { keys: ["F2"] });
             const ownsField = () => (this.owner ?? this.active) === session && this.nameField.focused;
@@ -108,12 +100,15 @@ export class HostRenameTools {
                 } }, { keys: ["Enter"], shared: true, priority: 33, repeat: false });
             register({ id: "rename.cancel", label: "Cancel rename", enabled: ownsField,
                 run: () => { this.cancel(); editor.focus(); } }, { keys: ["Escape"], shared: true, priority: 9 });
-        } catch (error) { session.stop(); throw error; }
-        onSourceFocus(editor, events.signal, () => { this.active = session; this.publish(); });
-        editor.onEditIntent(() => {
-            if (this.owner && this.owner !== session && this.host.workspace.document(editor.view.documentId).key.variant === "working") this.cancel();
-        }, events.signal);
-        return detachWithEditor(editor, events.signal, session.stop);
+            onSourceFocus(editor, signal, () => { this.active = session; this.publish(); });
+            editor.onEditIntent(() => {
+                if (this.owner && this.owner !== session && this.host.workspace.document(editor.view.documentId).key.variant === "working") this.cancel();
+            }, signal);
+        }, () => {
+            if (this.active === session) this.active = undefined;
+            if (this.owner === session) this.cancel();
+            else this.publish();
+        });
     }
     private hint(session: Session) { return navigationSymbol(this.host.workspace.document(session.editor.view.documentId).buffer, session.editor.view.getSnapshot().selection.head); }
     private prompt(session: Session) {
@@ -134,7 +129,7 @@ export class HostRenameTools {
     openChanged(document: DocumentId) {
         const s = this.cell.get();
         if (s.pending || s.preview || this.disposed || !s.changes.some(c => c.document === document)) return;
-        this.publish({ message: openChangedFile(this.host, document, this.sessions) });
+        this.publish({ message: openChangedFile(this.host, document, this.sessions.keys()) });
     }
     setDelay(value: number) { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid rename delay."); this.delay = value; }
     faultNext(value: NavigationFault) { this.fault = value; }
@@ -144,5 +139,5 @@ export class HostRenameTools {
     }
     debug() { return { state: this.cell.get(), requested: this.requested, capture: this.owner ? { view: this.owner.id } : null,
         sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
-    dispose() { if (!this.disposed) { this.disposed = true; this.cancel(); this.nameField.dispose(); for (const s of this.sessions) s.stop(); } }
+    dispose() { if (!this.disposed) { this.disposed = true; this.cancel(); this.nameField.dispose(); for (const detach of this.sessions.values()) detach(); } }
 }

@@ -112,6 +112,14 @@ test("language shortcuts follow their panel and editor through attachment failur
                 try { panel.attach("primary", tab, first); } catch (error) { refused = String(error).includes("Key binding conflicts: Escape"); }
                 const rollback = { refused, commands: owned(first), sessions: sessions(), escape: first.commands.run("host.escape") };
                 conflict.dispose();
+                if (feature !== "hover") {
+                    first.focus();
+                    const failure = new Error("The host could not render the focused panel");
+                    const stop = panel.state.subscribe(() => { stop(); throw failure; });
+                    try { panel.attach("primary", tab, first); throw new Error("Expected the focused mount to fail"); }
+                    catch (error) { if (error !== failure) throw error; }
+                    if (owned(first).length || sessions()) throw new Error(feature + " retained a failed mount");
+                }
                 const detach = panel.attach("primary", tab, first);
                 first.dispose();
                 const afterEditor = sessions();

@@ -1,7 +1,7 @@
 import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
 import { createActionPages } from "./action-pages.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
-import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts";
+import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import { openChangedFile, type ChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, TabId, TabTarget } from "../../src/index.ts";
@@ -12,7 +12,7 @@ import { validDomainModule } from "../../fixtures/language/domain.ts";
 import type { ActionInput } from "../../fixtures/language/actions.ts";
 import { HostCell } from "../shared/observable.ts";
 import type { HostProjectTools } from "./project.ts";
-type Session = { events: AbortController; id: string; target: TabTarget; editor: TextEditor; controller: CodeActionController };
+type Session = { id: string; target: TabTarget; editor: TextEditor; controller: CodeActionController };
 type ActionSettings = Pick<ActionInput, "module" | "delay" | "fault">;
 export type ActionHostOptions = Readonly<{ provider: LspWorkspace; commandPolicy?: LspCommandPolicy;
     beforeRequest?: (scope: LspScopeAccess, config: ActionSettings) => Promise<unknown>;
@@ -28,7 +28,7 @@ export class HostActionsTools {
     private readonly reviewKey;
     private readonly options: ActionHostOptions;
     private readonly reviewOwner: HostProjectTools | undefined;
-    private readonly sessions = new Set<Session>();
+    private readonly sessions = new Map<Session, () => void>();
     private active: Session | undefined;
     private panel: Panel | undefined;
     private readonly stopReviewOwner: (() => void) | undefined;
@@ -81,7 +81,7 @@ export class HostActionsTools {
     private readonly documents = () => this.host.workspace.getSnapshot().documents.filter(doc => doc.language !== null);
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
         if (this.disposed) throw new Error("Code action panel is disposed.");
-        const target = this.host.workspace.tabs.capture(tab), events = new AbortController();
+        const target = this.host.workspace.tabs.capture(tab);
         const { provider, commandPolicy, beforeRequest, beforeResolve } = this.options, review = this.reviewOwner;
         const settings = () => {
             const panel = this.panel;
@@ -94,32 +94,28 @@ export class HostActionsTools {
                 const resolveSettings = { module: settings().module, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) };
                 this.fault = undefined; return beforeResolve(session, resolveSettings);
             } }), ...(review && { runCommand: command => review.beginAction({ ...command, editor }) }) });
-        const s = { id, target, editor, controller, events }; this.sessions.add(s);
-        onSourceFocus(editor, events.signal, () => { this.active = s; this.publish(); });
-        editor.onEditIntent(() => {
-            if (this.panel && this.panel.source !== s && this.cell.get().active && this.panel.source.controller.getSnapshot().status !== "executing"
-                && this.host.workspace.document(editor.view.documentId).key.variant === "working") this.cancel();
-        }, events.signal);
-        const detach = () => events.abort();
-        events.signal.addEventListener("abort", () => {
-            if (this.panel?.source === s) {
-                if (this.cell.get().active) this.cancel();
-                else { this.panel.stop(); this.panel = undefined; }
-            }
-            controller.dispose(); this.sessions.delete(s); if (this.active === s) this.active = undefined;
-            this.publish();
-        }, { once: true });
+        const s = { id, target, editor, controller };
         const ownsModule = () => this.moduleField.focused && (this.panel?.source ?? this.active) === s;
-        try {
-            const register = scopedCommands(editor, events.signal);
+        return attachPanelSession(this.sessions, s, (signal, register) => {
+            onSourceFocus(editor, signal, () => { this.active = s; this.publish(); });
+            editor.onEditIntent(() => {
+                if (this.panel && this.panel.source !== s && this.cell.get().active && this.panel.source.controller.getSnapshot().status !== "executing"
+                    && this.host.workspace.document(editor.view.documentId).key.variant === "working") this.cancel();
+            }, signal);
             register({ id: "actions.request", label: "Preview module action", enabled: () => this.available(s),
                 run: from => { this.active = s; this.start(from !== "panel"); } }, { keys: ["Ctrl+.", "Meta+."] });
             register({ id: "actions.submitModule", label: "Preview the entered module", enabled: ownsModule,
                 run: () => editor.commands.run("actions.request", "panel") }, { keys: ["Enter"], shared: true, priority: 35, repeat: false });
             register({ id: "actions.dismiss", label: "Dismiss action preview", enabled: ownsModule,
                 run: () => { this.cancel(); editor.focus(); } }, { keys: ["Escape"], shared: true, priority: 6 });
-            return detachWithEditor(editor, events.signal, detach);
-        } catch (error) { detach(); throw error; }
+        }, () => {
+            if (this.active === s) this.active = undefined;
+            if (this.panel?.source === s) {
+                if (this.cell.get().active) this.cancel();
+                else { this.panel.stop(); this.panel = undefined; }
+            }
+            this.publish();
+        });
     }
     readonly request = (): void => {
         if (!this.active?.editor.commands.run("actions.request", "panel"))
@@ -143,7 +139,7 @@ export class HostActionsTools {
     }
     openChangedDocument(document: DocumentId): void {
         if (this.disposed || this.cell.get().active || !this.cell.get().changes.some(change => change.document === document)) return;
-        this.publish({ message: openChangedFile(this.host, document, this.sessions) });
+        this.publish({ message: openChangedFile(this.host, document, this.sessions.keys()) });
     }
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid action delay."); this.delay = value; }
     faultNext(value: NonNullable<ActionSettings["fault"]>): void { this.fault = value; }
@@ -154,5 +150,5 @@ export class HostActionsTools {
     }
     debug() { return { requested: this.requested, state: this.cell.get(), capture: this.panel && this.cell.get().active ? { view: this.panel.source.id } : null,
         transport: this.panel ? "lsp3.17" : null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
-    dispose(): void { if (this.disposed) return; this.cancel(); this.moduleField.dispose(); this.stopReviewOwner?.(); this.disposed = true; for (const session of this.sessions) session.events.abort(); this.active = undefined; this.publish(); }
+    dispose(): void { if (this.disposed) return; this.cancel(); this.moduleField.dispose(); this.stopReviewOwner?.(); this.disposed = true; for (const detach of this.sessions.values()) detach(); this.active = undefined; this.publish(); }
 }
