@@ -1,21 +1,14 @@
 import { createToolPanel } from "./tool-panel.ts";
-import { changedFiles, createChangedFileList } from "./edit-review.ts";
+import { changedFiles, createChangedFileList, editPageSize } from "./edit-review.ts";
+import { pageActions } from "./panel-actions.ts";
 import type { HostRenameTools, RenameNote, HostRenameSnapshot } from "./rename.ts";
-type RenamePanelTools = Pick<HostRenameTools, "prepare" | "cancel" | "showPage" | "disconnect" | "reconnect" | "bindName" | "setName" | "openChanged">;
-export function renamePageActions(tools: Pick<HostRenameTools, "showPage">, s: HostRenameSnapshot, previous: string, next: string) {
-    const { preview, reviewKey, page, count, locations } = s;
-    const action = (label: string, destination: number, enabled: boolean) => ({
-        label, reviewKey, disabled: !preview || !enabled, invoke: () => { if (preview && enabled) tools.showPage(preview, destination); }
-    });
-    const last = locations.at(-1);
-    return [action(previous, page - 1, page > 0), action(next, page + 1, !!last && last.ordinal + 1 < count)];
-}
+type RenamePanelTools = Pick<HostRenameTools, "prepare" | "cancel" | "disconnect" | "reconnect" | "bindName" | "setName" | "openChanged">;
 function renameActions(tools: RenamePanelTools, s: HostRenameSnapshot) {
     return [
         { label: "Prepare rename preview", invoke: tools.prepare, disabled: !s.available || s.disconnected || s.pending },
         { label: "Apply captured rename", reviewKey: s.reviewKey, invoke: () => s.preview?.confirm(), disabled: !s.canApply },
         { label: "Dismiss rename preview", invoke: tools.cancel, disabled: !s.pending && !s.preview },
-        ...renamePageActions(tools, s, "Previous rename targets", "Next rename targets"),
+        ...pageActions("rename targets", s.paging),
         { label: "Disconnect rename provider", invoke: tools.disconnect, disabled: !s.connected && !s.pending },
         { label: "Reconnect rename provider", invoke: tools.reconnect, disabled: !s.disconnected && s.status !== "failed" }
     ];
@@ -29,7 +22,7 @@ export function renamePanelModel(tools: RenamePanelTools, s: HostRenameSnapshot)
         title: "Rename preview", description: renameDescription, status: { label: "Rename status", text: s.message },
         name: { label: "New identifier ", value: s.name, maxLength: 256, bind: tools.bindName, change: (value: string) => tools.setName(value) },
         actions: renameActions(tools, s),
-        targets: { label: "Captured rename targets", identity: s.locations, start: s.page * 64 + 1,
+        targets: { label: "Captured rename targets", identity: s.locations, start: s.page * editPageSize + 1,
             items: () => s.locations.map(at => ({ key: at.ordinal, text: renameTarget(at) } as const)) },
         changes: changedFiles("Renamed resources", "Open renamed changes in ", s.changes, s.pending || !!s.preview, id => tools.openChanged(id)),
     } as const;

@@ -1,4 +1,5 @@
-import { changedFiles, createChangedFileList, formatEditNote } from "./edit-review.ts";
+import { changedFiles, createChangedFileList, createEditNoteList } from "./edit-review.ts";
+import { pageActions } from "./panel-actions.ts";
 import { createToolPanel } from "./tool-panel.ts";
 import type { HostProjectTools, ProjectSnapshot } from "./project.ts";
 type ProjectPanelTools = Pick<HostProjectTools, "register" | "unregister" | "requestEdits" | "requestStatus" | "cancel" | "disconnect" | "reconnect" | "openChanged">;
@@ -16,13 +17,12 @@ export function projectPanelModel(tools: ProjectPanelTools, s: ProjectSnapshot) 
             { label: "Cancel workspace provider request", invoke: tools.cancel, disabled: !s.pending },
             { label: "Apply captured provider edits", reviewKey, invoke: () => review?.apply(), disabled: !review?.canApply },
             { label: "Decline captured provider edits", reviewKey, invoke: () => review?.decline(), disabled: !review },
-            { label: "Previous provider edits", reviewKey, invoke: () => review?.previousPage(), disabled: !review || review.page === 0 },
-            { label: "Next provider edits", reviewKey, invoke: () => review?.nextPage(), disabled: !review || (review.page + 1) * 64 >= review.count },
+            ...pageActions("provider edits", review?.paging ?? null),
             { label: "Disconnect workspace provider", invoke: tools.disconnect, disabled: !s.connected && !s.pending },
             { label: "Reconnect workspace provider", invoke: tools.reconnect, disabled: !s.disconnected && !s.reconnectRequired && s.status !== "failed" }
         ],
-        review: { visible: review !== null, identity: review, titleLabel: "Provider edit review", title: review?.label ?? "",
-            label: "Captured provider edits", start: (review?.page ?? 0) * 64 + 1, items: () => review?.notes.map(formatEditNote) ?? [] },
+        review: { visible: review !== null, titleLabel: "Provider edit review", title: review?.label ?? "" },
+        edits: { label: "Captured provider edits", page: review?.page ?? 0, notes: review?.notes },
         changes: changedFiles("Provider changed resources", "Open provider changes in ", s.changes, s.pending, id => tools.openChanged(id)),
         changesDescription: s.changes.length ? "Last applied provider edits" : "",
     } as const;
@@ -30,11 +30,10 @@ export function projectPanelModel(tools: ProjectPanelTools, s: ProjectSnapshot) 
 export function mountProjectPanel(host: HTMLElement, tools: HostProjectTools): () => void {
     const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => projectPanelModel(tools, state));
     const changed = createChangedFileList(owner, initial.changes.label), description = owner.createElement("p");
-    const previewTitle = owner.createElement("p"), preview = owner.createElement("ol"); previewTitle.setAttribute("aria-label", initial.review.titleLabel); preview.setAttribute("aria-label", initial.review.label);
-    let previousReview: ProjectSnapshot["review"] | undefined;
-    return mount([controls, previewTitle, preview, description, changed.element], model => {
+    const previewTitle = owner.createElement("p"), edits = createEditNoteList(owner, initial.edits.label); previewTitle.setAttribute("aria-label", initial.review.titleLabel);
+    return mount([controls, previewTitle, edits.element, description, changed.element], model => {
         previewTitle.hidden = !model.review.visible; previewTitle.textContent = model.review.title;
-        if (previousReview !== model.review.identity) { previousReview = model.review.identity; preview.start = model.review.start; preview.replaceChildren(...model.review.items().map(text => { const li = owner.createElement("li"), pre = owner.createElement("pre"); pre.textContent = text; li.append(pre); return li; })); }
+        edits.element.hidden = !model.review.visible; edits.render(model.edits);
         description.hidden = !model.changesDescription; description.textContent = model.changesDescription;
         changed.render(model.changes);
     });

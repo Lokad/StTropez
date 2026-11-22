@@ -1,4 +1,5 @@
-import { createReviewKey } from "./panel-actions.ts";
+import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
+import { editPageSize, editPaging } from "./edit-review.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts";
 import { onSourceFocus } from "./source-focus.ts";
@@ -7,7 +8,7 @@ import type { DocumentId, TabId } from "../../src/index.ts";
 import { createRenameController } from "../../src/browser/index.ts";
 import type { RenameController, RenamePreview, RenameSnapshot, TextEditor } from "../../src/browser/index.ts";
 import type { LspPrepare, LspWorkspace, LspWorkspaceEditNote } from "../../src/protocol/index.ts";
-import { navigationLimits, navigationSymbol } from "../../fixtures/language/navigation.ts";
+import { navigationSymbol } from "../../fixtures/language/navigation.ts";
 import type { NavigationFault } from "../../fixtures/language/navigation.ts";
 import { HostCell } from "../shared/observable.ts";
 
@@ -16,9 +17,9 @@ type Session = { id: string; editor: TextEditor; controller: RenameController; s
 export type RenameNote = Omit<LspWorkspaceEditNote, "insert" | "insertUnits"> & Readonly<{ ordinal: number; line: number; column: number; after: string }>;
 export type HostRenameSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; status: RenameSnapshot["status"];
     message: string; name: string; preview: RenamePreview | null; reviewKey: number | null; canApply: boolean; count: number; page: number; locations: readonly RenameNote[];
-    changes: RenameSnapshot["changes"] }>;
+    paging: PanelPaging | null; changes: RenameSnapshot["changes"] }>;
 const initial: HostRenameSnapshot = { available: false, connected: false, disconnected: false, pending: false, status: "idle",
-    message: "Focus a source and prepare a rename preview.", name: "", preview: null, reviewKey: null, canApply: false, count: 0, page: 0, locations: [], changes: [] };
+    message: "Focus a source and prepare a rename preview.", name: "", preview: null, reviewKey: null, canApply: false, count: 0, page: 0, paging: null, locations: [], changes: [] };
 
 /** The host owns the name field, paging and opening changed files. Each pane owns its rename preview. */
 export class HostRenameTools {
@@ -48,17 +49,22 @@ export class HostRenameTools {
         const preview = state.preview, notes = preview?.readPage(page)?.notes ?? [];
         const locations = notes.map(({ insert, insertUnits, ...at }, i) => {
             const { line, column } = this.host.workspace.document(at.document as DocumentId).buffer.positionAt(at.from);
-            return { ...at, ordinal: page * navigationLimits.page + i, line, column,
+            return { ...at, ordinal: page * editPageSize + i, line, column,
                 before: at.before + (at.to - at.from > 256 ? ` (${at.to - at.from} UTF-16 units)` : ""),
                 after: insert + (insertUnits > insert.length ? `… (${insertUnits} UTF-16 units)` : "") };
         });
         if (state.status === "expired" && this.options.provider.getSnapshot().phase === "disconnected") this.disconnected = true;
-        this.publish({ name: state.name, status: state.status, message: state.message, preview, reviewKey: this.reviewKey(preview), pending: state.status === "pending",
+        const reviewKey = this.reviewKey(preview);
+        const paging = preview && reviewKey !== null ? editPaging(reviewKey, page, preview.count, next => {
+            const current = this.owner?.controller.getSnapshot();
+            if (current?.preview === preview && this.cell.get().locations === locations) this.render(current, next);
+        }) : null;
+        this.publish({ name: state.name, status: state.status, message: state.message, preview, reviewKey, paging, pending: state.status === "pending",
             canApply: preview?.canApply ?? false, count: preview?.count ?? 0, page, locations, ...(state.status === "applied" ? { changes: state.changes } : {}) });
     }
     readonly cancel = () => {
         const owner = this.owner; this.owner = undefined; owner?.controller.cancel();
-        this.publish({ status: "idle", pending: false, preview: null, reviewKey: null, canApply: false, count: 0, locations: [], page: 0, message: "Rename preview dismissed." });
+        this.publish({ status: "idle", pending: false, preview: null, reviewKey: null, paging: null, canApply: false, count: 0, locations: [], page: 0, message: "Rename preview dismissed." });
     };
     readonly disconnect = () => { this.disconnected = true; this.cancel(); };
     readonly reconnect = () => { this.disconnected = false; this.cancel(); this.host.reconnect?.(); };
@@ -124,10 +130,6 @@ export class HostRenameTools {
         if (!name || /[\u0000-\u001f\u007f]/.test(name)) { this.prompt(s); return; }
         if (this.owner !== s) this.cancel();
         this.owner = s; s.controller.request(name);
-    }
-    showPage(preview: RenamePreview, page: number) {
-        const state = this.owner?.controller.getSnapshot();
-        if (state?.preview === preview && Number.isSafeInteger(page) && page >= 0 && page * navigationLimits.page < preview.count) this.render(state, page);
     }
     openChanged(document: DocumentId) {
         const s = this.cell.get();

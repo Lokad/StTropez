@@ -60,7 +60,7 @@ export class HostNavigationTools {
         const turn = (move: (() => NavigationPage) | null) => move && (() => {
             if (this.job?.page === page) this.showPage(job, move());
         });
-        const paging = page ? { key: this.queryKey(job)!, previous: turn(page.previousPage), next: turn(page.nextPage) } : null;
+        const paging = page ? { key: this.queryKey(job)!, first: page.first, previous: turn(page.previousPage), next: turn(page.nextPage) } : null;
         job.page = page; this.publish({ ...patch, locations, paging });
         return locations;
     }

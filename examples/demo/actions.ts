@@ -4,7 +4,8 @@ import type { CodeActionPreview, TextEditor } from "../../src/browser/index.ts";
 import type { LspCodeAction, LspWorkspace } from "../../src/protocol/index.ts";
 import { HostProjectTools } from "../hosts/project.ts";
 import { createReviewKey, pageActions, renderPanelActions, renderPanelButton } from "../hosts/panel-actions.ts";
-import { actionChoicePageSize, actionEditPageSize, createActionPages } from "../hosts/action-pages.ts";
+import { actionChoicePageSize, createActionPages } from "../hosts/action-pages.ts";
+import { editPageSize } from "../hosts/edit-review.ts";
 import { demoCommandPolicy } from "./action-commands.ts";
 import { projectReviewNote } from "./action-fixture.ts";
 import type { DemoFile } from "./project.ts";
@@ -85,7 +86,7 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
         previousChoices = renderPanelButton(previousChoices, back); nextChoices = renderPanelButton(nextChoices, forward);
         choiceCount.textContent = `${choicePage * actionChoicePageSize + 1}–${Math.min((choicePage + 1) * actionChoicePageSize, state.choices.length)} of ${state.choices.length}`;
         for (const button of choices.querySelectorAll<HTMLButtonElement>("[data-choice]")) button.dataset.chosen = String(Number(button.dataset.choice) === state.choice);
-        edits.start = (page?.page ?? 0) * actionEditPageSize + 1;
+        edits.start = (page?.page ?? 0) * editPageSize + 1;
         edits.replaceChildren(...(page?.notes ?? []).map(at => {
             const item = document.createElement("li"), before = document.createElement("del"), after = document.createElement("ins");
             before.textContent = at.before; after.textContent = at.insert + (at.insertUnits > at.insert.length ? "…" : "");

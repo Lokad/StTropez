@@ -147,19 +147,19 @@ test("link rows retain their own action through repaging and resolution", () => 
 test("rename presentation retains its preview name, confirmation action and changed resource", () => {
     const applied: (number | null)[] = [], opened: DocumentId[] = [], firstId = "first" as DocumentId, secondId = "second" as DocumentId;
     const tools: Parameters<typeof renamePanelModel>[0] = { prepare: noop, cancel: noop,
-        showPage: noop, disconnect: noop, reconnect: noop, bindName: noop, setName: noop, openChanged: id => { opened.push(id); } };
+        disconnect: noop, reconnect: noop, bindName: noop, setName: noop, openChanged: id => { opened.push(id); } };
     let formatted = 0;
     const preview = (id: number, name: string) => ({ name, count: 1, canApply: true, readPage: () => undefined, confirm: () => { applied.push(id); return { applied: true } as const; } });
     const locations = (after: string) => Object.freeze([Object.freeze({ ordinal: 0, document: firstId, resource: "source", title: "First", revision: 1,
         from: 0, to: 6, line: 0, column: 0, before: "symbol", after, get context() { formatted++; return "symbol"; } })]);
     const state: HostRenameSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, pending: false, status: "ready", message: "Captured rename",
-        name: "firstName", reviewKey: 3, preview: preview(3, "firstName"), canApply: true, count: 1, page: 0, locations: locations("firstName"),
+        name: "firstName", reviewKey: 3, preview: preview(3, "firstName"), canApply: true, count: 1, page: 0, paging: null, locations: locations("firstName"),
         changes: Object.freeze([Object.freeze({ document: firstId, title: "First" })]) });
     const first = renamePanelModel(tools, state), renamed = renamePanelModel(tools, { ...state, name: "secondName", preview: preview(4, "secondName"),
         locations: locations("secondName"), changes: [{ document: secondId, title: "Second" }] });
     assert.equal(formatted, 0); assert.notEqual(first.targets.identity, renamed.targets.identity);
     assert.match(first.targets.items()[0]!.text, /symbol → firstName/); assert.match(renamed.targets.items()[0]!.text, /symbol → secondName/);
-    renamed.actions.find(action => action.label === "Apply captured rename")!.invoke(); first.actions.find(action => action.label === "Apply captured rename")!.invoke();
+    renamed.actions.find(action => action.label === "Apply captured rename")!.invoke!(); first.actions.find(action => action.label === "Apply captured rename")!.invoke!();
     renamed.changes.items()[0]!.invoke(); first.changes.items()[0]!.invoke();
     assert.deepEqual(applied, [4, 3]); assert.deepEqual(opened, [secondId, firstId]); assert.equal(first.name.bind, tools.bindName);
 });
@@ -191,13 +191,13 @@ test("navigation presentation keeps a captured target while a newer snapshot sup
         addCompanion: noop, disconnect: noop, reconnect: noop, setIncludeDeclaration: noop };
     let formatted = 0;
     const state: NavigationSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, canCancel: true,
-        paging: { key: 7, previous: null, next: noop }, status: "ready", message: "Captured results", includeDeclaration: true, canReturn: false,
+        paging: { key: 7, first: 0, previous: null, next: noop }, status: "ready", message: "Captured results", includeDeclaration: true, canReturn: false,
         locations: Object.freeze([Object.freeze({ declaration: true, ordinal: 0,
             get title() { formatted++; return "First"; }, line: 1, column: 3, open: () => { opened.push([7, 0]); } })]) });
     const first = navigationPanelModel(tools, state), statusOnly = navigationPanelModel(tools, { ...state, message: "Origin focused", canReturn: true });
     assert.equal(formatted, 0, "status presentation does not format the retained result list");
     assert.equal(statusOnly.results.identity, first.results.identity);
-    const newer = navigationPanelModel(tools, { ...state, paging: { key: 8, previous: noop, next: null }, locations: [{ ...state.locations[0]!, ordinal: 64, open: () => { opened.push([8, 64]); } }] });
+    const newer = navigationPanelModel(tools, { ...state, paging: { key: 8, first: 64, previous: noop, next: null }, locations: [{ ...state.locations[0]!, ordinal: 64, open: () => { opened.push([8, 64]); } }] });
     newer.results.items()[0]!.invoke(); first.results.items()[0]!.invoke();
     assert.deepEqual(opened, [[8, 64], [7, 0]], "old rows never resolve through the newer result page");
     assert.notEqual(newer.results.identity, first.results.identity);
@@ -211,14 +211,14 @@ test("project presentation keeps decisions, edit pages and resources tied to the
         disconnect: noop, reconnect: noop, openChanged: id => { opened.push(id); } };
     const review = (key: number) => Object.freeze({ key, label: "Captured review", count: 130, page: 1, notes: Object.freeze([]), canApply: true,
         apply: () => { decisions.push(key); }, decline: () => { decisions.push(key); },
-        nextPage: () => { decisions.push(key); }, previousPage: () => { decisions.push(key); } });
+        paging: { key, first: 64, next: () => { decisions.push(key); }, previous: () => { decisions.push(key); } } });
     const state: ProjectSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, reconnectRequired: false, registered: true, pending: true,
         status: "pending", message: "Review captured changes", view: "primary", changes: Object.freeze([Object.freeze({ document: firstId, title: "First" })]),
         review: review(5) });
     const first = projectPanelModel(tools, state), statusOnly = projectPanelModel(tools, { ...state, pending: false, message: "Ready" });
-    assert.equal(first.changes.identity, statusOnly.changes.identity); assert.equal(first.review.identity, statusOnly.review.identity);
+    assert.equal(first.changes.identity, statusOnly.changes.identity); assert.equal(first.edits.notes, statusOnly.edits.notes);
     const newer = projectPanelModel(tools, { ...state, changes: [{ document: secondId, title: "Second" }], review: review(6) });
-    const invoke = (model: typeof first, label: string) => model.actions.find(action => action.label === label)!.invoke();
+    const invoke = (model: typeof first, label: string) => model.actions.find(action => action.label === label)!.invoke!();
     invoke(newer, "Apply captured provider edits"); invoke(first, "Apply captured provider edits"); invoke(first, "Decline captured provider edits");
     invoke(first, "Next provider edits"); invoke(newer, "Previous provider edits");
     newer.changes.items()[0]!.invoke(); first.changes.items()[0]!.invoke();

@@ -1,10 +1,9 @@
 import type { CodeActionController, CodeActionPreview } from "../../src/browser/index.ts";
 import type { LspWorkspaceEditPreview } from "../../src/protocol/index.ts";
 import { panelPaging, type createReviewKey } from "./panel-actions.ts";
+import { editPaging } from "./edit-review.ts";
 
 export const actionChoicePageSize = 16;
-/** The protocol's workspace-edit preview contains at most 64 notes per page. */
-export const actionEditPageSize = 64;
 
 /** Keep the list page across choices, and start each edit preview on its first page. */
 export function createActionPages(controller: CodeActionController, key: ReturnType<typeof createReviewKey>, changed: () => void) {
@@ -24,13 +23,13 @@ export function createActionPages(controller: CodeActionController, key: ReturnT
                 if (current.status !== "ready" || current.choices !== state.choices || choicePage !== from) return;
                 choicePage = next; changed();
             }) : null;
-        const editPaging = state.status === "ready" && preview && page && page.count > actionEditPageSize
-            ? panelPaging(key(preview)!, page.page, page.count, actionEditPageSize, next => {
+        const editControls = state.status === "ready" && preview && page
+            ? editPaging(key(preview)!, page.page, page.count, next => {
                 const current = controller.getSnapshot();
                 if (current.status !== "ready" || current.preview !== preview || edits !== page) return;
                 const result = preview.readPage(next);
                 if (result) { edits = result; changed(); }
             }) : null;
-        return { choicePage, choicePaging, editPaging, edits };
+        return { choicePage, choicePaging, editPaging: editControls, edits };
     };
 }

@@ -3,8 +3,7 @@ import { captureViewRequest, createNavigationController, mountAnchoredOverlay } 
 import type { CapturedViewRequest, NavigationChoice, NavigationPage, TextEditor } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import { HostRenameTools } from "../hosts/rename.ts";
-import { renderPanelActions, renderPanelButton } from "../hosts/panel-actions.ts";
-import { renamePageActions } from "../hosts/rename-panel.ts";
+import { pageActions, renderPanelActions, renderPanelButton } from "../hosts/panel-actions.ts";
 import type { DemoFile } from "./project.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 import { bindPopupCommands } from "./language-commands.ts";
@@ -148,8 +147,7 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         preview.disabled = state.pending || !state.name.trim();
         targets.replaceChildren(...state.locations.map(at => { const item = document.createElement("li"), before = document.createElement("del"), after = document.createElement("ins"), code = document.createElement("code");
             before.textContent = at.before; after.textContent = at.after; code.append(before, " → ", after); item.append(`${at.title} · ${at.line + 1}:${at.column + 1} `, code); return item; }));
-        const actions = renamePageActions(rename, state, "Previous edits", "Next edits");
-        renderPanelActions(pages, actions); pages.hidden = actions.every(action => action.disabled);
+        renderPanelActions(pages, pageActions("edits", state.paging)); pages.hidden = !state.paging;
         if (state.status === "applied") queueMicrotask(() => { if (!disposed && rename.state.getSnapshot() === state) closeRename(true); });
     }));
     popup.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });

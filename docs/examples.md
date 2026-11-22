@@ -384,9 +384,10 @@ revision to label the result and select its range.
 If the host cannot open the pane, the panel shows the error. You can retry the same result. Return records successful visits.
 F12 can open a file in the same secondary pane that requested it. The new pane focuses the
 definition and selects its name. Return skips the replaced tab.
-If references, module links, document colors or code actions refresh while you hold Next or
-Previous, releasing the button keeps the new list on its selected page. Choosing a different
-code action starts its edit preview on page one.
+If a result list or review page changes while you hold Next or Previous, releasing the button
+leaves the new page in place. You can keep paging with the keyboard. Rename, code actions and
+provider workspace edits show up to 64 edits per page. Choosing a different code action starts
+its edit preview on page one.
 
 F4 opens the module links list. Closing another view of the source keeps those links available.
 Escape dismisses the list and returns focus to its mounted source,

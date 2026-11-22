@@ -1,6 +1,6 @@
-import { panelActionKey } from "./panel-actions.ts";
-import type { ChangedFileList } from "./edit-review.ts";
-import { Profiler, StrictMode, useSyncExternalStore } from "react";
+import { bindPageButton, panelActionKey, type PanelAction } from "./panel-actions.ts";
+import { editPageSize, formatEditNote, type ChangedFileList, type EditNotes } from "./edit-review.ts";
+import { memo, Profiler, StrictMode, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import type { Root } from "react-dom/client";
@@ -176,10 +176,17 @@ function TablePasteTools() {
 function App() {
     return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><ConfigurationSavePanel /><TransferWorkspace /><DraftRecovery /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentLinksTools /><DocumentColorsTools /><SignatureTools /><SymbolInfo /></>;
 }
+const EditNoteList = memo(function EditNoteList({ label, page, notes }: EditNotes) {
+    return <ol aria-label={label} start={page * editPageSize + 1}>{notes?.map((note, i) => <li key={i}><pre>{formatEditNote(note)}</pre></li>)}</ol>;
+});
+function PanelControls({ actions }: { actions: readonly PanelAction[] }) {
+    return <div>{actions.map(action => <button key={panelActionKey(action)} ref={action.pageStart === undefined ? undefined : bindPageButton}
+        data-page={action.pageStart} disabled={action.disabled} onClick={action.invoke ?? undefined}>{action.label}</button>)}</div>;
+}
 function DocumentColorsTools() {
     const tools = bindings.colors, model = documentColorsPanelModel(tools, useObserved(tools.state));
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
-        <output aria-label={model.status.label}>{model.status.text}</output><div>{model.actions.map(action => <button key={panelActionKey(action)} disabled={action.disabled} onClick={action.invoke ?? undefined}>{action.label}</button>)}</div>
+        <output aria-label={model.status.label}>{model.status.text}</output><PanelControls actions={model.actions} />
         <ul ref={model.results.bind} tabIndex={-1} aria-label={model.results.label}>{model.results.items().map(color => <li key={color.key}><span className="host-color-swatch" aria-hidden="true" style={{backgroundColor: color.css}} /><button disabled={model.results.disabled} aria-pressed={model.results.isSelected(color.ordinal)} onClick={color.invoke}>{color.label}</button></li>)}</ul>
         <label>{model.value.label}<input ref={model.value.bind} type="text" maxLength={model.value.maxLength} value={model.value.value} onChange={event => model.value.change(event.currentTarget.value)} /></label><span className="host-color-swatch" aria-hidden="true" style={{backgroundColor: model.value.css}} />
         <button disabled={model.preview.disabled} onClick={model.preview.invoke}>{model.preview.label}</button><label>{model.presentation.label}<select disabled={model.presentation.disabled} value={model.presentation.value} onChange={event => model.presentation.change(event.currentTarget.selectedIndex)}>{model.presentation.choices.map((choice, i) => <option key={i} value={`provider-${i}`}>{choice.label}</option>)}</select></label>
@@ -190,7 +197,7 @@ function DocumentLinksTools() {
     const tools = bindings.links, model = documentLinksPanelModel(tools, useObserved(tools.state));
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
         <output aria-label={model.status.label}>{model.status.text}</output>
-        <div>{model.actions.map(action => <button key={panelActionKey(action)} disabled={action.disabled} onClick={action.invoke ?? undefined}>{action.label}</button>)}</div>
+        <PanelControls actions={model.actions} />
         <ul ref={model.results.bind} tabIndex={-1} aria-label={model.results.label}>{model.results.items().map(link => <li key={link.key}><button disabled={model.results.disabled || !link.available} onClick={link.invoke}>{link.label}</button><p>{link.details}</p></li>)}</ul></section>;
 }
 function ChangedFiles({ model }: { model: ChangedFileList }) {
@@ -202,9 +209,9 @@ function ActionsTools() {
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
         <output aria-label={model.status.label}>{model.status.text}</output>
         <label>{model.module.label}<input ref={model.module.bind} type="text" maxLength={model.module.maxLength} value={model.module.value} onChange={event => model.module.change(event.currentTarget.value)} /></label>
-        <div>{model.actions.map(action => <button key={panelActionKey(action)} onClick={action.invoke ?? undefined} disabled={action.disabled}>{action.label}</button>)}</div>
+        <PanelControls actions={model.actions} />
         <ol aria-label={model.choices.label} start={model.choices.start}>{model.choices.items().map(choice => <li key={choice.key}><button disabled={model.choices.disabled} aria-pressed={model.choices.isSelected(choice.key)} onClick={choice.invoke}>{choice.label}</button></li>)}</ol>
-        <p aria-label={model.preview.label}>{model.preview.text}</p><ol aria-label={model.edits.label} start={model.edits.start}>{model.edits.items().map((text, i) => <li key={i}><pre>{text}</pre></li>)}</ol>
+        <p aria-label={model.preview.label}>{model.preview.text}</p><EditNoteList {...model.edits} />
         <ChangedFiles model={model.changes} /></section>;
 }
 function RenameTools() {
@@ -212,7 +219,7 @@ function RenameTools() {
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
         <output aria-label={model.status.label}>{model.status.text}</output>
         <label>{model.name.label}<input ref={model.name.bind} type="text" maxLength={model.name.maxLength} value={model.name.value} onChange={event => model.name.change(event.currentTarget.value)} /></label>
-        <div>{model.actions.map(action => <button key={panelActionKey(action)} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        <PanelControls actions={model.actions} />
         <ol aria-label={model.targets.label} start={model.targets.start}>{model.targets.items().map(at => <li key={at.key}>{at.text}</li>)}</ol>
         <ChangedFiles model={model.changes} /></section>;
 }
@@ -220,8 +227,8 @@ function ProjectTools() {
     const tools = bindings.project, model = projectPanelModel(tools, useObserved(tools.state));
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2>
         <output aria-label={model.status.label}>{model.status.text}</output>
-        <div>{model.actions.map(action => <button key={panelActionKey(action)} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
-        {model.review.visible && <><p aria-label={model.review.titleLabel}>{model.review.title}</p><ol aria-label={model.review.label} start={model.review.start}>{model.review.items().map((text, index) => <li key={index}><pre>{text}</pre></li>)}</ol></>}
+        <PanelControls actions={model.actions} />
+        {model.review.visible && <><p aria-label={model.review.titleLabel}>{model.review.title}</p><EditNoteList {...model.edits} /></>}
         {model.changesDescription && <p>{model.changesDescription}</p>}
         <ChangedFiles model={model.changes} /></section>;
 }
@@ -231,7 +238,7 @@ function NavigationTools() {
         <output aria-label={model.status.label}>{model.status.text}</output>
         <progress aria-label={model.progress.label} hidden={model.progress.hidden} />
         <label><input type="checkbox" checked={model.declarations.checked} onChange={event => model.declarations.change(event.currentTarget.checked)} />{model.declarations.label}</label>
-        <div>{model.actions.map(action => <button key={panelActionKey(action)} onClick={action.invoke ?? undefined} disabled={action.disabled}>{action.label}</button>)}</div>
+        <PanelControls actions={model.actions} />
         <ul aria-label={model.results.label}>{model.results.items().map(note => <li key={note.key}><button onClick={note.invoke}>{note.label}</button></li>)}</ul></section>;
 }
 function DomainTools() {
