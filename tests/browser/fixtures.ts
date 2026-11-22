@@ -1,8 +1,20 @@
 import { test as base, expect } from "@playwright/test";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { captureBrowserErrors } from "../helpers/browser-errors.ts";
 
 export { expect };
+
+export async function expectPanelKeyReserved(control: Locator, key: "Escape" | "Enter") {
+    const consumed = await control.evaluate((node, key) => [
+        { keyCode: 229 }, { modifierAltGraph: true }, { isComposing: true }, { shiftKey: true },
+    ].map(detail => {
+        const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...detail });
+        node.dispatchEvent(event);
+        return event.defaultPrevented;
+    }), key);
+    expect(consumed).toEqual([false, false, false, false]);
+    await expect(control).toBeFocused();
+}
 
 /** A single-source fixture keeps recovery and its provider owner while DOM views detach. */
 export function expectUnmountedSourceHost(state: ReturnType<Window["hostFixture"]["snapshot"]>, additionalSubscriptions = 0): void {

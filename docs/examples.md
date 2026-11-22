@@ -351,6 +351,9 @@ provider. Select an action and review it before choosing **Apply captured action
 In **Action module**, Enter requests a preview for the source and Escape dismisses it
 and returns focus to that editor.
 
+F4 opens the module links list. Escape dismisses the list and returns focus to its source if that
+editor is still mounted. After following a link, Shift+F4 restores the original document and selection.
+
 An action’s initial edit gets its own undo step. For later edits, open **Workspace provider** and
 choose **Apply captured provider edits** or **Decline captured provider edits**. If the command then
 fails, the initial edit stays in history. Reconnect leaves it there. The same panel lets you register

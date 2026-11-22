@@ -1,4 +1,4 @@
-import { ready, isolatedTest as test, expect } from "./fixtures.ts";
+import { ready, isolatedTest as test, expect, expectPanelKeyReserved } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { holdLspReplies } from "../helpers/lsp-replies.ts";
 import { coversHost } from "./host-cases.ts";
@@ -341,7 +341,18 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
             if (origin === "comparison") expect(after.bindings.comparison!.selectionSet).toEqual(before.bindings.comparison!.selectionSet);
             else expect(after.bindings.views.find(view => view.id === "secondary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "secondary")!.selectionSet);
             expect(after.bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline); expect(after.history).toEqual(before.history);
-            await button(page, "Dismiss module links").click();
+            await row.focus(); await expectPanelKeyReserved(row, "Escape");
+            await row.press("Escape"); await expect(source).toBeFocused();
+            expect((await snapshot(page)).bindings.links.state).toMatchObject({ status: "idle", canReturn: false, count: 0 });
+            if (origin === "secondary") {
+                // Dismissing while away releases the route without focusing the replacement editor.
+                await source.press("F4"); await expect(list).toBeFocused();
+                await row.click(); await expect.poll(async () => (await snapshot(page)).bindings.links.state.status).toBe("away");
+                await list.focus(); await list.press("Escape"); await expect(list).toBeFocused();
+                const dismissed = await snapshot(page);
+                expect(dismissed.bindings.links.state.canReturn).toBe(false);
+                expect(dismissed.bindings.views.find(view => view.id === "secondary")!.documentId).toBe(before.bindings.links.companion);
+            }
         }
         await field(page).focus(); replies.hold(); await field(page).press("F4"); await expect.poll(replies.waiting).toBe(true);
         const form = field(page, "Configuration path"); await form.focus(); await replies.release(); await settledColorsAndLinks(page);

@@ -14,7 +14,7 @@ export type LinkHostOptions = Readonly<{ provider: LspWorkspace;
     prepare: (aliases: readonly Alias[], delay: number, fault?: LinksInput["fault"]) => LspPrepare }>;
 type Session = { id: string; editor: TextEditor; controller: DocumentLinkController };
 type Route = { origin: Session; source: DocumentSnapshot; selections: SelectionSet; documents: Map<string, DocumentSnapshot>;
-    targets: Map<DocumentId, Session>; opened: boolean; releaseHistory?: () => void };
+    targets: Map<DocumentId, Session>; destination?: TextEditor; releaseHistory?: () => void };
 export type LinkNote = ModuleLink & Readonly<{ line: number; column: number; title: string; targetTitle: string | null; resolvable: boolean; open: () => void }>;
 export type DocumentLinksSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; requestView: string | null;
     status: DocumentLinkSnapshot["status"] | "away"; message: string; count: number; page: number; links: readonly LinkNote[]; canReturn: boolean }>;
@@ -51,7 +51,7 @@ export class HostDocumentLinks {
     private publish(patch: Partial<DocumentLinksSnapshot> = {}) {
         this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && !this.disposed && !this.active.editor.signal.aborted,
             connected: !!this.route && !this.disconnected && this.options.provider.getSnapshot().phase === "ready",
-            disconnected: this.disconnected, requestView: this.route?.origin.id ?? null, canReturn: !!this.route?.opened });
+            disconnected: this.disconnected, requestView: this.route?.origin.id ?? null, canReturn: !!this.route?.destination });
     }
     private release() {
         const route = this.route; this.route = undefined;
@@ -60,14 +60,16 @@ export class HostDocumentLinks {
     readonly cancel = () => { this.release(); this.publish({ ...initial, message: "Module links dismissed." }); };
     readonly disconnect = () => { this.disconnected = true; this.cancel(); };
     readonly reconnect = () => { this.disconnected = false; this.cancel(); this.reconnectProvider?.(); };
+    private listEditor() {
+        const route = this.route;
+        return route && (this.sessions.has(route.origin) ? route.origin.editor : route.destination);
+    }
     readonly bindList = (list: HTMLElement | null) => {
         this.listEvents?.abort(); this.list = list ?? undefined;
         if (!list || this.disposed) return;
         const events = new AbortController(); this.listEvents = events;
         list.addEventListener("keydown", event => {
-            if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
-            const origin = this.route?.origin; event.preventDefault(); event.stopPropagation(); this.cancel();
-            if (origin && this.sessions.has(origin)) origin.editor.focus();
+            if (this.listEditor()?.keymap.handle(event)) event.stopPropagation();
         }, { signal: events.signal });
     };
     attach(id: string, _tab: TabId, editor: TextEditor) {
@@ -91,11 +93,19 @@ export class HostDocumentLinks {
         try {
             for (const [id, label, key, run, enabled] of [
                 ["links.discover", "Discover module links", "F4", () => { this.active = session; this.start(true); }, () => !this.disconnected],
-                ["links.return", "Return to link origin", "Shift+F4", this.returnToOrigin, () => !!this.route?.opened],
+                ["links.return", "Return to link origin", "Shift+F4", this.returnToOrigin, () => !!this.route?.destination],
             ] as const) {
                 const command = editor.commands.register({ id, label, run, enabled }, { keys: [key] });
                 events.signal.addEventListener("abort", command.dispose, { once: true });
             }
+            const dismiss = editor.commands.register({ id: "links.dismiss", label: "Dismiss module links",
+                enabled: () => this.listEditor() === editor && !!this.list?.matches(":focus-within"),
+                run: () => {
+                    const origin = this.route?.origin;
+                    this.cancel();
+                    if (origin && this.sessions.has(origin)) origin.editor.focus();
+                } }, { keys: ["Escape"], shared: true, priority: 7 });
+            events.signal.addEventListener("abort", dismiss.dispose, { once: true });
         } catch (error) { detach(); throw error; }
         onSourceFocus(editor, events.signal, () => {
             if (this.active !== session && this.cell.get().status === "resolving" && !this.presenting) this.cancel();
@@ -144,7 +154,7 @@ export class HostDocumentLinks {
         for (const s of this.sessions) if (!targets.has(s.editor.view.documentId)) targets.set(s.editor.view.documentId, s);
         targets.set(source.id, origin);
         this.release();
-        const route = { origin, source, documents, targets, selections: origin.editor.view.getSnapshot().selectionSet, opened: false };
+        const route: Route = { origin, source, documents, targets, selections: origin.editor.view.getSnapshot().selectionSet };
         this.route = route; this.metrics.requested++;
         if (!returning) this.publish({ ...initial });
         void origin.controller.request().then(() => {
@@ -182,11 +192,11 @@ export class HostDocumentLinks {
                 if (!follow || owner.activeElement !== focused && !(owner.activeElement === owner.body && (!focused?.isConnected || !!this.list?.contains(focused)))) return;
                 // A host can replace the only mounted source while presenting the destination.
                 const release = this.retainReturn(route);
-                let placed = false;
-                try { placed = !!this.place(route, doc); }
+                let placed: TextEditor | undefined;
+                try { placed = this.place(route, doc); }
                 finally { if (!placed || this.sessions.has(route.origin)) release(); else route.releaseHistory = release; }
                 if (!placed) return;
-                route.opened = true; this.metrics.opened++;
+                route.destination = placed; this.metrics.opened++;
                 this.publish({ message: `Opened ${doc.title}.`, ...(!this.sessions.has(route.origin) ? { status: "away" as const } : {}) });
             });
         } finally { events.abort(); }
@@ -194,13 +204,13 @@ export class HostDocumentLinks {
     private retainReturn(route: Route) {
         const { source } = route, lease = this.workspace.acquire(source.resourceId), handle = this.workspace.observeDocument(source.id);
         const metadata = this.workspace.resourceForDocument(source.id).metadata;
-        const invalidate = () => { route.opened = false; queueMicrotask(() => { if (this.route === route) this.cancel(); }); };
+        const invalidate = () => { delete route.destination; queueMicrotask(() => { if (this.route === route) this.cancel(); }); };
         const stop = handle.subscribe(invalidate), stopMetadata = metadata.subscribe(invalidate);
         return () => { stop(); stopMetadata(); lease.release(); };
     }
     readonly returnToOrigin = () => {
         const route = this.route;
-        if (!route?.opened || !this.place(route, route.source, route.selections)) return;
+        if (!route?.destination || !this.place(route, route.source, route.selections)) return;
         this.metrics.returned++;
         if (!this.sessions.has(route.origin)) this.start(false, true);
         else this.publish({ message: "Returned to the captured source and selection." });
