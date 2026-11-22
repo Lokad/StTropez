@@ -1,4 +1,4 @@
-import { BrowserLspWorkspace, type BrowserLspWorkspaceOptions } from "../../src/browser/lsp-workspace.ts";
+import { BrowserLspWorkspace, type BrowserLspWorkspaceOptions } from "../../src/browser/index.ts";
 import type { JsonValue, LspDocumentFeature, LspScopeAccess, LspWorkspaceScope } from "../../src/protocol/index.ts";
 import type { Workspace } from "../../src/index.ts";
 

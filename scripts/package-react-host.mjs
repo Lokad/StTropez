@@ -4,6 +4,7 @@ import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { build } from "esbuild";
 import { libraryModules, libraryCss } from "./library-entries.mjs";
+import { moduleSpecifiers } from "./module-specifiers.mjs";
 
 /**
  * @param {string} root
@@ -35,12 +36,19 @@ const publicImports = new Map([...libraryModules, libraryCss].map(entry => [entr
  * @param {string} consumer
  * @param {string} path
  * @param {string} [destination]
+ * @param {Set<string>} [hostSources]
  */
-export async function stageHostFixture(project, consumer, path, destination = join("host-fixtures", path)) {
+export async function stageHostFixture(project, consumer, path, destination = join("host-fixtures", path), hostSources) {
     assert.ok((path.startsWith("examples/") || path.startsWith("fixtures/protocol/") || path.startsWith("fixtures/language/")) && !path.includes(".."), `Unexpected host fixture: ${path}`);
     const original = resolve(project, path), text = await readFile(original, "utf8"),
         /** @type {{original: string; restored: string}[]} */ imports = [];
-    // Include type-only imports erased from the emitted graph; reject private library imports.
+    // Type-only host modules have no entry in esbuild's runtime graph.
+    if (hostSources && /\.tsx?$/.test(path)) for (const { value } of moduleSpecifiers(path, text)) {
+        if (!/^\.\.?\//.test(value)) continue;
+        const local = relative(project, resolve(dirname(original), value)).replaceAll("\\", "/");
+        if (!local.startsWith("src/")) hostSources.add(local);
+    }
+    // Keep library modules external, including types and CSS imports.
     const staged = text.replace(/(["'])((?:\.\.\/)+src\/[^"']+)\1/g, (_match, quote, specifier) => {
         const target = resolve(dirname(original), specifier);
         assert.ok(within(project, target), `Host import escaped project: ${specifier}`);
@@ -66,9 +74,7 @@ export async function stagePackagedReactHost(project, consumer) {
     const entryPoints = {
         "host-react": "host-fixtures/react-entry.ts",
     };
-    // Seed contracts whose type-only imports disappear from the bundle graph.
-    const graph = await build({ absWorkingDir: project, entryPoints: ["examples/hosts/react-main.tsx",
-        "examples/shared/language/provider-contract.ts"],
+    const graph = await build({ absWorkingDir: project, entryPoints: ["examples/hosts/react-main.tsx"],
         outdir: join(consumer, "graph"), bundle: true, platform: "browser", format: "esm", target: "es2022", packages: "external", write: false, metafile: true,
         plugins: [{ name: "host-public-imports", setup(builder) {
             builder.onResolve({ filter: /^\./ }, args => {
@@ -80,8 +86,8 @@ export async function stagePackagedReactHost(project, consumer) {
             });
         } }],
     });
-    const sources = [];
-    for (const path of Object.keys(graph.metafile.inputs).sort()) sources.push(await stageHostFixture(project, consumer, path));
+    const sources = [], hostSources = new Set(Object.keys(graph.metafile.inputs));
+    for (const path of hostSources) sources.push(await stageHostFixture(project, consumer, path, undefined, hostSources));
     await writeFile(join(consumer, entryPoints["host-react"]), 'import { startReactHost } from "./examples/hosts/react-main.tsx";\nstartReactHost();\n');
     const shim = "host-fixtures/styles.d.ts";
     await writeFile(join(consumer, shim), 'declare module "*.css";\n');
