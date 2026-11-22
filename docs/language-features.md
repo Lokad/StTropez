@@ -371,8 +371,16 @@ the gesture. Alt+click stays available for multiple carets.
 Supply the project with `options.documents`. A host that opens tabs or shows a chooser handles
 `options.onDefinition(offset)` by calling `controller.request("definition", offset)` during the
 callback. This reuses the hover reply. F12 and reference commands can call the same controller
-at the caret. Read `result.count` and call `result.locationAt(index)` for each displayed row.
-Keep that choice in the row's click handler. Its `open(present)` calls the host with the captured
+at the caret. For a single destination use `result.locationAt(index)`. For a list,
+`result.pageFor(index)` selects that location and returns its page of up to 64 choices.
+The index defaults to zero. An empty result or an invalid index yields `undefined`.
+
+Render `page.locations` and highlight `page.selected`. Each choice has a zero-based result index.
+`moveSelection(-1 | 1)` moves one row and wraps at either end. `previousPage` and `nextPage`
+are actions, or `null` at the boundary. They keep the selected row within the page. A short last
+page selects the nearest available row, and paging back restores the preferred row.
+Each move returns a new page. Keep a choice in its row's click handler so later paging preserves
+that button's destination. Its `open(present)` calls the host with the captured
 document and range while the choice is current. It returns false after cancellation, replacement,
 a change to the captured documents or a provider restart. The host opens the destination and owns
 its navigation history. A result list can open several choices as the caret moves. Set
@@ -396,7 +404,7 @@ Location[] for references; null yields an empty result. Mixed location/link arra
 Every target URI must resolve to an exact captured buffer/index/resource/document/revision.
 Unknown targets reject the whole batch. A LocationLink selection must fit its target range after
 position conversion; its optional origin range uses the source capture. Results retain all
-validated locations within the host's input limits. The host owns paging and explicit reveal.
+validated locations within the host's input limits. The navigation controller pages these locations. The host decides when to reveal one.
 
 Navigation, rename, actions and incoming edits share `LspWorkspaceOptions.resolveTarget(uri,
 context)` for missing targets. Wire structure is validated before loading. `LspTargetContext`

@@ -120,9 +120,14 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await hover(page); await expect(page.getByRole("tooltip")).toContainText("target"); await field(page).press("Escape"); await field(page).press("F12"); await waitForNavigation(page); await expect(results(page)).toHaveCount(1);
         const selected = (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection; expect(selected).toMatchObject({ anchor: text.lastIndexOf("const target") + 6, head: text.lastIndexOf("const target") + 12 });
         await button(page, "Find references").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(64);
+        const second = await results(page).nth(1).elementHandle(); expect(second).toBeTruthy();
         await expect(button(page, "Previous navigation results")).toBeDisabled();
         for (let index = 1; index < 16; index++) { await button(page, "Next navigation results").click(); await expect(results(page)).toHaveCount(64); }
-        await expect(button(page, "Next navigation results")).toBeDisabled(); await results(page).last().click(); await waitForNavigation(page);
+        await expect(button(page, "Next navigation results")).toBeDisabled();
+        await second!.evaluate(node => (node as HTMLButtonElement).click()); await second!.dispose(); await waitForNavigation(page);
+        const secondOffset = text.indexOf("target;", text.indexOf("const target"));
+        expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: secondOffset, head: secondOffset + 6 });
+        await results(page).last().click(); await waitForNavigation(page);
         expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: text.lastIndexOf("target"), head: text.lastIndexOf("target") + 6 });
         await button(page, "Previous navigation results").click(); await expect(results(page)).toHaveCount(64);
         await expect(button(page, "Next navigation results")).toBeEnabled();

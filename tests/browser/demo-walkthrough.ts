@@ -853,9 +853,18 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     const firstResult = locations.locator('[data-location="0"]');
     await expect(firstResult.locator("code")).toHaveText("const sharedValue = 1;");
     await expect(firstResult.locator("mark")).toHaveText("sharedValue");
+    const originCursor = await page.locator("#cursor").innerText();
     // Up wraps to the last result and must reveal its page without creating 1,201 buttons.
     await locations.locator('[data-location="0"]').press("ArrowUp"); await expect(locations).toContainText("1153–1201 of 1201");
     await expect(locations.locator('[data-location="1200"] code')).toHaveText("const use1199 = sharedValue;");
+    await locations.getByRole("button", { name: "Previous locations" }).click();
+    await expect(locations.locator('[data-chosen="true"]')).toHaveAttribute("data-location", "1136");
+    await locations.locator('[data-location="1150"]').press("ArrowDown");
+    await locations.getByRole("button", { name: "Next locations" }).click();
+    await expect(locations.locator('[data-chosen="true"]')).toHaveAttribute("data-location", "1200");
+    await locations.getByRole("button", { name: "Previous locations" }).click();
+    await expect(locations.locator('[data-chosen="true"]')).toHaveAttribute("data-location", "1151");
+    await locations.getByRole("button", { name: "Next locations" }).click();
     const viewport = page.locator("#editor .st-viewport");
     async function scrollAwayAndBack(popup: Locator, lineNumber: number) {
         const initial = await viewport.evaluate(node => node.scrollTop);
@@ -876,6 +885,9 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     await expect(locations.locator("[data-location]")).toHaveCount(49); await source.press("Enter");
     await expect(locations).toBeHidden(); await expect(page.locator("#cursor")).toContainText("Ln 1201,");
     await expect(page.locator("#editor")).toContainText("const use1199 = sharedValue;");
+    await source.press("Alt+ArrowLeft"); await expect(source).toBeFocused(); await expect(page.locator("#cursor")).toHaveText(originCursor);
+    await source.press("Shift+F12"); await expect(locations).toContainText("1–64 of 1201");
+    await source.press("ArrowUp"); await source.press("Enter"); await expect(page.locator("#cursor")).toContainText("Ln 1201,");
     await source.press("F2");
     const rename = page.getByRole("dialog", { name: "Rename symbol", exact: true });
     await rename.getByRole("textbox", { name: "New name", exact: true }).fill("renamedValue");

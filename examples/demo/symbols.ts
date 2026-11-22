@@ -1,6 +1,6 @@
 import type { DocumentId, Workspace } from "../../src/index.ts";
 import { captureViewRequest, createNavigationController, mountAnchoredOverlay } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, NavigationChoice, NavigationResult, TextEditor } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, NavigationChoice, NavigationPage, TextEditor } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import { HostRenameTools } from "../hosts/rename.ts";
 import type { DemoFile } from "./project.ts";
@@ -43,7 +43,7 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     const locationsOverlay = mountAnchoredOverlay(editor, popup);
     const renameOverlay = mountAnchoredOverlay(editor, renamePopup, { onFocusedAnchorHidden: editor.focus });
     scope.defer(locationsOverlay.dispose); scope.defer(renameOverlay.dispose);
-    type Query = { choice: number; message: string; offset: number; revision: number; result?: NavigationResult };
+    type Query = { message: string; offset: number; revision: number; page: NavigationPage | undefined };
     let query: Query | undefined;
     const idle = () => { const s = editor.activity(); return !disposed && valid() && !s.composing && !s.pendingInput && !s.pendingCommand; };
     const navigation = createNavigationController(editor, provider, { canCapture: idle, resultLifetime: "view", documents: () => files().map(file => workspace.document(file.resource.documentId)),
@@ -59,7 +59,7 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     };
     scope.defer(cancelNavigation);
     const markChoice = (captured: Query) => {
-        for (const button of popup.querySelectorAll<HTMLButtonElement>("[data-location]")) button.dataset.chosen = String(Number(button.dataset.location) === captured.choice);
+        for (const button of popup.querySelectorAll<HTMLButtonElement>("[data-location]")) button.dataset.chosen = String(Number(button.dataset.location) === captured.page?.selected.index);
         popup.querySelector<HTMLElement>('[data-chosen="true"]')?.scrollIntoView({ block: "nearest" });
     };
     const choose = (choice: NavigationChoice) => choice.open(at => {
@@ -70,23 +70,24 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         captured.message = message;
         const focused = popup.contains(document.activeElement);
         const note = document.createElement("p"); note.textContent = message;
-        const first = Math.floor(captured.choice / 64) * 64, total = captured.result?.count ?? 0;
+        const page = captured.page;
         const buttons: HTMLButtonElement[] = [];
-        for (let index = first; index < Math.min(total, first + 64); index++) {
-            const location = captured.result!.locationAt(index)!;
+        for (const location of page?.locations ?? []) {
             const file = files().find(file => file.resource.documentId === location.document.documentId); if (!file) continue;
             const button = locationButton(file, location);
-            button.dataset.location = String(index);
+            button.dataset.location = String(location.index);
             button.addEventListener("click", () => choose(location)); buttons.push(button);
         }
         const pages = document.createElement("div"), previous = document.createElement("button"), next = document.createElement("button"), count = document.createElement("span");
-        previous.textContent = "Previous locations"; next.textContent = "Next locations"; pages.hidden = total <= 64;
-        previous.disabled = first === 0; next.disabled = first + 64 >= total; count.textContent = `${first + 1}–${Math.min(first + 64, total)} of ${total}`;
-        const move = (direction: number) => {
-            if (query !== captured) return;
-            captured.choice = first + direction * 64; showNavigation(captured, message);
+        previous.textContent = "Previous locations"; next.textContent = "Next locations";
+        previous.disabled = !page?.previousPage; next.disabled = !page?.nextPage; pages.hidden = previous.disabled && next.disabled;
+        if (page) count.textContent = `${page.first + 1}–${page.first + page.locations.length} of ${page.count}`;
+        const movePage = (action: "previousPage" | "nextPage") => {
+            if (query !== captured || captured.page?.first !== page?.first) return;
+            const moved = captured.page?.[action]?.();
+            if (moved) { captured.page = moved; showNavigation(captured, message); }
         };
-        previous.onclick = () => move(-1); next.onclick = () => move(1); pages.append(previous, count, next);
+        previous.onclick = () => movePage("previousPage"); next.onclick = () => movePage("nextPage"); pages.append(previous, count, next);
         const close = document.createElement("button"); close.textContent = "Close locations"; close.addEventListener("click", () => { if (query === captured) { cancelNavigation(); editor.focus(); } });
         popup.replaceChildren(note, pages, ...buttons, close); locationsOverlay.show({ revision: captured.revision, offset: captured.offset }); markChoice(captured);
         if (focused) editor.focus();
@@ -95,13 +96,13 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         if (!idle()) return; dismissOther(); closeRename(false); cancelNavigation(); editor.focus();
         const caret = editor.view.getSnapshot().selection;
         if (pointed === undefined) editor.viewport.revealOffset(caret.head, { affinity: caret.headAffinity ?? "after" });
-        const captured: Query = { choice: 0, message: "", offset: pointed ?? caret.head, revision: workspace.document(file.resource.documentId).revision };
+        const captured: Query = { page: undefined, message: "", offset: pointed ?? caret.head, revision: workspace.document(file.resource.documentId).revision };
         query = captured; showNavigation(captured, kind === "definition" ? "Finding definition…" : "Finding references…");
         void navigation.request(kind, captured.offset).then(result => {
             if (query !== captured || navigation.getSnapshot().result !== result) return;
-            captured.result = result;
-            if (kind === "definition" && result.count === 1) choose(result.locationAt(0)!);
-            else showNavigation(captured, result.count ? `Choose a ${kind === "definition" ? "definition" : "reference"}.` : `No ${kind} in this sample.`);
+            if (kind === "definition" && result.count === 1) { choose(result.locationAt(0)!); return; }
+            captured.page = result.pageFor();
+            showNavigation(captured, result.count ? `Choose a ${kind === "definition" ? "definition" : "reference"}.` : `No ${kind} in this sample.`);
         }).catch(error => { if (query === captured) showNavigation(captured,
             error instanceof Error ? `Cannot open this location: ${error.message}` : "This location is unavailable in the sample."); });
     }
@@ -155,19 +156,20 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     const bind = bindPopupCommands(scope, editor, popup, 36);
     bind("locations.dismiss", "Close locations", "Escape", () => { cancelNavigation(); editor.focus(); });
     const move = (direction: -1 | 1) => {
-        const count = query?.result?.count;
-        if (!query || !count) return false;
+        if (!query?.page) return false;
         const focused = popup.querySelector<HTMLElement>("[data-location]:focus")?.dataset.location;
+        const current = focused === undefined ? query.page : navigation.getSnapshot().result?.pageFor(Number(focused));
+        if (!current) return false;
         editor.focus();
-        const previousPage = Math.floor(query.choice / 64);
-        query.choice = ((focused === undefined ? query.choice : Number(focused)) + direction + count) % count;
-        if (Math.floor(query.choice / 64) !== previousPage) showNavigation(query, query.message); else markChoice(query);
+        const first = query.page.first;
+        query.page = current.moveSelection(direction);
+        if (query.page.first !== first) showNavigation(query, query.message); else markChoice(query);
         return true;
     };
     bind("locations.previous", "Previous location", "ArrowUp", () => move(-1));
     bind("locations.next", "Next location", "ArrowDown", () => move(1));
     bind("locations.open", "Open selected location", "Enter", () => {
-        const location = query?.result?.locationAt(query.choice);
+        const location = query?.page?.selected;
         return !!location && choose(location);
     });
     scope.defer(rename.attach("source", file.tab, editor));

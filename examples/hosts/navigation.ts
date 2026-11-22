@@ -1,19 +1,19 @@
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, DocumentSnapshot, SelectionSet, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { createNavigationController } from "../../src/browser/index.ts";
-import type { NavigationChoice, NavigationController, NavigationResult, TextEditor } from "../../src/browser/index.ts";
+import type { NavigationChoice, NavigationController, NavigationPage, NavigationResult, TextEditor } from "../../src/browser/index.ts";
 import type { LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
-import { navigationLimits, navigationSymbol, validateNavigationInput } from "../../fixtures/language/navigation.ts";
+import { navigationSymbol, validateNavigationInput } from "../../fixtures/language/navigation.ts";
 import type { NavigationInput, NavigationLocation } from "../../fixtures/language/navigation.ts";
 import { HostCell } from "../shared/observable.ts";
 
 export type NavigationHostOptions = Readonly<{ provider: LspWorkspace; prepare: (kind: NavigationInput["kind"], delay: number, fault?: NavigationInput["fault"]) => LspPrepare }>;
 type Session = { token: number; id: string; target: TabTarget; editor: TextEditor; controller: NavigationController };
 type Job = { origin: Session; selections: SelectionSet; input: NavigationInput; sources: Map<string, DocumentSnapshot>; targets: Map<string, Session>;
-    timer: number; result?: NavigationResult; navigated: boolean };
+    timer: number; result?: NavigationResult; page: NavigationPage | undefined; navigated: boolean };
 export type NavigationNote = NavigationLocation & Readonly<{ ordinal: number; title: string; line: number; column: number; open: () => void }>;
 export type NavigationSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; syncedDocuments: number; view: string | null; requestView: string | null; token: number | null; status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired" | "disconnected";
-    message: string; work: number; total: number; includeDeclaration: boolean; locations: readonly NavigationNote[]; count: number; truncated: boolean; page: number; canReturn: boolean }>;
+    message: string; work: number; total: number; includeDeclaration: boolean; locations: readonly NavigationNote[]; count: number; truncated: boolean; first: number; hasNextPage: boolean; canReturn: boolean }>;
 
 /** Host-owned project navigation; results carry identities, never a future focus target. */
 export class HostNavigationTools {
@@ -31,7 +31,7 @@ export class HostNavigationTools {
     private client: NavigationController | undefined;
     private readonly options: NavigationHostOptions;
     private disconnected = false;
-    private readonly cell = new HostCell<NavigationSnapshot>({ available: false, connected: false, disconnected: false, syncedDocuments: 0, view: null, requestView: null, token: null, status: "idle", message: "Focus a candidate source to navigate symbols.", work: 0, total: 0, includeDeclaration: true, locations: [], count: 0, truncated: false, page: 0, canReturn: false });
+    private readonly cell = new HostCell<NavigationSnapshot>({ available: false, connected: false, disconnected: false, syncedDocuments: 0, view: null, requestView: null, token: null, status: "idle", message: "Focus a candidate source to navigate symbols.", work: 0, total: 0, includeDeclaration: true, locations: [], count: 0, truncated: false, first: 0, hasNextPage: false, canReturn: false });
     readonly state = this.cell.observable;
     private readonly metrics = { requested: 0, applied: 0, cancelled: 0, expired: 0, failed: 0 };
     private readonly queries = { completed: 0, failed: 0 };
@@ -47,22 +47,22 @@ export class HostNavigationTools {
     }
     private publish(patch: Partial<NavigationSnapshot> = {}): void {
         const job = this.job, state = { ...this.cell.get(), ...patch }, locations: NavigationNote[] = [];
-        const count = job?.result?.count ?? 0, first = state.page * navigationLimits.page;
-        if (job?.result) for (let ordinal = first; ordinal < Math.min(count, first + navigationLimits.page); ordinal++) {
-            const choice = job.result.locationAt(ordinal)!, doc = job.sources.get(choice.document.documentId)!;
+        const page = job?.page;
+        if (job && page) for (const choice of page.locations) {
+            const doc = job.sources.get(choice.document.documentId)!;
             const line = doc.buffer.lineAt(choice.from);
             locations.push({ document: doc.id, revision: doc.revision, from: choice.from, to: choice.to, declaration: job.input.kind === "definition",
-                ordinal, title: doc.title.slice(0, 128), line: line + 1, column: choice.from - doc.buffer.offsetAt(line) + 1, open: () => this.open(job, choice) });
+                ordinal: choice.index, title: doc.title.slice(0, 128), line: line + 1, column: choice.from - doc.buffer.offsetAt(line) + 1, open: () => this.open(job, choice) });
         }
         const transport = this.client?.getDiagnostics();
         this.cell.set({ ...state, available: !!this.active && this.available(this.active), connected: !!transport?.connected, disconnected: this.disconnected, syncedDocuments: transport?.documents.length ?? 0, view: this.active?.id ?? null, requestView: job?.origin.id ?? null, token: job?.input.id ?? null,
-            locations, count, canReturn: !!job?.navigated });
+            locations, first: page?.first ?? 0, hasNextPage: !!page?.nextPage, count: page?.count ?? 0, canReturn: !!job?.navigated });
     }
     private dropClient(): void { const previous = this.client; this.client = undefined; previous?.cancel(); }
     private clear(status: NavigationSnapshot["status"], message: string): void {
         const job = this.job; this.job = undefined;
         if (job) { job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); this.dropClient(); }
-        this.publish({ status, message, work: 0, total: 0, page: 0, truncated: false });
+        this.publish({ status, message, work: 0, total: 0, truncated: false });
     }
     readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.clear("idle", "Symbol navigation dismissed."); };
     readonly disconnect = (): void => { this.cancel(); this.dropClient(); this.disconnected = true; this.publish({ status: "disconnected", message: "Navigation provider disconnected; local editing remains available." }); };
@@ -119,20 +119,20 @@ export class HostNavigationTools {
             documents: documents.map(doc => ({ document: doc.id, revision: doc.revision, length: doc.buffer.length })), ...(this.fault ? { fault: this.fault } : {}) }); }
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Unsupported navigation capture." }); return; }
         const targets = new Map<string, Session>(); for (const s of this.sessions.values()) if (this.available(s) && !targets.has(s.editor.view.documentId)) targets.set(s.editor.view.documentId, s); targets.set(document.id, origin);
-        const job: Job = { origin, selections: origin.editor.view.getSnapshot().selectionSet, input, sources, targets, timer: 0, navigated: false };
+        const job: Job = { origin, selections: origin.editor.view.getSnapshot().selectionSet, input, sources, targets, timer: 0, page: undefined, navigated: false };
         this.job = job; this.metrics.requested++; const win = origin.editor.element.ownerDocument.defaultView!;
         try {
             job.timer = win.setTimeout(() => { if (this.job === job && !job.result) { this.metrics.failed++; this.clear("failed", "Navigation timed out; source is unchanged."); } }, 30000);
             const total = input.documents.reduce((sum, doc) => sum + doc.length, 0);
-            this.publish({ status: "pending", message: `Finding ${kind === "definition" ? "definitions" : "references"} of ${symbol} from ${origin.id}.`, work: 0, total, page: 0, truncated: false });
+            this.publish({ status: "pending", message: `Finding ${kind === "definition" ? "definitions" : "references"} of ${symbol} from ${origin.id}.`, work: 0, total, truncated: false });
             if (this.client !== origin.controller) this.dropClient();
             this.client = origin.controller;
             void this.client.request(kind, offset, input.includeDeclaration).then(result => {
                 this.queries.completed++;
                 if (this.job !== job || origin.controller.getSnapshot().result !== result) return;
-                win.clearTimeout(job.timer); job.result = result; this.metrics.applied++;
+                win.clearTimeout(job.timer); job.result = result; job.page = result.pageFor(); this.metrics.applied++;
                 this.publish({ status: result.count ? "ready" : "empty", message: `${result.count} ${kind === "definition" ? "definition" : "reference"} locations for ${symbol} across ${sources.size} captured resources.`, work: total });
-                if (keyboard && kind === "definition" && result.count === 1 && origin.editor.element.ownerDocument.activeElement === origin.editor.input) this.open(job, result.locationAt(0)!);
+                if (keyboard && kind === "definition" && result.count === 1 && origin.editor.element.ownerDocument.activeElement === origin.editor.input) this.open(job, job.page!.selected);
             }).catch(error => { if (this.job !== job) return; this.queries.failed++; this.metrics.failed++; this.clear("failed", error instanceof Error ? error.message : "Navigation failed; source is unchanged."); });
         } catch (error) { this.metrics.failed++; this.clear("failed", error instanceof Error ? error.message : "Navigation is unavailable."); }
     }
@@ -154,8 +154,12 @@ export class HostNavigationTools {
         });
     }
     readonly returnToOrigin = (): void => { const job = this.job; if (job?.navigated && this.place(job, job.origin.editor.view.documentId, job.selections)) this.publish({ message: "Returned to the captured origin and complete selection set." }); };
-    readonly nextPage = (): void => { const state = this.cell.get(); if ((state.page + 1) * navigationLimits.page < state.count) this.publish({ page: state.page + 1 }); };
-    readonly previousPage = (): void => { const state = this.cell.get(); if (state.page > 0) this.publish({ page: state.page - 1 }); };
+    private movePage(action: "previousPage" | "nextPage"): void {
+        const job = this.job, page = job?.page?.[action]?.();
+        if (job && page) { job.page = page; this.publish(); }
+    }
+    readonly nextPage = (): void => this.movePage("nextPage");
+    readonly previousPage = (): void => this.movePage("previousPage");
     setIncludeDeclaration(value: boolean): void { if (value === this.cell.get().includeDeclaration) return; this.cancel(); this.publish({ includeDeclaration: value }); }
     readonly addCompanion = (): void => {
         if (this.disposed) return; this.cancel();

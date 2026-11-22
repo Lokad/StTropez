@@ -51,7 +51,10 @@ hover.subscribe(() => {
 });
 command("Definition", async () => { const value = await navigation.request("definition", position());
     result.textContent = `Definition targets: ${value.count}`;
-    const choice = value.locationAt(0); if (!choice) return;
+    const page = value.pageFor(); if (!page) return;
+    if (![page, page.locations, page.selected].every(Object.isFrozen) || page.selected !== page.locations[0]
+        || value.pageFor(value.count) !== undefined) throw new Error("Invalid navigation page");
+    const choice = page.selected;
     const open = document.createElement("button"); open.textContent = "Open definition";
     open.onclick = () => {
         const current = choice.open(at => { notes.navigation = at.document.documentId; });

@@ -14,8 +14,14 @@ type Client = ReturnType<typeof createLspNavigationClient>;
 type Preview = Awaited<ReturnType<Client["prepareDefinition"]>>;
 type Reply = Awaited<ReturnType<Client["run"]>>;
 export type NavigationDestination = Omit<LspLocation, "target"> & Readonly<{ document: LspLocation["target"]["document"] }>;
-export type NavigationChoice = NavigationDestination & Readonly<{ open: (present: (destination: NavigationDestination) => void) => boolean }>;
-export type NavigationResult = Readonly<{ count: number; locationAt: (index: number) => NavigationChoice | undefined }>;
+export type NavigationChoice = NavigationDestination & Readonly<{ index: number; open: (present: (destination: NavigationDestination) => void) => boolean }>;
+export type NavigationPage = Readonly<{
+    count: number; first: number; locations: readonly NavigationChoice[]; selected: NavigationChoice;
+    previousPage: (() => NavigationPage) | null; nextPage: (() => NavigationPage) | null;
+    moveSelection: (direction: -1 | 1) => NavigationPage;
+}>;
+export type NavigationResult = Readonly<{ count: number; locationAt: (index: number) => NavigationChoice | undefined;
+    pageFor: (index?: number) => NavigationPage | undefined }>;
 type Kind = "definition" | "references";
 export type NavigationControllerOptions = Readonly<{
     documents?: () => readonly DocumentSnapshot[]; canCapture?: () => boolean;
@@ -32,18 +38,37 @@ export type NavigationController = Observable<NavigationSnapshot> & Readonly<{
 }>;
 const idle: NavigationSnapshot = Object.freeze({ status: "idle", result: null });
 
+const navigationPageSize = 64;
 function navigationResult(reply: Reply, canOpen: () => boolean): NavigationResult {
-    return Object.freeze({ count: reply.locations.length, locationAt(index: number) {
+    const count = reply.locations.length;
+    function locationAt(index: number): NavigationChoice | undefined {
         if (!Number.isSafeInteger(index)) return;
         const location = reply.locations[index];
         if (!location) return;
         const { target, from, to, originRange, targetRange } = location;
         const destination = Object.freeze({ document: target.document, from, to, originRange, targetRange });
-        return Object.freeze({ ...destination, open(present: (at: NavigationDestination) => void) {
+        return Object.freeze({ ...destination, index, open(present: (at: NavigationDestination) => void) {
             if (!canOpen()) return false;
             present(destination); return true;
         } });
-    } });
+    }
+    function buildPage(index: number, preferredRow = index % navigationPageSize): NavigationPage {
+        const first = index - index % navigationPageSize, end = Math.min(first + navigationPageSize, count);
+        const locations = Object.freeze(Array.from({ length: end - first }, (_, row) => locationAt(first + row)!));
+        function select(at: number, row: number): NavigationPage {
+            return Object.freeze({ count, first, locations, selected: locations[at - first]!,
+                previousPage: first > 0 ? () => buildPage(first - navigationPageSize + row, row) : null,
+                nextPage: end < count ? () => buildPage(Math.min(end + row, count - 1), row) : null,
+                moveSelection(direction: -1 | 1) {
+                    if (direction !== -1 && direction !== 1) throw new RangeError("Expected a navigation direction of -1 or 1.");
+                    const next = (at + direction + count) % count;
+                    return next >= first && next < end ? select(next, next - first) : buildPage(next);
+                } });
+        }
+        return select(index, preferredRow);
+    }
+    return Object.freeze({ count, locationAt, pageFor: (index = 0) =>
+        Number.isSafeInteger(index) && index >= 0 && index < count ? buildPage(index) : undefined });
 }
 
 /** A passive definition lookup can paint a link. Only an explicit request resolves its target URIs. */

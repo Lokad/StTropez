@@ -28,7 +28,7 @@ export type { DocumentColorChoice, ColorPresentationChoice, ColorPresentationRev
 export type { DocumentLinkChoice, DocumentLinkController, DocumentLinkControllerOptions, DocumentLinkSnapshot } from "./document-link-controller.ts";
 export type { RenameController, RenameControllerOptions, RenamePreview, RenameSnapshot } from "./rename-controller.ts";
 export type { SignatureController, SignatureControllerOptions, SignatureSnapshot } from "./signature-controller.ts";
-export type { NavigationController, NavigationControllerOptions, NavigationSnapshot, NavigationResult, NavigationChoice, NavigationDestination } from "./navigation-controller.ts";
+export type { NavigationController, NavigationControllerOptions, NavigationSnapshot, NavigationResult, NavigationPage, NavigationChoice, NavigationDestination } from "./navigation-controller.ts";
 export type { HoverController, HoverControllerOptions, HoverDiagnostics, HoverSnapshot } from "./hover-controller.ts";
 export type { CodeActionController, CodeActionControllerOptions, CodeActionSnapshot, CodeActionChoice, CodeActionPreview, CodeActionCommand, CodeActionExecution } from "./code-action-controller.ts";
 export type { DiagnosticController, DiagnosticControllerOptions, DiagnosticSnapshot, EditorDiagnostic } from "./diagnostic-controller.ts";
