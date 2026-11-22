@@ -165,7 +165,7 @@ if (deferredOnly || lspOnly || plainEditing) {
     const harnessName = lspOnly ? "lsp-harness" : plainEditing ? "editing-harness" : "page-lifecycle";
     const scripts = await Promise.all((lspOnly ? ["scripts/package-lsp.mjs"]
         : plainEditing ? ["scripts/package-pilot.mjs", "scripts/package-hunk-pilot.mjs", "scripts/host-typing.mjs", "scripts/host-reference-probe.mjs", "scripts/measurement.mjs",
-            ...(checkTransitions ? ["scripts/package-transitions.mjs", "scripts/package-react-host.mjs", "scripts/package-host.mjs", "scripts/library-entries.mjs"] : [])]
+            ...(checkTransitions ? ["scripts/package-transitions.mjs", "scripts/package-react-host.mjs", "scripts/package-host.mjs", "scripts/library-entries.mjs", "scripts/module-specifiers.mjs"] : [])]
         : ["scripts/package-page-lifecycle.mjs", workspaceOnly ? "scripts/package-workspace.mjs" : "scripts/package-activation.mjs", "tests/helpers/latch.ts"])
         .map(path => realpath(join(project, path))));
     const fixture = join(consumer, lspOnly ? "lsp.ts" : plainEditing ? "pilot.ts" : "activation-main.ts"), declarations = [];
@@ -193,11 +193,12 @@ declare global { interface Window {
         "@types/node", "@playwright/test", "playwright", "playwright-core", "undici-types",
         ...(checkTransitions ? ["esbuild", "fflate"] : []),
     ].map(name => realpath(join(project, "node_modules", name))))];
-    const metadataInputs = checkTransitions ? [await realpath(join(project, "package.json"))] : [];
+    // The transition harness stages host imports with the development TypeScript parser.
+    const toolingFiles = checkTransitions ? await Promise.all(["package.json", "node_modules/typescript-demo/lib/typescript.d.ts"].map(path => realpath(join(project, path)))) : [];
     /** @type {string[]} */ const inputs = [];
     for (const path of output.split(/\r?\n/).filter(Boolean)) {
         const input = await realpath(resolve(consumer, path));
-        assert.ok(within(consumer, input) || scripts.includes(input) || metadataInputs.includes(input) || toolRoots.some(root => within(root, input)),
+        assert.ok(within(consumer, input) || scripts.includes(input) || toolingFiles.includes(input) || toolRoots.some(root => within(root, input)),
             `Unexpected input in the restored ${harnessName} harness: ${input}`);
         inputs.push(input);
     }
