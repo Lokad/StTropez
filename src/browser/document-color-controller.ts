@@ -4,6 +4,7 @@ import type { Observable } from "../core/observable.ts";
 import { mapReplacementSelections } from "../core/selections.ts";
 import { decodeLspColor } from "../protocol/lsp-features.ts";
 import type { LspColor, LspColorPresentation, LspDocumentColor } from "../protocol/lsp-features.ts";
+import { describeLspEdit, type LspWorkspaceEditNote } from "../protocol/lsp-workspace-edit.ts";
 import { createLspColorClient, type LspColorClient } from "../protocol/lsp-language.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
 import { captureViewRequest } from "./captured-view.ts";
@@ -15,7 +16,7 @@ export type DocumentColorChoice = LspDocumentColor & Readonly<{ revision: number
 export type ColorPresentationChoice = Readonly<{ label: string; select: () => void }>;
 export type ColorPresentationReview = Readonly<{
     reference: DocumentColorChoice; proposed: LspColor; choice: ColorPresentationChoice;
-    edits: LspColorPresentation["edits"]; canApply: boolean; apply: () => ReviewEditResult;
+    edits: LspColorPresentation["edits"]; notes: readonly LspWorkspaceEditNote[]; canApply: boolean; apply: () => ReviewEditResult;
 }>;
 export type DocumentColorSnapshot = Readonly<{
     status: "idle" | "discovering" | "ready" | "previewing" | "review" | "applied" | "expired" | "failed" | "disposed";
@@ -107,8 +108,10 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
         const j = job, p = j?.preview, result = p?.result?.[index];
         if (!j || !p || !result || presentations[index] !== choice || !current(j) || !p.capture.isCurrent()) return;
         if (state.get().review?.choice === choice) return;
+        const doc = p.capture.document;
+        const notes = Object.freeze(result.edits.map(edit => describeLspEdit(doc, doc.id, doc.title, edit)));
         const review: ColorPresentationReview = Object.freeze({ reference: p.reference, proposed: p.proposed, choice,
-            edits: result.edits, canApply: writable(), apply: () => apply(review) });
+            edits: result.edits, notes, canApply: writable(), apply: () => apply(review) });
         publish("review", { colors: state.get().colors, presentations, review });
     }
     function presentation(raw: LspColorPresentation, index: number): ColorPresentationChoice {

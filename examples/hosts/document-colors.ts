@@ -1,4 +1,5 @@
 import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.ts";
+import { formatEditNote } from "./edit-review.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts";
 import { onSourceFocus } from "./source-focus.ts";
@@ -103,10 +104,7 @@ export class HostDocumentColors {
             if (this.owner === s && !current.pending && current.colors === colors) this.render(s, { page: next });
         });
         const choices = state.presentations, reviewKey = this.reviewKey(review);
-        const edits = !review ? initial.edits : reviewKey === old.reviewKey ? old.edits : Object.freeze(review.edits.map(edit => {
-            const context = doc.buffer.slice(Math.max(0, edit.from - 32), Math.min(doc.buffer.length, edit.from + 32));
-            return `${doc.title.slice(0, 128)} · ${doc.resourceId} · ${doc.id} @ revision ${doc.revision} · [${edit.from},${edit.to})\nInsert ${JSON.stringify(edit.insert)}\nContext: ${context}`;
-        }));
+        const edits = !review ? initial.edits : reviewKey === old.reviewKey ? old.edits : Object.freeze(review.notes.map(formatEditNote));
         this.publish({ status: state.status === "ready" ? "colors" : "presentations", message: pending ? "Requesting color presentations…" : review ? "Review the edits before applying." : `${state.colors.length} document colors.`,
             pending, count: state.colors.length, colors, selected, page, paging, value, css: proposed ? rgbaColor(proposed) : null, choices,
             presentation: review ? `provider-${choices.indexOf(review.choice)}` : "", edits, canPreview: !!reference && !!proposed && !pending,

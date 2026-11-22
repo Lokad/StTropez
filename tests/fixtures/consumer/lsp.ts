@@ -145,7 +145,7 @@ colors.subscribe(() => {
     const state = colors.getSnapshot(), review = state.review;
     notes.colorPresentations = state.presentations.length; notes.colorApplied = state.status === "applied";
     applyColor(review?.apply, review?.canApply);
-    result.textContent = review ? review.edits.map(edit => edit.insert).join("\n") : state.status === "applied" ? "Color applied" : state.message;
+    result.textContent = review ? review.notes.map(note => note.insert).join("\n") : state.status === "applied" ? "Color applied" : state.message;
 });
 const dispose = () => { if (disposed) return; disposed = true; stop(); controller.dispose(); diagnostics.dispose(); hover.dispose(); navigation.dispose(); rename.dispose(); actions.dispose(); signature.dispose(); links.dispose(); colors.dispose(); provider.dispose(); editor.dispose(); };
 async function probeTypedHover() {

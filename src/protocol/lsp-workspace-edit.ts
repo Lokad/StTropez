@@ -1,7 +1,9 @@
 import { wireLimits, staleRequest } from "./wire.ts";
 import type { DocumentId, DocumentSnapshot, DocumentView, EditOrigin, EditRequest, Workspace } from "../core/workspace.ts";
 import type { EditKind } from "../core/history.ts";
+import type { TextEdit } from "../core/changes.ts";
 import type { LspWorkspaceEdit } from "./lsp-features.ts";
+import type { LspDocumentSnapshot } from "./lsp-session.ts";
 
 export type LspWorkspaceEditOptions = Readonly<{
     origin: EditOrigin;
@@ -56,6 +58,17 @@ export type LspWorkspaceEditNote = Readonly<{
 }>;
 export type LspWorkspaceEditPreview = Readonly<{ count: number; page: number; notes: readonly LspWorkspaceEditNote[] }>;
 
+export function describeLspEdit(source: Pick<LspDocumentSnapshot, "buffer" | "resourceId" | "revision">, document: string, title: string, edit: TextEdit): LspWorkspaceEditNote {
+    const { from, to, insert } = edit, { buffer } = source;
+    return Object.freeze({
+        document, resource: source.resourceId, title: title.slice(0, wireLimits.previewLabelUnits), revision: source.revision, from, to,
+        before: buffer.slice(from, Math.min(to, from + 256)) + (to - from > 256 ? "…" : ""),
+        insert: insert.slice(0, 256), insertUnits: insert.length,
+        context: buffer.slice(Math.max(0, from - 32), Math.min(to, from + wireLimits.previewContextUnits)) + (to - from > wireLimits.previewContextUnits ? "…" : "")
+            + buffer.slice(to, Math.min(buffer.length, to + 32)),
+    });
+}
+
 /**
  * Build a 64-edit review page from captured buffers, without exporting complete text or
  * materializing off-page edits. Titles come from the host's captured resource inventory.
@@ -69,15 +82,8 @@ export function previewLspWorkspaceEdit(edit: LspWorkspaceEdit, title: (document
         const from = Math.max(0, first - count), to = Math.min(change.edits.length, last - count);
         count += change.edits.length;
         if (from >= to) continue;
-        const doc = change.target.document, label = title(doc.documentId).slice(0, wireLimits.previewLabelUnits);
-        for (let i = from; i < to; i++) {
-            const at = change.edits[i]!;
-            notes.push(Object.freeze({ document: doc.documentId, resource: doc.resourceId, title: label, revision: doc.revision, from: at.from, to: at.to,
-                before: doc.buffer.slice(at.from, Math.min(at.to, at.from + 256)) + (at.to - at.from > 256 ? "…" : ""),
-                insert: at.insert.slice(0, 256), insertUnits: at.insert.length,
-                context: doc.buffer.slice(Math.max(0, at.from - 32), Math.min(at.to, at.from + wireLimits.previewContextUnits)) + (at.to - at.from > wireLimits.previewContextUnits ? "…" : "")
-                    + doc.buffer.slice(at.to, Math.min(doc.buffer.length, at.to + 32)) }));
-        }
+        const doc = change.target.document, label = title(doc.documentId);
+        for (let i = from; i < to; i++) notes.push(describeLspEdit(doc, doc.documentId, label, change.edits[i]!));
     }
     return Object.freeze({ count, page, notes: Object.freeze(notes) });
 }

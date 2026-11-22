@@ -1,3 +1,4 @@
+import type { LspWorkspaceEditNote } from "../../src/protocol/index.ts";
 import type { DocumentId } from "../../src/index.ts";
 import type { ChangedFile } from "./language-host.ts";
 
@@ -25,3 +26,5 @@ export function createChangedFileList(owner: Document, label: string) {
         for (const button of element.querySelectorAll("button")) button.disabled = model.disabled;
     } };
 }
+
+export const formatEditNote = (at: LspWorkspaceEditNote): string => `${at.title} · ${at.resource} · ${at.document} @ revision ${at.revision} · [${at.from},${at.to})\nInsert ${JSON.stringify(at.insert)}${at.insertUnits > at.insert.length ? `… (${at.insertUnits} UTF-16 units)` : ""}\nContext: ${at.context}`;

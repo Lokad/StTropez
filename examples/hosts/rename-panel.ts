@@ -1,5 +1,5 @@
 import { createToolPanel } from "./tool-panel.ts";
-import { changedFiles, createChangedFileList } from "./changed-files.ts";
+import { changedFiles, createChangedFileList } from "./edit-review.ts";
 import type { HostRenameTools, RenameNote, HostRenameSnapshot } from "./rename.ts";
 type RenamePanelTools = Pick<HostRenameTools, "prepare" | "cancel" | "showPage" | "disconnect" | "reconnect" | "bindName" | "setName" | "openChanged">;
 export function renamePageActions(tools: Pick<HostRenameTools, "showPage">, s: HostRenameSnapshot, previous: string, next: string) {

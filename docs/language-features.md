@@ -652,6 +652,10 @@ review. Give each review its own Apply button as in the rename example. Call `re
 for that review. It returns `{ applied: true }` on success, or a `ReviewEditResult` with
 `reason` set to `expired`, `not-writable` or `failed`.
 
+Use `review.notes` to display the proposed edits. Each note gives the captured range, nearby text,
+the first 256 UTF-16 units of the insertion and its full length in `insertUnits`.
+`review.edits` contains the complete replacements used by Apply.
+
 Call `dismissPreview()` when the picker value changes. Dismissing a pending provider call ends
 discovery. You can reuse a completed list after dismissing its review or moving the caret.
 Changing the selected format, source, selection, folds or edit permission invalidates the old

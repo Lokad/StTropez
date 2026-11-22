@@ -218,6 +218,29 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await expect(secondary).toBeFocused();
         await replacement.click(); await expect(field(page)).toBeFocused(); await disposeColorsAndLinks(page);
     });
+    if (coversHost("plain-candidate", host, "candidate")) test("a long color insertion has a bounded review and applies in full", async ({ page }) => {
+        const raw = 'const color = "#abc";', insert = "#aabbcc/*" + "x".repeat(12_000) + "*/";
+        await page.routeWebSocket("**/lsp-fixture", client => {
+            const server = client.connectToServer();
+            client.onMessage(message => {
+                const packet = JSON.parse(message.toString());
+                if (packet.method !== "textDocument/colorPresentation") { server.send(message); return; }
+                client.send(JSON.stringify({ jsonrpc: "2.0", id: packet.id, result: [
+                    { label: "Hex with comment", textEdit: { range: packet.params.range, newText: insert } },
+                ] }));
+            });
+        });
+        await page.reload(); await seed(page, raw);
+        await button(page, "Discover document colors").click(); await settledColorsAndLinks(page);
+        await button(page, "Preview color presentations").click();
+        const notes = page.getByRole("list", { name: "Proposed color edits", exact: true }), apply = button(page, "Apply captured color");
+        await expect(apply).toBeEnabled();
+        const shown = (await notes.textContent())!;
+        expect(shown.length).toBeLessThan(1_000);
+        expect(shown).toContain(`${insert.length} UTF-16 units`);
+        await exact(page, raw); await apply.click(); await exact(page, raw.replace("#abc", insert));
+        await field(page).press("Control+z"); await exact(page, raw); await disposeColorsAndLinks(page);
+    });
     test("provider color presentations preview every edit and preserve complete selections through shared history", async ({ page }) => {
         const methods: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value.method); }));
         const raw = '\ufeffconst color = "#aabbcc";\r\nvalue;'; await seed(page, raw);

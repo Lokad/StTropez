@@ -1,5 +1,5 @@
 import { panelActionKey } from "./panel-actions.ts";
-import type { ChangedFileList } from "./changed-files.ts";
+import type { ChangedFileList } from "./edit-review.ts";
 import { Profiler, StrictMode, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";

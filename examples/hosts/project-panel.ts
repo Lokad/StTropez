@@ -1,7 +1,6 @@
-import { changedFiles, createChangedFileList } from "./changed-files.ts";
+import { changedFiles, createChangedFileList, formatEditNote } from "./edit-review.ts";
 import { createToolPanel } from "./tool-panel.ts";
 import type { HostProjectTools, ProjectSnapshot } from "./project.ts";
-import { actionTarget } from "./actions-panel.ts";
 type ProjectPanelTools = Pick<HostProjectTools, "register" | "unregister" | "requestEdits" | "requestStatus" | "cancel" | "disconnect" | "reconnect" | "openChanged">;
 
 /** Captured decisions and lazy bounded lists shared by both host renderers. */
@@ -23,7 +22,7 @@ export function projectPanelModel(tools: ProjectPanelTools, s: ProjectSnapshot) 
             { label: "Reconnect workspace provider", invoke: tools.reconnect, disabled: !s.disconnected && !s.reconnectRequired && s.status !== "failed" }
         ],
         review: { visible: review !== null, identity: review, titleLabel: "Provider edit review", title: review?.label ?? "",
-            label: "Captured provider edits", start: (review?.page ?? 0) * 64 + 1, items: () => review?.notes.map(actionTarget) ?? [] },
+            label: "Captured provider edits", start: (review?.page ?? 0) * 64 + 1, items: () => review?.notes.map(formatEditNote) ?? [] },
         changes: changedFiles("Provider changed resources", "Open provider changes in ", s.changes, s.pending, id => tools.openChanged(id)),
         changesDescription: s.changes.length ? "Last applied provider edits" : "",
     } as const;

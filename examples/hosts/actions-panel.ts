@@ -1,9 +1,8 @@
 import { pageActions } from "./panel-actions.ts";
 import { createToolPanel } from "./tool-panel.ts";
-import { changedFiles, createChangedFileList } from "./changed-files.ts";
+import { changedFiles, createChangedFileList, formatEditNote } from "./edit-review.ts";
 import { actionChoicePageSize, actionEditPageSize } from "./action-pages.ts";
 import type { CodeActionChoice } from "../../src/browser/index.ts";
-import type { LspWorkspaceEditNote } from "../../src/protocol/index.ts";
 import type { HostActionsTools, ActionsSnapshot } from "./code-actions.ts";
 type ActionsPanelTools = Pick<HostActionsTools, "request" | "cancel" | "disconnect" | "reconnect" | "bindModule" | "setModule" | "openChangedDocument">;
 function actionsControls(tools: ActionsPanelTools, s: ActionsSnapshot) {
@@ -19,7 +18,6 @@ function actionsControls(tools: ActionsPanelTools, s: ActionsSnapshot) {
 }
 export const actionsDescription = "Choose a provider action and review its captured edits or advertised command, then confirm. Commands run after their edits; any further provider edits require a decision in Workspace provider. Some choices load a preview when selected. This sample uses lexical/import policies, not general type or scope resolution.";
 export const actionChoiceLabel = (choice: CodeActionChoice): string => `${choice.title}${choice.kind ? ` · ${choice.kind}` : ""}${choice.preferred ? " · preferred" : ""}${choice.disabled ? ` · ${choice.disabled}` : choice.needsResolve ? " · Load preview" : ""}`;
-export const actionTarget = (at: LspWorkspaceEditNote): string => `${at.title} · ${at.resource} · ${at.document} @ revision ${at.revision} · [${at.from},${at.to})\nInsert ${JSON.stringify(at.insert)}${at.insertUnits > at.insert.length ? `… (${at.insertUnits} UTF-16 units)` : ""}\nContext: ${at.context}`;
 
 /** Choices and confirmations belong to the displayed preview. */
 export function actionsPanelModel(tools: ActionsPanelTools, s: ActionsSnapshot) {
@@ -32,7 +30,7 @@ export function actionsPanelModel(tools: ActionsPanelTools, s: ActionsSnapshot) 
             items: () => s.choices.slice(s.choicePage * actionChoicePageSize, (s.choicePage + 1) * actionChoicePageSize).map(choice => ({ key: choice.index, label: actionChoiceLabel(choice),
                 invoke: () => choice.select() } as const)) },
         preview: { label: "Captured action title", text: s.title },
-        edits: { label: "Proposed action edits", identity: s.edits, start: s.page * actionEditPageSize + 1, items: () => s.edits.map(actionTarget) },
+        edits: { label: "Proposed action edits", identity: s.edits, start: s.page * actionEditPageSize + 1, items: () => s.edits.map(formatEditNote) },
         changes: changedFiles("Action changed resources", "Open action changes in ", s.changes, s.active, id => tools.openChangedDocument(id)),
     } as const;
 }
