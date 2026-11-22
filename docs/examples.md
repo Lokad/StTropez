@@ -213,7 +213,8 @@ and save during either failure. Switching samples suspends the inactive provider
 project releases it and, for a local server, stops its process and deletes its temporary workspace.
 Idle local allocations expire after two minutes.
 
-The demo saves files and drafts in IndexedDB. Save, Restore draft and Keep current files return
+The demo saves the whole sample in IndexedDB, including files you haven’t opened. Saving keeps the
+current tabs and selection. Save, Restore draft and Keep current files return
 keyboard focus to the source editor or the last active comparison pane as soon as you activate them.
 **Reset sample** restores the open sample’s original
 text in one undoable edit. You can keep typing while a recovery offer is open. The demo checkpoints

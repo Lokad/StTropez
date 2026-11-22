@@ -43,6 +43,7 @@ export class DemoProject {
     private languageDisposed = false;
     private conflict: Conflict | undefined;
     private reviewedRevisions: readonly number[] | undefined;
+    private includeOpenedFileInSave: ((file: DemoFile) => void) | undefined;
     saving = false;
     message = "Changes are kept in this page until you save locally.";
     private readonly inputIdle: () => boolean;
@@ -89,6 +90,7 @@ export class DemoProject {
             this.loaded = Object.freeze([...this.loaded, file]); if (!readOnly) delete this.unloaded[name];
             this.fileOwners.defer(owners.dispose);
         } catch (error) { return owners.rollback(error); }
+        if (!readOnly) this.includeOpenedFileInSave?.(file);
         this.services?.recovery.filesChanged(); this.services?.language.filesChanged(); return file;
     }
     private prepareEditable(): void { for (const name of Object.keys(this.unloaded)) this.load(name); }
@@ -158,19 +160,26 @@ export class DemoProject {
         let writing = false;
         this.saving = true;
         try {
-            this.prepareEditable();
-            for (const file of this.editable) {
+            const capture = (file: DemoFile) => {
                 const document = this.workspace.document(file.resource.documentId);
                 const ticket = this.workspace.captureSave(file.resource, reviewed
                     ? { target: this.workspace.captureResource(file.resource.id), expectedRevision: document.revision,
                         expectedServerVersion: expected! } satisfies SaveReview : undefined);
                 tickets.push({ file, ticket, buffer: document.buffer });
-            }
+                return ticket;
+            };
+            for (const file of this.editable) capture(file);
             const token = crypto.randomUUID();
-            const submissions = tickets.map(({ ticket }) => ticket.start());
-            this.message = "Saving locally…"; changed();
-            writing = true;
-            await this.store.write({ token, value: { version: 1, files: Object.fromEntries(submissions.map((submission, i) => [tickets[i]!.file.name, submission.value])) } }, expected);
+            const files = { ...this.unloaded };
+            for (const { file, ticket } of tickets) files[file.name] = ticket.start().value;
+            // If navigation opens a submitted file before storage replies, acknowledge its original
+            // buffer with the other tickets. Typing in the newly opened tab stays dirty.
+            this.includeOpenedFileInSave = file => { capture(file).start(); };
+            try {
+                this.message = "Saving locally…"; changed();
+                writing = true;
+                await this.store.write({ token, value: { version: 1, files } }, expected);
+            } finally { this.includeOpenedFileInSave = undefined; }
             if (this.disposed) return;
             this.token = token;
             this.conflict = undefined; this.reviewedRevisions = undefined;

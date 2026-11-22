@@ -78,6 +78,25 @@ export async function runDemoUnopenedNavigation(page: Page, url = "/") {
     const main = page.getByRole("textbox", { name: "main.ts", exact: true }), labels = page.getByRole("textbox", { name: "labels.ts", exact: true });
     await expect(page.locator("#files button")).toHaveText(["main.ts"]);
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    // Hold the acknowledgement of one real IndexedDB commit while navigation opens its target.
+    type HeldSave = { files?: Record<string, string>; acknowledge?: () => void };
+    await page.evaluate(() => {
+        const held: HeldSave = {}, put = IDBObjectStore.prototype.put;
+        Object.assign(window, { heldNavigationSave: held });
+        IDBObjectStore.prototype.put = function (row, key) {
+            const tx = this.transaction;
+            if (tx.db.name === "sttropez-demo-projects-v1" && key === "navigation") {
+                IDBObjectStore.prototype.put = put; held.files = row.value.files;
+                tx.addEventListener("complete", event => {
+                    event.stopImmediatePropagation(); held.acknowledge = () => tx.dispatchEvent(new Event("complete"));
+                }, { capture: true, once: true });
+            }
+            return put.call(this, row, key);
+        };
+    });
+    await main.press("Control+s");
+    await expect.poll(() => page.evaluate(() => !!(window as unknown as { heldNavigationSave: HeldSave }).heldNavigationSave.acknowledge)).toBe(true);
+    await expect(page.locator("#files button")).toHaveText(["main.ts"]); await expect(main).toBeFocused();
     await select(page, main, "const label = formatLabel"); await main.press("ArrowRight"); await main.press("ArrowLeft");
     const cursor = "Ln 6, Col 25"; await expect(page.locator("#cursor")).toHaveText(cursor);
     const call = page.locator("#editor .st-viewport-row").filter({ hasText: "const label = formatLabel(record);" });
@@ -91,7 +110,14 @@ export async function runDemoUnopenedNavigation(page: Page, url = "/") {
     await page.mouse.click(point.x, point.y); await page.keyboard.up("Control"); await expect(labels).toBeVisible();
     await expect(page.locator("#editor")).toContainText("export function formatLabel");
     await labels.press("Control+End"); await page.keyboard.insertText("// edit the loaded module\n");
+    const submitted = await page.evaluate(() => {
+        const held = (window as unknown as { heldNavigationSave: HeldSave }).heldNavigationSave;
+        held.acknowledge!(); return held.files!["labels.ts"];
+    });
+    await expect(page.locator("#status")).toContainText("Saved in this browser");
+    await expect(labels).toHaveValue(submitted + "// edit the loaded module\n"); await expect(labels).toBeFocused();
     await expect(page.locator("#files")).toContainText("labels.ts ●"); await labels.press("Control+z");
+    await expect(labels).toHaveValue(submitted!); await expect(page.locator("#files")).not.toContainText("●");
     await labels.press("Alt+ArrowLeft"); await expect(main).toBeFocused(); await expect(page.locator("#cursor")).toHaveText(cursor);
     await select(page, main, "const record: RecordId"); await main.press("ArrowRight"); await main.press("ArrowLeft"); await main.press("F12");
     const declaration = page.getByRole("textbox", { name: "contracts.d.ts", exact: true }); await expect(declaration).toBeVisible();
