@@ -1,8 +1,8 @@
 import type { EditingCommand } from "../core/language-edits.ts";
 import type { EditorKeymap } from "./command-registry.ts";
-import { historyKey, type KeyBinding, type ViewCommand } from "./editing-keys.ts";
+import { commandKey, historyKey, type KeyBinding, type ViewCommand, type WordDeletion } from "./editing-keys.ts";
 
-const views = {
+const paneCommands = {
     "select-all": "Select all", "go-to-line": "Go to line", "select-line": "Select line", "jump-to-bracket": "Go to matching bracket",
     "add-caret-above": "Add caret above", "add-caret-below": "Add caret below", "undo-caret": "Undo caret change",
     "select-next-occurrence": "Select next occurrence", "select-all-occurrences": "Select all occurrences",
@@ -11,7 +11,10 @@ const views = {
     "select-to-line-start": "Select to start of line", "select-to-line-end": "Select to end of line",
     "move-to-document-start": "Move to start of document", "move-to-document-end": "Move to end of document",
     "select-to-document-start": "Select to start of document", "select-to-document-end": "Select to end of document",
-} satisfies Record<ViewCommand, string>;
+    "move-word-backward": "Move to previous word", "move-word-forward": "Move to next word",
+    "select-word-backward": "Select to previous word", "select-word-forward": "Select to next word",
+    "delete-word-backward": "Delete previous word", "delete-word-forward": "Delete next word",
+} satisfies Record<ViewCommand | WordDeletion, string>;
 const edits = {
     "move-line-up": "Move line up", "move-line-down": "Move line down", "copy-line-up": "Copy line up", "copy-line-down": "Copy line down",
     "insert-line-above": "Insert line above", "insert-line-below": "Insert line below", "delete-lines": "Delete lines",
@@ -19,12 +22,12 @@ const edits = {
     "add-line-comment": "Add line comment", "remove-line-comment": "Remove line comment", "block-comment": "Toggle block comment", newline: "Newline",
 } satisfies Record<EditingCommand, string>;
 
-export const editorCommandLabels = Object.freeze({ undo: "Undo", redo: "Redo", ...views, ...edits });
+export const editorCommandLabels = Object.freeze({ undo: "Undo", redo: "Redo", ...paneCommands, ...edits });
 export function editCommand(id: string): id is EditingCommand { return Object.hasOwn(edits, id); }
 export function editorKeyCommand(id: string): KeyBinding | undefined {
     if (id === "undo" || id === "redo") return historyKey(id);
     if (editCommand(id)) return { command: { kind: "language", command: id }, edit: true, text: "", fallback: false };
-    if (Object.hasOwn(views, id)) return { command: { kind: "view", command: id as ViewCommand }, edit: false, text: "", fallback: false };
+    if (Object.hasOwn(paneCommands, id)) return commandKey(id as keyof typeof paneCommands);
     return;
 }
 
@@ -50,6 +53,13 @@ export function bindEditorDefaults(keymap: EditorKeymap, apple: boolean): void {
     if (apple) {
         boundary("Meta+", "ArrowLeft", "line-start"); boundary("Meta+", "ArrowRight", "line-end");
         boundary("Meta+", "ArrowUp", "document-start"); boundary("Meta+", "ArrowDown", "document-end");
+    }
+    for (const modifier of apple ? ["Ctrl+", "Alt+"] : ["Ctrl+"]) {
+        keymap.bind(modifier + "ArrowLeft", "move-word-backward"); keymap.bind(modifier + "ArrowRight", "move-word-forward");
+        keymap.bind(modifier + "Shift+ArrowLeft", "select-word-backward"); keymap.bind(modifier + "Shift+ArrowRight", "select-word-forward");
+        for (const prefix of [modifier, modifier + "Shift+"]) {
+            keymap.bind(prefix + "Backspace", "delete-word-backward"); keymap.bind(prefix + "Delete", "delete-word-forward");
+        }
     }
     for (const [keys, command] of defaults) {
         if (keys.includes("Mod+")) {

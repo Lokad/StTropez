@@ -259,6 +259,11 @@ test("Apple caret chords navigate the document and full line beyond native input
         ["Meta+ArrowDown", text.length, text.length], ["Meta+Shift+ArrowUp", text.length, 0]] as const) {
         await source.press(key); await ready(page); expect((await state(page)).primary.selection).toMatchObject({ anchor, head });
     }
+    await source.press("Meta+ArrowUp"); await ready(page);
+    await source.press("Alt+Shift+ArrowRight"); await ready(page);
+    expect((await state(page)).primary.selection).toMatchObject({ anchor: 0, head: 3 });
+    await source.press("Alt+Backspace"); await ready(page);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 2))).toBe("\nx");
 });
 
 test("IME confirmation keycode does not invoke a language newline after compositionend", async ({ page }) => {
@@ -615,6 +620,8 @@ test("rebound history and Select All use the pane's document and leave native ed
         document.body.append(field);
     });
     const field = page.getByRole("textbox", { name: "Host text" });
+    await page.evaluate(() => window.editingFixture.keymap.bind("F10", "delete-word-forward"));
+    await field.press("Home"); await field.press("F10"); await expect(field).toHaveValue("host field");
     await field.press("Control+a"); await page.keyboard.type("local"); await field.press("F9");
     await expect(field).toHaveValue("local");
     const result = await page.evaluate(() => {

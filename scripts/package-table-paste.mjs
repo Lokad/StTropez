@@ -52,6 +52,11 @@ export async function runPackagedTablePaste(browser, origin, options) {
         await runCommand("select-to-document-end"); await ready();
         const selected = await page.evaluate(() => window.hostFixture.snapshot().bindings.views.find(view => view.id === "secondary")?.selection);
         assert.equal(selected?.anchor, 1); assert.equal(selected?.head, expected.length);
+        const start = expected.indexOf("unchanged", Math.floor(expected.length / 2)), end = start + "unchanged".length;
+        assert.ok(start >= 0);
+        await page.evaluate(head => { const f = window.hostFixture; f.selectSourceSet("secondary", f.snapshot().source.revision, [{ anchor: head, head }]); }, end);
+        await runCommand("delete-word-backward"); await ready(); assert.equal(await exact(expected.slice(0, start) + expected.slice(end)), true);
+        await runCommand("undo"); await ready(); assert.equal(await exact(expected), true);
         await runCommand("undo"); await ready(); assert.equal(await exact(original), true);
         assert.deepEqual(primary(await page.evaluate(() => window.hostFixture.snapshot())).selectionSet, primary(before).selectionSet);
         await input.press("Control+Shift+z"); await ready(); assert.equal(await exact(expected), true);

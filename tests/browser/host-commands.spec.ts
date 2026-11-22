@@ -64,6 +64,8 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
         await filter.fill("undo"); await expect(dialog.locator('option[value="undo"]')).toBeDisabled();
         await filter.fill("select all"); await expect(dialog.locator('option[value="select-all"]')).toBeEnabled();
         await filter.fill("select to end of document"); await expect(dialog.locator('option[value="select-to-document-end"]')).toBeEnabled();
+        await filter.fill("delete previous word"); await expect(run).toBeDisabled();
+        await filter.fill("select to next word"); await expect(dialog.locator('option[value="select-word-forward"]')).toBeEnabled();
         await filter.press("Escape");
         await expect(dialog).toHaveCount(0); await expect(reference).toBeFocused();
 

@@ -348,6 +348,10 @@ Use `move-to-line-start`, `move-to-line-end`, `move-to-document-start` and
 `move-to-document-end` in any text pane. Their `select-to-` variants extend each
 selection from its anchor. Line start moves to the first nonblank character, then to
 column one on a second press.
+Use `move-word-backward` and `move-word-forward` to navigate by word, or
+`select-word-backward` and `select-word-forward` to extend each selection.
+`delete-word-backward` and `delete-word-forward` require an editable pane.
+Rebinding a keyboard shortcut leaves native word-deletion input available.
 The view commands `select-all`, `select-line`, `select-next-occurrence`, `select-all-occurrences`, `add-caret-above`, `add-caret-below`, `undo-caret`,
 `jump-to-bracket`, `scroll-line-up`, `scroll-line-down`, `scroll-page-up` and
 `scroll-page-down` also work in read-only editors. The text-editing commands are
