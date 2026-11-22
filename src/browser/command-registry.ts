@@ -10,6 +10,8 @@ export type EditorCommands = Readonly<{
 export type EditorKeymap = Readonly<{
     bind: (keys: string, id: string, options?: BindingOptions) => { dispose(): void };
     unbind: (keys: string) => void;
+    /** Configured sequences for this command on this mount, including shared shortcuts. */
+    getShortcuts: (id: string) => readonly string[];
     /** Dispatch shared bindings from a host-owned control. Editor input dispatches its own keys. */
     handle: (event: KeyboardEvent) => boolean;
 }>;
@@ -24,7 +26,7 @@ function stroke(text: string, apple: boolean): string {
     return [...modifiers.filter(name => names.includes(name)), key].join("+");
 }
 
-type Binding = Readonly<{ id: string; shared: boolean; priority: number; repeat: boolean }>;
+type Binding = Readonly<{ id: string; keys: string; shared: boolean; priority: number; repeat: boolean }>;
 type Strokes = Map<string, readonly Binding[]>;
 /** Bindings belong to one mounted view. Only the prefix of a pending chord retains event-time state. */
 export function createCommandRegistry(apple: boolean, available: () => boolean, chordCurrent: () => () => boolean) {
@@ -122,7 +124,7 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
             if (!Number.isFinite(priority)) throw new RangeError("Key binding priority must be finite.");
             if (choices.some(binding => binding.priority === priority) || (last ? group.has("") : group.size && !group.has("")))
                 throw new Error(`Key binding conflicts: ${keys}`);
-            const binding = { id, shared: options?.shared ?? false, priority, repeat: options?.repeat ?? true };
+            const binding = { id, keys: keys.trim().replace(/\s+/g, " "), shared: options?.shared ?? false, priority, repeat: options?.repeat ?? true };
             reset(); group.set(last, [...choices, binding].sort((a, b) => b.priority - a.priority)); bindings.set(first, group);
             return { dispose() {
                 const current = bindings.get(first)?.get(last);
@@ -134,6 +136,14 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
         unbind(keys) {
             const [first, last] = sequence(keys), group = bindings.get(first);
             if (group?.delete(last)) { reset(); if (!group.size) bindings.delete(first); }
+        },
+        getShortcuts(id) {
+            const keys: string[] = [];
+            for (const group of bindings.values()) for (const choices of group.values()) {
+                const binding = choices.find(choice => choice.id === id);
+                if (binding) keys.push(binding.keys);
+            }
+            return Object.freeze(keys);
         },
         handle: event => handle(event, true, commands.run),
     });

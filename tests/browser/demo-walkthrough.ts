@@ -199,7 +199,8 @@ export async function runDemoDocumentation(page: Page, url = "/") {
     const overload = signature.getByLabel("Active signature parameter");
     const cursor = page.locator("#cursor"), callPosition = await cursor.innerText();
     await source.press("ArrowDown"); await expect(overload).toContainText("deduction");
-    await signature.getByRole("button", { name: "Previous signature" }).click(); await expect(overload).toContainText("rate");
+    const previous = signature.getByRole("button", { name: "Previous signature" });
+    await expect(previous).toHaveAttribute("title", "↑"); await previous.click(); await expect(overload).toContainText("rate");
     await expect(source).toBeFocused(); await expect(cursor).toHaveText(callPosition);
     await expect.poll(() => clearsLine(signature)).toBe(true);
     expect(await signature.evaluate(node => { const box = node.getBoundingClientRect(); return box.top >= 0 && box.bottom <= innerHeight; })).toBe(true);
@@ -329,7 +330,9 @@ export async function runDemoFolding(page: Page, url = "/") {
     const outline = page.getByRole("textbox", { name: "workflow.txt", exact: true });
     await expect(page.locator("#language-status")).toHaveText("Host outline · no language server");
     await expect(page.locator("#folding-status")).toContainText("7 folds");
-    await page.locator("#code-menu summary").click(); await page.locator("#fold-group").selectOption("regions"); await page.locator("#fold-group-collapse").click();
+    await page.locator("#code-menu summary").click();
+    await expect(page.locator("#fold")).toHaveAttribute("title", "Ctrl+Shift+[ / Meta+Shift+[");
+    await page.locator("#fold-group").selectOption("regions"); await page.locator("#fold-group-collapse").click();
     await expect(page.locator('#editor .st-fold-button[aria-expanded="false"]')).toHaveCount(1);
     await expect(page.locator('#editor .st-viewport-row[data-line="8"]')).toHaveCount(0);
     expect((await page.locator("#editor .st-line-numbers span").allTextContents()).map(Number).sort((a, b) => a - b))

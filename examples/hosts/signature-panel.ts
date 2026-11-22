@@ -3,6 +3,7 @@ import { mountDocumentation } from "../../src/browser/index.ts";
 import type { DocumentationOptions, SignatureSnapshot, TextEditor } from "../../src/browser/index.ts";
 import type { Observable } from "../../src/index.ts";
 import { bindPopup } from "./popup-position.ts";
+import { shortcutHint } from "../shared/shortcut-hint.ts";
 type SignatureCommandsTools = Pick<HostSignatureTools, "command" | "disconnect" | "reconnect">;
 function signatureActions(tools: SignatureCommandsTools, s: HostSignatureSnapshot) {
     return [
@@ -35,8 +36,7 @@ export function mountSignaturePopup(host: HTMLElement, source: Observable<Signat
     const documentation = mountDocumentation(popup, options), detail = mountDocumentation(popup, options);
     const buttons = (["signature.previous", "signature.next"] as const).map(id => {
         const button = owner.createElement("button"); button.type = "button"; controls.append(button);
-        const key = id === "signature.previous" ? "↑" : "↓";
-        return { button, key, id };
+        return { button, id };
     });
     if (withControls) popup.append(controls); host.append(popup);
     const placement = bindPopup(popup, "above");
@@ -48,8 +48,9 @@ export function mountSignaturePopup(host: HTMLElement, source: Observable<Signat
         documentation.setContent(sig?.content ?? []);
         detail.setContent(arg?.content ?? (sig ? [{ kind: "plaintext", value: "No declared parameter for this argument in this overload." }] : []));
         controls.hidden = s.signatureCount < 2;
-        if (withControls) for (const { button, key, id } of buttons) {
-            const command = editor?.commands.get(id); button.textContent = command?.label ?? ""; button.title = button.textContent + " (" + key + ")";
+        if (withControls && !controls.hidden) for (const { button, id } of buttons) {
+            const command = editor?.commands.get(id); button.textContent = command?.label ?? "";
+            button.title = editor && command ? shortcutHint(editor.keymap.getShortcuts(id)) : "";
             button.disabled = !command?.enabled; button.onclick = () => { if (activeEditor() === editor && source.getSnapshot() === s) editor?.commands.run(id); };
         }
         placement.update(editor && s.anchor ? { editor, ...s.anchor } : undefined);

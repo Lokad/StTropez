@@ -369,6 +369,10 @@ that returns `false` lets the next binding try. A handled command consumes the k
 to consume a held shortcut without invoking its enabled command again.
 Equal priorities for the same sequence and single strokes that conflict with chord prefixes throw.
 `keymap.unbind(keys)` removes all bindings for a sequence. Disposing a binding removes only that registration.
+`keymap.getShortcuts(id)` returns a frozen array of the sequences currently bound to that command
+on this editor. Each sequence appears once, even if the command has two priorities for it.
+The strings retain the configured spelling, including `Mod` and physical key codes. An unbound or
+unknown command returns an empty array. Read it when opening a menu so the hint reflects host rebindings.
 
 Editor input dispatches registered shortcuts. A binding marked `{ shared: true }` also works
 from controls inside the editor, including the fold gutter. For an external toolbar or form,

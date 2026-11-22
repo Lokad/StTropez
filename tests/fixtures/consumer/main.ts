@@ -161,13 +161,14 @@ const fixture = { text: () => workspace.document(documentId).text(),
             try { editor.keymap.bind("Ctrl+g", "sample.jump"); } catch { conflict = true; }
             if (!conflict) throw new Error("A host binding silently replaced the default Go to line shortcut.");
             const binding = editor.keymap.bind("Alt+j", "sample.jump", { shared: true, repeat: false });
+            if (editor.keymap.getShortcuts("sample.jump").join() !== "Alt+j") throw new Error("Restored keymap reported the wrong host shortcut.");
             const jump = (repeat = false) => new KeyboardEvent("keydown", { key: "j", altKey: true, cancelable: true, repeat });
             if (!editor.keymap.handle(jump())) throw new Error("Restored shared shortcut did not request the host prompt.");
             if (!editor.keymap.handle(jump(true)) || jumpCalls !== 1) throw new Error("Holding the shared shortcut requested another prompt.");
             editor.dispose();
             editor = mountTextEditor(host, model, tab, options); editor.restoreView(saved); editor.focus(); await wait();
             binding.dispose(); open.dispose();
-            if (retired.keymap.handle(jump()) || retired.commands.run("sample.jump") || editor.keymap.handle(jump()))
+            if (retired.keymap.getShortcuts("sample.jump").length || retired.keymap.handle(jump()) || retired.commands.run("sample.jump") || editor.keymap.handle(jump()))
                 throw new Error("Retired host command survived editor replacement.");
             if ((await pending).status !== "stale") throw new Error("A retired editor kept its pending edit.");
             if (!promptSignal.aborted) throw new Error("Retired view left its line request active.");

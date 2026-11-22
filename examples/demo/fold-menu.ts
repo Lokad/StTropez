@@ -1,4 +1,5 @@
 import type { FoldCommand, FoldingController, TextEditor } from "../../src/browser/index.ts";
+import { shortcutHint } from "../shared/shortcut-hint.ts";
 
 /** Keep the last source pane as the command target while the menu itself holds focus. */
 export function mountDemoFoldMenu(menu: HTMLDetailsElement, activePane: () => TextEditor | undefined) {
@@ -16,6 +17,8 @@ export function mountDemoFoldMenu(menu: HTMLDetailsElement, activePane: () => Te
         for (const { button, command } of buttons) {
             const entry = active?.editor.commands.get(command, filter(command));
             if (entry && button.textContent !== entry.label) button.textContent = entry.label;
+            const hint = active && entry ? shortcutHint(active.editor.keymap.getShortcuts(command)) : "";
+            if (button.title !== hint) button.title = hint;
             button.disabled = !entry?.enabled;
         }
     }

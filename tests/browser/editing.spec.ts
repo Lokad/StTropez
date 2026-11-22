@@ -554,7 +554,12 @@ test("a rebound chord belongs to its editor and leaves host field editing local"
         const command = commands.register({ id: "sample.action", label: "Sample action", enabled: () => enabled, run: () => { calls++; } });
         const keys = "Ctrl+k Ctrl+j";
         const old = keymap.bind(keys, "sample.action", { shared: true });
-        keymap.unbind(keys); keymap.bind(keys, "sample.action", { shared: true }); old.dispose();
+        const initial = keymap.getShortcuts("sample.action");
+        keymap.unbind(keys);
+        const unbound = keymap.getShortcuts("sample.action");
+        keymap.bind(keys, "sample.action", { shared: true }); old.dispose();
+        keymap.bind(keys, "sample.action", { shared: true, priority: -1 });
+        const rebound = keymap.getShortcuts("sample.action");
         const forward = (event: KeyboardEvent) => { keymap.handle(event); };
         field.addEventListener("keydown", forward);
         document.body.addEventListener("keydown", forward);
@@ -569,11 +574,13 @@ test("a rebound chord belongs to its editor and leaves host field editing local"
             enabled = false; const disabled = commands.run("sample.action");
             const listed = commands.list().find(entry => entry.id === "sample.action");
             command.dispose();
-            return { prefix, chord, afterBlur, afterMove, local, composing, disabled, listed, retired: commands.run("sample.action"), calls };
+            return { prefix, chord, afterBlur, afterMove, local, composing, disabled, listed, retired: commands.run("sample.action"), calls,
+                initial, frozen: Object.isFrozen(initial), unbound, rebound, disposed: keymap.getShortcuts("sample.action") };
         } finally { command.dispose(); document.body.removeEventListener("keydown", forward); field.remove(); }
     });
     expect(keys).toEqual({ prefix: true, chord: true, afterBlur: false, afterMove: false, local: false, composing: false, disabled: false,
-        listed: { id: "sample.action", label: "Sample action", enabled: false }, retired: false, calls: 1 });
+        listed: { id: "sample.action", label: "Sample action", enabled: false }, retired: false, calls: 1,
+        initial: ["Ctrl+k Ctrl+j"], frozen: true, unbound: [], rebound: ["Ctrl+k Ctrl+j"], disposed: [] });
 });
 
 test("popup bindings fall back in priority order and roll back conflicts without replacing the owner", async ({ page }) => {
