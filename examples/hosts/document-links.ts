@@ -1,3 +1,4 @@
+import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, DocumentSnapshot, SelectionSet, TabId, Workspace } from "../../src/index.ts";
 import { createDocumentLinkController } from "../../src/browser/index.ts";
 import type { DocumentLinkChoice, DocumentLinkController, DocumentLinkSnapshot, TextEditor } from "../../src/browser/index.ts";
@@ -8,7 +9,7 @@ import { validDomainModule } from "../../fixtures/language/domain.ts";
 import { HostCell } from "../shared/observable.ts";
 
 type Alias = Readonly<{ module: string; uri: string }>;
-export type LinkHostOptions = Readonly<{ provider: LspWorkspace; uri: (id: DocumentId) => string;
+export type LinkHostOptions = Readonly<{ provider: LspWorkspace;
     prepare: (aliases: readonly Alias[], delay: number, fault?: LinksInput["fault"]) => LspPrepare }>;
 type Session = { id: string; editor: TextEditor; controller: DocumentLinkController };
 type Route = { origin: Session; source: DocumentSnapshot; selections: SelectionSet; documents: Map<string, DocumentSnapshot>;
@@ -72,7 +73,7 @@ export class HostDocumentLinks {
         const controller = createDocumentLinkController(editor, this.options.provider, {
             documents: () => [...(this.route?.documents.values() ?? [])], canCapture: this.canCapture,
             prepareRequest: () => {
-                const aliases = [...this.aliases].map(([module, id]) => ({ module, uri: this.options.uri(id) }));
+                const aliases = [...this.aliases].map(([module, id]) => ({ module, uri: this.workspace.document(id).language!.uri }));
                 const fault = this.fault; this.fault = undefined; return this.options.prepare(aliases, this.delay, fault);
             },
         });
@@ -100,7 +101,8 @@ export class HostDocumentLinks {
             this.active = session; this.publish();
         }, { signal: events.signal });
         for (const type of ["beforeinput", "compositionstart", "paste", "cut"]) editor.input.addEventListener(type, () => {
-            if (!this.presenting && this.route?.documents.has(this.options.uri(editor.view.documentId))) this.cancel();
+            const uri = this.workspace.document(editor.view.documentId).language?.uri;
+            if (!this.presenting && uri && this.route?.documents.has(uri)) this.cancel();
         }, { signal: events.signal });
         return detach;
     }
@@ -129,11 +131,13 @@ export class HostDocumentLinks {
         const origin = this.active;
         if (!origin || this.disconnected || !this.canCapture(origin.editor.view.documentId)) return;
         const source = this.workspace.document(origin.editor.view.documentId);
-        if (source.key.variant !== "working") return;
-        const documents = new Map([[this.options.uri(source.id), source]]);
+        if (!source.language) return;
+        const documents = new Map([[source.language.uri, source]]);
         for (const id of this.aliases.values()) {
             if (!this.canCapture(id)) return;
-            documents.set(this.options.uri(id), this.workspace.document(id));
+            const target = this.workspace.document(id);
+            if (!target.language) return;
+            documents.set(target.language.uri, target);
         }
         const targets = new Map<DocumentId, Session>();
         for (const s of this.sessions) if (!targets.has(s.editor.view.documentId)) targets.set(s.editor.view.documentId, s);
@@ -214,7 +218,7 @@ export class HostDocumentLinks {
     }
     readonly addCompanion = () => {
         if (this.disposed) return;
-        this.companion ??= this.workspace.createTextResource({ scope: "host-fixture", resource: "module-companion", variant: "working" }, "Module companion", { value: "export const value = 1;\r\n" }).documentId;
+        this.companion ??= createWorkingSource(this.workspace, "module-companion", "Module companion", { value: "export const value = 1;\r\n" }).documentId;
         this.setAlias("sample-utils", this.companion); this.publish({ message: "Module companion registered for sample-utils." });
     };
     setDelay(value: number) { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid links delay."); this.delay = value; }

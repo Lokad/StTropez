@@ -1,3 +1,4 @@
+import { createWorkingSource } from "./working-source.ts";
 import { HostCell } from "../shared/observable.ts";
 import { TextBuffer, Workspace, WorkspaceCommands } from "../../src/index.ts";
 import type { ComparisonBaseline, DocumentId, DocumentView, TabId, TextEdit, TextResourceHandle } from "../../src/index.ts";
@@ -23,7 +24,7 @@ export type Activity = ServiceActivity & Readonly<{ pendingRuns: number; complet
 export class HostController {
     readonly workspace = new Workspace({ onListenerError: error => this.reportError(error) });
     readonly commands = new WorkspaceCommands(this.workspace, error => this.reportError(error));
-    readonly source = this.workspace.createTextResource({ scope: "host-fixture", resource: "source", variant: "working" }, "Primary source", { value: "start", serverVersion: "v0" });
+    readonly source = createWorkingSource(this.workspace, "source", "Primary source", { value: "start", serverVersion: "v0" });
     readonly connection = this.workspace.createResource<Connection>({ scope: "host-fixture", resource: "connection", variant: "working" }, "Connection", { value: { path: "source.csv", format: "csv" } });
     readonly configurationSave = new ConfigurationSave(this.workspace, this.commands, this.connection, task => { void this.track(task); });
     readonly transfer = new HostTransfer(this.workspace, this.commands, task => { void this.track(task); });
@@ -222,7 +223,7 @@ export class HostController {
     debug() {
         const source = this.source.getSnapshot(), form = this.connection.getSnapshot();
         return { diagnostics: this.workspace.diagnostics(), layout: this.layout.getSnapshot(), activity: this.activity.getSnapshot(),
-            source: { id: this.source.id, revision: source.revision, length: source.state === "ready" ? this.workspace.document(this.source.documentId).buffer.length : 0,
+            source: { id: this.source.id, uri: this.workspace.document(this.source.documentId).language!.uri, revision: source.revision, length: source.state === "ready" ? this.workspace.document(this.source.documentId).buffer.length : 0,
                 exports: source.state === "ready" ? this.workspace.document(this.source.documentId).buffer.readMetrics().textExports : 0,
                 serverVersion: source.metadata.serverVersion, dirty: source.metadata.dirty, saveStatus: source.metadata.saveStatus },
             ...this.sourceReview.debug(),

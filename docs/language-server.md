@@ -9,12 +9,12 @@ subset below with UTF-16 positions.
 
 ## Use
 
-Create one provider per workspace and provider configuration. Map each document to a stable URI and
-language ID. Obtain fresh settings and credentials for each connection attempt.
+Create one provider per workspace and provider configuration. Set the URI and language ID on each participating
+[text resource](workspace.md#identities-and-snapshots). Obtain fresh settings and credentials for each connection attempt.
 
 ```ts
 import type { Workspace } from "sttropez";
-import { BrowserLspWorkspace, openWebSocketTransport, type BrowserLspWorkspaceOptions } from "sttropez/browser";
+import { BrowserLspWorkspace, openWebSocketTransport } from "sttropez/browser";
 
 type ConnectionSettings = Readonly<{
     url: string;
@@ -24,12 +24,10 @@ type ConnectionSettings = Readonly<{
 
 export function createLanguageProvider(
     workspace: Workspace,
-    documentInfo: BrowserLspWorkspaceOptions["documentInfo"],
     settings: (signal: AbortSignal) => Promise<ConnectionSettings>,
     onError: (error: Error) => void
 ) {
     return new BrowserLspWorkspace(workspace, {
-        documentInfo,
         onError,
         async connect(signal) {
             const connection = await settings(signal);
@@ -223,10 +221,11 @@ A live binding alone cannot tell you whether completion offsets fit. To keep a c
 typing, also check the operation and map the edit. Ordinary request captures check the revision
 and the scope’s request.
 
-URI identity is exact and opaque. `documentInfo` determines the URI/language pair when a document
-joins. Replace participation or the provider explicitly when configuration changes. Local revision,
-resource/document identity and wire version are separate. Local edits expire captures immediately;
-their synchronization coalesces after workspace transaction delivery. Ordinary edits queue only
+The provider uses the exact URI and language ID in `DocumentSnapshot.language`. A document with
+no pair stays outside the provider. Changing either field expires existing bindings and replies
+immediately. Attach the document again to open its new identity. Local revision, resource and
+document IDs, and wire version are separate. Local edits expire captures immediately. The provider
+synchronizes them after workspace transaction delivery. Ordinary edits queue only
 the changed document. Capability and connection changes reconcile the participating bindings.
 
 The client opens a document only when static or matching dynamic capabilities cover both open/close

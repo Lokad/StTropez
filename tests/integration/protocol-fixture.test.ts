@@ -8,13 +8,12 @@ import { LspWorkspace, RpcError, createLspActionClient, createLspHighlightClient
 import type { LspDocumentCapture, LspCommandScope, LspWorkspaceEdit } from "../../src/protocol/index.ts";
 
 test("fixture diagnostics address the requested URI and reject missing, unknown or closed targets", { timeout: 15000 }, async () => withProtocolFixture(async ({ url, defer }) => {
-    const workspace = new Workspace(), first = workspace.createTextResource({ scope: "diagnostics", resource: "first", variant: "working" }, "First", { value: "TODO first" });
-    const second = workspace.createTextResource({ scope: "diagnostics", resource: "second", variant: "working" }, "Second", { value: "header\nTODO second" });
-    defer(() => assert.equal(workspace.diagnostics().leases, 0));
     const firstUri = "host+fixture:first", uri = "host+fixture:second%20document";
+    const workspace = new Workspace(), first = workspace.createTextResource({ scope: "diagnostics", resource: "first", variant: "working" }, "First", { value: "TODO first" }, undefined, { language: { uri: firstUri, languageId: "fixture" } });
+    const second = workspace.createTextResource({ scope: "diagnostics", resource: "second", variant: "working" }, "Second", { value: "header\nTODO second" }, undefined, { language: { uri: uri, languageId: "fixture" } });
+    defer(() => assert.equal(workspace.diagnostics().leases, 0));
     const owner = new LspWorkspace(workspace, { connect: () => openWebSocketTransport(url), diagnostics: true,
-        schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
-        documentInfo: doc => ({ uri: doc.id === first.documentId ? firstUri : uri, languageId: "fixture" }) });
+        schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); } });
     defer(() => owner.dispose());
     const scope = owner.createScope(), pushes: { uri: string; version?: number; diagnostics: { range: unknown; message: string }[] }[] = [];
     scope.onNotification("textDocument/publishDiagnostics", value => { pushes.push(value as typeof pushes[number]); });
@@ -47,14 +46,13 @@ test("fixture diagnostics address the requested URI and reject missing, unknown 
 
 test("generic host profile joins selector registration, space-triggered lazy snippets, occurrences and an explicitly authorized command", { timeout: 15000 }, async () => withProtocolFixture(async ({ url, defer }) => {
     const workspace = new Workspace(), initial = "const sample = 1;\nsample; ";
-    const source = workspace.createTextResource({ scope: "profile", resource: "source", variant: "working" }, "Source", { value: initial });
-    const other = workspace.createTextResource({ scope: "profile", resource: "other", variant: "working" }, "Other", { value: "sample" });
+    const source = workspace.createTextResource({ scope: "profile", resource: "source", variant: "working" }, "Source", { value: initial }, undefined, { language: { uri: "host+fixture:source", languageId: "fixture" } });
+    const other = workspace.createTextResource({ scope: "profile", resource: "other", variant: "working" }, "Other", { value: "sample" }, undefined, { language: { uri: "host+fixture:other", languageId: "other" } });
     defer(() => assert.equal(workspace.diagnostics().leases, 0));
     const document = () => workspace.document(source.documentId), snapshots = () => [document()];
     const owner = new LspWorkspace(workspace, {
         connect: () => openWebSocketTransport(url), initializationOptions: { fixtureHostProfile: true },
         features: ["textDocument/completion", "textDocument/documentHighlight", "textDocument/codeAction", "workspace/executeCommand"], applyEdit: true,
-        documentInfo: doc => ({ uri: `host+fixture:${doc.resourceId}`, languageId: doc.id === source.documentId ? "fixture" : "other" }),
         schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); }
     });
     defer(() => owner.dispose());

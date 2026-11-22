@@ -86,7 +86,8 @@ export class DemoProject {
         const owners = new CleanupScope(); let file: DemoFile;
         try {
             const resource = this.workspace.createTextResource({ scope: `demo:${this.sample.id}`, resource: name, variant: "working" }, name,
-                { value, serverVersion: this.token }, readOnly ? { edit: [], save: false, run: false } : undefined);
+                { value, serverVersion: this.token }, readOnly ? { edit: [], save: false, run: false } : undefined,
+                { language: this.services?.language.languageFor(name) ?? null });
             owners.defer(() => { this.workspace.releaseResource(resource.id, true); });
             const tab = this.workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "editor");
             owners.defer(() => { this.workspace.tabs.close(tab); });

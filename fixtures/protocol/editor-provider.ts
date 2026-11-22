@@ -9,27 +9,24 @@ import { createLspProjectClient } from "../../examples/shared/language/lsp-proje
 import type { LspProjectFactory } from "../../examples/shared/language/lsp-project-client.ts";
 import type { HoverHostOptions } from "../../examples/hosts/hover.ts";
 import type { NavigationHostOptions } from "../../examples/hosts/navigation.ts";
-import type { DocumentId, Workspace } from "../../src/index.ts";
+import type { Workspace } from "../../src/index.ts";
 import type { SignatureHostOptions } from "../../examples/hosts/signature.ts";
 import type { LinkHostOptions } from "../../examples/hosts/document-links.ts";
 import type { ColorHostOptions } from "../../examples/hosts/document-colors.ts";
-import { fixtureDocumentUri } from "./document-uri.ts";
 
 /** Explicit development-host choice. Generic session/feature code has no fixture endpoint policy. */
 export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspace; provider: ProviderFactory; hover: HoverHostOptions; navigation: NavigationHostOptions; rename: RenameHostOptions; actions: ActionHostOptions; project: LspProjectFactory; signature: SignatureHostOptions; links: LinkHostOptions; colors: ColorHostOptions }> {
     const url = new URL("/lsp-fixture", location.href); url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    const uri = (workspace: Workspace, id: DocumentId) => fixtureDocumentUri(workspace.resourceForDocument(id).id, id);
     const connection = new FixtureLspWorkspace(owner, { connect: signal => openWebSocketTransport(url.href, { signal }),
         initializationOptions: { fixtureDynamicLanguage: new URLSearchParams(location.search).get("lspSubset") === "dynamic" },
-        workspaceEdits: true, applyEdit: true,
-        documentInfo: document => document.key.variant === "working" ? { uri: uri(owner, document.id), languageId: "fixture" } : undefined });
+        workspaceEdits: true, applyEdit: true });
     // These initial working resources belong to the host's open project, including unmounted targets.
     connection.retainFeatures("workspace/executeCommand");
-    connection.createScope().setDocuments(owner.getSnapshot().documents.filter(document => document.key.variant === "working"));
+    connection.createScope().setDocuments(owner.getSnapshot().documents.filter(document => document.language !== null));
     return Object.freeze({
         owner: connection,
         signature: { provider: connection, prepare: (delay, fault) => session => connection.prepareRequest(session, "textDocument/signatureHelp", { delay, ...(fault ? { fault } : {}) }) },
-        links: { provider: connection, uri: id => uri(owner, id), prepare: (aliases, delay, fault) => session =>
+        links: { provider: connection, prepare: (aliases, delay, fault) => session =>
             connection.prepareRequest(session, "textDocument/documentLink", { aliases: [...aliases], delay, ...(fault ? { fault } : {}) }) },
         colors: { provider: connection, prepare: (kind, delay, fault) => session =>
             connection.prepareRequest(session, kind === "discovery" ? "textDocument/documentColor" : "textDocument/colorPresentation", { delay, ...(fault ? { fault } : {}) }) },

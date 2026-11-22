@@ -22,7 +22,7 @@ test("target checks visit the captured project once per pass and retain independ
     const f = clientFixture(t, undefined, async addressed => { const lease = await retained(f, addressed); leases.push(lease); return lease.value; }),
         client = createLspNavigationClient(f.provider); t.after(client.dispose);
     const resources = [f.source, ...Array.from({ length: 19 }, (_, i) => f.workspace.createTextResource(
-        { scope: "project", resource: `${i}`, variant: "working" }, `Source ${i}`, { value: "source" }))];
+        { scope: "project", resource: `${i}`, variant: "working" }, `Source ${i}`, { value: "source" }, undefined, { language: { uri: `generic:extra/${i}`, languageId: "generic" } }))];
     const snapshots = resources.map(resource => f.workspace.document(resource.documentId));
     f.peer.onRequest("textDocument/references", () => Array.from({ length: 40 }, (_, i) => ({ uri: `${uri}/${i}`, range })));
     let visits = 0; const observe = f.workspace.observeDocument;
@@ -130,7 +130,7 @@ test("a closed target cannot satisfy an invented wire version or bypass read-onl
     f.peer.onRequest("textDocument/rename", () => ({ documentChanges: [{ textDocument: { uri, version: 1 }, edits: [{ range, newText: "new" }] }] }));
     await assert.rejects(client.run([source], source.id, 6, "new"), stale); await settled(); assert.equal(f.workspace.diagnostics().leases, 0);
     f.workspace.setCapabilities(f.other.id, { ...f.other.metadata.getSnapshot().capabilities, edit: [] });
-    f.peer.onRequest("textDocument/rename", () => ({ changes: { [uri]: [{ range, newText: "new" }], [`generic:${source.resourceId}`]: [{ range, newText: "new" }] } }));
+    f.peer.onRequest("textDocument/rename", () => ({ changes: { [uri]: [{ range, newText: "new" }], [source.language!.uri]: [{ range, newText: "new" }] } }));
     const plan = await client.run([source], source.id, 6, "new");
     const applied = f.workspace.editDocuments(plan.documents.map(item => ({ documentId: item.target.document.documentId as typeof source.id,
         expectedRevision: item.target.document.revision, edits: item.edits, origin: "human" })));

@@ -82,11 +82,11 @@ test("real demo provider uses public workspace capture/sync over WebSocket and r
         assert.equal(config.versions.typescript, "5.9.3"); assert.equal(config.versions.server, "5.1.3");
         const comments = "\n// Example row".repeat(300);
         const workspace = new Workspace(), files = Object.entries(demoSample("errors").files).map(([name, value]) => ({ name,
-            resource: workspace.createTextResource({ scope: "demo-test", resource: name, variant: "working" }, name, { value: name === "main.ts" ? value + comments : value }) }));
+            resource: workspace.createTextResource({ scope: "demo-test", resource: name, variant: "working" }, name, { value: name === "main.ts" ? value + comments : value }, undefined,
+                { language: { uri: config.documents[name]!.uri, languageId: "typescript" } }) }));
         owner = new LspWorkspace(workspace, { connect: () => openWebSocketTransport(url.replace("http:", "ws:") + config.endpoint),
             rootUri: config.rootUri, features: ["textDocument/hover", "textDocument/definition", "workspace/executeCommand"],
-            schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
-            documentInfo: document => { const info = config.documents[document.key.resource]; return info && { uri: info.uri, languageId: "typescript" }; } });
+            schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); } });
         const scope = owner.createScope(); scope.setDocuments(files.map(file => workspace.document(file.resource.documentId)));
         await scope.ensureConnected();
         const source = files.find(file => file.name === "main.ts")!;
@@ -128,10 +128,10 @@ test("real lazy imports, snippets and reviewed command edits use public clients 
     try {
         const config = await (await fetch(url + "/demo-provider?sample=pricing", { method: "POST" })).json() as DemoProviderBootstrap;
         const workspace = new Workspace(), files = Object.entries(demoSample("pricing").files).map(([name, value]) => ({ name,
-            resource: workspace.createTextResource({ scope: "completion-test", resource: name, variant: "working" }, name, { value: name === "main.ts" ? "calculateT" : value }) }));
+            resource: workspace.createTextResource({ scope: "completion-test", resource: name, variant: "working" }, name, { value: name === "main.ts" ? "calculateT" : value }, undefined,
+                { language: { uri: config.documents[name]!.uri, languageId: "typescript" } }) }));
         owner = new LspWorkspace(workspace, { connect: () => openWebSocketTransport(url.replace("http:", "ws:") + config.endpoint), rootUri: config.rootUri,
             features: ["textDocument/completion", "textDocument/codeAction", "workspace/executeCommand"], applyEdit: true,
-            documentInfo: document => ({ uri: config.documents[document.key.resource]!.uri, languageId: "typescript" }),
             schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); } });
         const scope = owner.createScope(); scope.setDocuments(files.map(file => workspace.document(file.resource.documentId))); await scope.ensureConnected();
         const source = files.find(file => file.name === "main.ts")!, before = workspace.document(source.resource.documentId), binding = scope.attachDocument(before.id);
@@ -224,11 +224,11 @@ test("real quick fixes use correlated diagnostic context through the public acti
         const config = await (await fetch(url + "/demo-provider?sample=pricing", { method: "POST" })).json() as DemoProviderBootstrap;
         const workspace = new Workspace(), files = Object.entries(demoSample("pricing").files).map(([name, value]) => ({ name,
             resource: workspace.createTextResource({ scope: "fix-test", resource: name, variant: "working" }, name,
-                { value: name === "main.ts" ? value.replace("calculateTotal(cart,", "calculateTotl(cart,") : value }) }));
+                { value: name === "main.ts" ? value.replace("calculateTotal(cart,", "calculateTotl(cart,") : value }, undefined,
+                { language: { uri: config.documents[name]!.uri, languageId: "typescript" } }) }));
         owner = new LspWorkspace(workspace, { connect: () => openWebSocketTransport(url.replace("http:", "ws:") + config.endpoint), rootUri: config.rootUri,
             features: ["textDocument/codeAction"], diagnostics: false,
-            schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
-            documentInfo: document => ({ uri: config.documents[document.key.resource]!.uri, languageId: "typescript" }) });
+            schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); } });
         const scope = owner.createScope(); scope.setDocuments(files.map(file => workspace.document(file.resource.documentId))); await scope.ensureConnected();
         const source = files.find(file => file.name === "main.ts")!, binding = scope.attachDocument(source.resource.documentId), doc = workspace.document(source.resource.documentId), from = doc.text().indexOf("calculateTotl(");
         const request = () => scope.requestDocument("textDocument/codeAction", binding, index => ({ range: { start: index.at(from), end: index.at(from + 13) }, context: { diagnostics: [] } })).result;

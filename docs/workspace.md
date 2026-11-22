@@ -15,7 +15,8 @@ export function createWorkset() {
     const workspace = new Workspace();
     const source = workspace.createTextResource(
         { scope: "project", resource: "source.ts", variant: "working" },
-        "Source", { value: "const value = 1;\n", serverVersion: "source-v1" }
+        "Source", { value: "const value = 1;\n", serverVersion: "source-v1" }, undefined,
+        { language: { uri: "project:source.ts", languageId: "typescript" } }
     );
     const configuration = workspace.createResource(
         { scope: "project", resource: "configuration", variant: "working" },
@@ -65,6 +66,12 @@ Resource handles expose `getSnapshot`, `subscribe` and `metadata`. `observeDocum
 text snapshot or `undefined`. `document` requires a ready document. Read ranges from
 `DocumentSnapshot.buffer`. Calling `text()` on the snapshot or `value()` on the ready resource
 shares one lazy whole-string export per revision. Typed resources return their immutable value.
+
+`createTextResource` and `createTextResourceFromBuffer` accept an optional `language` pair.
+Each ready document snapshot carries the URI and language ID.
+Leave the pair unset for saved copies or generated output. If a server assigns URIs after startup,
+call `setDocumentLanguage(documentId, pair)`. Pass `null` to withdraw the binding. Changing the
+pair preserves the buffer, revision, history and selection. `onDocumentChange` reports text edits only.
 
 You can keep a reader and call it without a receiver, even after edits, metadata changes or release.
 Copying or serializing a snapshot does not read its content. JSON omits reader functions. Call the

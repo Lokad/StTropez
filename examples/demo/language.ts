@@ -1,4 +1,4 @@
-import type { Observable, Workspace } from "../../src/index.ts";
+import type { DocumentLanguage, Observable, Workspace } from "../../src/index.ts";
 import { BrowserLspWorkspace } from "../../src/browser/index.ts";
 import { type LspWorkspace, LspLineIndex, createLspFoldingClient, decodeLspDiagnostics, lspRangeOffsets } from "../../src/protocol/index.ts";
 import type { LspWorkspaceScope, RpcCall, LspScopeAccess, LspTargetResolver } from "../../src/protocol/index.ts";
@@ -10,6 +10,11 @@ import type { DemoDiagnostic } from "./diagnostic-state.ts";
 type State = Readonly<{ status: "suspended" | "starting" | "ready" | "failed"; checking: boolean; message: string; diagnostics: readonly DemoDiagnostic[] }>;
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 type Inventory = Readonly<{ names: readonly string[]; backing: () => Readonly<Record<string, string>>; load: (name: string, text: string) => DemoFile }>;
+
+function fileLanguage(config: DemoProvider | undefined, name: string): DocumentLanguage | null {
+    const file = config?.documents[name];
+    return file ? { uri: file.uri, languageId: "typescript" } : null;
+}
 
 /** Provider/diagnostic ownership for one demo project; editor views have shorter independent lifetimes. */
 export class DemoLanguage {
@@ -51,7 +56,7 @@ export class DemoLanguage {
         this.scope?.setDocuments(this.files.map(file => this.workspace.document(file.resource.documentId)));
         this.invalidate(); if (this.active) this.schedule();
     }
-    documentUri(file: DemoFile): string | undefined { return !this.disposed && this.files.includes(file) ? this.config?.documents[file.name]?.uri : undefined; }
+    languageFor(name: string): DocumentLanguage | null { return fileLanguage(this.config, name); }
     private publish(patch: Partial<State>): void { if (!this.disposed) this.cell.set({ ...this.cell.get(), ...patch }); }
     private invalidate(clear = false): void {
         this.diagnosticGeneration++; if (this.timer) clearTimeout(this.timer); this.timer = undefined;
@@ -90,6 +95,7 @@ export class DemoLanguage {
                 config = await this.openProvider(this.sample, abort.signal, this.inventory?.names ?? this.files.map(file => file.name), this.inventory?.backing());
                 if (!this.valid(lifecycle)) throw new Error("Language startup was cancelled.");
                 const capturedProvider = config;
+                for (const file of this.files) this.workspace.setDocumentLanguage(file.resource.documentId, fileLanguage(config, file.name));
                 const resolveTarget: LspTargetResolver = async (uri, context) => {
                     const targetLifecycle = this.lifecycle;
                     const name = Object.keys(capturedProvider.documents).find(name => capturedProvider.documents[name]!.uri === uri);
@@ -105,7 +111,7 @@ export class DemoLanguage {
                     const resource = file.resource, document = this.workspace.document(resource.documentId), metadata = resource.metadata.getSnapshot();
                     const lease = this.workspace.acquire(resource.id), identity = this.workspace.captureResource(resource.id);
                     const current = () => this.valid(targetLifecycle) && this.config === capturedProvider && this.workspace.resolveResource(identity) === resource
-                        && this.workspace.document(document.id).buffer === document.buffer && this.workspace.document(document.id).revision === document.revision
+                        && this.workspace.document(document.id) === document
                         && resource.metadata.getSnapshot().capabilities === metadata.capabilities && resource.metadata.getSnapshot().editLock === metadata.editLock;
                     try {
                         const index = await LspLineIndex.create(document.buffer, async () => { await new Promise(resolve => setTimeout(resolve, 0)); if (!current() || !context.isCurrent()) throw new Error("The target changed."); });
@@ -121,8 +127,7 @@ export class DemoLanguage {
                     rootUri: config.rootUri, clientInfo: { name: "StTropez demo" }, markdownDocumentation: true,
                     diagnostics: false, workspaceEdits: true, applyEdit: true,
                     maxDocumentUnits: 8_000_000, maxTotalUnits: 16_000_000, rpc: { maxMessageUnits: 16 * 1024 * 1024 },
-                    documentInfo: document => { const file = this.files.find(file => file.resource.documentId === document.id), info = file && capturedProvider.documents[file.name];
-                        return info && { uri: info.uri, languageId: "typescript" }; }, resolveTarget,
+                    resolveTarget,
                 });
                 abort.signal.addEventListener("abort", () => owner?.dispose(), { once: true });
                 const scope = owner.createScope(); scope.setDocuments(this.files.map(file => this.workspace.document(file.resource.documentId)));
@@ -152,7 +157,7 @@ export class DemoLanguage {
     async prepareActions(session: LspScopeAccess, file: DemoFile): Promise<void> {
         const config = this.config, lifecycle = this.lifecycle;
         if (!config || !this.valid(lifecycle) || !this.files.includes(file)) throw new Error("The language service is unavailable.");
-        const uri = config.documents[file.name]!.uri;
+        const uri = this.workspace.document(file.resource.documentId).language!.uri;
         for (const kind of ["syntactic", "semantic"] as const) {
             const value = await session.request("sttropez/diagnostics", { uri, kind }).result;
             if (!this.valid(lifecycle) || this.config !== config) throw new Error("The quick-fix context changed.");
@@ -170,8 +175,8 @@ export class DemoLanguage {
             // target at each await, then all bindings once before publishing the project result.
             const capturesCurrent = () => current() && [...project.values()].every(capture => capture.isCurrent());
             for (const file of this.files) {
-                const uri = this.config!.documents[file.name]!.uri, capture = project.get(uri)!;
                 const document = this.workspace.document(file.resource.documentId), syntax = this.diagnostics.syntax(document);
+                const uri = document.language!.uri, capture = project.get(uri)!;
                 for (const kind of ["syntactic", "semantic"] as const) {
                     if (!current() || !capture.isCurrent()) return;
                     if (kind === "syntactic" && syntax) { results.push(...syntax); continue; }
@@ -213,6 +218,7 @@ export class DemoLanguage {
         this.folds?.dispose(); this.folds = undefined;
         this.stopProvider?.(); this.stopProvider = undefined; this.scope?.dispose(); this.scope = undefined; this.owner?.dispose(); this.owner = undefined;
         if (this.config) void this.remove(this.config); this.config = undefined; this.suspend();
+        for (const file of this.files) this.workspace.setDocumentLanguage(file.resource.documentId, null);
     }
     private remove(config: DemoProvider): Promise<void> { return config.close(); }
     dispose(): Promise<void> {

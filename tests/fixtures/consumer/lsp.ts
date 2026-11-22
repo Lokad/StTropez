@@ -1,15 +1,17 @@
-import { Workspace } from "sttropez";
+import { TextBuffer, Workspace } from "sttropez";
 import type { DocumentId } from "sttropez";
 import { BrowserLspWorkspace, createCodeActionController, createCompletionController, createDiagnosticController, createDocumentColorController, createDocumentLinkController, createHoverController, createNavigationController, createRenameController, createSignatureController, mountAnchoredOverlay, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
 
 const workspace = new Workspace();
-const source = workspace.createTextResource({ scope: "consumer", resource: "source", variant: "working" }, "Source", { value: 'const saMORE = 1; // TODO\r\ncatalogue;\r\nlookup("a", );\r\nimport "sample-utils";\r\nconst color = "#abc";' });
-const companion = workspace.createTextResource({ scope: "consumer", resource: "companion", variant: "working" }, "Companion", { value: "const catalogue = 1;\r\ncatalogue;\r\n" });
+const companionUri = "consumer+opaque:project/companion%2Fpart";
+const source = workspace.createTextResource({ scope: "consumer", resource: "source", variant: "working" }, "Source", { value: 'const saMORE = 1; // TODO\r\ncatalogue;\r\nlookup("a", );\r\nimport "sample-utils";\r\nconst color = "#abc";' }, undefined,
+    { language: { uri: "consumer+opaque:project/source", languageId: "generic" } });
+const companion = workspace.createTextResourceFromBuffer({ scope: "consumer", resource: "companion", variant: "working" }, "Companion", { buffer: TextBuffer.from("const catalogue = 1;\r\ncatalogue;\r\n") }, undefined,
+    { language: { uri: companionUri, languageId: "generic" } });
 const editor = mountTextEditor(document.getElementById("editor")!, workspace, source.documentId, { ariaLabel: "Public LSP source" });
 const endpoint = new URL("/lsp-fixture", location.href); endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";
 const provider = new BrowserLspWorkspace(workspace, {
-    initializationOptions: { fixtureModuleUris: [{ module: "sample-utils", uri: `consumer+opaque:project/${encodeURIComponent(companion.id)}` }] },
-    documentInfo: snapshot => ({ uri: `consumer+opaque:project/${encodeURIComponent(snapshot.resourceId)}`, languageId: "generic" }),
+    initializationOptions: { fixtureModuleUris: [{ module: "sample-utils", uri: companionUri }] },
     connect: signal => openWebSocketTransport(endpoint.href, { signal }),
     workspaceEdits: true, applyEdit: true,
 });
@@ -115,7 +117,7 @@ colors.subscribe(() => {
 });
 const dispose = () => { if (disposed) return; disposed = true; stop(); controller.dispose(); diagnostics.dispose(); hover.dispose(); navigation.dispose(); rename.dispose(); actions.dispose(); signature.dispose(); links.dispose(); colors.dispose(); provider.dispose(); editor.dispose(); };
 const bridge = { text, select: (at: number) => editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: at, head: at }),
-    state: () => ({ provider: provider.snapshot(), editor: controller.getDiagnostics(), completion: controller.getSnapshot(), history: workspace.observeHistory(source.documentId).getSnapshot(), diagnostics: workspace.diagnostics(), notes, companion: companion.documentId, companionResource: companion.id, metrics: editor.snapshot(), errors }),
+    state: () => ({ provider: provider.snapshot(), editor: controller.getDiagnostics(), completion: controller.getSnapshot(), history: workspace.observeHistory(source.documentId).getSnapshot(), diagnostics: workspace.diagnostics(), notes, companion: companion.documentId, metrics: editor.snapshot(), errors }),
     showDiagnostic: () => {
         const state = diagnostics.getSnapshot(), first = state.diagnostics[0];
         if (first) { diagnosticHint.textContent = first.message; hint.show({ revision: state.diagnosticRevision, offset: first.from }); }

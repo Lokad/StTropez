@@ -9,14 +9,13 @@ import { isRecord } from "../../src/protocol/wire.ts";
 
 function fixture({ url, defer }: ProtocolFixture) {
     const workspace = new Workspace(), resources = ["first", "second"].map(name => workspace.createTextResource(
-        { scope: "actions", resource: name, variant: "working" }, name, { value: "const sample = 1; // TODO" }));
+        { scope: "actions", resource: name, variant: "working" }, name, { value: "const sample = 1; // TODO" }, undefined, { language: { uri: `host+fixture:${name}`, languageId: "fixture" } }));
     defer(() => assert.equal(workspace.diagnostics().leases, 0));
     const documents = () => resources.map(resource => workspace.document(resource.documentId));
     const endpoint = url;
     const owner = new LspWorkspace(workspace, {
         connect: () => openWebSocketTransport(endpoint),
         features: ["textDocument/codeAction"], workspaceEdits: true,
-        documentInfo: doc => ({ uri: `host+fixture:${doc.resourceId}`, languageId: "fixture" }),
         schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
     });
     defer(() => owner.dispose());

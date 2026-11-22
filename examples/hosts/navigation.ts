@@ -1,3 +1,4 @@
+import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, DocumentSnapshot, SelectionSet, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { createNavigationController } from "../../src/browser/index.ts";
 import type { NavigationChoice, NavigationController, NavigationResult, TextEditor } from "../../src/browser/index.ts";
@@ -67,7 +68,7 @@ export class HostNavigationTools {
     readonly disconnect = (): void => { this.cancel(); this.dropClient(); this.disconnected = true; this.publish({ status: "disconnected", message: "Navigation provider disconnected; local editing remains available." }); };
     readonly reconnect = (): void => { this.cancel(); this.dropClient(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ status: "idle", message: "Request fresh navigation with current resources." }); };
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const controller = createNavigationController(editor, this.options.provider, { documents: () => this.workspace.getSnapshot().documents.filter(doc => doc.key.variant === "working"),
+        const controller = createNavigationController(editor, this.options.provider, { documents: () => this.workspace.getSnapshot().documents.filter(doc => doc.language !== null),
             canCapture: () => !this.disconnected && !this.disposed && this.canCapture(editor.view.documentId),
             prepareRequest: kind => { const fault = this.fault; this.fault = undefined; return this.options.prepare(kind, this.delay, fault); },
             onDefinition: offset => { this.active = session; editor.focus(); this.start("definition", true, offset); } });
@@ -111,7 +112,7 @@ export class HostNavigationTools {
         if (!this.canCapture(origin.editor.view.documentId)) { this.publish({ message: "Finish pending input, navigation or composition first." }); return; }
         this.cancel(); const offset = pointed ?? origin.editor.view.getSnapshot().selection.head, document = this.workspace.document(origin.editor.view.documentId), symbol = navigationSymbol(document.buffer, offset) ?? "position";
         if (!symbol) { this.publish({ status: "empty", message: "No bounded symbol at this position." }); return; }
-        const documents = this.workspace.getSnapshot().documents.filter(doc => doc.key.variant === "working"), sources = new Map(documents.map(doc => [doc.id as string, doc]));
+        const documents = this.workspace.getSnapshot().documents.filter(doc => doc.language !== null), sources = new Map(documents.map(doc => [doc.id as string, doc]));
         if (!sources.has(document.id)) { this.publish({ status: "failed", message: "This source is outside the host navigation scope." }); return; }
         let input: NavigationInput;
         try { input = validateNavigationInput({ operation: "navigation-start", id: this.workspace.allocateIdentity(), kind, symbol, includeDeclaration: this.cell.get().includeDeclaration, delay: this.delay,
@@ -158,7 +159,7 @@ export class HostNavigationTools {
     setIncludeDeclaration(value: boolean): void { if (value === this.cell.get().includeDeclaration) return; this.cancel(); this.publish({ includeDeclaration: value }); }
     readonly addCompanion = (): void => {
         if (this.disposed) return; this.cancel();
-        this.companion ??= this.workspace.createTextResource({ scope: "host-fixture", resource: "navigation-companion", variant: "working" }, "Navigation companion", { value: "const catalogue = 1;\r\ncatalogue;\r\n" }).documentId;
+        this.companion ??= createWorkingSource(this.workspace, "navigation-companion", "Navigation companion", { value: "const catalogue = 1;\r\ncatalogue;\r\n" }).documentId;
         this.publish({ message: "Navigation companion added. Find catalogue from a source view to open its captured definition." });
     };
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid navigation delay."); this.delay = value; }

@@ -91,7 +91,7 @@ export class HostActionsTools {
             if (origin?.editor.keymap.handle(event)) event.stopPropagation();
         }, { signal: events.signal });
     };
-    private readonly documents = () => this.workspace.getSnapshot().documents.filter(doc => doc.key.variant === "working");
+    private readonly documents = () => this.workspace.getSnapshot().documents.filter(doc => doc.language !== null);
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
         const target = this.workspace.tabs.capture(tab), events = new AbortController();
         const { provider, commandPolicy, beforeRequest, beforeResolve } = this.options, review = this.reviewOwner;

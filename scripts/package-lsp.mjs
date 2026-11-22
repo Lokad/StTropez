@@ -88,7 +88,7 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         await button("Edit companion").click(); await expect(button("Open link")).toBeDisabled();
         await button("Links").click(); await expect(button("Open link")).toBeEnabled();
         assert.equal(await oldLink.evaluate(open => open?.(new PointerEvent("click"))), false); await oldLink.dispose();
-        assert.equal((await state()).notes.linkUri, undefined); await button("Open link").click(); await expect.poll(async () => (await state()).notes.linkUri).toBe(`consumer+opaque:project/${encodeURIComponent((await state()).companionResource)}`);
+        assert.equal((await state()).notes.linkUri, undefined); await button("Open link").click(); await expect.poll(async () => (await state()).notes.linkUri).toBe("consumer+opaque:project/companion%2Fpart");
         await button("Colors").click(); await expect.poll(async () => (await state()).notes.colorPresentations ?? 0).toBeGreaterThan(0);
         const beforeColor = await text(), colorDepth = (await state()).history.undoDepth;
         const oldColor = await button("Apply color").evaluateHandle(node => /** @type {HTMLButtonElement} */ (node).onclick?.bind(node));
@@ -102,7 +102,7 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
             && "initialize" in counts && "failures" in counts && "documents" in counts, "Expected synchronization counters");
         assert.equal(counts.initialize, 1); assert.deepEqual(counts.failures, []);
         assert.ok(Array.isArray(counts.documents)); assert.equal(counts.documents.length, 2);
-        const companionUri = `consumer+opaque:project/${encodeURIComponent((await state()).companionResource)}`;
+        const companionUri = "consumer+opaque:project/companion%2Fpart";
         const lifetimes = Object.fromEntries(counts.documents.map(document => {
             assert.ok(document && typeof document === "object" && !Array.isArray(document));
             return [document.uri === companionUri ? "companion" : "source", { open: document.open, close: document.close }];

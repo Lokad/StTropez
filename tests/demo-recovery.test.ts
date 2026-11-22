@@ -92,6 +92,7 @@ test("partial editor inventories checkpoint every file and restore only against 
 test("recovery restores the named files atomically with one linked undo unit", async t => {
     const f = fixture(); t.after(() => f.recovery.dispose()); await ready(f.recovery);
     assert.deepEqual(f.text(), ["original a.ts", "original b.ts"]);
+    for (const file of f.files) f.workspace.setDocumentLanguage(file.resource.documentId, { uri: `project:${file.name}`, languageId: "typescript" });
     assert.equal(f.recovery.canRestore(), true);
     await f.recovery.restore();
     assert.deepEqual(f.text(), ["draft A", "draft B"]);

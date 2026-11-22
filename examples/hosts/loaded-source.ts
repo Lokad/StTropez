@@ -1,3 +1,4 @@
+import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, DocumentView, TextResourceHandle, Workspace } from "../../src/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import type { HostLayout } from "./layout.ts";
@@ -59,7 +60,7 @@ export class HostLoadedSource {
         this.setLoaded(resource); return resource;
     }
     private createResource(ready = false): TextResourceHandle {
-        return this.workspace.createTextResource({ scope: "host-fixture", resource: `loaded-${this.workspace.getSnapshot().revision}`, variant: "working" }, "Loaded source",
+        return createWorkingSource(this.workspace, `loaded-${this.workspace.getSnapshot().revision}`, "Loaded source",
             ready ? { value: "loaded resource", serverVersion: "loaded-v1" } : undefined);
     }
     readonly begin = (): void => {

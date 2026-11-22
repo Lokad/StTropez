@@ -12,7 +12,7 @@ test("LSP folding negotiates whole lines and validates the entire response again
     assert.deepEqual(result.ranges, [{ from: 0, to: f.document().buffer.offsetAt(2), group: "host-group" }]);
     const init = f.sent("initialize")[0]!.params as { capabilities: { textDocument: { foldingRange: unknown } } };
     assert.deepEqual(init.capabilities.textDocument.foldingRange, { dynamicRegistration: true, lineFoldingOnly: true, foldingRangeKind: { valueSet: ["comment", "imports", "region"] } });
-    assert.deepEqual(f.sent("textDocument/foldingRange")[0]!.params, { textDocument: { uri: `generic:${f.source.id}` } });
+    assert.deepEqual(f.sent("textDocument/foldingRange")[0]!.params, { textDocument: { uri: "generic:source" } });
     value = [{ startLine: 0, endLine: 1 }, { startLine: 0, endLine: "bad" }];
     await assert.rejects(client.run(f.document()).result, /Malformed/); assert.equal(result.isCurrent(), false);
     value = null; assert.deepEqual((await client.run(f.document()).result).ranges, []);

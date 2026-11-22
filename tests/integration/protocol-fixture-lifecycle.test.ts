@@ -16,7 +16,6 @@ test("a cancelled browser opening releases a late transport and leaves its repla
         const firstTransport = new Promise<RpcTransport>(resolve => { deliver = resolve; });
         const firstReleased = new Promise<void>(resolve => { released = resolve; });
         const provider = new BrowserLspWorkspace(new Workspace(), {
-            documentInfo: () => undefined,
             connect(signal) {
                 signals.push(signal);
                 if (signals.length === 1) { started(); return firstTransport; }
@@ -50,11 +49,10 @@ test("partial protocol setup releases the listener and leases while preserving s
     t.after(async () => { acquired?.dispose(); if (retired) await closePackageServer(retired); });
     await assert.rejects(withProtocolFixture(async ({ url, server, defer }) => {
         retired = server; port = Number(new URL(url).port);
-        const workspace = new Workspace(), source = workspace.createTextResource({ scope: "cleanup", resource: "source", variant: "working" }, "Source", { value: "sample" });
+        const workspace = new Workspace(), source = workspace.createTextResource({ scope: "cleanup", resource: "source", variant: "working" }, "Source", { value: "sample" }, undefined, { language: { uri: "fixture:source", languageId: "fixture" } });
         defer(() => { order.push("leases"); assert.equal(workspace.diagnostics().leases, 0); });
         const owner = new FixtureLspWorkspace(workspace, {
             connect: () => openWebSocketTransport(url), features: ["textDocument/hover"],
-            documentInfo: document => ({ uri: `fixture:${document.resourceId}`, languageId: "fixture" }),
             schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
         });
         acquired = owner;

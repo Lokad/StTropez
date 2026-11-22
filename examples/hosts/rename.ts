@@ -82,7 +82,7 @@ export class HostRenameTools {
     };
     attach(id: string, _tab: TabId, editor: TextEditor): () => void {
         const controller = createRenameController(editor, this.backend.provider, {
-            documents: () => this.workspace.getSnapshot().documents.filter(doc => doc.key.variant === "working"),
+            documents: () => this.workspace.getSnapshot().documents.filter(doc => doc.language !== null),
             canCapture: this.canCapture, prepareRequest: () => {
                 const fault = this.fault; this.fault = undefined; return this.backend.prepare?.(this.delay, fault);
             },

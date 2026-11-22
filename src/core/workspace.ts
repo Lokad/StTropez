@@ -51,6 +51,8 @@ export type EditOrigin = "human" | "agent" | "host";
 export type Capabilities = Readonly<{ edit: readonly EditOrigin[]; save: boolean; run: boolean }>;
 export type ResourceVisibility = "workspace" | "internal";
 export type ResourceOptions = Readonly<{ visibility?: ResourceVisibility }>;
+export type DocumentLanguage = Readonly<{ uri: string; languageId: string }>;
+export type TextResourceOptions = ResourceOptions & Readonly<{ language?: DocumentLanguage | null }>;
 export type ResourceMetadata = Readonly<{
     id: ResourceId; key: ResourceKey; title: string; kind: "text" | "panel";
     visibility: ResourceVisibility;
@@ -70,7 +72,7 @@ export type LoadedResource<T> = Readonly<{ value: T; serverVersion?: string | nu
 export type LoadedTextBuffer = Readonly<{ buffer: TextBuffer; serverVersion?: string | null }>;
 export type DocumentSnapshot = Readonly<{
     id: DocumentId; resourceId: ResourceId; key: ResourceKey; title: string; buffer: TextBuffer; text: () => string; revision: number;
-    change: DocumentChange | null;
+    language: DocumentLanguage | null; change: DocumentChange | null;
 }>;
 export type DocumentChange = Readonly<{ previousRevision: number; revision: number; transactionId: number; origin: EditOrigin;
     source?: string; kind: EditKind | "undo" | "redo"; mapping: PositionMapping; edits: readonly TextEdit[] }>;
@@ -151,7 +153,7 @@ function historySelections(text: PreparedText): HistoryChange["selections"] {
         before: view.state.get().selectionSet, after: state.selectionSet })));
 }
 type ResourceRecord = {
-    handle: ResourceHandle<SnapshotValue>; documentId: DocumentId | null;
+    handle: ResourceHandle<SnapshotValue>; documentId: DocumentId | null; language: DocumentLanguage | null;
     state: Store<ResourceSnapshot<SnapshotValue>>; metadata: Store<ResourceMetadata>;
     document: Store<DocumentSnapshot | undefined>; saved: SnapshotValue | undefined;
     buffer: TextBuffer | null; savedBuffer: TextBuffer | null; change: DocumentChange | null; history: Store<HistorySnapshot>;
@@ -165,6 +167,12 @@ function capabilities(value: Capabilities): Capabilities {
 }
 function sameMetadata(a: ResourceMetadata, b: ResourceMetadata): boolean {
     return (Object.keys(a) as (keyof ResourceMetadata)[]).every(key => a[key] === b[key]);
+}
+function documentLanguage(value: DocumentLanguage | null | undefined): DocumentLanguage | null {
+    if (value == null) return null;
+    const { uri, languageId } = value;
+    if (typeof uri !== "string" || !uri || typeof languageId !== "string" || !languageId) throw new TypeError("Expected a document URI and language ID.");
+    return Object.freeze({ uri, languageId });
 }
 /** Tuple encoding preserves exact string components, including delimiters and empty values. */
 function resourceKeyIdentity(key: ResourceKey): string { return JSON.stringify([key.scope, key.resource, key.variant]); }
@@ -249,17 +257,17 @@ export class Workspace {
     createResource<T extends SnapshotValue>(key: ResourceKey, title: string, loaded?: LoadedResource<T>, permissions = defaultCapabilities, options: ResourceOptions = {}): ResourceHandle<T> {
         return this.create(key, title, "panel", loaded, permissions, options) as ResourceHandle<T>;
     }
-    createTextResource(key: ResourceKey, title: string, loaded?: LoadedResource<string>, permissions = defaultCapabilities, options: ResourceOptions = {}): TextResourceHandle {
+    createTextResource(key: ResourceKey, title: string, loaded?: LoadedResource<string>, permissions = defaultCapabilities, options: TextResourceOptions = {}): TextResourceHandle {
         return this.create(key, title, "text", loaded, permissions, options) as TextResourceHandle;
     }
     /** Retain an immutable buffer directly, without exporting or reparsing its text. */
-    createTextResourceFromBuffer(key: ResourceKey, title: string, loaded: LoadedTextBuffer, permissions = defaultCapabilities, options: ResourceOptions = {}): TextResourceHandle {
+    createTextResourceFromBuffer(key: ResourceKey, title: string, loaded: LoadedTextBuffer, permissions = defaultCapabilities, options: TextResourceOptions = {}): TextResourceHandle {
         return this.create(key, title, "text", loaded, permissions, options) as TextResourceHandle;
     }
     createDocument(key: ResourceKey, title: string, text: string): DocumentId {
         return this.createTextResource(key, title, { value: text }).documentId;
     }
-    private create(key: ResourceKey, title: string, kind: "text" | "panel", loaded: LoadedResource<SnapshotValue> | LoadedTextBuffer | undefined, permissions: Capabilities, options: ResourceOptions): ResourceHandle<SnapshotValue> {
+    private create(key: ResourceKey, title: string, kind: "text" | "panel", loaded: LoadedResource<SnapshotValue> | LoadedTextBuffer | undefined, permissions: Capabilities, options: TextResourceOptions): ResourceHandle<SnapshotValue> {
         this.scope.assertWritable();
         const visibility = options.visibility === undefined ? "workspace" : options.visibility;
         key = Object.freeze({ ...key });
@@ -278,7 +286,7 @@ export class Workspace {
             ? Object.freeze({ metadata, state: "loading", revision: 0 }) : readySnapshot(metadata, 0, buffer ?? value!), this.scope);
         const meta = new Store(metadata, this.scope);
         const handle = Object.freeze({ ...state.observable, id, metadata: meta.observable, ...(documentId === null ? {} : { documentId }) });
-        const record: ResourceRecord = { handle, documentId, state, metadata: meta,
+        const record: ResourceRecord = { handle, documentId, state, metadata: meta, language: documentLanguage(options.language),
             document: new Store<DocumentSnapshot | undefined>(undefined, this.scope), saved: buffer ? undefined : value,
             buffer, savedBuffer: buffer, change: null, history: new Store<HistorySnapshot>(this.history.snapshot(documentId ?? ""), this.scope), views: new Map(),
             leases: new Set(),
@@ -559,6 +567,16 @@ export class Workspace {
         this.commitRecord(record, readySnapshot({ ...current.metadata, dirty: record.saved === undefined || !equalValue(record.saved, value) }, current.revision + 1, value));
         return { applied: true, revision: current.revision + 1 };
     }
+    setDocumentLanguage(id: DocumentId, language: DocumentLanguage | null): void {
+        this.scope.assertWritable();
+        const record = this.documents.get(id);
+        if (!record) throw new Error("Unknown document.");
+        const current = record.language, next = documentLanguage(language);
+        if (next?.uri === current?.uri && next?.languageId === current?.languageId) return;
+        record.language = next;
+        const changed = new Set<Store<unknown>>();
+        this.projectDocument(record, changed); this.publish(changed);
+    }
     setCapabilities(id: ResourceId, permissions: Capabilities): void {
         this.scope.assertWritable();
         const record = this.requireResource(id), state = record.state.get();
@@ -806,10 +824,12 @@ export class Workspace {
     private projectDocument(record: ResourceRecord, changed: Set<Store<unknown>>): void {
         const state = record.state.get(), previous = record.document.get();
         if (record.documentId === null || state.state !== "ready") { record.document.set(undefined, changed); return; }
-        if (previous?.revision === state.revision) return;
+        const language = record.language;
+        if (previous?.revision === state.revision && previous.language === language) return;
         const buffer = record.buffer!;
         record.document.set(Object.freeze({ id: record.documentId, resourceId: record.handle.id, key: state.metadata.key,
-            title: state.metadata.title, buffer, text: state.value as () => string, revision: state.revision, change: record.change }), changed);
+            title: state.metadata.title, buffer, text: state.value as () => string, revision: state.revision, language,
+            change: previous?.revision === state.revision ? null : record.change }), changed);
     }
     private setRecord(record: ResourceRecord, next: ResourceSnapshot<SnapshotValue>, changed: Set<Store<unknown>>): void {
         const previous = record.metadata.get();

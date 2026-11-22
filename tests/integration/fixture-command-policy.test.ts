@@ -28,7 +28,6 @@ function fixture({ url, defer }: ProtocolFixture) {
                 } }) };
         },
         features: ["workspace/executeCommand"], applyEdit: true, rpc: { maxPending: 128 },
-        documentInfo: doc => ({ uri: `host+fixture:${doc.resourceId}`, languageId: "fixture" }),
         schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
     });
     defer(() => owner.dispose());

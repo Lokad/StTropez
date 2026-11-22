@@ -1,3 +1,4 @@
+import { createWorkingSource } from "./working-source.ts";
 import type { Connection, HostController } from "./controller.ts";
 import type { HostDraftRecovery } from "./draft-recovery.ts";
 import type { ViewBindings } from "./bindings.ts";
@@ -14,8 +15,8 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
     const seedInactiveDocuments = () => {
         if (lifecycle.disposed || inactive.length) throw new Error("Inactive workload can be created once on a live host.");
         for (let index = 0; index < 100; index++) {
-            const resource = controller.workspace.createTextResource({ scope: "host-workload", resource: `inactive-${index}`, variant: "working" },
-                `Inactive ${index}`, { value: `// inactive ${index}\r\n` + "row Δ😀\r\n".repeat(1000) });
+            const resource = createWorkingSource(controller.workspace, `inactive-${index}`,
+                `Inactive ${index}`, { value: `// inactive ${index}\r\n` + "row Δ😀\r\n".repeat(1000) }, "host-workload");
             let target: TabTarget | undefined;
             lifecycle.onDispose(async () => {
                 const index = inactive.findIndex(owner => owner.resource === resource); if (index >= 0) inactive.splice(index, 1);
@@ -58,7 +59,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         openTransferTarget: (text: string) => {
             if (lifecycle.disposed || transferTarget) throw new Error("Transfer target cannot be mounted.");
             lifecycle.unmount();
-            const resource = controller.workspace.createTextResource({ scope: "host-fixture", resource: "transfer-text", variant: "working" }, "Transfer target", { value: text });
+            const resource = createWorkingSource(controller.workspace, "transfer-text", "Transfer target", { value: text });
             transferTarget = resource; let target: TabTarget | undefined;
             lifecycle.onDispose(async () => {
                 if (target && controller.workspace.tabs.resolve(target)) controller.workspace.tabs.close(target.id);

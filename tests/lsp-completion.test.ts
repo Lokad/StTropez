@@ -146,8 +146,7 @@ test("unsupported lazy snippets omit one choice and preserve current alternative
 });
 
 test("registration and URI replacement expire retained choices, while cancellation leaves diagnostic participation", async t => {
-    let version = 0;
-    const f = clientFixture(t, undefined, undefined, doc => ({ uri: `generic:${version}/${doc.resourceId}`, languageId: "generic" })),
+    const f = clientFixture(t),
         client = createLspCompletionClient(f.provider), diagnostics = f.provider.createScope();
     t.after(() => { client.dispose(); diagnostics.dispose(); }); const binding = diagnostics.attachDocument(f.source.documentId);
     f.peer.onRequest("textDocument/completion", () => [choice()]); const batch = await client.run(f.document(), 2).result;
@@ -155,7 +154,12 @@ test("registration and URI replacement expire retained choices, while cancellati
     await f.peer.sendRequest("client/registerCapability", { registrations: [{ id: "completion", method: "textDocument/completion", registerOptions: { documentSelector: null, resolveProvider: true } }] });
     assert.equal(batch.isBindingCurrent(), false); assert.throws(() => client.resolve(batch, batch.items[0]!), stale);
     const fresh = await client.run(f.document(), 2).result;
-    version++; const replacing = f.provider.createScope(); t.after(replacing.dispose); replacing.attachDocument(f.source.documentId);
+    const original = f.document().language!;
+    f.workspace.setDocumentLanguage(f.source.documentId, { ...original, languageId: "other" });
+    f.workspace.setDocumentLanguage(f.source.documentId, original);
+    assert.equal(fresh.isBindingCurrent(), false);
+    assert.equal(diagnostics.captureBinding(binding), undefined);
+    const replacing = f.provider.createScope(); t.after(replacing.dispose); replacing.attachDocument(f.source.documentId);
     assert.equal(fresh.isCurrent(), false); assert.throws(() => client.resolve(fresh, fresh.items[0]!), stale);
     const next = await client.run(f.document(), 2).result; client.cancel(); assert.equal(next.isCurrent(), false);
     client.dispose(); assert.ok(f.provider.snapshot().documents > 0); assert.equal(f.provider.getSnapshot().phase, "ready");

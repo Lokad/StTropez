@@ -38,7 +38,8 @@ const workspace = new Workspace();
 const name = "tasks.md";
 const openedText = sessionStorage.getItem(name) ?? "- [ ] Review the draft\n";
 const file = workspace.createTextResource(
-    { scope: "checklist", resource: name, variant: "working" }, name, { value: openedText });
+    { scope: "checklist", resource: name, variant: "working" }, name, { value: openedText }, undefined,
+    { language: { uri: "file:///tasks.md", languageId: "markdown" } });
 
 const primary = document.querySelector("main");
 if (!primary) throw new Error("Missing <main>.");
@@ -342,7 +343,7 @@ button("Compare saved", () => {
 
 The HTTP server above serves the checklist files. **Connect** needs a separately provided Markdown
 language server at the same origin’s `/lsp` WebSocket endpoint. It must speak LSP 3.17, use
-UTF-16 positions and recognize the URI below.
+UTF-16 positions and recognize the URI assigned to the checklist resource.
 
 ```js
 import { BrowserLspWorkspace, createCompletionController, createDiagnosticController, openWebSocketTransport } from "sttropez/browser";
@@ -350,8 +351,6 @@ import { BrowserLspWorkspace, createCompletionController, createDiagnosticContro
 const endpoint = new URL("/lsp", location.href);
 endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";
 const provider = new BrowserLspWorkspace(workspace, {
-    documentInfo: doc => doc.id === file.documentId
-        ? { uri: "file:///tasks.md", languageId: "markdown" } : undefined,
     connect: signal => openWebSocketTransport(endpoint.href, { signal })
 });
 ```

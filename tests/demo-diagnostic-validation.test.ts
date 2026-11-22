@@ -8,13 +8,14 @@ import { DemoLanguage } from "../examples/demo/language.ts";
 /** Exercise the host's check loop against captured provider replies without opening a server. */
 async function fixture(count: number) {
     const workspace = new Workspace(), files = Array.from({ length: count }, (_, i) => {
-        const name = `${i}.ts`, resource = workspace.createTextResource({ scope: "diagnostics", resource: name, variant: "working" }, name, { value: "let value = 1;" });
+        const name = `${i}.ts`, resource = workspace.createTextResource({ scope: "diagnostics", resource: name, variant: "working" }, name, { value: "let value = 1;" }, undefined,
+            { language: { uri: `file:///${name}`, languageId: "typescript" } });
         return { name, resource, tab: workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "editor"), view: workspace.createDocumentView(resource.documentId) };
     });
     const captures = new Map<string, LspDocumentCapture>(), valid = files.map(() => true), calls: { uri: string; kind: string }[] = [];
     let visits = 0, beforeReply = (_uri: string) => {};
     for (const [i, file] of files.entries()) {
-        const doc = workspace.document(file.resource.documentId), uri = `file:///${file.name}`;
+        const doc = workspace.document(file.resource.documentId), uri = doc.language!.uri;
         captures.set(uri, { document: { uri, languageId: "typescript", resourceId: doc.resourceId, documentId: doc.id, revision: doc.revision, buffer: doc.buffer },
             index: await LspLineIndex.create(doc.buffer, async () => {}), version: 1, epoch: 1, registrationGeneration: 1,
             isCurrent: () => { visits++; return valid[i]! && workspace.document(doc.id).revision === doc.revision; } });

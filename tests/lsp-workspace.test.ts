@@ -4,7 +4,7 @@ import { setImmediate } from "node:timers/promises";
 import { TextDocument } from "vscode-languageserver-protocol/node.js";
 import type { DidOpenTextDocumentParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams } from "vscode-languageserver-protocol/node.js";
 import { referencePeer } from "../fixtures/protocol/reference-peer.ts";
-import type { LspFeature, LspRequestContext, LspWorkspaceOptions, RpcScheduler, RpcTransport } from "../src/protocol/index.ts";
+import type { LspFeature, LspRequestContext, RpcScheduler, RpcTransport } from "../src/protocol/index.ts";
 import { Workspace } from "../src/index.ts";
 import { LspWorkspace, createLspHoverClient, createLspCommandRunner, createLspSignatureClient, createLspLinkClient, createLspColorClient, createLspFoldingClient, createLspHighlightClient, RpcError } from "../src/protocol/index.ts";
 import { latch } from "./helpers/latch.ts";
@@ -29,11 +29,11 @@ test("binding captures read local revisions across request cancellation and expi
 });
 
 test("feature options for other documents preserve pending and completed captures without acquiring participation", async t => {
-    let excludeCompanion = false, policyError: Error | undefined;
-    const f = fixture(t, { features: ["textDocument/signatureHelp"], documentInfo: doc => {
-        if (doc.title === "Companion") { if (policyError) throw policyError; if (excludeCompanion) return; }
-        return { uri: `custom:/${doc.title}`, languageId: doc.title };
-    } }), client = createLspSignatureClient(f.provider); t.after(client.dispose);
+    const f = fixture(t, { features: ["textDocument/signatureHelp"] }), client = createLspSignatureClient(f.provider); t.after(client.dispose);
+    for (const resource of [f.source, f.companion]) {
+        const title = resource.metadata.getSnapshot().title;
+        f.workspace.setDocumentLanguage(resource.documentId, { uri: `custom:/${title}`, languageId: title });
+    }
     const source = f.workspace.document(f.source.documentId), other = f.workspace.document(f.companion.documentId);
     const beforeConnect = f.provider.snapshot(); assert.deepEqual(client.options(other), []); assert.deepEqual(f.provider.snapshot(), beforeConnect);
     await f.provider.connect(); const peer = f.peers[0]!;
@@ -53,8 +53,9 @@ test("feature options for other documents preserve pending and completed capture
     answer.resolve({ signatures: [{ label: "call(value)" }] }); const result = await pending; assert.ok(result); assert.ok(result.isCurrent());
     const completed = f.provider.snapshot(); assert.deepEqual(client.options(other)[0]!.triggerCharacters, ["["]);
     assert.ok(result.isCurrent()); assert.deepEqual(f.provider.snapshot(), completed); assert.deepEqual(peer.events, events);
-    excludeCompanion = true; assert.deepEqual(client.options(other), []); excludeCompanion = false;
-    policyError = new TypeError("Host document mapping failed."); assert.throws(() => client.options(other), error => error === policyError); policyError = undefined;
+    f.workspace.setDocumentLanguage(other.id, null); assert.deepEqual(client.options(f.workspace.document(other.id)), []);
+    assert.throws(() => client.options(other), error => error instanceof RpcError && error.code === -32801);
+    f.workspace.setDocumentLanguage(other.id, other.language);
     f.edit(other.id); assert.throws(() => client.options(other), error => error instanceof RpcError && error.code === -32801);
     assert.ok(result.isCurrent()); assert.deepEqual(peer.events, events);
     await peer.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "other-signature", method: "textDocument/signatureHelp" }] });
@@ -65,8 +66,7 @@ test("feature options for other documents preserve pending and completed capture
 });
 
 test("signature retriggers preserve the last resolved context through a cancelled reply without crossing document or provider authority", async t => {
-    let uriVersion = 0;
-    const f = fixture(t, { features: ["textDocument/signatureHelp"], documentInfo: doc => ({ uri: `fixture:${uriVersion}/${doc.resourceId}`, languageId: "fixture" }) }),
+    const f = fixture(t, { features: ["textDocument/signatureHelp"] }),
         client = createLspSignatureClient(f.provider); t.after(client.dispose);
     await f.provider.connect(); const peer = f.peers[0]!, entered = latch<void>(), held = latch<unknown>(); t.after(() => held.resolve(null));
     const contexts: { isRetrigger: boolean; activeSignatureHelp?: unknown }[] = []; let pause = false;
@@ -87,7 +87,8 @@ test("signature retriggers preserve the last resolved context through a cancelle
     assert.deepEqual(contexts.at(-1)!.activeSignatureHelp, { ...overloads, activeSignature: 1 });
     held.resolve(help("late")); await settled(); await run(); assert.deepEqual(contexts.at(-1)!.activeSignatureHelp, help("latest"));
     await run(f.companion.documentId); assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined);
-    uriVersion++; const replacement = f.provider.createScope(); replacement.attachDocument(f.companion.documentId);
+    f.workspace.setDocumentLanguage(f.companion.documentId, { uri: "fixture:replacement", languageId: "fixture" });
+    const replacement = f.provider.createScope(); replacement.attachDocument(f.companion.documentId);
     await run(f.companion.documentId); assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined); replacement.dispose();
     await run(f.companion.documentId, true, help("host choice")); assert.deepEqual(contexts.at(-1)!.activeSignatureHelp, help("host choice"));
     client.cancel(); await run(f.companion.documentId); assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined);
@@ -190,9 +191,11 @@ async function languageFixture(t: test.TestContext) {
     return { f, peer, signature, links, colors, rgba, doc: f.workspace.document(f.source.documentId) };
 }
 
-function fixture(t: test.TestContext, extra: Readonly<{ maxDocumentUnits?: number; features?: readonly LspFeature[]; schedule?: RpcScheduler; documentInfo?: LspWorkspaceOptions["documentInfo"] }> = {}) {
-    const workspace = new Workspace(), source = workspace.createTextResource({ scope: "generic", resource: "source", variant: "working" }, "Source", { value: "a😀\r\nsource" }),
-        companion = workspace.createTextResource({ scope: "generic", resource: "companion", variant: "working" }, "Companion", { value: "companion" });
+function fixture(t: test.TestContext, extra: Readonly<{ maxDocumentUnits?: number; features?: readonly LspFeature[]; schedule?: RpcScheduler }> = {}) {
+    const workspace = new Workspace(), source = workspace.createTextResource({ scope: "generic", resource: "source", variant: "working" }, "Source", { value: "a😀\r\nsource" }, undefined,
+        { language: { uri: "host+opaque:workspace/source", languageId: "generic-language" } }),
+        companion = workspace.createTextResource({ scope: "generic", resource: "companion", variant: "working" }, "Companion", { value: "companion" }, undefined,
+            { language: { uri: "host+opaque:workspace/companion", languageId: "generic-language" } });
     const timers = new Set<ReturnType<typeof setTimeout>>(), errors: string[] = [], peers: ReturnType<typeof peer>[] = [];
     const schedule: RpcScheduler = (ms, callback) => { const timer = setTimeout(() => { timers.delete(timer); callback(); }, ms); timers.add(timer); return () => { clearTimeout(timer); timers.delete(timer); }; };
     function peer() {
@@ -212,7 +215,7 @@ function fixture(t: test.TestContext, extra: Readonly<{ maxDocumentUnits?: numbe
     }
     const provider = new LspWorkspace(workspace, { ...extra, features: extra.features ?? ["textDocument/hover", "textDocument/definition", "workspace/executeCommand"], applyEdit: true, diagnostics: true, schedule: extra.schedule ?? schedule,
         connect: async () => { const next = peer(); peers.push(next); return next.transport; },
-        documentInfo: extra.documentInfo ?? (doc => ({ uri: `host+opaque:workspace/${encodeURIComponent(doc.resourceId)}`, languageId: "generic-language" })), onError: error => errors.push(error.message) });
+        onError: error => errors.push(error.message) });
     t.after(async () => { provider.dispose(); await settled(); for (const peer of peers) peer.rpc.dispose(); for (const timer of timers) clearTimeout(timer); });
     const edit = (id = source.documentId, insert = "!") => { const doc = workspace.document(id); assert.equal(workspace.edit({ documentId: id, expectedRevision: doc.revision, edits: [{ from: doc.buffer.length, to: doc.buffer.length, insert }], origin: "human" }).applied, true); };
     return { workspace, provider, source, companion, peers, errors, timers, edit };

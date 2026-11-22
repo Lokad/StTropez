@@ -33,8 +33,8 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
             && edit.from === edit.to && edit.from === request.edit.documents[0]!.target.document.buffer.length) ? "apply" : "decline");
     scope.defer(() => commands.dispose());
     const tools = createCodeActionController(editor, provider, {
-        documents: () => workspace.getSnapshot().documents.filter(doc => doc.key.variant === "working"), canCapture: idle,
-        commandPolicy: demoCommandPolicy(file, () => language.documentUri(file), idle),
+        documents: () => workspace.getSnapshot().documents.filter(doc => doc.language !== null), canCapture: idle,
+        commandPolicy: demoCommandPolicy(file, () => workspace.document(file.resource.documentId).language?.uri, idle),
         prepareRequest: session => language.prepareActions(session, file),
         runCommand: command => commands.beginAction({ ...command, editor })
     });

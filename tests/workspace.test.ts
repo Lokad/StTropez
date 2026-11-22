@@ -10,6 +10,30 @@ function fixture() {
     return { workspace, documentId, tabId };
 }
 
+test("language changes publish a new document identity without replaying an edit", () => {
+    const { workspace, documentId } = fixture(), changes: DocumentChange[] = [];
+    const resource = workspace.resourceForDocument(documentId), view = workspace.createDocumentView(documentId);
+    const stop = workspace.onDocumentChange(documentId, change => changes.push(change));
+    assert.ok(workspace.edit({ documentId, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "!" }], origin: "human" }).applied);
+    const before = workspace.document(documentId), history = workspace.observeHistory(documentId).getSnapshot(), selection = view.getSnapshot();
+    const metadata = resource.metadata.getSnapshot();
+    const pair = { uri: "project:source%2Fone", languageId: "generic" };
+    workspace.setDocumentLanguage(documentId, pair);
+    const linked = workspace.document(documentId);
+    assert.equal(before.language, null);
+    assert.equal(resource.metadata.getSnapshot(), metadata);
+    assert.deepEqual(linked.language, pair); assert.ok(Object.isFrozen(linked.language));
+    workspace.setDocumentLanguage(documentId, { ...pair }); pair.uri = "project:two";
+    assert.equal(workspace.document(documentId), linked);
+    assert.equal(linked.language!.uri, "project:source%2Fone");
+    workspace.setDocumentLanguage(documentId, null);
+    const excluded = workspace.document(documentId);
+    assert.equal(excluded.language, null); assert.equal(excluded.change, null);
+    assert.equal(excluded.buffer, before.buffer); assert.equal(excluded.revision, before.revision);
+    assert.equal(view.getSnapshot(), selection); assert.equal(workspace.observeHistory(documentId).getSnapshot(), history);
+    assert.deepEqual(changes, [before.change]); stop(); view.dispose();
+});
+
 test("edits, grouped history and batches publish immutable changes in previous coordinates", () => {
     const { workspace, documentId } = fixture(), changes: DocumentChange[] = [];
     const stop = workspace.onDocumentChange(documentId, change => changes.push(change));

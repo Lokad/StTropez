@@ -13,7 +13,7 @@ test("occurrences negotiate UTF-16 ranges, text/read/write and validate malforme
     const result = await client.run(f.document(), 6).result;
     assert.deepEqual(result.items, [{ from: 1, to: 3, kind: "text" }, { from: 5, to: 10, kind: "write" }, { from: 11, to: 16, kind: "read" }]);
     assert.ok(Object.isFrozen(result.items)); assert.ok(result.items.every(Object.isFrozen));
-    assert.deepEqual(f.sent("textDocument/documentHighlight")[0]!.params, { textDocument: { uri: `generic:${f.source.id}` }, position: { line: 1, character: 1 } });
+    assert.deepEqual(f.sent("textDocument/documentHighlight")[0]!.params, { textDocument: { uri: "generic:source" }, position: { line: 1, character: 1 } });
     const init = f.sent("initialize")[0]!.params as { capabilities: { textDocument: { documentHighlight: unknown } } };
     assert.deepEqual(init.capabilities.textDocument.documentHighlight, { dynamicRegistration: true });
     value = [{ range: range(1, 0, 99) }]; assert.deepEqual((await client.run(f.document(), 6).result).items, [{ from: 5, to: 16, kind: "text" }]);
