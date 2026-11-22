@@ -109,7 +109,8 @@ test("a clean position offers no fabricated fix and Escape preserves source and 
     await source.press("Control+Home"); await source.press("Control+.");
     const popup = page.getByRole("region", { name: "Quick fixes", exact: true });
     await expect(popup).toContainText("No quick fix at this position."); await expect(popup.getByRole("button", { name: "Apply fix", exact: true })).toBeDisabled();
-    await source.press("Escape"); await expect(popup).toBeHidden(); await expect(source).toBeFocused(); await expect(page.locator("#files")).not.toContainText("●");
+    await popup.getByRole("button", { name: "Cancel fix" }).press("Escape");
+    await expect(popup).toBeHidden(); await expect(source).toBeFocused(); await expect(page.locator("#files")).not.toContainText("●");
     await source.press("Control+."); await expect(popup).toContainText("No quick fix at this position.");
     await source.press("Enter"); await expect(popup).toBeHidden(); await expect(source).toBeFocused();
     await expect(page.locator("#cursor")).toHaveText("Ln 2, Col 1");

@@ -8,6 +8,7 @@ import { projectReviewNote } from "./action-fixture.ts";
 import type { DemoFile } from "./project.ts";
 import type { DemoLanguage } from "./language.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
+import { bindPopupCommands } from "./language-commands.ts";
 
 /** Contextual presentation; the existing action controller owns captures, validation and history. */
 export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file: DemoFile, editor: TextEditor, provider: LspWorkspace,
@@ -46,6 +47,8 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
             && changes[0]!.edits.length <= 4 && changes[0]!.edits.reduce((units, edit) => units + edit.to - edit.from + edit.insert.length, 0) <= 256;
     };
     const dismiss = () => { popup.hidden = true; tools.cancel(); };
+    const canApply = (preview: CodeActionPreview | null) =>
+        !!preview?.canApply && (!preview.command || commands.canRunAction(editor));
     const position = () => {
         const point = editor.viewport.coordsAt(editor.view.getSnapshot().selection.head), box = editor.element.getBoundingClientRect();
         popup.style.left = `${Math.max(8, Math.min(innerWidth - 400, point?.left ?? box.left + 8))}px`;
@@ -84,7 +87,7 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
             item.append(`${at.title} `, before, " → ", after); return item;
         }));
         const applyLabel = preview?.command ? "Run action" : "Apply fix"; if (apply.textContent !== applyLabel) apply.textContent = applyLabel;
-        apply.disabled = !preview?.canApply || !!preview.command && !commands.canRunAction(editor); apply.onclick = preview?.confirm ?? null;
+        apply.disabled = !canApply(preview); apply.onclick = preview?.confirm ?? null;
         const count = page?.count ?? 0;
         pages.hidden = count <= 64; previous.disabled = editPage === 0; next.disabled = (editPage + 1) * 64 >= count;
         if (state.status === "applied" && !commandAction) queueMicrotask(() => { if (!disposed && tools.getSnapshot() === state) { dismiss(); editor.focus(); } });
@@ -97,20 +100,27 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     close.addEventListener("click", () => { dismiss(); editor.focus(); }, { signal: events.signal });
     previous.addEventListener("click", () => { editPage--; render(); }, { signal: events.signal }); next.addEventListener("click", () => { editPage++; render(); }, { signal: events.signal });
     previousChoices.addEventListener("click", () => { choicePage--; render(); }, { signal: events.signal }); nextChoices.addEventListener("click", () => { choicePage++; render(); }, { signal: events.signal });
-    editor.input.addEventListener("keydown", event => {
-        if (event.defaultPrevented || event.isComposing || editor.activity().composing) return;
-        if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key === ".") { event.preventDefault(); event.stopImmediatePropagation(); request(); }
-        else if (!popup.hidden && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
-            const state = tools.getSnapshot();
-            if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); dismiss(); }
-            else if (event.key === "Enter" && !apply.disabled && state.preview) { event.preventDefault(); event.stopImmediatePropagation(); state.preview.confirm(); }
-            else if (event.key === "Enter" && !["pending", "resolving", "executing"].includes(state.status)) dismiss();
-            else if ((event.key === "ArrowDown" || event.key === "ArrowUp") && state.choices.length) {
-                event.preventDefault(); event.stopImmediatePropagation();
-                state.choices[((state.choice ?? 0) + (event.key === "ArrowDown" ? 1 : state.choices.length - 1)) % state.choices.length]!.select();
-            }
+    const bind = bindPopupCommands(scope, editor, popup, 35);
+    bind("quickfix.dismiss", "Dismiss quick fixes", "Escape", () => { dismiss(); editor.focus(); });
+    bind("quickfix.apply", "Apply selected fix", "Enter", () => {
+        const state = tools.getSnapshot();
+        if (state.preview && canApply(state.preview)) { state.preview.confirm(); return true; }
+        if (!["pending", "resolving", "executing"].includes(state.status)) dismiss();
+        return false;
+    });
+    const move = (direction: -1 | 1) => {
+        const state = tools.getSnapshot(), count = state.choices.length;
+        const focused = choices.querySelector<HTMLElement>("[data-choice]:focus")?.dataset.choice;
+        const start = focused === undefined ? state.choice ?? (direction === 1 ? -1 : 0) : Number(focused);
+        for (let step = 1; step <= count; step++) {
+            const next = state.choices[(start + direction * step + count) % count]!;
+            if (next.disabled !== null) continue;
+            editor.focus(); next.select(); return true;
         }
-    }, { capture: true, signal: events.signal });
+        return false;
+    };
+    bind("quickfix.previous", "Previous quick fix", "ArrowUp", () => move(-1));
+    bind("quickfix.next", "Next quick fix", "ArrowDown", () => move(1));
     scope.defer(commands.attach("source", file.tab, editor));
     return Object.freeze({ request, dismiss, isOpen: () => !popup.hidden });
 }

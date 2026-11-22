@@ -6,6 +6,7 @@ import { HostRenameTools } from "../hosts/rename.ts";
 import { createLspRenameClient } from "../shared/language/lsp-rename-client.ts";
 import type { DemoFile } from "./project.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
+import { bindPopupCommands } from "./language-commands.ts";
 
 export type DemoSymbolTarget = Readonly<{ documentId: DocumentId; revision: number; from: number; to: number }>;
 
@@ -49,10 +50,10 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         popup.querySelector<HTMLElement>('[data-chosen="true"]')?.scrollIntoView({ block: "nearest" });
     };
     const choose = (captured: Query, location: LspLocation) => {
-        if (query !== captured || !captured.current() || !captured.result?.isCurrent() || !location.target.isCurrent()) return;
-        const file = files().find(file => file.resource.documentId === location.target.document.documentId); if (!file) return;
+        if (query !== captured || !captured.current() || !captured.result?.isCurrent() || !location.target.isCurrent()) return false;
+        const file = files().find(file => file.resource.documentId === location.target.document.documentId); if (!file) return false;
         const target = { documentId: file.resource.documentId, revision: location.target.document.revision, from: location.from, to: location.to };
-        cancelNavigation(); open(target);
+        cancelNavigation(); open(target); return true;
     };
     const showNavigation = (captured: Query, message: string) => {
         captured.message = message;
@@ -139,20 +140,26 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     }));
     popup.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });
     renamePopup.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); closeRename(true); } }, { capture: true, signal: events.signal });
-    editor.input.addEventListener("keydown", event => {
-        if (event.defaultPrevented || event.isComposing || editor.activity().composing || event.ctrlKey || event.metaKey || event.altKey) return;
-        if (event.key === "F12") { event.preventDefault(); event.stopImmediatePropagation(); request(event.shiftKey ? "references" : "definition"); }
-        else if (event.key === "Escape" && query) { event.preventDefault(); event.stopImmediatePropagation(); cancelNavigation(); }
-        else if (event.key === "Escape" && renameSource) { event.preventDefault(); event.stopImmediatePropagation(); closeRename(true); }
-        else if (query?.result?.locations.length && !popup.hidden && !event.shiftKey) {
-            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                event.preventDefault(); event.stopImmediatePropagation();
-                const previousPage = Math.floor(query.choice / 64);
-                query.choice = (query.choice + (event.key === "ArrowDown" ? 1 : query.result.locations.length - 1)) % query.result.locations.length;
-                if (Math.floor(query.choice / 64) !== previousPage) showNavigation(query, query.message); else markChoice(query);
-            } else if (event.key === "Enter") { event.preventDefault(); event.stopImmediatePropagation(); choose(query, query.result.locations[query.choice]!); }
-        }
-    }, { capture: true, signal: events.signal });
+    scope.defer(editor.commands.register({ id: "rename.dismiss", label: "Dismiss rename", enabled: () => !!renameSource,
+        run: () => closeRename(true) }, { keys: ["Escape"], priority: 39 }).dispose);
+    const bind = bindPopupCommands(scope, editor, popup, 36);
+    bind("locations.dismiss", "Close locations", "Escape", () => { cancelNavigation(); editor.focus(); });
+    const move = (direction: -1 | 1) => {
+        const count = query?.result?.locations.length;
+        if (!query || !count || !query.current() || !query.result?.isCurrent()) return false;
+        const focused = popup.querySelector<HTMLElement>("[data-location]:focus")?.dataset.location;
+        editor.focus();
+        const previousPage = Math.floor(query.choice / 64);
+        query.choice = ((focused === undefined ? query.choice : Number(focused)) + direction + count) % count;
+        if (Math.floor(query.choice / 64) !== previousPage) showNavigation(query, query.message); else markChoice(query);
+        return true;
+    };
+    bind("locations.previous", "Previous location", "ArrowUp", () => move(-1));
+    bind("locations.next", "Next location", "ArrowDown", () => move(1));
+    bind("locations.open", "Open selected location", "Enter", () => {
+        const location = query?.result?.locations[query.choice];
+        return !!query && !!location && choose(query, location);
+    });
     scope.defer(rename.attach("source", file.tab, editor));
     const changed = () => { const captured = query; if (captured && (!captured.current() || captured.result && !captured.result.isCurrent())) {
         query = undefined; locationsOverlay.hide(); queueMicrotask(() => { captured.source.cancel(); if (!disposed && !query) navigation.cancel(); });

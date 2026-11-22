@@ -30,14 +30,15 @@ test("real definition and reference navigation open the captured file and range 
     await expect(page.locator("#files")).not.toContainText("●");
     await page.getByRole("textbox", { name: "main.ts", exact: true }).press("Shift+F12");
     await expect(locations.getByRole("button", { name: /^pricing.ts ·/ })).toBeVisible();
-    await page.getByRole("textbox", { name: "main.ts", exact: true }).press("ArrowDown");
+    await locations.locator('[data-location="0"]').press("ArrowDown");
     await expect(locations.locator('[data-location="1"]')).toHaveAttribute("data-chosen", "true");
-    await page.getByRole("textbox", { name: "main.ts", exact: true }).press("Enter"); await expect(locations).toBeHidden();
+    await page.keyboard.press("Enter"); await expect(locations).toBeHidden();
     if (await pricing.count()) await page.locator('[data-file="main.ts"]').click();
     await page.getByRole("textbox", { name: "main.ts", exact: true }).press("Control+End");
     await page.locator("#code-menu summary").click(); await page.getByRole("button", { name: "Go to definition", exact: true }).click();
     await expect(locations).toContainText("No definition in this sample.");
-    await page.getByRole("textbox", { name: "main.ts", exact: true }).press("Escape"); await expect(locations).toBeHidden();
+    await locations.getByRole("button", { name: "Close locations" }).press("Escape");
+    await expect(locations).toBeHidden(); await expect(source).toBeFocused();
 });
 
 test("real rename previews a captured name, rejects an old name and shares one undo across files", async ({ page }) => {

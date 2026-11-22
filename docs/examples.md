@@ -96,6 +96,10 @@ It runs when the service is ready if focus and the caret are in their original p
 moving the caret, switching panes or pressing Escape cancels the request. The footer also
 reports when an explicit completion or signature request has no results.
 
+In the references and quick-fix lists, Up and Down move the choice, including from a
+focused result button. Enter in the source opens the chosen location or confirms a ready
+fix. Escape from either list returns focus to the source.
+
 The Example picker loads samples on demand. You can keep using the arrow keys while a sample
 opens. The last choice appears, and returning to a sample keeps its edits. [Sample catalogue](../examples/demo/samples.ts)
 

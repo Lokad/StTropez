@@ -39,7 +39,9 @@ export async function runDemoActions(page: Page, url = "/") {
         const button = node as HTMLButtonElement, confirm = button.onclick!;
         return () => { confirm.call(button, new PointerEvent("click")); };
     });
-    await actions.getByRole("button", { name: "Demo host: add review note", exact: true }).click();
+    await actions.getByRole("button", { name: "Demo host: refactor, then check", exact: true }).press("ArrowUp");
+    await expect(actions.getByRole("button", { name: "Demo host: add review note", exact: true })).toHaveAttribute("data-chosen", "true");
+    await expect(source).toBeFocused();
     const run = actions.getByRole("button", { name: "Run action", exact: true });
     await expect(run).toBeEnabled(); await retiredApply.evaluate(confirm => confirm()); await expect(run).toBeEnabled();
     await choice.click(); await retiredApply.evaluate(confirm => confirm()); await retiredApply.dispose();
@@ -126,7 +128,7 @@ export async function runDemoUnopenedNavigation(page: Page, url = "/") {
 export async function runDemoDocumentation(page: Page, url = "/") {
     const guide = "https://www.typescriptlang.org/docs/handbook/2/functions.html";
     await page.context().route(guide, route => route.fulfill({ contentType: "text/html", body: "<title>Permitted help destination</title>" }));
-    await page.goto(url); await page.locator("#sample").selectOption("documentation");
+    await page.goto(url + "?sample=documentation");
     const source = page.getByRole("textbox", { name: "documentation.ts", exact: true });
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await select(page, source, "const discounted = applyDiscount"); await source.press("ArrowRight"); await source.press("ArrowLeft");
@@ -173,13 +175,13 @@ export async function runDemoDocumentation(page: Page, url = "/") {
     await source.press("Escape"); await expect(completions).toBeHidden();
     await source.press("Control+z");
     await source.press("Escape"); await expect(signature).toBeHidden(); await expect(page.locator("#files")).not.toContainText("●");
-    await page.locator("#sample").selectOption("pricing"); await expect(hover).toBeHidden();
     await page.context().unroute(guide);
     // The same public metadata decoder feeds Problems. Real compiler errors and an explicit
     // host fixture cover related declarations, tags and help without inventing TS capabilities.
     const diagnosticGuide = "https://www.typescriptlang.org/docs/handbook/2/everyday-types.html";
     await page.context().route(diagnosticGuide, route => route.fulfill({ contentType: "text/html", body: "<title>Diagnostic help</title>" }));
     await page.locator("#sample").selectOption("diagnostics");
+    await expect(hover).toBeHidden();
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await page.locator('[data-panel="problems"]').click();
     const problems = page.locator(".demo-problems"), error = problems.locator(".demo-problem").filter({ hasText: "TS2322:" });
@@ -675,7 +677,7 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     const locations = page.getByRole("region", { name: "Symbol locations", exact: true });
     await expect(locations).toContainText("1–64 of 1201"); await expect(locations.locator("[data-location]")).toHaveCount(64);
     // Up wraps to the last result and must reveal its page without creating 1,201 buttons.
-    await source.press("ArrowUp"); await expect(locations).toContainText("1153–1201 of 1201");
+    await locations.locator('[data-location="0"]').press("ArrowUp"); await expect(locations).toContainText("1153–1201 of 1201");
     const viewport = page.locator("#editor .st-viewport");
     async function scrollAwayAndBack(popup: Locator, lineNumber: number) {
         const initial = await viewport.evaluate(node => node.scrollTop);

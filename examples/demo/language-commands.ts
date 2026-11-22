@@ -13,6 +13,16 @@ const shortcuts = {
 } as const;
 type Command = keyof typeof shortcuts;
 
+/** Popup buttons keep native Enter activation. Escape and arrows can also run from the popup. */
+export function bindPopupCommands(scope: CleanupScope, editor: TextEditor, popup: HTMLElement, priority: number) {
+    const events = new AbortController(); scope.defer(() => events.abort());
+    popup.addEventListener("keydown", event => editor.keymap.handle(event), { signal: events.signal });
+    const enabled = () => !popup.hidden && (editor.input.matches(":focus") || popup.matches(":focus-within"));
+    return (id: string, label: string, key: string, run: () => boolean | void) => {
+        scope.defer(editor.commands.register({ id, label, enabled, run }, { keys: [key], priority, shared: key !== "Enter" }).dispose);
+    };
+}
+
 /** Keep one explicit request at its original caret while the project starts TypeScript. */
 export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, output: HTMLElement,
     execute: (command: Command, menu: boolean) => void) {
@@ -43,7 +53,7 @@ export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, o
     for (const command of Object.keys(shortcuts) as Command[]) {
         const [label, ...keys] = shortcuts[command];
         scope.defer(editor.commands.register({ id: "demo.language." + command, label,
-            enabled: () => phase === "starting" || phase === "ready" && (command === "complete" || command === "signature"),
+            enabled: () => phase === "starting" || phase === "ready" && command !== "rename" && command !== "inspect",
             run: () => run(command, false) }, { keys, priority: 50 }).dispose);
     }
     scope.defer(editor.commands.register({ id: "demo.language.dismiss", label: "Dismiss language request",
