@@ -97,14 +97,14 @@ export class HostRenameTools {
             const register = scopedCommands(editor, events.signal);
             register({ id: "rename.start", label: "Rename symbol", enabled: () => !this.disconnected && this.host.canCapture(editor.view.documentId),
                 run: () => { if (this.options.open && !this.options.open()) return false; this.active = session; this.prompt(session); return true; } }, { keys: ["F2"] });
-            const ownsField = () => (this.owner ?? this.active) === session && !!this.nameField.element?.matches(":focus");
+            const ownsField = () => (this.owner ?? this.active) === session && this.nameField.focused;
             register({ id: "rename.submit", label: "Preview or apply rename", enabled: ownsField,
                 run: () => {
                     this.setName(this.nameField.element!.value);
                     const state = this.cell.get();
                     if (state.pending) return;
                     if (!state.preview) this.prepareIn(session);
-                    else if (state.preview.confirm().applied && this.nameField.element?.matches(":focus")) editor.focus();
+                    else if (state.preview.confirm().applied && this.nameField.focused) editor.focus();
                 } }, { keys: ["Enter"], shared: true, priority: 33, repeat: false });
             register({ id: "rename.cancel", label: "Cancel rename", enabled: ownsField,
                 run: () => { this.cancel(); editor.focus(); } }, { keys: ["Escape"], shared: true, priority: 9 });

@@ -92,7 +92,7 @@ export class HostDocumentLinks {
             register({ id: "links.return", label: "Return to link origin", enabled: () => !!this.route?.destination,
                 run: this.returnToOrigin }, { keys: ["Shift+F4"] });
             register({ id: "links.dismiss", label: "Dismiss module links",
-                enabled: () => this.listEditor() === editor && !!this.linkList.element?.matches(":focus-within"),
+                enabled: () => this.listEditor() === editor && this.linkList.focused,
                 run: () => {
                     const origin = this.route?.origin;
                     this.cancel();

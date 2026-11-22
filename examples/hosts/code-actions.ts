@@ -109,13 +109,13 @@ export class HostActionsTools {
             controller.dispose(); this.sessions.delete(s); if (this.active === s) this.active = undefined;
             this.publish();
         }, { once: true });
-        const ownsModule = () => this.moduleField.element?.matches(":focus") === true && (this.panel?.source ?? this.active) === s;
+        const ownsModule = () => this.moduleField.focused && (this.panel?.source ?? this.active) === s;
         try {
             const register = scopedCommands(editor, events.signal);
             register({ id: "actions.request", label: "Preview module action", enabled: () => this.available(s),
                 run: from => { this.active = s; this.start(from !== "panel"); } }, { keys: ["Ctrl+.", "Meta+."] });
             register({ id: "actions.submitModule", label: "Preview the entered module", enabled: ownsModule,
-                run: () => editor.commands.run("actions.request", "panel") }, { keys: ["Enter"], shared: true, priority: 35 });
+                run: () => editor.commands.run("actions.request", "panel") }, { keys: ["Enter"], shared: true, priority: 35, repeat: false });
             register({ id: "actions.dismiss", label: "Dismiss action preview", enabled: ownsModule,
                 run: () => { this.cancel(); editor.focus(); } }, { keys: ["Escape"], shared: true, priority: 6 });
             return detachWithEditor(editor, events.signal, detach);

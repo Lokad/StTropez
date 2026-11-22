@@ -148,11 +148,11 @@ export class HostDocumentColors {
             const register = scopedCommands(editor, events.signal);
             register({ id: "colors.discover", label: "Discover document colors", enabled: () => !this.disconnected,
                 run: () => { this.active = s; this.start(true); } }, { keys: ["F6"] });
-            const ownsValue = () => (this.owner ?? this.active) === s && !!this.valueField.element?.matches(":focus");
+            const ownsValue = () => (this.owner ?? this.active) === s && this.valueField.focused;
             register({ id: "colors.preview", label: "Preview color presentations",
                 enabled: () => this.owner === s && ownsValue(), run: this.preview }, { keys: ["Enter"], shared: true, priority: 34, repeat: false });
             register({ id: "colors.dismiss", label: "Dismiss color preview",
-                enabled: () => ownsValue() || (this.owner === s && !!this.colorList.element?.matches(":focus-within")),
+                enabled: () => ownsValue() || (this.owner === s && this.colorList.focused),
                 run: () => { this.cancel(); focusSource(editor); } }, { keys: ["Escape"], shared: true, priority: 8 });
             this.syncSwatches();
         } catch (error) { detach(); throw error; }

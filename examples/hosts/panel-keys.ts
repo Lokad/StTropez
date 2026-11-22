@@ -12,5 +12,9 @@ export function createPanelKeyBinding<T extends HTMLElement>(owner: () => TextEd
         element = next;
         element?.addEventListener("keydown", keydown);
     }
-    return { get element() { return element; }, bind, dispose() { bind(null); disposed = true; } };
+    return {
+        get element() { return element; },
+        get focused() { return !!element?.matches(":focus-within"); },
+        bind, dispose() { bind(null); disposed = true; },
+    };
 }

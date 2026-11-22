@@ -367,8 +367,8 @@ the same pane immediately. Detaching a feature from an open editor also releases
 Select an action and review it before choosing **Apply captured action** or
 **Execute captured action**. If its command was never advertised, the whole choice is disabled.
 Changing actions or preparing another rename while its confirmation button is held requires a fresh click.
-In **Action module**, Enter requests a preview for the source and Escape dismisses it
-and returns focus to that editor.
+In **Action module**, each press of Enter requests one preview, even if you hold the key.
+Escape dismisses the preview and returns focus to the source editor.
 
 After applying a code action, rename, color change or provider edit, use **Open** to focus the changed file.
 The result survives hiding and showing the source views. If no pane is available, show the
