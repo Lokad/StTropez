@@ -349,23 +349,31 @@ const fixture = { text: () => workspace.document(documentId).text(),
         const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored locked command" });
         try {
             const refusals: EditRefusedDetail["reason"][] = [];
+            const observed: (EditRefusedDetail["reason"] | null)[] = [];
+            const initial = editor.getSnapshot();
+            editor.subscribe(() => observed.push(editor.getSnapshot().readOnlyReason));
             host.addEventListener(editRefusedEvent, event => {
                 const detail = (event as CustomEvent<EditRefusedDetail>).detail;
                 if (detail.documentId !== source.documentId || !Object.isFrozen(detail) || detail.reason !== editor.element.dataset.readOnly)
                     throw new Error("Refusal did not identify the mounted document and its current authority.");
                 refusals.push(detail.reason);
             }, { signal: editor.signal });
-            editor.view.setSelection(0, { anchor: 0, head: text.length }); model.setCapabilities(source.id, { edit: ["host"], save: true, run: true });
+            editor.view.setSelection(0, { anchor: 0, head: text.length });
+            if (editor.getSnapshot() !== initial || !Object.isFrozen(initial) || initial.disabled || initial.readOnlyReason !== null)
+                throw new Error("A selection changed editor focus or authority.");
+            model.setCapabilities(source.id, { edit: ["host"], save: true, run: true });
             editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: "x", bubbles: true, cancelable: true }));
             const before = model.observeHistory(source.documentId).getSnapshot(); let lockedAtHandler = false;
-            editor.input.addEventListener("keydown", () => { lockedAtHandler = editor.input.readOnly;
+            editor.input.addEventListener("keydown", () => { lockedAtHandler = editor.getSnapshot().readOnlyReason === "read-only";
                 queueMicrotask(() => model.setCapabilities(source.id, { edit: ["human", "host"], save: true, run: true })); }, { once: true });
             editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: outdent, bubbles: true, cancelable: true }));
             await new Promise<void>(resolve => { let turns = 16; const step = () => { if (--turns) setTimeout(step, 0); else resolve(); }; setTimeout(step, 0); });
             const lease = model.acquireEditLease(source.id, "consumer", "host");
             try { editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })); }
             finally { lease.release(); }
-            if (editor.element.hasAttribute("data-read-only") || editor.input.readOnly) throw new Error("Editor remained locked after lease release.");
+            if (editor.element.hasAttribute("data-read-only") || editor.getSnapshot().readOnlyReason !== null
+                || JSON.stringify(observed) !== JSON.stringify(["read-only", null, "edit-locked", null]))
+                throw new Error("Restored editor did not publish each permission and edit-lease transition.");
             const current = model.document(source.documentId);
             return { outdent, lockedAtHandler, refusals, revision: current.revision, sameText: current.buffer.slice(0, text.length) === text,
                 undoBefore: before.undoDepth, undoAfter: model.observeHistory(source.documentId).getSnapshot().undoDepth, exports: current.buffer.readMetrics().textExports };

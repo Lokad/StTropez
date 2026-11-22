@@ -134,7 +134,7 @@ export class HostNavigationTools {
                 if (this.job !== job || origin.controller.getSnapshot().result !== result) return;
                 win.clearTimeout(job.timer); job.result = result; job.page = result.pageFor(); this.metrics.applied++;
                 this.publish({ status: result.count ? "ready" : "empty", message: `${result.count} ${kind === "definition" ? "definition" : "reference"} locations for ${symbol} across ${sources.size} captured resources.`, work: total });
-                if (keyboard && kind === "definition" && result.count === 1 && origin.editor.element.ownerDocument.activeElement === origin.editor.input) this.open(job, job.page!.selected);
+                if (keyboard && kind === "definition" && result.count === 1 && origin.editor.getSnapshot().focused) this.open(job, job.page!.selected);
             }).catch(error => { if (this.job !== job) return; this.queries.failed++; this.metrics.failed++; this.clear("failed", error instanceof Error ? error.message : "Navigation failed; source is unchanged."); });
         } catch (error) { this.metrics.failed++; this.clear("failed", error instanceof Error ? error.message : "Navigation is unavailable."); }
     }

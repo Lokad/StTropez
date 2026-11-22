@@ -182,6 +182,9 @@ test("public input recovery reaches retained listeners inside a closed root befo
             const { mountTextareaEditor } = await import(baselinePath) as typeof import("../../fixtures/textarea-editor.ts");
             const f = window.shadowFocus, host = f.editor.element.parentElement!, listeners = new AbortController();
             const native = mountTextareaEditor(host, f.workspace, f.tab), received: { detail: InputConflictDetail; frozen: boolean; bubbles: boolean; composed: boolean }[] = [];
+            const states: { focused: boolean; composing: boolean; disabled: boolean }[] = [];
+            f.editor.subscribe(() => { const { focused, composing, disabled } = f.editor.getSnapshot(); states.push({ focused, composing, disabled }); });
+            f.editor.focus();
             let inside = 0, outside = 0;
             host.addEventListener(inputConflictEvent, () => inside++, { signal: listeners.signal });
             document.addEventListener(inputConflictEvent, () => outside++, { signal: listeners.signal });
@@ -192,9 +195,14 @@ test("public input recovery reaches retained listeners inside a closed root befo
                     node.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })); node.value = "uncommitted 東京";
                     dispose();
                 }
-                return { name: inputConflictEvent, received, inside, outside, documentId: f.source.documentId, revision: f.workspace.document(f.source.documentId).revision };
+                return { name: inputConflictEvent, received, inside, outside, states, documentId: f.source.documentId, revision: f.workspace.document(f.source.documentId).revision };
             } finally { native.dispose(); listeners.abort(); }
         });
+        expect(result.states).toEqual([
+            { focused: true, composing: false, disabled: false },
+            { focused: true, composing: true, disabled: false },
+            { focused: false, composing: false, disabled: true },
+        ]);
         expect(result.name).toBe("sttropez-conflict"); expect(result.inside).toBe(2); expect(result.outside).toBe(0);
         expect(result.revision).toBe(0); expect(await text(page)).toBe("sample sample\ns");
         expect(result.received).toEqual([0, undefined].map(contextFrom => ({ frozen: true, bubbles: true, composed: false,

@@ -2,6 +2,8 @@ import { mountInputCaret } from "./input-caret.ts";
 import { autoClosedPairs } from "./auto-closed-pairs.ts";
 import { automaticIndentation } from "./automatic-indentation.ts";
 import { clientBox, cssZoom } from "./dom-coordinates.ts";
+import { isFocused } from "./dom-focus.ts";
+import { Store, type Observable } from "../core/observable.ts";
 import { textDifference } from "../core/changes.ts";
 import { copyCaretLines, planClipboardPaste } from "../core/clipboard-edits.ts";
 import { createWordCommandCursor, WordCursor } from "../core/words.ts";
@@ -58,6 +60,8 @@ export type TextEditorEdit = Readonly<{ expectedRevision: number; edits: readonl
 export type TextEditorEditTransform = (edit: TextEditorEdit) => Readonly<{ edits: readonly TextEdit[]; selectionSet: SelectionSet; complete?: (applied: boolean) => void }> | undefined;
 export type TextEditorActivity = Readonly<{ disposed: boolean; composing: boolean; pendingInput: boolean; pendingCommand: boolean;
     pendingCaret: boolean; pendingDragScroll: boolean; pendingWord: boolean; pendingGrapheme: boolean }>;
+export type TextEditorSnapshot = Readonly<{ focused: boolean; disabled: boolean; composing: boolean;
+    readOnlyReason: EditRefusedDetail["reason"] | null }>;
 export type TextEditorCommand = EditingCommand | ViewCommand;
 export type LinePrompt = (request: Readonly<{ currentLine: number; lineCount: number; signal: AbortSignal }>) =>
     number | undefined | PromiseLike<number | undefined>;
@@ -68,7 +72,7 @@ export type ResolvedEditorSettings = ViewportSettings & Readonly<{ language: Res
 export type EditorRevealRange = Readonly<{ from: number; to: number }>;
 export type EditorRevealOptions = Readonly<{ align?: RevealAlignment; select?: boolean; focus?: boolean; expectedRevision?: number }>;
 export type TextEditorOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; requestLine?: LinePrompt; settings?: EditorSettings }>;
-export type TextEditor = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; workspace: Workspace; tab: TabTarget | undefined; signal: AbortSignal; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
+export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; workspace: Workspace; tab: TabTarget | undefined; signal: AbortSignal; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
     operation: <T>(options: EditorOperationOptions, work: (op: EditorOperation) => T | PromiseLike<T>) => Promise<EditorOperationOutcome<T>>;
     latestOperation: () => EditorOperationLane;
     /** One pending host insertion, invalidated by later editing/selection/authority/lifecycle changes. */
@@ -135,6 +139,15 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     let contextBuffer: TextBuffer | undefined = workspace.document(documentId).buffer, contextSelection = view.getSnapshot().selection;
     let revision = workspace.document(documentId).revision, context: InputContext = inputContext(contextBuffer, contextSelection);
     let disposed = false, composing = false, selecting = false, committing = false;
+    const notifications = workspace.createNotificationScope();
+    const editorState = new Store<TextEditorSnapshot>(Object.freeze({ focused: false, disabled: false, composing: false, readOnlyReason: null }), notifications);
+    const stateSubscriptions = new Set<() => void>();
+    function publishState(): void {
+        const prior = editorState.get(), focused = !disposed && isFocused(input), disabled = disposed || input.disabled;
+        const reason = readOnlyReason ?? null;
+        if (prior.focused !== focused || prior.disabled !== disabled || prior.composing !== composing || prior.readOnlyReason !== reason)
+            notifications.publish(editorState, Object.freeze({ focused, disabled, composing, readOnlyReason: reason }));
+    }
     let escapeSelection: SelectionSet | undefined;
     let editTransform: TextEditorEditTransform | undefined;
     let hostInsertion: CapturedInsertion | undefined;
@@ -223,17 +236,19 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     function refresh(): void {
         if (escapeSelection && escapeSelection !== view.getSnapshot().selectionSet) escapeState(false);
         if (disposed || selecting || committing) return;
-        const state = resource.getSnapshot(); input.disabled = !live() || state.state !== "ready";
-        if (lineRequest && !validCommand(lineRequest.capture)) cancelLineRequest();
-        if (input.disabled) contextBuffer = undefined;
+        const state = resource.getSnapshot(), disabled = !live() || state.state !== "ready";
+        if (disabled) contextBuffer = undefined;
         const reason = readOnly || !state.metadata.capabilities.edit.includes("human") ? "read-only"
             : state.metadata.editLock !== null ? "edit-locked" : undefined;
-        if (reason !== readOnlyReason) {
+        if (reason !== readOnlyReason || disabled !== input.disabled) {
             readOnlyReason = reason;
             input.readOnly = reason !== undefined;
             if (reason) root.dataset.readOnly = reason;
             else delete root.dataset.readOnly;
+            input.disabled = disabled;
+            publishState();
         }
+        if (lineRequest && !validCommand(lineRequest.capture)) cancelLineRequest();
         if (inputQueue.executing?.edit && input.readOnly) inputQueue.recover(inputQueue.executing, "pending-input-expired");
         if (inputQueue.pending && (!inputQueue.current(inputQueue.pending) || inputQueue.pending.edit && input.readOnly)) cancelWord();
 
@@ -1093,6 +1108,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         composing = true;
         group = undefined;
         inputBinding.setComposing(true);
+        publishState();
         scheduleCaret();
     }
     function endComposition(): void {
@@ -1100,6 +1116,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         composition = undefined;
         composing = false;
         inputBinding.setComposing(false);
+        publishState();
         commit("insertCompositionText", captured);
     }
     input.addEventListener("compositionstart", startComposition, { signal: listeners.signal });
@@ -1111,8 +1128,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (event.key === "Shift") escapeState(false);
         if (event.key === "Tab") refresh(); else syncSelection();
     }, { signal: listeners.signal });
-    input.addEventListener("focus", scheduleCaret, { signal: listeners.signal });
-    input.addEventListener("blur", () => { syncSelection(); group = undefined; registry.reset(); scheduleCaret();
+    input.addEventListener("focus", () => { publishState(); scheduleCaret(); }, { signal: listeners.signal });
+    input.addEventListener("blur", () => { publishState(); syncSelection(); group = undefined; registry.reset(); scheduleCaret();
         // Clear the Escape prefix after the browser completes focus traversal.
         if (escapeSelection) queueMicrotask(() => { if (!disposed) escapeState(false); }); }, { signal: listeners.signal });
     function keydown(event: KeyboardEvent, captured?: KeyBinding): void {
@@ -1440,6 +1457,13 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             characterWarnings: warningOptions?.configuration ?? false });
     };
     const editor: TextEditor = Object.freeze({ element: root, input, workspace, tab: target, signal: listeners.signal, view, viewport, decorations: viewport.decorations, focus, activity, bracketMatching: brackets.handle, characterWarnings: warnings.handle,
+        getSnapshot: editorState.observable.getSnapshot,
+        subscribe(listener: () => void) {
+            if (disposed) throw new Error("Editor is disposed.");
+            const unsubscribe = editorState.observable.subscribe(listener);
+            const stop = () => { unsubscribe(); stateSubscriptions.delete(stop); };
+            stateSubscriptions.add(stop); return stop;
+        },
         operation: (options, work) => runEditorOperation(editor, options, work),
         latestOperation: () => createOperationLane(editor),
         captureInsertion: (kind = "paste") => {
@@ -1491,7 +1515,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         snapshot: () => Object.freeze({ ...activity(), inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, maxQueuedInputTurnMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs,
             dragScrollFrames, maxDragScrollStepMs, commits, conflicts, queuedInputUnits: inputQueue.pending?.units ?? 0, wordScanSteps, maxWordScanStepMs, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves }),
         dispose: () => {
-            if (disposed) return; disposed = true; activitySnapshot = undefined; editTransform = undefined;
+            if (disposed) return;
+            notifications.assertWritable(); disposed = true; activitySnapshot = undefined; editTransform = undefined;
             cancelLineRequest();
             registry.dispose(); brackets!.dispose(); paired.clear(); automaticIndent.clear();
             caretHistory.length = 0;
@@ -1505,6 +1530,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             graphemeCache = undefined; preferred = undefined; contextBuffer = undefined;
             if (composing && input.value !== context.text) conflict("composition-detached");
             composing = false;
+            publishState();
+            for (const stop of stateSubscriptions) stop();
             stopDrag();
             textDrag.dispose();
             caretLayer.dispose();

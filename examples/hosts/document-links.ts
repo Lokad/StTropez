@@ -152,7 +152,7 @@ export class HostDocumentLinks {
             const head = route.selections.ranges[route.selections.primary]!.head;
             const index = state.links.findIndex(link => link.from <= head && head <= link.to);
             if (index >= 0) this.render(route, Math.floor(index / linkLimits.page));
-            if (keyboard && origin.editor.element.ownerDocument.activeElement === origin.editor.input) this.list?.focus();
+            if (keyboard && origin.editor.getSnapshot().focused) this.list?.focus();
         });
     }
     private place(route: Route, doc: DocumentSnapshot, selections?: SelectionSet) {

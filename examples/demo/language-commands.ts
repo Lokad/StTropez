@@ -17,7 +17,7 @@ type Command = keyof typeof shortcuts;
 export function bindPopupCommands(scope: CleanupScope, editor: TextEditor, popup: HTMLElement, priority: number) {
     const events = new AbortController(); scope.defer(() => events.abort());
     popup.addEventListener("keydown", event => editor.keymap.handle(event), { signal: events.signal });
-    const enabled = () => !popup.hidden && (editor.input.matches(":focus") || popup.matches(":focus-within"));
+    const enabled = () => !popup.hidden && (editor.getSnapshot().focused || popup.matches(":focus-within"));
     return (id: string, label: string, key: string, run: () => boolean | void) => {
         scope.defer(editor.commands.register({ id, label, enabled, run }, { keys: [key], priority, shared: key !== "Enter" }).dispose);
     };
@@ -42,7 +42,7 @@ export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, o
         if (phase === "ready" && command !== "complete" && command !== "signature") { execute(command, menu); return; }
         const capture = captureViewRequest(editor.workspace, editor.tab, editor.view, { available: () => {
             const state = editor.activity();
-            return editor.input.matches(":focus") && !state.pendingInput && !state.pendingCommand && !state.composing && !state.disposed;
+            return editor.getSnapshot().focused && !state.pendingInput && !state.pendingCommand && !state.composing && !state.disposed;
         } });
         if (!capture) return;
         const next: Intent = intent = { command, menu, capture, stage: phase === "starting" ? "waiting" : "request" };

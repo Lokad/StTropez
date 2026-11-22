@@ -92,7 +92,7 @@ export class HostHoverTools {
                 { keys: ["Ctrl+k Ctrl+i", "Meta+k Meta+i"] });
             listeners.signal.addEventListener("abort", inspect.dispose, { once: true });
             const close = editor.commands.register({ id: "hover.dismiss", label: "Dismiss hover",
-                enabled: () => (editor.input.matches(":focus") || !!this.popup?.matches(":focus-within"))
+                enabled: () => (editor.getSnapshot().focused || !!this.popup?.matches(":focus-within"))
                     && (this.current === session || session.scheduled), run: () => {
                     if (this.current !== session) { cancelPointer(); return false; }
                     const visible = this.cell.get().visible; this.dismiss(); return visible;

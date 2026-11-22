@@ -174,7 +174,7 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         if (query && (status === "expired" || status === "idle")) { query = undefined; locationsOverlay.hide(); }
     }));
     const dismissOnBlur = () => queueMicrotask(() => {
-        if (!disposed && query && document.activeElement !== editor.input && !popup.contains(document.activeElement)) cancelNavigation();
+        if (!disposed && query && !editor.getSnapshot().focused && !popup.contains(document.activeElement)) cancelNavigation();
     });
     editor.input.addEventListener("blur", dismissOnBlur, { signal: events.signal });
     popup.addEventListener("focusout", dismissOnBlur, { signal: events.signal });

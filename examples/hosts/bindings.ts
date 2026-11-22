@@ -176,7 +176,8 @@ export class ViewBindings {
         if (this.composing() || this.review.controller.getSnapshot().status !== "ready") {
             this.reviewResult = "Finish composition and wait for the review before discarding changes."; this.reviewStatus!.textContent = this.reviewResult; return;
         }
-        if (this.review.panes.working.input.disabled || this.review.panes.working.input.readOnly) {
+        const { disabled, readOnlyReason } = this.review.panes.working.getSnapshot();
+        if (disabled || readOnlyReason) {
             this.reviewResult = "The working source is read-only. Changes were retained."; this.reviewStatus!.textContent = this.reviewResult; return;
         }
         try { const ticket = this.review.controller.beginReversion(); this.discardTickets.push({ ticket, variantGeneration: this.controller.variants.state.getSnapshot().generation });
@@ -371,6 +372,6 @@ export class ViewBindings {
             result: this.reviewResult, work: this.review!.getDiagnostics(), input: this.review!.panes.working.snapshot(), referenceInput: this.review!.panes.reference.snapshot(),
             discards: this.discardTickets.map(({ ticket, variantGeneration }) => ({ revision: ticket.capture.working.revision, current: ticket.isCurrent() && this.controller.variants.state.getSnapshot().generation === variantGeneration })),
             workingViewport: this.review!.panes.working.viewport.snapshot(), referenceViewport: this.review!.panes.reference.viewport.snapshot() } : null,
-        views: [...this.mounted].map(([id, { editor, documentId }]) => ({ id, documentId, viewId: editor.view.id, foldGeneration: editor.view.folding.getSnapshot().generation,
-            selection: editor.view.getSnapshot().selection, selectionSet: editor.view.getSnapshot().selectionSet, focused: editor.element.ownerDocument.activeElement === editor.element, metrics: editor.metrics() })) }; }
+        views: [...this.mounted].map(([id, { editor, documentId, candidate }]) => ({ id, documentId, viewId: editor.view.id, foldGeneration: editor.view.folding.getSnapshot().generation,
+            selection: editor.view.getSnapshot().selection, selectionSet: editor.view.getSnapshot().selectionSet, focused: candidate?.getSnapshot().focused ?? editor.element.matches(":focus"), metrics: editor.metrics() })) }; }
 }

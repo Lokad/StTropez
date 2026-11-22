@@ -49,6 +49,13 @@ Supply a view to keep its selections and folds across mounts. Otherwise the edit
 `editor.workspace` and `editor.view.documentId` identify the document. `editor.tab` holds the optional
 tab capture. `editor.signal` aborts when the mount is disposed.
 
+`editor.getSnapshot()` reports whether the text input has focus, including inside a shadow root
+(`focused`), or is composing (`composing`). `readOnlyReason` is `null` when human edits are permitted,
+`"read-only"` for a read-only view or resource, and `"edit-locked"` during an edit lease. A
+`disabled` editor cannot receive input. `editor.subscribe(listener)` observes changes to these
+fields. The frozen snapshot keeps its identity between changes. Disposal disables the editor,
+clears focus and composition, and releases its listeners.
+
 | Option | Behavior |
 | --- | --- |
 | `view` | Retained host view, or a new independent view when omitted |

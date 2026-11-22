@@ -291,7 +291,7 @@ function detachLanguage(): void {
     try { previous?.dispose(); } catch (error) { console.error(error); }
 }
 function mountFile(file: DemoFile, focus = false): void {
-    if (!project || disposed || editor?.activity().composing) return;
+    if (!project || disposed || editor?.getSnapshot().composing) return;
     const viewState = editor?.captureView();
     const previous = active;
     if (previous && viewState) savedViews.set(previous.view, viewState);
@@ -349,10 +349,9 @@ function mountFile(file: DemoFile, focus = false): void {
             : file.name + " is read-only.";
         element("status").textContent = project.message;
     }, { signal: viewListeners.signal });
-    editor.input.addEventListener("compositionstart", renderMetadata, { signal: viewListeners.signal });
-    editor.input.addEventListener("compositionend", renderMetadata, { signal: viewListeners.signal });
+    viewListeners.signal.addEventListener("abort", editor.subscribe(scheduleMetadata), { once: true });
     editor.element.addEventListener("keydown", event => {
-        if (event.isComposing || editor?.activity().composing || event.defaultPrevented) return;
+        if (event.isComposing || editor?.getSnapshot().composing || event.defaultPrevented) return;
         if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.key === "ArrowLeft") { event.preventDefault(); goBack(); return; }
     }, { signal: viewListeners.signal });
     bindPaneCommands(editor);
@@ -412,7 +411,7 @@ function loadProject(id: SampleId): Promise<DemoProject> {
     return load;
 }
 async function openSample(id: SampleId): Promise<void> {
-    if (editor?.activity().composing) { selectSample(project!.sample.id); return; }
+    if (editor?.getSnapshot().composing) { selectSample(project!.sample.id); return; }
     const generation = ++opening; selectSample(id);
     if (id === "host") {
         // Keep the current editor and sample picker usable while the shared stylesheet loads.
@@ -436,7 +435,7 @@ async function openSample(id: SampleId): Promise<void> {
     }
     if (disposed || generation !== opening) return;
     // A composition can start in the retained editor during asynchronous preparation.
-    if (editor?.activity().composing) { selectSample(project!.sample.id); sample.disabled = false; return; }
+    if (editor?.getSnapshot().composing) { selectSample(project!.sample.id); sample.disabled = false; return; }
     stopWorkspace?.(); stopWorkspace = undefined;
     stopRecovery?.(); stopRecovery = undefined;
     stopLanguage?.(); stopLanguage = undefined;
@@ -456,7 +455,7 @@ async function openSample(id: SampleId): Promise<void> {
     mountFile(next.files.find(file => file.name === activeFiles.get(id)) ?? next.files[0]!);
 }
 function setPanel(next: typeof panel): void {
-    if (!active || editor?.activity().composing) return;
+    if (!active || editor?.getSnapshot().composing) return;
     const samePanel = panel === next; panel = next;
     const wasCollapsed = element("workspace").classList.contains("collapsed");
     element("workspace").classList.remove("collapsed"); element("panel-collapse").textContent = "Hide";
@@ -645,7 +644,7 @@ on("language-retry", () => {
     folding?.refresh();
 });
 on("panel-collapse", () => {
-    if (editor?.activity().composing) return;
+    if (editor?.getSnapshot().composing) return;
     const collapsed = element("workspace").classList.toggle("collapsed"); element("panel-collapse").textContent = collapsed ? "Show" : "Hide";
     if (setReviewCollapsed) setReviewCollapsed(collapsed).focus();
     else if (collapsed && editor && output && activePane === output.editor) editor.focus();
@@ -653,11 +652,11 @@ on("panel-collapse", () => {
 });
 on("walkthrough-toggle", () => { element("walkthrough").hidden = !element("walkthrough").hidden; });
 on("reset", () => {
-    if (!project || project.sample.id !== sample.value || editor?.activity().composing || !window.confirm(`Restore the original files in “${project.sample.title}”? You can undo this change. Other samples and recovery drafts are kept. The saved copy changes only when you save locally.`)) return;
+    if (!project || project.sample.id !== sample.value || editor?.getSnapshot().composing || !window.confirm(`Restore the original files in “${project.sample.title}”? You can undo this change. Other samples and recovery drafts are kept. The saved copy changes only when you save locally.`)) return;
     project.reset(); renderMetadata(); editor?.focus();
 });
 async function save(reviewed = false): Promise<void> {
-    const captured = project; if (!captured || editor?.activity().composing) return;
+    const captured = project; if (!captured || editor?.getSnapshot().composing) return;
     await captured.save(renderMetadata, reviewed);
     if (!disposed && project === captured && comparison && active) {
         const ticket = comparison.controller.beginRefresh(); ticket.complete(captured.baseline(active));
@@ -739,7 +738,7 @@ element("files").addEventListener("click", event => {
     const file = project?.files.find(file => file.name === name); if (file) mountFile(file, true);
 }, { signal: listeners.signal });
 window.addEventListener("keydown", event => {
-    if (!event.isComposing && !editor?.activity().composing && (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "s") {
+    if (!event.isComposing && !editor?.getSnapshot().composing && (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "s") {
         event.preventDefault(); void save();
     }
 }, { signal: listeners.signal });

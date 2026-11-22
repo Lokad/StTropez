@@ -167,7 +167,7 @@ export class HostDocumentColors {
         const s = this.active;
         if (!s || this.disconnected || !this.canCapture(s.editor.view.documentId) || this.workspace.document(s.editor.view.documentId).key.variant !== "working") return;
         this.cancel(); this.owner = s; this.metrics.requested++;
-        void s.controller.request().then(() => { if (keyboard && this.owner === s && s.controller.getSnapshot().status === "ready" && s.editor.element.ownerDocument.activeElement === s.editor.input) this.list?.focus(); });
+        void s.controller.request().then(() => { if (keyboard && this.owner === s && s.controller.getSnapshot().status === "ready" && s.editor.getSnapshot().focused) this.list?.focus(); });
     }
     readonly preview = () => {
         const s = this.owner, state = this.cell.get(), proposed = parseColor(state.value), reference = s?.controller.getSnapshot().colors[state.selected];

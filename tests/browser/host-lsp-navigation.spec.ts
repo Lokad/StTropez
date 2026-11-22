@@ -41,7 +41,14 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
             socket.on("framereceived", frame => { const value = JSON.parse(frame.payload.toString()); if (Array.isArray(value.result) && value.result[0]?.targetUri) linkedResponses++; }); });
         const text = "catalogue;\r\nconst local = 1;\r\n"; await seed(page, text, 3); await button(page, "Add navigation companion").click();
         await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 3, head: 3 }, { anchor: 22, head: 22 }]); });
-        const before = await snapshot(page); replies.hold(); await button(page, "Find definition").click(); await expect.poll(replies.waiting).toBe(true);
+        await field(page).evaluate(input => {
+            const editor = input.closest<HTMLElement>(".st-editor")!, host = document.createElement("div");
+            host.style.height = "200px"; editor.before(host);
+            const root = host.attachShadow({ mode: "open" });
+            for (const style of document.querySelectorAll("style, link[rel=stylesheet]")) root.append(style.cloneNode(true));
+            root.append(editor);
+        });
+        const before = await snapshot(page); replies.hold(); await field(page).press("F12"); await expect.poll(replies.waiting).toBe(true);
         await field(page, "Configuration path").focus(); await replies.release(); await waitForNavigation(page);
         await expect(field(page, "Configuration path")).toBeFocused(); await expect(results(page)).toHaveText(["Navigation companion:1:7 · declaration"]);
         expect((await snapshot(page)).bindings.navigation.transport?.version).toBe("LSP3.17");
@@ -50,6 +57,8 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await results(page).first().click(); await waitForNavigation(page); await expect(field(page, "Secondary source")).toBeFocused(); expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")!.documentId).toBe(companion);
         await button(page, "Return to navigation origin").click(); await waitForNavigation(page); await expect(field(page)).toBeFocused(); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "primary")!.selectionSet);
         await expect(results(page).first()).toHaveAttribute("data-retained", "navigation-row");
+        await field(page).press("F12"); await expect(field(page, "Secondary source")).toBeFocused();
+        await button(page, "Return to navigation origin").click(); await expect(field(page)).toBeFocused();
         await button(page, "Find references").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(3);
         const sameList = results(page).filter({ hasText: "Navigation companion:" });
         await expect(sameList).toHaveCount(2);

@@ -71,7 +71,7 @@ export class HostSignatureTools {
             editor.input.removeEventListener("focus", focus); stop(); controller.dispose(); this.publish();
         } };
         this.sessions.add(session); editor.input.addEventListener("focus", focus);
-        if (editor.input.ownerDocument.activeElement === editor.input) focus();
+        if (editor.getSnapshot().focused) focus();
         return session.stop;
     }
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid signature delay."); this.delay = value; }
