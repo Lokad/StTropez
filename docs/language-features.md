@@ -325,7 +325,8 @@ HTML tags. Otherwise the client requests plaintext. Completion documentation alw
 
 `createSignatureController(editor, provider)` follows the primary caret in one editor.
 Call `request()` or press Ctrl/Cmd+Shift+Space to show parameter help, including in a read-only
-view. Typing an advertised trigger such as `(` requests help after the edit settles. Up and Down
+view. An accepted trigger such as `(` requests help at the resulting caret, including when the
+editor supplies the closing parenthesis. An intercepted key leaves help closed. Up and Down
 cycle through overloads. Escape closes the topmost popup. A higher-priority completion list gets
 these keys first.
 

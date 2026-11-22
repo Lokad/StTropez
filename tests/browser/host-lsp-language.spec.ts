@@ -3,6 +3,7 @@ import type { Page } from "@playwright/test";
 import { holdLspReplies } from "../helpers/lsp-replies.ts";
 import { coversHost } from "./host-cases.ts";
 import { hostTextEquals } from "../../scripts/host-scene.mjs";
+import { typedTextEvent } from "../../src/browser/input-events.ts";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const field = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
@@ -430,8 +431,19 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method === "textDocument/signatureHelp") contexts.push(value.params.context); }));
         const popup = page.getByRole("tooltip", { name: "Signature help", exact: true }), parameter = popup.getByLabel("Active signature parameter", { exact: true });
         await seed(page, "lookup");
-        await field(page).evaluate(node => node.addEventListener("keydown", e => { e.preventDefault(); e.stopImmediatePropagation(); }, { capture: true, once: true }));
-        await field(page).press("("); await expect.poll(async () => (await snapshot(page)).bindings.signature.scheduled).toBe(false); expect(contexts).toHaveLength(0);
+        await field(page).evaluate(node => node.addEventListener("keydown", e => {
+            e.preventDefault(); e.stopImmediatePropagation();
+            const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: 5, head: 5 });
+        }, { capture: true, once: true }));
+        await field(page).press("("); await expect.poll(async () => (await snapshot(page)).bindings.signature.scheduled).toBe(false);
+        expect((await snapshot(page)).bindings.signature.requested).toBe(0); await exact(page, "lookup");
+        await field(page).press("End"); expect(contexts).toHaveLength(0);
+        await field(page).evaluate((node, name) => node.closest(".st-editor")!.addEventListener(name, () => queueMicrotask(() => {
+            const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: 0, head: 0 });
+        }), { once: true }), typedTextEvent);
+        await field(page).press("("); await expect.poll(async () => (await snapshot(page)).bindings.signature.scheduled).toBe(false);
+        expect((await snapshot(page)).bindings.signature.requested).toBe(0);
+        await seed(page, "lookup");
         await field(page).pressSequentially("("); await expect(parameter).toHaveText("key: string"); expect(contexts[0]).toMatchObject({ triggerKind: 2, triggerCharacter: "(", isRetrigger: false });
         await field(page).press("ArrowDown"); await expect(parameter).toHaveText("keys: readonly string[]");
         await field(page).pressSequentially("x");

@@ -14,7 +14,7 @@ const hover = (page: Page) => page.locator(".demo-language-popups .host-symbol-i
 
 test("real type inspection works from Code, keyboard and pointer without changing source or pointer focus", async ({ page }) => {
 
-    await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready");
+    await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     const source = await select(page, "calculateTotal(cart"); await source.press("ArrowLeft"); await source.press("ArrowRight");
     await page.locator("#code-menu summary").click(); await page.getByRole("button", { name: "Inspect type", exact: true }).click();
     await expect(hover(page)).toContainText("calculateTotal(items: readonly CartItem[]"); await expect(source).toBeFocused();

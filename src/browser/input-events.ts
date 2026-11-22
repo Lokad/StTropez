@@ -1,5 +1,14 @@
-import type { DocumentId } from "../core/workspace.ts";
+import type { DocumentId, DocumentViewSnapshot } from "../core/workspace.ts";
 import type { TextEdit } from "../core/changes.ts";
+import type { SelectionSet } from "../core/selections.ts";
+
+/** Character input accepted by this editor, once per committed gesture or replay batch. */
+export const typedTextEvent = "sttropez-typed-text";
+export type TypedTextDetail = Readonly<{ documentId: DocumentId; revision: number; selectionSet: SelectionSet; text: string }>;
+export function dispatchTypedText(root: HTMLElement, { documentId, revision, selectionSet }: DocumentViewSnapshot, text: string): void {
+    root.dispatchEvent(new CustomEvent<TypedTextDetail>(typedTextEvent, { bubbles: true,
+        detail: Object.freeze({ documentId, revision, selectionSet, text }) }));
+}
 
 /** Dispatched on the editor's input. Bubbles within its root; does not cross shadow boundaries. */
 export const inputConflictEvent = "sttropez-conflict";

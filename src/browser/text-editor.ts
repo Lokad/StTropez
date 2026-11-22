@@ -10,7 +10,7 @@ import { createSelectionSet, planSelectionEdits } from "../core/selections.ts";
 import { selectionOccurrences } from "../core/selection-occurrences.ts";
 import type { Affinity } from "../core/positions.ts";
 import { captureTextSurface, ownsTextSurface } from "../core/workspace.ts";
-import type { DocumentId, DocumentView, TabId, TabTarget, Workspace } from "../core/workspace.ts";
+import type { DocumentId, DocumentView, DocumentViewSnapshot, TabId, TabTarget, Workspace } from "../core/workspace.ts";
 import type { EditKind, Selection } from "../core/history.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import type { BufferPosition, TextBuffer } from "../core/text-buffer.ts";
@@ -23,8 +23,8 @@ import type { GraphemePoint } from "../core/grapheme-point.ts";
 import { captureNativeInsertion, resolveNativeInsertion } from "./input-target.ts";
 import type { NativeInsertionTarget } from "./input-target.ts";
 import type { InputContext } from "./input-context.ts";
-import { editRefusedEvent, inputConflictEvent, type EditRefusedDetail } from "./input-conflict.ts";
-import type { InputConflictDetail } from "./input-conflict.ts";
+import { dispatchTypedText, editRefusedEvent, inputConflictEvent } from "./input-events.ts";
+import type { EditRefusedDetail, InputConflictDetail } from "./input-events.ts";
 import { mountViewport, validateRevealAlignment } from "./viewport.ts";
 import type { FoldContainsChange, RevealAlignment, RevealOptions, TextViewport, ViewportSettings } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
@@ -334,8 +334,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     function revealCaret(selected = view.getSnapshot().selection, vertical: NonNullable<RevealOptions["vertical"]> = "nearest"): void {
         viewport.revealOffset(selected.head, { horizontal: "nearest", vertical, affinity: selected.headAffinity ?? "after" });
     }
-    function apply(edits: readonly TextEdit[], selection: Selection | SelectionSet, kind: EditKind, type?: string, expectedRevision = revision, recoveryText?: string, adjustNewlines = false,
-        accepted?: (edits: readonly TextEdit[]) => void): boolean {
+    type ApplyOptions = { type?: string | undefined; expectedRevision?: number; recoveryText?: string | undefined;
+        adjustNewlines?: boolean; accepted?: ((edits: readonly TextEdit[]) => void) | undefined; typedText?: string | undefined };
+    function apply(edits: readonly TextEdit[], selection: Selection | SelectionSet, kind: EditKind,
+        { type, expectedRevision = revision, recoveryText, adjustNewlines, accepted, typedText }: ApplyOptions = {}): boolean {
         if (disposed) return false;
         hostInsertion?.cancel();
         if (readOnly) { conflict("read-only", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
@@ -358,7 +360,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             if (tail === "space" && (typed!.length > 1 || adjacent)) tail = "spaces";
             key = adjacent ? group!.key : `${view.id}:${scope}:${++serial}`;
         } else group = undefined;
-        committing = true; let applied = false;
+        committing = true; let applied = false, typedAt: DocumentViewSnapshot | undefined;
         try {
             const result = workspace.edit({ documentId, expectedRevision, origin: "human", edits, view,
                 ...("ranges" in selection ? { selectionSet: selection } : { selection }),
@@ -368,9 +370,16 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 inputQueue.consumeRunning();
                 if (accepted && workspace.document(documentId).revision === result.revision) accepted(edits);
                 commits++; const after = view.getSnapshot(); revealCaret(after.selection);
+                if (typedText && after.revision === result.revision && (!transformed || edits.some(edit => edit.insert.length > 0))) typedAt = after;
                 if (type && key) group = { type, revision: result.revision, selectionSet: after.selectionSet, tail, key }; }
             else conflict(result.reason, edits[0], expectedRevision, context.from, recoveryText);
-        } finally { committing = false; try { transformed?.complete?.(applied); } finally { refresh(); } }
+        } finally {
+            committing = false;
+            try { transformed?.complete?.(applied); } finally {
+                refresh();
+                if (typedAt && typedText && !disposed && live()) dispatchTypedText(root, typedAt, typedText);
+            }
+        }
         return applied;
     }
     function captureInput(type: string, data: string | null, wholeLines = false): InputCapture {
@@ -396,6 +405,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const to = exactTarget ? Math.max(selected.anchor, selected.head) : edit.from === edit.to ? from : projection.toModel(edit.to);
         const typing = type === "insertText" && !edit.insert.includes("\n"), deleting = type === "deleteContentBackward" || type === "deleteContentForward";
         const kind = typing ? "typing" : deleting ? "delete" : type === "insertCompositionText" ? "composition" : type === "insertFromPaste" ? "paste" : "replace";
+        const options = { type: typing || deleting ? type : undefined, expectedRevision: captured.revision,
+            typedText: type === "insertText" || type === "insertCompositionText" ? edit.insert : undefined };
         if (captured.selectionSet.ranges.length > 1 || kind === "paste" && captured.wholeLines && exactTarget) {
             // A native textarea describes one primary target. Replicate only an exact captured
             // selection replacement; neighbouring autocorrection/reconversion needs its own plan.
@@ -403,7 +414,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 conflict("unsupported-multiple-input-target", { from, to, insert: edit.insert }, captured.revision, projection.from); refresh(); return;
             }
             const plan = planInput(workspace.document(documentId).buffer, captured.selectionSet, edit.insert, kind, captured.wholeLines);
-            apply(plan.edits, plan.selectionSet, kind, typing || deleting ? type : undefined, captured.revision); return;
+            apply(plan.edits, plan.selectionSet, kind, options); return;
         }
         const buffer = workspace.document(documentId).buffer;
         const converted = kind === "paste" && pasteLineEndings !== "preserve" && /[\r\n]/.test(edit.insert)
@@ -414,7 +425,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             : from + (converted?.mapping.map(offset - edit.from).offset ?? offset - edit.from);
         const backward = input.selectionDirection === "backward", selection = exactTarget ? { anchor: from + insert.length, head: from + insert.length }
             : { anchor: map(backward ? input.selectionEnd : input.selectionStart), head: map(backward ? input.selectionStart : input.selectionEnd) };
-        apply([{ from, to, insert }], selection, kind, typing || deleting ? type : undefined, captured.revision);
+        apply([{ from, to, insert }], selection, kind, options);
     }
     function history(direction: "undo" | "redo"): void {
         if (disposed) return; hostInsertion?.cancel(); cancelWord(); group = undefined; syncSelection();
@@ -433,7 +444,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     }
     function replaceSelection(insert: string, kind: EditKind, type?: string, recoveryText?: string, wholeLines = false): boolean {
         const document = workspace.document(documentId), plan = planInput(document.buffer, view.getSnapshot().selectionSet, insert, kind, wholeLines);
-        return apply(plan.edits, plan.selectionSet, kind, type, document.revision, recoveryText);
+        return apply(plan.edits, plan.selectionSet, kind, { type: kind === "typing" ? type : undefined, expectedRevision: document.revision,
+            recoveryText, typedText: type === "insertText" ? insert : undefined });
     }
     // Delayed commands belong to this captured tab, revision and complete selection set.
     // cancelWord releases scans, row preparation and ordered input; no focused-view lookup occurs later.
@@ -504,7 +516,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const selections = createSelectionSet(capture.buffer.length, ranges, primary);
         completeCaptured(capture, () => {
         if (capture.deleting) { const plan = planSelectionEdits(capture.buffer.length, selections, "");
-            return apply(plan.edits, plan.selectionSet, "delete", type, capture.revision); }
+            return apply(plan.edits, plan.selectionSet, "delete", { type, expectedRevision: capture.revision }); }
         else { cancelWord(); group = undefined; view.setSelections(capture.revision, selections.ranges, selections.primary);
             const selected = view.getSnapshot().selection;
             viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" }); refresh(); }
@@ -852,12 +864,16 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             completeCaptured(capture, () => {
                 const plan = result.result!;
                 const autoIndent = language.enter !== undefined && (command === "newline" || command === "insert-line-above" || command === "insert-line-below");
-                if (plan.edits.length) return apply(plan.edits, plan.selectionSet, typeof command === "object" ? "typing" : "replace", undefined, capture.revision, undefined,
-                    autoIndent, autoIndent ? edits => automaticIndent.remember(workspace.document(documentId), edits, plan.edits)
-                        : typeof command === "object" ? acceptPairs : undefined);
+                if (plan.edits.length) return apply(plan.edits, plan.selectionSet, typeof command === "object" ? "typing" : "replace", {
+                    expectedRevision: capture.revision, adjustNewlines: autoIndent, typedText: typeof command === "object" ? command.character : undefined,
+                    accepted: autoIndent ? edits => automaticIndent.remember(workspace.document(documentId), edits, plan.edits)
+                        : typeof command === "object" ? acceptPairs : undefined });
                 if (overtyped.length) acceptPairs(plan.edits);
-                group = undefined; view.setSelections(capture.revision, plan.selectionSet.ranges, plan.selectionSet.primary);
-                revealCaret(); refresh(); return true;
+                group = undefined;
+                if (!view.setSelections(capture.revision, plan.selectionSet.ranges, plan.selectionSet.primary)) return false;
+                revealCaret(); refresh();
+                if (overtyped.length && typeof command === "object") dispatchTypedText(root, view.getSnapshot(), command.character);
+                return true;
             });
         }, typeof command === "object" ? command.character : "");
         group = undefined; step(); return true;
@@ -960,7 +976,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             // The same captured command path serves keyboard and cancellable native input.
         } else if (action.kind === "text") {
             const typing = action.type === "insertText" && !action.text.includes("\n");
-            if (!replaceSelection(action.text, typing ? "typing" : action.type === "insertFromPaste" ? "paste" : "replace", typing ? "insertText" : undefined, action.text, action.wholeLines)) {
+            if (!replaceSelection(action.text, typing ? "typing" : action.type === "insertFromPaste" ? "paste" : "replace", action.type, action.text, action.wholeLines)) {
                 return "reported";
             }
         } else {
@@ -1042,7 +1058,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 && input.value.length - (input.selectionEnd - input.selectionStart) + event.data.length > inputContextUnits) {
                 event.preventDefault();
                 const text = event.data.replace(/\r\n?/g, "\n"), typing = !text.includes("\n");
-                replaceSelection(text, typing ? "typing" : "replace", typing ? "insertText" : undefined);
+                replaceSelection(text, typing ? "typing" : "replace", "insertText");
                 return;
             }
             insertion = captureInput(event.inputType, event.data, event.inputType === "insertFromPaste" && copiedLines(event.dataTransfer));
@@ -1433,7 +1449,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             if (!available()) return;
             syncSelection(); view.folding.revealSelection(view.folding.getSnapshot());
             let captured: CapturedInsertion | undefined;
-            captured = captureInsertion(workspace, target, view, available, (plan, expected) => apply(plan.edits, plan.selectionSet, kind, undefined, expected),
+            captured = captureInsertion(workspace, target, view, available, (plan, expected) => apply(plan.edits, plan.selectionSet, kind, { expectedRevision: expected }),
                 () => { if (hostInsertion === captured) hostInsertion = undefined; });
             hostInsertion = captured; return captured;
         },

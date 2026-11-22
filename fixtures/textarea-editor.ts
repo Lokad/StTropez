@@ -7,8 +7,8 @@ import type { EditKind, Selection } from "../src/core/history.ts";
 import type { TextBuffer } from "../src/core/text-buffer.ts";
 import { captureNativeInsertion, resolveNativeInsertion } from "../src/browser/input-target.ts";
 import type { NativeInsertionTarget } from "../src/browser/input-target.ts";
-import { inputConflictEvent } from "../src/browser/input-conflict.ts";
-import type { InputConflictDetail } from "../src/browser/input-conflict.ts";
+import { inputConflictEvent } from "../src/browser/input-events.ts";
+import type { InputConflictDetail } from "../src/browser/input-events.ts";
 import type { ViewRestoreOptions, ViewState } from "../src/browser/view-state.ts";
 
 export type TextareaEditor = Readonly<{ element: HTMLTextAreaElement; view: DocumentView;

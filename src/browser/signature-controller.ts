@@ -1,7 +1,7 @@
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
-import type { SelectionSet } from "../core/selections.ts";
 import { ownsTextSurface } from "../core/workspace.ts";
+import type { DocumentViewSnapshot } from "../core/workspace.ts";
 import { createLspSignatureClient } from "../protocol/lsp-language.ts";
 import type { LspSignatureContext } from "../protocol/lsp-language.ts";
 import type { LspSignature } from "../protocol/lsp-features.ts";
@@ -9,6 +9,8 @@ import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
 import { captureViewRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import type { TextEditor } from "./text-editor.ts";
+import { typedTextEvent, type TypedTextDetail } from "./input-events.ts";
+import { isFocused } from "./dom-focus.ts";
 
 export type SignatureControllerOptions = Readonly<{ canCapture?: () => boolean; beforeRequest?: () => void; prepareRequest?: LspPrepare }>;
 export type SignatureSnapshot = Readonly<{
@@ -34,8 +36,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
     const events = new AbortController(), notifications = workspace.createNotificationScope(), cell = new Store(idle, notifications);
     const stops = new Set<() => void>();
     let client: Client | undefined, job: Request | undefined, armed = false, requested = 0, applied = 0;
-    type InputStart = { revision: number; selection: SelectionSet };
-    let queued: { timer: number; context: LspSignatureContext; start?: InputStart } | undefined;
+    let queued: { timer: number; context: LspSignatureContext } | undefined;
     const publish = (next: SignatureSnapshot) => notifications.publish(cell, Object.freeze(next));
     const available = () => {
         const activity = editor.activity();
@@ -54,24 +55,25 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         notifications.assertWritable(); end();
         if (!events.signal.aborted && cell.get() !== idle) publish(idle);
     }
-    function schedule(context: LspSignatureContext, start?: InputStart) {
+    function schedule(context: LspSignatureContext, afterTyping?: DocumentViewSnapshot) {
         stopTimer();
         const deadline = win.performance.now() + 5000;
         const poll = () => {
-            if (!queued || !armed || input.ownerDocument.activeElement !== input || win.performance.now() >= deadline) { cancel(); return; }
+            if (!queued || !armed || !isFocused(input) || win.performance.now() >= deadline) { cancel(); return; }
             if (!available()) { queued.timer = win.setTimeout(poll, 50); return; }
             queued = undefined;
-            if (start && workspace.document(view.documentId).revision === start.revision && view.getSnapshot().selectionSet === start.selection) {
-                armed = !!job; return;
+            if (afterTyping && view.getSnapshot() !== afterTyping) {
+                if (context.isRetrigger) request(changed); else cancel();
+                return;
             }
             request(context);
         };
-        queued = { context, timer: win.setTimeout(poll, 50), ...(start ? { start } : {}) };
+        queued = { context, timer: win.setTimeout(poll, 50) };
     }
     function expire(current: Request) {
         if (current !== job) return;
         release(); publish({ ...idle, status: "expired", message: "Signature context changed." });
-        if (armed && provider.getSnapshot().phase === "ready" && input.ownerDocument.activeElement === input) {
+        if (armed && provider.getSnapshot().phase === "ready" && isFocused(input)) {
             if (!queued) schedule(changed);
         } else end();
     }
@@ -90,7 +92,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         if (context === manual) {
             const caret = view.getSnapshot().selection;
             editor.viewport.revealOffset(caret.head, { horizontal: "nearest", vertical: "nearest", affinity: caret.headAffinity ?? "after" });
-            if (input.ownerDocument.activeElement === input) editor.viewport.element.scrollIntoView({ block: "nearest", inline: "nearest" });
+            if (isFocused(input)) editor.viewport.element.scrollIntoView({ block: "nearest", inline: "nearest" });
         }
         const capture = captureViewRequest(workspace, tab, view, { available });
         if (!capture) { cancel(); return; }
@@ -119,18 +121,25 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         const index = (cell.get().activeSignature + delta + help.signatures.length) % help.signatures.length;
         if (help.selectOverload(help.signatures[index]!)) show(index);
     }
-    function typed(character: string | null, keydown: boolean) {
-        if (input.readOnly || editor.activity().composing || !ownsTextSurface(workspace, view, tab) || !armed && options.canCapture?.() === false) return;
+    function typed(event: Event) {
+        const detail = (event as CustomEvent<TypedTextDetail>).detail, after = view.getSnapshot();
+        if (event.target !== editor.element || detail?.documentId !== view.documentId || detail.revision !== after.revision
+            || detail.selectionSet !== after.selectionSet || typeof detail.text !== "string" || !ownsTextSurface(workspace, view, tab)) return;
         const doc = workspace.document(view.documentId);
-        const trigger = character && provider.queryFeatureOptions("textDocument/signatureHelp", doc).some(option =>
-            Array.isArray(option.triggerCharacters) && option.triggerCharacters.includes(character)
-            || armed && Array.isArray(option.retriggerCharacters) && option.retriggerCharacters.includes(character));
-        if (!trigger && (keydown || !armed)) return;
+        let trigger = "";
+        for (const option of provider.queryFeatureOptions("textDocument/signatureHelp", doc)) {
+            for (const list of [option.triggerCharacters, armed && option.retriggerCharacters]) {
+                if (Array.isArray(list)) for (const value of list) {
+                    if (typeof value === "string" && value.length > trigger.length && value.length <= 8 && detail.text.endsWith(value)) trigger = value;
+                }
+            }
+        }
+        const caret = after.selection.head;
+        if (trigger && (caret < trigger.length || doc.buffer.slice(caret - trigger.length, caret) !== trigger)) trigger = "";
+        if (!trigger && !armed) return;
         const prior = queued?.context;
-        const context = trigger ? { triggerKind: 2 as const, triggerCharacter: character, isRetrigger: prior?.triggerCharacter === character ? prior.isRetrigger : armed } : prior ?? changed;
-        // A key may be intercepted. Only send a typed trigger once text or the caret actually changed.
-        const start = queued ? queued.start : { revision: doc.revision, selection: view.getSnapshot().selectionSet };
-        armed = true; schedule(context, start);
+        const context = trigger ? { triggerKind: 2 as const, triggerCharacter: trigger, isRetrigger: prior?.isRetrigger ?? armed } : prior ?? changed;
+        armed = true; schedule(context, after);
     }
     function bind(id: string, label: string, keys: string[], enabled: () => boolean, run: () => void | boolean) {
         const registration = editor.commands.register({ id, label, enabled, run }, { keys, priority: 10 });
@@ -142,9 +151,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         bind("signature.next", "Next signature", ["ArrowDown"], canCycle, () => cycle(1));
         bind("signature.dismiss", "Dismiss signature help", ["Escape"], () => armed, () => { const visible = !!cell.get().anchor; cancel(); return visible; });
     } catch (error) { events.abort(); throw error; }
-    // Paired punctuation may commit on keydown, before the browser can send beforeinput.
-    input.addEventListener("keydown", e => { if (!e.defaultPrevented && !e.isComposing && !e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) typed(e.key, true); }, { capture: true, signal: events.signal });
-    input.addEventListener("beforeinput", e => { if (!e.defaultPrevented && !e.isComposing) typed(e.data, false); }, { capture: true, signal: events.signal });
+    editor.element.addEventListener(typedTextEvent, typed, { signal: events.signal });
     for (const event of ["blur", "compositionstart", "paste", "cut"]) input.addEventListener(event, cancel, { signal: events.signal });
     const stopProvider = provider.subscribe(() => {
         const current = job;

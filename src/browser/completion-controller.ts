@@ -1,5 +1,6 @@
 import { ProtocolDecodeError, rpcCodes, staleRequest } from "../protocol/wire.ts";
 import { isFocused } from "./dom-focus.ts";
+import { dispatchTypedText } from "./input-events.ts";
 import { codeWordConstituentPattern } from "../core/words.ts";
 import { ownsTextSurface } from "../core/workspace.ts";
 import type { ResourceLease, ResourceMetadata } from "../core/workspace.ts";
@@ -242,7 +243,10 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
         if (!result.applied) { expire(`LSP completion rejected: ${result.reason}.`); return false; }
         if (first && first.index !== 0) snippet = { stops: plan.snippet!, active: 0, revision: result.revision, authority: authority(),
             indentation: captured.indentation, maxUnits: completion.insertion.maxUnits, primaryGroup: captured.selections.primary };
-        counters.applied++; cancelAuto(); release(); publish("LSP completion applied."); editor.viewport.revealOffset(editor.view.getSnapshot().selection.head); editor.focus(); return true;
+        const after = editor.view.getSnapshot();
+        counters.applied++; cancelAuto(); release(); publish("LSP completion applied."); editor.viewport.revealOffset(after.selection.head); editor.focus();
+        if (character && available() && after.revision === result.revision) dispatchTypedText(editor.element, after, character);
+        return true;
     };
     const accept = (mode: "insert" | "replace", id?: number): boolean => {
         const captured = job, item = captured?.visible[captured.choice];
@@ -333,7 +337,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
         cancelAuto();
         if (snippet) return;
         const captured = job, selected = captured?.visible[captured.choice];
-        if (!event.defaultPrevented && !event.isComposing && !editor.activity().composing && event.inputType === "insertText" && event.data?.length === 1 && captured && selected?.commitCharacters.includes(event.data)) {
+        if (event.cancelable && !event.defaultPrevented && !event.isComposing && !editor.activity().composing && event.inputType === "insertText" && event.data?.length === 1 && captured && selected?.commitCharacters.includes(event.data)) {
             if (apply("replace", captured.id, event.data)) {
                 event.preventDefault();
                 // The cancelled native input won't schedule a trigger. Use the committed caret.

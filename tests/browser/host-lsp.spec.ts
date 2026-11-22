@@ -2,6 +2,7 @@ import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { publishFixtureDiagnostics, sourceDiagnosticUri } from "./fixture-diagnostics.ts";
 import { holdLspReplies } from "../helpers/lsp-replies.ts";
+import { recordTypedText } from "../helpers/typed-text.ts";
 // Explicit background process ownership also avoids the known Firefox context-deletion issue.
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
@@ -99,11 +100,13 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         await field(page).press("ArrowDown"); await expect(page.getByLabel("Completion detail", { exact: true })).toContainText("Resolved sampleWithImport");
         await expect.poll(async () => (await provider(page)).pending).toBe(false);
         await expect(page.getByLabel("Completion detail", { exact: true })).toContainText("<b>Literal completion detail</b>"); expect(await page.locator(".host-language b").count()).toBe(0);
+        const events = await recordTypedText(page);
         const typed = await source(page), depth = (await snapshot(page)).history.undoDepth; await field(page).pressSequentially(";"); await ready(page);
         const expected = "// resolved import\r\nconst sampleValue; = 1;"; expect(await source(page)).toBe(expected); expect((await snapshot(page)).history.undoDepth).toBe(depth + 1);
         expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection.head).toBe(expected.indexOf("sampleValue;") + 12);
         await field(page, "Secondary source").press("Control+z"); expect(await source(page)).toBe(typed);
         await field(page, "Secondary source").press("Control+Shift+z"); expect(await source(page)).toBe(expected);
+        expect(await events.evaluate(list => list.map(event => event.text))).toEqual([";"]);
     });
     test("pending acceptance applies once and expires on selection, focus or document changes", async ({ page }) => {
         let hold = true, release: (() => void) | undefined;

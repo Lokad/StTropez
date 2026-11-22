@@ -1,5 +1,5 @@
 import { Workspace, TextBuffer, TextDiff, WordCursor, importText, exportText, anchoredRange, composePositionMaps, createGraphemeCursor } from "sttropez";
-import { editRefusedEvent, inputConflictEvent, createFontAssetController, createFindController, createNavigationHistory, createRegexFindBackend, mountTextComparison, mountTextViewport, mountTextEditor } from "sttropez/browser";
+import { editRefusedEvent, inputConflictEvent, typedTextEvent, type TypedTextDetail, createFontAssetController, createFindController, createNavigationHistory, createRegexFindBackend, mountTextComparison, mountTextViewport, mountTextEditor } from "sttropez/browser";
 import * as browserApi from "sttropez/browser";
 import { fontFixture } from "./font-fixture.js";
 import { WorkspaceCommands } from "sttropez";
@@ -295,6 +295,8 @@ const fixture = { text: () => workspace.document(documentId).text(),
             const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: kind, variant: "working" }, kind, { value: original });
             const tab = model.tabs.open({ kind: "text", documentId: source.documentId }, kind), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
             const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored ordered input" }), recovered: string[] = [];
+            const typed: TypedTextDetail[] = [];
+            host.addEventListener(typedTextEvent, event => typed.push((event as CustomEvent<TypedTextDetail>).detail));
             editor.input.addEventListener(inputConflictEvent, event => recovered.push((event as CustomEvent<InputConflictDetail>).detail.attemptedText));
             const ready = async () => { for (let turn = 0; ; turn++) { const s = editor.snapshot();
                 if (!s.pendingInput && !s.pendingWord && !s.pendingGrapheme && !s.pendingCaret && !editor.viewport.snapshot().pending) return;
@@ -312,8 +314,10 @@ const fixture = { text: () => workspace.document(documentId).text(),
             };
             try {
                 editor.focus(); editor.view.setSelections(0, heads.map(head => ({ anchor: head, head })), heads.length - 1); await ready(); command(); type();
-                if (!editor.snapshot().pendingInput || model.document(source.documentId).revision !== 0) throw new Error("Compiled command failed to yield/capture input.");
+                if (!editor.snapshot().pendingInput || model.document(source.documentId).revision !== 0 || typed.length) throw new Error("Compiled command failed to yield/capture input.");
                 await ready(); const changed = model.document(source.documentId), parts: string[] = []; let from = 0;
+                if (kind !== "paste-word" && (typed[0]?.text !== text || typed[0].documentId !== source.documentId || typed[0].revision !== changed.revision
+                    || typed[0].selectionSet !== editor.view.getSnapshot().selectionSet || !Object.isFrozen(typed[0]))) throw new Error("Compiled typing reported the wrong committed input.");
                 for (const head of destinations) { parts.push(original.slice(from, head), kind === "paste-word" ? text.replace("\r\n", "\n") : text); from = head; } parts.push(original.slice(from)); const expected = kind === "pointer-word" ? text : parts.join("");
                 if (changed.buffer.length !== expected.length) throw new Error("Compiled ordered input length changed.");
                 for (let at = 0; at < expected.length; at += 32768) if (changed.buffer.slice(at, Math.min(expected.length, at + 32768)) !== expected.slice(at, at + 32768)) throw new Error("Compiled input used the wrong destination.");
@@ -322,6 +326,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
                 if (editor.view.getSnapshot().selectionSet.ranges.some((range, i) => kind === "pointer-word" ? range.anchor !== 0 || range.head !== original.length : range.anchor !== destinations[i] || range.head !== destinations[i])) throw new Error("Compiled undo lost moved selections.");
                 const document = model.document(source.documentId); editor.view.setSelections(document.revision, heads.map(head => ({ anchor: head, head })), heads.length - 1); await ready(); command(); type(); editor.dispose();
                 if (recovered.length !== 1 || recovered[0] !== text || model.document(source.documentId).buffer !== document.buffer) throw new Error("Compiled detach lost pending input.");
+                if (typed.length !== (kind === "paste-word" ? 0 : 1)) throw new Error("Paste, Undo or a cancelled input produced a typing event.");
             } finally { editor.dispose(); host.remove(); model.tabs.close(tab); model.releaseResource(source.id, true); }
             const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled ordered input leaked.");
             results.push({ kind, exactText: true, sharedHistory: true, detachRecovery: true, exports: 0, released: { views, leases, subscriptions } });

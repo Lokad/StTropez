@@ -1,5 +1,6 @@
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { recordTypedText } from "../helpers/typed-text.ts";
 
 test("an async editor operation applies once and releases every expired or failed request", async ({ page }) => {
     const result = await page.evaluate(async () => {
@@ -252,6 +253,7 @@ test("typing, newline, paste and history keep a visible caret in place on both s
 });
 
 test("captured host insertion uses the input transform once and expires before later typing", async ({ page }) => {
+    const events = await recordTypedText(page);
     await page.evaluate(() => { window.editingFixture.setText("abc"); window.editingFixture.select("primary", { anchor: 1, head: 2 }); }); await ready(page);
     expect(await page.evaluate(() => {
         const f = window.editingFixture, completions: boolean[] = [];
@@ -274,6 +276,13 @@ test("captured host insertion uses the input transform once and expires before l
         text: window.editingFixture.range(0, 3), pending: window.editingFixture.snapshot().primary.pendingInput })))
         .toEqual({ superseded: true, aborted: true, late: false, text: "aqc", pending: false });
     await pending.dispose();
+    const release = await page.evaluateHandle(() => {
+        const f = window.editingFixture, selectionSet = f.snapshot().primary.viewport.selectionSet;
+        if (!selectionSet) throw new Error("Expected the primary editor's current selections.");
+        return f.registerEditTransform(() => ({ edits: [], selectionSet }));
+    });
+    await source.press("x"); await release.evaluate(stop => stop()); await release.dispose();
+    expect(await events.evaluate(list => list.map(event => event.text))).toEqual(["q"]);
 });
 
 test("real typing in 100k lines uses bounded native context and shared grouped undo", async ({ page }) => {
@@ -404,6 +413,7 @@ test("pasting at mixed line endings respects each caret and the host's literal o
 });
 
 test("synthetic composition commits once and rejects stale, readonly and expired captured targets", async ({ page }) => {
+    const events = await recordTypedText(page);
     await page.evaluate(() => { window.editingFixture.setText("alpha omega"); window.editingFixture.select("primary", { anchor: 6, head: 11 }); window.editingFixture.focus("primary"); }); await ready(page);
     const input = page.getByRole("textbox", { name: "Primary source" });
     const start = async () => input.evaluate(node => {
@@ -411,7 +421,8 @@ test("synthetic composition commits once and rejects stale, readonly and expired
         input.setRangeText("東京", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", isComposing: true }));
     });
     const end = async () => input.evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "東京" })));
-    await start(); expect((await state(page)).primary.commits).toBe(0); await end(); await ready(page);
+    await start(); expect((await state(page)).primary.commits).toBe(0); expect(await events.jsonValue()).toHaveLength(0);
+    await end(); await ready(page);
     expect(await page.evaluate(() => window.editingFixture.range(0, 8))).toBe("alpha 東京"); expect((await state(page)).primary.commits).toBe(1);
     for (const reason of ["stale-revision", "read-only", "expired-view"]) {
         await start();
@@ -426,6 +437,7 @@ test("synthetic composition commits once and rejects stale, readonly and expired
         if (reason === "read-only") await page.evaluate(() => window.editingFixture.readOnly(false));
     }
     expect((await state(page)).primary.commits).toBe(1);
+    expect(await events.evaluate(list => list.map(event => event.text))).toEqual(["東京"]);
     expect((await state(page)).secondary.viewport.revision).toBe((await state(page)).document!.revision);
 });
 
@@ -479,12 +491,16 @@ test("Backspace removes an automatic pair through a mapped edit and undo, but le
 });
 
 test("line indentation/outdent, CRLF Enter, paired brackets and vertical navigation use model selections", async ({ page }) => {
+    const events = await recordTypedText(page);
     await page.evaluate(() => { window.editingFixture.setText("one\n\ttwo\nthree"); window.editingFixture.select("primary", { anchor: 0, head: 9 }); window.editingFixture.focus("primary"); }); await ready(page);
     await page.keyboard.press("Tab"); expect(await page.evaluate(() => window.editingFixture.range(0, 22))).toBe("    one\n    \ttwo\nthree");
     await page.keyboard.press("Shift+Tab"); expect(await page.evaluate(() => window.editingFixture.range(0, 14))).toBe("one\n\ttwo\nthree");
     await page.keyboard.press("ControlOrMeta+End"); await page.keyboard.press("End"); await page.keyboard.type("(");
     expect(await page.evaluate(() => window.editingFixture.range(14, 16))).toBe("()");
     await page.keyboard.type(")"); expect((await state(page)).document!.length).toBe(16); expect((await state(page)).primary.selection.head).toBe(16);
+    const pairRevision = (await state(page)).document!.revision;
+    expect(await events.evaluate(list => list.map(e => [e.text, e.revision, e.selectionSet.ranges[e.selectionSet.primary]!.head])))
+        .toEqual([["(", pairRevision, 15], [")", pairRevision, 16]]);
     await page.keyboard.press("ControlOrMeta+Home"); await ready(page); await page.keyboard.press("ArrowDown");
     expect((await state(page)).primary.selection.head).toBe(4);
     await page.keyboard.press("ArrowUp"); expect((await state(page)).primary.selection.head).toBe(0);
