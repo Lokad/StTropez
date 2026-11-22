@@ -18,7 +18,7 @@ async function select(page: Page, at: number) { await input(page).focus(); await
 async function seed(page: Page, text = raw) { await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, text); await select(page, text.indexOf("catalogue") + 2); }
 async function preview(page: Page, value = "inventory") { await name(page).fill(value); await button(page, "Prepare rename preview").click(); await waitForRename(page); }
 async function exact(page: Page, text: string) { expect(await hostTextEquals(page, text)).toBe(true); }
-async function dispose(page: Page) { await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.bindings.rename).toMatchObject({ transport: null, sessions: 0, subscriptions: 0, disposed: true }); }
+async function dispose(page: Page) { await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.bindings.rename).toMatchObject({ sessions: 0, subscriptions: 0, disposed: true }); }
 for (const host of ["plain", "react"] as const) test.describe(`${host} LSP rename host`, () => {
     test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(input(page)).toBeVisible(); await waitForRename(page); });
     if (coversHost("candidate-hosts", host, "candidate")) test("new-name preview applies exact provider edits across captured resources with shared complete-set history", async ({ page }) => {
@@ -49,7 +49,11 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP renam
         await input(page, "Secondary source").press("Control+z"); await waitForRename(page); await exact(page, raw); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet.ranges.map(r => ({ anchor: r.anchor, head: r.head }))).toEqual(ranges);
         await input(page, "Secondary source").press("Control+Shift+z"); await waitForRename(page); await button(page, "Open renamed changes in Navigation companion").click(); await waitForRename(page); await expect(input(page, "Secondary source")).toBeFocused();
         await expect(button(page, "Open renamed changes in Navigation companion")).toHaveAttribute("data-retained", "rename-resource");
-        await input(page, "Secondary source").press("Control+z"); await waitForRename(page); await exact(page, raw); await input(page, "Secondary source").press("Control+Shift+z"); await waitForRename(page); await exact(page, expected); expect((await snapshot(page)).source.exports).toBe(0); await dispose(page); await expect.poll(() => closed).toBe(opened);
+        await input(page, "Secondary source").press("Control+z"); await waitForRename(page); await exact(page, raw);
+        expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe("const catalogue = 1;\r\ncatalogue;\r\n");
+        await input(page, "Secondary source").press("Control+Shift+z"); await waitForRename(page); await exact(page, expected);
+        expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe("const café = 1;\r\ncafé;\r\n");
+        expect((await snapshot(page)).source.exports).toBe(0); await dispose(page); await expect.poll(() => closed).toBe(opened);
     });
     if (coversHost("candidate-hosts", host, "candidate")) test("malformed targets, authority changes, cancelled captures and reconnect leave editing available", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/rename"); await page.reload();
@@ -64,10 +68,16 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP renam
         expect((await snapshot(page)).bindings.rename.state.status).toBe("ready"); expect((await snapshot(page)).history).toEqual(before.history);
         expect(await targets(page).count()).toBeGreaterThan(0);
         expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe("const catalogue = 1;\r\ncatalogue;\r\n"); await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
+        await preview(page); await expect(button(page, "Apply captured rename")).toBeEnabled();
+        const retired = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.rename.state.preview!);
+        await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
+        await select(page, raw.indexOf("catalogue") + 2); await preview(page); await expect(button(page, "Apply captured rename")).toBeEnabled();
+        expect(await retired.evaluate(p => [p.confirm(), p.readPage() === undefined])).toEqual([false, true]); await retired.dispose();
+        await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
         for (const mode of ["selection", "typing", "remount"] as const) {
             await select(page, raw.indexOf("catalogue") + 2); await name(page).fill("inventory"); replies.hold(); await button(page, "Prepare rename preview").click(); await expect.poll(replies.waiting).toBe(true); expect((await snapshot(page)).bindings.rename.state.pending).toBe(true);
-            const token = (await snapshot(page)).bindings.rename.state.token;
-            await name(page).press("Enter"); expect((await snapshot(page)).bindings.rename.state.token).toBe(token);
+            const pendingRequests = requests;
+            await name(page).press("Enter"); expect(requests).toBe(pendingRequests);
             if (mode === "selection") await select(page, raw.indexOf("catalogue") + 3);
             else if (mode === "typing") { await input(page).press("Control+End"); await input(page).pressSequentially("x"); await waitForRename(page); await input(page).press("Control+z"); }
             else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });

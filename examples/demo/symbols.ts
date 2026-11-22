@@ -3,7 +3,6 @@ import { captureViewRequest, createNavigationController, mountAnchoredOverlay } 
 import type { CapturedViewRequest, NavigationChoice, NavigationResult, TextEditor } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import { HostRenameTools } from "../hosts/rename.ts";
-import { createLspRenameClient } from "../shared/language/lsp-rename-client.ts";
 import type { DemoFile } from "./project.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 import { bindPopupCommands } from "./language-commands.ts";
@@ -107,7 +106,7 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
             error instanceof Error ? `Cannot open this location: ${error.message}` : "This location is unavailable in the sample."); });
     }
     const rename = new HostRenameTools(workspace, () => idle(), id => id === file.resource.documentId && valid() ? editor : undefined,
-        () => createLspRenameClient({ provider }), { open: beginRename });
+        { provider }, { open: beginRename });
     scope.defer(() => rename.dispose());
     const heading = document.createElement("h2"), status = document.createElement("p"), label = document.createElement("label"), name = document.createElement("input");
     heading.textContent = `Rename in ${file.name}`; status.setAttribute("aria-label", "Rename status"); name.maxLength = 256; label.append("New name ", name);
@@ -143,7 +142,7 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         status.textContent = state.status === "pending" ? "Preparing rename preview…" : state.status === "ready" ? state.message
             : state.status === "expired" ? "The code or selection changed. Preview again." : state.status === "failed" ? state.message : "Enter a name, then preview its changes.";
         if (name.value !== state.name) name.value = state.name;
-        apply.disabled = !state.canApply; apply.onclick = () => rename.apply(state.token); preview.disabled = state.pending || !state.name.trim();
+        apply.disabled = !state.canApply; apply.onclick = state.preview?.confirm ?? null; preview.disabled = state.pending || !state.name.trim();
         targets.replaceChildren(...state.locations.map(at => { const item = document.createElement("li"), before = document.createElement("del"), after = document.createElement("ins"), code = document.createElement("code");
             before.textContent = at.before ?? state.symbol; after.textContent = at.after ?? state.name; code.append(before, " → ", after); item.append(`${at.title} · ${at.line + 1}:${at.column + 1} `, code); return item; }));
         pages.hidden = state.count <= 64; previous.disabled = state.page === 0; next.disabled = (state.page + 1) * 64 >= state.count;

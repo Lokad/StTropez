@@ -39,6 +39,11 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         await priorChoice.dispose(); assert.equal(await text(), typed);
         await expect.poll(async () => (await state()).diagnostics.leases).toBeLessThanOrEqual(beforeNavigation);
         await button("Rename preview").click(); await expect.poll(async () => (await state()).notes.renameEdits ?? 0).toBeGreaterThan(1);
+        const retiredRename = await button("Apply rename").evaluateHandle(node => /** @type {HTMLButtonElement} */ (node).onclick?.bind(node));
+        await button("Edit companion").click(); await expect(button("Apply rename")).toBeDisabled();
+        await button("Rename preview").click(); await expect(button("Apply rename")).toBeEnabled();
+        assert.equal(await retiredRename.evaluate(confirm => confirm?.(new PointerEvent("click"))), false); await retiredRename.dispose();
+        assert.equal(await text(), typed); await expect(button("Apply rename")).toBeEnabled();
         const history = (await state()).history.undoDepth; await button("Apply rename").click(); await expect(page.locator("#result")).toHaveText("Rename applied");
         assert.equal((await state()).history.undoDepth, history + 1); assert.ok((await text()).includes("inventory")); await input.press("Control+z"); assert.equal(await text(), typed);
         await button("Code actions").click(); await expect.poll(async () => (await state()).notes.actions ?? 0).toBeGreaterThan(1);
@@ -81,8 +86,8 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
             assert.ok(document && typeof document === "object" && !Array.isArray(document));
             return [document.uri === companionUri ? "companion" : "source", { open: document.open, close: document.close }];
         }));
-        // Expiring navigation closes the unopened companion. Rename opens it again.
-        assert.deepEqual(lifetimes, { source: { open: 1, close: 0 }, companion: { open: 2, close: 1 } });
+        // Navigation, the expired rename and the applied rename each release the unopened companion.
+        assert.deepEqual(lifetimes, { source: { open: 1, close: 0 }, companion: { open: 4, close: 3 } });
         await page.evaluate(() => { window.publicLsp.stopCompletion(); window.publicLsp.diagnostics.request(); });
         await expect(marker).toHaveText("TODO");
         await button("Hover").click(); await expect.poll(async () => (await state()).notes.hover).toContain("Resolve this placeholder.");

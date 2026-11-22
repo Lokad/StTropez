@@ -1,8 +1,7 @@
 import { Workspace } from "sttropez";
 import type { DocumentId, DocumentSnapshot, TextEdit } from "sttropez";
-import { createCodeActionController, createCompletionController, createDiagnosticController, createHoverController, createNavigationController, createSignatureController, mountAnchoredOverlay, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
-import { LspWorkspace, applyLspWorkspaceEdit, previewLspWorkspaceEdit, createLspColorClient, createLspLinkClient, createLspRenameClient } from "sttropez/protocol";
-import type { LspWorkspaceEdit } from "sttropez/protocol";
+import { createCodeActionController, createCompletionController, createDiagnosticController, createHoverController, createNavigationController, createRenameController, createSignatureController, mountAnchoredOverlay, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
+import { LspWorkspace, createLspColorClient, createLspLinkClient } from "sttropez/protocol";
 
 const workspace = new Workspace();
 const source = workspace.createTextResource({ scope: "consumer", resource: "source", variant: "working" }, "Source", { value: 'const saMORE = 1; // TODO\r\ncatalogue;\r\nlookup("a", );\r\nimport "sample-utils";\r\nconst color = "#abc";' });
@@ -23,15 +22,16 @@ const controller = createCompletionController(editor, provider, { autoConnect: f
 const diagnostics = createDiagnosticController(editor, provider, { autoConnect: false });
 const diagnosticHint = document.createElement("aside"); diagnosticHint.id = "diagnostic-hint"; document.body.append(diagnosticHint);
 const hint = mountAnchoredOverlay(editor, diagnosticHint);
-const hover = createHoverController(editor, provider, { diagnostics }), rename = createLspRenameClient(provider);
+const hover = createHoverController(editor, provider, { diagnostics });
 const signature = createSignatureController(editor, provider), links = createLspLinkClient(provider), colors = createLspColorClient(provider);
 const project = () => [workspace.document(source.documentId), workspace.document(companion.documentId)];
+const rename = createRenameController(editor, provider, { documents: project });
 const navigation = createNavigationController(editor, provider, { documents: project });
 const actions = createCodeActionController(editor, provider, { documents: project });
 const text = () => { const buffer = workspace.document(source.documentId).buffer; return buffer.slice(0, buffer.length); };
 const position = () => text().indexOf("catalogue") + 2;
 const result = document.getElementById("result")!, status = document.getElementById("status")!, choices = document.getElementById("choices")!;
-let plan: LspWorkspaceEdit | undefined, disposed = false;
+let disposed = false;
 let colorPlan: Readonly<{ document: DocumentSnapshot; edits: readonly TextEdit[]; isCurrent: () => boolean }> | undefined;
 const notes: { hover?: string; navigation?: string; renameEdits?: number; actions?: number; resolved?: boolean; signature?: string; linkUri?: string; colorPresentations?: number; colorApplied?: boolean } = {};
 const command = (label: string, invoke: () => void | Promise<unknown>) => { const button = document.createElement("button"); button.textContent = label;
@@ -66,13 +66,19 @@ command("Edit companion", () => {
         edits: [{ from: doc.buffer.length, to: doc.buffer.length, insert: "\n" }] });
     if (!changed.applied) throw new Error(changed.reason);
 });
-command("Rename preview", async () => { plan = await rename.run(project(), source.documentId, position(), "inventory");
-    const preview = previewLspWorkspaceEdit(plan, id => workspace.document(id as DocumentId).title);
-    notes.renameEdits = preview.count; result.textContent = `Rename edits: ${notes.renameEdits}\n${preview.notes.map(note => `${note.title}: ${note.before} → ${note.insert}`).join("\n")}`; });
-command("Apply rename", () => {
-    if (!plan?.isCurrent()) throw new Error("Rename preview expired");
-    applyLspWorkspaceEdit(workspace, plan, { origin: "host", requiredOrigins: ["human"], view: editor.view });
-    result.textContent = "Rename applied";
+command("Rename preview", () => {
+    const offset = position();
+    editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: offset, head: offset });
+    rename.request("inventory");
+});
+const applyRename = command("Apply rename", () => {});
+applyRename.disabled = true;
+rename.subscribe(() => {
+    const state = rename.getSnapshot(), preview = state.preview, page = preview?.readPage();
+    notes.renameEdits = preview?.count ?? 0;
+    applyRename.disabled = !preview?.canApply; applyRename.onclick = preview?.confirm ?? null;
+    result.textContent = state.status === "applied" ? "Rename applied" : page
+        ? page.notes.map(note => note.title + ": " + note.before + " → " + note.insert).join("\n") : state.message;
 });
 command("Code actions", () => { const at = text().indexOf("TODO");
     editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: at, head: at + 4 }); actions.request(); });

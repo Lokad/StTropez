@@ -1,227 +1,148 @@
-import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
-import type { LspWorkspaceEdit } from "../../src/protocol/index.ts";
-import { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../../src/protocol/index.ts";
-import { captureViewRequest } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, TextEditor } from "../../src/browser/index.ts";
-import { createRenameBackend } from "../shared/language/rename-backend.ts";
-import type { RenameBackend } from "../shared/language/rename-backend.ts";
-import { ProviderLane } from "../shared/provider-lane.ts";
-import { navigationLimits, navigationSymbol, validateNavigationInput } from "../../fixtures/language/navigation.ts";
+import type { DocumentId, TabId, Workspace } from "../../src/index.ts";
+import { createRenameController } from "../../src/browser/index.ts";
+import type { RenameController, RenamePreview, RenameSnapshot, TextEditor } from "../../src/browser/index.ts";
+import type { LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
+import { navigationLimits, navigationSymbol } from "../../fixtures/language/navigation.ts";
 import type { NavigationInput } from "../../fixtures/language/navigation.ts";
-import type { RenameCapture } from "../../fixtures/language/rename.ts";
-import type { LspRenameFactory } from "../shared/language/lsp-rename-client.ts";
 import { HostCell } from "../shared/observable.ts";
 
-type Session = { token: number; id: string; target: TabTarget; editor: TextEditor };
-type RenameOptions = Readonly<{ reconnectProvider?: () => void; open?: () => boolean }>;
-type Job = { origin: Session; capture: RenameCapture; viewCapture: CapturedViewRequest; documents: Map<string, DocumentSnapshot>; authority: Map<string, string>;
-    leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; workspaceEdit?: LspWorkspaceEdit; name?: string };
+export type RenameHostOptions = Readonly<{ provider: LspWorkspace; prepare?: (delay: number, fault?: NavigationInput["fault"]) => LspPrepare }>;
+type Session = { id: string; editor: TextEditor; controller: RenameController; stop: () => void };
 export type RenameNote = Readonly<{ ordinal: number; document: string; resource: string; title: string; revision: number; from: number; to: number; line: number; column: number; context: string; before?: string; after?: string }>;
-export type RenameSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; status: "idle" | "pending" | "ready" | "expired" | "failed" | "applied";
-    message: string; name: string; symbol: string; token: number | null; canApply: boolean; work: number; total: number; count: number; page: number; locations: readonly RenameNote[];
-    changes: readonly Readonly<{ document: DocumentId; title: string }>[] }>;
-/** Captured provider or lexical previews share host authority guards and atomic workspace history. */
+export type HostRenameSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; status: RenameSnapshot["status"];
+    message: string; name: string; symbol: string; preview: RenamePreview | null; canApply: boolean; count: number; page: number; locations: readonly RenameNote[];
+    changes: RenameSnapshot["changes"] }>;
+const initial: HostRenameSnapshot = { available: false, connected: false, disconnected: false, pending: false, status: "idle",
+    message: "Focus a source and prepare a rename preview.", name: "", symbol: "", preview: null, canApply: false, count: 0, page: 0, locations: [], changes: [] };
+
+/** The host owns the name field, paging and opening changed files. Each pane owns its rename preview. */
 export class HostRenameTools {
+    private readonly sessions = new Set<Session>();
+    private active: Session | undefined;
+    private owner: Session | undefined;
     private readonly workspace: Workspace;
     private readonly canCapture: (id: DocumentId) => boolean;
     private readonly present: (id: DocumentId) => TextEditor | undefined;
-    private readonly sessions = new Map<number, Session>();
-    private active: Session | undefined;
-    private job: Job | undefined;
-    private readonly lane = new ProviderLane<RenameBackend>(backend => this.connectionChanged(backend));
-    private readonly backendFactory: LspRenameFactory;
-    private disposed = false;
+    private readonly backend: RenameHostOptions;
+    private readonly options: Readonly<{ reconnectProvider?: () => void; open?: () => boolean }>;
     private disconnected = false;
-    private nameInput: HTMLInputElement | undefined;
-    private nameEvents: AbortController | undefined;
-    private serial = 0;
+    private disposed = false;
     private delay = 0;
     private fault: NavigationInput["fault"];
-    private readonly metrics = { requested: 0, applied: 0, expired: 0, failed: 0, cancelled: 0 };
-    private readonly cell = new HostCell<RenameSnapshot>({ available: false, connected: false, disconnected: false, pending: false, status: "idle", message: "Focus a source and prepare a rename preview.", name: "", symbol: "", token: null, canApply: false, work: 0, total: 0, count: 0, page: 0, locations: [], changes: [] });
+    private requested = 0;
+    private input: HTMLInputElement | undefined;
+    private nameEvents: AbortController | undefined;
+    private readonly cell = new HostCell(initial);
     readonly state = this.cell.observable;
-    private readonly options: RenameOptions;
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined,
-        backendFactory: LspRenameFactory, options: RenameOptions = {}) {
-        this.options = options;
-        this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backendFactory = backendFactory;
+        backend: RenameHostOptions, options: Readonly<{ reconnectProvider?: () => void; open?: () => boolean }> = {}) {
+        this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backend = backend; this.options = options;
     }
-    private validName(name: string): boolean { return (name.length > 0 && name.length <= 256 && !/[\u0000-\u001f\u007f]/.test(name)); }
-    private available(s: Session): boolean {
-        const tab = this.workspace.tabs.resolve(s.target);
-        return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
-            && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
+    private publish(patch: Partial<HostRenameSnapshot> = {}) {
+        this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && !this.active.editor.signal.aborted,
+            connected: !this.disconnected && this.backend.provider.getSnapshot().phase === "ready", disconnected: this.disconnected });
     }
-    private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
-    private current(job: Job): boolean {
-        if (this.job !== job || job.invalid || job.name !== undefined && job.name !== this.cell.get().name) return false;
-        try {
-            if (!job.viewCapture.isCurrent() || job.workspaceEdit && !job.workspaceEdit.isCurrent()) return false;
-            for (const doc of job.documents.values()) if (doc.id !== job.viewCapture.document.id
-                && (this.workspace.observeDocument(doc.id).getSnapshot()?.revision !== doc.revision || this.authority(doc.id) !== job.authority.get(doc.id) || !this.canCapture(doc.id))) return false;
-        } catch { return false; }
-        return true;
+    private render(state: RenameSnapshot, page = 0) {
+        const preview = state.preview, notes = preview?.readPage(page)?.notes ?? [];
+        const locations = notes.map(({ insert, insertUnits, ...at }, i) => {
+            const buffer = this.workspace.document(at.document as DocumentId).buffer, line = buffer.lineAt(at.from);
+            return { ...at, ordinal: page * navigationLimits.page + i, line, column: at.from - buffer.offsetAt(line),
+                before: at.before + (at.to - at.from > 256 ? ` (${at.to - at.from} UTF-16 units)` : ""),
+                after: insert + (insertUnits > insert.length ? `… (${insertUnits} UTF-16 units)` : "") };
+        });
+        if (state.status === "expired" && this.backend.provider.getSnapshot().phase === "disconnected") this.disconnected = true;
+        this.publish({ name: state.name, status: state.status, message: state.message, preview, pending: state.status === "pending",
+            canApply: preview?.canApply ?? false, count: preview?.count ?? 0, page, locations, ...(state.status === "applied" ? { changes: state.changes } : {}) });
     }
-    private editCount(job: Job): number { return job.workspaceEdit?.documents.reduce((count, change) => count + change.edits.length, 0) ?? 0; }
-    private editableTargets(job: Job): boolean {
-        const seen = new Set<string>();
-        const editable = (id: string) => {
-            if (seen.has(id)) return true; seen.add(id);
-            const metadata = this.workspace.resourceForDocument(id as DocumentId).metadata.getSnapshot();
-            return metadata.capabilities.edit.includes("human") && metadata.capabilities.edit.includes("host") && metadata.editLock === null;
-        };
-        return job.workspaceEdit?.documents.every(change => !change.edits.length || editable(change.target.document.documentId)) ?? false;
+    readonly cancel = () => {
+        const owner = this.owner; this.owner = undefined; owner?.controller.cancel();
+        this.publish({ status: "idle", pending: false, preview: null, canApply: false, count: 0, locations: [], page: 0, message: "Rename preview dismissed." });
+    };
+    readonly disconnect = () => { this.disconnected = true; this.cancel(); };
+    readonly reconnect = () => { this.disconnected = false; this.cancel(); this.options.reconnectProvider?.(); };
+    setName(value: string) {
+        const name = value.slice(0, 256);
+        if (this.owner) this.owner.controller.setName(name); else this.publish({ name });
     }
-    private publish(patch: Partial<RenameSnapshot> = {}): void {
-        const state = { ...this.cell.get(), ...patch }, job = this.job;
-        const current = !!job?.ready && this.current(job), editable = current && this.editableTargets(job);
-        this.cell.set({ ...state, available: !!this.active && this.available(this.active), connected: this.lane.value?.snapshot().connected ?? false, disconnected: this.disconnected,
-            pending: !!job && !job.ready, token: job?.capture.input.id ?? null, count: job ? this.editCount(job) : 0,
-            message: state.status === "ready" && current && !editable ? "A captured source is read-only or locked; this preview cannot be applied." : state.message,
-            canApply: editable && this.validName(state.name) && (this.editCount(job) > 0) });
-    }
-    private changed(job: Job): void {
-        if (this.job === job && !this.current(job)) {
-            job.invalid = true;
-            queueMicrotask(() => { if (this.job === job) { this.metrics.expired++; this.release(); this.publish({ status: "expired", message: "Captured revision, selection, view or edit authority changed; prepare a fresh preview.", locations: [] }); } });
-        }
-    }
-    private connectionChanged(backend: RenameBackend): void {
-        const state = backend.snapshot(), job = this.job;
-        if (!job) return;
-        if (job.ready && !state.connected && !state.busy) this.disconnected = true;
-        this.changed(job); this.publish();
-    }
-    private release(): void {
-        const job = this.job; this.job = undefined;
-        if (!job) return; job.invalid = true; job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer);
-        job.stops.splice(0).forEach(stop => stop()); job.viewCapture.cancel(); job.leases.splice(0).forEach(lease => lease.release()); if (!job.ready) this.lane.drop(); else this.lane.value?.cancel();
-    }
-    readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.release(); this.publish({ status: "idle", message: "Rename preview dismissed; source is unchanged.", locations: [], work: 0, total: 0, page: 0 }); };
-    readonly disconnect = (): void => { this.cancel(); this.lane.drop(); this.disconnected = true; this.publish({ message: "Rename provider disconnected; local editing remains available." }); };
-    readonly reconnect = (): void => { this.cancel(); this.lane.drop(); this.disconnected = false; this.options.reconnectProvider?.(); this.publish({ message: "Prepare a fresh rename preview." }); };
-    setName(value: string): void { const name = value.slice(0, 256); if (name === this.cell.get().name) return;
-        if (this.job) { this.metrics.cancelled++; this.release(); this.publish({ status: "idle", locations: [], work: 0, total: 0, page: 0, message: "Name changed; request a fresh provider preview." }); }
-        this.publish({ name }); }
-    /** Explicit host ref lifecycle; no component effect owns editor state. */
-    readonly bindName = (input: HTMLInputElement | null): void => {
-        this.nameEvents?.abort(); this.nameEvents = undefined; this.nameInput = input ?? undefined;
+    readonly bindName = (input: HTMLInputElement | null) => {
+        this.nameEvents?.abort(); this.input = input ?? undefined;
         if (!input || this.disposed) return;
         const events = new AbortController(); this.nameEvents = events;
-        input.addEventListener("keydown", event => {
-            if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
-            if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
-                event.preventDefault();
-                if (event.repeat) return;
-                this.setName(input.value);
-                const state = this.cell.get(), origin = this.job?.origin;
-                if (state.pending || state.status === "pending") return;
-                if (state.status !== "ready") { this.prepare(); return; }
-                if (!state.canApply) return;
-                this.apply(state.token);
-                if (origin && this.cell.get().status === "applied" && this.active === origin && this.available(origin)) origin.editor.focus();
-                return;
-            }
-            const origin = this.job?.origin ?? this.active;
-            if (event.key !== "Escape" || !origin) return;
-            event.preventDefault(); event.stopPropagation(); this.cancel(); if (this.available(origin)) origin.editor.focus();
+        input.addEventListener("keydown", e => {
+            if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
+            const origin = this.owner ?? this.active;
+            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.cancel(); origin?.editor.focus(); }
+            if (e.key !== "Enter" || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+            e.preventDefault(); if (e.repeat) return; this.setName(input.value);
+            const state = this.cell.get();
+            if (state.pending) return;
+            if (!state.preview) this.prepare();
+            else if (state.preview.confirm() && origin === this.active) origin?.editor.focus();
         }, { signal: events.signal });
     };
-    attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const s: Session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.tabs.capture(tab), editor }, events = new AbortController();
-        const start = editor.commands.register({ id: "rename.start", label: "Rename symbol", enabled: () => this.available(s),
-            run: () => { if (this.options.open && !this.options.open()) return false; this.active = s; this.start(true); return true; } }, { keys: ["F2"] });
-        events.signal.addEventListener("abort", start.dispose, { once: true });
-        this.sessions.set(s.token, s);
-        editor.input.addEventListener("focus", () => { this.active = s; this.publish(); }, { signal: events.signal });
-        for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.job?.documents.has(editor.view.documentId)) this.cancel(); }, { signal: events.signal });
-        let detached = false;
-        return () => { if (detached) return; detached = true; if (this.job?.origin === s) this.cancel(); events.abort(); this.sessions.delete(s.token); if (this.active === s) this.active = undefined; if (!this.sessions.size) this.lane.drop(); this.publish(); };
-    }
-    readonly prepare = (): void => this.start(false);
-    private start(keyboard: boolean): void {
-        const origin = this.active;
-        if (this.disconnected || !origin || !this.available(origin)) { this.publish({ message: "Focus an available source and reconnect first." }); return; }
-        const documents = this.workspace.getSnapshot().documents.filter(d => d.key.variant === "working");
-        if (documents.some(d => !this.canCapture(d.id))) { this.publish({ message: "Finish pending input, navigation, table conversion or composition first." }); return; }
-        this.cancel(); const selected = origin.editor.view.getSnapshot(), doc = this.workspace.document(origin.editor.view.documentId), hint = navigationSymbol(doc.buffer, selected.selection.head), symbol = (hint ?? "position");
-        if (!symbol || !documents.some(d => d.id === doc.id)) { this.publish({ status: "failed", message: "No supported identifier at the captured position." }); return; }
-        if ((keyboard || !this.validName(this.cell.get().name))) {
-            this.publish({ name: hint ?? "", symbol, message: "Enter the new name, then prepare its provider edit preview." });
-            this.nameInput?.focus(); this.nameInput?.select(); return;
-        }
-        let input: NavigationInput;
-        try { input = validateNavigationInput({ operation: "navigation-start", id: ++this.serial, kind: "references", includeDeclaration: true, symbol: "position", documents: documents.map(d => ({ document: d.id, revision: d.revision, length: d.buffer.length })), delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
-        catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid rename capture." }); return; }
-        this.fault = undefined;
-        const authority = new Map(documents.filter(d => d.id !== doc.id).map(d => [d.id, this.authority(d.id)]));
-        const viewCapture = captureViewRequest(this.workspace, origin.target, origin.editor.view, { available: () => this.available(origin) && this.canCapture(origin.editor.view.documentId) });
-        if (!viewCapture) { this.publish({ message: "The source changed before capture; prepare a fresh rename preview." }); return; }
-        const job: Job = { origin, capture: { input, document: doc.id, offset: selected.selection.head }, viewCapture,
-            documents: new Map(documents.map(d => [d.id, d])), authority, leases: [], stops: [], timer: 0, invalid: false, ready: false, name: this.cell.get().name };
-        this.job = job; this.metrics.requested++; const win = origin.editor.element.ownerDocument.defaultView!, total = input.documents.reduce((n, d) => n + d.length, 0);
+    attach(id: string, _tab: TabId, editor: TextEditor): () => void {
+        const controller = createRenameController(editor, this.backend.provider, {
+            documents: () => this.workspace.getSnapshot().documents.filter(doc => doc.key.variant === "working"),
+            canCapture: this.canCapture, prepareRequest: () => {
+                const fault = this.fault; this.fault = undefined; return this.backend.prepare?.(this.delay, fault);
+            },
+        });
+        const events = new AbortController();
+        const session: Session = { id, editor, controller, stop: () => {
+            if (!this.sessions.delete(session)) return;
+            if (this.active === session) this.active = undefined;
+            if (this.owner === session) this.cancel();
+            events.abort(); stop(); controller.dispose(); this.publish();
+        } };
+        const stop = controller.subscribe(() => { if (this.owner === session) {
+            const state = controller.getSnapshot(); if (state.status === "pending") this.requested++;
+            this.render(state);
+        } });
+        this.sessions.add(session);
         try {
-            const changed = () => this.changed(job);
-            viewCapture.signal.addEventListener("abort", changed, { once: true });
-            for (const d of documents) if (d.id !== viewCapture.document.id) { job.leases.push(this.workspace.acquire(d.resourceId)); job.stops.push(this.workspace.observeDocument(d.id).subscribe(changed), this.workspace.resourceForDocument(d.id).metadata.subscribe(changed)); }
-            job.timer = win.setTimeout(() => { if (this.job === job && !job.ready) { this.release(); this.metrics.failed++; this.publish({ status: "failed", message: "Rename provider timed out; source is unchanged.", locations: [] }); } }, 30000);
-            this.publish({ status: "pending", message: "Requesting the provider's complete rename edit preview.", symbol, ...(keyboard ? { name: symbol } : {}), locations: [], page: 0, work: 0, total });
-            const backend = this.lane.acquire(notify => createRenameBackend(this.backendFactory, notify));
-            void backend.run({ documents, capture: job.capture, name: job.name ?? this.cell.get().name }).then(result => {
-                job.workspaceEdit = result.edit;
-                if (!this.current(job)) { changed(); return; }
-                // The provider client may have retained additional host-resolved targets.
-                // Capture those exact workspace identities before presentation or application.
-                for (const change of result.edit.documents) {
-                    const target = change.target.document; if (job.documents.has(target.documentId)) continue;
-                    const document = this.workspace.getSnapshot().documents.find(document => document.id === target.documentId);
-                    if (!document || document.resourceId !== target.resourceId || document.revision !== target.revision || document.buffer !== target.buffer
-                        || !change.target.isCurrent() || !this.canCapture(document.id)) throw new Error("A resolved rename target changed.");
-                    job.documents.set(document.id, document); job.authority.set(document.id, this.authority(document.id));
-                    job.stops.push(this.workspace.observeDocument(document.id).subscribe(changed), this.workspace.resourceForDocument(document.id).metadata.subscribe(changed));
-                }
-                job.ready = true; win.clearTimeout(job.timer); this.showPage(0);
-                const count = this.editCount(job);
-                this.publish({ status: "ready", message: count ? `Review ${count} ${count === 1 ? "change" : "changes"}. Press Enter in the name field to apply.`
-                    : "No edits for this name.", work: total });
-            }).catch(error => { if (this.job !== job) return; this.release(); this.lane.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Rename provider failed; source is unchanged.", locations: [] }); });
-
-        } catch (error) { this.release(); this.lane.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Rename unavailable.", locations: [] }); }
+            const command = editor.commands.register({ id: "rename.start", label: "Rename symbol", enabled: () => !this.disconnected && this.canCapture(editor.view.documentId),
+                run: () => { if (this.options.open && !this.options.open()) return false; this.active = session; this.prompt(); return true; } }, { keys: ["F2"] });
+            events.signal.addEventListener("abort", command.dispose, { once: true });
+        } catch (error) { session.stop(); throw error; }
+        editor.input.addEventListener("focus", () => { this.active = session; this.publish(); }, { signal: events.signal });
+        for (const event of ["beforeinput", "compositionstart", "paste", "cut"]) editor.input.addEventListener(event, () => {
+            if (this.owner && this.owner !== session && this.workspace.document(editor.view.documentId).key.variant === "working") this.cancel();
+        }, { signal: events.signal });
+        return session.stop;
     }
-    private showPage(page: number): void {
-        const job = this.job; if (!job?.ready || !job.workspaceEdit || page < 0 || page * navigationLimits.page >= this.editCount(job)) return;
-        const entries = previewLspWorkspaceEdit(job.workspaceEdit, id => job.documents.get(id)!.title, page).notes.map(({ insert, insertUnits, ...note }) => ({ ...note,
-            before: note.before + (note.to - note.from > 256 ? ` (${note.to - note.from} UTF-16 units)` : ""),
-            after: insert + (insertUnits > insert.length ? `… (${insertUnits} UTF-16 units)` : "") }));
-        const locations = entries.map((at, index) => {
-            const doc = job.documents.get(at.document)!, line = doc.buffer.lineAt(at.from);
-            return Object.freeze({ ...at, ordinal: page * navigationLimits.page + index, line, column: at.from - doc.buffer.offsetAt(line) });
-        }); this.publish({ page, locations: Object.freeze(locations) });
+    private hint(session: Session) { return navigationSymbol(this.workspace.document(session.editor.view.documentId).buffer, session.editor.view.getSnapshot().selection.head); }
+    private prompt() {
+        if (!this.active) return;
+        this.cancel(); const hint = this.hint(this.active);
+        this.publish({ name: hint ?? "", symbol: hint ?? "position", message: "Enter a name, then preview its changes." });
+        this.input?.focus(); this.input?.select();
     }
-    readonly nextPage = (): void => this.showPage(this.cell.get().page + 1);
-    readonly previousPage = (): void => this.showPage(this.cell.get().page - 1);
-    apply(token: number | null): void {
-        const job = this.job, name = this.cell.get().name;
-        if (!job?.ready || !job.workspaceEdit || token !== job.capture.input.id || !this.current(job) || !this.validName(name) || !this.editCount(job)) { this.publish({ message: "Use a fresh complete preview and a valid new name." }); return; }
-        if (!this.editableTargets(job)) { this.publish(); return; }
-        try {
-            let documents: readonly DocumentSnapshot[] = [];
-            if (!job.viewCapture.commit(() => {
-                documents = applyLspWorkspaceEdit(this.workspace, job.workspaceEdit!, { origin: "host", source: "rename", requiredOrigins: ["human"], view: job.origin.editor.view });
-                return true;
-            })) throw new Error("Captured rename context changed before application.");
-            const changes = documents.map(doc => ({ document: doc.id, title: doc.title.slice(0, 128) }));
-            this.metrics.applied++; this.release(); this.publish({ status: "applied", message: `Applied ${this.editCount(job)} captured provider edits in ${changes.length} resources as one undo command.`, changes, locations: [] });
-        } catch (error) { this.release(); this.publish({ status: "failed", message: error instanceof Error ? error.message : "Rename rejected; source is unchanged.", locations: [] }); }
+    readonly prepare = () => {
+        const s = this.active, name = this.cell.get().name;
+        if (!s || this.disconnected || !this.canCapture(s.editor.view.documentId)) return;
+        if (!name || /[\u0000-\u001f\u007f]/.test(name)) { this.prompt(); return; }
+        if (this.owner !== s) this.cancel();
+        this.owner = s; this.publish({ symbol: this.hint(s) ?? "position" }); s.controller.request(name);
+    };
+    private page(delta: number) {
+        const state = this.cell.get(), page = state.page + delta;
+        if (state.preview && this.owner && page >= 0 && page * navigationLimits.page < state.count) this.render(this.owner.controller.getSnapshot(), page);
     }
-    openChanged(document: DocumentId): void {
-        if (this.job || this.disposed || !this.cell.get().changes.some(c => c.document === document) || !this.canCapture(document)) return;
-        try { const editor = [...this.sessions.values()].find(s => s.editor.view.documentId === document && this.available(s))?.editor ?? this.present(document); editor?.focus(); }
+    readonly nextPage = () => this.page(1);
+    readonly previousPage = () => this.page(-1);
+    openChanged(document: DocumentId) {
+        const s = this.cell.get();
+        if (s.pending || s.preview || this.disposed || !s.changes.some(c => c.document === document) || !this.canCapture(document)) return;
+        try { ([...this.sessions].find(s => s.editor.view.documentId === document && !s.editor.signal.aborted)?.editor ?? this.present(document))?.focus(); }
         catch { this.publish({ message: "The captured changed resource is no longer available." }); }
     }
-    setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid rename delay."); this.delay = value; }
-    faultNext(value: NonNullable<NavigationInput["fault"]>): void { this.fault = value; }
-    faultIdle(): boolean { return this.lane.value?.faultIdle() ?? false; }
-    debug() { const job = this.job; return { ...this.metrics, state: this.cell.get(), capture: job ? { view: job.origin.id, document: job.capture.document, revision: job.documents.get(job.capture.document)!.revision, selections: job.viewCapture.selectionSet } : null, transport: this.lane.value?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
-    dispose(): void { if (this.disposed) return; this.cancel(); this.lane.dispose(); this.bindName(null); this.disposed = true; this.active = undefined; this.publish({ changes: [] }); }
+    setDelay(value: number) { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid rename delay."); this.delay = value; }
+    faultNext(value: NonNullable<NavigationInput["fault"]>) { this.fault = value; }
+    faultIdle() {
+        if (!this.owner || this.cell.get().pending || !this.cell.get().connected) return false;
+        this.backend.provider.disconnect(); return true;
+    }
+    debug() { return { state: this.cell.get(), requested: this.requested, capture: this.owner ? { view: this.owner.id } : null,
+        sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
+    dispose() { if (!this.disposed) { this.disposed = true; this.cancel(); this.bindName(null); for (const s of this.sessions) s.stop(); } }
 }

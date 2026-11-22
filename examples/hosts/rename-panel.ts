@@ -1,10 +1,10 @@
-import type { HostRenameTools, RenameNote, RenameSnapshot } from "./rename.ts";
-type RenamePanelTools = Pick<HostRenameTools, "prepare" | "apply" | "cancel" | "previousPage" | "nextPage" | "disconnect" | "reconnect" | "bindName" | "setName" | "openChanged">;
-function renameActions(tools: RenamePanelTools, s: RenameSnapshot) {
+import type { HostRenameTools, RenameNote, HostRenameSnapshot } from "./rename.ts";
+type RenamePanelTools = Pick<HostRenameTools, "prepare" | "cancel" | "previousPage" | "nextPage" | "disconnect" | "reconnect" | "bindName" | "setName" | "openChanged">;
+function renameActions(tools: RenamePanelTools, s: HostRenameSnapshot) {
     return [
         { label: "Prepare rename preview", invoke: tools.prepare, disabled: !s.available || s.disconnected || s.pending },
-        { label: "Apply captured rename", invoke: () => tools.apply(s.token), disabled: !s.canApply },
-        { label: "Dismiss rename preview", invoke: tools.cancel, disabled: s.token === null },
+        { label: "Apply captured rename", invoke: s.preview?.confirm ?? (() => false), disabled: !s.canApply },
+        { label: "Dismiss rename preview", invoke: tools.cancel, disabled: !s.pending && !s.preview },
         { label: "Previous rename targets", invoke: tools.previousPage, disabled: s.page === 0 || s.status !== "ready" },
         { label: "Next rename targets", invoke: tools.nextPage, disabled: (s.page + 1) * 64 >= s.count || s.status !== "ready" },
         { label: "Disconnect rename provider", invoke: tools.disconnect, disabled: !s.connected && !s.pending },
@@ -15,14 +15,14 @@ export const renameDescription = "Enter a new name and request its provider edit
 export function renameTarget(at: RenameNote, symbol: string, name: string): string { return `${at.title} · ${at.resource} · ${at.document} @ revision ${at.revision} · ${at.line + 1}:${at.column + 1} [${at.from},${at.to}) · ${at.before ?? symbol} → ${at.after ?? (name || "(enter name)")}\n${at.context}`; }
 
 /** One captured preview supplies both renderers; formatting stays lazy for retained lists. */
-export function renamePanelModel(tools: RenamePanelTools, s: RenameSnapshot) {
+export function renamePanelModel(tools: RenamePanelTools, s: HostRenameSnapshot) {
     return {
         title: "Rename preview", description: renameDescription, status: { label: "Rename status", text: s.message },
         name: { label: "New identifier ", value: s.name, maxLength: 256, bind: tools.bindName, change: (value: string) => tools.setName(value) },
         actions: renameActions(tools, s),
         targets: { label: "Captured rename targets", identity: s.locations, start: s.page * 64 + 1,
             items: () => s.locations.map(at => ({ key: at.ordinal, text: renameTarget(at, s.symbol, s.name) } as const)) },
-        changes: { label: "Renamed resources", identity: s.changes, disabled: s.token !== null,
+        changes: { label: "Renamed resources", identity: s.changes, disabled: s.pending || !!s.preview,
             items: () => s.changes.map(change => ({ key: change.document, label: `Open renamed changes in ${change.title}`,
                 invoke: () => tools.openChanged(change.document) } as const)) },
     } as const;

@@ -4,8 +4,9 @@ import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentSnapshot, TabTarget } from "../core/workspace.ts";
 import { RpcError, applyLspWorkspaceEdit, createLspActionClient, previewLspWorkspaceEdit } from "../protocol/index.ts";
 import type { LspCodeAction, LspCommandPolicy, LspCommandReceipt, LspCommandScope, LspPrepare, LspWorkspace, LspWorkspaceEdit, LspWorkspaceEditPreview } from "../protocol/index.ts";
-import { captureViewRequest, sameEditAuthority } from "./captured-view.ts";
+import { captureViewRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
+import { retainEditProject, writableEdit } from "./edit-project.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 export type CodeActionChoice = Readonly<{
@@ -39,8 +40,8 @@ export type CodeActionControllerOptions = Readonly<{
 type Client = ReturnType<typeof createLspActionClient>;
 type Batch = Awaited<ReturnType<Client["run"]>>;
 type Job = {
-    id: number; capture: CapturedViewRequest<TabTarget | undefined>; documents: Map<DocumentId, DocumentSnapshot>;
-    stops: (() => void)[]; timer?: number; invalid: boolean; batch?: Batch; selection?: LspCodeAction;
+    id: number; capture: CapturedViewRequest<TabTarget | undefined>; project: ReturnType<typeof retainEditProject>;
+    timer?: number; invalid: boolean; batch?: Batch; selection?: LspCodeAction;
 };
 const empty: CodeActionSnapshot = Object.freeze({ status: "idle", message: "", choices: Object.freeze([]), choice: null, preview: null, changes: Object.freeze([]) });
 export type CodeActionController = Observable<CodeActionSnapshot> & Readonly<{
@@ -62,14 +63,14 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
     const publish = (state: CodeActionSnapshot) => scope.publish(cell, Object.freeze(state));
     function current(j: Job): boolean {
         if (job !== j || j.invalid || !j.capture.isCurrent() || (j.batch && !j.batch.isCurrent())) return false;
-        if (options.canCapture) for (const id of j.documents.keys()) if (!options.canCapture(id)) return false;
+        if (options.canCapture) for (const id of j.project.documents.keys()) if (!options.canCapture(id)) return false;
         return true;
     }
     const release = (keepClient = false) => {
         const previous = job; job = undefined;
         if (!previous) return;
         win.clearTimeout(previous.timer);
-        for (const stop of previous.stops.splice(0)) stop();
+        previous.project.dispose();
         previous.capture.cancel();
         if (!keepClient) client.cancel();
     };
@@ -88,44 +89,15 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
         win.clearTimeout(j.timer);
         j.timer = win.setTimeout(() => fail(j, new Error("Code action request timed out.")), 30000);
     };
-    function retain(j: Job, doc: DocumentSnapshot): void {
-        const existing = j.documents.get(doc.id);
-        if (existing) {
-            if (existing.resourceId !== doc.resourceId || existing.buffer !== doc.buffer || existing.revision !== doc.revision) throw new Error("Code action target changed.");
-            return;
-        }
-        const live = workspace.document(doc.id);
-        if (live.resourceId !== doc.resourceId || live.revision !== doc.revision || live.buffer !== doc.buffer || !available(doc.id)) throw new Error("Code action target is unavailable.");
-        j.documents.set(doc.id, doc);
-        if (doc.id === view.documentId) return;
-        const metadata = workspace.resourceForDocument(doc.id).metadata;
-        const permission = metadata.getSnapshot(), lease = workspace.acquire(doc.resourceId);
-        j.stops.push(lease.release, workspace.observeDocument(doc.id).subscribe(() => {
-            const next = workspace.observeDocument(doc.id).getSnapshot();
-            if (next?.revision !== doc.revision || next.buffer !== doc.buffer) expire(j);
-        }), metadata.subscribe(() => { if (!sameEditAuthority(permission, metadata.getSnapshot())) expire(j); }));
-    }
-    function retainEdits(j: Job, actions: readonly LspCodeAction[]): void {
-        for (const action of actions) for (const change of action.edit?.documents ?? []) {
-            const target = change.target.document, doc = workspace.document(target.documentId as DocumentId);
-            if (doc.resourceId !== target.resourceId || doc.revision !== target.revision || doc.buffer !== target.buffer || !change.target.isCurrent()) throw new Error("A resolved code action target changed.");
-            retain(j, doc);
-        }
-    }
     const disabled = (batch: Batch, action: LspCodeAction) => action.disabled ?? (action.command
         ? !options.runCommand || !batch.supports(action.command) ? "This command is unavailable." : null
         : !action.resolve && !action.edit?.documents.some(part => part.edits.length) ? "The provider returned no text changes." : null);
-    const writable = (action: LspCodeAction) => (action.edit?.documents ?? []).every(part => {
-        if (!part.edits.length) return true;
-        const m = workspace.resourceForDocument(part.target.document.documentId as DocumentId).metadata.getSnapshot();
-        return m.capabilities.edit.includes("human") && m.capabilities.edit.includes("host") && m.editLock === null;
-    });
     function confirm(): void {
         const j = job, action = j?.selection, batch = j?.batch;
-        if (!j || !action || !batch || !current(j) || disabled(batch, action) || !writable(action)) return;
+        if (!j || !action || !batch || !current(j) || disabled(batch, action) || !writableEdit(workspace, action.edit)) return;
         if (action.command) {
             try {
-                const handle = options.runCommand?.({ documents: Object.freeze([...j.documents.values()]), edit: action.edit,
+                const handle = options.runCommand?.({ documents: Object.freeze([...j.project.documents.values()]), edit: action.edit,
                     isCurrent: batch.commandCurrent, subscribe: client.subscribe, execute: s => batch.execute(action, s),
                     cancel: () => { if (batch.commandCurrent()) client.cancel(); } });
                 if (!handle) return;
@@ -159,7 +131,7 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
                 const j = job;
                 if (cell.get().preview !== preview || !j || !current(j)) return;
                 const edit = j.selection?.edit;
-                return edit ? previewLspWorkspaceEdit(edit, id => j.documents.get(id as DocumentId)!.title, page)
+                return edit ? previewLspWorkspaceEdit(edit, id => j.project.documents.get(id as DocumentId)!.title, page)
                     : Object.freeze({ page, count: 0, notes: Object.freeze([]) });
             },
             confirm: () => { scope.assertWritable(); if (cell.get().preview === preview) confirm(); } });
@@ -169,7 +141,7 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
         if (!j.batch || !current(j)) { expire(j); return; }
         j.selection = action;
         const reason = disabled(j.batch, action);
-        const preview = makePreview(index, action.title, action.command?.command ?? null, reason, !reason && writable(action));
+        const preview = makePreview(index, action.title, action.command?.command ?? null, reason, !reason && writableEdit(workspace, action.edit));
         publish({ ...cell.get(), status: "ready", choice: index, preview, message: reason ?? "Review the selected action before confirming." });
         if (!reason && applyWhen?.(action)) preview.confirm();
     }
@@ -182,7 +154,7 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
         timeout(j);
         void batch.resolve(action, options.prepareResolve).then(resolved => {
             if (!current(j)) { expire(j); return; }
-            win.clearTimeout(j.timer); retainEdits(j, [resolved]); present(j, index, resolved, applyWhen);
+            win.clearTimeout(j.timer); if (resolved.edit) j.project.includeEdit(resolved.edit); present(j, index, resolved, applyWhen);
         }).catch(error => fail(j, error));
     }
     function cancel(): void {
@@ -198,17 +170,17 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
         const capture = captureViewRequest(workspace, tab, view, { available: () => available(view.documentId) });
         if (!capture) { publish({ ...empty, status: "expired", message: "Finish the current editor operation before requesting actions." }); return; }
         const id = workspace.allocateIdentity();
-        const j: Job = { id, capture, documents: new Map(), stops: [], invalid: false }; job = j;
+        const j: Job = { id, capture, project: retainEditProject(editor, available, () => expire(j)), invalid: false }; job = j;
         try {
-            retain(j, capture.document);
-            for (const doc of options.documents?.() ?? []) retain(j, doc);
+            j.project.include(capture.document);
+            for (const doc of options.documents?.() ?? []) j.project.include(doc);
             capture.signal.addEventListener("abort", () => expire(j), { once: true });
             const range = capture.selectionSet.ranges[capture.selectionSet.primary]!;
             timeout(j); publish({ ...empty, status: "pending", message: "Requesting code actions." });
-            void client.run([...j.documents.values()], view.documentId, Math.min(range.anchor, range.head), Math.max(range.anchor, range.head), options.prepareRequest).then(batch => {
+            void client.run([...j.project.documents.values()], view.documentId, Math.min(range.anchor, range.head), Math.max(range.anchor, range.head), options.prepareRequest).then(batch => {
                 j.batch = batch;
                 if (!current(j)) { expire(j); return; }
-                win.clearTimeout(j.timer); retainEdits(j, batch.actions);
+                win.clearTimeout(j.timer); for (const action of batch.actions) if (action.edit) j.project.includeEdit(action.edit);
                 const choices = Object.freeze(batch.actions.map((action, index): CodeActionChoice => Object.freeze({ index, title: action.title, kind: action.kind,
                     preferred: action.preferred, disabled: disabled(batch, action), needsResolve: action.resolve !== null,
                     select: applyWhen => choose(id, index, applyWhen) })));

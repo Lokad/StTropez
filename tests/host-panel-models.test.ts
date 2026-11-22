@@ -11,7 +11,7 @@ import type { NavigationSnapshot } from "../examples/hosts/navigation.ts";
 import type { ProjectSnapshot } from "../examples/hosts/project.ts";
 import { renamePanelModel } from "../examples/hosts/rename-panel.ts";
 import { actionsPanelModel } from "../examples/hosts/actions-panel.ts";
-import type { RenameSnapshot } from "../examples/hosts/rename.ts";
+import type { HostRenameSnapshot } from "../examples/hosts/rename.ts";
 import type { ActionsSnapshot } from "../examples/hosts/code-actions.ts";
 import { documentColorsPanelModel } from "../examples/hosts/document-colors-panel.ts";
 import { documentLinksPanelModel } from "../examples/hosts/document-links-panel.ts";
@@ -151,16 +151,17 @@ test("link presentation retains captured ordinals while status updates do not re
     assert.equal(first.results.items()[0]!.available, true); assert.equal(first.results.bind, tools.bindList);
 });
 
-test("rename presentation retains its preview name, confirmation token and changed resource", () => {
+test("rename presentation retains its preview name, confirmation action and changed resource", () => {
     const applied: (number | null)[] = [], opened: DocumentId[] = [], firstId = "first" as DocumentId, secondId = "second" as DocumentId;
-    const tools: Parameters<typeof renamePanelModel>[0] = { prepare: noop, apply: token => { applied.push(token); }, cancel: noop,
+    const tools: Parameters<typeof renamePanelModel>[0] = { prepare: noop, cancel: noop,
         previousPage: noop, nextPage: noop, disconnect: noop, reconnect: noop, bindName: noop, setName: noop, openChanged: id => { opened.push(id); } };
     let formatted = 0;
-    const state: RenameSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, pending: false, status: "ready", message: "Captured rename",
-        name: "firstName", symbol: "symbol", token: 3, canApply: true, work: 1, total: 1, count: 1, page: 0,
+    const preview = (id: number, name: string) => ({ name, count: 1, canApply: true, readPage: () => undefined, confirm: () => { applied.push(id); return true; } });
+    const state: HostRenameSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, pending: false, status: "ready", message: "Captured rename",
+        name: "firstName", symbol: "symbol", preview: preview(3, "firstName"), canApply: true, count: 1, page: 0,
         locations: Object.freeze([Object.freeze({ ordinal: 0, document: firstId, resource: "source", title: "First", revision: 1, from: 0, to: 6, line: 0, column: 0,
             get context() { formatted++; return "symbol"; } })]), changes: Object.freeze([Object.freeze({ document: firstId, title: "First" })]) });
-    const first = renamePanelModel(tools, state), renamed = renamePanelModel(tools, { ...state, name: "secondName", token: 4, changes: [{ document: secondId, title: "Second" }] });
+    const first = renamePanelModel(tools, state), renamed = renamePanelModel(tools, { ...state, name: "secondName", preview: preview(4, "secondName"), changes: [{ document: secondId, title: "Second" }] });
     assert.equal(formatted, 0); assert.equal(first.targets.identity, renamed.targets.identity);
     assert.match(first.targets.items()[0]!.text, /symbol → firstName/); assert.match(renamed.targets.items()[0]!.text, /symbol → secondName/);
     renamed.actions.find(action => action.label === "Apply captured rename")!.invoke(); first.actions.find(action => action.label === "Apply captured rename")!.invoke();

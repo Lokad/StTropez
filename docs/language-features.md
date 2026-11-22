@@ -17,7 +17,7 @@ separately. Incoming edits and command execution have their own
 | Hover | `createHoverController`, `createLspHoverClient` | `textDocument/hover` |
 | Signature help | `createSignatureController`, `createLspSignatureClient` | `textDocument/signatureHelp` |
 | Definition / references | `createLspNavigationClient` | `textDocument/definition` / `textDocument/references` |
-| Rename | `createLspRenameClient` | `textDocument/rename` |
+| Rename | `createRenameController`, `createLspRenameClient` | `textDocument/rename` |
 | Code actions | `createCodeActionController`, `createLspActionClient` | `textDocument/codeAction` |
 | Document links | `createLspLinkClient` | `textDocument/documentLink` |
 | Document colors | `createLspColorClient` | `textDocument/documentColor` and `textDocument/colorPresentation` |
@@ -419,8 +419,38 @@ comparison baselines. An immutable comparison reference needs no provider bindin
 
 ### Rename and workspace edits
 
-In the examples, F2 opens the name field. Enter requests a preview. After reviewing the edits,
-press Enter again to apply them and return to the source. Changing the name invalidates the preview.
+Use `createRenameController(editor, provider, { documents })` for an editor with a rename form.
+Pass `setName(value)` each time the name changes and call `request()` to preview it at the primary
+caret. Alternatively, `request(name)` sets the name and requests its preview in one call. F2 opens
+the example form. Enter previews a name, then confirms the reviewed edit on the next press.
+
+A ready snapshot contains a `preview` for that exact name and selection. Its `count` covers all
+edits. `readPage(index)` reads up to 64 edits. A read-only or locked target can be reviewed with
+`canApply` false. An unrelated read-only document can stay in the project. Bind the button to
+`preview.confirm`. Changing the name, source selection or captured targets, replacing the request,
+and disposing the editor retire the old preview. Its `confirm()` returns false and its
+`readPage()` returns undefined. Confirming a current, writable preview applies all pages as one
+undo step across the changed files. The applied snapshot lists their identities and titles.
+
+```ts
+import type { RenameController, RenamePreview } from "sttropez/browser";
+
+export function bindRenameReview(
+    rename: RenameController,
+    apply: HTMLButtonElement,
+    show: (preview: RenamePreview | null) => void
+) {
+    const render = () => {
+        const { preview } = rename.getSnapshot();
+        apply.disabled = !preview?.canApply;
+        apply.onclick = preview?.confirm ?? null;
+        show(preview);
+    };
+    const stop = rename.subscribe(render);
+    render();
+    return () => { stop(); apply.onclick = null; apply.disabled = true; };
+}
+```
 
 Call `createLspRenameClient(provider).run(project, originId, offset, newName, prepare?)` for a
 workspace edit plan. A null reply gives an empty plan. The server checks language naming rules. Your
@@ -444,59 +474,8 @@ history transaction. `origin` is required; `requiredOrigins` adds host permissio
 `view` carries the originating view; `historyKind` defaults to `"replace"`. The helper returns
 only changed document snapshots and throws on refusal. An empty or text-identical batch adds no
 revision/history entry. It owns no leases, selection/lifecycle capture or approval controls.
-Retain those guards and the provider client through the decision:
-
-```ts
-import type { DocumentSnapshot, DocumentView, Workspace } from "sttropez";
-import {
-    applyLspWorkspaceEdit,
-    createLspRenameClient,
-    previewLspWorkspaceEdit,
-    type LspWorkspace,
-    type LspWorkspaceEditPreview
-} from "sttropez/protocol";
-
-export async function reviewRename(
-    workspace: Workspace,
-    provider: LspWorkspace,
-    project: readonly DocumentSnapshot[],
-    view: DocumentView,
-    offset: number,
-    newName: string,
-    signal: AbortSignal,
-    isIntentCurrent: () => boolean,
-    title: (documentId: string) => string,
-    review: (
-        page: (index: number) => LspWorkspaceEditPreview,
-        signal: AbortSignal
-    ) => Promise<boolean>
-) {
-    if (signal.aborted || !isIntentCurrent()) return false;
-    const client = createLspRenameClient(provider);
-    const cancel = () => client.cancel();
-    signal.addEventListener("abort", cancel, { once: true });
-    try {
-        const edit = await client.run(project, view.documentId, offset, newName);
-        if (signal.aborted || !isIntentCurrent() || !edit.isCurrent()) return false;
-        const approved = await review(
-            index => previewLspWorkspaceEdit(edit, title, index), signal
-        );
-        if (!approved || signal.aborted || !isIntentCurrent() || !edit.isCurrent()) return false;
-        const changed = applyLspWorkspaceEdit(workspace, edit, {
-            origin: "host", requiredOrigins: ["human"], view, historyKind: "refactor"
-        });
-        return changed.length > 0;
-    } finally {
-        signal.removeEventListener("abort", cancel);
-        client.dispose();
-    }
-}
-```
-
-Guard the tab, view, all selections, input readiness, name and permissions. If the user dismisses the
-review, abort it, close the UI and settle the callback. Handle promise rejection. Each approved batch
-adds one undo step across its changed files, including unmounted ones. Only a locked or unauthorized
-edit target blocks the batch. An unrelated read-only file can stay in the project.
+Direct protocol consumers retain the provider client, captured view and approval through confirmation.
+The browser controller owns these lifetimes for a mounted editor.
 
 ### Code actions and commands
 
