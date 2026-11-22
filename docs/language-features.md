@@ -172,7 +172,7 @@ Completion and diagnostics share one binding and lease but have separate scopes.
 receives the completion scope after synchronization. Cancellation skips pending preparation or
 discards a late result. Dispose the attachment, editor and provider separately.
 
-Automatic completion waits for input to settle after prefix typing or an advertised trigger character.
+Automatic completion uses the text the editor accepted, including committed composition and advertised trigger characters. It waits for input to settle at the resulting revision and selection. Moving the caret cancels that request, even if you move back before the next frame.
 The controller registers `completion.request`, `completion.dismiss`, `completion.previous`,
 `completion.next`, `completion.page-previous`, `completion.page-next`, `completion.insert` and
 `completion.replace` on the owning editor at shortcut priority 30. Snippet choice commands

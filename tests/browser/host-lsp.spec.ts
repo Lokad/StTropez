@@ -160,7 +160,27 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         expect(methods.filter(method => method === "textDocument/completion")).toHaveLength(0); await expect(page.getByRole("option")).toHaveCount(0);
         await field(page).evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "m" })));
         await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible(); expect(await source(page)).toBe("const samMORE");
-        await field(page).press("Escape"); await seed(page, "const s", 7); await page.evaluate(() => window.hostFixture.setProviderDelay(300));
+        await field(page).press("Escape");
+        const beforeMove = (await provider(page)).posted;
+        await field(page).evaluate(node => {
+            const input = node as HTMLTextAreaElement, fixture = window.hostFixture;
+            input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+            input.setRangeText("p", input.selectionStart, input.selectionEnd, "end");
+            input.dispatchEvent(new CompositionEvent("compositionend", { data: "p", bubbles: true }));
+            const revision = fixture.snapshot().source.revision;
+            fixture.selectSource("primary", revision, { anchor: 0, head: 0 });
+            fixture.selectSource("primary", revision, { anchor: 10, head: 10 });
+        });
+        await ready(page); await page.evaluate(() => new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+        expect(await source(page)).toBe("const sampMORE"); expect((await provider(page)).posted).toBe(beforeMove);
+        await expect(page.getByRole("option")).toHaveCount(0);
+        await field(page).evaluate(async node => {
+            node.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+            node.dispatchEvent(new CompositionEvent("compositionend", { data: "p", bubbles: true }));
+            await new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+        });
+        expect((await provider(page)).posted).toBe(beforeMove);
+        await seed(page, "const s", 7); await page.evaluate(() => window.hostFixture.setProviderDelay(300));
         const count = (await provider(page)).posted; await field(page).pressSequentially("a"); await expect.poll(async () => (await provider(page)).pending).toBe(true);
         await field(page).pressSequentially("mple"); await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible();
         await expect.poll(async () => (await provider(page)).pending).toBe(false); expect(await source(page)).toBe("const sample");
