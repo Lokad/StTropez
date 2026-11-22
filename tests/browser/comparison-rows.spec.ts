@@ -75,6 +75,10 @@ for (const host of ["plain", "react"]) test(`${host} aligned folds, padding poin
     await align(p).check(); await waitForReview(p); const from = raw.indexOf("row 000100"), to = raw.indexOf("row 000130"); await sourceSet(p, [{ anchor: from, head: to }]); await input(p).press("Control+Shift+["); await waitForReview(p); await scroll(p, 110);
     let c = (await snapshot(p)).bindings.comparison!; expect(c.workingViewport.collapsedFolds).toBe(1); expect(c.referenceViewport!.collapsedFolds).toBe(0); expect(c.workingViewport.paddingRows).toBeGreaterThan(0);
     const point = await paddingPoint(p);
+    const hovers = () => snapshot(p).then(state => state.bindings.hover.sessions.find(session => session.id === "comparison")!.counters.posted);
+    const posted = await hovers(); await p.mouse.move(point.x, point.y);
+    await p.waitForTimeout(400); // Cross the host's pointer dwell before checking provider traffic.
+    expect(await hovers()).toBe(posted);
     await p.mouse.click(point.x, point.y); await waitForReview(p); c = (await snapshot(p)).bindings.comparison!; expect(c.selection.head).toBe(from); expect(c.workingViewport.collapsedFolds).toBe(1); await input(p).pressSequentially("H"); await waitForReview(p); await exact(p, raw.slice(0, from) + "H" + raw.slice(from));
     await input(p).press("Control+z"); await waitForReview(p); await exact(p, raw);
     // Existing native DOM geometry supplies a common pitch; no new font/shaping path.

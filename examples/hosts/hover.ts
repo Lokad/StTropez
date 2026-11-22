@@ -1,11 +1,11 @@
-import type { Affinity, TabId, Workspace } from "../../src/index.ts";
-import { createHoverController } from "../../src/browser/index.ts";
+import type { Affinity, TabId } from "../../src/index.ts";
+import { createHoverController, observePointerDwell } from "../../src/browser/index.ts";
 import type { DocumentationContent, HoverController, HoverDiagnostics, HoverSnapshot, TextEditor } from "../../src/browser/index.ts";
 import type { LspScopeAccess, LspWorkspace } from "../../src/protocol/index.ts";
 import { HostCell } from "../shared/observable.ts";
 type Settings = { delay: number; fault?: "malformed" | "failure" | "markup" };
 type Session = { id: string; editor: TextEditor; controller: HoverController; settings: Settings;
-    revision: number; affinity: Affinity; offset: number; overTarget: boolean; scheduled: boolean; cancelTimers: () => void };
+    revision: number; affinity: Affinity; offset: number; overTarget: boolean; cancelTimers: () => void };
 export type HoverPresentation = Readonly<{ visible: boolean; view: string | null; status: HoverSnapshot["status"]; text: string; message: string; content?: DocumentationContent }>;
 export type HoverHostOptions = Readonly<{ provider: LspWorkspace; diagnostics?: HoverDiagnostics;
     beforeRequest?: (session: LspScopeAccess, config: Settings) => Promise<unknown>;
@@ -13,7 +13,6 @@ export type HoverHostOptions = Readonly<{ provider: LspWorkspace; diagnostics?: 
 
 /** Host-owned presentation follows an explicit view; pointer inspection never changes focus. */
 export class HostHoverTools {
-    private readonly workspace: Workspace;
     private readonly allowInspect: (kind: "pointer" | "keyboard") => boolean;
     private readonly options: HoverHostOptions;
     private readonly canCapture: (document: TextEditor["view"]["documentId"]) => boolean;
@@ -26,9 +25,9 @@ export class HostHoverTools {
     private cancelDismiss: (() => void) | undefined;
     private retired = { posted: 0, received: 0, stale: 0, invalid: 0, failed: 0, cancelled: 0 };
     readonly state = this.cell.observable;
-    constructor(workspace: Workspace, allowInspect: (kind: "pointer" | "keyboard") => boolean = () => true,
+    constructor(allowInspect: (kind: "pointer" | "keyboard") => boolean = () => true,
         options: HoverHostOptions) {
-        this.workspace = workspace; this.allowInspect = allowInspect; this.options = options; this.canCapture = options.canCapture ?? (() => true);
+        this.allowInspect = allowInspect; this.options = options; this.canCapture = options.canCapture ?? (() => true);
     }
     private clearDismiss(): void { this.cancelDismiss?.(); this.cancelDismiss = undefined; }
     popupAnchor() {
@@ -82,11 +81,17 @@ export class HostHoverTools {
                 const config = { ...settings }; delete settings.fault; return beforeRequest(session, config);
             } }) });
         const listeners = new AbortController(), win = editor.element.ownerDocument.defaultView!;
-        let pointerTimer: number | undefined, key: string | undefined, scrolled = false;
         let requested: Readonly<{ revision: number; offset: number }> | undefined;
-        const session: Session = { id, editor, controller, settings, revision: -1, affinity: "after", offset: 0, overTarget: false, scheduled: false, cancelTimers: () => {} };
-        const cancelDwell = () => { if (pointerTimer !== undefined) win.clearTimeout(pointerTimer); pointerTimer = undefined; session.scheduled = false; key = undefined; };
-        const cancelPointer = () => { cancelDwell(); requested = undefined; };
+        const session: Session = { id, editor, controller, settings, revision: -1, affinity: "after", offset: 0, overTarget: false, cancelTimers: () => {} };
+        const dwell = observePointerDwell(editor, point => {
+            const state = controller.getSnapshot(), range = state.range;
+            if (requested?.revision === point.revision && (requested.offset === point.offset && ["pending", "ready", "empty", "failed"].includes(state.status)
+                || state.status === "ready" && range && range.from <= point.offset && point.offset < range.to)) return;
+            if (this.inspect(session, point.revision, point.offset, point.affinity, "pointer")) requested = point;
+        }, { enabled: () => !(this.current && this.kind === "keyboard") && this.allowInspect("pointer"),
+            onMiss: () => { requested = undefined; if (this.current === session) this.dismiss(); } });
+        listeners.signal.addEventListener("abort", dwell.dispose, { once: true });
+        const cancelPointer = () => { dwell.cancel(); requested = undefined; };
         session.cancelTimers = cancelPointer;
         try {
             const inspect = editor.commands.register({ id: "hover.inspect", label: "Inspect type",
@@ -95,7 +100,7 @@ export class HostHoverTools {
             listeners.signal.addEventListener("abort", inspect.dispose, { once: true });
             const close = editor.commands.register({ id: "hover.dismiss", label: "Dismiss hover",
                 enabled: () => (editor.getSnapshot().focused || !!this.popup?.matches(":focus-within"))
-                    && (this.current === session || session.scheduled), run: () => {
+                    && (this.current === session || dwell.isPending()), run: () => {
                     if (this.current !== session) { cancelPointer(); return false; }
                     const visible = this.cell.get().visible; this.dismiss(); return visible;
                 } }, { keys: ["Escape"], priority: 20, shared: true });
@@ -103,43 +108,7 @@ export class HostHoverTools {
         } catch (error) { listeners.abort(); controller.dispose(); throw error; }
         this.sessions.set(id, session);
         const stop = controller.subscribe(() => { if (this.current === session) this.publish(); });
-        const pointerAt = (x: number, y: number) => {
-            const viewport = editor.viewport.snapshot(); if (viewport.pending) return undefined;
-            const point = editor.viewport.hitTest(x, y);
-            return point && Math.abs(point.left - x) <= viewport.columnWidth * 1.5 && Math.abs(point.top + point.height / 2 - y) <= point.height ? point : undefined;
-        };
-        const sameTarget = (revision: number, offset: number) => {
-            if (requested?.revision !== revision) return false;
-            const state = controller.getSnapshot();
-            if (requested.offset === offset && (state.status === "pending" || state.status === "ready" || state.status === "empty" || state.status === "failed")) return true;
-            return state.status === "ready" && state.range !== null && state.range.from <= offset && offset < state.range.to;
-        };
         editor.element.addEventListener("pointerenter", () => { session.overTarget = true; if (this.current === session) this.clearDismiss(); }, { signal: listeners.signal });
-        editor.element.addEventListener("pointermove", event => {
-            // Keyboard inspection owns the popup until dismissal or a captured-state change.
-            // Browsers can deliver delayed pointer motion after a dialog or layout change.
-            if (this.current && this.kind === "keyboard" && !event.buttons) { cancelPointer(); return; }
-            if (!this.allowInspect("pointer")) { cancelPointer(); return; }
-            if (event.buttons || event.ctrlKey || event.metaKey || editor.activity().composing) { cancelPointer(); if (this.current === session) this.dismiss(); return; }
-            const x = event.clientX, y = event.clientY, pending = editor.viewport.activity().pending, point = pointerAt(x, y);
-            if (!pending && !point) {
-                cancelPointer(); if (this.current === session) this.dismiss(); return;
-            }
-            const revision = this.workspace.document(editor.view.documentId).revision;
-            session.overTarget = true; if (this.current === session) this.clearDismiss();
-            if (point && sameTarget(revision, point.offset)) { cancelDwell(); return; }
-            const next = `${revision}:${point?.offset ?? `${x},${y}`}`;
-            if (key === next) return; cancelDwell(); key = next; session.scheduled = true; scrolled = false;
-            // Decoration/focus changes can leave a frame pending when the pointer arrives.
-            // Keep the existing dwell, then capture settled geometry once; never force a paint
-            // from pointermove or retry indefinitely, and never follow a changed document.
-            pointerTimer = win.setTimeout(() => {
-                cancelDwell();
-                const settled = pointerAt(x, y);
-                if (settled?.revision === revision && (!scrolled || settled.offset === point?.offset) && !sameTarget(revision, settled.offset)
-                    && this.inspect(session, revision, settled.offset, settled.affinity, "pointer")) requested = settled;
-            }, 300);
-        }, { signal: listeners.signal });
         editor.element.addEventListener("pointerleave", () => { cancelPointer(); session.overTarget = false; if (this.current === session) this.queueDismiss(session); }, { signal: listeners.signal });
         editor.element.addEventListener("pointerdown", () => { cancelPointer(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
         win.addEventListener("keydown", event => {
@@ -161,9 +130,7 @@ export class HostHoverTools {
         editor.input.addEventListener("compositionstart", () => { session.cancelTimers(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
         editor.input.addEventListener("beforeinput", () => { cancelPointer(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
         const scroll = () => {
-            // An ancestor may report its completed scroll just after a pointer move.
-            // A pending dwell can still open if the very same character is under the pointer.
-            scrolled = true; requested = undefined; if (this.current === session && this.kind === "pointer") this.dismiss();
+            requested = undefined; if (this.current === session && this.kind === "pointer") this.dismiss();
         };
         editor.element.addEventListener("scroll", scroll, { capture: true, signal: listeners.signal });
         win.addEventListener("scroll", event => {

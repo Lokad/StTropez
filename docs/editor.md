@@ -197,6 +197,20 @@ lines, or Shift+click a number to extend to that line. The editor keeps keyboard
 gutter scrolls with the wheel and stays in place horizontally. Both comparison panes use their
 own source line numbers. Alignment gaps have no number.
 
+### Pointer dwell
+
+`observePointerDwell(editor, listener, options?)` reports the document ID, revision, UTF-16 offset and
+caret affinity under a resting mouse or pen. It leaves focus and selection with their current owner.
+The default delay is 300 ms. Set `delayMs` to change it or `enabled` to suspend observation while
+another control is open. `onMiss` can dismiss a hint when the pointer moves off text, onto a
+comparison gap, or with a pressed button or Ctrl/Cmd.
+
+The observer checks the painted position again when the delay ends. A changed revision, fold projection
+or aligned comparison expires the pending visit. Use `isPending()` for pending work, `cancel()` to
+forget the current visit and `dispose()` to detach. Disposing the editor also detaches it.
+
+### Shortcuts
+
 Ctrl/Cmd means either Control or Meta, without Alt. The word modifier is Control, or Option
 on Apple platforms. Shift extends movement from each selection's anchor.
 

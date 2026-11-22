@@ -219,7 +219,7 @@ export class ViewBindings {
         this.lspOwner = lsp.owner;
         const reconnectProvider = () => { void lsp.owner.reconnect().catch(controller.reportError); };
         this.language = new HostLanguageTools(controller.workspace, { canCapture, providerFactory: lsp.provider });
-        this.hover = new HostHoverTools(controller.workspace, kind => { if (kind === "pointer") return !this.signature?.state.getSnapshot().visible; this.signature?.dismiss(); return true; }, { ...lsp.hover, canCapture });
+        this.hover = new HostHoverTools(kind => { if (kind === "pointer") return !this.signature?.state.getSnapshot().visible; this.signature?.dismiss(); return true; }, { ...lsp.hover, canCapture });
         this.navigation = new HostNavigationTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.navigation, reconnectProvider);
         this.project = new HostProjectTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.project, lsp.owner, undefined, reconnectProvider);
         this.colors = new HostDocumentColors(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.colors, reconnectProvider);

@@ -270,7 +270,7 @@ commit-character acceptance inserts expanded text plus the character without sta
 ### Hover and documentation
 
 `createHoverController(editor, provider)` inspects the caret with `request()` or accepts a
-captured `{ revision, offset }` from the pointer. It shows diagnostics at that offset as soon as
+captured `{ revision, offset }` from the [pointer dwell observer](editor.md#pointer-dwell). It shows diagnostics at that offset as soon as
 they are available. Symbol documentation joins them when the hover request completes. Messages
 remain plain text. A mapped diagnostic reads “Awaiting recheck” until fresh analysis arrives.
 
