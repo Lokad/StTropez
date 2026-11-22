@@ -64,7 +64,8 @@ function refreshBrackets(captured: TextEditor | undefined) {
 const presentation = new DemoPresentation(() => { syntaxLayer?.invalidate(); if (presentation.status === "ready") refreshBrackets(editor); renderOutput(); renderMetadata(); });
 const indentation = element("indentation") as HTMLSelectElement;
 function editingConfiguration(rules = presentation.editing) {
-    const config = rules.configuration(indentation.value === "2" ? 2 : 4, indentation.value !== "tabs");
+    const tabSize = indentation.value === "sample" ? project?.sample.indentSize ?? 2 : indentation.value === "2" ? 2 : 4;
+    const config = rules.configuration(tabSize, indentation.value !== "tabs");
     if (project?.sample.id === "host") return hostConfiguration(config.tabSize!, config.insertSpaces!);
     return project?.sample.id === "outline" ? { tabSize: config.tabSize!, insertSpaces: config.insertSpaces!, lineComment: "#", pairs: [], enter: "keep" as const } : config;
 }
@@ -442,6 +443,7 @@ async function openSample(id: SampleId): Promise<void> {
     if (active && editor) savedViews.set(active.view, editor.captureView());
     detachView(); project?.language.suspend(); active = undefined; project = next;
     selectSample(id); sample.disabled = false;
+    indentation.options[0]!.textContent = `Sample default (${next.sample.indentSize ?? 2} spaces)`;
     element("description").textContent = next.sample.description;
     const tabs = next.files.map(file => {
         const tab = document.createElement("button"); tab.dataset.file = file.name; tab.textContent = file.name;
@@ -593,8 +595,11 @@ for (const command of ["line-comment", "block-comment", "indent", "outdent"] as 
 });
 indentation.addEventListener("change", () => {
     editor?.configure({ language: editingConfiguration() });
-    comparison?.panes.reference.configure({ language: editingConfiguration(referencePresentation?.editing) }); folding?.refresh(); referenceFolding?.refresh(); editor?.focus();
+    comparison?.panes.reference.configure({ language: editingConfiguration(referencePresentation?.editing) }); folding?.refresh(); referenceFolding?.refresh();
+    codeMenu.open = false;
+    (comparison?.activePane() ?? editor)?.focus();
 }, { signal: listeners.signal });
+element("host-paste-mode").addEventListener("change", () => { codeMenu.open = false; }, { signal: listeners.signal });
 codeMenu.addEventListener("click", event => {
     const target = event.target as HTMLElement;
     // Inspection can replace its clicked entry before this bubbling listener runs.
@@ -602,9 +607,19 @@ codeMenu.addEventListener("click", event => {
     if (target.closest("button") && !inspection) codeMenu.open = false;
 }, { signal: listeners.signal });
 for (const menu of [codeMenu, element("view-menu") as HTMLDetailsElement]) {
+    const summary = menu.querySelector("summary")!;
+    const position = () => {
+        if (!menu.open) return;
+        const trigger = summary.getBoundingClientRect();
+        menu.style.setProperty("--menu-right", `${trigger.right}px`);
+        menu.style.setProperty("--menu-top", `${Math.max(8, trigger.bottom + 6)}px`);
+    };
+    menu.addEventListener("toggle", position, { signal: listeners.signal });
+    window.addEventListener("resize", position, { signal: listeners.signal });
+    window.addEventListener("scroll", position, { signal: listeners.signal });
     document.addEventListener("pointerdown", event => { if (!menu.contains(event.target as Node)) menu.open = false; }, { signal: listeners.signal });
     menu.addEventListener("keydown", event => {
-        if (event.key === "Escape" && menu.open) { event.preventDefault(); menu.open = false; menu.querySelector("summary")!.focus(); }
+        if (event.key === "Escape" && menu.open) { event.preventDefault(); menu.open = false; summary.focus(); }
     }, { signal: listeners.signal });
 }
 on("language-retry", () => {

@@ -98,7 +98,18 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
     await source.press("Control+z"); await expect(source).toHaveValue(original);
 
     await source.press("Control+End"); await page.locator("#code-menu summary").click();
-    await page.locator("#host-paste-mode").selectOption("csv"); await page.locator("#code-menu summary").click();
+    const viewport = page.viewportSize()!;
+    await page.setViewportSize({ width: 375, height: 667 });
+    await expect.poll(() => page.locator("#code-menu > div").evaluate(list => {
+        list.scrollTop = list.scrollHeight;
+        const bounds = list.getBoundingClientRect(), last = list.querySelector("#host-annotate")!;
+        const button = last.getBoundingClientRect();
+        return bounds.left >= 0 && bounds.right <= innerWidth && bounds.bottom <= innerHeight
+            && last.contains(document.elementFromPoint(button.left + button.width / 2, button.top + button.height / 2));
+    })).toBe(true);
+    await page.locator("#host-paste-mode").selectOption("csv");
+    await expect(page.locator("#code-menu")).toHaveJSProperty("open", false); await expect(source).toBeFocused();
+    await page.setViewportSize(viewport);
     await paste(source, "a\tb\nc\td"); await expect(page.locator("#host-status")).toHaveText("Pasted 2 × 2 table as CSV.");
     // Textarea values normalize line endings; model paste tests own exact CRLF preservation.
     await expect(source).toHaveValue(original + '"a","b"\n"c","d"');

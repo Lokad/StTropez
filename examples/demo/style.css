@@ -10,7 +10,13 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .toolbar-menu { position: relative; font-size: 13px; }
 .toolbar-menu a { color: #8cddca; }
 .toolbar-menu summary { cursor: pointer; border: 1px solid #36435a; border-radius: 5px; background: #1b273a; padding: 7px 11px; }
-.toolbar-menu > div { position: absolute; top: calc(100% + 6px); right: 0; min-width: 190px; max-height: calc(100vh - 110px); overflow: auto; z-index: 30; padding: 5px; border: 1px solid #40536e; border-radius: 6px; background: #1b283c; box-shadow: 0 8px 28px #0007; }
+.toolbar-menu > div {
+    --menu-width: min(250px, calc(100% - 16px));
+    position: fixed; top: var(--menu-top); width: var(--menu-width);
+    left: clamp(8px, calc(var(--menu-right) - var(--menu-width)), calc(100% - var(--menu-width) - 8px));
+    max-height: calc(100% - var(--menu-top) - 8px); overflow: auto; overscroll-behavior: contain; z-index: 30;
+    padding: 5px; border: 1px solid #40536e; border-radius: 6px; background: #1b283c; box-shadow: 0 8px 28px #0007;
+}
 .toolbar-menu button { display: block; width: 100%; border: 0; text-align: left; }
 .toolbar-menu label { display: grid; gap: 5px; padding: 7px 11px; }
 .toolbar-menu .menu-check { display: flex; align-items: center; white-space: nowrap; }

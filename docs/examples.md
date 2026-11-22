@@ -50,6 +50,8 @@ always uses the bounded editor. Installed examples use `mountTextEditor`. Both d
 Open **Shopping cart** or **Fix a type error**. Edit the source, inspect JavaScript or Problems,
 then open Changes to compare against the saved file. Save writes to this browser. The demo compiles
 TypeScript without executing it. The Code menu contains language, indentation and folding commands.
+Enter and Tab follow the sample’s indentation. Choose spaces or tabs under Code → Indentation to
+override it across samples, or select Sample default to switch back.
 
 Click in **JavaScript** to select and copy the emitted code. Ctrl+A (Cmd+A on macOS) selects the
 entire output, including lines outside the viewport. Edit the TypeScript pane to change the output.

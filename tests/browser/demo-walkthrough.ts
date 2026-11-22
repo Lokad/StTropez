@@ -421,6 +421,15 @@ export async function runDemoEditingRules(page: Page, url = "/") {
     await expect(source).toBeVisible();
     const replace = async (text: string) => { await source.press("Control+Home"); await source.press("Control+a"); await page.keyboard.insertText(text); };
     const menu = async (name: string) => { await page.locator("#code-menu summary").click(); await page.getByRole("button", { name, exact: true }).click(); };
+    const indentation = async (value: string) => {
+        await page.locator("#code-menu summary").click(); await page.locator("#indentation").selectOption(value);
+        await expect(page.locator("#code-menu")).toHaveJSProperty("open", false); await expect(source).toBeFocused();
+    };
+    await source.press("Control+Home");
+    for (let i = 0; i < 3; i++) await source.press("ArrowDown");
+    await source.press("End"); await source.press("Enter"); await page.keyboard.insertText("probe");
+    await expect(source).toHaveValue(/CartItem\[\] = \[\n    probe\n    \{ name: "Notebook"/);
+    await indentation("2");
     await replace("function demo() {}"); await source.press("ArrowLeft");
     await expect(page.locator("#editor .st-matching-bracket")).toHaveText(["{", "}"]);
     await source.press("Enter");
@@ -443,9 +452,9 @@ export async function runDemoEditingRules(page: Page, url = "/") {
     await source.pressSequentially('"'); await expect(source).toHaveValue('/*\n[comment]"\n*/\n');
     await replace("a\nb\n"); await source.press("Control+a"); await menu("Indent selection");
     await expect(source).toHaveValue("  a\n  b\n"); await source.press("Control+z");
-    await page.locator("#code-menu summary").click(); await page.locator("#indentation").selectOption("4"); await page.locator("#code-menu summary").click();
+    await indentation("4");
     await source.press("Tab"); await expect(source).toHaveValue("    a\n    b\n"); await source.press("Control+z");
-    await page.locator("#code-menu summary").click(); await page.locator("#indentation").selectOption("tabs"); await page.locator("#code-menu summary").click();
+    await indentation("tabs");
     await source.press("Tab"); await expect(source).toHaveValue("\ta\n\tb\n");
     await page.getByRole("button", { name: "Compare", exact: true }).click();
     await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");

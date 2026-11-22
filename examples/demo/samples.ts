@@ -1,7 +1,7 @@
 import type { FoldRange } from "../../src/index.ts";
 
 export type SampleId = "pricing" | "shipping" | "errors" | "unicode" | "large" | "catalogue" | "templates" | "results" | "outline" | "documentation" | "navigation" | "diagnostics" | "actions" | "host";
-export type DemoSample = Readonly<{ id: SampleId; title: string; description: string; files: Readonly<Record<string, string>>;
+export type DemoSample = Readonly<{ id: SampleId; title: string; description: string; files: Readonly<Record<string, string>>; indentSize?: 2 | 4;
     initialFiles?: readonly string[]; initialFolds?: Readonly<Record<string, readonly FoldRange[]>>; declarations?: Readonly<Record<string, string>> }>;
 
 const pricing = `export interface CartItem {
@@ -47,7 +47,7 @@ export const sampleChoices: readonly Readonly<{ id: SampleId; title: string }>[]
 
 /** Large fixtures are built only on explicit selection. */
 export function demoSample(id: SampleId): DemoSample {
-    if (id === "shipping") return { id, title: "Shipping quotes",
+    if (id === "shipping") return { id, title: "Shipping quotes", indentSize: 4,
         description: "Turn on View → Minimap. Hover to locate the rate table, then jump to the quote calculation. Change a rate and open Changes to review your edit.",
         files: { "shipping.ts": `type Zone = "local" | "regional";
 
@@ -161,11 +161,11 @@ for (const quote of shippingQuotes(parcel, "local")) {
         description: "Open Problems to browse 300 type errors. In uses.ts, select sharedValue, then use Code → Find references or Rename to review all 1,201 occurrences. Results are paged; one undo restores a rename.",
         files: { "uses.ts": "const sharedValue = 1;\n" + Array.from({ length: 1200 }, (_, i) => `const use${i} = sharedValue;`).join("\n") + "\n",
             "problems.ts": Array.from({ length: 300 }, (_, i) => `const problem${i}: number = "needs a number";`).join("\n") + "\n" } };
-    if (id === "templates") return { id, title: "Snippets & lazy completion",
+    if (id === "templates") return { id, title: "Snippets & lazy completion", indentSize: 4,
         description: "Demo template provider: go to the end (Ctrl+End), press Ctrl+Space and Tab. Edit linked names, Tab/Shift+Tab through fields, Alt+Up/Down for choices; Escape finishes.",
         files: { "templates.ts": "// Demo-owned templates demonstrate the public completion protocol.\n// TypeScript still checks, colors and compiles these files.\n\ntemplate",
             "types.ts": 'export interface TemplateRecord {\n    state: "draft" | "ready";\n}\n' } };
-    if (id === "catalogue") return { id, title: "Completion catalogue",
+    if (id === "catalogue") return { id, title: "Completion catalogue", indentSize: 4,
         description: "Go to the end (Ctrl+End), type catalogue. and explore 1,200 fields. Filter by typing item119, then choose with arrows and Tab.",
         files: { "catalogue.ts": "// A real TypeScript object supplies every completion candidate.\nconst catalogue = {\n"
             + Array.from({ length: 1200 }, (_, i) => `    item${String(i).padStart(4, "0")}: ${i},`).join("\n")
@@ -185,7 +185,7 @@ Enjoy your visit.\`;
 
 console.log(invitation, accents, emoji);
 ` } };
-    return { id, title: id === "errors" ? "Fix a type error" : "Shopping cart",
+    return { id, title: id === "errors" ? "Fix a type error" : "Shopping cart", indentSize: 4,
         description: id === "errors" ? "The discount should be a number. Open Problems, then replace the string with 0.1 to fix the error."
             : "Edit the cart or compare the operators in readyToShip with View → Font ligatures.",
         files: { "main.ts": id === "errors" ? main.replace("calculateTotal(cart, 0.1)", 'calculateTotal(cart, "10%")') : main, "pricing.ts": pricing } };
