@@ -43,7 +43,7 @@ try {
                 const head = isPage ? (line.length + eol.length) * Math.floor(lineCount / 2) + 8 : backward ? 1_000_000 : 0;
                 window.editingFixture.setText(text); window.editingFixture.select("primary", { anchor: head, head }); window.editingFixture.focus("primary");
                 return { key: isPage ? "PageDown" : `Control+${name.startsWith("delete") ? backward ? "Backspace" : "Delete" : backward ? "ArrowLeft" : "ArrowRight"}`,
-                    expected: isPage ? null : backward ? 0 : 1_000_002, lineUnits: line.length + eol.length, head };
+                    expected: isPage ? null : name === "word-forward" ? 1_000_000 : 0, lineUnits: line.length + eol.length, head };
             }, name); await ready();
             const before = await harness.page.evaluate(() => window.editingFixture.snapshot());
             assert.ok(before.document, "Navigation measurement requires a document.");
@@ -71,12 +71,12 @@ try {
             await harness.page.keyboard.press(config.key);
             const sample = await harness.page.evaluate(() => /** @type {MeasurementGlobal} */ (globalThis).navigationMeasurement), state = sample.state;
             assert.ok(state.document, "Navigation measurement lost its document.");
-            assert.equal(state.primary.selection.head, name.startsWith("delete") ? 0 : expected);
+            assert.equal(state.primary.selection.head, expected, name);
             assert.equal(state.document.revision - before.document.revision, name.startsWith("delete") ? 1 : 0);
-            assert.equal(state.document.length, name === "delete-forward" ? 4 : name === "delete-backward" ? 6 : before.document.length);
+            assert.equal(state.document.length, name.startsWith("delete") ? 6 : before.document.length);
             assert.equal(state.document.exports, 0); assert.equal(state.primary.conflicts, 0); assert.ok(state.primary.inputUnits <= 2600);
             assert.equal(await harness.page.locator("textarea.st-textarea-baseline").count(), 0);
-            if (name.startsWith("delete")) assert.equal(await harness.page.evaluate(length => window.editingFixture.range(0, length), state.document.length), name === "delete-forward" ? "tail" : "  tail");
+            if (name.startsWith("delete")) assert.equal(await harness.page.evaluate(length => window.editingFixture.range(0, length), state.document.length), "  tail");
             if (!name.startsWith("page")) { assert.ok(state.primary.wordScanSteps > 1); assert.ok(Number.isFinite(state.primary.maxWordScanStepMs)); }
             if (trial >= 3) samples.push({ keyToFrameReadyProxyMs: sample.keyToFrameReadyProxyMs, document: state.document, primary: state.primary, history: state.history });
         }
