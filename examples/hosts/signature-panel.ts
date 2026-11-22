@@ -39,7 +39,7 @@ export function mountSignaturePopup(host: HTMLElement, source: Observable<Signat
         return { button, id };
     });
     if (withControls) popup.append(controls); host.append(popup);
-    const placement = bindPopup(popup, "above");
+    const placement = bindPopup(popup, { prefer: "above" });
     const render = () => { const s = source.getSnapshot(), editor = activeEditor();
         const sig = s.signature, label = sig?.label ?? "", arg = sig?.activeParameter == null ? undefined : sig.parameters[sig.activeParameter];
         before.textContent = arg ? label.slice(0, arg.from) : s.status === "pending" ? s.message : label;

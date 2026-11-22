@@ -24,7 +24,10 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         const replies = await holdLspReplies(page, "textDocument/hover"); await page.reload();
         const packets: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const data = JSON.parse(frame.payload.toString()); if (data.method) packets.push(data.method); }));
         await seed(page, "const café = 1;\r\n𐐀value = 2;", 2); await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 2, head: 2 }, { anchor: 8, head: 8 }]); }); await waitForNavigation(page);
+        await moveEditorIntoShadow(field(page));
+        await field(page).focus(); await waitForNavigation(page);
         const before = await snapshot(page); await hover(page); await expect(page.getByRole("tooltip")).toContainText("Declares a constant binding."); await expect(field(page)).toBeFocused();
+        await page.getByRole("tooltip").focus(); await page.keyboard.press("Escape"); await expect(field(page)).toBeFocused();
         expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "primary")!.selectionSet);
         expect((await snapshot(page)).bindings.hover.sessions.find(session => session.id === "primary")!.counters.transport).toBe("lsp3.17");
         await page.evaluate(() => window.hostFixture.faultHoverNext("primary", "markup")); await hover(page); await expect(page.getByRole("tooltip")).toContainText("<img"); await expect(page.getByRole("tooltip").locator("img,script")).toHaveCount(0);

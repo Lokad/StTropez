@@ -6,16 +6,25 @@ export function mountHoverPanel(host: HTMLElement, tools: HostHoverTools, option
     const owner = host.ownerDocument, popup = owner.createElement("div"), hint = owner.createElement("span"), listeners = new AbortController();
     const content = mountDocumentation(popup, options);
     popup.className = "host-symbol-info"; popup.tabIndex = -1; popup.setAttribute("role", "tooltip"); hint.textContent = "Esc to close"; popup.append(hint); host.append(popup);
-    const placement = bindPopup(popup, "below");
+    const placement = bindPopup(popup, { prefer: "below" });
+    const keyboard = { prefer: "below", dismissOn: ["focus-leave"], onDismiss: tools.dismiss } as const;
     const detach = tools.bindPopup(popup);
-    let previousFocus: HTMLElement | undefined;
+    let enteringFrom: HTMLElement | undefined, previousFocus: HTMLElement | undefined;
+    // focusin exposes a shadow host as relatedTarget. Capture the departing control before retargeting.
+    popup.getRootNode().addEventListener("focusout", event => {
+        const next = (event as FocusEvent).relatedTarget;
+        const from = next instanceof Node && popup.contains(next) ? event.composedPath()[0] : undefined;
+        enteringFrom = from instanceof HTMLElement ? from : undefined;
+    }, { capture: true, signal: listeners.signal });
     popup.addEventListener("focusin", event => {
         if (!(event.relatedTarget instanceof Node && popup.contains(event.relatedTarget)))
-            previousFocus = event.relatedTarget instanceof HTMLElement ? event.relatedTarget : undefined;
+            previousFocus = enteringFrom ?? (event.relatedTarget instanceof HTMLElement ? event.relatedTarget : undefined);
+        enteringFrom = undefined;
     }, { signal: listeners.signal });
     popup.addEventListener("focusout", event => {
         const anchor = tools.popupAnchor();
-        if (!anchor || !(event.relatedTarget instanceof Node) || popup.contains(event.relatedTarget) || event.relatedTarget === previousFocus) return;
+        const next = event.relatedTarget;
+        if (!anchor || tools.keyboardActive || (next instanceof Node && (popup.contains(next) || anchor.editor.element.contains(next) || next === previousFocus))) return;
         const shown = tools.state.getSnapshot();
         // The destination receives focus after focusout. It may be this editor inside a shadow root.
         queueMicrotask(() => {
@@ -41,6 +50,6 @@ export function mountHoverPanel(host: HTMLElement, tools: HostHoverTools, option
     const render = () => { const state = tools.state.getSnapshot();
         if (!state.visible) previousFocus = undefined;
         content.setContent(state.visible ? state.content ?? [{ kind: "plaintext", value: state.text || state.message }] : []);
-        placement.update(tools.popupAnchor()); };
+        placement.update(tools.popupAnchor(), tools.keyboardActive ? keyboard : undefined); };
     const stop = tools.state.subscribe(render); render(); return () => { stop(); detach(); placement.dispose(); listeners.abort(); content.dispose(); popup.remove(); };
 }

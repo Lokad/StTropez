@@ -94,7 +94,7 @@ offer **Go to line**. Editing commands are disabled in both read-only panes.
 | Action | Workflow |
 | --- | --- |
 | Completion | Type an identifier or member prefix, press Ctrl+Space or choose **Show completions**. Arrows select a result. Enter, Tab or a click accepts it. Escape closes the list. |
-| Type inspection | Hover over a symbol, or use **Inspect type** / Ctrl+K, Ctrl+I at the caret. A plain click keeps typing focus. Select tooltip text to copy it or follow a help link. Escape closes the tooltip and preserves the source caret. |
+| Type inspection | Hover over a symbol, or use **Inspect type** / Ctrl+K, Ctrl+I at the caret. Select tooltip text to copy it or follow a help link. A plain click returns focus to the previous control. Escape closes the tooltip. Keyboard inspection also closes when focus leaves both the editor and the tooltip. |
 | Signature help | Type a provider trigger or use **Show signature help** / Ctrl+Shift+Space. Moving between arguments updates the active parameter. The overload controls choose another signature. |
 | Definition and references | F12 / Shift+F12 request locations. Each result shows its file, line, column and an excerpt with the symbol highlighted. **Back to previous location** restores the source selection and view. Alt+Left also returns on Windows and Linux. Option+Left moves by word on Apple platforms. |
 | Rename | F2 / **Rename symbol** previews the proposed name across files. The list scrolls independently. Next and Previous show the first edit on the chosen page and keep numbering across pages. Changing the name requires another preview. Apply creates one shared undo step for the validated files. |

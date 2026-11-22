@@ -31,6 +31,7 @@ export class HostHoverTools {
         this.allowInspect = allowInspect; this.options = options; this.canCapture = options.canCapture ?? (() => true);
     }
     private clearDismiss(): void { this.cancelDismiss?.(); this.cancelDismiss = undefined; }
+    get keyboardActive(): boolean { return !!this.current && this.kind === "keyboard"; }
     popupAnchor() {
         const session = this.current;
         if (!session || !this.cell.get().visible) return;
@@ -40,9 +41,9 @@ export class HostHoverTools {
     }
     private publish(): void {
         const session = this.current;
-        if (!session) { this.cell.set({ ...this.cell.get(), visible: false, view: null, status: "idle", text: "", message: "" }); return; }
+        if (!session) { this.cell.set({ visible: false, view: null, status: "idle", text: "", message: "" }); return; }
         const state = session.controller.getSnapshot();
-        if (["expired", "empty", "disposed"].includes(state.status)) { this.current = undefined; this.overPopup = false; this.clearDismiss(); this.cell.set({ ...this.cell.get(), visible: false, view: null, status: state.status, text: "", message: state.message }); return; }
+        if (["expired", "empty", "disposed"].includes(state.status)) { this.current = undefined; this.overPopup = false; this.clearDismiss(); this.cell.set({ visible: false, view: null, status: state.status, text: "", message: state.message }); return; }
         const visible = state.status === "ready" || state.status === "failed" || (state.status === "pending" && this.kind === "keyboard");
         this.cell.set({ visible, view: session.id, status: state.status, text: state.text, message: state.message, ...(state.content ? { content: state.content } : {}) });
     }
@@ -88,7 +89,7 @@ export class HostHoverTools {
         const listeners = new AbortController(), win = editor.element.ownerDocument.defaultView!;
         const session: Session = { id, editor, controller, settings, revision: -1, affinity: "after", offset: 0, overTarget: false, cancelTimers: () => {} };
         const dwell = observePointerDwell(editor, point => this.inspect(session, point.revision, point.offset, point.affinity, "pointer"), {
-            enabled: () => !(this.current && this.kind === "keyboard") && this.allowInspect("pointer"),
+            enabled: () => !this.keyboardActive && this.allowInspect("pointer"),
             onMiss: () => { if (this.current === session) this.dismiss(); } });
         listeners.signal.addEventListener("abort", dwell.dispose, { once: true });
         session.cancelTimers = dwell.cancel;
@@ -106,9 +107,11 @@ export class HostHoverTools {
         } catch (error) { listeners.abort(); controller.dispose(); throw error; }
         this.sessions.set(id, session);
         const stop = controller.subscribe(() => { if (this.current === session) this.publish(); });
+        const dismissPane = () => { if (this.current === session) this.dismiss(); };
+        const dismissPointer = () => { if (this.kind === "pointer") dismissPane(); };
         editor.element.addEventListener("pointerenter", () => { session.overTarget = true; if (this.current === session) this.clearDismiss(); }, { signal: listeners.signal });
-        editor.element.addEventListener("pointerleave", () => { dwell.cancel(); session.overTarget = false; if (this.current === session) this.queueDismiss(session); }, { signal: listeners.signal });
-        editor.element.addEventListener("pointerdown", () => { dwell.cancel(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
+        editor.element.addEventListener("pointerleave", () => { session.overTarget = false; if (this.current === session) this.queueDismiss(session); }, { signal: listeners.signal });
+        editor.element.addEventListener("pointerdown", dismissPane, { signal: listeners.signal });
         win.addEventListener("keydown", event => {
             if (event.key === "Escape" && this.current === session && this.kind === "pointer" && this.cell.get().visible
                 && !event.defaultPrevented && !event.isComposing && event.keyCode !== 229 && !event.ctrlKey && !event.metaKey
@@ -119,31 +122,21 @@ export class HostHoverTools {
             }
             if (event.key !== "Control" && event.key !== "Meta") return;
             if (this.popup?.matches(":focus-within")) return;
-            dwell.cancel(); if (this.current === session && this.kind === "pointer") this.dismiss();
+            dwell.cancel(); dismissPointer();
         }, { signal: listeners.signal });
-        editor.element.addEventListener("focusout", event => {
-            if (this.current === session && this.kind === "keyboard"
-                && !(event.relatedTarget instanceof Node && this.popup?.contains(event.relatedTarget))) this.dismiss();
-        }, { signal: listeners.signal });
-        editor.onEditIntent(() => {
-            dwell.cancel();
-            if (this.current === session) this.dismiss();
-        }, listeners.signal);
-        const scroll = () => {
-            if (this.current === session && this.kind === "pointer") this.dismiss();
-        };
-        editor.element.addEventListener("scroll", scroll, { capture: true, signal: listeners.signal });
+        editor.onEditIntent(() => { dwell.cancel(); dismissPane(); }, listeners.signal);
+        editor.element.addEventListener("scroll", dismissPointer, { capture: true, signal: listeners.signal });
         win.addEventListener("scroll", event => {
             const target = event.target;
             if (target !== win && target !== editor.element.ownerDocument && !(target instanceof Node && target.contains(editor.element))) return;
-            scroll();
+            dismissPointer();
         }, { capture: true, signal: listeners.signal });
-        win.addEventListener("resize", () => { dwell.cancel(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
+        win.addEventListener("resize", dismissPane, { signal: listeners.signal });
         return detachWithEditor(editor, listeners.signal, () => {
             if (this.sessions.get(id) !== session) return;
             this.sessions.delete(id);
             if (this.current === session) this.dismiss();
-            session.cancelTimers(); listeners.abort(); stop();
+            listeners.abort(); stop();
             const counts = controller.getDiagnostics(); for (const name of Object.keys(this.retired) as (keyof typeof this.retired)[]) this.retired[name] += counts[name];
             controller.dispose();
         });

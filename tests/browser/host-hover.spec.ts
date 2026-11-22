@@ -89,6 +89,10 @@ for (const host of ["plain", "react"]) {
         const after = await snapshot(page); expect(after.bindings.hover.presentation.view).toBe("primary");
         expect(after.bindings.comparison!.selectionSet).toEqual(captured.bindings.comparison!.selectionSet); expect(after.history).toEqual(captured.history);
         expect(after.source.revision).toBe(captured.source.revision); expect(after.source.exports).toBe(0);
+        await tooltip(page).focus();
+        await page.getByRole("heading", { level: 1 }).click();
+        await expect.poll(async () => (await snapshot(page)).bindings.hover.presentation.visible).toBe(false);
+        expect((await snapshot(page)).bindings.hover.presentation).not.toHaveProperty("content");
         await page.evaluate(() => window.hostFixture.dispose()); const final = await snapshot(page);
         expect(final.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(final.hostSubscriptions).toBe(0);
         expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
