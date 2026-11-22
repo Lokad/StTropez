@@ -38,17 +38,22 @@ test("a host pre-protocol text message precedes initialize on every WebSocket co
 test("disposing a session during a held WebSocket handshake releases pending ownership", async ({ page, browserName, browserErrors }, testInfo) => {
     // Withhold HTTP 101: cancellation must run while the native socket is CONNECTING.
     const server = createServer(), sockets = new Set<Duplex>(), failures: Error[] = []; let upgrades = 0, closed = 0, received = 0;
-    const peer = new WebSocketServer({ noServer: true }); let finishHandshake: (() => void) | undefined;
+    const peer = new WebSocketServer({ noServer: true }); let finishHandshake: (() => void) | undefined, disposalStarted = false;
+    const recordError = (error: Error) => {
+        // A browser can abort its opening TCP connection with a reset instead of FIN.
+        if (disposalStarted && "code" in error && error.code === "ECONNRESET") return;
+        failures.push(error);
+    };
     server.on("upgrade", (request, socket, head) => {
         upgrades++; sockets.add(socket);
         finishHandshake = () => {
             if (socket.destroyed || socket.readableEnded) return;
             peer.handleUpgrade(request, socket, head, connection => {
                 connection.on("message", () => { received++; });
-                connection.on("error", error => failures.push(error));
+                connection.on("error", recordError);
             });
         };
-        socket.on("error", error => failures.push(error));
+        socket.on("error", recordError);
         // HTTP upgrades transfer the half-open socket to this fixture. Finish our side
         // only after the browser ends its side.
         socket.once("end", () => socket.end());
@@ -78,6 +83,7 @@ test("disposing a session during a held WebSocket handshake releases pending own
         const before = await session.evaluate(owner => owner.snapshot());
         expect(before).toMatchObject({ phase: "connecting", timers: 1,
             ownership: { documents: 1, remoteDocuments: 0, subscriptions: 1, pendingRequests: 0, incomingRequests: 0 } });
+        disposalStarted = true;
         const after = await session.evaluate(owner => owner.dispose());
         expect(after).toEqual({ cancelled: true, transportCancelled: true, phase: "disposed", timers: 0,
             ownership: { documents: 0, remoteDocuments: 0, registrations: 0, subscriptions: 0, scheduledTasks: 0, pendingDocumentRequests: 0, pendingRequests: 0, incomingRequests: 0 } });
