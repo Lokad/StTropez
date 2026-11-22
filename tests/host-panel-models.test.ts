@@ -122,9 +122,9 @@ test("color controls keep the reference and reviewed Apply from the displayed sn
     const state: DocumentColorsSnapshot = { available: true, connected: true, disconnected: false, pending: false, view: "primary", status: "presentations", message: "",
         count: 1, page: 0, paging: null, selected: 0, value: "#abc", css: "#abc", presentation: "hex", canPreview: true, canApply: true, reviewKey: 1, apply: () => { calls.push("apply first"); return { applied: true } as const; },
         colors: [{ from: 1, to: 5, text: "#abc", label: "#abc", color: { red: 1, green: 1, blue: 1, alpha: 1 }, ordinal: 0, line: 1, column: 2, css: "#abc", inspect: () => calls.push("inspect first") }],
-        choices: [{ id: "hex", label: "Hex", select: () => calls.push("hex") }], edits: [], changed: null };
+        choices: [{ label: "Hex", select: () => calls.push("hex") }], edits: [], changed: null };
     const first = documentColorsPanelModel(tools, state), newer = documentColorsPanelModel(tools, { ...state, apply: () => { calls.push("apply next"); return { applied: true } as const; } });
-    assert.equal(first.results.retentionKey(), newer.results.retentionKey()); first.results.items()[0]!.invoke(); first.presentation.change("hex");
+    assert.equal(first.results.identity, newer.results.identity); first.results.items()[0]!.invoke(); first.presentation.change(0);
     newer.apply.invoke(); first.apply.invoke(); assert.deepEqual(calls, ["inspect first", "hex", "apply next", "apply first"]);
 });
 

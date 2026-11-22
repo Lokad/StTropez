@@ -4,7 +4,7 @@ import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts
 import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId, Workspace } from "../../src/index.ts";
 import { createDocumentColorController } from "../../src/browser/index.ts";
-import type { DecorationLayer, DocumentColorChoice, DocumentColorController, ReviewEditResult, TextEditor } from "../../src/browser/index.ts";
+import type { ColorPresentationChoice, DecorationLayer, DocumentColorChoice, DocumentColorController, ReviewEditResult, TextEditor } from "../../src/browser/index.ts";
 import type { LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import { colorLimits, parseColor, rgbaColor } from "../../fixtures/language/colors.ts";
 import type { ColorFault, ColorReference } from "../../fixtures/language/colors.ts";
@@ -14,14 +14,13 @@ export type ColorHostOptions = Readonly<{ provider: LspWorkspace;
     prepare: (kind: "discovery" | "presentation", delay: number, fault?: ColorFault) => LspPrepare }>;
 type Session = { id: string; editor: TextEditor; controller: DocumentColorController; layer: DecorationLayer; detach: () => void; painted?: readonly DocumentColorChoice[] };
 export type ColorNote = ColorReference & Readonly<{ ordinal: number; line: number; column: number; css: string; inspect: () => void }>;
-export type ColorEditNote = Readonly<{ document: string; resource: string; title: string; revision: number; from: number; to: number; insert: string; context: string }>;
 export type DocumentColorsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; view: string | null;
     status: "idle" | "scan" | "colors" | "presentations" | "applied" | "expired" | "failed"; message: string; count: number; page: number; paging: PanelPaging | null; colors: readonly ColorNote[];
-    selected: number; value: string; css: string | null; presentation: string; choices: readonly Readonly<{ id: string; label: string; select: () => void }>[];
-    edits: readonly ColorEditNote[]; canPreview: boolean; canApply: boolean; reviewKey: number | null; apply: (() => ReviewEditResult) | null; changed: Readonly<{ document: DocumentId; title: string }> | null }>;
+    selected: number; value: string; css: string | null; presentation: string; choices: readonly ColorPresentationChoice[];
+    edits: readonly string[]; canPreview: boolean; canApply: boolean; reviewKey: number | null; apply: (() => ReviewEditResult) | null; changed: Readonly<{ document: DocumentId; title: string }> | null }>;
 const initial: DocumentColorsSnapshot = { available: false, connected: false, disconnected: false, pending: false, view: null,
     status: "idle", message: "Focus a source to discover colors.", count: 0, page: 0, paging: null, colors: [], selected: -1, value: "", css: null,
-    presentation: "", choices: [], edits: [], canPreview: false, canApply: false, reviewKey: null, apply: null, changed: null };
+    presentation: "", choices: Object.freeze([]), edits: Object.freeze([]), canPreview: false, canApply: false, reviewKey: null, apply: null, changed: null };
 
 function focusSource(editor: TextEditor) {
     editor.viewport.revealOffset(editor.view.getSnapshot().selection.head);
@@ -105,13 +104,15 @@ export class HostDocumentColors {
             const current = this.cell.get();
             if (this.owner === s && !current.pending && current.colors === colors) this.render(s, { page: next });
         });
-        const choices = state.presentations.map((choice, i) => ({ id: `provider-${i}`, label: choice.label, select: choice.select }));
-        const edits = review?.edits.map(edit => ({ ...edit, document: doc.id, resource: doc.resourceId, title: doc.title.slice(0, 128), revision: doc.revision,
-            context: doc.buffer.slice(Math.max(0, edit.from - 32), Math.min(doc.buffer.length, edit.from + 32)) })) ?? [];
+        const choices = state.presentations, reviewKey = this.reviewKey(review);
+        const edits = !review ? initial.edits : reviewKey === old.reviewKey ? old.edits : Object.freeze(review.edits.map(edit => {
+            const context = doc.buffer.slice(Math.max(0, edit.from - 32), Math.min(doc.buffer.length, edit.from + 32));
+            return `${doc.title.slice(0, 128)} · ${doc.resourceId} · ${doc.id} @ revision ${doc.revision} · [${edit.from},${edit.to})\nInsert ${JSON.stringify(edit.insert)}\nContext: ${context}`;
+        }));
         this.publish({ status: state.status === "ready" ? "colors" : "presentations", message: pending ? "Requesting color presentations…" : review ? "Review the edits before applying." : `${state.colors.length} document colors.`,
             pending, count: state.colors.length, colors, selected, page, paging, value, css: proposed ? rgbaColor(proposed) : null, choices,
-            presentation: review ? choices[state.presentations.indexOf(review.choice)]!.id : "", edits, canPreview: !!reference && !!proposed && !pending,
-            canApply: review?.canApply ?? false, reviewKey: this.reviewKey(review), apply: review ? () => {
+            presentation: review ? `provider-${choices.indexOf(review.choice)}` : "", edits, canPreview: !!reference && !!proposed && !pending,
+            canApply: review?.canApply ?? false, reviewKey, apply: review ? () => {
                 const result = review.apply();
                 if (result.applied && this.sessions.has(s)) focusSource(s.editor);
                 return result;

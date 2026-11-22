@@ -274,9 +274,16 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await preview("#445566"); const beforeOld = await snapshot(page);
         expect(await old.evaluate(apply => apply())).toEqual({ applied: false, reason: "expired" }); await old.dispose();
         const format = page.getByRole("combobox", { name: "Color presentation", exact: true });
+        const option = format.getByRole("option").first();
+        await option.evaluate(node => { node.dataset.retained = "color-format"; });
+        const edits = page.getByLabel("Proposed color edits", { exact: true }).getByRole("listitem");
+        const firstEdits = await edits.allTextContents();
         const first = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.colors.state.apply!);
         await apply.hover(); await page.mouse.down();
-        await format.selectOption("provider-1"); await format.selectOption("provider-0");
+        await format.selectOption("provider-1");
+        await expect(edits).not.toHaveText(firstEdits);
+        await expect(option).toHaveAttribute("data-retained", "color-format");
+        await format.selectOption("provider-0"); await expect(edits).toHaveText(firstEdits);
         await apply.hover(); await page.mouse.up();
         expect(await first.evaluate(apply => apply())).toEqual({ applied: false, reason: "expired" }); await first.dispose();
         await exact(page, current);
