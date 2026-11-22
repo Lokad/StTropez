@@ -71,6 +71,44 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await field(page).focus(); await select(page, text.indexOf(";") + 1); await button(page, "Find definition").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(0);
         expect(methods.filter(message => message.method === "textDocument/definition").length).toBe(definitions + 1);
     });
+    if (coversHost("candidate-hosts", host, "candidate")) test("closing the review preserves primary references and retires the review's own request", async ({ page }) => {
+        const replies = await holdLspReplies(page, "textDocument/references");
+        await page.reload();
+        const text = "const target = 1;\ntarget;";
+        await seed(page, text, text.lastIndexOf("target") + 2);
+        await button(page, "Open source review").click();
+        const review = field(page, "Comparison working source");
+        await expect(review).toBeVisible();
+        replies.hold();
+        await field(page).press("Shift+F12");
+        await expect.poll(replies.waiting).toBe(true);
+        await button(page, "Close source review").click();
+        await expect(review).toHaveCount(0);
+        await replies.release();
+        await waitForNavigation(page);
+        await expect(results(page)).toHaveCount(2);
+        await results(page).filter({ hasText: "Primary source:1:7" }).click();
+        await expect(field(page)).toBeFocused();
+        const selected = (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection;
+        expect(selected).toMatchObject({ anchor: 6, head: 12 });
+
+        await button(page, "Open source review").click();
+        await review.focus();
+        await page.evaluate(() => {
+            const f = window.hostFixture;
+            f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: 8, head: 8 }]);
+        });
+        replies.hold();
+        await review.press("Shift+F12");
+        await expect.poll(replies.waiting).toBe(true);
+        await button(page, "Close source review").click();
+        await expect.poll(replies.cancelled).toBe(true);
+        await field(page).focus();
+        await replies.release();
+        await waitForNavigation(page);
+        await expect(results(page)).toHaveCount(0);
+        expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toEqual(selected);
+    });
     if (coversHost("candidate-hosts", host, "candidate")) test("Return retraces two symbol jumps with their selections, scroll and focus", async ({ page }) => {
         const text = "catalogue;\n" + "// padding\n".repeat(120) + "catalogue;\n";
         const tail = text.lastIndexOf("catalogue"), primary = field(page), secondary = field(page, "Secondary source");
