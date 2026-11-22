@@ -373,8 +373,9 @@ reviewed format. Changing formats during a press requires a fresh click.
 
 An action’s initial edit gets its own undo step. For later edits, open **Workspace provider** and
 choose **Apply captured provider edits** or **Decline captured provider edits**. If another review
-arrives while a button is held, it takes a fresh press to decide that review. The initial edit
-stays in history if the command fails or reconnects. The panel also manages review command
+arrives while a button is held, it takes a fresh press to decide that review. One Undo restores
+every file in an applied batch, including a companion first resolved during the command. The initial
+edit stays in history if the command fails or reconnects. The panel also manages review command
 registration and workspace status.
 [Code actions and commands](language-features.md#code-actions-and-commands)
 
