@@ -108,7 +108,7 @@ edit permission.
 | `editing-unavailable` | Replacement is refused or cancelled because the view is read-only or resource authority is unavailable |
 | `composition-active` | Navigation/replacement is refused, or queued replacement is cancelled, for composition |
 | `backend-unavailable` | Regular-expression mode has no configured backend |
-| `search-failed` | Search construction, matching or result validation failed |
+| `search-failed` | Search construction, matching or result validation failed. For invalid regex syntax, the worker reports the engine's reason in the message. |
 | `replacement-failed` | Replacement planning or plan validation failed |
 | `view-unavailable` | The captured target or editor view is unavailable |
 | `cancelled` | The host explicitly cancelled find |

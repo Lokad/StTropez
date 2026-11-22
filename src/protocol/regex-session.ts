@@ -2,7 +2,7 @@ import { regexExpression, regexMatches, regexRanges, regexReplacement } from "..
 import type { RegexMatch } from "../core/regex-search.ts";
 import type { TextEdit } from "../core/changes.ts";
 import { splitsSurrogatePair } from "../core/utf16.ts";
-import { regexProtocolVersion, regexChunkUnits, regexSourceLimit, regexMatchLimit, regexPageLimit, regexRecord, regexIdentity, regexChunk, readRegexStart } from "./regex.ts";
+import { regexProtocolVersion, regexChunkUnits, regexSourceLimit, regexMatchLimit, regexPageLimit, regexErrorLimit, regexRecord, regexIdentity, regexChunk, readRegexStart } from "./regex.ts";
 import type { RegexRange, RegexReply } from "./regex.ts";
 type Request = { id: number; source: number; revision: number; length: number; pattern: string; matchCase: boolean; wholeWord: boolean; received: number; parts: string[];
     replacement: string | undefined; range: RegexRange | undefined; maxOutputUnits: number };
@@ -29,7 +29,13 @@ export class RegexSession {
             catch (cause) { yield error((cause as Error).message); return; }
             const wholeWord = start.wholeWord === true;
             try { regexExpression(start.pattern, start.matchCase, wholeWord); }
-            catch { yield error("Invalid regular expression."); return; }
+            catch (cause) {
+                // Engines may include the entire pattern before the syntax error.
+                const detail = cause instanceof SyntaxError
+                    ? cause.message.replace(/^Invalid regular expression:\s*(?:\/[\s\S]*\/[a-z]+:\s*)?/i, "").trim() : "";
+                yield error(detail ? ("Invalid regular expression: " + detail).slice(0, regexErrorLimit) : "Invalid regular expression.");
+                return;
+            }
             const retained = this.source?.id === start.source && this.source.revision === start.revision && this.source.text.length === start.length;
             if (!retained) this.source = undefined;
             const received = retained ? start.length : 0;

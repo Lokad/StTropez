@@ -239,7 +239,7 @@ test("Find toggles regex on the existing query and replaces captured groups in o
     await expect(status).toHaveText("2 of 2 · Wrapped to end");
     await query.press("Enter"); await expect(status).toHaveText("1 of 2 · Wrapped to start");
     await page.locator("#replace-toggle").click(); await query.fill("(");
-    await expect(status).toHaveText("Invalid regular expression.");
+    await expect(status).toHaveText(/^Invalid regular expression: .*(group|parenthe|missing \))/i);
     await expect(page.locator("#replace-current")).toBeDisabled(); await expect(replaceAll).toBeDisabled();
     await query.fill(pattern); await expect(replaceAll).toBeEnabled();
     await page.getByRole("textbox", { name: "Replacement text" }).fill("quantity: $1 + 1"); await replaceAll.click();

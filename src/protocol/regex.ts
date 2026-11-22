@@ -7,6 +7,7 @@ export const regexChunkUnits = 32768;
 export const regexSourceLimit = 32 * 1024 * 1024;
 export const regexMatchLimit = 1_000_000;
 export const regexPatternLimit = 4096;
+export const regexErrorLimit = 256;
 export const regexMessageLimit = 262144;
 export const regexPageLimit = 512;
 export type RegexRange = SearchMatch;
@@ -92,7 +93,7 @@ export function readRegexReply(value: Record<string, unknown> & Identity): Regex
             if (value.outputLength !== undefined && !regexInteger(value.outputLength)) throw new Error("Invalid regex result size.");
             break;
         case "regex-error": return { operation: "regex-error", id: value.id, revision: value.revision,
-            message: typeof value.message === "string" && value.message.length <= 256 ? value.message : "Regex search failed." };
+            message: typeof value.message === "string" && value.message.length <= regexErrorLimit ? value.message : "Regex search failed." };
         default: throw new Error("Unexpected regex response.");
     }
     return value as RegexReply;

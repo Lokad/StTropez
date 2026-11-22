@@ -217,6 +217,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             if (!point || point.offset !== 4) throw new Error("Compiled CRLF caret has no painted position.");
             find.replaceAll("|"); await wait("ready"); exact("|😀|x|\r|\n|l|a|s|t|");
             find.setQuery("("); await wait("failed"); exact("|😀|x|\r|\n|l|a|s|t|");
+            if (!/^Invalid regular expression: \S/.test(find.getSnapshot().message ?? "")) throw new Error("Compiled regex lost the syntax error detail.");
             if (model.document(source.documentId).buffer.readMetrics().textExports) throw new Error("Compiled regex exported the model value.");
         } finally { find.dispose(); editor.dispose(); host.remove(); model.tabs.close(tab); model.releaseResource(source.id, true); }
         const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled regex resources leaked.");

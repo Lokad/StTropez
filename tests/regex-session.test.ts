@@ -23,7 +23,11 @@ test("regex capture rejects malformed ordering/bounds and superseded generators 
         assert.deepEqual([...session.receive({ ...start(1), version })], [{ operation: "regex-error", id: 1, revision: 7, message: "Unsupported regex worker protocol version." }]);
         assert.deepEqual([...session.receive({ operation: "regex-chunk", id: 1, revision: 7, from: 0, text: "x" })], []);
     }
-    for (const bad of [{ ...start(1), length: regexSourceLimit + 1 }, { ...start(1), pattern: "(" }, { ...start(1), matchCase: "yes" },
+    const invalid = [...new RegexSession().receive(start(1, "x".repeat(4000) + "\n("))][0]!;
+    assert.equal(invalid.operation, "regex-error");
+    assert.match(invalid.message, /^Invalid regular expression: .*group/i);
+    assert.ok(!invalid.message.includes("xxxx"));
+    for (const bad of [{ ...start(1), length: regexSourceLimit + 1 }, { ...start(1), matchCase: "yes" },
         { ...start(1), pattern: "x".repeat(4097) }, { ...start(1), replacement: "x".repeat(32769) }, { ...start(1), range: { from: 0, to: 1 } }]) {
         const session = new RegexSession(); assert.equal([...session.receive(bad)][0]!.operation, "regex-error");
     }
