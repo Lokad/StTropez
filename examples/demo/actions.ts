@@ -1,5 +1,5 @@
 import type { Workspace } from "../../src/index.ts";
-import { createCodeActionController } from "../../src/browser/index.ts";
+import { createCodeActionController, mountAnchoredOverlay } from "../../src/browser/index.ts";
 import type { CodeActionPreview, TextEditor } from "../../src/browser/index.ts";
 import type { LspCodeAction, LspWorkspace } from "../../src/protocol/index.ts";
 import { HostProjectTools } from "../hosts/project.ts";
@@ -50,17 +50,20 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
             && changes.length === 1 && changes[0]!.target.document.documentId === file.resource.documentId
             && changes[0]!.edits.length <= 4 && changes[0]!.edits.reduce((units, edit) => units + edit.to - edit.from + edit.insert.length, 0) <= 256;
     };
-    const dismiss = () => { popup.hidden = true; tools.cancel(); };
+    const overlay = mountAnchoredOverlay(editor, popup, { onFocusedAnchorHidden: editor.focus });
+    scope.defer(overlay.dispose);
+    let open = false;
+    const dismiss = () => { open = false; overlay.hide(); tools.cancel(); };
     const canApply = (preview: CodeActionPreview | null) =>
         !!preview?.canApply && (!preview.command || commands.canRunAction(editor));
-    const position = () => {
-        const point = editor.viewport.coordsAt(editor.view.getSnapshot().selection.head), box = editor.element.getBoundingClientRect();
-        popup.style.left = `${Math.max(8, Math.min(innerWidth - 400, point?.left ?? box.left + 8))}px`;
-        popup.style.top = `${Math.max(8, Math.min(innerHeight - 290, point ? point.top + point.height + 6 : box.top + 8))}px`;
+    const anchor = () => {
+        if (!open) return;
+        const { revision, selection } = editor.view.getSnapshot();
+        overlay.show({ revision, offset: selection.head, affinity: selection.headAffinity ?? "after" });
     };
     const request = () => {
-        if (!idle()) return; dismissOther(); editor.focus(); position();
-        commandAction = false; popup.hidden = false; tools.request();
+        if (!idle()) return; dismissOther(); editor.focus();
+        commandAction = false; open = true; anchor(); tools.request();
     };
     const readPages = createActionPages(tools, reviewKey, render);
     let oldChoices: unknown, oldChoicePage = -1;
@@ -68,7 +71,6 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
         const state = tools.getSnapshot(), preview = state.preview;
         const { choicePage, choicePaging, editPaging, edits: page } = readPages();
         if (state.status === "ready") commandAction = !!preview?.command;
-        if (!popup.hidden) position();
         status.textContent = state.status === "expired" ? "The code or selection changed. Request fixes again."
             : state.status === "ready" ? state.choices.length ? preview?.command ? state.message : "Choose a small fix to apply it. Broader changes stay here for review before Apply." : "No quick fix at this position."
                 : state.message;
@@ -97,7 +99,7 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     }
     scope.defer(tools.subscribe(render));
     scope.defer(commands.state.subscribe(() => { if (tools.getSnapshot().preview?.command) render(); }));
-    scope.defer(editor.viewport.onRender(() => { if (!popup.hidden) position(); }));
+    scope.defer(editor.view.subscribe(anchor));
     popup.addEventListener("pointerdown", event => { if (event.target === apply) event.preventDefault(); }, { signal: events.signal });
     choices.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });
     close.addEventListener("click", () => { dismiss(); editor.focus(); }, { signal: events.signal });

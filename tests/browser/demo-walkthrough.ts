@@ -11,6 +11,18 @@ export async function runDemoActions(page: Page, url = "/") {
     await expect(page.locator("#editor")).toContainText("Demo project action fixture");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     const actions = page.getByRole("region", { name: "Quick fixes", exact: true });
+    const size = page.viewportSize()!, viewport = page.locator("#editor .st-viewport");
+    await page.setViewportSize({ width: 1100, height: 520 });
+    await source.press("Control+End"); await page.keyboard.insertText("\n".repeat(80));
+    await source.press("Control+Home"); await source.press("Control+.");
+    await actions.getByRole("button", { name: "Demo refactor: rename exampleRate across files", exact: true }).click();
+    const confirm = actions.getByRole("button", { name: "Apply fix", exact: true });
+    await confirm.focus(); await viewport.evaluate(el => { el.scrollTop = el.scrollHeight / 2; });
+    await expect(actions).toBeHidden(); await expect(source).toBeFocused();
+    await viewport.evaluate(el => { el.scrollTop = 0; }); await expect(confirm).toBeEnabled();
+    await expect(actions.getByLabel("Quick-fix edits").locator("li")).toHaveCount(3);
+    await confirm.press("Escape"); await expect(actions).toBeHidden(); await expect(source).toBeFocused();
+    await source.press("Control+z"); await page.setViewportSize(size);
     const command = async (name: string) => {
         await source.press("Control+Home"); await source.press("Control+.");
         await actions.getByRole("button", { name, exact: true }).click();
