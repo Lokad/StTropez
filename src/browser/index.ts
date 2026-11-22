@@ -34,7 +34,7 @@ export type { ReviewEditResult } from "./review-edit.ts";
 export type { SignatureController, SignatureControllerOptions, SignatureSnapshot } from "./signature-controller.ts";
 export type { NavigationController, NavigationControllerOptions, NavigationSnapshot, NavigationResult, NavigationPage, NavigationChoice, NavigationDestination } from "./navigation-controller.ts";
 export type { HoverController, HoverControllerOptions, HoverDiagnostics, HoverSnapshot } from "./hover-controller.ts";
-export type { CodeActionController, CodeActionControllerOptions, CodeActionSnapshot, CodeActionChoice, CodeActionPreview, CodeActionCommand, CodeActionExecution } from "./code-action-controller.ts";
+export type { CodeActionController, CodeActionControllerOptions, CodeActionSnapshot, CodeActionChoice, CodeActionPreview, CodeActionConfirmation, CodeActionCommand, CodeActionExecution } from "./code-action-controller.ts";
 export type { DiagnosticController, DiagnosticControllerOptions, DiagnosticSnapshot, EditorDiagnostic } from "./diagnostic-controller.ts";
 export { createCompletionController } from "./completion-controller.ts";
 export { createLspHighlightController } from "./lsp-highlights.ts";

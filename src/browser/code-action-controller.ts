@@ -12,9 +12,13 @@ export type CodeActionChoice = Readonly<{
     index: number; title: string; kind: string | null; preferred: boolean; disabled: string | null; needsResolve: boolean;
     select: (applyWhen?: (resolved: LspCodeAction) => boolean) => void;
 }>;
+export type CodeActionConfirmation = Readonly<
+    { status: "applied" | "executing" | "declined" | "expired" | "disabled" | "not-writable" }
+    | { status: "failed"; message: string }
+>;
 export type CodeActionPreview = Readonly<{
     index: number; title: string; command: string | null; disabled: string | null;
-    canApply: boolean; readPage: (page?: number) => LspWorkspaceEditPreview | undefined; confirm: () => void;
+    canApply: boolean; readPage: (page?: number) => LspWorkspaceEditPreview | undefined; confirm: () => CodeActionConfirmation;
 }>;
 type ChangedDocument = Readonly<{ document: DocumentId; title: string }>;
 export type CodeActionSnapshot = Readonly<{
@@ -78,28 +82,43 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
         // Lease release is a workspace write. Complete it after the notifying edit.
         queueMicrotask(() => { if (job === j) { release(); publish({ ...empty, status: "expired", message: "The captured source or provider changed." }); } });
     };
-    const fail = (j: Job, error: unknown) => {
-        if (job !== j) return;
-        if (j.invalid || !j.capture.isCurrent() || error instanceof RpcError && (error.code === -32800 || error.code === -32801)) { expire(j); return; }
-        release(); publish({ ...empty, status: "failed", message: error instanceof Error ? error.message : "Code action failed." });
+    const expired = Object.freeze({ status: "expired" } as const);
+    const fail = (j: Job, error: unknown): CodeActionConfirmation => {
+        if (job !== j) return expired;
+        const message = error instanceof Error ? error.message : "Code action failed.";
+        release(); publish({ ...empty, status: "failed", message });
+        return Object.freeze({ status: "failed", message });
+    };
+    const requestFailed = (j: Job, error: unknown) => {
+        if (j.invalid || !j.capture.isCurrent() || error instanceof RpcError && (error.code === -32800 || error.code === -32801)) expire(j);
+        else fail(j, error);
     };
     const timeout = (j: Job) => {
         win.clearTimeout(j.timer);
-        j.timer = win.setTimeout(() => fail(j, new Error("Code action request timed out.")), 30000);
+        j.timer = win.setTimeout(() => requestFailed(j, new Error("Code action request timed out.")), 30000);
     };
     const disabled = (batch: LspActionResult, action: LspCodeAction) => action.disabled ?? (action.command
         ? !options.runCommand || !batch.supports(action.command) ? "This command is unavailable." : null
         : !action.resolve && !action.edit?.documents.some(part => part.edits.length) ? "The provider returned no text changes." : null);
-    function confirm(): void {
+    function confirm(preview: CodeActionPreview): CodeActionConfirmation {
+        scope.assertWritable();
         const j = job, action = j?.selection, batch = j?.batch;
-        if (!j || !action || !batch || !current(j) || disabled(batch, action) || !writableEdit(workspace, action.edit)) return;
+        if (cell.get().preview !== preview || !j || !action || !batch || !current(j)) return expired;
+        if (disabled(batch, action) !== null) return Object.freeze({ status: "disabled" });
+        if (!writableEdit(workspace, action.edit)) return Object.freeze({ status: "not-writable" });
         if (action.command) {
+            let live = true;
+            const isCurrent = () => live && batch.commandCurrent();
             try {
                 const handle = options.runCommand?.({ documents: Object.freeze([...j.project.documents.values()]), edit: action.edit,
-                    isCurrent: batch.commandCurrent, subscribe: client.subscribe, execute: s => batch.execute(action, s),
-                    cancel: () => { if (batch.commandCurrent()) client.cancel(); } });
-                if (!handle) return;
-                execution = handle; release(true); publish({ ...empty, status: "executing", message: "Executing the confirmed action." });
+                    isCurrent, subscribe: client.subscribe, execute: s => isCurrent() ? batch.execute(action, s) : Promise.reject(new Error("Code action command expired.")),
+                    cancel: () => { if (isCurrent()) client.cancel(); } });
+                if (!handle) {
+                    live = false;
+                    if (cell.get().preview !== preview || !current(j)) return expired;
+                    publish({ ...cell.get(), message: "The host declined this command. You can retry this preview." });
+                    return Object.freeze({ status: "declined" });
+                }
                 void handle.result.then(receipt => {
                     if (execution !== handle) return;
                     execution = undefined; client.cancel();
@@ -109,8 +128,13 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
                     if (execution !== handle) return;
                     execution = undefined; client.cancel(); publish({ ...empty, status: "failed", message: String(error) });
                 });
-            } catch (error) { fail(j, error); }
-            return;
+                if (cell.get().preview !== preview) { live = false; handle.cancel(); return expired; }
+                execution = handle; release(true); publish({ ...empty, status: "executing", message: "Executing the confirmed action." });
+                return Object.freeze({ status: "executing" });
+            } catch (error) {
+                live = false;
+                return cell.get().preview === preview ? fail(j, error) : expired;
+            }
         }
         try {
             let changes: readonly ChangedDocument[] = [];
@@ -118,10 +142,11 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
                 changes = applyLspWorkspaceEdit(workspace, action.edit!, { origin: "host", requiredOrigins: ["human"], source: "code-action", historyKind: "refactor", view })
                     .map(doc => Object.freeze({ document: doc.id, title: doc.title }));
                 return true;
-            })) { expire(j); return; }
+            })) { expire(j); return expired; }
             release(); publish({ ...empty, status: "applied", message: "Applied the reviewed edits.", changes: Object.freeze(changes) });
-            if (editor.element.isConnected && !editor.signal.aborted) { editor.viewport.revealOffset(view.getSnapshot().selection.head); editor.focus(); }
-        } catch (error) { fail(j, error); }
+        } catch (error) { return fail(j, error); }
+        if (editor.element.isConnected && !editor.signal.aborted) { editor.viewport.revealOffset(view.getSnapshot().selection.head); editor.focus(); }
+        return Object.freeze({ status: "applied" });
     }
     function makePreview(index: number, title: string, command: string | null, reason: string | null, canApply: boolean): CodeActionPreview {
         const preview: CodeActionPreview = Object.freeze({ index, title, command, disabled: reason, canApply,
@@ -132,7 +157,7 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
                 return edit ? previewLspWorkspaceEdit(edit, id => j.project.documents.get(id as DocumentId)!.title, page)
                     : Object.freeze({ page, count: 0, notes: Object.freeze([]) });
             },
-            confirm: () => { scope.assertWritable(); if (cell.get().preview === preview) confirm(); } });
+            confirm: () => confirm(preview) });
         return preview;
     }
     function present(j: Job, index: number, action: LspCodeAction, applyWhen?: (action: LspCodeAction) => boolean): void {
@@ -153,7 +178,7 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
         void batch.resolve(action, options.prepareResolve).then(resolved => {
             if (!current(j)) { expire(j); return; }
             win.clearTimeout(j.timer); if (resolved.edit) j.project.includeEdit(resolved.edit); present(j, index, resolved, applyWhen);
-        }).catch(error => fail(j, error));
+        }).catch(error => requestFailed(j, error));
     }
     function cancel(): void {
         scope.assertWritable(); if (disposed) return;
@@ -184,8 +209,8 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
                     select: applyWhen => choose(id, index, applyWhen) })));
                 publish({ ...empty, status: "ready", choices, message: choices.length ? "Choose an action to review." : "No actions for this range." });
                 if (batch.actions[0]?.edit && !choices[0]!.disabled) choices[0]!.select();
-            }).catch(error => fail(j, error));
-        } catch (error) { fail(j, error); }
+            }).catch(error => requestFailed(j, error));
+        } catch (error) { requestFailed(j, error); }
     }
     const stopClient = client.subscribe(() => {
         if (job?.batch && (provider.getSnapshot().phase !== "ready" || cell.get().status !== "resolving" && !job.batch.isCurrent())) expire(job);

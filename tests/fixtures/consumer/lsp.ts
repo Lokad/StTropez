@@ -1,7 +1,7 @@
 import { TextBuffer, Workspace } from "sttropez";
 import type { DocumentId } from "sttropez";
 import { createLspHoverClient, RpcError, type LspHoverClient } from "sttropez/protocol";
-import type { AnchoredOverlay, DiagnosticController, DocumentLinkOpenResult, HoverController, ReviewEditResult } from "sttropez/browser";
+import type { AnchoredOverlay, CodeActionConfirmation, DiagnosticController, DocumentLinkOpenResult, HoverController, ReviewEditResult } from "sttropez/browser";
 import { BrowserLspWorkspace, createCodeActionController, createCompletionController, createDiagnosticController, createDocumentColorController, createDocumentLinkController, createHoverController, createNavigationController, createRenameController, createSignatureController, mountAnchoredOverlay, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
 
 const workspace = new Workspace();
@@ -33,7 +33,7 @@ const text = () => { const buffer = workspace.document(source.documentId).buffer
 const position = () => text().indexOf("catalogue") + 2;
 const result = document.getElementById("result")!, status = document.getElementById("status")!, choices = document.getElementById("choices")!;
 let disposed = false;
-const notes: { hover?: string; navigation?: string; renameEdits?: number; actions?: number; resolved?: boolean; signature?: string; linkUri?: string; lastLink?: DocumentLinkOpenResult; colorPresentations?: number; colorApplied?: boolean; lastReview?: ReviewEditResult } = {};
+const notes: { hover?: string; navigation?: string; renameEdits?: number; actions?: number; lastAction?: CodeActionConfirmation; resolved?: boolean; signature?: string; linkUri?: string; lastLink?: DocumentLinkOpenResult; colorPresentations?: number; colorApplied?: boolean; lastReview?: ReviewEditResult } = {};
 const command = (label: string, invoke: () => void | Promise<unknown>) => { const button = document.createElement("button"); button.textContent = label;
     button.onclick = () => { void Promise.resolve().then(invoke).catch(error => { result.textContent = String(error); }); }; document.getElementById("controls")!.append(button); return button; };
 function reviewButton<T>(label: string, record?: (value: T) => void) {
@@ -108,7 +108,7 @@ rename.subscribe(() => {
 command("Code actions", () => { const at = text().indexOf("TODO");
     editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: at, head: at + 4 }); actions.request(); });
 const resolveAction = command("Review lazy action", () => actions.getSnapshot().choices.find(choice => choice.needsResolve)?.select());
-const applyAction = reviewButton("Apply reviewed action");
+const applyAction = reviewButton("Apply reviewed action", (value: CodeActionConfirmation) => { notes.lastAction = value; });
 actions.subscribe(() => {
     const state = actions.getSnapshot(), preview = state.preview, page = preview?.readPage();
     notes.actions = state.choices.length;
@@ -158,14 +158,14 @@ async function probeTypedHover() {
         return hover?.isCurrent() ? hover.text : null;
     } finally { client.dispose(); }
 }
-function confirmRenameWithWriteFailure() {
-    const preview = rename.getSnapshot().preview;
-    if (!preview?.canApply) throw new Error("Expected a writable rename preview");
+function confirmWithWriteFailure(kind: "rename" | "action") {
+    const preview = (kind === "rename" ? rename : actions).getSnapshot().preview;
+    if (!preview?.canApply) throw new Error("Expected a writable preview");
     const edit = workspace.editDocuments;
     workspace.editDocuments = () => { throw new Error("Fixture write failure"); };
     try { return preview.confirm(); } finally { workspace.editDocuments = edit; }
 }
-const bridge = { text, probeTypedHover, confirmRenameWithWriteFailure, select: (at: number) => editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: at, head: at }),
+const bridge = { text, probeTypedHover, confirmWithWriteFailure, select: (at: number) => editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: at, head: at }),
     state: () => ({ provider: provider.snapshot(), editor: controller.getDiagnostics(), completion: controller.getSnapshot(), history: workspace.observeHistory(source.documentId).getSnapshot(), diagnostics: workspace.diagnostics(), notes, companion: companion.documentId, metrics: editor.getDiagnostics(), errors }),
     showDiagnostic: () => {
         const state = diagnostics.getSnapshot(), first = state.diagnostics[0];

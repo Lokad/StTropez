@@ -57,7 +57,7 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         assert.deepEqual(await retiredRename.evaluate(confirm => confirm?.(new PointerEvent("click"))), { applied: false, reason: "expired" }); await retiredRename.dispose();
         assert.equal(await text(), typed); await expect(button("Apply rename")).toBeEnabled();
         const history = (await state()).history.undoDepth;
-        assert.deepEqual(await page.evaluate(() => window.publicLsp.confirmRenameWithWriteFailure()),
+        assert.deepEqual(await page.evaluate(() => window.publicLsp.confirmWithWriteFailure("rename")),
             { applied: false, reason: "failed", message: "Fixture write failure" });
         await expect(page.locator("#result")).toHaveText("Fixture write failure");
         assert.equal(await text(), typed); assert.equal((await state()).history.undoDepth, history);
@@ -65,10 +65,17 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         assert.deepEqual((await state()).notes.lastReview, { applied: true });
         assert.equal((await state()).history.undoDepth, history + 1); assert.ok((await text()).includes("inventory")); await input.press("Control+z"); assert.equal(await text(), typed);
         await button("Code actions").click(); await expect.poll(async () => (await state()).notes.actions ?? 0).toBeGreaterThan(1);
+        await button("Review lazy action").click(); await expect(button("Apply reviewed action")).toBeEnabled();
+        assert.deepEqual(await page.evaluate(() => window.publicLsp.confirmWithWriteFailure("action")),
+            { status: "failed", message: "Fixture write failure" });
+        await expect(page.locator("#result")).toHaveText("Fixture write failure");
+        assert.equal(await text(), typed); assert.equal((await state()).history.undoDepth, history);
+        await button("Code actions").click();
         await button("Review lazy action").click(); await expect.poll(async () => (await state()).notes.resolved).toBe(true);
         await expect(page.locator("#result")).toContainText("TODO → DONE"); assert.equal(await text(), typed);
         const actionDepth = (await state()).history.undoDepth; await button("Apply reviewed action").click();
         await expect.poll(text).toBe(typed.replace("TODO", "DONE")); assert.equal((await state()).history.undoDepth, actionDepth + 1);
+        assert.deepEqual((await state()).notes.lastAction, { status: "applied" });
         await input.press("Control+z"); assert.equal(await text(), typed);
         await page.evaluate(() => window.publicLsp.custom("fixture/completionStyle", { style: "interactive" }));
         await input.focus(); await page.evaluate(() => window.publicLsp.select(9)); await input.press("Backspace"); await input.pressSequentially("m");

@@ -515,7 +515,8 @@ The browser controller owns these lifetimes for a mounted editor.
 selection. The origin document is always included. Supply `documents` to include other project files.
 Render `getSnapshot().choices` and call the chosen item’s `select()` to resolve and preview it.
 If the first choice already has an edit, its preview opens with the list. A preview page contains up
-to 64 edits. Confirming applies the full edit across all affected files in one undo step.
+to 64 edits. For an edit-only action, `confirm()` applies the full edit across all affected files in
+one undo step and returns `{ status: "applied" }`.
 
 ```ts
 import { createCodeActionController, type TextEditor } from "sttropez/browser";
@@ -539,7 +540,15 @@ A change to the captured selection, fold projection, document revision or edit a
 the preview. Replacing the editor disposes its controller. Old choices and confirmation buttons
 cannot edit the replacement. For a direct fix, an explicit choice button can pass a predicate to
 `select` that checks the resolved action before confirming it. Commands also require a host
-`runCommand` handler that owns authorization and review of any subsequent edits.
+`runCommand` handler that owns authorization and review of any subsequent edits. Return
+`undefined` before starting work to decline a command. The caller receives
+`{ status: "declined" }` and can retry the same preview while it is current. Returning an
+execution handle gives the caller `{ status: "executing" }`. Observe the controller for the
+eventual result (`applied`, `executed` or `failed`).
+
+`CodeActionConfirmation` also reports `expired` for a retired preview, `disabled` for an
+unavailable action, and `not-writable` when a reviewed edit lacks permission. A synchronous
+failure returns `{ status: "failed", message }`.
 
 `createLspActionClient(provider, options).run({ document, project, from, to }).result` resolves to
 validated `actions`, currentness guards, `supports(command)`, `resolve(action)` and

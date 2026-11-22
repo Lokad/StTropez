@@ -198,7 +198,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await expect(button(page, "Apply captured action")).toBeDisabled();
         await preview(page);
         await choices(page).nth(1).click();
-        await page.evaluate(() => window.hostFixture.snapshot().bindings.actions.state.confirm?.());
+        expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.actions.state.confirm?.())).toEqual({ status: "not-writable" });
         await waitForActions(page);
         await exact(page, raw);
         expect((await snapshot(page)).history).toEqual(before.history);
@@ -268,8 +268,29 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await seed(page); await button(page, "Add navigation companion").click(); const before = await snapshot(page);
         await preview(page); await choices(page).nth(4).click(); await expect(button(page, "Execute captured action")).toBeEnabled(); expect(await control(page, "fixture/lastCommand", {})).toBeNull(); await exact(page, raw);
         await button(page, "Execute captured action").click(); await waitForActions(page); expect((await snapshot(page)).bindings.actions.state.status).toBe("executed"); expect((await snapshot(page)).history).toEqual(before.history); expect((await control(page, "fixture/lastCommand", {})).command).toBe("fixture.status");
-        await select(page); const ranges = [{ anchor: raw.indexOf("TODO") + 4, head: raw.indexOf("TODO") + 1 }, { anchor: raw.length, head: raw.length }]; await page.evaluate(ranges => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, ranges); }, ranges); await preview(page); await choices(page).nth(8).click(); await expect(button(page, "Execute captured action")).toBeDisabled(); await page.evaluate(() => window.hostFixture.snapshot().bindings.actions.state.confirm?.()); await exact(page, raw);
-        await choices(page).nth(5).click(); await button(page, "Execute captured action").click(); await waitForActions(page); await exact(page, marker + raw); const receipt = await control(page, "fixture/lastCommand", {}); expect(receipt.arguments).toEqual([]); expect(receipt.documents.some((doc: any) => doc.prefix.startsWith(marker))).toBe(true); expect(receipt.documents.every((doc: any) => doc.version >= 1)).toBe(true); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
+        await select(page); const ranges = [{ anchor: raw.indexOf("TODO") + 4, head: raw.indexOf("TODO") + 1 }, { anchor: raw.length, head: raw.length }]; await page.evaluate(ranges => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, ranges); }, ranges); await preview(page); await choices(page).nth(8).click(); await expect(button(page, "Execute captured action")).toBeDisabled(); expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.actions.state.confirm?.())).toEqual({ status: "disabled" }); await exact(page, raw);
+        await choices(page).nth(5).click();
+        const confirm = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.actions.state.confirm!);
+        await button(page, "Register provider review command").click();
+        await expect.poll(async () => (await snapshot(page)).bindings.project.pending).toBe(false);
+        await button(page, "Request provider review edits").click(); await review(page);
+        const previousCommand = await control(page, "fixture/lastCommand", {});
+        await expect(button(page, "Execute captured action")).toBeDisabled();
+        const refused = await confirm.evaluate(invoke => invoke());
+        const afterRefusal = (await snapshot(page)).bindings.actions.state;
+        await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
+        expect(await control(page, "fixture/lastCommand", {})).toEqual(previousCommand);
+        expect(await confirm.evaluate(invoke => invoke === window.hostFixture.snapshot().bindings.actions.state.confirm)).toBe(true);
+        expect({ result: refused, status: afterRefusal.status, message: afterRefusal.message }).toMatchObject({
+            result: { status: "declined" }, status: "ready", message: expect.stringContaining("retry"),
+        });
+        await button(page, "Decline captured provider edits").click();
+        await expect(button(page, "Execute captured action")).toBeEnabled();
+        expect(await confirm.evaluate(invoke => invoke())).toEqual({ status: "executing" });
+        await waitForActions(page); await exact(page, marker + raw);
+        expect(await confirm.evaluate(invoke => invoke())).toEqual({ status: "expired" });
+        await confirm.dispose();
+        const receipt = await control(page, "fixture/lastCommand", {}); expect(receipt.arguments).toEqual([]); expect(receipt.documents.some((doc: any) => doc.prefix.startsWith(marker))).toBe(true); expect(receipt.documents.every((doc: any) => doc.version >= 1)).toBe(true); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
         await button(page, "Open action changes in Navigation companion").click(); await input(page, "Secondary source").press("Control+z"); await waitForActions(page); await exact(page, raw); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet.ranges.map(range => ({ anchor: range.anchor, head: range.head }))).toEqual(ranges); await input(page, "Secondary source").press("Control+Shift+z"); await waitForActions(page); await exact(page, marker + raw); await dispose(page);
     });
     if (coversHost("plain-candidate", host, "candidate")) test("action commands share the captured workspace decision owner and retain initial edits when later decisions fail", async ({ page }) => {
