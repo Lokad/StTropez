@@ -82,6 +82,8 @@ footer { display: flex; gap: 20px; align-items: center; min-height: 38px; paddin
 #language-command-status:not([hidden]) + #language-status { display: none; }
 .demo-token-keyword { color: #c4a7fa; } .demo-token-string { color: #a9d58a; } .demo-token-number { color: #edc58c; }
 .demo-token-type { color: #82d6d6; } .demo-token-comment { color: #8496ae; font-style: normal; }
+.st-comparison { --st-comparison-removed: #6e3442; --st-comparison-added: #214e38; }
+.st-comparison :is(.st-comparison-line-baseline, .st-comparison-line-working) .demo-token-comment { color: #b1c2d6; }
 .host-integration-status { margin: 0; padding: 6px 24px; font-size: 12px; color: #abc5d9; background: #192438; }
 .demo-source-notes { pointer-events: none; }
 .demo-source-note { position: fixed; z-index: 8; padding: 2px 7px; border: 1px solid #54716c; border-radius: 4px; background: #1c3530ed; color: #b8e3d6; font: 11px/1.5 system-ui, sans-serif; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

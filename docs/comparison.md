@@ -223,6 +223,11 @@ A pure insertion or deletion marks the empty side with a point at the correspond
 Only the side containing changed text receives a changed-line background. The tint fills the
 visible text area as you scroll sideways. Its change bar stays beside the gutter.
 
+Set `--st-comparison-baseline-line` and `--st-comparison-working-line` on the host to theme the
+row tints. The matching `--st-comparison-baseline-bar` and `--st-comparison-working-bar` set
+the gutter-edge colors. `--st-comparison-removed` and `--st-comparison-added` set the backgrounds
+behind the changed characters. Choose colors that keep your syntax tokens legible on both backgrounds.
+
 The reference pane is read-only. Passing a workspace document displays it directly and follows
 its edits. An external baseline uses a private document with Save and Run disabled. It takes no tab
 and stays out of the workspace inventory. A host lease can retain it after comparison disposal.

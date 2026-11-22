@@ -54,6 +54,8 @@ test("paired rows highlight their own changed text and restore together", async 
     await expect(working.locator(".st-comparison-added")).toHaveText(["5", "😁", "x"]);
     await expect(baseline.locator('[data-line="2"] .st-comparison-anchor')).toHaveCount(1);
     await expect(working.locator('.st-comparison-line-working[data-line="3"]')).toBeVisible();
+    await page.addStyleTag({ content: `.st-comparison { --st-comparison-baseline-line: #512230; --st-comparison-baseline-bar: #d37782;
+        --st-comparison-working-line: #194832; --st-comparison-working-bar: #77cf9a; }` });
     await page.evaluate(() => {
         for (const pane of Object.values(window.comparisonFixture.review.panes)) pane.configure({ minimap: true });
     }); await ready(page);
@@ -81,7 +83,7 @@ test("paired rows highlight their own changed text and restore together", async 
                 const ctx = canvas.getContext("2d")!; ctx.drawImage(image, 0, 0);
                 return [1, canvas.width - 2].map(x => Array.from(ctx.getImageData(x, 0, 1, 1).data.slice(0, 3)));
             }, png.toString("base64"));
-            expect(colors).toEqual(index === 0 ? [[208, 120, 134], [77, 37, 44]] : [[100, 190, 141], [24, 61, 48]]);
+            expect(colors).toEqual(index === 0 ? [[211, 119, 130], [81, 34, 48]] : [[119, 207, 154], [25, 72, 50]]);
         }
     }
     await page.getByRole("button", { name: "Next change" }).click();

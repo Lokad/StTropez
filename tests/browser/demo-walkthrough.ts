@@ -363,7 +363,7 @@ export async function runDemoFolding(page: Page, url = "/") {
 export async function runDemoFoldingBoundaries(page: Page, url = "/") {
     await page.goto(url);
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
-    const branches = ["if (true) {", "  first();", "} else {", "  second();", "} const after = 1;", "function empty() {", "}"];
+    const branches = ["if (true) {", "  first(); // draft", "} else {", "  second();", "} const after = 1;", "function empty() {", "}"];
     await source.press("Control+a"); await page.keyboard.insertText(branches.join("\n"));
     await page.getByRole("button", { name: "Save locally", exact: true }).click();
     await page.getByRole("button", { name: "Compare", exact: true }).click();
@@ -371,10 +371,24 @@ export async function runDemoFoldingBoundaries(page: Page, url = "/") {
     const panes = page.locator(".st-comparison-panes > section"), left = panes.first(), right = panes.last();
     const working = right.getByRole("textbox");
     await working.press("Control+Home"); await working.press("ArrowDown"); await working.press("End");
-    await page.keyboard.insertText(" // reviewed");
+    await working.press("Control+Shift+ArrowLeft"); await page.keyboard.insertText("reviewed");
     const status = page.locator(".st-comparison-controls output");
     await expect(status).toHaveText(/1 change|Change 1 of 1/);
     for (const pane of [left, right]) {
+        const changedComment = pane.locator(".demo-token-comment:is(.st-comparison-added, .st-comparison-removed)");
+        await expect(changedComment).toHaveText(pane === left ? "draft" : "reviewed");
+        const contrast = await changedComment.evaluate(span => {
+            const luminance = (rgb: string) => {
+                const [r, g, b] = rgb.match(/\d+/g)!.slice(0, 3).map(part => {
+                    const v = Number(part) / 255;
+                    return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4;
+                });
+                return .2126 * r! + .7152 * g! + .0722 * b!;
+            };
+            const ink = luminance(getComputedStyle(span).color);
+            return [span, span.closest(".st-viewport-row")!].map(el => (ink + .05) / (luminance(getComputedStyle(el).backgroundColor) + .05));
+        });
+        expect(Math.min(...contrast)).toBeGreaterThanOrEqual(4.5);
         const toggles = pane.locator(".st-fold-button");
         await expect(toggles).toHaveCount(2);
         await toggles.first().click(); await toggles.last().click();
@@ -389,7 +403,7 @@ export async function runDemoFoldingBoundaries(page: Page, url = "/") {
         expect(visible).toBe(true);
     }
     await left.locator(".st-fold-button").first().click();
-    await expect(left.locator('.st-viewport-row[data-line="1"]')).toHaveText("  first();");
+    await expect(left.locator('.st-viewport-row[data-line="1"]')).toHaveText(branches[1]!);
     await expect(right.locator('.st-viewport-row[data-line="1"]')).toHaveCount(0);
     await page.getByRole("button", { name: "Next change", exact: true }).click();
     await expect(right.locator('.st-viewport-row[data-line="1"]')).toContainText("// reviewed");
