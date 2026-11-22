@@ -578,7 +578,8 @@ advertise it. `resolve(item, prepare?)` requires an item from that captured list
 Resolving a link can change its target and tooltip. `decodeLspResolvedDocumentLink` keeps the range,
 opaque identity, capture and size limits fixed. When the user clicks, check the destination against
 your current policy and keep the source location for Return. You can display an unknown target as
-text. Receiving a late reply should never open a link or move focus.
+text. If the user clicks elsewhere during resolution, keep focus there. The resolved link stays
+available for a fresh click.
 
 ### Document colors
 

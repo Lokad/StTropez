@@ -296,12 +296,19 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await button(page, "Discover module links").click(); await expect(list.getByRole("button")).toBeEnabled();
         outside = true; await list.getByRole("button").click(); expect(outside).toBe(false);
         await expect(page.getByLabel("Module link status", { exact: true })).toContainText("outside the host"); await expect(list.getByRole("button")).toBeDisabled(); expect((await snapshot(page)).bindings.links.opened).toBe(1);
-        await field(page).focus(); await button(page, "Discover module links").click(); await expect(list.getByRole("button")).toBeEnabled();
-        hold = true; await list.getByRole("button").click(); await expect.poll(() => !!release).toBe(true);
-        await field(page, "Configuration path").focus(); release!(); release = undefined;
-        await page.evaluate(() => window.hostFixture.providerCustom("fixture/state", {}));
-        await expect.poll(async () => (await snapshot(page)).bindings.links.state.pending).toBe(false);
-        await expect(field(page, "Configuration path")).toBeFocused(); expect((await snapshot(page)).bindings.links.opened).toBe(1);
+        for (const destination of ["form", "heading"]) {
+            await field(page).focus(); await button(page, "Discover module links").click(); await expect(list.getByRole("button")).toBeEnabled();
+            hold = true; await list.getByRole("button").click(); await expect.poll(() => !!release).toBe(true);
+            if (destination === "form") await field(page, "Configuration path").focus();
+            else await page.getByRole("heading", { name: "Module document links", exact: true }).click();
+            const focused = destination === "form" ? field(page, "Configuration path") : page.locator("body");
+            await expect(focused).toBeFocused(); release!(); release = undefined;
+            await page.evaluate(() => window.hostFixture.providerCustom("fixture/state", {}));
+            await expect.poll(async () => (await snapshot(page)).bindings.links.state.pending).toBe(false);
+            expect((await snapshot(page)).bindings.links.opened).toBe(1); await expect(focused).toBeFocused();
+        }
+        await list.getByRole("button").click(); await expect(field(page, "Secondary source")).toBeFocused();
+        expect((await snapshot(page)).bindings.links.opened).toBe(2); expect((await snapshot(page)).history).toEqual(history);
         expect(methods).toContain("textDocument/documentLink"); expect(methods).toContain("documentLink/resolve"); expect((await snapshot(page)).source.exports).toBe(0);
     });
     test("F4 links restore complete comparison and secondary selections without taking later form focus", async ({ page }) => {

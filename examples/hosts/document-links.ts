@@ -151,11 +151,15 @@ export class HostDocumentLinks {
             if (!capture) { this.publish({ message: "The source changed before capture; discover fresh links." }); return; }
             job.resolving = ordinal; job.resolveCapture = capture;
             capture.signal.addEventListener("abort", () => this.changed(job), { once: true });
-            const owner = job.origin.editor.element.ownerDocument, focused = owner.activeElement; this.publish({ status: "resolving", message: "Resolving the captured provider link." });
+            const owner = job.origin.editor.element.ownerDocument, focused = owner.activeElement;
+            // Disabling or replacing a result button can focus the body. A later click on a heading does too.
+            let follow = true;
+            owner.addEventListener("pointerdown", () => { follow = false; }, { capture: true, once: true, signal: capture.signal });
+            this.publish({ status: "resolving", message: "Resolving the captured provider link." });
             void this.client.resolve(link).then(resolved => {
                 if (!this.current(job) || job.links[ordinal] !== link) return; job.links = Object.freeze(job.links.map((value, index) => index === ordinal ? resolved : value)); job.resolving = undefined; delete job.resolveCapture; capture.cancel();
                 this.publish({ status: "ready", message: resolved.target ? "Resolved a host-authorized destination." : "Provider link target is outside the host's captured resources." });
-                if (resolved.target && (owner.activeElement === focused || owner.activeElement === owner.body && (!focused?.isConnected || !!this.list?.contains(focused)))) this.open(token, ordinal);
+                if (follow && resolved.target && (owner.activeElement === focused || owner.activeElement === owner.body && (!focused?.isConnected || !!this.list?.contains(focused)))) this.open(token, ordinal);
             }).catch(error => { if (this.job !== job) return; this.release(); this.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Link resolution failed; source is unchanged." }); }); return;
         }
         if (!link.target) return;
