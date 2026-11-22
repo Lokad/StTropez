@@ -25,7 +25,7 @@ type KeyCommand = Readonly<{ kind: "history"; direction: "undo" | "redo" }>
     | Readonly<{ kind: "language"; command: EditingCommand | Readonly<{ character: string }> }>;
 export type KeyBinding = Readonly<{ command: KeyCommand; text: string; edit: boolean; fallback: boolean }>;
 type EditingKey = KeyBinding | "escape" | "prevent-native" | undefined;
-const navigationKeys = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"]);
+const arrowAndPageKeys = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown"]);
 const bind = (command: KeyCommand, edit = false, text = "", fallback = false): KeyBinding => ({ command, edit, text, fallback });
 
 export const historyKey = (direction: "undo" | "redo"): KeyBinding => bind({ kind: "history", direction }, true);
@@ -39,9 +39,9 @@ export function classifyEditingKey(event: KeyStroke, apple: boolean, paired: (ke
     // After unbinding a word shortcut, keep the browser from moving or deleting in the input projection.
     if (word && ["ArrowLeft", "ArrowRight", "Backspace", "Delete"].includes(event.key)) return "prevent-native";
     if (!command && !event.altKey) {
-        if (navigationKeys.has(event.key) || ["Enter", "Backspace", "Delete"].includes(event.key)) return "prevent-native";
+        if (arrowAndPageKeys.has(event.key) || ["Enter", "Backspace", "Delete"].includes(event.key)) return "prevent-native";
         if (paired(event.key)) return bind({ kind: "language", command: { character: event.key } }, true, event.key, true);
     }
-    if (command && navigationKeys.has(event.key)) return "prevent-native";
+    if (command && (arrowAndPageKeys.has(event.key) || event.key === "Home" || event.key === "End")) return "prevent-native";
     return;
 }
