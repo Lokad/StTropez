@@ -1,6 +1,34 @@
 import type { Observable } from "../../src/index.ts";
 import { renderPanelActions } from "./panel-actions.ts";
 
+type PanelChoice = Readonly<{ key: number | string; label: string; invoke: () => void }>;
+type ChoiceList<T extends PanelChoice> = Readonly<{ label: string; identity: readonly unknown[]; page?: number; disabled: boolean;
+    items: () => readonly T[]; isSelected?: (key: T["key"]) => boolean }>;
+
+/** Keep each button while its result page is displayed, including when only selection changes. */
+export function bindChoiceList<T extends PanelChoice>(list: HTMLElement, initial: ChoiceList<T>, decoration?: (item: T) => HTMLElement) {
+    const owner = list.ownerDocument, buttons: [T["key"], HTMLButtonElement][] = [];
+    list.setAttribute("aria-label", initial.label);
+    let identity: readonly unknown[] | undefined, page: number | undefined;
+    return (model: ChoiceList<T>) => {
+        if (identity !== model.identity || page !== model.page) {
+            buttons.length = 0;
+            list.replaceChildren(...model.items().map(item => {
+                const row = owner.createElement("li"), button = owner.createElement("button");
+                button.textContent = item.label; button.onclick = item.invoke; buttons.push([item.key, button]);
+                if (decoration) row.append(decoration(item));
+                row.append(button);
+                return row;
+            }));
+            identity = model.identity; page = model.page;
+        }
+        for (const [key, button] of buttons) {
+            button.disabled = model.disabled;
+            if (model.isSelected) button.setAttribute("aria-pressed", String(model.isSelected(key)));
+        }
+    };
+}
+
 type ToolPanel = Readonly<{ title: string; description?: string; status: { label: string; text: string };
     actions: Parameters<typeof renderPanelActions>[1] }>;
 

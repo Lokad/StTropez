@@ -1,5 +1,5 @@
 import { pageActions } from "./panel-actions.ts";
-import { createToolPanel } from "./tool-panel.ts";
+import { bindChoiceList, createToolPanel } from "./tool-panel.ts";
 import { changedFiles, createChangedFileList, createEditNoteList } from "./edit-review.ts";
 import { actionChoicePageSize } from "./action-pages.ts";
 import type { CodeActionChoice } from "../../src/browser/index.ts";
@@ -37,15 +37,14 @@ export function actionsPanelModel(tools: ActionsPanelTools, s: ActionsSnapshot) 
 export function mountActionsPanel(host: HTMLElement, tools: HostActionsTools): () => void {
     const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => actionsPanelModel(tools, state));
     const label = owner.createElement("label"), module = owner.createElement("input"), title = owner.createElement("p"), edits = createEditNoteList(owner, initial.edits.label);
-    const choices = owner.createElement("ol"), changes = createChangedFileList(owner, initial.changes.label); choices.setAttribute("aria-label", initial.choices.label);
+    const choices = owner.createElement("ol"), changes = createChangedFileList(owner, initial.changes);
+    const renderChoices = bindChoiceList(choices, initial.choices);
     module.type = "text"; module.maxLength = initial.module.maxLength; module.value = initial.module.value; module.oninput = () => initial.module.change(module.value); label.append(initial.module.label, module); initial.module.bind(module);
     title.setAttribute("aria-label", initial.preview.label);
-    let previousChoices: unknown;
-    let choiceButtons: { key: number; button: HTMLButtonElement }[] = [], previousChoicePage: number | undefined;
     return mount([label, controls, choices, title, edits.element, changes.element], model => {
         if (module.value !== model.module.value) module.value = model.module.value; title.textContent = model.preview.text;
-        if (previousChoices !== model.choices.identity || previousChoicePage !== model.choices.page) { previousChoices = model.choices.identity; previousChoicePage = model.choices.page; choiceButtons = []; choices.start = model.choices.start; choices.replaceChildren(...model.choices.items().map(choice => { const li = owner.createElement("li"), button = owner.createElement("button"); button.textContent = choice.label; button.onclick = choice.invoke; choiceButtons.push({ key: choice.key, button }); li.append(button); return li; })); }
-        for (const { key, button } of choiceButtons) { button.disabled = model.choices.disabled; button.setAttribute("aria-pressed", String(model.choices.isSelected(key))); }
+        choices.start = model.choices.start;
+        renderChoices(model.choices);
         edits.render(model.edits);
         changes.render(model.changes);
     }, () => initial.module.bind(null));

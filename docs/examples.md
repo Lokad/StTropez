@@ -399,8 +399,9 @@ Changing result pages during a press requires a fresh click to open a link on th
 Press F2 on the symbol to rename. Enter and **Prepare rename preview** both use that pane,
 even if you focus another pane before requesting the preview. Press Enter in the name field
 again to apply the reviewed edits.
-In the F6 colour picker, Enter previews the proposed value. **Apply captured color** applies the
-reviewed format. Changing formats during a press requires a fresh click.
+The F6 colour picker lists each provider result, including colors at the same source position.
+Select a result and press Enter in the value field to preview it. **Apply captured color** applies
+the reviewed format. Changing formats during a press requires a fresh click.
 
 An action’s initial edit gets its own undo step. For later edits, open **Workspace provider** and
 choose **Apply captured provider edits** or **Decline captured provider edits**. If another review

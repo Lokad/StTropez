@@ -139,7 +139,26 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         const final = await snapshot(page); expect(final.bindings.lsp!.created).toBe(final.bindings.lsp!.terminated);
     });
     test("paged links and colors keep unresolved targets and invalid form values inert and reject oversized lists", async ({ page }) => {
-        const methods: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value.method); }));
+        const methods: string[] = [];
+        await page.routeWebSocket("**/lsp-fixture", client => {
+            const server = client.connectToServer(), colorRequests = new Set<number>();
+            client.onMessage(message => {
+                const value = JSON.parse(message.toString());
+                if (value.method) methods.push(value.method);
+                if (value.method === "textDocument/documentColor") colorRequests.add(value.id);
+                server.send(message);
+            });
+            server.onMessage(message => {
+                const value = JSON.parse(message.toString());
+                if (colorRequests.delete(value.id) && value.result?.length === 70) {
+                    // Two provider entries can start at the same character.
+                    value.result[1].range = value.result[0].range;
+                    value.result[1].color = { red: 1, green: 0, blue: 0, alpha: 1 };
+                    client.send(JSON.stringify(value));
+                } else client.send(message);
+            });
+        });
+        await page.reload(); await settledColorsAndLinks(page);
         const line = 'import "sample-utils";\r\n#abc;\r\n', text = line.repeat(70) + 'import "missing-utils";';
         await seed(page, text, text.indexOf("#abc") + 2); await button(page, "Add module companion").click(); const before = await snapshot(page);
         const links = page.getByLabel("Module link results", { exact: true }), colors = page.getByLabel("Document color results", { exact: true });
@@ -153,13 +172,18 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
             await expect(next).toBeEnabled(); await next.hover(); await page.mouse.up();
             await oldNext.evaluate(turn => turn()); await oldNext.dispose();
             await expect(button(page, "Previous " + name)).toBeDisabled(); await expect(rows).toHaveCount(64);
+            if (kind === "colors") {
+                const red = rows.nth(1).getByRole("button"); await red.click();
+                await expect(red).toHaveAttribute("aria-pressed", "true");
+            }
+            const row = rows.first().getByRole("button"), resolves = methods.filter(method => method === "documentLink/resolve").length;
+            await row.hover(); await page.mouse.down(); await next.evaluate(node => (node as HTMLButtonElement).click());
+            await expect(rows).toHaveCount(kind === "links" ? 7 : 6);
+            await row.hover(); await page.mouse.up(); await settledColorsAndLinks(page);
             if (kind === "links") {
-                const row = rows.first().getByRole("button"), resolves = methods.filter(method => method === "documentLink/resolve").length;
-                await row.hover(); await page.mouse.down(); await next.evaluate(node => (node as HTMLButtonElement).click());
-                await expect(rows).toHaveCount(7); await row.hover(); await page.mouse.up(); await settledColorsAndLinks(page);
                 expect(methods.filter(method => method === "documentLink/resolve")).toHaveLength(resolves);
                 expect((await snapshot(page)).bindings.links.opened).toBe(0);
-            } else await next.click();
+            } else expect((await snapshot(page)).bindings.colors.state.selected).toBe(1);
         };
         await turnAfterRefresh("links"); await expect(links.getByRole("listitem")).toHaveCount(7);
         await expect(button(page, "Next module links")).toBeDisabled(); await expect(links.getByRole("button").last()).toBeEnabled();

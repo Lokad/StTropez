@@ -29,7 +29,7 @@ export function renamePanelModel(tools: RenamePanelTools, s: HostRenameSnapshot)
 }
 export function mountRenamePanel(host: HTMLElement, tools: HostRenameTools): () => void {
     const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => renamePanelModel(tools, state));
-    const label = owner.createElement("label"), name = owner.createElement("input"), targets = owner.createElement("ol"), changes = createChangedFileList(owner, initial.changes.label);
+    const label = owner.createElement("label"), name = owner.createElement("input"), targets = owner.createElement("ol"), changes = createChangedFileList(owner, initial.changes);
     name.maxLength = initial.name.maxLength; name.type = "text"; name.value = initial.name.value; name.oninput = () => initial.name.change(name.value); label.append(initial.name.label, name);
     initial.name.bind(name);
     targets.setAttribute("aria-label", initial.targets.label);

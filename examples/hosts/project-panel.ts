@@ -29,7 +29,7 @@ export function projectPanelModel(tools: ProjectPanelTools, s: ProjectSnapshot) 
 }
 export function mountProjectPanel(host: HTMLElement, tools: HostProjectTools): () => void {
     const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => projectPanelModel(tools, state));
-    const changed = createChangedFileList(owner, initial.changes.label), description = owner.createElement("p");
+    const changed = createChangedFileList(owner, initial.changes), description = owner.createElement("p");
     const previewTitle = owner.createElement("p"), edits = createEditNoteList(owner, initial.edits.label); previewTitle.setAttribute("aria-label", initial.review.titleLabel);
     return mount([controls, previewTitle, edits.element, description, changed.element], model => {
         previewTitle.hidden = !model.review.visible; previewTitle.textContent = model.review.title;
