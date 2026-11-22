@@ -10,6 +10,26 @@ import { bindPopupCommands } from "./language-commands.ts";
 
 export type DemoSymbolTarget = Readonly<{ documentId: DocumentId; revision: number; from: number; to: number }>;
 
+function locationButton(file: DemoFile, location: LspLocation): HTMLButtonElement {
+    const buffer = location.target.document.buffer;
+    const line = buffer.lineAt(location.from), start = buffer.offsetAt(line);
+    const end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
+    const from = Math.max(start, location.from - 24), at = location.from - from;
+    const limit = 112;
+    // Allow for CRLF when deciding whether there is more source to show.
+    const excerpt = buffer.slice(from, Math.min(end, from + limit + 2)).replace(/\r?\n$/, "");
+    const clipped = excerpt.length > limit;
+    const text = clipped ? excerpt.slice(0, limit).replace(/[\uD800-\uDBFF]$/u, "") : excerpt;
+    const stop = Math.min(text.length, location.to - from);
+    const button = document.createElement("button"), code = document.createElement("code"), match = document.createElement("mark");
+    button.textContent = file.name + " · " + (line + 1) + ":" + (location.from - start + 1);
+    code.append((from > start ? "…" : "") + text.slice(0, at).replace(/^[\uDC00-\uDFFF]/u, "").trimStart());
+    match.textContent = text.slice(at, stop);
+    code.append(match, text.slice(stop), clipped ? "…" : "");
+    button.append(code);
+    return button;
+}
+
 /** Host presentation around validated public results. Navigation may replace this editor view. */
 export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, files: () => readonly DemoFile[], file: DemoFile, editor: TextEditor,
     provider: LspWorkspace, valid: () => boolean, dismissOther: () => void, open: (target: DemoSymbolTarget) => void) {
@@ -62,8 +82,7 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         const first = Math.floor(captured.choice / 64) * 64, total = captured.result?.locations.length ?? 0;
         const buttons = captured.result?.locations.slice(first, first + 64).flatMap((location, index) => {
             const file = files().find(file => file.resource.documentId === location.target.document.documentId); if (!file) return [];
-            const button = document.createElement("button"), doc = workspace.document(file.resource.documentId), line = doc.buffer.lineAt(location.from);
-            button.textContent = `${doc.title} · ${line + 1}:${location.from - doc.buffer.offsetAt(line) + 1}`;
+            const button = locationButton(file, location);
             button.dataset.location = String(first + index);
             button.addEventListener("click", () => choose(captured, location)); return button;
         }) ?? [];

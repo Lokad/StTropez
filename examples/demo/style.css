@@ -31,6 +31,8 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .demo-actions > button { margin-right: 6px; } .demo-actions ol { padding-left: 20px; line-height: 1.8; }
 .demo-actions del { color: #ed9a9a; } .demo-actions ins { color: #8ce0ca; }
 .demo-symbols > button { display: block; width: 100%; margin-top: 5px; text-align: left; }
+.demo-symbols > button code { display: block; margin-top: 2px; font: 12px/1.4 var(--st-font); color: #b4c7d9; overflow-wrap: anywhere; }
+.demo-symbols > button mark { background: transparent; color: #e2fff6; font-weight: 700; }
 .demo-symbols > button[data-chosen="true"] { background: #365474; color: #e2fff6; }
 .demo-symbols p, .demo-rename p { margin: 0 0 10px; }
 .demo-rename h2 { margin: 0 0 10px; font-size: 15px; }
