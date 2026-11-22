@@ -258,7 +258,9 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         expect(await old.evaluate(apply => apply())).toBe(false); await old.dispose();
         const format = page.getByRole("combobox", { name: "Color presentation", exact: true });
         const first = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.colors.state.apply!);
+        await apply.hover(); await page.mouse.down();
         await format.selectOption("provider-1"); await format.selectOption("provider-0");
+        await apply.hover(); await page.mouse.up();
         expect(await first.evaluate(apply => apply())).toBe(false); await first.dispose();
         await exact(page, current);
         expect((await snapshot(page)).history).toEqual(beforeOld.history);

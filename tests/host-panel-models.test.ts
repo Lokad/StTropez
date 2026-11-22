@@ -118,7 +118,7 @@ test("color controls keep the reference and reviewed Apply from the displayed sn
     const tools: Parameters<typeof documentColorsPanelModel>[0] = { discover: noop, cancel: noop, previousPage: noop, nextPage: noop, disconnect: noop, reconnect: noop,
         bindList: noop, bindValue: noop, setValue: noop, preview: noop, openChanged: noop };
     const state: DocumentColorsSnapshot = { available: true, connected: true, disconnected: false, pending: false, view: "primary", status: "presentations", message: "",
-        count: 1, page: 0, selected: 0, value: "#abc", css: "#abc", presentation: "hex", canPreview: true, canApply: true, apply: () => { calls.push("apply first"); return true; },
+        count: 1, page: 0, selected: 0, value: "#abc", css: "#abc", presentation: "hex", canPreview: true, canApply: true, reviewKey: 1, apply: () => { calls.push("apply first"); return true; },
         colors: [{ from: 1, to: 5, text: "#abc", label: "#abc", color: { red: 1, green: 1, blue: 1, alpha: 1 }, ordinal: 0, line: 1, column: 2, css: "#abc", inspect: () => calls.push("inspect first") }],
         choices: [{ id: "hex", label: "Hex", select: () => calls.push("hex") }], edits: [], changed: null };
     const first = documentColorsPanelModel(tools, state), newer = documentColorsPanelModel(tools, { ...state, apply: () => { calls.push("apply next"); return true; } });

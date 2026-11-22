@@ -1,7 +1,7 @@
 import { onSourceFocus } from "./source-focus.ts";
 import type { DocumentId, TabId, Workspace } from "../../src/index.ts";
 import { createDocumentColorController } from "../../src/browser/index.ts";
-import type { DecorationLayer, DocumentColorChoice, DocumentColorController, TextEditor } from "../../src/browser/index.ts";
+import type { ColorPresentationReview, DecorationLayer, DocumentColorChoice, DocumentColorController, TextEditor } from "../../src/browser/index.ts";
 import type { LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import { colorLimits, parseColor, rgbaColor } from "../../fixtures/language/colors.ts";
 import type { ColorFault, ColorReference } from "../../fixtures/language/colors.ts";
@@ -15,10 +15,10 @@ export type ColorEditNote = Readonly<{ document: string; resource: string; title
 export type DocumentColorsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; view: string | null;
     status: "idle" | "scan" | "colors" | "presentations" | "applied" | "expired" | "failed"; message: string; count: number; page: number; colors: readonly ColorNote[];
     selected: number; value: string; css: string | null; presentation: string; choices: readonly Readonly<{ id: string; label: string; select: () => void }>[];
-    edits: readonly ColorEditNote[]; canPreview: boolean; canApply: boolean; apply: (() => boolean) | null; changed: Readonly<{ document: DocumentId; title: string }> | null }>;
+    edits: readonly ColorEditNote[]; canPreview: boolean; canApply: boolean; reviewKey: number | null; apply: (() => boolean) | null; changed: Readonly<{ document: DocumentId; title: string }> | null }>;
 const initial: DocumentColorsSnapshot = { available: false, connected: false, disconnected: false, pending: false, view: null,
     status: "idle", message: "Focus a source to discover colors.", count: 0, page: 0, colors: [], selected: -1, value: "", css: null,
-    presentation: "", choices: [], edits: [], canPreview: false, canApply: false, apply: null, changed: null };
+    presentation: "", choices: [], edits: [], canPreview: false, canApply: false, reviewKey: null, apply: null, changed: null };
 
 function focusSource(editor: TextEditor) {
     editor.viewport.revealOffset(editor.view.getSnapshot().selection.head);
@@ -29,6 +29,7 @@ function focusSource(editor: TextEditor) {
 /** The host owns the picker, swatches, preview list and focus after confirmation. */
 export class HostDocumentColors {
     private readonly sessions = new Set<Session>();
+    private readonly reviewKeys = new WeakMap<ColorPresentationReview, number>();
     private active: Session | undefined;
     private owner: Session | undefined;
     private displayed: readonly DocumentColorChoice[] | undefined;
@@ -97,13 +98,18 @@ export class HostDocumentColors {
                 } };
         }) : old.colors;
         const review = state.review, pending = state.status === "previewing";
+        let reviewKey = review && this.reviewKeys.get(review);
+        if (review && reviewKey === undefined) {
+            reviewKey = this.workspace.allocateIdentity();
+            this.reviewKeys.set(review, reviewKey);
+        }
         const choices = state.presentations.map((choice, i) => ({ id: `provider-${i}`, label: choice.label, select: choice.select }));
         const edits = review?.edits.map(edit => ({ ...edit, document: doc.id, resource: doc.resourceId, title: doc.title.slice(0, 128), revision: doc.revision,
             context: doc.buffer.slice(Math.max(0, edit.from - 32), Math.min(doc.buffer.length, edit.from + 32)) })) ?? [];
         this.publish({ status: state.status === "ready" ? "colors" : "presentations", message: pending ? "Requesting color presentations…" : review ? "Review the edits before applying." : `${state.colors.length} document colors.`,
             pending, count: state.colors.length, colors, selected, page, value, css: proposed ? rgbaColor(proposed) : null, choices,
             presentation: review ? choices[state.presentations.indexOf(review.choice)]!.id : "", edits, canPreview: !!reference && !!proposed && !pending,
-            canApply: review?.canApply ?? false, apply: review ? () => {
+            canApply: review?.canApply ?? false, reviewKey: reviewKey ?? null, apply: review ? () => {
                 if (!review.apply()) return false;
                 if (this.sessions.has(s)) focusSource(s.editor);
                 return true;

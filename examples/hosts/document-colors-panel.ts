@@ -24,7 +24,7 @@ export function documentColorsPanelModel(tools: DocumentColorsPanelTools, s: Doc
         preview: { label: "Preview color presentations", disabled: !s.canPreview || s.pending, invoke: tools.preview },
         presentation: { label: "Color presentation ", value: s.presentation, disabled: !s.choices.length || s.pending,
             retentionKey: () => JSON.stringify(s.choices), items: () => s.choices, change: (id: string) => s.choices.find(choice => choice.id === id)?.select() },
-        apply: { label: "Apply captured color", disabled: !s.canApply || s.pending, invoke: s.apply ?? (() => false) },
+        apply: { label: "Apply captured color", key: s.reviewKey, disabled: !s.canApply || s.pending, invoke: s.apply ?? (() => false) },
         edits: { label: "Proposed color edits", retentionKey: () => JSON.stringify(s.edits), items: () => s.edits.map(colorEditLabel) },
         changed: { visible: s.changed !== null, label: s.changed ? `Open color changes in ${s.changed.title}` : "Open color changes", disabled: s.pending || s.view !== null,
             invoke: () => { if (s.changed) tools.openChanged(s.changed.document); } },
@@ -32,9 +32,10 @@ export function documentColorsPanelModel(tools: DocumentColorsPanelTools, s: Doc
 }
 export function mountDocumentColorsPanel(host: HTMLElement, tools: HostDocumentColors): () => void {
     const initial = documentColorsPanelModel(tools, tools.state.getSnapshot());
-    const owner = host.ownerDocument, heading = owner.createElement("h2"), description = owner.createElement("p"), status = owner.createElement("output"), controls = owner.createElement("div"), list = owner.createElement("ul"), label = owner.createElement("label"), value = owner.createElement("input"), swatch = owner.createElement("span"), preview = owner.createElement("button"), presentationLabel = owner.createElement("label"), presentation = owner.createElement("select"), apply = owner.createElement("button"), edits = owner.createElement("ol"), changed = owner.createElement("button");
+    const owner = host.ownerDocument, heading = owner.createElement("h2"), description = owner.createElement("p"), status = owner.createElement("output"), controls = owner.createElement("div"), list = owner.createElement("ul"), label = owner.createElement("label"), value = owner.createElement("input"), swatch = owner.createElement("span"), preview = owner.createElement("button"), presentationLabel = owner.createElement("label"), presentation = owner.createElement("select"), edits = owner.createElement("ol"), changed = owner.createElement("button");
     host.setAttribute("aria-label", initial.title); heading.textContent = initial.title; description.textContent = initial.description; status.setAttribute("aria-label", initial.status.label); list.tabIndex = -1; list.setAttribute("aria-label", initial.results.label); initial.results.bind(list);
     value.type = "text"; value.maxLength = initial.value.maxLength; value.oninput = () => initial.value.change(value.value); label.append(initial.value.label, value); initial.value.bind(value); swatch.className = "host-color-swatch"; swatch.setAttribute("aria-hidden", "true"); preview.textContent = initial.preview.label; preview.onclick = initial.preview.invoke;
+    let apply = owner.createElement("button"), reviewKey = initial.apply.key;
     presentationLabel.append(initial.presentation.label, presentation); apply.textContent = initial.apply.label; edits.setAttribute("aria-label", initial.edits.label);
     const buttons = initial.actions.map(action => { const button = owner.createElement("button"); button.textContent = action.label; controls.append(button); return button; });
     host.replaceChildren(heading, description, status, controls, list, label, swatch, preview, presentationLabel, apply, edits, changed); let choiceKey = "", editsKey = ""; let listKey: readonly ColorNote[] | undefined, resultButtons: { ordinal: number; button: HTMLButtonElement }[] = [];
@@ -44,7 +45,12 @@ export function mountDocumentColorsPanel(host: HTMLElement, tools: HostDocumentC
         for (const { ordinal, button } of resultButtons) { button.disabled = model.results.disabled; button.setAttribute("aria-pressed", String(model.results.isSelected(ordinal))); }
         if (value.value !== model.value.value) value.value = model.value.value; swatch.style.backgroundColor = model.value.css; preview.disabled = model.preview.disabled;
         const nextChoices = model.presentation.retentionKey(); if (nextChoices !== choiceKey) { choiceKey = nextChoices; presentation.replaceChildren(...model.presentation.items().map(c => { const option = owner.createElement("option"); option.value = c.id; option.textContent = c.label; return option; })); }
-        presentation.onchange = () => model.presentation.change(presentation.value); presentation.disabled = model.presentation.disabled; presentation.value = model.presentation.value; apply.disabled = model.apply.disabled; apply.onclick = model.apply.invoke;
+        presentation.onchange = () => model.presentation.change(presentation.value); presentation.disabled = model.presentation.disabled; presentation.value = model.presentation.value;
+        if (reviewKey !== model.apply.key) {
+            const next = owner.createElement("button"); next.textContent = model.apply.label;
+            apply.replaceWith(next); apply = next; reviewKey = model.apply.key;
+        }
+        apply.disabled = model.apply.disabled; apply.onclick = model.apply.invoke;
         const nextEdits = model.edits.retentionKey(); if (nextEdits !== editsKey) { editsKey = nextEdits; edits.replaceChildren(...model.edits.items().map(text => { const li = owner.createElement("li"), pre = owner.createElement("pre"); pre.textContent = text; li.append(pre); return li; })); }
         changed.hidden = !model.changed.visible; changed.disabled = model.changed.disabled; changed.textContent = model.changed.label; changed.onclick = model.changed.invoke;
     };
