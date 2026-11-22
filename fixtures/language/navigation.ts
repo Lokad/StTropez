@@ -3,14 +3,11 @@ import { provideHover } from "./hover.ts";
 
 export const navigationLimits = Object.freeze({ documents: 100, sourceUnits: 16777216, chunkUnits: 16384, symbolUnits: 256, locations: 1024, page: 64, responseUnits: 524288 });
 export type NavigationDocument = Readonly<{ document: string; revision: number; length: number }>;
-export type NavigationInput = Readonly<{ operation: "navigation-start"; id: number; kind: "definition" | "references"; symbol: string;
-    documents: readonly NavigationDocument[]; includeDeclaration: boolean; delay: number; fault?: "malformed" | "failure" }>;
+export type NavigationFault = "malformed" | "failure";
 export type NavigationLocation = Readonly<{ document: string; revision: number; from: number; to: number; declaration: boolean }>;
-export type NavigationResult = Readonly<{ operation: "navigation-result"; id: number; locations: readonly NavigationLocation[]; truncated: boolean }>;
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object";
 const integer = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 const word = /^[\p{L}\p{N}\p{Pc}\p{M}\u200c\u200d]$/u;
-const symbol = (text: string) => text.length > 0 && text.length <= navigationLimits.symbolUnits && Array.from(text).every(char => word.test(char));
 
 /** Reuse the bounded hover fixture's symbol policy, with guards for cut window edges. */
 export function navigationSymbol(buffer: TextBuffer, offset: number): string | undefined {
@@ -18,15 +15,6 @@ export function navigationSymbol(buffer: TextBuffer, offset: number): string | u
     const range = provideHover({ operation: "hover", id: 1, revision: 0, text, offset: offset - from, delay: 0 }).range;
     if (!range || range.from === 0 && from > 0 || range.to === text.length && to < buffer.length) return;
     return text.slice(range.from, range.to);
-}
-export function validateNavigationInput(value: unknown): NavigationInput {
-    if (!record(value) || value.operation !== "navigation-start" || !integer(value.id) || value.id < 1 || value.kind !== "definition" && value.kind !== "references"
-        || typeof value.symbol !== "string" || !symbol(value.symbol) || !Array.isArray(value.documents) || !value.documents.length || value.documents.length > navigationLimits.documents
-        || typeof value.includeDeclaration !== "boolean" || typeof value.delay !== "number" || !Number.isFinite(value.delay) || value.delay < 0 || value.delay > 1000
-        || value.fault !== undefined && value.fault !== "malformed" && value.fault !== "failure") throw new Error("Invalid navigation capture.");
-    const documents = validateNavigationDocuments(value.documents);
-    return Object.freeze({ operation: "navigation-start", id: value.id, kind: value.kind, symbol: value.symbol, documents, includeDeclaration: value.includeDeclaration, delay: value.delay,
-        ...(value.fault === undefined ? {} : { fault: value.fault }) });
 }
 export function validateNavigationDocuments(value: unknown): readonly NavigationDocument[] {
     if (!Array.isArray(value) || !value.length || value.length > navigationLimits.documents) throw new Error("Invalid project documents.");

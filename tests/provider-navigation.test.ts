@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer } from "../src/index.ts";
 import { SymbolScanner, navigationSymbol } from "../fixtures/language/navigation.ts";
-import type { NavigationInput } from "../fixtures/language/navigation.ts";
-function run(texts: readonly string[], kind: NavigationInput["kind"] = "references", includeDeclaration = true, budget = 3, name = "café") {
+import type { LspNavigationRequest } from "../src/protocol/index.ts";
+function run(texts: readonly string[], kind: LspNavigationRequest["kind"] = "references", includeDeclaration = true, budget = 3, name = "café") {
     const locations: { document: string; revision: number; from: number; to: number; declaration: boolean }[] = [];
     texts.forEach((text, i) => {
         const scanner = new SymbolScanner(name, (from, to, declaration) => {

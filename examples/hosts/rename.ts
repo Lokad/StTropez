@@ -4,10 +4,10 @@ import { createRenameController } from "../../src/browser/index.ts";
 import type { RenameController, RenamePreview, RenameSnapshot, TextEditor } from "../../src/browser/index.ts";
 import type { LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import { navigationLimits, navigationSymbol } from "../../fixtures/language/navigation.ts";
-import type { NavigationInput } from "../../fixtures/language/navigation.ts";
+import type { NavigationFault } from "../../fixtures/language/navigation.ts";
 import { HostCell } from "../shared/observable.ts";
 
-export type RenameHostOptions = Readonly<{ provider: LspWorkspace; prepare?: (delay: number, fault?: NavigationInput["fault"]) => LspPrepare }>;
+export type RenameHostOptions = Readonly<{ provider: LspWorkspace; prepare?: (delay: number, fault?: NavigationFault) => LspPrepare }>;
 type Session = { id: string; editor: TextEditor; controller: RenameController; stop: () => void };
 export type RenameNote = Readonly<{ ordinal: number; document: string; resource: string; title: string; revision: number; from: number; to: number; line: number; column: number; context: string; before?: string; after?: string }>;
 export type HostRenameSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; status: RenameSnapshot["status"];
@@ -29,7 +29,7 @@ export class HostRenameTools {
     private disconnected = false;
     private disposed = false;
     private delay = 0;
-    private fault: NavigationInput["fault"];
+    private fault: NavigationFault | undefined;
     private requested = 0;
     private input: HTMLInputElement | undefined;
     private nameEvents: AbortController | undefined;
@@ -145,7 +145,7 @@ export class HostRenameTools {
         catch { this.publish({ message: "The captured changed resource is no longer available." }); }
     }
     setDelay(value: number) { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid rename delay."); this.delay = value; }
-    faultNext(value: NonNullable<NavigationInput["fault"]>) { this.fault = value; }
+    faultNext(value: NavigationFault) { this.fault = value; }
     faultIdle() {
         if (!this.owner || this.cell.get().pending || !this.cell.get().connected) return false;
         this.backend.provider.disconnect(); return true;
