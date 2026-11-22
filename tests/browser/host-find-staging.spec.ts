@@ -1,3 +1,4 @@
+import { moveEditorIntoShadow } from "../helpers/shadow-editor.ts";
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
@@ -31,6 +32,35 @@ test("host commands use confirmed matches immediately while a local edit is awai
     expect(selection(result.after)).toMatchObject({ anchor: 0, head: 3 }); expect(result.after.bindings.language.findCommandPending).toBeNull();
     await expect(page.getByLabel("Find status", { exact: true })).toHaveText("1999 matches · ready");
     await primary(page).press("Control+z"); await expect(page.getByLabel("Find status", { exact: true })).toHaveText("2000 matches · ready");
+});
+
+test("a pending F3 in a shadow editor follows its match until the user leaves the source", async ({ page }) => {
+    await page.goto("/hosts/plain/?editor=candidate"); await ready(page);
+    const prefix = "some line\n".repeat(20000);
+    await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot().source;
+        f.editSource(s.revision, [{ from: 0, to: s.length, insert: text }]);
+        f.selectSource("primary", f.snapshot().source.revision, { anchor: 0, head: 0 });
+    }, prefix + "first second");
+    const source = primary(page), query = page.getByRole("textbox", { name: "Find source", exact: true });
+    await moveEditorIntoShadow(source); await source.press("Control+f");
+    const input = (await source.elementHandle())!;
+    try {
+        for (const needle of ["first", "second"]) {
+            const pending = await query.evaluate((node, { input, needle }) => {
+                const field = node as HTMLInputElement, source = input as HTMLElement;
+                field.value = needle; field.dispatchEvent(new Event("input", { bubbles: true }));
+                source.focus();
+                source.dispatchEvent(new KeyboardEvent("keydown", { key: "F3", bubbles: true, cancelable: true }));
+                const pending = window.hostFixture.snapshot().bindings.language.findCommandPending;
+                if (needle === "second") { field.focus(); source.focus(); }
+                return pending;
+            }, { input, needle });
+            expect(pending).toBe("navigate");
+            await expect(page.getByLabel("Find status", { exact: true })).toHaveText("1 matches · ready");
+            await expect.poll(async () => selection(await snapshot(page))).toMatchObject({ anchor: prefix.length, head: prefix.length + 5 });
+            expect((await snapshot(page)).bindings.language.findCommandPending).toBeNull();
+        }
+    } finally { await input.dispose(); }
 });
 
 test.afterEach(async ({ page }, info) => {

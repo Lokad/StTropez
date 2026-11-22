@@ -155,8 +155,10 @@ export class HostLanguageTools {
         const authority = () => { const m = metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); };
         const capturedAuthority = command.kind === "replace" ? authority() : undefined, access = metadata.getSnapshot();
         if (command.kind === "replace" && (access.state !== "ready" || !access.capabilities.edit.includes("human") || access.editLock !== null)) return;
-        const editor = session.editor, owner = editor.element.ownerDocument, clock = owner.defaultView!, origin = owner.activeElement;
-        if (!(origin instanceof clock.HTMLElement) || !editor.element.contains(origin) && !this.toolsElement?.contains(origin)) return;
+        const editor = session.editor, clock = editor.element.ownerDocument.defaultView!;
+        const sourceFocused = editor.getSnapshot().focused;
+        const origin = sourceFocused ? editor.element : editor.element.querySelector<HTMLElement>(":focus") ?? this.toolsElement?.querySelector<HTMLElement>(":focus");
+        if (!origin) return;
         const selections = editor.view.getSnapshot().selectionSet, listeners = new AbortController(), stops: (() => void)[] = [];
         let disability: MutationObserver | undefined;
         let stopped = false, queued = false;
@@ -167,7 +169,8 @@ export class HostLanguageTools {
             const state = find.getSnapshot();
             return this.active === session && this.sessions.get(session.id) === session && session.find === find
                 && (capturedAuthority === undefined || authority() === capturedAuthority)
-                && origin.isConnected && owner.activeElement === origin && !(origin.closest("button,input,select,textarea") ?? origin).matches(":disabled")
+                && origin.isConnected && (sourceFocused ? editor.getSnapshot().focused : origin.matches(":focus"))
+                && !(origin.closest("button,input,select,textarea") ?? origin).matches(":disabled")
                 && editor.element.isConnected && !editor.activity().disposed && !editor.activity().composing && this.workspace.ownsDocumentView(editor.view)
                 && this.ownsSession(session)
                 && this.workspace.document(editor.view.documentId).revision === captured.revision && editor.view.getSnapshot().selectionSet === selections
@@ -188,7 +191,7 @@ export class HostLanguageTools {
         // Native blur may follow a render that reenables the control. A disabled transition still expires the command.
         disability = new clock.MutationObserver(stop);
         for (let node: HTMLElement | null = origin; node; node = node.parentElement) disability.observe(node, { attributes: true, attributeFilter: ["disabled"] });
-        origin.addEventListener("blur", stop, { signal: listeners.signal });
+        origin.addEventListener(sourceFocused ? "focusout" : "blur", stop, { signal: listeners.signal });
         origin.addEventListener("input", stop, { signal: listeners.signal });
         origin.addEventListener("compositionstart", stop, { signal: listeners.signal });
         editor.input.addEventListener("compositionstart", stop, { signal: listeners.signal });

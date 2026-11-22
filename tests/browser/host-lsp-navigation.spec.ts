@@ -1,3 +1,4 @@
+import { moveEditorIntoShadow } from "../helpers/shadow-editor.ts";
 import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { coversHost } from "./host-cases.ts";
@@ -41,13 +42,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
             socket.on("framereceived", frame => { const value = JSON.parse(frame.payload.toString()); if (Array.isArray(value.result) && value.result[0]?.targetUri) linkedResponses++; }); });
         const text = "catalogue;\r\nconst local = 1;\r\n"; await seed(page, text, 3); await button(page, "Add navigation companion").click();
         await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 3, head: 3 }, { anchor: 22, head: 22 }]); });
-        await field(page).evaluate(input => {
-            const editor = input.closest<HTMLElement>(".st-editor")!, host = document.createElement("div");
-            host.style.height = "200px"; editor.before(host);
-            const root = host.attachShadow({ mode: "open" });
-            for (const style of document.querySelectorAll("style, link[rel=stylesheet]")) root.append(style.cloneNode(true));
-            root.append(editor);
-        });
+        await moveEditorIntoShadow(field(page));
         const before = await snapshot(page); replies.hold(); await field(page).press("F12"); await expect.poll(replies.waiting).toBe(true);
         await field(page, "Configuration path").focus(); await replies.release(); await waitForNavigation(page);
         await expect(field(page, "Configuration path")).toBeFocused(); await expect(results(page)).toHaveText(["Navigation companion:1:7 · declaration"]);
