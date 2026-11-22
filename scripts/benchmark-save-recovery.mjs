@@ -77,8 +77,10 @@ try{
             assert.ok(inputStart!==undefined,"Recovery point requires its automation start.");
             /** @type {PointObservation} */ const point=Object.assign(observation,{completeActionProxyMs:inputFinished-inputStart});activeSample.point=point;
             const failureBrowserFinish=await page.evaluate(async()=>{
-                const s=window.hostFixture.snapshot();if(s.source.saveStatus!=="failed"||s.pendingCommands!==0
-                    ||!document.querySelector('[aria-label="Host messages"]')?.textContent?.includes("Your document is retained"))throw new Error("Missing visible failed-save outcome.");
+                const state = window.hostFixture.snapshot(), modal = state.layout.modal;
+                if (state.source.saveStatus !== "failed" || state.pendingCommands !== 0 || modal.kind !== "error"
+                    || modal.source !== "source-save" || !document.querySelector('[aria-label="Host messages"]')?.textContent?.includes(modal.message))
+                    throw new Error("Missing visible failed-save outcome.");
                 await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return performance.now();
             });
             const failureWithTypingActionProxyMs=performance.now()-failureStart,failureToReviewAndMessageReadyProxyMs=failureBrowserFinish-failureBrowserStart;
