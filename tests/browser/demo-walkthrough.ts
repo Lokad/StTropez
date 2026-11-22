@@ -427,11 +427,13 @@ export async function runDemoFoldingBoundaries(page: Page, url = "/") {
         const summaries = pane.locator(".st-fold-summary");
         await expect(summaries.first()).toHaveAttribute("data-label", "… 1 line hidden · contains changes");
         await expect(summaries.last()).toHaveAttribute("data-label", "… 1 line hidden");
-        const visible = await summaries.first().evaluate(node => {
-            const box = node.getBoundingClientRect(), layer = node.closest(".st-viewport-layer")!.getBoundingClientRect();
+        await expect.poll(() => pane.evaluate(root => {
+            const summary = root.querySelector(".st-fold-summary");
+            const layer = summary?.closest(".st-viewport-layer")?.getBoundingClientRect();
+            if (!summary || !layer) return false;
+            const box = summary.getBoundingClientRect();
             return box.width > 0 && box.left >= layer.left && box.right <= layer.right;
-        });
-        expect(visible).toBe(true);
+        })).toBe(true);
     }
     await left.locator(".st-fold-button").first().click();
     await expect(left.locator('.st-viewport-row[data-line="1"]')).toHaveText(branches[1]!);
