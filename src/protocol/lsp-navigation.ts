@@ -1,5 +1,6 @@
-import { createLspClient, lspFeatureHandle, type LspProjectRequest } from "./lsp-client.ts";
+import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspProjectClientDiagnostics, type LspProjectRequest } from "./lsp-client.ts";
 import { decodeLspLocations, definitionOriginRange, lspLocationUris } from "./lsp-features.ts";
+import type { LspCall } from "./lsp-session.ts";
 import type { LspWorkspace } from "./lsp-workspace.ts";
 
 export type LspDefinitionRequest = LspProjectRequest & Readonly<{ offset: number }>;
@@ -8,8 +9,14 @@ export type LspNavigationResult = Readonly<{ locations: ReturnType<typeof decode
 export type LspDefinitionPreview = Readonly<{ hasTargets: boolean; originRange: ReturnType<typeof definitionOriginRange>;
     isCurrent: () => boolean; resolve: () => Promise<LspNavigationResult> }>;
 
+export type LspNavigationClient = LspFeatureClient<"textDocument/definition" | "textDocument/references", LspNavigationRequest,
+    LspNavigationResult, LspProjectClientDiagnostics & Readonly<{ epoch: number; sequence: number;
+        documents: readonly Readonly<{ document: string; revision: number; length: number }>[] }>> & Readonly<{
+    prepareDefinition: (request: LspDefinitionRequest) => LspCall<LspDefinitionPreview>;
+}>;
+
 /** Captured read-only queries; the host chooses how to present each validated target. */
-export function createLspNavigationClient(provider: LspWorkspace) {
+export function createLspNavigationClient(provider: LspWorkspace): LspNavigationClient {
     const client = createLspClient(provider, "textDocument/definition", "textDocument/references");
     type Reply = Parameters<Parameters<typeof client.request>[3]>[0];
     function lookup<T>(request: LspNavigationRequest,

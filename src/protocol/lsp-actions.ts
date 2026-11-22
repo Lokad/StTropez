@@ -1,19 +1,26 @@
 import { staleRequest } from "./wire.ts";
-import { createLspClient, lspFeatureHandle, type LspProjectRequest } from "./lsp-client.ts";
+import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspProjectClientDiagnostics, type LspProjectRequest } from "./lsp-client.ts";
 import { decodeLspCodeActions, decodeLspResolvedCodeAction, lspCodeActionUris } from "./lsp-code-actions.ts";
-import type { LspCodeAction } from "./lsp-code-actions.ts";
+import type { LspCodeAction, LspCodeActions } from "./lsp-code-actions.ts";
 import type { LspCommand } from "./lsp-command-value.ts";
 import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
-import { createLspCommandRunner } from "./lsp-command.ts";
-import type { LspCommandPolicy, LspCommandRoute, LspCommandScope } from "./lsp-command.ts";
+import { createLspCommandRunner, type LspCommandRunner } from "./lsp-command.ts";
+import type { LspCommandReceipt, LspCommandPolicy, LspCommandRoute, LspCommandScope } from "./lsp-command.ts";
 
 export type LspActionRequest = LspProjectRequest & Readonly<{ from: number; to: number }>;
 export type LspActionOptions = Readonly<{ commandPolicy?: LspCommandPolicy }>;
 
+export type LspActionResult = Readonly<{
+    actions: LspCodeActions; isCurrent: () => boolean; commandCurrent: () => boolean; supports: (command: LspCommand) => boolean;
+    execute: (action: LspCodeAction, scope: LspCommandScope) => Promise<LspCommandReceipt>;
+    resolve: (action: LspCodeAction, prepare?: LspPrepare) => Promise<LspCodeAction>;
+}>;
+export type LspActionClient = LspFeatureClient<"textDocument/codeAction", LspActionRequest, LspActionResult, LspProjectClientDiagnostics>;
+
 /** Reads share capture policy; confirmed commands retain their distinct mutation policy. */
-export function createLspActionClient(provider: LspWorkspace, options: LspActionOptions = {}) {
+export function createLspActionClient(provider: LspWorkspace, options: LspActionOptions = {}): LspActionClient {
     const client = createLspClient(provider, "textDocument/codeAction"), session = client.scope;
-    let executing = false, runner: ReturnType<typeof createLspCommandRunner> | undefined;
+    let executing = false, runner: LspCommandRunner | undefined;
     const commands = () => runner ??= createLspCommandRunner(session, client.notify);
     const busy = () => executing || client.isBusy();
     return Object.freeze({ ...lspFeatureHandle(client, { isBusy: busy,

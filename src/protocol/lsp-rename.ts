@@ -1,11 +1,13 @@
-import { createLspClient, lspFeatureHandle, type LspProjectRequest } from "./lsp-client.ts";
-import { decodeLspWorkspaceEdit, lspWorkspaceEditUris } from "./lsp-features.ts";
+import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspProjectClientDiagnostics, type LspProjectRequest } from "./lsp-client.ts";
+import { decodeLspWorkspaceEdit, lspWorkspaceEditUris, type LspWorkspaceEdit } from "./lsp-features.ts";
 import type { LspWorkspace } from "./lsp-workspace.ts";
 
 export type LspRenameRequest = LspProjectRequest & Readonly<{ offset: number; newName: string }>;
 
+export type LspRenameClient = LspFeatureClient<"textDocument/rename", LspRenameRequest, LspWorkspaceEdit, LspProjectClientDiagnostics>;
+
 /** A rename response is a fixed provider edit batch for one captured new name. */
-export function createLspRenameClient(provider: LspWorkspace) {
+export function createLspRenameClient(provider: LspWorkspace): LspRenameClient {
     const client = createLspClient(provider, "textDocument/rename");
     return Object.freeze({ ...lspFeatureHandle(client),
         run: (request: LspRenameRequest) => {

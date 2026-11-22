@@ -3,7 +3,7 @@ import type { Observable } from "../core/observable.ts";
 import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
 import type { LspDocumentLink } from "../protocol/lsp-features.ts";
-import { createLspLinkClient } from "../protocol/lsp-language.ts";
+import { createLspLinkClient, type LspLinkClient } from "../protocol/lsp-language.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
 import { captureViewRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
@@ -25,10 +25,9 @@ export type DocumentLinkControllerOptions = Readonly<{
 export type DocumentLinkController = Observable<DocumentLinkSnapshot> & Readonly<{
     request: () => Promise<void>; cancel: () => void; dispose: () => void;
 }>;
-type Client = ReturnType<typeof createLspLinkClient>;
 type Job = {
-    client: Client; project: ReturnType<typeof retainDocuments>; capture?: CapturedViewRequest<TextEditor["tab"]>;
-    reply?: Awaited<ReturnType<Client["run"]>["result"]>; invalid: boolean; timer?: number;
+    client: LspLinkClient; project: ReturnType<typeof retainDocuments>; capture?: CapturedViewRequest<TextEditor["tab"]>;
+    reply?: Awaited<ReturnType<LspLinkClient["run"]>["result"]>; invalid: boolean; timer?: number;
 };
 const empty: readonly DocumentLinkChoice[] = Object.freeze([]);
 const idle: DocumentLinkSnapshot = Object.freeze({ status: "idle", links: empty, message: "" });
@@ -112,7 +111,7 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
         release();
         const source = capture();
         if (!source) { publish("expired"); return; }
-        let client: Client;
+        let client: LspLinkClient;
         try { client = createLspLinkClient(provider); }
         catch (error) { source.cancel(); publish("failed", empty, String(error)); return; }
         const j: Job = { client, project: retainDocuments(workspace, available, () => expire(j)), invalid: false }; job = j;

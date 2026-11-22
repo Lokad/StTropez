@@ -13,11 +13,16 @@ export type DiagnosticSnapshot = Readonly<{
 export type DiagnosticControllerOptions = Readonly<{
     autoConnect?: boolean; canCapture?: () => boolean; onError?: (error: unknown) => void;
 }>;
+export type DiagnosticController = Observable<DiagnosticSnapshot> & Readonly<{
+    request: () => void; cancel: () => void; dispose: () => void;
+    getDiagnostics: () => Readonly<{ received: number; stale: number; invalid: number }>;
+}>;
+
 const empty: DiagnosticSnapshot = Object.freeze({ diagnostics: Object.freeze([]), diagnosticRevision: -1,
     diagnosticsPending: false, unversionedDiagnostics: Object.freeze([]) });
 
 /** Displays pushed diagnostics for one view, including positions mapped while analysis is pending. */
-export function createDiagnosticController(editor: TextEditor, provider: LspWorkspace, options: DiagnosticControllerOptions = {}) {
+export function createDiagnosticController(editor: TextEditor, provider: LspWorkspace, options: DiagnosticControllerOptions = {}): DiagnosticController {
     const { workspace, view, tab } = editor, documentId = view.documentId;
     if (editor.signal.aborted || !ownsTextSurface(workspace, view, tab)) throw new Error("Diagnostics require a live document view.");
     const scope = provider.createScope();
@@ -88,5 +93,3 @@ export function createDiagnosticController(editor: TextEditor, provider: LspWork
         return Object.freeze({ received, stale, invalid });
     } });
 }
-
-export type DiagnosticController = ReturnType<typeof createDiagnosticController>;

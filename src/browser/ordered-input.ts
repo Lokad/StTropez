@@ -1,5 +1,5 @@
 import { commandBudget } from "./cooperative-runner.ts";
-import type { createCooperativeRunner } from "./cooperative-runner.ts";
+import type { CooperativeRunner } from "./cooperative-runner.ts";
 import type { KeyBinding, KeyStroke } from "./editing-keys.ts";
 
 export type InputKey = KeyStroke & KeyBinding & { kind: "key" };
@@ -14,7 +14,7 @@ export type OrderedInput<C> = { capture: C; purpose: Command<C>["purpose"]; acti
 
 /** Retains ordered intent and recovery ownership. The editor validates captures and executes each action. */
 export function createOrderedInputQueue<C extends Readonly<{ deleting: boolean }>>(
-    clock: Pick<Performance, "now">, runner: Pick<ReturnType<typeof createCooperativeRunner>, "schedule">,
+    clock: Pick<Performance, "now">, runner: Pick<CooperativeRunner, "schedule">,
     owner: Readonly<{
         command: () => Command<C> | undefined; capture: () => C; disposed: () => boolean;
         validCommand: (capture: C) => boolean; valid: (capture: C, editing: boolean) => boolean; committed: (capture: C) => boolean;

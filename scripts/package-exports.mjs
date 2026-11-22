@@ -24,7 +24,20 @@ export async function qualifyPackageExports(project, consumer, assetRoot) {
             `Source extension in shipped declaration: ${asset.path}`);
     }
     await writeFile(join(root, "package.json"), '{"type":"module"}\n');
-    await writeFile(join(root, "main.ts"), 'import * as core from "sttropez";\nimport * as browser from "sttropez/browser";\nimport * as protocol from "sttropez/protocol";\nexport { core, browser, protocol };\n');
+    await writeFile(join(root, "main.ts"), `import * as core from "sttropez";
+import * as browser from "sttropez/browser";
+import * as protocol from "sttropez/protocol";
+export { core, browser, protocol };
+
+type RequiresTrue<T extends true> = T;
+type HoverDocument = Parameters<ReturnType<typeof protocol.createLspHoverClient>["options"]>[0];
+type Mapping = NonNullable<HoverDocument["change"]>["mapping"];
+// The inferred declaration used to allow arbitrary properties on the inverse mapping.
+type Inverse = ReturnType<Mapping["invert"]>;
+type TypedInverse = RequiresTrue<string extends keyof Inverse ? false : true>;
+type ColorMethods = NonNullable<Parameters<protocol.LspColorClient["options"]>[1]>;
+type HasColorPresentation = RequiresTrue<"textDocument/colorPresentation" extends ColorMethods ? true : false>;
+`);
     await writeFile(join(root, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext",
         strict: true, skipLibCheck: false, noEmit: true, types: [] }, files: ["main.ts"] }));
     const compilerOutput = execFileSync(process.execPath, [join(project, "node_modules/typescript/bin/tsc"), "-p", join(root, "tsconfig.json"), "--listFiles", "--pretty", "false"],

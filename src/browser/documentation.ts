@@ -7,8 +7,10 @@ export type DocumentationOptions = Readonly<{
     openLink?: (target: string) => void;
 }>;
 
+export type DocumentationView = Readonly<{ element: HTMLDivElement; setContent: (content: DocumentationContent) => void; dispose: () => void }>;
+
 /** Small documentation presentation, not a general Markdown engine. No HTML or automatic URLs. */
-export function mountDocumentation(host: HTMLElement, options: DocumentationOptions = {}) {
+export function mountDocumentation(host: HTMLElement, options: DocumentationOptions = {}): DocumentationView {
     const owner = host.ownerDocument, element = owner.createElement("div"), events = new AbortController();
     element.className = "st-documentation"; host.append(element);
     let disposed = false, current: DocumentationContent | undefined, links = new WeakMap<HTMLButtonElement, string>();
@@ -52,4 +54,3 @@ export function mountDocumentation(host: HTMLElement, options: DocumentationOpti
         },
         dispose: () => { if (disposed) return; disposed = true; events.abort(); links = new WeakMap(); current = undefined; element.remove(); } });
 }
-export type DocumentationView = ReturnType<typeof mountDocumentation>;

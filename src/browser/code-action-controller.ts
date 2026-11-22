@@ -2,7 +2,7 @@ import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentSnapshot, TabTarget } from "../core/workspace.ts";
-import { RpcError, applyLspWorkspaceEdit, createLspActionClient, previewLspWorkspaceEdit } from "../protocol/index.ts";
+import { RpcError, applyLspWorkspaceEdit, createLspActionClient, type LspActionResult, previewLspWorkspaceEdit } from "../protocol/index.ts";
 import type { LspCodeAction, LspCommandPolicy, LspCommandReceipt, LspCommandScope, LspPrepare, LspWorkspace, LspWorkspaceEdit, LspWorkspaceEditPreview } from "../protocol/index.ts";
 import { captureViewRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
@@ -37,11 +37,10 @@ export type CodeActionControllerOptions = Readonly<{
     prepareRequest?: LspPrepare; prepareResolve?: LspPrepare; commandPolicy?: LspCommandPolicy;
     runCommand?: (command: CodeActionCommand) => CodeActionExecution | undefined; onError?: (error: unknown) => void;
 }>;
-type Client = ReturnType<typeof createLspActionClient>;
-type Batch = Awaited<ReturnType<Client["run"]>["result"]>;
+
 type Job = {
     id: number; capture: CapturedViewRequest<TabTarget | undefined>; project: ReturnType<typeof retainEditProject>;
-    timer?: number; invalid: boolean; batch?: Batch; selection?: LspCodeAction;
+    timer?: number; invalid: boolean; batch?: LspActionResult; selection?: LspCodeAction;
 };
 const empty: CodeActionSnapshot = Object.freeze({ status: "idle", message: "", choices: Object.freeze([]), choice: null, preview: null, changes: Object.freeze([]) });
 export type CodeActionController = Observable<CodeActionSnapshot> & Readonly<{
@@ -89,7 +88,7 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
         win.clearTimeout(j.timer);
         j.timer = win.setTimeout(() => fail(j, new Error("Code action request timed out.")), 30000);
     };
-    const disabled = (batch: Batch, action: LspCodeAction) => action.disabled ?? (action.command
+    const disabled = (batch: LspActionResult, action: LspCodeAction) => action.disabled ?? (action.command
         ? !options.runCommand || !batch.supports(action.command) ? "This command is unavailable." : null
         : !action.resolve && !action.edit?.documents.some(part => part.edits.length) ? "The provider returned no text changes." : null);
     function confirm(): void {

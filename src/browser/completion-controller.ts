@@ -12,7 +12,7 @@ import type { TextEditor } from "./text-editor.ts";
 import { editorInput } from "./editor-input.ts";
 import type { DecorationLayer } from "./decoration-layers.ts";
 import { sameEditAuthority } from "./captured-view.ts";
-import { RpcError, createLspCompletionClient, lspCompletionPlan } from "../protocol/index.ts";
+import { RpcError, createLspCompletionClient, type LspCompletionClient, lspCompletionPlan } from "../protocol/index.ts";
 import type { LspCall, LspCompletion, LspCompletionBatch, LspCompletionResolution, LspCompletions, LspCompletionFallback, LspDocument, LspScopeAccess, LspWorkspace, JsonValue } from "../protocol/index.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
@@ -49,7 +49,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     const { workspace, tab: target, view } = editor, documentId = view.documentId, resource = workspace.resourceForDocument(documentId);
     if (editor.signal.aborted || !ownsTextSurface(workspace, view, target)) throw new Error("LSP provider requires the captured document view.");
     const listeners = new AbortController(), scope = provider.createScope();
-    let binding: LspDocument, completion: ReturnType<typeof createLspCompletionClient>;
+    let binding: LspDocument, completion: LspCompletionClient;
     try { binding = scope.attachDocument(documentId); completion = createLspCompletionClient(provider); }
     catch (error) { scope.dispose(); throw error; }
     const counters = { posted: 0, applied: 0, stale: 0, cancelled: 0, invalid: 0, failed: 0, resolved: 0,

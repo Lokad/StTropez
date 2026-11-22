@@ -12,6 +12,8 @@ export type AnchoredOverlayOptions = Readonly<{ prefer?: "above" | "below"; prio
     dismissOn?: readonly OverlayDismissEvent[]; onDismiss?: (event: OverlayDismissEvent) => void;
     /** Called before an offscreen popup hides if one of its controls has focus. */
     onFocusedAnchorHidden?: () => void }>;
+export type AnchoredOverlay = Readonly<{ show: (anchor: OverlayAnchor) => void; hide: () => void; dispose: () => void }>;
+
 type Placement = { priority: number; rectangle: DOMRect | undefined; schedule: () => void };
 const activeOverlays = new WeakMap<TextEditor, Set<Placement>>();
 
@@ -59,7 +61,7 @@ function visibleAnchor(editor: TextEditor, anchor: OverlayAnchor, buffer: TextBu
 }
 
 /** Positions a host popup against a painted source position without scrolling or focusing the editor. */
-export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, options: AnchoredOverlayOptions = {}) {
+export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, options: AnchoredOverlayOptions = {}): AnchoredOverlay {
     const { viewport, view, workspace } = editor, owner = editor.element.ownerDocument, win = owner.defaultView!;
     if (element.ownerDocument !== owner || editor.signal.aborted) throw new Error("An overlay needs a live editor in the same document.");
     const priority = options.priority ?? 0, dismissOn = new Set(options.dismissOn);
@@ -176,4 +178,3 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
     editor.signal.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ show, hide, dispose });
 }
-export type AnchoredOverlay = ReturnType<typeof mountAnchoredOverlay>;

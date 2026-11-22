@@ -1,14 +1,28 @@
 import { rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError } from "./wire.ts";
+import type { Observable } from "../core/observable.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
 import type { JsonValue } from "./wire.ts";
 import type { LspCall, LspDocument, LspDocumentCapture, LspDocumentFeature, LspDocumentSnapshot } from "./lsp-session.ts";
-import { sameDocument, type LspPrepare, type LspWorkspace } from "./lsp-workspace.ts";
+import { sameDocument, type LspPrepare, type LspWorkspace, type LspWorkspaceScope, type LspWorkspaceSnapshot } from "./lsp-workspace.ts";
 import { createLspTargets } from "./lsp-targets.ts";
 import type { LspTargetContext } from "./lsp-targets.ts";
 
 export type LspDocumentRequest = Readonly<{ document: DocumentSnapshot; prepare?: LspPrepare | undefined }>;
 export type LspPositionRequest = LspDocumentRequest & Readonly<{ offset: number }>;
 export type LspProjectRequest = LspDocumentRequest & Readonly<{ project?: readonly DocumentSnapshot[] }>;
+
+export type LspClientDiagnostics = Readonly<{ connected: boolean; disposed: boolean;
+    protocol: ReturnType<LspWorkspaceScope["snapshotOwnership"]> }>;
+export type LspProjectClientDiagnostics = LspClientDiagnostics & Readonly<{ busy: boolean; version: "LSP3.17" }>;
+
+type FeatureOptions = readonly Readonly<Record<string, JsonValue>>[];
+type FeatureControls<Method extends LspDocumentFeature, Diagnostics extends LspClientDiagnostics = LspClientDiagnostics> =
+    Observable<LspWorkspaceSnapshot> & Readonly<{
+        snapshot: () => Diagnostics; isBusy: () => boolean; cancel: () => void; dispose: () => void;
+        options: (document: DocumentSnapshot, method?: Method) => FeatureOptions;
+    }>;
+export type LspFeatureClient<Method extends LspDocumentFeature, Request, Result, Diagnostics extends LspClientDiagnostics = LspClientDiagnostics> =
+    FeatureControls<Method, Diagnostics> & Readonly<{ run: (request: Request) => LspCall<Result> }>;
 
 type Request = { generation: number; pending: number; cancelled: boolean; reject: (error: unknown) => void;
     cancellation: Promise<never>; cleanups: Set<() => void>; identities: ReadonlyMap<LspDocument, LspDocumentSnapshot> };
@@ -188,8 +202,9 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
 }
 
 /** Common public controls over the existing request owner; feature state stays with its client. */
-export function lspFeatureHandle<Method extends LspDocumentFeature>(client: ReturnType<typeof createLspClient<Method>>,
-    controls: Partial<Pick<ReturnType<typeof createLspClient>, "isBusy" | "cancel" | "dispose">> = {}) {
+export function lspFeatureHandle<Method extends LspDocumentFeature>(client: Omit<FeatureControls<Method>, "options"> & Readonly<{
+    methods: readonly [Method, ...Method[]]; options: (document: DocumentSnapshot, method: Method) => FeatureOptions;
+}>, controls: Partial<Pick<FeatureControls<Method>, "isBusy" | "cancel" | "dispose">> = {}): FeatureControls<Method> {
     return Object.freeze({ getSnapshot: client.getSnapshot, subscribe: client.subscribe, snapshot: client.snapshot,
         isBusy: controls.isBusy ?? client.isBusy, cancel: controls.cancel ?? client.cancel, dispose: controls.dispose ?? client.dispose,
         options: (document: DocumentSnapshot, method: Method = client.methods[0]) => {

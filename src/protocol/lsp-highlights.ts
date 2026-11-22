@@ -1,5 +1,5 @@
 import { ProtocolDecodeError, staleRequest } from "./wire.ts";
-import { createLspClient, lspFeatureHandle, type LspPositionRequest } from "./lsp-client.ts";
+import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspPositionRequest } from "./lsp-client.ts";
 import { lspRangeOffsets } from "./lsp-features.ts";
 import type { LspDocumentCapture } from "./lsp-session.ts";
 import type { LspWorkspace } from "./lsp-workspace.ts";
@@ -38,7 +38,10 @@ export function decodeLspDocumentHighlights(value: unknown, capture: LspDocument
     } });
 }
 
-export function createLspHighlightClient(provider: LspWorkspace) {
+export type LspHighlightClient = LspFeatureClient<"textDocument/documentHighlight", LspPositionRequest,
+    LspDocumentHighlights & Readonly<{ revision: number; isCurrent: () => boolean }>>;
+
+export function createLspHighlightClient(provider: LspWorkspace): LspHighlightClient {
     const client = createLspClient(provider, "textDocument/documentHighlight");
     return Object.freeze({ ...lspFeatureHandle(client),
         run: (request: LspPositionRequest) => {

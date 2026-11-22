@@ -2,7 +2,7 @@ import { cancelledRequest, staleRequest } from "./wire.ts";
 import type { JsonValue } from "./wire.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
 import type { InsertionIndentation } from "../core/insertion-text.ts";
-import { createLspClient, lspFeatureHandle, type LspPositionRequest } from "./lsp-client.ts";
+import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspClientDiagnostics, type LspPositionRequest } from "./lsp-client.ts";
 import { decodeLspCompletions, decodeLspResolvedCompletion, rebaseLspCompletion, UnsupportedLspSnippetError } from "./lsp-features.ts";
 import type { LspCompletion, LspCompletions, LspCompletionFallback } from "./lsp-features.ts";
 import type { LspCall } from "./lsp-session.ts";
@@ -16,13 +16,19 @@ export type LspCompletionRequest = LspPositionRequest & Readonly<{
     /** Keep this client's current batch usable while its replacement is pending. */
     retain?: LspCompletionBatch }>;
 export type LspCompletionResolution = Readonly<{ batch: LspCompletionBatch; item: LspCompletion | null; reason: string | null }>;
+export type LspCompletionClient = LspFeatureClient<"textDocument/completion", LspCompletionRequest, LspCompletionBatch,
+    LspClientDiagnostics & Readonly<{ received: number }>> & Readonly<{
+    rebase: (value: LspCompletionBatch, document: DocumentSnapshot) => LspCompletionBatch | undefined;
+    resolve: (value: LspCompletionBatch, item: LspCompletion, prepare?: LspPrepare) => LspCall<LspCompletionResolution>;
+}>;
+
 type Batch = { binding: LspBindingCapture; value: LspCompletionBatch; requestedAt: number };
 const same = (left: DocumentSnapshot | undefined, right: DocumentSnapshot) => !!left && left.id === right.id
     && left.resourceId === right.resourceId && left.revision === right.revision && left.buffer === right.buffer;
 const stale = () => staleRequest("LSP completion batch expired.");
 
 /** One current choice batch and one request/resolve intent; host view and acceptance policy stay outside. */
-export function createLspCompletionClient(provider: LspWorkspace) {
+export function createLspCompletionClient(provider: LspWorkspace): LspCompletionClient {
     const client = createLspClient(provider, "textDocument/completion"), batches = new WeakMap<LspCompletionBatch, Batch>();
     let active: Batch | undefined, sequence = 0, received = 0, disposed = false;
     let pending: LspCall<unknown> | undefined;

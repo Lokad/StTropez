@@ -4,7 +4,7 @@ import { mapReplacementSelections } from "../core/selections.ts";
 import { ownsTextSurface } from "../core/workspace.ts";
 import { decodeLspColor } from "../protocol/lsp-features.ts";
 import type { LspColor, LspColorPresentation, LspDocumentColor } from "../protocol/lsp-features.ts";
-import { createLspColorClient } from "../protocol/lsp-language.ts";
+import { createLspColorClient, type LspColorClient } from "../protocol/lsp-language.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
 import { captureViewRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
@@ -28,11 +28,10 @@ export type DocumentColorControllerOptions = Readonly<{
 export type DocumentColorController = Observable<DocumentColorSnapshot> & Readonly<{
     request: () => Promise<void>; dismissPreview: () => void; cancel: () => void; dispose: () => void;
 }>;
-type Client = ReturnType<typeof createLspColorClient>;
 type Capture = CapturedViewRequest<TextEditor["tab"]>;
 type Preview = { capture: Capture; reference: DocumentColorChoice; proposed: LspColor; result?: readonly LspColorPresentation[] };
-type Job = { client: Client; documents: ReturnType<typeof retainDocuments>; source: Capture; invalid: boolean; timer?: number;
-    reply?: Awaited<ReturnType<Client["run"]>["result"]>; registration?: number; preview?: Preview };
+type Job = { client: LspColorClient; documents: ReturnType<typeof retainDocuments>; source: Capture; invalid: boolean; timer?: number;
+    reply?: Awaited<ReturnType<LspColorClient["run"]>["result"]>; registration?: number; preview?: Preview };
 const empty = Object.freeze([]);
 const idle: DocumentColorSnapshot = Object.freeze({ status: "idle", colors: empty, presentations: empty, review: null, message: "", changed: false });
 
@@ -143,7 +142,7 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
         scope.assertWritable(); if (events.signal.aborted) return;
         release(); const source = capture();
         if (!source) { publish("expired"); return; }
-        let client: Client;
+        let client: LspColorClient;
         try { client = createLspColorClient(provider); } catch (error) { source.cancel(); publish("failed", { message: String(error) }); return; }
         const j: Job = { source, client, invalid: false, documents: retainDocuments(workspace, available, () => expire(j)) }; job = j;
         try {

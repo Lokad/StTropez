@@ -20,8 +20,15 @@ export type LspCommandRoute = Readonly<{ kind: "server"; isCurrent?: () => boole
 /** Called once for each captured invocation. Null denies it; no policy retains advertised server commands. */
 export type LspCommandPolicy = (invocation: LspCommand) => LspCommandRoute | null;
 
+export type LspCommandRunner = Readonly<{
+    sync: (scope: LspCommandScope) => Promise<void>; isCurrent: () => boolean; cancel: () => void; dispose: () => void;
+    run: (command: string, args: readonly JsonValue[], scope: LspCommandScope, allowEdits?: boolean) => Promise<LspCommandReceipt>;
+    runAuthorized: (invocation: LspCommand, scope: LspCommandScope, route: LspCommandRoute) => Promise<LspCommandReceipt>;
+    snapshot: () => Readonly<{ received: number; refused: number }>;
+}>;
+
 /** One confirmed command per session. The host owns decisions and every document mutation. */
-export function createLspCommandRunner(session: LspWorkspaceScope, notify: () => void = () => {}) {
+export function createLspCommandRunner(session: LspWorkspaceScope, notify: () => void = () => {}): LspCommandRunner {
     type Active = { scope: LspCommandScope; route: LspCommandRoute; allowEdits: boolean; epoch: number; generation: number; call?: LspCommandCall<JsonValue>; decision?: LspApplyEditResult };
     const invalidations = new Set<() => void>(); let disposed = false, incoming = false, active: Active | undefined, received = 0, refused = 0;
     const current = (op: Active) => !disposed && active === op && session.getSnapshot().phase === "ready" && session.getSnapshot().epoch === op.epoch

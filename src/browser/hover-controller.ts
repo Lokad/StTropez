@@ -5,7 +5,7 @@ import { ownsTextSurface } from "../core/workspace.ts";
 import type { FoldIndex } from "../core/folding.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import { createLspHoverClient } from "../protocol/index.ts";
-import type { LspDiagnostic, LspPrepare, LspWorkspace } from "../protocol/index.ts";
+import type { LspHoverResult, LspDiagnostic, LspPrepare, LspWorkspace } from "../protocol/index.ts";
 import type { OverlayPosition } from "./anchored-overlay.ts";
 import type { TextEditor } from "./text-editor.ts";
 
@@ -20,13 +20,18 @@ export type HoverSnapshot = Readonly<{
     status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired" | "disposed";
     message: string; revision: number | null; range: Range | null; text: string; content?: DocumentationContent;
 }>;
+export type HoverController = Observable<HoverSnapshot> & Readonly<{
+    request: (anchor?: OverlayPosition) => boolean; cancel: () => void; dispose: () => void;
+    getDiagnostics: () => Readonly<{ connected: boolean; pending: boolean; disposed: boolean; posted: number; received: number;
+        stale: number; invalid: number; failed: number; cancelled: number }>;
+}>;
+
 const idle: HoverSnapshot = Object.freeze({ status: "idle", message: "", revision: null, range: null, text: "" });
-type HoverResult = NonNullable<Awaited<ReturnType<ReturnType<typeof createLspHoverClient>["run"]>["result"]>>;
 type Inspection = { revision: number; selection: SelectionSet; folds: FoldIndex; offset: number; source: HoverDiagnostics;
-    stops: (() => void)[]; timer?: number; pending: boolean; symbol?: HoverResult; failure?: string };
+    stops: (() => void)[]; timer?: number; pending: boolean; symbol?: LspHoverResult; failure?: string };
 
 /** A mounted view owns the range, provider reply and diagnostic messages displayed together. */
-export function createHoverController(editor: TextEditor, provider: LspWorkspace, options: HoverControllerOptions = {}) {
+export function createHoverController(editor: TextEditor, provider: LspWorkspace, options: HoverControllerOptions = {}): HoverController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
     if (editor.signal.aborted || !ownsTextSurface(workspace, view, tab)) throw new Error("Hover requires a live document view.");
     const notifications = workspace.createNotificationScope(options.onError), cell = new Store(idle, notifications);
@@ -155,4 +160,3 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
         const stop = () => { unsubscribe(); subscribers.delete(stop); }; subscribers.add(stop); return stop;
     }, getDiagnostics: () => Object.freeze({ ...counts, connected: client.getSnapshot().phase === "ready", pending: !!inspection?.pending, disposed }) });
 }
-export type HoverController = ReturnType<typeof createHoverController>;

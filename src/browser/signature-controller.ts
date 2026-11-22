@@ -2,7 +2,7 @@ import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentViewSnapshot } from "../core/workspace.ts";
-import { createLspSignatureClient } from "../protocol/lsp-language.ts";
+import { createLspSignatureClient, type LspSignatureClient } from "../protocol/lsp-language.ts";
 import type { LspSignatureContext } from "../protocol/lsp-language.ts";
 import type { LspSignature } from "../protocol/lsp-features.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
@@ -21,8 +21,7 @@ export type SignatureController = Observable<SignatureSnapshot> & Readonly<{
     request: () => void; cancel: () => void; dispose: () => void;
     getDiagnostics: () => Readonly<{ requested: number; applied: number; scheduled: boolean }>;
 }>;
-type Client = ReturnType<typeof createLspSignatureClient>;
-type Call = ReturnType<Client["run"]>;
+type Call = ReturnType<LspSignatureClient["run"]>;
 type Request = { capture: CapturedViewRequest<TextEditor["tab"]>; call?: Call; help?: NonNullable<Awaited<Call["result"]>>; timer?: number };
 const idle: SignatureSnapshot = Object.freeze({ status: "idle", message: "", anchor: null, signature: null, activeSignature: 0, signatureCount: 0 });
 const manual = Object.freeze({ triggerKind: 1, isRetrigger: false } as const);
@@ -34,7 +33,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
     if (editor.signal.aborted || !ownsTextSurface(workspace, view, tab)) throw new Error("Signature help requires a live document view.");
     const events = new AbortController(), notifications = workspace.createNotificationScope(), cell = new Store(idle, notifications);
     const stops = new Set<() => void>();
-    let client: Client | undefined, job: Request | undefined, armed = false, requested = 0, applied = 0;
+    let client: LspSignatureClient | undefined, job: Request | undefined, armed = false, requested = 0, applied = 0;
     let queued: { timer: number; context: LspSignatureContext } | undefined;
     const publish = (next: SignatureSnapshot) => notifications.publish(cell, Object.freeze(next));
     const available = () => {

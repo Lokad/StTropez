@@ -1,6 +1,6 @@
 import type { DocumentLanguage, Observable, Workspace } from "../../src/index.ts";
 import { BrowserLspWorkspace } from "../../src/browser/index.ts";
-import { type LspWorkspace, createLspFoldingClient, decodeLspDiagnostics, lspRangeOffsets } from "../../src/protocol/index.ts";
+import { type LspWorkspace, createLspFoldingClient, type LspFoldingClient, decodeLspDiagnostics, lspRangeOffsets } from "../../src/protocol/index.ts";
 import type { LspWorkspaceScope, RpcCall, LspScopeAccess, LspTargetResolver } from "../../src/protocol/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import type { DemoFile } from "./project.ts";
@@ -28,7 +28,7 @@ export class DemoLanguage {
     readonly state: Observable<State> = this.cell.observable;
     private owner: LspWorkspace | undefined;
     private scope: LspWorkspaceScope | undefined;
-    private folds: ReturnType<typeof createLspFoldingClient> | undefined;
+    private folds: LspFoldingClient | undefined;
     private config: DemoProvider | undefined;
     private opening: Promise<LspWorkspace> | undefined;
     private abort: AbortController | undefined;

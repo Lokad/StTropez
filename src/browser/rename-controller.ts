@@ -2,7 +2,7 @@ import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
-import { createLspRenameClient } from "../protocol/lsp-rename.ts";
+import { createLspRenameClient, type LspRenameClient } from "../protocol/lsp-rename.ts";
 import type { LspWorkspaceEdit } from "../protocol/lsp-features.ts";
 import { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../protocol/lsp-workspace-edit.ts";
 import type { LspWorkspaceEditPreview } from "../protocol/lsp-workspace-edit.ts";
@@ -27,7 +27,7 @@ export type RenameController = Observable<RenameSnapshot> & Readonly<{
     setName: (name: string) => void; request: (name?: string) => void; cancel: () => void; dispose: () => void;
 }>;
 type Job = { source: CapturedViewRequest<TextEditor["tab"]>; project: ReturnType<typeof retainEditProject>;
-    client: ReturnType<typeof createLspRenameClient>; invalid: boolean; timer?: number; edit?: LspWorkspaceEdit };
+    client: LspRenameClient; invalid: boolean; timer?: number; edit?: LspWorkspaceEdit };
 const idle: RenameSnapshot = Object.freeze({ name: "", status: "idle", message: "", preview: null, changes: Object.freeze([]) });
 
 /** Review and confirm one provider rename from the captured caret and project. */

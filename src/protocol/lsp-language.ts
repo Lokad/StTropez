@@ -1,13 +1,24 @@
 import { wireLimits, jsonSnapshot } from "./wire.ts";
-import { createLspClient, lspFeatureHandle, type LspDocumentRequest, type LspPositionRequest } from "./lsp-client.ts";
+import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspDocumentRequest, type LspPositionRequest } from "./lsp-client.ts";
 import type { JsonValue } from "./wire.ts";
 import { decodeLspColor, decodeLspColorPresentations, decodeLspDocumentColors, decodeLspDocumentLinks, decodeLspResolvedDocumentLink, decodeLspSignatureHelp } from "./lsp-features.ts";
-import type { LspColor, LspDocumentColor, LspDocumentLink, LspSignature } from "./lsp-features.ts";
+import type { LspColorPresentation, LspSignatureHelp, LspColor, LspDocumentColor, LspDocumentLink, LspSignature } from "./lsp-features.ts";
 import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
 
 export type LspSignatureContext = Readonly<{ triggerKind: 1 | 2 | 3; triggerCharacter?: string; isRetrigger: boolean; activeSignatureHelp?: JsonValue }>;
 export type LspSignatureRequest = LspPositionRequest & Readonly<{ context?: LspSignatureContext }>;
-export function createLspSignatureClient(provider: LspWorkspace) {
+export type LspSignatureClient = LspFeatureClient<"textDocument/signatureHelp", LspSignatureRequest,
+    (LspSignatureHelp & Readonly<{ isCurrent: () => boolean; selectOverload: (signature: LspSignature) => boolean }>) | null>;
+export type LspLinkClient = LspFeatureClient<"textDocument/documentLink", LspDocumentRequest, Readonly<{
+    items: readonly LspDocumentLink[]; isCurrent: () => boolean;
+    resolve: (item: LspDocumentLink, prepare?: LspPrepare) => Promise<LspDocumentLink>;
+}>>;
+export type LspColorClient = LspFeatureClient<"textDocument/documentColor" | "textDocument/colorPresentation", LspDocumentRequest, Readonly<{
+    items: readonly LspDocumentColor[]; isCurrent: () => boolean;
+    presentations: (item: LspDocumentColor, color: LspColor, prepare?: LspPrepare) => Promise<readonly LspColorPresentation[]>;
+}>>;
+
+export function createLspSignatureClient(provider: LspWorkspace): LspSignatureClient {
     const lane = createLspClient(provider, "textDocument/signatureHelp");
     // Prior wire context is not fresh range/edit authority. Keep only its binding identities,
     // never the old buffer/capture, and compare them after the next request has synchronized.
@@ -47,7 +58,7 @@ export function createLspSignatureClient(provider: LspWorkspace) {
             }));
         } });
 }
-export function createLspLinkClient(provider: LspWorkspace) {
+export function createLspLinkClient(provider: LspWorkspace): LspLinkClient {
     const lane = createLspClient(provider, "textDocument/documentLink");
     return Object.freeze({ ...lspFeatureHandle(lane),
         run: ({ document, prepare }: LspDocumentRequest) => lane.request({ document, prepare }, "textDocument/documentLink", () => ({}), result => {
@@ -60,7 +71,7 @@ export function createLspLinkClient(provider: LspWorkspace) {
             } });
         }) });
 }
-export function createLspColorClient(provider: LspWorkspace) {
+export function createLspColorClient(provider: LspWorkspace): LspColorClient {
     const lane = createLspClient(provider, "textDocument/documentColor", "textDocument/colorPresentation");
     return Object.freeze({ ...lspFeatureHandle(lane),
         run: (request: LspDocumentRequest) => lane.request(request, "textDocument/documentColor", () => ({}), result => {

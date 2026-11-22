@@ -150,8 +150,12 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, ident
 }
 
 /** Internal mount: navigation and comparison publication share the viewport lifetime. */
+export type MountedViewport = Readonly<{
+    viewport: TextViewport; navigation: ViewportNavigation; setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean;
+}>;
+
 export function mountViewport(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId | ReturnType<typeof captureTextSurface>,
-    options: TextViewportOptions = {}, foldContainsChange?: FoldContainsChange): Readonly<{ viewport: TextViewport; navigation: ViewportNavigation; setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean }> {
+    options: TextViewportOptions = {}, foldContainsChange?: FoldContainsChange): MountedViewport {
     let settings = viewportSettings(defaultSettings, options.settings);
     const { documentId, resource, tab } = typeof identity === "string" ? captureTextSurface(workspace, identity) : identity;
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");

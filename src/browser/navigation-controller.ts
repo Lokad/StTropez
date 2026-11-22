@@ -2,7 +2,7 @@ import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import { ownsTextSurface } from "../core/workspace.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
-import { createLspNavigationClient, type LspNavigationResult, type LspDefinitionPreview } from "../protocol/lsp-navigation.ts";
+import { createLspNavigationClient, type LspNavigationClient, type LspNavigationResult, type LspDefinitionPreview } from "../protocol/lsp-navigation.ts";
 import type { LspLocation } from "../protocol/lsp-features.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
 import { captureViewRequest, sameEditAuthority } from "./captured-view.ts";
@@ -10,7 +10,6 @@ import { bindDefinitionPointer } from "./definition-pointer.ts";
 import type { DefinitionHit } from "./definition-pointer.ts";
 import type { TextEditor } from "./text-editor.ts";
 
-type Client = ReturnType<typeof createLspNavigationClient>;
 export type NavigationDestination = Omit<LspLocation, "target"> & Readonly<{ document: LspLocation["target"]["document"] }>;
 export type NavigationChoice = NavigationDestination & Readonly<{ index: number; open: (present: (destination: NavigationDestination) => void) => boolean }>;
 export type NavigationPage = Readonly<{
@@ -32,7 +31,7 @@ export type NavigationControllerOptions = Readonly<{
 export type NavigationSnapshot = Readonly<{ status: "idle" | "pending" | "ready" | "empty" | "expired" | "failed" | "disposed"; result: NavigationResult | null }>;
 export type NavigationController = Observable<NavigationSnapshot> & Readonly<{
     request: (kind?: Kind, offset?: number, includeDeclaration?: boolean) => Promise<NavigationResult>;
-    cancel: () => void; dispose: () => void; getDiagnostics: () => ReturnType<Client["snapshot"]> | null;
+    cancel: () => void; dispose: () => void; getDiagnostics: () => ReturnType<LspNavigationClient["snapshot"]> | null;
 }>;
 const idle: NavigationSnapshot = Object.freeze({ status: "idle", result: null });
 
@@ -83,8 +82,8 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
     };
     const capture = () => captureViewRequest(workspace, tab, view, { available });
     type Source = NonNullable<ReturnType<typeof capture>>;
-    type Hover = { hit: DefinitionHit; client: Client; source: Source; reply: Promise<LspDefinitionPreview>; result?: LspDefinitionPreview };
-    type Request = { client: Client; source?: Source; stops: (() => void)[]; expired: boolean; reply?: LspNavigationResult };
+    type Hover = { hit: DefinitionHit; client: LspNavigationClient; source: Source; reply: Promise<LspDefinitionPreview>; result?: LspDefinitionPreview };
+    type Request = { client: LspNavigationClient; source?: Source; stops: (() => void)[]; expired: boolean; reply?: LspNavigationResult };
     let hover: Hover | undefined, activation: Hover | undefined, explicit: Request | undefined;
     const publish = (status: NavigationSnapshot["status"], result: NavigationResult | null = null) => notifications.publish(state, Object.freeze({ status, result }));
     const release = (job?: Hover) => { job?.source.cancel(); job?.client.dispose(); };

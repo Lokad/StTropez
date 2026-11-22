@@ -1,5 +1,5 @@
 import { ProtocolDecodeError, staleRequest } from "./wire.ts";
-import { createLspClient, lspFeatureHandle, type LspDocumentRequest } from "./lsp-client.ts";
+import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspDocumentRequest } from "./lsp-client.ts";
 import type { LspDocumentCapture } from "./lsp-session.ts";
 import type { LspWorkspace } from "./lsp-workspace.ts";
 import type { DiscoveredFold } from "../core/fold-discovery.ts";
@@ -23,7 +23,10 @@ export function decodeLspFoldingRanges(value: unknown, capture: LspDocumentCaptu
     return Object.freeze(result);
 }
 
-export function createLspFoldingClient(provider: LspWorkspace) {
+export type LspFoldingClient = LspFeatureClient<"textDocument/foldingRange", LspDocumentRequest,
+    Readonly<{ revision: number; ranges: readonly DiscoveredFold[]; isCurrent: () => boolean }>>;
+
+export function createLspFoldingClient(provider: LspWorkspace): LspFoldingClient {
     const client = createLspClient(provider, "textDocument/foldingRange");
     return Object.freeze({ ...lspFeatureHandle(client),
         run: (request: LspDocumentRequest) => {

@@ -11,9 +11,9 @@ Attach indentation and marker discovery to an existing editor:
 ```ts
 import { discoverIndentationFolds } from "sttropez";
 import { createFoldingController } from "sttropez/browser";
-import type { TextEditor } from "sttropez/browser";
+import type { FoldingController, TextEditor } from "sttropez/browser";
 
-export function attachFolding(editor: TextEditor) {
+export function attachFolding(editor: TextEditor): FoldingController {
     return createFoldingController(editor, document =>
         discoverIndentationFolds(document.buffer, {
             tabSize: 2,

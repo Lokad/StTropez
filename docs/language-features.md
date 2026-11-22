@@ -24,7 +24,8 @@ separately. Incoming edits and command execution have their own
 | Occurrences | `createLspHighlightClient`; browser `createLspHighlightController` | `textDocument/documentHighlight` |
 | Folding | [Folding client and discovery controller](folding.md#language-server-discovery) | `textDocument/foldingRange` |
 
-Import headless clients from `sttropez/protocol`. Pass the source snapshot to `run({ document, ... })`.
+Import the headless client and its type from `sttropez/protocol`, for example
+`createLspHoverClient` and `LspHoverClient`. Pass the source snapshot to `run({ document, ... })`.
 Offsets are UTF-16 code units in that snapshot. Navigation, rename and code actions also accept a
 `project` array containing the same source revision. Omitting it captures the source alone.
 An optional `prepare` callback runs after synchronization and before dispatch.
@@ -287,7 +288,7 @@ accepts Hover/null and legacy strings, MarkedString arrays and code fragments. L
 Markdown. `{ language, value }` preserves code. Your host places and dismisses the popup, even when
 the range is absent.
 
-Use `mountDocumentation` from `sttropez/browser` to append a documentation view. `setContent` reuses
+Use `mountDocumentation` from `sttropez/browser` to append a `DocumentationView`. `setContent` reuses
 an unchanged immutable array. `dispose` removes the view and listeners. All three entries (`sttropez`,
 `sttropez/browser`, `sttropez/protocol`) export the headless `DocumentationContent` and
 `DocumentationPart` types.

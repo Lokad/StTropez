@@ -1,4 +1,4 @@
-import { Store } from "../core/observable.ts";
+import { Store, type Observable } from "../core/observable.ts";
 import { codeWordConstituentPattern } from "../core/words.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 import { ownsTextSurface } from "../core/workspace.ts";
@@ -11,11 +11,15 @@ import type { TextEditor } from "./text-editor.ts";
 export type LspHighlightSnapshot = Readonly<{ status: "idle" | "pending" | "ready" | "unavailable" | "disposed";
     documentId: DocumentId; revision: number; caret: number | null; items: readonly LspDocumentHighlight[] }>;
 
+export type LspHighlightController = Observable<LspHighlightSnapshot> & Readonly<{
+    refresh: () => void; intersect: (from: number, to: number) => readonly LspDocumentHighlight[]; dispose: () => void;
+}>;
+
 const identifier = new RegExp(`^(?:\\$|${codeWordConstituentPattern})+$`, "u");
 
 /** Advisory occurrences for one captured view. Never changes text, selection, focus or connection policy. */
 export function createLspHighlightController(editor: TextEditor,
-    options: Readonly<{ provider: LspWorkspace; delayMs?: number }>) {
+    options: Readonly<{ provider: LspWorkspace; delayMs?: number }>): LspHighlightController {
     const { workspace, tab: target, view } = editor, documentId = view.documentId, win = editor.element.ownerDocument.defaultView!;
     const delay = options.delayMs ?? 150;
     if (editor.signal.aborted || !ownsTextSurface(workspace, view, target)) throw new Error("Invalid highlight view.");
@@ -95,4 +99,3 @@ export function createLspHighlightController(editor: TextEditor,
         intersect: (from: number, to: number): readonly LspDocumentHighlight[] => result?.isCurrent() && available() && focused() ? result.intersect(from, to) : empty,
         dispose });
 }
-export type LspHighlightController = ReturnType<typeof createLspHighlightController>;

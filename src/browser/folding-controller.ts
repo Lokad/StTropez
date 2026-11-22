@@ -1,4 +1,4 @@
-import { Store } from "../core/observable.ts";
+import { Store, type Observable } from "../core/observable.ts";
 import { lineContentEnd } from "../core/newlines.ts";
 import { reconcileFoldRanges } from "../core/fold-discovery.ts";
 import type { DiscoveredFold } from "../core/fold-discovery.ts";
@@ -19,9 +19,11 @@ export type FoldCommand = keyof typeof foldLabels;
 export type FoldingStatus = Readonly<{ status: "pending" | "ready" | "failed" | "disposed"; revision: number; regions: number; collapsed: number;
     groups: readonly string[]; message: string }>;
 
+export type FoldingController = Observable<FoldingStatus> & Readonly<{ refresh: () => void; dispose: () => void }>;
+
 /** One discovery policy for one retained view. Providers own syntax; the editor owns fold projection. */
 export function createFoldingController(editor: TextEditor, discover: FoldDiscovery,
-    options: Readonly<{ delayMs?: number }> = {}) {
+    options: Readonly<{ delayMs?: number }> = {}): FoldingController {
     const { workspace, tab: target, view } = editor, win = editor.element.ownerDocument.defaultView!;
     if (editor.signal.aborted || !ownsTextSurface(workspace, view, target)) throw new Error("Invalid fold discovery view.");
     const delay = options.delayMs ?? 100;
@@ -150,4 +152,3 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
     refresh();
     return Object.freeze({ ...cell.observable, refresh: () => { notifications.assertWritable(); refresh(); }, dispose });
 }
-export type FoldingController = ReturnType<typeof createFoldingController>;

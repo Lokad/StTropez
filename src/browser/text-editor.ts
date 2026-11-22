@@ -28,7 +28,7 @@ import type { InputContext } from "./input-context.ts";
 import { dispatchTypedText, editRefusedEvent, inputConflictEvent } from "./input-events.ts";
 import type { EditRefusedDetail, InputConflictDetail } from "./input-events.ts";
 import { mountViewport, validateRevealAlignment } from "./viewport.ts";
-import type { FoldContainsChange, RevealAlignment, RevealOptions, TextViewport, ViewportSettings } from "./viewport.ts";
+import type { FoldContainsChange, MountedViewport, RevealAlignment, RevealOptions, TextViewport, ViewportSettings } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
 import { lineColumnScanner, planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
 import { exportText, lineContentEnd, lineEnding } from "../core/newlines.ts";
@@ -107,7 +107,7 @@ export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HT
     activity: () => TextEditorActivity;
     getDiagnostics: () => TextEditorDiagnostics;
     dispose: () => void }>;
-export type MountedTextEditor = Readonly<{ editor: TextEditor; input: HTMLTextAreaElement; setComparisonRows: ReturnType<typeof mountViewport>["setComparisonRows"] }>;
+export type MountedTextEditor = Readonly<{ editor: TextEditor; input: HTMLTextAreaElement; setComparisonRows: MountedViewport["setComparisonRows"] }>;
 
 /** Text editor with bounded native input and virtualized rendering. Native IME qualification is separate. */
 export function mountTextEditor(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId,
@@ -137,7 +137,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
     const view = options.view ?? workspace.createDocumentView(documentId);
     const live = () => ownsTextSurface(workspace, view, target);
-    let setComparisonRows: MountedTextEditor["setComparisonRows"], viewport: TextViewport, navigation: ReturnType<typeof mountViewport>["navigation"], brackets: ReturnType<typeof mountBracketHighlights> | undefined, warnings: ReturnType<typeof mountCharacterWarnings> | undefined;
+    let setComparisonRows: MountedTextEditor["setComparisonRows"], viewport: TextViewport, navigation: MountedViewport["navigation"], brackets: ReturnType<typeof mountBracketHighlights> | undefined, warnings: ReturnType<typeof mountCharacterWarnings> | undefined;
     try { const mounted = mountViewport(host, workspace, surface, { ...options, view }, foldContainsChange);
         viewport = mounted.viewport; navigation = mounted.navigation; setComparisonRows = mounted.setComparisonRows; }
     catch (error) { if (!options.view) view.dispose(); throw error; }

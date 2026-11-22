@@ -1,6 +1,7 @@
 import { TextBuffer, Workspace } from "sttropez";
 import type { DocumentId } from "sttropez";
-import { createLspHoverClient, RpcError } from "sttropez/protocol";
+import { createLspHoverClient, RpcError, type LspHoverClient } from "sttropez/protocol";
+import type { AnchoredOverlay, DiagnosticController, HoverController } from "sttropez/browser";
 import { BrowserLspWorkspace, createCodeActionController, createCompletionController, createDiagnosticController, createDocumentColorController, createDocumentLinkController, createHoverController, createNavigationController, createRenameController, createSignatureController, mountAnchoredOverlay, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
 
 const workspace = new Workspace();
@@ -18,10 +19,10 @@ const provider = new BrowserLspWorkspace(workspace, {
 });
 const errors: string[] = [];
 const controller = createCompletionController(editor, provider, { autoConnect: false, onError: error => errors.push(String(error)) });
-const diagnostics = createDiagnosticController(editor, provider, { autoConnect: false });
+const diagnostics: DiagnosticController = createDiagnosticController(editor, provider, { autoConnect: false });
 const diagnosticHint = document.createElement("aside"); diagnosticHint.id = "diagnostic-hint"; document.body.append(diagnosticHint);
-const hint = mountAnchoredOverlay(editor, diagnosticHint, { dismissOn: ["outside-pointerdown"] });
-const hover = createHoverController(editor, provider, { diagnostics });
+const hint: AnchoredOverlay = mountAnchoredOverlay(editor, diagnosticHint, { dismissOn: ["outside-pointerdown"] });
+const hover: HoverController = createHoverController(editor, provider, { diagnostics });
 const signature = createSignatureController(editor, provider), colors = createDocumentColorController(editor, provider);
 const project = () => [workspace.document(source.documentId), workspace.document(companion.documentId)];
 const links = createDocumentLinkController(editor, provider, { documents: project });
@@ -124,7 +125,7 @@ colors.subscribe(() => {
 });
 const dispose = () => { if (disposed) return; disposed = true; stop(); controller.dispose(); diagnostics.dispose(); hover.dispose(); navigation.dispose(); rename.dispose(); actions.dispose(); signature.dispose(); links.dispose(); colors.dispose(); provider.dispose(); editor.dispose(); };
 async function probeTypedHover() {
-    const client = createLspHoverClient(provider), document = workspace.document(source.documentId);
+    const client: LspHoverClient = createLspHoverClient(provider), document = workspace.document(source.documentId);
     try {
         const request = { document, offset: text().indexOf("probe") };
         const first = client.run(request); first.cancel();

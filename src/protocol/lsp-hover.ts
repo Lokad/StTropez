@@ -1,8 +1,11 @@
-import { createLspClient, lspFeatureHandle, type LspPositionRequest } from "./lsp-client.ts";
-import { decodeLspHover } from "./lsp-features.ts";
+import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspPositionRequest } from "./lsp-client.ts";
+import { decodeLspHover, type LspHover } from "./lsp-features.ts";
 import type { LspWorkspace } from "./lsp-workspace.ts";
 
-export function createLspHoverClient(provider: LspWorkspace) {
+export type LspHoverResult = LspHover & Readonly<{ revision: number; isCurrent: () => boolean }>;
+export type LspHoverClient = LspFeatureClient<"textDocument/hover", LspPositionRequest, LspHoverResult | null>;
+
+export function createLspHoverClient(provider: LspWorkspace): LspHoverClient {
     const client = createLspClient(provider, "textDocument/hover");
     return Object.freeze({ ...lspFeatureHandle(client),
         run: (request: LspPositionRequest) => {

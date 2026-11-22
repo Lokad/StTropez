@@ -5,10 +5,16 @@ type Kind = "render" | "fold" | "scroll" | "input" | "pointerdown" | "compositio
 type Callback = (pane: TextViewport, event?: Event) => void;
 type Binding = { mount: MountedTextEditor; base: AbortController; stops: Map<Kind, () => void> };
 type Registration = { callback: Callback };
-export type ComparisonPanes = ReturnType<typeof createComparisonPanes>;
+export type ComparisonPanes = Readonly<{
+    working: MountedTextEditor; reference: () => MountedTextEditor | undefined;
+    setReference: (mount: MountedTextEditor | undefined) => void;
+    observe: (observation: Partial<Record<Kind, Callback>>) => () => void;
+    onReferenceChange: (listener: (previous: MountedTextEditor | undefined) => void) => () => void;
+    dispose: () => void;
+}>;
 
 /** One attachment owner and one native/fold observation per pane and requested event kind. */
-export function createComparisonPanes(working: MountedTextEditor, compositionChanged: () => void) {
+export function createComparisonPanes(working: MountedTextEditor, compositionChanged: () => void): ComparisonPanes {
     const listeners = new Map<Kind, Set<Registration>>(), replacements = new Set<(previous: MountedTextEditor | undefined) => void>();
     let reference: Binding | undefined, disposed = false, resize: ResizeObserver | undefined;
     const source = bind(working);
