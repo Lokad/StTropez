@@ -47,7 +47,7 @@ import { mountCharacterWarnings } from "./character-warnings.ts";
 import type { CharacterWarningHighlights } from "./character-warnings.ts";
 import { createCommandRegistry, type EditorCommands, type EditorKeymap } from "./command-registry.ts";
 import { bindEditorDefaults, editCommand, editorCommandLabels, editorKeyCommand } from "./editor-commands.ts";
-import { classifyEditingKey } from "./editing-keys.ts";
+import { classifyEditingKey, historyKey } from "./editing-keys.ts";
 import type { KeyBinding, KeyStroke, ViewCommand } from "./editing-keys.ts";
 import { commandBudget, createCooperativeRunner } from "./cooperative-runner.ts";
 import { createEdgeAutoscroll, edgeVelocity } from "./edge-autoscroll.ts";
@@ -70,7 +70,7 @@ export type TextEditorDiagnostics = TextEditorActivity & Readonly<{
 }>;
 export type TextEditorSnapshot = Readonly<{ focused: boolean; disabled: boolean; composing: boolean;
     readOnlyReason: EditRefusedDetail["reason"] | null }>;
-export type TextEditorCommand = EditingCommand | ViewCommand;
+export type TextEditorCommand = EditingCommand | ViewCommand | "undo" | "redo";
 export type LinePrompt = (request: Readonly<{ currentLine: number; lineCount: number; signal: AbortSignal }>) =>
     number | undefined | PromiseLike<number | undefined>;
 export type EditorSettings = Partial<ViewportSettings> & Readonly<{ language?: LanguageConfiguration;
@@ -226,6 +226,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     });
     for (const id of Object.keys(editorCommandLabels) as TextEditorCommand[]) {
         registry.commands.register({ id, label: editorCommandLabels[id], run: () => runCommand(id), enabled: () => {
+            if (id === "undo" || id === "redo") {
+                const depth = workspace.observeHistory(documentId).getSnapshot();
+                return !input.readOnly && (id === "undo" ? depth.undoDepth : depth.redoDepth) > 0;
+            }
             if (id === "go-to-line") return !!options.requestLine;
             if (!editCommand(id)) return true;
             if (input.readOnly) return false;
@@ -462,14 +466,14 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             : { anchor: map(backward ? input.selectionEnd : input.selectionStart), head: map(backward ? input.selectionStart : input.selectionEnd) };
         apply([{ from, to, insert }], selection, kind, options);
     }
-    function history(direction: "undo" | "redo"): void {
-        if (disposed) return; hostInsertion?.cancel(); cancelWord(); group = undefined; syncSelection();
-        if (readOnly) { refresh(); return; }
-        if (!live()) { conflict("expired-view"); refresh(); return; }
+    function history(direction: "undo" | "redo"): boolean {
+        if (disposed) return false; hostInsertion?.cancel(); cancelWord(); group = undefined; syncSelection();
+        if (input.readOnly) { refresh(); return false; }
+        if (!live()) { conflict("expired-view"); refresh(); return false; }
         const result = workspace[direction]({ documentId, expectedRevision: revision });
         if (!result.applied && result.reason !== "history-empty") conflict(result.reason);
         else if (result.applied) revealCaret(view.getSnapshot().selection, "center-if-outside");
-        refresh();
+        refresh(); return result.applied;
     }
     const focus = () => { if (!disposed) { input.focus({ preventScroll: true }); scheduleCaret(); } };
     const inputBinding = viewport.bindInput(focus);
@@ -916,6 +920,12 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     function runCommand(command: TextEditorCommand): boolean {
         if (disposed || composing || input.disabled || !live()) return false;
         switch (command) {
+            case "undo": case "redo": return history(command);
+            case "select-all":
+                hostInsertion?.cancel(); cancelWord(); group = undefined; preferred = undefined;
+                view.folding.revealSelection(view.folding.getSnapshot());
+                view.setSelection(revision, { anchor: 0, head: workspace.document(documentId).buffer.length });
+                refresh(); return true;
             case "go-to-line": {
                 const prompt = options.requestLine;
                 if (!prompt) return false;
@@ -1028,7 +1038,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         let stroke: KeyStroke;
         if (["deleteWordBackward", "deleteWordForward", "deleteContentBackward", "deleteContentForward"].includes(type))
             stroke = { key: backward ? "Backspace" : "Delete", ctrlKey: word, metaKey: false, altKey: false, shiftKey: false };
-        else if (type === "historyUndo" || type === "historyRedo") stroke = { key: "z", ctrlKey: true, metaKey: false, altKey: false, shiftKey: type === "historyRedo" };
+        else if (type === "historyUndo" || type === "historyRedo") {
+            stroke = { key: "z", ctrlKey: true, metaKey: false, altKey: false, shiftKey: type === "historyRedo" };
+            return captureKey(stroke, historyKey(type === "historyUndo" ? "undo" : "redo"));
+        }
         else return;
         const binding = classifyEditingKey(stroke, apple, !!escapeSelection, pairKey); return typeof binding === "object" ? captureKey(stroke, binding) : undefined;
     }
@@ -1188,7 +1201,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         view.folding.revealSelection(view.folding.getSnapshot());
         if (command && command.kind !== "delete" && command.kind !== "word" || binding === "escape" || binding === "prevent-navigation") group = undefined;
         if (command?.kind === "history") { event.preventDefault(); history(command.direction); return; }
-        if (command?.kind === "select-all") { event.preventDefault(); cancelWord(); preferred = undefined; const length = workspace.document(documentId).buffer.length; view.setSelection(revision, { anchor: 0, head: length }); refresh(); return; }
         if (binding === "escape") {
             cancelWord(); commandRunner.cancel(); preferred = undefined;
             const state = view.getSnapshot();

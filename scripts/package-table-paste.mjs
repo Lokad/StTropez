@@ -13,6 +13,14 @@ export async function runPackagedTablePaste(browser, origin, options) {
     page.on("pageerror", error => errors.push(error.message));
     /** @param {string} name */
     const click = name => page.getByRole("button", { name, exact: true }).click();
+    /** @param {string} id */
+    const runCommand = async id => {
+        await click("Editor commands");
+        const palette = page.getByRole("dialog", { name: "Editor commands" });
+        await palette.getByRole("searchbox").fill(id);
+        await palette.getByRole("listbox").selectOption(id);
+        await palette.getByRole("button", { name: "Run command" }).click();
+    };
     const ready = () => page.waitForFunction(() => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
         return !s.bindings.tablePaste.pending && s.bindings.views.every(v => v.metrics !== null && !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision)
             && (!c || c.status === "ready" && !c.workingViewport.pending && c.referenceViewport !== undefined && !c.referenceViewport.pending); });
@@ -39,12 +47,11 @@ export async function runPackagedTablePaste(browser, origin, options) {
         await ready(); assert.equal(await exact(expected), true);
         const pasted = await page.evaluate(() => window.hostFixture.snapshot()); assert.equal(pasted.bindings.tablePaste.status, "applied"); assert.equal(pasted.history.undoDepth, before.history.undoDepth + 1); assert.equal(pasted.source.exports, 0);
         assert.equal(primary(pasted).selectionSet.ranges.length, 2);
-        await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await ready(); assert.equal(await exact(original), true);
+        await page.getByRole("textbox", { name: "Secondary source", exact: true }).focus();
+        await runCommand("undo"); await ready(); assert.equal(await exact(original), true);
         assert.deepEqual(primary(await page.evaluate(() => window.hostFixture.snapshot())).selectionSet, primary(before).selectionSet);
         await input.press("Control+Shift+z"); await ready(); assert.equal(await exact(expected), true);
-        await click("Editor commands");
-        const filter = page.getByRole("dialog", { name: "Editor commands" }).getByRole("searchbox");
-        await filter.fill("source.save"); await filter.press("Enter");
+        await runCommand("source.save");
         await page.waitForFunction(() => window.hostFixture.snapshot().pendingSaves.length === 1);
         await input.press("Escape"); await input.press("Control+End"); await input.pressSequentially(" later"); await page.evaluate(() => window.hostFixture.finishSave()); await ready(); assert.equal(await exact(expected + " later"), true);
         await input.press("Control+z"); await ready(); assert.equal(await exact(expected), true); assert.equal((await page.evaluate(() => window.hostFixture.snapshot())).source.dirty, false);

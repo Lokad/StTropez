@@ -1,10 +1,9 @@
 import type { EditingCommand } from "../core/language-edits.ts";
 
 export type KeyStroke = Readonly<Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">>;
-export type ViewCommand = "select-line" | "jump-to-bracket" | "add-caret-above" | "add-caret-below" | "undo-caret"
+export type ViewCommand = "select-all" | "select-line" | "jump-to-bracket" | "add-caret-above" | "add-caret-below" | "undo-caret"
     | "select-next-occurrence" | "select-all-occurrences" | "go-to-line" | "scroll-line-up" | "scroll-line-down" | "scroll-page-up" | "scroll-page-down";
 type KeyCommand = Readonly<{ kind: "history"; direction: "undo" | "redo" }>
-    | Readonly<{ kind: "select-all" }>
     | Readonly<{ kind: "view"; command: ViewCommand }>
     | Readonly<{ kind: "horizontal"; key: "ArrowLeft" | "ArrowRight" | "Home" | "End"; extend: boolean; document: boolean }>
     | Readonly<{ kind: "vertical"; direction: -1 | 1; page: boolean; extend: boolean }>
@@ -16,12 +15,12 @@ type EditingKey = KeyBinding | "escape" | "tab-escape" | "prevent-navigation" | 
 const navigationKeys = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"]);
 const bind = (command: KeyCommand, edit = false, text = "", fallback = false): KeyBinding => ({ command, edit, text, fallback });
 
+export const historyKey = (direction: "undo" | "redo"): KeyBinding => bind({ kind: "history", direction }, true);
+
 /** Shared interpretation for immediate execution and captured queued intent; no view/lifecycle authority. */
 export function classifyEditingKey(event: KeyStroke, apple: boolean, escaped: boolean, paired: (key: string) => boolean): EditingKey {
-    const command = (event.ctrlKey || event.metaKey) && !event.altKey, key = event.key.toLowerCase(), extend = event.shiftKey;
+    const command = (event.ctrlKey || event.metaKey) && !event.altKey, extend = event.shiftKey;
     const horizontal = (key: "ArrowLeft" | "ArrowRight" | "Home" | "End", document = false) => bind({ kind: "horizontal", key, extend, document });
-    if (command && (key === "z" || event.ctrlKey && key === "y")) return bind({ kind: "history", direction: extend || key === "y" ? "redo" : "undo" }, true);
-    if (command && key === "a") return bind({ kind: "select-all" });
     if (command && (event.key === "Home" || event.key === "End")) return horizontal(event.key, true);
     if (apple && event.metaKey && !event.ctrlKey && !event.altKey) {
         if (event.key === "ArrowLeft" || event.key === "ArrowRight") return horizontal(event.key === "ArrowLeft" ? "Home" : "End");

@@ -49,14 +49,21 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
         const matches = dialog.getByRole("listbox"); await expect(matches).toBeFocused();
         await matches.press("Enter"); await expect(dialog).toHaveCount(0); await expect(secondary).toBeFocused();
         await expect.poll(() => source(page)).toBe("one\ntwo\n\nthree");
-        await secondary.press("Control+z"); await expect.poll(() => source(page)).toBe(original);
+        await primary(page).press("Control+k"); await primary(page).press("Control+p");
+        await filter.fill("undo"); await dialog.getByRole("listbox").selectOption("undo");
+        await run.click(); await expect(primary(page)).toBeFocused(); await expect.poll(() => source(page)).toBe(original);
+        await secondary.press("Control+y"); await expect.poll(() => source(page)).toBe("one\ntwo\n\nthree");
+        await secondary.press("Control+z");
 
         await page.getByRole("button", { name: "Open source review", exact: true }).click();
         const reference = page.getByRole("textbox", { name: "Comparison baseline source", exact: true });
         await reference.focus();
         await page.getByRole("button", { name: "Editor commands", exact: true }).click();
         await filter.fill("insert line below"); await expect(run).toBeDisabled();
-        await expect(dialog.getByRole("option")).toBeDisabled(); await filter.press("Escape");
+        await expect(dialog.getByRole("option")).toBeDisabled();
+        await filter.fill("undo"); await expect(dialog.locator('option[value="undo"]')).toBeDisabled();
+        await filter.fill("select all"); await expect(dialog.locator('option[value="select-all"]')).toBeEnabled();
+        await filter.press("Escape");
         await expect(dialog).toHaveCount(0); await expect(reference).toBeFocused();
 
         const field = page.getByRole("textbox", { name: "Configuration path", exact: true });

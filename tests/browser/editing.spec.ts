@@ -595,6 +595,35 @@ test("comment chords and shifted slash act on the captured lines", async ({ page
     expect(await stroke("c")).toBe(false);
 });
 
+test("rebound history and Select All use the pane's document and leave native edits in host fields", async ({ page }) => {
+    const input = page.locator("#primary textarea");
+    await page.evaluate(() => {
+        const f = window.editingFixture;
+        f.setText("two rows\nto select"); f.focus("primary");
+        f.keymap.unbind("Ctrl+a"); f.keymap.unbind("Ctrl+z");
+        f.keymap.bind("F8", "select-all"); f.keymap.bind("F9", "undo");
+    });
+    const defaults = await input.evaluate(node => ["a", "z"].map(key =>
+        node.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, bubbles: true, cancelable: true }))));
+    expect(defaults).toEqual([true, true]);
+    await input.press("F8"); await page.keyboard.type("X"); await input.press("F9");
+    expect(await page.evaluate(() => window.editingFixture.range(0, 18))).toBe("two rows\nto select");
+    await page.evaluate(() => {
+        const field = document.createElement("input");
+        field.setAttribute("aria-label", "Host text"); field.value = "host field";
+        field.addEventListener("keydown", window.editingFixture.keymap.handle);
+        document.body.append(field);
+    });
+    const field = page.getByRole("textbox", { name: "Host text" });
+    await field.press("Control+a"); await page.keyboard.type("local"); await field.press("F9");
+    await expect(field).toHaveValue("local");
+    const result = await page.evaluate(() => {
+        const f = window.editingFixture;
+        return { redo: f.command("redo"), again: f.command("redo"), text: f.range(0, 1) };
+    });
+    expect(result).toEqual({ redo: true, again: false, text: "X" });
+});
+
 test("a rebound chord belongs to its editor and leaves host field editing local", async ({ page }) => {
     const keys = await page.evaluate(() => {
         window.editingFixture.setText("abc");
