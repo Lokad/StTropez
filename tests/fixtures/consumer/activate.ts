@@ -1,5 +1,5 @@
 import { Workspace } from "sttropez";
-import type { Selection, TabId, TextResourceHandle } from "sttropez";
+import type { FindBackend, Selection, TabId, TextResourceHandle } from "sttropez";
 import { createFindController, createRegexFindBackend, mountTextEditor } from "sttropez/browser";
 import type { TextEditor, FindController, ViewState } from "sttropez/browser";
 
@@ -23,8 +23,9 @@ export function createActivationSession(original: string, selection: Selection, 
             editor = mountTextEditor(host, workspace, tab, { ariaLabel: shared?.label ?? "Activated source", view, readOnly }); mounts++;
             if (viewState) editor.restoreView(viewState, { selection: "current" });
             if (changed || !viewState) editor.viewport.revealOffset(view.getSnapshot().selection.head);
-            find = createFindController(editor, { regularExpressionBackend: createRegexFindBackend({ clock: host.ownerDocument.defaultView!,
-                createWorker: () => { workers++; return new Worker(new URL("./regex-worker.js", import.meta.url), { type: "module" }); } }) });
+            const backend: FindBackend = createRegexFindBackend({ clock: host.ownerDocument.defaultView!,
+                createWorker: () => { workers++; return new Worker(new URL("./regex-worker.js", import.meta.url), { type: "module" }); } });
+            find = createFindController(editor, { regularExpressionBackend: backend });
             stopFind = find.subscribe(() => { const s = find!.getSnapshot(); update(s.message || `${s.status}: ${s.count} matches`); });
             if (shared?.focus !== false) editor.input.focus({ preventScroll: true });
         },

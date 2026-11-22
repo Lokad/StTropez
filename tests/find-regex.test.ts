@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Workspace } from "../src/index.ts";
+import type { FindBackend, FindQueryCapture, FindPlanStep, SearchStep } from "../src/index.ts";
 import { findForView } from "../src/browser/find.ts";
-import type { FindBackend, FindQueryCapture, FindPlanStep, FindSnapshot } from "../src/browser/index.ts";
-import type { SearchStep } from "../src/core/search.ts";
+import type { FindSnapshot } from "../src/browser/index.ts";
 import type { FindHost } from "../src/browser/find.ts";
 import { regexMatches, regexReplacement } from "../src/core/regex-search.ts";
 

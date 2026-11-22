@@ -11,6 +11,7 @@ export type { BufferChangeSpan, BufferChangeProgress } from "./core/buffer-chang
 export type { BufferChange, BufferLine, BufferPosition, BufferReadMetrics, BufferRetention } from "./core/text-buffer.ts";
 export { LiteralSearch } from "./core/search.ts";
 export type { SearchMatch, SearchStep, LiteralSearchOptions } from "./core/search.ts";
+export type { FindBackend, FindQueryCapture, FindSearchCursor, FindPlanCursor, FindPlanStep } from "./core/find.ts";
 export { FoldIndex, createFoldRegions } from "./core/folding.ts";
 export type { FoldRange, FoldRegion, FoldVersion, FoldingSnapshot, DocumentFolding } from "./core/folding.ts";
 export { discoverIndentationFolds, reconcileFoldRanges } from "./core/fold-discovery.ts";

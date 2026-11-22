@@ -205,10 +205,10 @@ while waiting keeps focus.
 
 ### Regular expressions and worker limits
 
-`createRegexFindBackend(RegexFindBackendOptions)` supplies a `FindBackend`. Give each controller its
-own backend with an idempotent `dispose`. Custom backends return `FindSearchCursor` and
-`FindPlanCursor` for the exact `FindQueryCapture`. Return one edit per indexed match, including
-no-ops. The controller commits the plan.
+Import `FindBackend`, `FindQueryCapture`, `FindSearchCursor`, `FindPlanCursor` and `FindPlanStep`
+from `sttropez`. The browser entry supplies `createRegexFindBackend` for hosts that use a worker.
+Give each controller its own backend with an idempotent `dispose`. A custom backend searches the
+captured revision and returns one edit per indexed match, including no-ops. The controller commits the plan.
 
 Patterns use native Unicode, global, multiline matching (`gmu`, adding `i` when match-case is
 cleared). Supply the pattern without slash delimiters. Captures, lookarounds, Unicode properties
