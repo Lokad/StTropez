@@ -772,7 +772,12 @@ export async function runDemoWalkthrough(page: Page, url = "/") {
     await select(page, main, "calculateTotal(cart"); await main.press("ArrowLeft"); await main.press("ArrowRight"); await main.press("F12");
     await expect(pricing).toBeFocused(); await pricing.press("F2");
     const rename = page.getByRole("dialog", { name: "Rename symbol", exact: true });
-    await rename.getByRole("textbox", { name: "New name", exact: true }).fill("basketTotal");
+    const newName = rename.getByRole("textbox", { name: "New name", exact: true });
+    await expect(newName).toHaveValue("calculateTotal"); await newName.press("Enter");
+    await expect(rename.getByLabel("Rename status")).toHaveText("No edits for this name.");
+    await expect(rename.getByLabel("Rename edits").locator("li")).toHaveCount(0);
+    await expect(rename.getByRole("button", { name: "Apply rename", exact: true })).toBeDisabled();
+    await newName.fill("basketTotal");
     await rename.getByRole("button", { name: "Preview rename", exact: true }).click();
     await expect(rename.getByLabel("Rename edits")).toContainText("main.ts"); await expect(rename.getByLabel("Rename edits")).toContainText("pricing.ts");
     await rename.getByRole("button", { name: "Apply rename", exact: true }).click(); await expect(rename).toBeHidden();

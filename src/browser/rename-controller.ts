@@ -1,4 +1,5 @@
 import { Store } from "../core/observable.ts";
+import { changedTextEdits } from "../core/changes.ts";
 import { reviewApplied, reviewFailed, reviewRefused, type ReviewEditResult } from "./review-edit.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
@@ -27,7 +28,7 @@ export type RenameController = Observable<RenameSnapshot> & Readonly<{
     setName: (name: string) => void; request: (name?: string) => void; cancel: () => void; dispose: () => void;
 }>;
 type Job = { source: CapturedViewRequest<TextEditor["tab"]>; project: ReturnType<typeof retainEditProject>;
-    client: LspRenameClient; invalid: boolean; timer?: number; edit?: LspWorkspaceEdit };
+    client: LspRenameClient; invalid: boolean; timer?: number; edit?: LspWorkspaceEdit; review?: LspWorkspaceEdit };
 const idle: RenameSnapshot = Object.freeze({ name: "", status: "idle", message: "", preview: null, changes: Object.freeze([]) });
 
 /** Review and confirm one provider rename from the captured caret and project. */
@@ -72,8 +73,8 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
         // A retained button keeps the identity of its preview, never the project's old buffers.
         const preview: RenamePreview = Object.freeze({ name, count, canApply, readPage(page = 0) {
             const j = job;
-            if (cell.get().preview !== preview || !j?.edit || !current(j)) return;
-            return previewLspWorkspaceEdit(j.edit, id => j.project.documents.get(id as DocumentId)!.title, page);
+            if (cell.get().preview !== preview || !j?.review || !current(j)) return;
+            return previewLspWorkspaceEdit(j.review, id => j.project.documents.get(id as DocumentId)!.title, page);
         }, confirm() {
             scope.assertWritable(); const j = job, edit = j?.edit;
             if (cell.get().preview !== preview || !j || !edit || !current(j)) return reviewRefused("expired");
@@ -118,7 +119,10 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
                 j.edit = edit;
                 if (!current(j)) { expire(j); return; }
                 win.clearTimeout(j.timer); j.project.includeEdit(edit);
-                const count = edit.documents.reduce((n, change) => n + change.edits.length, 0);
+                // Review changed text. Confirmation still checks every target in the original provider reply.
+                const documents = edit.documents.map(({ target, edits }) => ({ target, edits: changedTextEdits(target.document.buffer, edits) }));
+                j.review = { ...edit, documents };
+                const count = documents.reduce((n, change) => n + change.edits.length, 0);
                 const canApply = count > 0 && writableEdit(editor, edit);
                 publish({ name, status: "ready", preview: makePreview(name, count, canApply),
                     message: !count ? "No edits for this name." : !canApply ? "A rename target is read-only or locked."

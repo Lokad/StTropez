@@ -486,8 +486,9 @@ Pass `setName(value)` each time the name changes and call `request()` to preview
 caret. Alternatively, `request(name)` sets the name and requests its preview in one call. F2 opens
 the example form. Enter previews a name, then confirms the reviewed edit on the next press.
 
-A ready snapshot contains a `preview` for the captured name and selection. Its `count` covers
-all edits. `readPage(index)` reads up to 64. Give each preview its own Apply button and keep
+A ready snapshot contains a `preview` for the captured name and selection. Its `count` and
+`readPage(index)` omit replacements whose text already equals the captured range. Each page
+holds up to 64 edits. Confirmation checks the original provider targets. Give each preview its own Apply button and keep
 that button while paging. A pointer press started on an older preview then cannot confirm a
 replacement on release.
 
@@ -510,7 +511,7 @@ step. The snapshot lists the changed files. On refusal, read `reason`:
 - `expired` means the name, capture or request changed, or the editor was disposed. The old
   preview's `readPage()` returns `undefined`.
 - `not-writable` means a target in this preview is read-only or locked.
-- `no-changes` means the provider supplied no edits.
+- `no-changes` means the provider supplied no edits or every replacement already matched its source text.
 - `failed` includes a `message` describing the apply error.
 
 Call `createLspRenameClient(provider).run({ document, project, offset, newName }).result` for a

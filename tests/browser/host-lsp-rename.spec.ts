@@ -102,7 +102,8 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP renam
         await seed(page); await button(page, "Add navigation companion").click(); const before = await snapshot(page), companion = before.bindings.navigation.companion!;
         await page.evaluate(() => window.hostFixture.faultRenameNext("malformed")); await preview(page); expect((await snapshot(page)).bindings.rename.state).toMatchObject({ status: "failed", count: 0, canApply: false }); await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
         await preview(page); await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion); await waitForRename(page); await expect(button(page, "Apply captured rename")).toBeDisabled();
-        await preview(page); await expect(button(page, "Apply captured rename")).toBeDisabled();
+        await preview(page, "catalogue"); await expect(button(page, "Apply captured rename")).toBeDisabled();
+        await expect(targets(page)).toHaveCount(1); await expect(targets(page)).toContainText(["// fixture rename"]);
         await expect(page.getByLabel("Rename status", { exact: true })).toContainText("read-only or locked");
         expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.rename.state.preview!.confirm())).toEqual({ applied: false, reason: "not-writable" });
         // A programmatic click must not bypass the captured permission policy either.
@@ -130,6 +131,9 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP renam
         await button(page, "Reconnect rename provider").click(); await select(page, raw.indexOf("catalogue") + 2); await preview(page); await button(page, "Disconnect rename provider").click(); await input(page).press("Control+End"); await input(page).pressSequentially("local"); await waitForRename(page); await exact(page, raw + "local"); await button(page, "Reconnect rename provider").click(); await select(page, raw.indexOf("catalogue") + 2); await preview(page); await expect(button(page, "Apply captured rename")).toBeEnabled();
         const count = requests; await select(page, raw.indexOf(";") + 1); await preview(page); expect(requests).toBe(count + 1); expect(lastPosition).toEqual({ line: 1, character: "const catalogue = 1;".length }); expect((await snapshot(page)).bindings.rename.state.count).toBe(0);
         expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.rename.state.preview!.confirm())).toEqual({ applied: false, reason: "no-changes" });
+        await select(page, raw.indexOf("catalogue") + 2); await preview(page, "catalogue");
+        await expect(targets(page)).toHaveCount(1); await button(page, "Apply captured rename").press("Space");
+        await exact(page, marker + raw + "local"); await page.keyboard.press("Control+z");
         await exact(page, raw + "local"); await dispose(page);
     });
     if (coversHost("candidate-hosts", host, "candidate")) test("comparison rename preserves its baseline and primary Save/Run through unmounted-target focus", async ({ page }) => {

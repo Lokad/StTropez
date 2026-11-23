@@ -1,4 +1,4 @@
-import { validateTextEdits } from "./changes.ts";
+import { changedTextEdits, validateTextEdits } from "./changes.ts";
 import type { TextEdit } from "./changes.ts";
 import { PositionMap } from "./positions.ts";
 import { lineContentEnd } from "./newlines.ts";
@@ -242,7 +242,7 @@ export class TextBuffer {
     replace(from: number, to: number, insert: string): TextBuffer { return this.apply([{ from, to, insert }]).buffer; }
     apply(edits: readonly TextEdit[]): BufferChange {
         validateTextEdits(this.length, edits);
-        const effective = edits.filter(edit => edit.to - edit.from !== edit.insert.length || this.slice(edit.from, edit.to) !== edit.insert);
+        const effective = changedTextEdits(this, edits);
         const mapping = new PositionMap(this.length, effective);
         if (!effective.length) return Object.freeze({ buffer: this, mapping, changedUnits: 0 });
         let root: Root;
