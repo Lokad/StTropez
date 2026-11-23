@@ -334,6 +334,21 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         previewed = { index, selection: preview.selection }; publish({ current: index });
         if (visible === undefined) { const match = matches.at(index); editor.viewport.revealRange(match.from, match.to); }
     }
+    function capturePreview(previousSelection?: SelectionSet): void {
+        if (options.highlightMatches === false || store.get().status !== "searching") return;
+        const listeners = new AbortController(), events = { signal: listeners.signal, passive: true };
+        const root = viewport?.element, top = root?.scrollTop, left = root?.scrollLeft;
+        const scrollUnchanged = () => root?.scrollTop === top && root?.scrollLeft === left;
+        captureFocus();
+        const selection = editor.view.getSnapshot().selectionSet;
+        pendingPreview = { selection, followSelected: previousSelection === selection, scrollUnchanged, listeners };
+        owner.addEventListener("focusout", cancelPreview, events);
+        if (root) {
+            root.addEventListener("wheel", cancelPreview, events);
+            root.addEventListener("scroll", () => { if (!scrollUnchanged()) cancelPreview(); }, events);
+            root.ownerDocument.defaultView!.addEventListener("blur", cancelPreview, events);
+        }
+    }
     function finishAdvance(): void {
         const selection = advanceAfterReplace;
         advanceAfterReplace = undefined;
@@ -502,24 +517,16 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             const selected = navigatedMatch?.selectionSet ?? (pendingPreview?.followSelected ? pendingPreview.selection : undefined);
             const refinement = !!previous && (query.startsWith(previous) || previous.startsWith(query));
             restart(query);
-            if (!queryOptions?.preview || options.highlightMatches === false || store.get().status !== "searching") return;
-            const listeners = new AbortController(), events = { signal: listeners.signal, passive: true };
-            const root = viewport?.element, top = root?.scrollTop, left = root?.scrollLeft;
-            const scrollUnchanged = () => root?.scrollTop === top && root?.scrollLeft === left;
-            captureFocus();
-            const selection = editor.view.getSnapshot().selectionSet;
-            pendingPreview = { selection, followSelected: refinement && selected === selection, scrollUnchanged, listeners };
-            owner.addEventListener("focusout", cancelPreview, events);
-            if (root) {
-                root.addEventListener("wheel", cancelPreview, events);
-                root.addEventListener("scroll", () => { if (!scrollUnchanged()) cancelPreview(); }, events);
-                root.ownerDocument.defaultView!.addEventListener("blur", cancelPreview, events);
-            }
+            if (queryOptions?.preview) capturePreview(refinement ? selected : undefined);
         },
         setFlags: (flags: FindFlags) => {
             scope.assertWritable();
             const state = store.get(), wholeWord = flags.wholeWord ?? state.wholeWord, matchCase = flags.matchCase ?? state.matchCase, regularExpression = flags.regularExpression ?? state.regularExpression;
-            if (!disposed && (wholeWord !== store.get().wholeWord || matchCase !== store.get().matchCase || regularExpression !== store.get().regularExpression)) restart(store.get().query, wholeWord, matchCase, regularExpression);
+            if (disposed || wholeWord === state.wholeWord && matchCase === state.matchCase && regularExpression === state.regularExpression) return;
+            const preview = pendingPreview ?? previewed;
+            const refresh = preview && preview.selection === editor.view.getSnapshot().selectionSet;
+            restart(state.query, wholeWord, matchCase, regularExpression);
+            if (refresh) capturePreview();
         },
         acceptPreview: () => {
             scope.assertWritable();

@@ -595,8 +595,8 @@ on("find-close", () => { activePane?.commands.run("find.close"); });
 for (const toggle of element("find-options").querySelectorAll("button")) {
     on(toggle.id, () => {
         toggle.setAttribute("aria-pressed", String(toggle.getAttribute("aria-pressed") !== "true"));
-        find?.setFlags(findFlags());
         findQuery.focus();
+        find?.setFlags(findFlags());
     });
 }
 on("replace-toggle", () => {

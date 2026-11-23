@@ -478,7 +478,7 @@ test("Find combines case and word boundaries and keeps the options across files"
     const word = page.getByRole("button", { name: "Match whole word" }), regex = page.getByRole("button", { name: "Use regular expression" });
     await page.getByRole("textbox", { name: "main.ts", exact: true }).press("Control+f");
     await query.fill("Cart"); await expect(status).toHaveText("1 of 5");
-    await caseButton.press("Space"); await expect(query).toBeFocused(); await expect(status).toHaveText("2 matches");
+    await caseButton.press("Space"); await expect(query).toBeFocused(); await expect(status).toHaveText("1 of 2");
     await word.click(); await expect(status).toHaveText("No matches");
     await caseButton.click(); await expect(status).toHaveText("3 matches");
     await regex.click(); await query.fill("car[t]"); await expect(status).toHaveText("1 of 3");

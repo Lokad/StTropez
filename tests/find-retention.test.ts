@@ -139,6 +139,8 @@ test("preview keeps the selection, replacement advances, and edits cancel a pend
         const selected = f.view.getSnapshot().selectionSet;
         f.find.setQuery("cat", { preview: true }); f.drain();
         assert.equal(f.find.getSnapshot().current, 1); assert.equal(f.view.getSnapshot().selectionSet, selected);
+        f.find.setFlags({ wholeWord: true }); f.drain();
+        assert.equal(f.find.getSnapshot().current, 1); assert.equal(f.view.getSnapshot().selectionSet, selected);
         assert.equal(f.find.replaceCurrent("dog"), true); f.drain();
         assert.equal(f.document().text(), "a cat, a dog, a cat");
         assert.equal(f.find.getSnapshot().current, 1); assert.equal(f.find.getSnapshot().wrappedTo, null);

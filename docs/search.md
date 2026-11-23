@@ -54,7 +54,7 @@ notice.
 | `regularExpression` | Defaults to `false`; requires a configured `FindBackend` when enabled |
 | `setQuery(query)` | Cancels obsolete work and starts a search; an empty query is idle |
 | `setQuery(query, { preview: true })` | Shows a match when the search finishes and keeps focus in the Find panel. |
-| `setFlags(flags)` | Patches supplied flags and restarts only when a value changes |
+| `setFlags(flags)` | Patches supplied flags and restarts when a value changes. Refreshes an active preview at the same selection. |
 | `next(direction?)` | Selects a match in the captured view; direction is `1` by default or `-1` |
 | `next(direction, { whenReady: true })` | Accepts one navigation request while the search finishes. The latest direction wins. Changing the query, revision, focus, selection or visible folds cancels the request. |
 | `replaceCurrent(text)` | Replaces the selected match, or the next match if none is selected, then selects the following match |
