@@ -578,8 +578,9 @@ execution handle gives the caller `{ status: "executing" }`. Observe the control
 eventual result (`applied`, `executed` or `failed`).
 
 `CodeActionConfirmation` also reports `expired` for a retired preview, `disabled` for an
-unavailable action, and `not-writable` when a reviewed edit lacks permission. A read-only view
-can preview edits to its source but cannot confirm them, even if another view can edit the file. A synchronous
+unavailable action, and `not-writable` when a reviewed edit lacks permission. If an edit targets a
+read-only or locked file, the preview stays available for inspection. Its `disabled` field explains
+the restriction and `canApply` is false. A read-only view also enforces its own editing restriction. A synchronous
 failure returns `{ status: "failed", message }`.
 
 `createLspActionClient(provider, options).run({ document, project, from, to }).result` resolves to

@@ -149,8 +149,8 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
         if (editor.element.isConnected && !editor.signal.aborted) { editor.viewport.revealOffset(view.getSnapshot().selection.head); editor.focus(); }
         return Object.freeze({ status: "applied" });
     }
-    function makePreview(index: number, title: string, command: string | null, reason: string | null, canApply: boolean): CodeActionPreview {
-        const preview: CodeActionPreview = Object.freeze({ index, title, command, disabled: reason, canApply,
+    function makePreview(index: number, title: string, command: string | null, reason: string | null): CodeActionPreview {
+        const preview: CodeActionPreview = Object.freeze({ index, title, command, disabled: reason, canApply: reason === null,
             readPage: (page = 0) => {
                 const j = job;
                 if (cell.get().preview !== preview || !j || !current(j)) return;
@@ -164,10 +164,10 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
     function present(j: Job, index: number, action: LspCodeAction, applyWhen?: (action: LspCodeAction) => boolean): void {
         if (!j.batch || !current(j)) { expire(j); return; }
         j.selection = action;
-        const reason = disabled(j.batch, action);
-        const preview = makePreview(index, action.title, action.command?.command ?? null, reason, !reason && writableEdit(editor, action.edit));
+        const reason = disabled(j.batch, action) ?? (writableEdit(editor, action.edit) ? null : "This action would edit a read-only or locked file.");
+        const preview = makePreview(index, action.title, action.command?.command ?? null, reason);
         publish({ ...cell.get(), status: "ready", choice: index, preview, message: reason ?? "Review the selected action before confirming." });
-        if (!reason && cell.get().preview === preview && applyWhen?.(action)) preview.confirm();
+        if (preview.canApply && cell.get().preview === preview && applyWhen?.(action)) preview.confirm();
     }
     function choose(id: number, index: number, applyWhen?: (action: LspCodeAction) => boolean): void {
         scope.assertWritable();

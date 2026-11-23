@@ -209,6 +209,13 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await seed(page);
         await button(page, "Add navigation companion").click();
         const before = await snapshot(page), companion = before.bindings.navigation.companion!;
+        await page.evaluate(() => window.hostFixture.setSourceReadOnly(true));
+        await input(page).press("Control+.");
+        const status = page.getByLabel("Code action status", { exact: true });
+        await expect(status).toContainText("read-only or locked");
+        await expect(button(page, "Apply captured action")).toBeDisabled();
+        await expect(edits(page)).toHaveCount(1);
+        await page.evaluate(() => window.hostFixture.setSourceReadOnly(false));
         await preview(page);
         await choices(page).nth(1).click();
         await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion);
@@ -216,6 +223,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await expect(button(page, "Apply captured action")).toBeDisabled();
         await preview(page);
         await choices(page).nth(1).click();
+        await expect(status).toContainText("read-only or locked");
         expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.actions.state.confirm?.())).toEqual({ status: "not-writable" });
         await waitForActions(page);
         await exact(page, raw);
