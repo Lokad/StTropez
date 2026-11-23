@@ -65,6 +65,29 @@ test("configured line indentation and comments preserve reversed selections, bla
     assert.deepEqual(result.result!.selectionSet.ranges, [{ anchor: 0, head: 0, anchorAffinity: "after", headAffinity: "after" }]);
 });
 
+test("line shifts step over visible blocks and keep the caret column, including at document edges", () => {
+    const blocks = ["first", "alpha\ninside", "bravo\ninner\nleaf", "last\ntail"];
+    const buffer = TextBuffer.from(blocks.join("\n")), config = resolveLanguageConfiguration();
+    const offsets = blocks.map((_, i) => blocks.slice(0, i).reduce((sum, block) => sum + block.length + 1, 0));
+    const folds = new FoldIndex(buffer.lineCount, createFoldRegions(buffer, blocks.flatMap((block, i) => block.includes("\n")
+        ? [{ id: String(i), from: offsets[i]!, to: Math.min(buffer.length, offsets[i]! + block.length + 1), collapsed: true }] : [])));
+    for (const command of ["move-line-up", "move-line-down", "copy-line-up", "copy-line-down"] as const) {
+        for (const [i, block] of blocks.entries()) {
+            const at = offsets[i]! + 1, selection = createSelectionSet(buffer.length, [{ anchor: at, head: at }]);
+            const cursor = planLanguageEdit(buffer, selection, command, config, folds);
+            const result = cursor.next(4096).result!; cursor.dispose();
+            const expected = blocks.slice(), delta = command.endsWith("up") ? -1 : 1;
+            let target = i;
+            if (command.startsWith("copy")) { target = delta < 0 ? i : i + 1; expected.splice(target, 0, block); }
+            else if (i + delta >= 0 && i + delta < expected.length) {
+                target = i + delta; expected.splice(i, 1); expected.splice(target, 0, block);
+            }
+            assert.equal(buffer.apply(result.edits).buffer.text(), expected.join("\n"), command);
+            assert.equal(result.selectionSet.ranges[0]!.head, expected.slice(0, target).reduce((sum, line) => sum + line.length + 1, 1), command);
+        }
+    }
+});
+
 test("moving and copying line blocks retains directed selections, mixed endings and final-line boundaries", () => {
     const source = "aa\r\nb\ncc", reversed = selection(6, 4);
     for (const [command, text, anchor, head] of [

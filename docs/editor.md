@@ -434,8 +434,9 @@ Pairing, comments and cancellable non-composing line-break input
 use the same transaction/transform path. Composition and noncancellable input use literal capture.
 
 For headless planning, use `resolveLanguageConfiguration` and `planLanguageEdit`. Pass the
-view’s current fold index as the fifth argument to insert above, insert below or delete a collapsed
-block as one line. Omit it to plan in source lines. A character
+view’s current fold index as the fifth argument for line insertion, deletion, moves and copies.
+Each collapsed block counts as one line. Apply the returned edits to the captured buffer so
+folds can follow a move. Omit the index to plan in source lines. A character
 command can supply `canOvertype(offset)` to identify closers the caller inserted. Without it,
 typing a closer inserts the character. Advance the lazy
 cursor with `next(workBudget?)` or inspect it with `snapshot()`. Frozen progress gives `status`

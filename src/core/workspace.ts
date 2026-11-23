@@ -19,6 +19,7 @@ import type { Observable } from "./observable.ts";
 import { collapseFoldRegions, createFoldRegions, foldingSnapshot, mapFoldRegions, revealFoldRange, revealSelectionFolds } from "./folding.ts";
 import { lineContentEnd } from "./newlines.ts";
 import type { DocumentFolding, FoldingSnapshot, FoldVersion } from "./folding.ts";
+import { plannedLineSwaps, type LineSwap } from "./line-moves.ts";
 import { equalValue, snapshotValue } from "./values.ts";
 import type { Immutable, SnapshotValue } from "./values.ts";
 
@@ -192,6 +193,7 @@ export class Workspace {
     private nextAttachmentId = 0;
     private nextTransaction = 0;
     private readonly history: TextHistory;
+    private readonly lineSwaps = new WeakMap<PositionMapping, readonly LineSwap[]>();
     private readonly scope: NotificationScope;
     private readonly records = new Map<ResourceId, ResourceRecord>();
     private readonly resourceKeys = new Set<string>();
@@ -453,6 +455,10 @@ export class Workspace {
             const before = record.buffer!;
             const result = action ? this.scope.read(() => stageTextTransaction(before, action))
                 : "text" in request ? replaceDocumentBuffer(before, request.text) : before.apply(compactDocumentEdit(before, request.edits));
+            if (!action && "edits" in request && request.edits && result.buffer !== before) {
+                const swaps = plannedLineSwaps(before, request.edits);
+                if (swaps) this.lineSwaps.set(result.mapping, swaps);
+            }
             const afterSelections = request.selectionSet ? createSelectionSet(result.buffer.length, request.selectionSet.ranges, request.selectionSet.primary)
                 : request.selection ? createSelectionSet(result.buffer.length, [request.selection]) : view ? mapSelectionSet(result.mapping, view.state.get().selectionSet) : undefined;
             const text = result.buffer !== before ? this.prepareText(record, result.buffer, result.mapping,
@@ -505,7 +511,12 @@ export class Workspace {
         const prepared = entry.changes.map(change => {
             const participant = this.documents.get(change.documentId as DocumentId)!, forward = change.mapping;
             const selections = new Map(change.selections.map(view => [view.viewId, direction === "undo" ? view.before : view.after]));
-            return this.prepareText(participant, direction === "undo" ? change.before : change.after, direction === "undo" ? forward.invert() : forward,
+            const mapping = direction === "undo" ? forward.invert() : forward;
+            const swaps = this.lineSwaps.get(forward);
+            if (direction === "undo" && swaps) {
+                this.lineSwaps.set(mapping, swaps.map(({ first, middle, end }) => ({ first, middle: first + (end - middle), end })));
+            }
+            return this.prepareText(participant, direction === "undo" ? change.before : change.after, mapping,
                 view => selections.get(view.handle.id));
         });
         this.history.move(entry, direction);
@@ -523,7 +534,7 @@ export class Workspace {
         const state = readySnapshot(adopted ?? { ...current.metadata, dirty: record.savedBuffer === null || !buffer.equals(record.savedBuffer) }, revision, buffer), views = [];
         for (const view of record.views.values()) {
             const selections = selectionFor?.(view) ?? mapSelectionSet(mapping, view.state.get().selectionSet);
-            const priorFolds = view.folds.get(), mapped = mapFoldRegions(buffer, mapping, priorFolds.regions, before);
+            const priorFolds = view.folds.get(), mapped = mapFoldRegions(buffer, mapping, priorFolds.regions, before, this.lineSwaps.get(mapping));
             views.push(this.prepareView(view, record.documentId!, revision, buffer, selections, mapped));
         }
         return { record, buffer, mapping, state, views };

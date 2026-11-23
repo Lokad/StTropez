@@ -6,6 +6,7 @@ import type { Observable } from "./observable.ts";
 import { partitionPoint } from "./bound-search.ts";
 import { appendNestedFold } from "./fold-nesting.ts";
 import { lineContentEnd } from "./newlines.ts";
+import type { LineSwap } from "./line-moves.ts";
 
 /** Host-owned raw anchors include a visible header and at least one complete body row. */
 export type FoldRange = Readonly<{ id: string; from: number; to: number; collapsed?: boolean; group?: string }>;
@@ -72,15 +73,43 @@ export function createFoldRegions(buffer: TextBuffer, ranges: readonly FoldRange
     const result = owned.has(previous) && sameFoldRegions(previous, regions) ? previous : regions.length ? retain(regions) : empty;
     prepareFoldRanges(buffer, result, result); return result;
 }
+function movedFold(buffer: TextBuffer, previous: TextBuffer, r: FoldRegion, swaps: readonly LineSwap[]): FoldRegion | null | undefined {
+    const at = partitionPoint(swaps.length, i => swaps[i]!.first <= r.lineFrom);
+    const swap = swaps[at - 1];
+    if (!swap || r.lineTo > swap.end || r.lineFrom < swap.middle && r.lineTo > swap.middle) return;
+    const shift = r.lineFrom < swap.middle ? swap.end - swap.middle : swap.first - swap.middle;
+    const offset = (value: number, line: number) => {
+        const target = line + shift;
+        const oldEnd = line + 1 < previous.lineCount ? previous.offsetAt(line + 1) : previous.length;
+        const newEnd = target + 1 < buffer.lineCount ? buffer.offsetAt(target + 1) : buffer.length;
+        return value === oldEnd ? newEnd : Math.min(newEnd, buffer.offsetAt(target) + value - previous.offsetAt(line));
+    };
+    // An empty last source row at EOF has no character that can anchor a fold body.
+    return region(buffer, r.id, offset(r.from, r.lineFrom), offset(r.to, r.lineTo - 1), r.collapsed, r.group) ?? null;
+}
+
 /** View metadata follows document mappings. Degenerate/merged headers cease to be folds. */
-export function mapFoldRegions(buffer: TextBuffer, mapping: PositionMapping, regions: readonly FoldRegion[], previous: TextBuffer): readonly FoldRegion[] {
+export function mapFoldRegions(buffer: TextBuffer, mapping: PositionMapping, regions: readonly FoldRegion[], previous: TextBuffer, swaps?: readonly LineSwap[]): readonly FoldRegion[] {
     if (!regions.length) return regions;
     const metadata = owned.get(regions), edges = metadata ? unchangedPositionEdges(mapping) : undefined;
-    if (edges && metadata!.maxTo <= edges.prefix) return regions;
+    if (edges && metadata!.maxTo <= edges.prefix && (!swaps || metadata!.maxLineTo <= swaps[0]!.first)) return regions;
     const suffix = edges ? mapping.oldLength - edges.suffix : Infinity;
     const units = mapping.newLength - mapping.oldLength, lines = buffer.lineCount - previous.lineCount;
     const mapped: FoldRegion[] = [], headers = new Map<number, number>(), stack: FoldRegion[] = [];
+    const reordered: FoldRegion[] | undefined = swaps ? [] : undefined;
+    const append = (next: FoldRegion) => {
+        const existing = headers.get(next.lineFrom);
+        if (existing !== undefined) { mapped[existing] = Object.freeze({ ...mapped[existing]!, collapsed: false }); return; }
+        if (!appendNestedFold(stack, next)) {
+            // Removing a boundary newline can merge formerly disjoint headers.
+            const parent = headers.get(stack.at(-1)!.lineFrom)!;
+            mapped[parent] = Object.freeze({ ...mapped[parent]!, collapsed: false }); return;
+        }
+        headers.set(next.lineFrom, mapped.length); mapped.push(next);
+    };
     for (const r of regions) {
+        const moved = swaps && movedFold(buffer, previous, r, swaps);
+        if (moved !== undefined) { if (moved) reordered!.push(moved); continue; }
         let next: FoldRegion | undefined;
         if (edges && r.to <= edges.prefix) next = r;
         else if (edges && r.from >= suffix) next = units === 0 && lines === 0 ? r
@@ -102,16 +131,9 @@ export function mapFoldRegions(buffer: TextBuffer, mapping: PositionMapping, reg
             }
         }
         if (!next) continue;
-        const existing = headers.get(next.lineFrom);
-        if (existing !== undefined) { mapped[existing] = Object.freeze({ ...mapped[existing]!, collapsed: false }); continue; }
-        if (!appendNestedFold(stack, next)) {
-            // Removing a boundary newline can merge formerly disjoint headers. Do not
-            // publish a crossing projection or keep the merged boundary hidden.
-            const parent = headers.get(stack.at(-1)!.lineFrom)!;
-            mapped[parent] = Object.freeze({ ...mapped[parent]!, collapsed: false }); continue;
-        }
-        headers.set(next.lineFrom, mapped.length); mapped.push(next);
+        if (reordered) reordered.push(next); else append(next);
     }
+    if (reordered) for (const next of reordered.sort((a, b) => a.lineFrom - b.lineFrom || b.lineTo - a.lineTo)) append(next);
     return sameFoldRegions(regions, mapped) ? regions : mapped.length ? retain(mapped) : empty;
 }
 /** Internal state-only change; geometry was validated when the regions were installed. */

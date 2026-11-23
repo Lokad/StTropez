@@ -900,6 +900,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         cancelWord(); syncSelection();
         const capture = commandCapture(true), overtyped: number[] = [];
         const folds = command === "delete-lines" || command === "insert-line-above" || command === "insert-line-below"
+            || command === "move-line-up" || command === "move-line-down" || command === "copy-line-up" || command === "copy-line-down"
             ? view.folding.getSnapshot().index : undefined;
         const opening = typeof command === "object" ? language.pairs.find(pair => pair.open === command.character) : undefined;
         const planner = planLanguageEdit(capture.buffer, capture.selectionSet, typeof command === "string" ? command : {

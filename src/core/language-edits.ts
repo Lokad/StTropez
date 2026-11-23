@@ -1,5 +1,6 @@
 import { lineContentEnd, lineEnding } from "./newlines.ts";
 import { collapsedLineBlock, type FoldIndex } from "./folding.ts";
+import { recordLineMovePlan, type LineSwap } from "./line-moves.ts";
 import { createClosingBracketCursor } from "./bracket-matching.ts";
 import type { EditingPair, PairingContext, ResolvedLanguageConfiguration } from "./language-configuration.ts";
 import type { TextBuffer } from "./text-buffer.ts";
@@ -205,33 +206,39 @@ function* blockText(read: (from: number, to: number) => string, state: MutablePl
 }
 
 function* shiftLines(buffer: TextBuffer, selections: SelectionSet, command: LineShift,
-    read: (from: number, to: number) => string, state: MutablePlanning): Generator<void, SelectionEditPlan> {
+    read: (from: number, to: number) => string, state: MutablePlanning, folds?: FoldIndex): Generator<void, SelectionEditPlan> {
     const copy = command === "copy-line-up" || command === "copy-line-down", up = command.endsWith("-up");
-    const edits: TextEdit[] = [], ranges: Selection[] = [];
+    const edits: TextEdit[] = [], ranges: Selection[] = [], swaps: LineSwap[] = [];
     let delta = 0;
-    for (const group of yield* lineGroups(buffer, selections, true, state)) {
+    for (const group of yield* lineGroups(buffer, selections, true, state, folds)) {
         const start = buffer.offsetAt(group.first), end = lineContentEnd(buffer, group.last);
         const after = group.last + 1 < buffer.lineCount ? buffer.offsetAt(group.last + 1) : end;
         let destination = start + delta, newEnding = after - end;
         if (copy) {
             const body = yield* blockText(read, state, start, end), separator = lineEnding(buffer, group.last);
-            const at = up ? start : end;
-            edits.push({ from: at, to: at, insert: up ? body + separator : separator + body });
-            if (up) newEnding = separator.length; else destination += body.length + separator.length;
+            const beforeNext = !up && after > end && !!collapsedLineBlock(folds, group.last);
+            const at = up ? start : beforeNext ? after : end;
+            edits.push({ from: at, to: at, insert: up || beforeNext ? body + separator : separator + body });
+            if (up) newEnding = separator.length;
+            else destination += body.length + separator.length;
             delta += body.length + separator.length;
         } else if (up && group.first > 0) {
             // Move the neighbouring row around the selection. A million selected lines
             // cost no more buffer reads than one selected line.
-            const before = buffer.offsetAt(group.first - 1), beforeEnd = lineContentEnd(buffer, group.first - 1);
+            const first = collapsedLineBlock(folds, group.first - 1)?.lineFrom ?? group.first - 1;
+            const before = buffer.offsetAt(first), beforeEnd = lineContentEnd(buffer, group.first - 1);
             const neighbour = yield* blockText(read, state, before, beforeEnd);
             edits.push({ from: before, to: start, insert: "" }, { from: end, to: end, insert: read(beforeEnd, start) + neighbour });
             destination = before; newEnding = start - beforeEnd;
+            swaps.push({ first, middle: group.first, end: group.last + 1 });
         } else if (!up && group.last + 1 < buffer.lineCount) {
-            const nextEnd = lineContentEnd(buffer, group.last + 1);
+            const through = collapsedLineBlock(folds, group.last + 1)?.lineTo ?? group.last + 2;
+            const nextEnd = lineContentEnd(buffer, through - 1);
             const neighbour = yield* blockText(read, state, after, nextEnd);
             edits.push({ from: start, to: start, insert: neighbour + read(end, after) }, { from: end, to: nextEnd, insert: "" });
             destination += nextEnd - end;
-            newEnding = group.last + 2 < buffer.lineCount ? buffer.offsetAt(group.last + 2) - nextEnd : 0;
+            newEnding = through < buffer.lineCount ? buffer.offsetAt(through) - nextEnd : 0;
+            swaps.push({ first: group.first, middle: group.last + 1, end: through });
         }
         const offset = (at: number) => {
             if (at <= end) return destination + at - start;
@@ -245,7 +252,9 @@ function* shiftLines(buffer: TextBuffer, selections: SelectionSet, command: Line
         }
     }
     state.phase = "map"; bulk(state, ranges.length);
-    return yield* publish(edits, createSelectionSet(buffer.length + delta, ranges, selections.primary), state);
+    const result = yield* publish(edits, createSelectionSet(buffer.length + delta, ranges, selections.primary), state);
+    recordLineMovePlan(buffer, result.edits, swaps);
+    return result;
 }
 
 function* indent(buffer: TextBuffer, selections: SelectionSet, config: ResolvedLanguageConfiguration,
@@ -351,7 +360,7 @@ function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCom
     if (command === "insert-line-above" || command === "insert-line-below" || command === "delete-lines")
         return yield* insertOrDeleteLines(buffer, selections, command, config, unit, read, state, folds);
     if (command === "move-line-up" || command === "move-line-down" || command === "copy-line-up" || command === "copy-line-down")
-        return yield* shiftLines(buffer, selections, command, read, state);
+        return yield* shiftLines(buffer, selections, command, read, state, folds);
     if (command === "indent") return yield* indent(buffer, selections, config, read, state);
     const commenting = command === "line-comment" || command === "add-line-comment" || command === "remove-line-comment";
     if (command === "outdent" || command === "indent-lines" || commenting) {

@@ -2,6 +2,52 @@ import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 
+test("moving adjacent collapsed blocks carries nested folds, the caret and each pane's fold choices through Undo", async ({ page }) => {
+    await page.goto("/editing/");
+    const top = "one\r\n  inner\n    x\r\n", bottom = "two\n  y\r\n", tail = "tail";
+    await page.evaluate(({ top, bottom, tail }) => {
+        const f = window.editingFixture, end = top.length + bottom.length;
+        f.setText(top + bottom + tail);
+        const ranges = [{ id: "one", from: 0, to: top.length, collapsed: true },
+            { id: "inner", from: top.indexOf("inner"), to: top.length, collapsed: true },
+            { id: "two", from: top.length, to: end, collapsed: true }];
+        f.folds(ranges); f.folds(ranges.map(r => ({ ...r, collapsed: r.id === "inner" })), "secondary");
+        f.select("primary", { anchor: 1, head: 1 }); f.focus("primary");
+    }, { top, bottom, tail }); await ready(page);
+    const state = () => page.evaluate(() => {
+        const f = window.editingFixture;
+        const folds = (pane: "primary" | "secondary") => f.folding(pane).regions.map(r => [r.id, r.lineFrom, r.lineTo, r.collapsed]);
+        return { text: f.range(0, f.snapshot().document!.length), main: folds("primary"), peer: folds("secondary"), head: f.selectionSet().ranges[0]!.head };
+    });
+    const before = await state(), source = input(page);
+    await source.press("Alt+ArrowDown");
+    const moved = await state();
+    expect(moved).toEqual({ text: bottom + top + tail, head: bottom.length + 1,
+        main: [["two", 0, 2, true], ["one", 2, 5, true], ["inner", 3, 5, true]],
+        peer: [["two", 0, 2, false], ["one", 2, 5, false], ["inner", 3, 5, true]] });
+    await page.keyboard.type("X"); await expect(page.locator("#primary .st-viewport-row")).toHaveText(["two", "oXne", "tail"]);
+    await source.press("Control+z"); await source.press("Control+z"); expect(await state()).toEqual(before);
+    await source.press("Control+Shift+z"); expect(await state()).toEqual(moved);
+    await source.press("Alt+ArrowUp"); expect(await state()).toEqual(before);
+});
+
+test("duplicating a collapsed header copies its body and types in the new copy", async ({ page }) => {
+    await page.goto("/editing/");
+    const source = input(page), original = "head\n  body\nend";
+    const contents = () => page.evaluate(() => { const f = window.editingFixture; return f.range(0, f.snapshot().document!.length); });
+    for (const key of ["Alt+Shift+ArrowDown", "Alt+Shift+ArrowUp"]) {
+        await page.evaluate(original => {
+            const f = window.editingFixture; f.setText(original); f.folds([{ id: "body", from: 0, to: 12, collapsed: true }]);
+            f.select("primary", { anchor: 2, head: 2 }); f.focus("primary");
+        }, original); await ready(page);
+        await source.press(key); await page.keyboard.type("X");
+        const down = key.endsWith("Down");
+        expect(await contents()).toBe((down ? "head\n  body\nheXad" : "heXad\n  body\nhead") + "\n  body\nend");
+        await expect(page.locator("#primary .st-fold-button")).toHaveAttribute("aria-expanded", "false");
+        await source.press("Control+z"); await source.press("Control+z"); expect(await contents()).toBe(original);
+    }
+});
+
 test("whole-line gestures select a collapsed block for deletion, including at EOF", async ({ page }) => {
     await page.goto("/editing/");
     const source = input(page), fold = page.locator("#primary .st-fold-button");
