@@ -162,7 +162,7 @@ const plainEditing = !deferredOnly && !lspOnly && !reactOnly;
 const checkTransitions = scenario === "full";
 if (deferredOnly || lspOnly || plainEditing) {
     const harnessName = lspOnly ? "lsp-harness" : plainEditing ? "editing-harness" : "page-lifecycle";
-    const scripts = await Promise.all((lspOnly ? ["scripts/package-lsp.mjs"]
+    const scripts = await Promise.all((lspOnly ? ["scripts/package-lsp.mjs", "tests/helpers/painted-character.ts"]
         : plainEditing ? ["scripts/package-pilot.mjs", "scripts/package-hunk-pilot.mjs", "scripts/host-typing.mjs", "scripts/host-reference-probe.mjs", "scripts/measurement.mjs",
             ...(checkTransitions ? ["scripts/package-transitions.mjs", "scripts/package-react-host.mjs", "scripts/package-host.mjs", "scripts/library-entries.mjs", "scripts/module-specifiers.mjs"] : [])]
         : ["scripts/package-page-lifecycle.mjs", workspaceOnly ? "scripts/package-workspace.mjs" : "scripts/package-activation.mjs", "tests/helpers/latch.ts"])
