@@ -69,7 +69,7 @@ type ToolPanel = Readonly<{ title: string; description?: string; status: { label
     actions: Parameters<typeof renderPanelActions>[1] }>;
 
 /** Plain-host panels share the heading, status and command buttons. Each tool owns its form and results. */
-export function createToolPanel<S, M extends ToolPanel>(host: HTMLElement, state: Observable<S>, describe: (snapshot: S) => M) {
+export function createToolPanel<S, M extends ToolPanel>(host: HTMLElement, state: Observable<S>, describe: (snapshot: S) => M, showStatus = true) {
     const owner = host.ownerDocument, controls = owner.createElement("div"), initial = describe(state.getSnapshot());
     function mount(body: HTMLElement[], render: (model: M) => void, unbind?: () => void) {
         const heading = owner.createElement("h2"), status = owner.createElement("output");
@@ -79,10 +79,11 @@ export function createToolPanel<S, M extends ToolPanel>(host: HTMLElement, state
         if (initial.description) {
             const description = owner.createElement("p"); description.textContent = initial.description; host.append(description);
         }
-        host.append(status, ...body);
+        if (showStatus) host.append(status);
+        host.append(...body);
         const update = () => {
             const model = describe(state.getSnapshot());
-            status.textContent = model.status.text;
+            if (showStatus) status.textContent = model.status.text;
             renderPanelActions(controls, model.actions);
             render(model);
         };

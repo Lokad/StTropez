@@ -26,8 +26,8 @@ export function navigationPanelModel(tools: NavigationPanelTools, state: Navigat
                 invoke: note.open } as const)) },
     } as const;
 }
-export function mountNavigationPanel(host: HTMLElement, tools: HostNavigationTools): () => void {
-    const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => navigationPanelModel(tools, state));
+export function mountNavigationPanel(host: HTMLElement, tools: HostNavigationTools, showStatus = true): () => void {
+    const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => navigationPanelModel(tools, state), showStatus);
     const progress = owner.createElement("progress"), notes = createDestinationList(owner, initial.results), label = owner.createElement("label"), include = owner.createElement("input");
     progress.setAttribute("aria-label", initial.progress.label); include.type = "checkbox"; label.append(include, initial.declarations.label); include.onchange = () => initial.declarations.change(include.checked);
     return mount([progress, notes.element, label, controls], model => {

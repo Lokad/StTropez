@@ -88,6 +88,7 @@ export class HostNavigationTools {
         this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && this.available(this.active),
             connected: !!this.job && this.options.provider.getSnapshot().phase === "ready", disconnected: this.disconnected,
             canCancel: !!this.job, canReturn: this.history.getSnapshot() > 0 });
+        if (patch.message) this.host.report("symbols", patch.message);
     }
     private clear(status: NavigationSnapshot["status"], message: string, successor?: Session): void {
         const job = this.job; this.job = undefined;
@@ -153,6 +154,7 @@ export class HostNavigationTools {
     readonly findDefinition = (): void => this.requestFromPanel("definition");
     readonly findReferences = (): void => this.requestFromPanel("references");
     private start(kind: Kind, keyboard: boolean, pointed?: number): void {
+        const mayFocus = this.host.claimNavigationFocus("symbols");
         if (this.disconnected) { this.publish({ status: "disconnected", message: "Reconnect the navigation provider before requesting results." }); return; }
         const origin = this.active;
         if (!origin || !this.available(origin)) { this.publish({ message: "Focus an available candidate source." }); return; }
@@ -172,7 +174,6 @@ export class HostNavigationTools {
         const targets = captureDestinationPanes(origin, this.sessions.keys(), sources);
         const returnPoint = this.history.capture(origin.editor); if (!returnPoint) { this.cancel(); return; }
         this.clear("idle", "Symbol navigation dismissed.", origin);
-        const mayFocus = this.host.claimNavigationFocus();
         const job: Job = { kind, symbol, origin, returnPoint, sources, targets, timer: 0, page: undefined };
         if (keyboard && origin.editor.getSnapshot().focused) job.mayFocus = mayFocus;
         this.job = job; this.metrics.requested++; const win = origin.editor.element.ownerDocument.defaultView!;
@@ -213,6 +214,7 @@ export class HostNavigationTools {
     private open(job: Job, choice: NavigationChoice, title: string): void {
         try {
             choice.open(at => {
+                this.host.claimNavigationFocus("symbols");
                 if (job.returnPoint.visit(() => this.place(job, at))) this.publish({ message: `Opened a captured ${job.kind} location in ${title}.` });
             });
         } catch (error) {
@@ -223,6 +225,7 @@ export class HostNavigationTools {
         }
     }
     readonly returnToOrigin = (): void => {
+        this.host.claimNavigationFocus("symbols");
         if (this.active && !this.host.canCapture(this.active.editor.view.documentId)) {
             this.publish({ message: "Finish pending input before returning." }); return;
         }

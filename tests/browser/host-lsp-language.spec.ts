@@ -229,7 +229,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await page.keyboard.press("ArrowUp"); await expect(links.getByRole("button").nth(5)).toBeFocused();
         await page.keyboard.press("ArrowDown"); await expect(links.getByRole("button").last()).toBeFocused();
         await page.keyboard.press("Enter"); await settledColorsAndLinks(page); await expect(links.getByRole("button").last()).toBeDisabled();
-        await expect(page.getByLabel("Module link status", { exact: true })).toContainText("No destination for missing-utils");
+        await expect(page.getByLabel("Locations status", { exact: true })).toContainText("No destination for missing-utils");
         expect((await snapshot(page)).bindings.links.opened).toBe(0); await button(page, "Previous module links").click(); await expect(links.getByRole("listitem")).toHaveCount(64);
         await turnAfterRefresh("colors"); await expect(colors.getByRole("listitem")).toHaveCount(6);
         await expect(button(page, "Next document colors")).toBeDisabled(); await colors.getByRole("button").last().click();
@@ -244,7 +244,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         for (const method of ["textDocument/documentLink", "documentLink/resolve", "textDocument/documentColor"]) expect(methods).toContain(method);
         const oversized = line.repeat(1025); await seed(page, oversized, oversized.indexOf("#abc") + 2); const overflow = await snapshot(page);
         await button(page, "Discover module links").click(); await settledColorsAndLinks(page); await expect(links.getByRole("listitem")).toHaveCount(0);
-        expect((await snapshot(page)).bindings.links.state.status).toBe("failed"); await expect(page.getByLabel("Module link status", { exact: true })).toContainText("limit");
+        expect((await snapshot(page)).bindings.links.state.status).toBe("failed"); await expect(page.getByLabel("Locations status", { exact: true })).toContainText("limit");
         await button(page, "Discover document colors").click(); await settledColorsAndLinks(page); await expect(colors.getByRole("listitem")).toHaveCount(0);
         expect((await snapshot(page)).bindings.colors.state.status).toBe("failed"); await expect(page.getByLabel("Document color status", { exact: true })).toContainText("limit");
         expect((await snapshot(page)).bindings.colors.decoratedViews).toBe(0); await exact(page, oversized);
@@ -437,10 +437,10 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await expect(field(page).locator("..").locator('.st-viewport-row[data-line="1"]')).toBeInViewport();
         await button(page, "Discover module links").click(); await expect(list.getByRole("button")).toBeEnabled();
         fault = "outside"; await list.getByRole("button").click(); expect(fault).toBeNull();
-        await expect(page.getByLabel("Module link status", { exact: true })).toContainText("outside the host"); await expect(list.getByRole("button")).toBeDisabled(); expect((await snapshot(page)).bindings.links.opened).toBe(1);
+        await expect(page.getByLabel("Locations status", { exact: true })).toContainText("outside the host"); await expect(list.getByRole("button")).toBeDisabled(); expect((await snapshot(page)).bindings.links.opened).toBe(1);
         await button(page, "Discover module links").click(); await expect(list.getByRole("button")).toBeEnabled();
         fault = "malformed"; await list.getByRole("button").click();
-        await expect(page.getByLabel("Module link status", { exact: true })).toContainText("range or identity");
+        await expect(page.getByLabel("Locations status", { exact: true })).toContainText("range or identity");
         expect((await snapshot(page)).bindings.links.state.status).toBe("failed");
         for (const destination of ["escape", "form", "heading", "back-to-list"]) {
             await field(page).focus(); await button(page, "Discover module links").click(); await expect(list.getByRole("button")).toBeEnabled();
@@ -487,7 +487,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
             return busy;
         });
         expect(pending).toBe(true);
-        await expect(page.getByLabel("Module link status", { exact: true })).toContainText("pending input");
+        await expect(page.getByLabel("Locations status", { exact: true })).toContainText("pending input");
         await expect(secondary).toBeFocused();
         await expect.poll(async () => (await snapshot(page)).bindings.tablePaste.status).toBe("applied");
         expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, occupant)).toMatch(/"one","two"$/);
@@ -507,7 +507,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
             (node as HTMLButtonElement).click();
         });
         await expect(secondary).toBeFocused();
-        await expect(page.getByLabel("Module link status", { exact: true })).toContainText("pending input");
+        await expect(page.getByLabel("Locations status", { exact: true })).toContainText("pending input");
         await expect.poll(async () => (await snapshot(page)).bindings.tablePaste.status).toBe("applied");
         await secondary.press("Shift+F4"); await expect(field(page)).toBeFocused(); await exact(page, raw);
         expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, before.bindings.links.companion!)).toContain(' // edited"three","four"');

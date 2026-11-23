@@ -144,7 +144,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await page.reload();
         const text = 'import "sample-utils";\r\nimport "missing-utils";\r\ncatalogue;';
         await seed(page, text, text.length); await button(page, "Add module companion").click();
-        const source = field(page), editor = source.locator(".."), status = page.getByLabel("Module link status", { exact: true });
+        const source = field(page), editor = source.locator(".."), status = page.getByLabel("Locations status", { exact: true });
         await source.focus();
         const clickPath = async (line: number, module: string) => {
             const row = editor.locator(`.st-viewport-row[data-line="${line}"]`);
@@ -165,6 +165,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await expect(field(page, "Secondary source")).toBeFocused();
         await button(page, "Return to link origin").click(); await expect(source).toBeFocused();
         await clickPath(1, "missing-utils"); await expect(status).toContainText("No destination for missing-utils");
+        await expect(status).toBeInViewport(); await expect(source).toBeFocused();
         expect(methods.filter(method => method === "textDocument/documentLink")).toHaveLength(1);
         expect(methods).not.toContain("textDocument/definition");
         expect((await snapshot(page)).bindings.links.opened).toBe(1);
@@ -188,11 +189,12 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await source.press("F4");
         await expect.poll(links.waiting).toBe(true);
         await source.press("F12");
-        await expect(page.getByLabel("Symbol navigation status", { exact: true })).toContainText("0 definition locations");
+        await expect(page.getByLabel("Locations status", { exact: true })).toContainText("0 definition locations");
         await expect(source).toBeFocused();
         await links.release();
         const row = page.getByLabel("Module link results", { exact: true }).getByRole("button");
         await expect(row).toHaveCount(1);
+        await expect(page.getByLabel("Locations status", { exact: true })).toContainText("0 definition locations");
         await expect(source).toBeFocused();
         await row.click();
         await expect(field(page, "Secondary source")).toBeFocused();
@@ -211,9 +213,12 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await expect.poll(definitions.waiting).toBe(true);
         await source.press("F4");
         await expect.poll(async () => (await snapshot(page)).bindings.links.state.status).toBe("failed");
+        const status = page.getByLabel("Locations status", { exact: true }), failure = (await snapshot(page)).bindings.links.state.message;
+        await expect(status).toHaveText(failure);
         await definitions.release();
         const row = results(page).filter({ hasText: "Navigation companion:" });
         await expect(row).toBeVisible();
+        await expect(status).toHaveText(failure);
         await expect(source).toBeFocused();
         await expect(button(page, "Return to navigation origin")).toBeDisabled();
         await row.click();
@@ -346,7 +351,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await seed(page, text, symbol);
         await button(page, "Add module companion").click();
         const primary = field(page), secondary = field(page, "Secondary source");
-        await primary.press("F12"); await expect(page.getByLabel("Symbol navigation status", { exact: true })).toContainText("Opened");
+        await primary.press("F12"); await expect(page.getByLabel("Locations status", { exact: true })).toContainText("Opened");
         await select(page, path); await primary.press("F12"); await expect(secondary).toBeFocused();
         await secondary.press("End"); await page.keyboard.insertText(" // edited");
         const back = button(page, "Return to navigation origin");
@@ -372,7 +377,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
     if (coversHost("candidate-hosts", host, "candidate")) test("malformed navigation, changed authority and pending remount cannot publish stale targets", async ({ page, browserName, browserErrors }) => {
         const replies = await holdLspReplies(page, "textDocument/definition"); await page.reload();
         const text = "const target = 1;\r\ntarget"; await seed(page, text, text.length - 2); const before = await snapshot(page);
-        await page.evaluate(() => window.hostFixture.faultNavigationNext("malformed")); await field(page).press("F12"); await expect(page.getByLabel("Symbol navigation status", { exact: true })).toContainText("unavailable"); await expect(results(page)).toHaveCount(0); await expect(field(page)).toBeFocused();
+        await page.evaluate(() => window.hostFixture.faultNavigationNext("malformed")); await field(page).press("F12"); await expect(page.getByLabel("Locations status", { exact: true })).toContainText("unavailable"); await expect(results(page)).toHaveCount(0); await expect(field(page)).toBeFocused();
         await button(page, "Find definition").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(1); await page.evaluate(() => window.hostFixture.setSourceReadOnly(true)); await expect(results(page)).toHaveCount(0); await page.evaluate(() => window.hostFixture.setSourceReadOnly(false));
         replies.hold(); await field(page).press("F12"); await expect.poll(replies.waiting).toBe(true); await expect.poll(async () => (await snapshot(page)).bindings.navigation.pending).toBe(true);
         await field(page).press("ArrowLeft"); await expect.poll(replies.cancelled).toBe(true); await replies.release(); await waitForNavigation(page); await expect(results(page)).toHaveCount(0);

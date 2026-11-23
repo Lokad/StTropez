@@ -65,6 +65,9 @@ function Status() {
     const model = operationStatusModel(useObserved(controller.activity), useObserved(controller.source.metadata));
     return <output aria-label={model.label}>{model.text}</output>;
 }
+function LocationStatus() {
+    return <output aria-label="Locations status">{useObserved(bindings.locationStatus)}</output>;
+}
 function SourceMetadata() {
     const metadata = useObserved(controller.source.metadata);
     return <p>{metadata.title} · {metadata.dirty ? "Unsaved" : "Saved"}</p>;
@@ -187,7 +190,7 @@ function TablePasteTools() {
 }
 function App() {
     return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview />
-        <div className="host-locations" role="region" aria-label="Locations"><NavigationTools /><DocumentLinksTools /></div>
+        <div className="host-locations" role="region" aria-label="Locations"><LocationStatus /><NavigationTools /><DocumentLinksTools /></div>
         <ConfigurationSavePanel /><TransferWorkspace /><DraftRecovery /><LanguageTools /><TablePasteTools /><DomainTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentColorsTools /><SignatureTools /><SymbolInfo /></>;
 }
 const EditNoteList = memo(function EditNoteList({ label, page, notes }: EditNotes) {
@@ -210,7 +213,6 @@ function DocumentColorsTools() {
 function DocumentLinksTools() {
     const tools = bindings.links, model = documentLinksPanelModel(tools, useObserved(tools.state));
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
-        <output aria-label={model.status.label}>{model.status.text}</output>
         <Destinations results={model.results} />
         <PanelControls actions={model.actions} /></section>;
 }
@@ -245,7 +247,6 @@ function ProjectTools() {
 function NavigationTools() {
     const tools = bindings.navigation, model = navigationPanelModel(tools, useObserved(tools.state));
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2>
-        <output aria-label={model.status.label}>{model.status.text}</output>
         <progress aria-label={model.progress.label} hidden={model.progress.hidden} />
         <Destinations results={model.results} />
         <label><input type="checkbox" checked={model.declarations.checked} onChange={event => model.declarations.change(event.currentTarget.checked)} />{model.declarations.label}</label>

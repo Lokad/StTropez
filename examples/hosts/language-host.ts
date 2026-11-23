@@ -16,6 +16,12 @@ export type LanguageHost = Readonly<{
 /** A later destination request owns focus even if its result is empty or fails. */
 export function createNavigationHost(host: LanguageHost) {
     let latest = 0;
+    type Kind = "symbols" | "modules";
+    let active: Kind = "symbols";
+    const status = new HostCell("Focus a source to look up a symbol or module.");
+    function report(kind: Kind, message: string) {
+        if (kind === active && status.get() !== message) status.set(message);
+    }
     const history = createNavigationHistory(host.workspace);
     // The link panel has a targeted Return. Track opaque visit identities so it never pops a newer symbol jump.
     const visits = new HostCell<readonly symbol[]>([]);
@@ -48,7 +54,8 @@ export function createNavigationHost(host: LanguageHost) {
         return result;
     }
     return { ...host, history: { capture, getSnapshot: history.getSnapshot, subscribe: visits.observable.subscribe,
-        dispose() { history.dispose(); visits.set([]); } }, back, claimNavigationFocus() {
+        dispose() { history.dispose(); visits.set([]); } }, back, locationStatus: status.observable, report, claimNavigationFocus(kind: Kind) {
+        active = kind;
         const request = ++latest;
         return () => request === latest;
     } };
