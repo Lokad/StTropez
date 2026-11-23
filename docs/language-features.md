@@ -696,16 +696,18 @@ Use `review.notes` to display the proposed edits. Each note gives the captured r
 the first 256 UTF-16 units of the insertion and its full length in `insertUnits`.
 `review.edits` contains the complete replacements used by Apply.
 
-Call `dismissPreview()` when the picker value changes. Dismissing a pending provider call ends
-discovery. You can reuse a completed list after dismissing its review or moving the caret.
+Call `dismissPreview()` when the picker value changes. It cancels the pending presentation
+and clears its Apply action. The same color list can preview the new value immediately.
 Changing the selected format, source, selection, folds or edit permission invalidates the old
 Apply action. Read-only sources allow review. A successful Apply preserves relative carets inside
 replaced literals and groups all edits into one Undo. Matching text preserves revision and history.
 
 `createLspColorClient(provider).run({ document }).result` resolves to `{ items, isCurrent, presentations }`.
 `decodeLspDocumentColors` validates every range and RGBA value. `decodeLspColor` requires finite
-channels in `[0, 1]`. `presentations(item, rgba, prepare?)` requires an item from the captured list
-and returns validated choices for that same source.
+channels in `[0, 1]`. `presentations(item, rgba, prepare?, onCancel?)` requires an item from the
+captured list and returns validated choices for that source. Supply `onCancel` to register a
+cancellation listener for this presentation and return an unsubscribe function. Cancelling the
+presentation leaves the list usable while `isCurrent()` holds.
 
 `decodeLspColorPresentations` validates complete primary/additional edit plans. A missing primary
 edit uses the literal presentation label at the captured color range. An invalid final choice,

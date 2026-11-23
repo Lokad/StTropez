@@ -2,7 +2,7 @@ import { rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError } 
 import type { Observable } from "../core/observable.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
 import type { JsonValue } from "./wire.ts";
-import type { LspCall, LspDocument, LspDocumentCapture, LspDocumentFeature, LspDocumentSnapshot } from "./lsp-session.ts";
+import type { LspCall, LspConnectContext, LspDocument, LspDocumentCapture, LspDocumentFeature, LspDocumentSnapshot } from "./lsp-session.ts";
 import { sameDocument, type LspPrepare, type LspWorkspace, type LspWorkspaceScope, type LspWorkspaceSnapshot } from "./lsp-workspace.ts";
 import { createLspTargets } from "./lsp-targets.ts";
 import type { LspTargetContext } from "./lsp-targets.ts";
@@ -71,13 +71,13 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
         // Validation must not rebind a captured project or miss unflushed Workspace edits.
         for (const [document, snapshot] of request.identities) if (!scope.isDocumentCurrent(document, snapshot)) throw stale();
     };
-    const wait = async <T>(request: Request, work: () => Promise<T>) => {
+    const wait = async <T>(request: Request, work: () => Promise<T>, interrupted?: () => boolean) => {
         guard(request);
         request.pending++;
         queueNotify();
         try { return await Promise.race([work(), request.cancellation]); }
         catch (error) {
-            if (current(request)) invalidate(true, error);
+            if (current(request) && !interrupted?.()) invalidate(true, error);
             throw error;
         }
         finally { request.pending--; if (current(request)) notify(); }
@@ -133,20 +133,32 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
                     throw error;
                 }
             },
-            follow: (feature: LspDocumentFeature, wireMethod: string, values: JsonValue, prepareFollow?: LspPrepare) => wait(op, async () => {
-                if (!isCurrent()) throw stale();
-                if (prepareFollow) await prepareFollow(scope);
-                validate(op);
-                if (!isCurrent()) throw stale();
-                if (!scope.canRequest(feature, target)) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable.");
-                const body = { ...values as Record<string, JsonValue> };
-                delete body.textDocument;
-                const next = feature === wireMethod ? scope.requestDocument(feature, target, () => { validate(op); return body; }) : scope.request(wireMethod, values);
-                const result = await next.result;
-                validate(op);
-                if (!isCurrent()) throw stale();
-                return result;
-            }) });
+            follow: (feature: LspDocumentFeature, wireMethod: string, values: JsonValue, prepareFollow?: LspPrepare, onCancel?: LspConnectContext["onCancel"]) => {
+                let interrupted = false, next: LspCall<JsonValue> | undefined, unsubscribe: (() => void) | undefined;
+                const check = () => {
+                    if (interrupted) throw cancelled();
+                    validate(op);
+                    if (!isCurrent()) throw stale();
+                };
+                const send = async () => {
+                    check();
+                    if (prepareFollow) { await prepareFollow(scope); check(); }
+                    if (!scope.canRequest(feature, target)) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable.");
+                    const body = { ...values as Record<string, JsonValue> };
+                    delete body.textDocument;
+                    next = feature === wireMethod ? scope.requestDocument(feature, target, () => { check(); return body; }) : scope.request(wireMethod, values);
+                    const result = await next.result;
+                    check();
+                    return result;
+                };
+                return wait(op, () => {
+                    if (!onCancel) return send();
+                    return new Promise<JsonValue>((resolve, reject) => {
+                        unsubscribe = onCancel(() => { interrupted = true; reject(cancelled()); next?.cancel(); });
+                        if (!interrupted) void send().then(resolve, reject);
+                    });
+                }, () => interrupted).finally(() => unsubscribe?.());
+            } });
     }
     function request<T>(input: LspProjectRequest, method: LspDocumentFeature, params: Params,
         read: (response: Awaited<ReturnType<typeof receive>>) => T | Promise<T>, wireMethod?: "completionItem/resolve" | "codeAction/resolve"): LspCall<T> {

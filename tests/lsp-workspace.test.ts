@@ -151,6 +151,17 @@ test("selected language clients share one binding and decode their independent r
 test("cancelling a lazy color presentation leaves independent language results current", async t => {
     const { peer, signature, links, colors, rgba, doc } = await languageFixture(t);
     const [help, linkBatch, colorBatch] = await Promise.all([signature.run({ document: doc, offset: 1 }).result, links.run({ document: doc }).result, colors.run({ document: doc }).result]);
+    const preparing = latch<void>(), resume = latch<void>(), picker = new AbortController();
+    const replaced = colorBatch.presentations(colorBatch.items[0]!, rgba, async () => { preparing.resolve(); await resume.promise; }, cancel => {
+        picker.signal.addEventListener("abort", cancel);
+        return () => picker.signal.removeEventListener("abort", cancel);
+    });
+    const dismissed = assert.rejects(replaced, error => error instanceof RpcError && error.code === -32800);
+    await preparing.promise; picker.abort(); await dismissed;
+    assert.equal(colors.isBusy(), false); assert.equal(colorBatch.isCurrent(), true);
+    assert.equal((await colorBatch.presentations(colorBatch.items[0]!, rgba))[0]!.label, "red");
+    resume.resolve(); await settled();
+    assert.equal(peer.sent.filter(method => method === "textDocument/colorPresentation").length, 1);
     const entered = latch<void>(), late = latch<unknown>(); t.after(() => late.resolve([]));
     peer.rpc.onRequest("textDocument/colorPresentation", () => { entered.resolve(); return late.promise; });
     const pending = colorBatch.presentations(colorBatch.items[0]!, rgba);

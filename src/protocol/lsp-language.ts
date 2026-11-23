@@ -4,6 +4,7 @@ import type { JsonValue } from "./wire.ts";
 import { decodeLspColor, decodeLspColorPresentations, decodeLspDocumentColors, decodeLspDocumentLinks, decodeLspResolvedDocumentLink, decodeLspSignatureHelp } from "./lsp-features.ts";
 import type { LspColorPresentation, LspSignatureHelp, LspColor, LspDocumentColor, LspDocumentLink, LspSignature } from "./lsp-features.ts";
 import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
+import type { LspConnectContext } from "./lsp-session.ts";
 
 export type LspSignatureContext = Readonly<{ triggerKind: 1 | 2 | 3; triggerCharacter?: string; isRetrigger: boolean; activeSignatureHelp?: JsonValue }>;
 export type LspSignatureRequest = LspPositionRequest & Readonly<{ context?: LspSignatureContext }>;
@@ -15,7 +16,7 @@ export type LspLinkClient = LspFeatureClient<"textDocument/documentLink", LspDoc
 }>>;
 export type LspColorClient = LspFeatureClient<"textDocument/documentColor" | "textDocument/colorPresentation", LspDocumentRequest, Readonly<{
     items: readonly LspDocumentColor[]; isCurrent: () => boolean;
-    presentations: (item: LspDocumentColor, color: LspColor, prepare?: LspPrepare) => Promise<readonly LspColorPresentation[]>;
+    presentations: (item: LspDocumentColor, color: LspColor, prepare?: LspPrepare, onCancel?: LspConnectContext["onCancel"]) => Promise<readonly LspColorPresentation[]>;
 }>>;
 
 export function createLspSignatureClient(provider: LspWorkspace): LspSignatureClient {
@@ -77,10 +78,10 @@ export function createLspColorClient(provider: LspWorkspace): LspColorClient {
         run: (request: LspDocumentRequest) => lane.request(request, "textDocument/documentColor", () => ({}), result => {
             const { capture, isCurrent } = result;
             const items = result.decode(() => decodeLspDocumentColors(result.response, capture));
-            return Object.freeze({ items, isCurrent, presentations: async (item: LspDocumentColor, color: LspColor, preparePresentation?: LspPrepare) => {
+            return Object.freeze({ items, isCurrent, presentations: async (item: LspDocumentColor, color: LspColor, preparePresentation?: LspPrepare, onCancel?: LspConnectContext["onCancel"]) => {
                 if (!items.includes(item)) throw new TypeError("Choose a captured document color.");
                 const value = await result.follow("textDocument/colorPresentation", "textDocument/colorPresentation", {
-                    textDocument: { uri: capture.document.uri }, color: decodeLspColor(color), range: { start: capture.index.at(item.from), end: capture.index.at(item.to) } }, preparePresentation);
+                    textDocument: { uri: capture.document.uri }, color: decodeLspColor(color), range: { start: capture.index.at(item.from), end: capture.index.at(item.to) } }, preparePresentation, onCancel);
                 return result.decode(() => decodeLspColorPresentations(value, item, capture));
             } });
         }) });

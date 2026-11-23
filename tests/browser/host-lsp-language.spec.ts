@@ -354,7 +354,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await discover(); await proposed.fill("#112233"); replies.hold();
         await button(page, "Preview color presentations").click();
         await expect.poll(replies.waiting).toBe(true);
-        const captured = (await snapshot(page)).bindings.colors.state;
+        const { state: captured, requested } = (await snapshot(page)).bindings.colors;
         expect(captured.pending).toBe(true); expect(captured.apply).toBeNull();
         if (mode === "selection") await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 17, head: 17 }]); });
         else if (mode === "value") { await proposed.press("Home"); await proposed.press("ArrowRight"); await page.keyboard.type("ff"); await expect(proposed).toHaveValue("#ff112233"); }
@@ -364,15 +364,27 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await settledColorsAndLinks(page);
         await expect.poll(replies.cancelled).toBe(true);
         const invalidated = await snapshot(page);
+        if (mode === "value") {
+            expect(invalidated.bindings.colors.state).toMatchObject({ canPreview: true, canApply: false, choices: [], count: captured.count, selected: captured.selected });
+            await proposed.press("Enter");
+            await expect(apply).toBeEnabled();
+        }
         await replies.release();
         expect(await retired.evaluate(apply => apply())).toEqual({ applied: false, reason: "expired" }); await retired.dispose();
         await settledColorsAndLinks(page);
         const after = await snapshot(page);
-        expect(after.bindings.colors.state).toMatchObject({ pending: false, canApply: false, choices: [] });
+        if (mode === "value") {
+            expect(after.bindings.colors.state).toMatchObject({ pending: false, canApply: true, value: "#ff112233" });
+            expect(after.bindings.colors.requested).toBe(requested);
+        } else expect(after.bindings.colors.state).toMatchObject({ pending: false, canApply: false, choices: [] });
         expect(after.bindings.colors.applied).toBe(0);
         expect(after.history).toEqual(invalidated.history);
         expect(after.bindings.views.map(view => view.selectionSet)).toEqual(invalidated.bindings.views.map(view => view.selectionSet));
         await exact(page, current);
+        if (mode === "value") {
+            await apply.click(); await exact(page, current.replace("#abc", "#ff112233"));
+            await field(page).press("Control+z"); await exact(page, current);
+        }
         expect((await snapshot(page)).source.exports).toBe(0);
         await disposeColorsAndLinks(page);
     });

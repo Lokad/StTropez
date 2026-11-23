@@ -81,9 +81,9 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
         scope.assertWritable();
         const j = job, p = j?.preview;
         if (!j || !p) return;
-        // A pending follow-up uses the discovery lane. Disposing it cancels the wire request.
-        if (!p.result) { release(); publish("expired"); return; }
-        delete j.preview; p.capture.cancel(); publish("ready", { colors: state.get().colors });
+        delete j.preview; win.clearTimeout(j.timer); p.capture.cancel();
+        if (current(j)) publish("ready", { colors: state.get().colors });
+        else expire(j);
     }
     function apply(review: ColorPresentationReview): ReviewEditResult {
         scope.assertWritable();
@@ -120,7 +120,7 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
     async function preview(reference: DocumentColorChoice, index: number, value: LspColor) {
         scope.assertWritable();
         const j = job, { colors } = state.get();
-        if (!j?.reply || colors[index] !== reference || !current(j) || j.preview && !j.preview.result) return;
+        if (!j?.reply || colors[index] !== reference || !current(j)) return;
         const proposed = decodeLspColor(value);
         dismissPreview();
         const source = capture();
@@ -131,7 +131,11 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
         }, { once: true });
         try {
             startTimer(j); publish("previewing", { colors });
-            p.result = await j.reply.presentations(j.reply.items[index]!, proposed, options.prepareRequest?.("presentation"));
+            p.result = await j.reply.presentations(j.reply.items[index]!, proposed, options.prepareRequest?.("presentation"), cancel => {
+                if (source.signal.aborted) cancel();
+                else source.signal.addEventListener("abort", cancel, { once: true });
+                return () => source.signal.removeEventListener("abort", cancel);
+            });
             if (job !== j || j.preview !== p || j.invalid) return;
             if (!current(j)) { expire(j); return; }
             if (!source.isCurrent()) { dismissPreview(); return; }
@@ -139,7 +143,7 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
             const choices = Object.freeze(p.result.map(presentation));
             if (choices.length) select(choices[0]!, 0, choices);
             else publish("review", { colors });
-        } catch (error) { fail(j, error); }
+        } catch (error) { if (j.preview === p && source.isCurrent()) fail(j, error); }
     }
     function reference(raw: LspDocumentColor, index: number, revision: number): DocumentColorChoice {
         const item: DocumentColorChoice = Object.freeze({ ...raw, revision, preview: color => preview(item, index, color) }); return item;

@@ -27,7 +27,8 @@ export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspa
         links: { provider: connection, prepare: (aliases, policy) => session =>
             connection.prepareRequest(session, "textDocument/documentLink", { aliases: [...aliases], ...policy }) },
         colors: { provider: connection, prepare: (kind, policy) => session =>
-            connection.prepareRequest(session, kind === "discovery" ? "textDocument/documentColor" : "textDocument/colorPresentation", policy) },
+            connection.prepareRequest(session, kind === "discovery" ? "textDocument/documentColor" : "textDocument/colorPresentation", policy,
+                { replacePending: kind === "presentation" }) },
         provider: (editor, options) => createLspProviderController(editor, { ...options, provider: connection,
             beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/completion", configuration, { replacePending: true }) }),
         hover: { provider: connection, beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/hover", configuration) },
