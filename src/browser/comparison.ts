@@ -132,23 +132,34 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     const scroll = createComparisonScroll(win, pair, controller.getSnapshot, () => {
         return !busy(working) && !busy(referenceEditor()) && !alignment.snapshot().pending;
     });
-    let active = working;
+    let lastFocused: TextEditor | undefined;
+    const activePane = () => lastFocused ?? working;
     function caretPosition(comparison: ComparisonSnapshot, pane: TextEditor) {
         const side = pane === working ? "working" : "baseline";
         const { head, anchor } = pane.view.getSnapshot().selection;
         const next = partitionPoint(comparison.hunks.length, i => comparison.hunks[i]![side].from <= head);
+        const buffer = comparison[side]?.buffer;
+        if (!buffer || head > buffer.length) return { next, selected: null };
         const range = comparison.hunks[next - 1]?.[side];
-        // A selected hunk ends at its exclusive boundary. A collapsed caret there is between changes.
-        const selected = range && (head < range.to || head === range.to && (head === range.from || anchor === range.from))
-            ? next - 1 : null;
-        return { next, selected };
+        if (range && (head < range.to || head === range.to && (head === range.from || anchor === range.from)))
+            return { next, selected: next - 1 };
+        // Opening a comparison leaves Next at the first change until the user places a caret.
+        if (lastFocused || head !== 0 || anchor !== 0) {
+            const line = buffer.lineAt(head > anchor ? head - 1 : head);
+            for (const index of [next - 1, next]) {
+                const candidate = comparison.hunks[index]?.[side];
+                if (candidate && candidate.lineFrom <= line && line < candidate.lineTo)
+                    return { next: index + 1, selected: index };
+            }
+        }
+        return { next, selected: null };
     }
     const stateScope = workspace.createNotificationScope(), stateStore = new Store(captureState(), stateScope);
     let stopControls: (() => void) | undefined;
     function captureState(): TextComparisonSnapshot {
         const comparison = controller.getSnapshot(), ready = !disposed && comparison.status === "ready";
         const canNavigate = ready && comparison.hunks.length > 0 && !!referenceViewport() && epoch === comparison.baseline?.epoch && !composing();
-        const selectedHunk = ready && epoch === comparison.baseline?.epoch && comparison.hunks.length ? caretPosition(comparison, active).selected : null;
+        const selectedHunk = ready && epoch === comparison.baseline?.epoch && comparison.hunks.length ? caretPosition(comparison, activePane()).selected : null;
         const metadata = comparison.working ? workspace.resource(comparison.working.resourceId).metadata.getSnapshot() : undefined;
         const access = working.getSnapshot();
         const canRevert = canNavigate && selectedHunk !== null && access.readOnlyReason === null && !access.disabled
@@ -234,7 +245,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         const index = direction === 1 ? next % count : ((selected ?? next) + count - 1) % count;
         return selectHunk(current.comparison.generation, index);
     }
-    const navigateHunk = (direction: -1 | 1) => navigateFrom(active, direction);
+    const navigateHunk = (direction: -1 | 1) => navigateFrom(activePane(), direction);
     function revertSelectedHunk(shown = stateStore.get()): boolean {
         stateScope.assertWritable();
         const current = stateStore.get();
@@ -275,16 +286,16 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         if (!reference) throw new Error("Comparison reference expired during mount.");
         const editors = Object.freeze({ working, reference });
         for (const editor of Object.values(editors)) {
-            const stop = editor.view.subscribe(() => { if (active === editor && !disposed) publishState(); });
+            const stop = editor.view.subscribe(() => { if (activePane() === editor && !disposed) publishState(); });
             editor.signal.addEventListener("abort", stop, { once: true });
-            editor.element.addEventListener("focusin", () => { active = editor; publishState(); }, { signal: editor.signal });
+            editor.element.addEventListener("focusin", () => { lastFocused = editor; publishState(); }, { signal: editor.signal });
             for (const [id, label, key, direction] of [
                 ["comparison.nextChange", "Next change", "F7", 1],
                 ["comparison.previousChange", "Previous change", "Shift+F7", -1],
             ] as const) editor.commands.register({ id, label, enabled: () => stateStore.get().canNavigate,
                 run: () => navigateFrom(editor, direction) }, { keys: [key] });
         }
-        const review: TextComparison = Object.freeze({ element: root, controller, panes: editors, activePane: () => active, ...stateStore.observable, navigateHunk, revertSelectedHunk, hunkAt, setScrollLinked, setRowsAligned,
+        const review: TextComparison = Object.freeze({ element: root, controller, panes: editors, activePane, ...stateStore.observable, navigateHunk, revertSelectedHunk, hunkAt, setScrollLinked, setRowsAligned,
             getDiagnostics: () => Object.freeze({ generation: measuredGeneration, steps, advances, maxStepMs, totalStepMs, scrollLinked: scroll.snapshot().linked, pendingScroll: scroll.snapshot().pending, rowsAligned: alignment.snapshot().enabled, alignment: alignment.snapshot(), disposed }), dispose });
         if (options.controls !== false) stopControls = mountComparisonControls(review, referencePane.section, workingPane.section);
         schedule();

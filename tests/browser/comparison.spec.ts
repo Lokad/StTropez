@@ -34,12 +34,13 @@ for (const custom of [false, true]) test(`${custom ? "host" : "built-in"} review
     const restore = button(custom ? "Restore selected change" : "Use baseline");
     const status = page.locator(custom ? "#review-controls output" : ".st-comparison-controls output");
     const rows = (side: "working" | "baseline") => page.locator(".st-comparison-line-" + side);
-    await rows("working").nth(1).click({ position: { x: 6, y: 8 } });
+    await rows("working").nth(1).click({ position: { x: 6, y: 8 } }); await working.press("End");
     await expect(working).toBeFocused(); await expect(status).toContainText(/change 2 of 3/i); await expect(restore).toBeEnabled();
+    await working.press("Control+l"); await expect(status).toContainText(/change 2 of 3/i);
     await next.click(); await expect(status).toContainText(/change 3 of 3/i);
     await next.click(); await expect(status).toContainText(/change 1 of 3/i);
     await previous.click(); await expect(status).toContainText(/change 3 of 3/i);
-    await rows("baseline").nth(1).click({ position: { x: 6, y: 8 } });
+    await rows("baseline").nth(1).click({ position: { x: 6, y: 8 } }); await reference.press("End");
     await expect(reference).toBeFocused(); await expect(status).toContainText(/change 2 of 3/i);
     const rect = await restore.boundingBox(); await page.mouse.move(rect!.x + rect!.width / 2, rect!.y + rect!.height / 2);
     await page.mouse.down();
@@ -146,6 +147,10 @@ test("a one-sided change marks the empty range without tinting its unchanged nei
         await page.evaluate(text => window.comparisonFixture.setText(text), working); await ready(page);
         const empty = insert ? sections.first() : sections.last(), changed = insert ? sections.last() : sections.first();
         const row = empty.locator('.st-viewport-row[data-line="1"]');
+        await row.click(); await empty.getByRole("textbox").press("Home");
+        const restore = page.getByRole("button", { name: "Use baseline", exact: true });
+        await expect(restore).toBeEnabled();
+        await empty.getByRole("textbox").press("ArrowRight"); await expect(restore).toBeDisabled();
         for (const aligned of [true, false]) {
             await page.getByRole("checkbox", { name: "Align review rows" }).setChecked(aligned); await ready(page);
             await expect(row).toHaveText(insert ? "middle" : "last");
@@ -271,7 +276,7 @@ test("a stale selected hunk cannot retarget after typing, and permissions gate r
     const captured = await page.evaluateHandle(() => { const f = window.comparisonFixture, hunk = f.review.hunkAt(0)!; hunk.select(); f.focus(); return hunk; });
     await page.keyboard.type("new"); await ready(page);
     expect(await captured.evaluate(hunk => hunk.revert())).toBe(false);
-    await expect(page.getByRole("button", { name: "Use baseline", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Use baseline", exact: true })).toBeEnabled();
     await page.getByRole("button", { name: "Next change", exact: true }).click();
     await page.evaluate(() => window.comparisonFixture.readOnly(true));
     await expect(page.getByRole("button", { name: "Use baseline", exact: true })).toBeDisabled();
@@ -310,8 +315,8 @@ test("custom host controls observe captured selection, alignment, authority and 
     await page.evaluate(() => window.comparisonFixture.focus());
     await page.keyboard.type("replacement"); await ready(page);
     expect(await selected.evaluate(hunk => hunk.revert())).toBe(false);
-    expect(await page.evaluate(() => window.comparisonFixture.review.getSnapshot().selectedHunk)).toBeNull();
-    await expect(restore).toBeDisabled();
+    expect(await page.evaluate(() => window.comparisonFixture.review.getSnapshot().selectedHunk)).toBe(0);
+    await expect(restore).toBeEnabled();
     await later.click();
     const beforeRefresh = await page.evaluateHandle(() => window.comparisonFixture.review.hunkAt(0)!);
     expect(await page.evaluate(() => {

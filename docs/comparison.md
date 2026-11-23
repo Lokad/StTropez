@@ -86,9 +86,10 @@ is ready. Changing the reference clears the old preview immediately.
 
 Subscribe to `TextComparison` for a `TextComparisonSnapshot`. Repeated reads return the same
 immutable object until a field changes. Its `comparison` field holds the controller snapshot.
-`selectedHunk` indexes the change at the last focused pane's caret. It is `null` between changes
-and while the comparison recomputes. A caret at an empty change selects that point. At the end of
-a nonempty change, selecting its full range keeps it current. A collapsed caret there is outside it.
+`selectedHunk` indexes the change at the last focused pane's caret. Any column on a tinted
+line targets that change, including when the selection covers the line and its ending.
+An empty change is selectable at its exact offset. On an unchanged line or during recomputation,
+`selectedHunk` is `null`. Before the first pane receives focus, Next starts at the initial caret.
 Use `canNavigate` and `canRevert` to enable buttons. They account for pane readiness, active
 composition and edit permission.
 
