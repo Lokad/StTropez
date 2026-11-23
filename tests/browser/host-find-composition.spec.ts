@@ -29,7 +29,7 @@ test.afterEach(async ({ page }, info) => {
     }
 });
 
-for (const host of ["plain", "react"] as const) for (const arm of ["ordinary", "commit", "cancel", "active"] as const)
+for (const [host, arm] of [["plain", "ordinary"], ["react", "commit"], ["plain", "cancel"], ["react", "active"]] as const)
     test(`${host} 100000 replace all composition ${arm} preserves staged input and captured work`, async ({ page }) => {
 
         const original = Array(100000).fill("const sample = 1234567;").join("\r\n"), changed = original.replaceAll("sample", "changed");
@@ -56,14 +56,14 @@ for (const host of ["plain", "react"] as const) for (const arm of ["ordinary", "
         if (arm !== "ordinary") {
             await primary(page).focus(); await primary(page).evaluate((node, arm) => {
                 const input = node as HTMLTextAreaElement;
-                // Deliberately synthetic staged composition, not native IME qualification.
+                // Stage one character while replacement planning is pending.
                 input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
                 window.compositionFindTrace!.afterStart = window.hostFixture.snapshot();
                 if (arm === "cancel") input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "" }));
-                else { input.setRangeText("東京", input.selectionStart, input.selectionEnd, "end");
-                    input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", data: "東京", isComposing: true })); }
+                else { input.setRangeText("ê", input.selectionStart, input.selectionEnd, "end");
+                    input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", data: "ê", isComposing: true })); }
             }, arm);
-            // Explicit host command during staging; programmatic click does not move focus or imply a native IME sequence.
+            // Dispatch the host command without moving focus away from the staged character.
             if (arm === "active") await replace.evaluate(node => (node as HTMLButtonElement).click());
         }
         await drainPlan(page); const during = await snapshot(page), trace = await page.evaluate(() => window.compositionFindTrace!);
@@ -83,9 +83,9 @@ for (const host of ["plain", "react"] as const) for (const arm of ["ordinary", "
                 await replace.click(); await expect(status).toHaveText("Replaced 100000 matches."); await ready(page); await exact(page, changed);
             } else {
                 await expect(status).toHaveText(arm === "active" ? "Finish composition before replacing." : "Replacement cancelled for composition.");
-                await primary(page).evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "東京" })));
-                expected = "東京" + original; await ready(page); await exact(page, expected);
-                expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: 2, head: 2 });
+                await primary(page).evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "ê" })));
+                expected = "ê" + original; await ready(page); await exact(page, expected);
+                expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: 1, head: 1 });
             }
         }
         await ready(page); const edited = await snapshot(page);

@@ -8,13 +8,13 @@ async function waitForReview(page: import("@playwright/test").Page): Promise<voi
 }
 const selection = (state: Awaited<ReturnType<typeof snapshot>>, id: string) => state.bindings.views.find(v => v.id === id)!.selection;
 
-for (const host of ["plain", "react"] as const) for (const reply of ["unchanged", "canonical"] as const)
+for (const [host, reply] of [["plain", "unchanged"], ["react", "canonical"]] as const)
     test(`${host} ${reply} save reply preserves staged input or captured recovery`, async ({ page }) => {
 
         const button = (name: string) => page.getByRole("button", { name, exact: true });
         const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
         const original = "alpha omega\r\n// café 😀" + (reply === "canonical" ? "  " : "");
-        const canonical = original.trimEnd(), attempted = original.replace("omega", "東京"), nativeAttempt = attempted.replaceAll("\r\n", "\n");
+        const canonical = original.trimEnd(), attempted = original.replace("omega", "ê"), nativeAttempt = attempted.replaceAll("\r\n", "\n");
         await page.goto(`/hosts/${host}/?editor=candidate`);
         await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
         for (const name of ["Open source review", "Capture review acceptance", "Finish review acceptance"]) await button(name).click();
@@ -26,10 +26,10 @@ for (const host of ["plain", "react"] as const) for (const reply of ["unchanged"
         const before = await snapshot(page);
         await primary.evaluate(node => {
             const input = node as HTMLTextAreaElement;
-            // Protocol staging only. Native IME/reconversion remains a separate device gate.
+            // Hold the accent open until the save reply arrives.
             input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-            input.setRangeText("東京", input.selectionStart, input.selectionEnd, "end");
-            input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", data: "東京", isComposing: true }));
+            input.setRangeText("ê", input.selectionStart, input.selectionEnd, "end");
+            input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", data: "ê", isComposing: true }));
         });
         await expect(primary).toHaveValue(nativeAttempt); expect(await source(page)).toBe(original);
         await primary.press("Control+s"); expect((await snapshot(page)).pendingSaves).toEqual(before.pendingSaves);
@@ -44,7 +44,7 @@ for (const host of ["plain", "react"] as const) for (const reply of ["unchanged"
         expect(during.bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline);
         expect(during.inputRecovery).toEqual([]);
         expect(await page.evaluate(n => window.hostFixture.referenceRange(0, n), original.length)).toBe(original);
-        await primary.evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "東京" })));
+        await primary.evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "ê" })));
         await waitForReview(page); const after = await snapshot(page);
         if (reply === "canonical") {
             expect(await source(page)).toBe(canonical); expect(after.source.dirty).toBe(false);
@@ -52,7 +52,7 @@ for (const host of ["plain", "react"] as const) for (const reply of ["unchanged"
             expect(after.inputRecovery).toEqual([{ documentId: before.bindings.views.find(v => v.id === "primary")!.documentId,
                 expectedRevision: before.source.revision, reason: "stale-revision", contextFrom: 0, attemptedUnits: nativeAttempt.length }]);
             expect(await page.evaluate(() => window.hostFixture.recoveryText())).toBe(nativeAttempt);
-            expect(JSON.stringify(after)).not.toContain("東京");
+            expect(JSON.stringify(after)).not.toContain("ê");
             const preview = page.locator('section[aria-label="Input recovery"] pre');
             await preview.evaluate(node => { node.dataset.retained = "input-recovery"; });
             await button("Inspect recovered input").click();

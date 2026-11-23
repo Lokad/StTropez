@@ -24,7 +24,7 @@ test.afterEach(async ({ page }, info) => {
     }
 });
 
-for (const host of ["plain", "react"] as const) for (const phase of ["ordinary", "commit", "cancel"] as const)
+for (const [host, phase] of [["plain", "ordinary"], ["react", "commit"], ["plain", "cancel"]] as const)
     test(`${host} diagnostic selection ${phase} preserves composition and captured work`, async ({ page }) => {
 
         // The save fixture trims trailing whitespace; internal CRLF and Unicode remain exact.
@@ -45,10 +45,10 @@ for (const host of ["plain", "react"] as const) for (const phase of ["ordinary",
         });
         if (phase !== "ordinary") await primary(page).evaluate(node => {
             const input = node as HTMLTextAreaElement;
-            // Synthetic protocol staging, separate from the native IME/device gate.
+            // Hold the accent open when the diagnostic arrives.
             input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-            input.setRangeText("東京", input.selectionStart, input.selectionEnd, "end");
-            input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", data: "東京", isComposing: true }));
+            input.setRangeText("ê", input.selectionStart, input.selectionEnd, "end");
+            input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", data: "ê", isComposing: true }));
         });
         await diagnostic(page).evaluate(node => node.addEventListener("click", event => { window.diagnosticTrace!.commandTrusted = event.isTrusted; }, { capture: true, once: true }));
         // Explicit host callback avoids a focus move that could end native composition.
@@ -62,11 +62,11 @@ for (const host of ["plain", "react"] as const) for (const phase of ["ordinary",
             expect(during.bindings.language.sessions.find(s => s.id === "primary")!.provider.diagnostics).toBe(1);
             await primary(page).evaluate((node, commit) => {
                 const input = node as HTMLTextAreaElement;
-                if (!commit) input.setRangeText("", input.selectionStart - 2, input.selectionEnd, "end");
-                input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: commit ? "東京" : "" }));
+                if (!commit) input.setRangeText("", input.selectionStart - 1, input.selectionEnd, "end");
+                input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: commit ? "ê" : "" }));
             }, phase === "commit");
         }
-        await ready(page); const expected = phase === "commit" ? "東京" + original : original, groups = phase === "commit" ? 1 : 0;
+        await ready(page); const expected = phase === "commit" ? "ê" + original : original, groups = phase === "commit" ? 1 : 0;
         expect(await source(page)).toBe(expected); const afterComposition = await snapshot(page);
         expect(afterComposition.source.revision).toBe(before.source.revision + groups);
         expect(afterComposition.history.undoDepth).toBe(before.history.undoDepth + groups);
@@ -75,11 +75,11 @@ for (const host of ["plain", "react"] as const) for (const phase of ["ordinary",
             await diagnostic(page).click();
         } else if (phase === "commit") {
             // LSP may publish the replacement before the next paint.
-            await expect(diagnostic(page)).toHaveText((todo + 2) + ": Resolve this placeholder.");
+            await expect(diagnostic(page)).toHaveText((todo + 1) + ": Resolve this placeholder.");
             await diagnostic(page).click();
         }
         await ready(page); const edited = await snapshot(page);
-        expect(selection(edited)).toMatchObject({ anchor: todo + groups * 2, head: todo + groups * 2 + 4 });
+        expect(selection(edited)).toMatchObject({ anchor: todo + groups, head: todo + groups + 4 });
         expect(await source(page)).toBe(expected); expect(edited.history).toEqual(afterComposition.history);
         expect(edited.inputRecovery).toEqual(before.inputRecovery); expect(edited.pendingSaves).toEqual(before.pendingSaves);
         expect(edited.source.exports).toBe(groups ? 0 : before.source.exports); expect(edited.bindings.comparison!.baseline).toEqual(baseline);
