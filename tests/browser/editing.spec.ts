@@ -766,8 +766,8 @@ test("popup bindings fall back in priority order and roll back conflicts without
     expect(await page.evaluate(() => {
         const { commands, keymap } = window.editingFixture, calls: string[] = [];
         const press = (key: string) => keymap.handle(new KeyboardEvent("keydown", { key, cancelable: true }));
-        const lower = commands.register({ id: "test.find", label: "Close Find", run: () => { calls.push("find"); } },
-            { keys: ["Escape"], shared: true });
+        const query = document.querySelector<HTMLInputElement>("#find-query")!;
+        const editor = document.querySelector("#primary textarea")!;
         let open = false;
         const higher = commands.register({ id: "test.popup", label: "Dismiss popup", run: () => { calls.push("popup"); return open; } },
             { keys: ["Escape"], priority: 5, shared: true });
@@ -775,9 +775,14 @@ test("popup bindings fall back in priority order and roll back conflicts without
         try { commands.register({ id: "test.rejected", label: "Duplicate", run: () => { calls.push("rejected"); } },
             { keys: ["F8", "Escape"], priority: 5, shared: true }); } catch { conflict = true; }
         const partial = commands.get("test.rejected") !== undefined || press("F8");
-        press("Escape"); open = true; press("Escape"); higher.dispose(); press("Escape"); lower.dispose();
-        return { calls, conflict, partial, after: press("Escape") };
-    })).toEqual({ calls: ["popup", "find", "popup", "find"], conflict: true, partial: false, after: false });
+        query.focus();
+        const fellBack = press("Escape") && document.activeElement === editor;
+        open = true; query.focus();
+        const dismissedPopup = press("Escape") && document.activeElement === query;
+        higher.dispose();
+        const dismissedFind = press("Escape") && document.activeElement === editor;
+        return { calls, conflict, partial, fellBack, dismissedPopup, dismissedFind, after: press("Escape") };
+    })).toEqual({ calls: ["popup", "popup"], conflict: true, partial: false, fellBack: true, dismissedPopup: true, dismissedFind: true, after: false });
 });
 
 test("Alt arrows move and copy lines while typing and Undo follow the selected block", async ({ page }) => {
