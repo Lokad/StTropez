@@ -3,21 +3,24 @@ export type Observable<T> = Readonly<{ getSnapshot: () => T; subscribe: (listene
 type Deliveries = Map<() => void, (error: unknown) => void>;
 type AfterDelivery = (work: () => void) => void;
 const queueFollowUp = Symbol("subscription follow-up");
+const maxFollowUpsPerChain = 256;
+type FollowUpChain = { scheduled: number; reported: boolean };
 
+function reportError(report: (error: unknown) => void, error: unknown): void {
+    try { report(error); } catch { /* Error reporters cannot interrupt delivery. */ }
+}
 function deliver(work: () => void, report: (error: unknown) => void): void {
-    try { work(); } catch (error) {
-        try { report(error); } catch { /* Error reporters cannot interrupt delivery. */ }
-    }
+    try { work(); } catch (error) { reportError(report, error); }
 }
 
 /** All stores publish before delivery. Each callback runs once per publication; reentrant writes are rejected. */
 export class NotificationScope {
-    private readonly delivery: { depth: number; batches: number; pending: Deliveries; following: (() => void)[]; draining: boolean };
+    private readonly delivery: { depth: number; batches: number; pending: Deliveries; following: (() => void)[]; draining: boolean; activeChain: FollowUpChain | undefined };
     private subscriptions = 0;
     private readonly onListenerError: (error: unknown) => void;
     constructor(onListenerError?: (error: unknown) => void, parent?: NotificationScope) {
         this.onListenerError = onListenerError ?? parent?.onListenerError ?? (() => {});
-        this.delivery = parent?.delivery ?? { depth: 0, batches: 0, pending: new Map(), following: [], draining: false };
+        this.delivery = parent?.delivery ?? { depth: 0, batches: 0, pending: new Map(), following: [], draining: false, activeChain: undefined };
     }
     assertWritable(): void {
         if (this.delivery.depth) throw new Error("Reentrant mutation during a read-only callback.");
@@ -29,7 +32,19 @@ export class NotificationScope {
     subscriptionChanged(delta: number): void { this.subscriptions += delta; }
     subscriptionCount(): number { return this.subscriptions; }
     [queueFollowUp](work: () => void): void {
-        this.delivery.following.push(() => deliver(work, this.onListenerError));
+        const state = this.delivery, chain = state.activeChain ?? { scheduled: 0, reported: false };
+        if (chain.scheduled === maxFollowUpsPerChain) {
+            if (!chain.reported) {
+                chain.reported = true;
+                reportError(this.onListenerError, new RangeError(`Document change follow-up chain exceeded ${maxFollowUpsPerChain} callbacks.`));
+            }
+            return;
+        }
+        chain.scheduled++;
+        state.following.push(() => {
+            state.activeChain = chain;
+            deliver(work, this.onListenerError);
+        });
     }
     /** Defers shared-scope notifications until this synchronous action ends; committed writes are not rolled back. */
     batch<T>(action: () => T): T {
@@ -64,7 +79,7 @@ export class NotificationScope {
         // a follow-up can edit the same resource or dispose the initiating attachment.
         void Promise.resolve().then(() => {
             try { for (const work of state.following) work(); }
-            finally { state.following.length = 0; state.draining = false; }
+            finally { state.activeChain = undefined; state.following.length = 0; state.draining = false; }
         });
     }
 }

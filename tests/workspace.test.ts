@@ -66,6 +66,29 @@ test("edits, grouped history and batches publish immutable changes in previous c
     stop();
 });
 
+test("a branching follow-up loop stops without discarding independent notifications or later edits", async () => {
+    const errors: unknown[] = [];
+    const workspace = new Workspace({ onListenerError: error => { errors.push(error); throw new Error("reporter failed"); } });
+    const id = workspace.createDocument({ scope: "demo", resource: "loop", variant: "working" }, "Loop", "");
+    const append = (source: string) => workspace.edit({ documentId: id, expectedRevision: workspace.document(id).revision,
+        edits: [{ from: 0, to: 0, insert: "x" }], origin: "host", source });
+    let writes = 0, independent = 0;
+    workspace.onDocumentChange(id, (change, after) => {
+        const echo = () => { if (++writes <= 512) append("echo"); };
+        if (change.source === "start") {
+            after(echo);
+            for (let i = 0; i < 300; i++) after(() => { independent++; });
+        } else if (change.source === "echo") {
+            after(echo); after(echo);
+        } else after(() => { independent++; });
+    });
+    append("start"); await Promise.resolve();
+    assert.equal(writes, 256); assert.equal(independent, 300);
+    assert.equal(errors.length, 1); assert.ok(errors[0] instanceof RangeError);
+    append("later"); await Promise.resolve();
+    assert.equal(independent, 301); assert.equal(errors.length, 1);
+});
+
 test("follow-up writes run after listeners in order and expire with their subscription", async () => {
     const { workspace, documentId } = fixture(), order: string[] = [];
     const append = (source: string, revision: number) => workspace.edit({ documentId, expectedRevision: revision, origin: "host",

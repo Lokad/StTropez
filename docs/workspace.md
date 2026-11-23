@@ -226,6 +226,11 @@ Pass a `source` string to identify writes from a host feature or peer. Edit perm
 in request order in a microtask after listeners and the initiating command finish. Unsubscribing drops that listener’s queued
 work. Use the change’s revision when a follow-up depends on the exact text.
 
+A listener that writes back to the same document should ignore changes bearing its own
+`source`. Each initial follow-up can schedule up to 255 further callbacks through the changes
+it causes. On overflow the workspace reports one `RangeError` to `onListenerError` and
+drops excess callbacks from that chain. Other initial follow-ups and later edits run normally.
+
 ```ts
 import type { DocumentId, TextEdit, Workspace } from "sttropez";
 
