@@ -549,14 +549,17 @@ function selectedFindQuery(source: TextEditor, regex: boolean): string | undefin
 }
 function openFind(replace = false): void {
     if (!activePane) return;
-    if (findBar.hidden) {
-        findQuery.value = selectedFindQuery(activePane, findFlags().regularExpression) ?? findQuery.value;
-        sizeFindField(findQuery);
-        releaseFind();
+    if (findBar.hidden || activePane.getSnapshot().focused) {
+        const selected = selectedFindQuery(activePane, findFlags().regularExpression);
+        if (selected !== undefined && selected !== findQuery.value) {
+            findQuery.value = selected; sizeFindField(findQuery);
+            if (!findBar.hidden) find?.setQuery(selected);
+        }
     }
+    if (findBar.hidden) releaseFind();
     findBar.hidden = false; showReplacement(replace);
     setActivePane(activePane);
-    const target = replace && activePane === editor && !active?.readOnly ? replacement : findQuery;
+    const target = replace && findQuery.value && activePane === editor && !active?.readOnly ? replacement : findQuery;
     target.focus(); target.select();
 }
 function revealFindCaret(): void {

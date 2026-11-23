@@ -77,6 +77,7 @@ with a line break. Enter in the replacement field replaces the current match. Ho
 in either field performs its action once.
 In regex replacements, `\n` starts a new line and `\\` inserts one backslash.
 Opening Find picks up a selection of up to 4,096 UTF-16 units and escapes it in regex mode.
+Select different text in the editor and press Ctrl/Cmd+F again to search for it.
 Literal Find accepts selected text with LF or CRLF endings. Regex mode keeps each ending exact
 and can also seed a query from a bare carriage return. An empty or oversized selection keeps
 the previous query. Typing a query previews a match while focus stays in Find. Enter selects it.
@@ -86,6 +87,7 @@ Choose **Find** after focusing generated JavaScript or the saved copy to search 
 The bar names the read-only target. Escape returns focus to it. Focusing the working source
 while the bar is open searches the same query there and enables replacement for matches.
 Ctrl/Cmd+F and Ctrl/Cmd+H open Find and Replace from the panes, Find fields and toolbar.
+Replace focuses the query when it is empty. With a query in an editable pane, it focuses the replacement.
 The bar opens below the workspace. In short windows it uses the top of the window to keep code visible.
 Escape returns to the search pane. F3 and Shift+F3 continue the last query with the bar closed.
 

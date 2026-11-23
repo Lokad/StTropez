@@ -412,7 +412,8 @@ test("opening Find and Replace keeps the same code under the pointer", async ({ 
             document.elementFromPoint(pt.x, pt.y)?.closest("#editor .st-viewport-row")?.getAttribute("data-line"), point);
         await expect.poll(lineAtPoint).toBe("0");
         await source.press("Control+h");
-        await expect(page.locator("#replacement")).toBeFocused();
+        await expect(query).toBeFocused(); await page.keyboard.type("import");
+        await expect(query).toHaveValue("import"); await expect(page.locator("#replacement")).toHaveValue("");
         await expect.poll(() => paintedCharacter(row, "import", 2)).toEqual(point);
         await expect.poll(lineAtPoint).toBe("0");
         await page.locator("#find-close").click(); await expect(query).toBeHidden();
@@ -438,10 +439,15 @@ test("multiline Find and Replace preserves line breaks, regex captures and one-s
     await source.press("Shift+ArrowDown"); await source.press("Shift+End"); await source.press("Control+f");
     const query = page.locator("#find-query"), status = page.locator("#find-status"), replacement = page.locator("#replacement");
     await expect(query).toHaveValue("start\nitem 2");
+    await source.press("Control+Home"); await source.press("Shift+End"); await source.press("Control+f");
+    await expect(query).toBeFocused(); await expect(query).toHaveValue("start");
+    await expect(status).toHaveText(/(of 2|2 matches)$/);
+    await expect(page.locator("#editor .st-search-match").first()).toHaveText("start");
     await query.press("Control+a"); await page.keyboard.insertText("item 4\nend");
     await expect(query).toHaveValue("item 4\nend"); await expect(status).toHaveText("1 of 1");
     await query.press("Enter"); await expect(query).toBeFocused();
-    await query.press("Control+h"); await replacement.fill("lastREMOVE");
+    await query.press("Control+h"); await expect(replacement).toBeFocused(); await expect(query).toHaveValue("item 4\nend");
+    await replacement.fill("lastREMOVE");
     await replacement.evaluate(node => (node as HTMLTextAreaElement).setSelectionRange(4, 10));
     await replacement.press("Control+Enter");
     await replacement.dispatchEvent("keydown", { key: "Enter", ctrlKey: true, repeat: true });
