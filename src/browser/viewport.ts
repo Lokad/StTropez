@@ -381,14 +381,16 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
                 const offset = gapAt(renderedIndex, visibleRow)?.offset ?? Math.min(end, start + Math.floor(left / columnWidth));
                 anchor = { revision: previous.revision, offset, topRemainder: top - renderedIndex.rowAt(previous.buffer.lineAt(offset)) * lineHeight, leftRemainder: left - (offset - start) * columnWidth };
             }
-            anchor = current.change?.previousRevision === anchor.revision
-                ? { ...anchor, revision: current.revision, offset: current.change.mapping.map(anchor.offset, "before").offset } : undefined;
+            if (anchor.revision !== current.revision) {
+                anchor = current.change?.previousRevision === anchor.revision
+                    ? { ...anchor, revision: current.revision, offset: current.change.mapping.map(anchor.offset, "before").offset } : undefined;
+            }
             if (reveal && current.change?.previousRevision === reveal.revision) {
                 const offset = current.change.mapping.map(reveal.offset, reveal.affinity).offset;
                 reveal = { ...reveal, revision: current.revision, offset,
                     ...(reveal.end !== undefined && { end: Math.max(offset, current.change.mapping.map(reveal.end, "before").offset) }) };
             }
-            if (horizontalAnchor) horizontalAnchor = current.change?.previousRevision === horizontalAnchor.revision
+            if (horizontalAnchor && horizontalAnchor.revision !== current.revision) horizontalAnchor = current.change?.previousRevision === horizontalAnchor.revision
                 ? { ...horizontalAnchor, revision: current.revision, offset: current.change.mapping.map(horizontalAnchor.offset, horizontalAnchor.affinity).offset } : undefined;
             fragmentPlacement = undefined;
         } else if (!current) { anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined; }

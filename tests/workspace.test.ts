@@ -28,10 +28,18 @@ test("language changes publish a new document identity without replaying an edit
     assert.equal(linked.language!.uri, "project:source%2Fone");
     workspace.setDocumentLanguage(documentId, null);
     const excluded = workspace.document(documentId);
-    assert.equal(excluded.language, null); assert.equal(excluded.change, null);
+    assert.equal(excluded.language, null); assert.equal(excluded.change, before.change);
     assert.equal(excluded.buffer, before.buffer); assert.equal(excluded.revision, before.revision);
     assert.equal(view.getSnapshot(), selection); assert.equal(workspace.observeHistory(documentId).getSnapshot(), history);
-    assert.deepEqual(changes, [before.change]); stop(); view.dispose();
+    assert.deepEqual(changes, [before.change]);
+    const late: DocumentChange[] = [], detach = workspace.onDocumentChange(documentId, change => late.push(change));
+    workspace.createNotificationScope().batch(() => {
+        workspace.setDocumentLanguage(documentId, pair);
+        workspace.edit({ documentId, expectedRevision: before.revision, edits: [{ from: 0, to: 0, insert: "?" }], origin: "human" });
+        workspace.setDocumentLanguage(documentId, null);
+    });
+    assert.deepEqual(late, [workspace.document(documentId).change]); assert.deepEqual(changes, [before.change, ...late]);
+    detach(); stop(); view.dispose();
 });
 
 test("edits, grouped history and batches publish immutable changes in previous coordinates", () => {

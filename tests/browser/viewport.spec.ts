@@ -74,6 +74,7 @@ test("multiple edits before a frame map the scroll anchor and shared undo restor
     const before = await page.evaluate(() => window.viewportFixture.snapshot());
     await page.evaluate(() => {
         for (const insert of ["first\n", "second\n"]) window.viewportFixture.edit(window.viewportFixture.snapshot().document!.revision, [{ from: 0, to: 0, insert }]);
+        window.viewportFixture.bindLanguage("sample:source");
     }); await ready(page);
     const after = await page.evaluate(() => window.viewportFixture.snapshot());
     expect(after.primary.scrollTop).toBeCloseTo(before.primary.scrollTop + before.primary.lineHeight * 2, 3);

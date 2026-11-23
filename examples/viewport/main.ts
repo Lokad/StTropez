@@ -45,6 +45,7 @@ pane("workload").addEventListener("change", event => load((event.currentTarget a
 const status = () => { const current = workspace.document(source.documentId); pane("status").textContent = `${current.buffer.lineCount.toLocaleString()} lines · Revision ${current.revision}`; };
 const unsubscribe = workspace.observeDocument(source.documentId).subscribe(status); status();
 const fixture = { ready: true, load, edit, background,
+    bindLanguage: (uri: string) => workspace.setDocumentLanguage(source.documentId, { uri, languageId: "typescript" }),
     get settled() { return !disposed && viewportSettled(views.primary) && viewportSettled(views.secondary); },
     reload: (value: string) => workspace.operations.beginLoad(source).accept({ value }),
     select: (which: "primary" | "secondary", ranges: readonly Selection[], primary = 0) => views[which].view.setSelections(workspace.document(source.documentId).revision, ranges, primary),

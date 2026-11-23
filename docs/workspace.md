@@ -75,7 +75,8 @@ shares one lazy whole-string export per revision. Typed resources return their i
 Each ready document snapshot carries the URI and language ID.
 Leave the pair unset for saved copies or generated output. If a server assigns URIs after startup,
 call `setDocumentLanguage(documentId, pair)`. Pass `null` to withdraw the binding. Changing the
-pair preserves the buffer, revision, history and selection. `onDocumentChange` reports text edits only.
+pair preserves the buffer, revision, history and selection. The snapshot retains the change
+that produced its text revision. `onDocumentChange` reports each text edit once.
 
 You can keep a reader and call it without a receiver, even after edits, metadata changes or release.
 Copying or serializing a snapshot does not read its content. JSON omits reader functions. Call the

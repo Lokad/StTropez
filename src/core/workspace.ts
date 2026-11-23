@@ -317,8 +317,11 @@ export class Workspace {
     onDocumentChange(id: DocumentId, listener: (change: DocumentChange, afterDelivery: (work: () => void) => void) => void): () => void {
         const record = this.documents.get(id);
         if (!record) throw new Error("Unknown document.");
+        let revision = record.document.get()?.revision;
         return record.document.subscribeChanges((document, afterDelivery) => {
-            if (document?.change) listener(document.change, afterDelivery);
+            if (!document || document.revision === revision) return;
+            revision = document.revision;
+            if (document.change) listener(document.change, afterDelivery);
         });
     }
     observeHistory(id: DocumentId): Observable<HistorySnapshot> { return this.requireResource(this.resourceForDocument(id).id).history.observable; }
@@ -828,7 +831,7 @@ export class Workspace {
         const buffer = record.buffer!;
         record.document.set(Object.freeze({ id: record.documentId, resourceId: record.handle.id, key: state.metadata.key,
             title: state.metadata.title, buffer, text: state.value as () => string, revision: state.revision, language,
-            change: previous?.revision === state.revision ? null : record.change }), changed);
+            change: record.change }), changed);
     }
     private setRecord(record: ResourceRecord, next: ResourceSnapshot<SnapshotValue>, changed: Set<Store<unknown>>): void {
         const previous = record.metadata.get();
