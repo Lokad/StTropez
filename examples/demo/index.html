@@ -82,7 +82,7 @@
             <button id="find-word" aria-label="Match whole word" title="Match whole word" aria-pressed="false">Word</button>
             <button id="find-regex" aria-label="Use regular expression" title="Use regular expression" aria-pressed="false">.*</button>
         </span>
-        <button id="find-previous" title="Previous match (Shift+Enter)">↑</button><button id="find-next" title="Next match (Enter)">↓</button>
+        <button id="find-previous" aria-label="Previous match" title="Previous match (Shift+Enter)" disabled>↑</button><button id="find-next" aria-label="Next match" title="Next match (Enter)" disabled>↓</button>
         <button id="replace-toggle" aria-controls="replace-controls" aria-expanded="false">Replace…</button><span id="replace-controls" hidden><textarea id="replacement" rows="1" wrap="off" spellcheck="false" aria-label="Replacement text" title="Ctrl/Cmd+Enter inserts a line break" placeholder="Replace with"></textarea>
             <button id="replace-current">Replace</button><button id="replace-all">Replace all</button></span>
         <span id="find-target"></span><output id="find-status"></output><button id="find-close" title="Close find (Escape)">Close</button>

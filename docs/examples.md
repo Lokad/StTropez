@@ -82,7 +82,8 @@ Literal Find accepts selected text with LF or CRLF endings. Regex mode keeps eac
 and can also seed a query from a bare carriage return. An empty or oversized selection keeps
 the previous query. Typing a query previews a match while focus stays in Find. Enter selects it.
 Escape selects a completed preview and returns to the editor. The counter shows
-the active match and total, and reports when navigation wraps.
+the active match and total, and reports when navigation wraps. With no matches or a failed search,
+the arrows are disabled. Hover over a disabled Replace button to see why it is unavailable.
 Choose **Find** after focusing generated JavaScript or the saved copy to search that pane.
 The bar names the read-only target. Escape returns focus to it. Focusing the working source
 while the bar is open searches the same query there and enables replacement for matches.

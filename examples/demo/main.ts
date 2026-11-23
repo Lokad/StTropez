@@ -512,12 +512,22 @@ function setActivePane(target: TextEditor, repeat = false): void {
     const label = target === output?.editor ? "JavaScript output" : target === comparison?.panes.reference ? "Saved copy" : active?.name;
     const readOnly = target !== editor || active?.readOnly;
     element("find-target").textContent = readOnly ? `${label} · read-only` : "";
+    const status = element("find-status"), previous = button("find-previous"), next = button("find-next");
+    const replace = button("replace-current"), all = button("replace-all");
     const render = () => {
         const snapshot = current.getSnapshot();
-        element("find-status").textContent = findStatus(snapshot);
-        const hasMatches = !readOnly && snapshot.count > 0;
-        button("replace-all").disabled = !(hasMatches && snapshot.status === "ready");
-        button("replace-current").disabled = !(hasMatches && (snapshot.status === "ready" || snapshot.status === "searching" && snapshot.retained));
+        const searching = snapshot.status === "searching", ready = snapshot.status === "ready", matches = snapshot.count > 0;
+        const message = findStatus(snapshot);
+        status.textContent = message;
+        status.classList.toggle("no-matches", ready && !matches && !!snapshot.query);
+        status.classList.toggle("search-failed", snapshot.status === "failed");
+        previous.disabled = next.disabled = !(searching || ready && matches);
+        replace.disabled = readOnly || !matches || !(ready || searching && snapshot.retained);
+        all.disabled = readOnly || !matches || !ready;
+        const reason = readOnly ? `${label} is read-only.` : searching ? "Waiting for search results."
+            : snapshot.status === "replacing" ? "Replacement in progress." : message || "Enter text to find.";
+        replace.title = replace.disabled ? reason : "Replace the current match";
+        all.title = all.disabled ? reason : "Replace all matches";
     };
     stopFind = current.subscribe(render); render();
     current.setQuery(findQuery.value);

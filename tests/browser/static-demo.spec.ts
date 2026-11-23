@@ -298,11 +298,14 @@ test("Find toggles regex on the existing query and replaces captured groups in o
     await page.goto(baseURL!);
     const query = page.getByRole("textbox", { name: "Find text" }), mode = page.getByRole("button", { name: "Use regular expression" });
     const status = page.locator("#find-status"), replaceAll = page.getByRole("button", { name: "Replace all" });
+    const previous = page.getByRole("button", { name: "Previous match", exact: true }), next = page.getByRole("button", { name: "Next match", exact: true });
     const source = page.getByRole("textbox", { name: "main.ts", exact: true }), pattern = String.raw`quantity:\s*(\d+)`;
     await source.press("Control+f"); await query.fill(pattern);
     await expect(mode).toHaveAttribute("aria-pressed", "false"); await expect(status).toHaveText("No matches");
+    await expect(previous).toBeDisabled(); await expect(next).toBeDisabled();
     await mode.press("Enter"); await expect(mode).toHaveAttribute("aria-pressed", "true"); await expect(query).toBeFocused();
     await expect(status).toHaveText("2 matches");
+    await expect(previous).toBeEnabled(); await expect(next).toBeEnabled();
     await expect(page.locator("#editor .st-viewport-row").filter({ has: page.locator(".st-search-match") })).toHaveCount(2);
     const selected = () => source.evaluate(node => { const input = node as HTMLTextAreaElement; return input.value.slice(input.selectionStart, input.selectionEnd); });
     await page.keyboard.press("Enter"); await expect.poll(selected).toBe("quantity: 2"); await expect(query).toBeFocused();
@@ -315,6 +318,9 @@ test("Find toggles regex on the existing query and replaces captured groups in o
     await page.locator("#replace-toggle").click(); await query.fill("(");
     await expect(status).toHaveText(/^Invalid regular expression: .*(group|parenthe|missing \))/i);
     await expect(page.locator("#replace-current")).toBeDisabled(); await expect(replaceAll).toBeDisabled();
+    await expect(replaceAll).toHaveAttribute("title", /Invalid regular expression/);
+    await expect(next).toBeDisabled(); await expect(previous).toBeDisabled();
+    await query.press("Enter"); expect(await selected()).toBe("quantity: 2"); await expect(query).toBeFocused();
     await query.fill(pattern); await expect(replaceAll).toBeEnabled();
     await page.getByRole("textbox", { name: "Replacement text" }).fill("quantity: $1 + 1"); await replaceAll.click();
     await expect(page.locator("#editor")).toContainText("quantity: 4 + 1");
@@ -325,7 +331,7 @@ test("Find toggles regex on the existing query and replaces captured groups in o
     await working.getByRole("textbox").press("Control+z");
     await expect(working).not.toContainText(" + 1"); await expect(working).toContainText("quantity: 2"); await expect(working).toContainText("quantity: 4");
     await mode.click(); await expect(status).toHaveText("No matches");
-    await query.fill(""); await expect(status).toBeEmpty();
+    await query.fill(""); await expect(status).toBeEmpty(); await expect(next).toBeDisabled(); await expect(previous).toBeDisabled();
     await query.press("Escape");
     const input = working.getByRole("textbox");
     await input.press("Control+Home"); await input.press("Shift+End"); await input.press("Control+f");
@@ -498,6 +504,7 @@ test("the Find toolbar follows generated output and both Changes panes", async (
     await expect(output.locator(".st-search-match").first()).toBeVisible(); await expect(source.locator(".st-search-match")).toHaveCount(0);
     await query.press("Control+h"); await expect(query).toBeFocused(); await expect(replace).toBeVisible();
     await expect(replace).toBeDisabled(); await expect(replaceAll).toBeDisabled();
+    await expect(replace).toHaveAttribute("title", "JavaScript output is read-only.");
     await reader.press("Escape"); await expect(reader).toBeFocused(); await expect(query).toBeHidden();
     await reader.press("F3");
     const selected = (input: Locator) => input.evaluate(node => { const el = node as HTMLTextAreaElement; return el.value.slice(el.selectionStart, el.selectionEnd); });
@@ -609,7 +616,7 @@ test("a pending regex search allows large-file scrolling and typing and expires 
     await expect(viewport.locator('.st-viewport-row[data-line="50003"]')).toContainText("Row 50004:");
     await gate.setHolding(true);
     await query.fill("Row (?:5|50004):"); await expect.poll(gate.waiting, { timeout: 15000 }).toBe(1);
-    await query.press("Enter");
+    await page.getByRole("button", { name: "Next match", exact: true }).click();
     await gate.release();
     await expect(page.locator("#cursor")).toContainText("Ln 50004,"); await expect(query).toBeFocused();
     await gate.setHolding(true);
