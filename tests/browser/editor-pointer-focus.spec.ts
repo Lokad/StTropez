@@ -216,7 +216,7 @@ test("typing after a native scrollbar drag or track click edits the selected sou
     await page.evaluate(() => window.editingFixture.setText("target\n" + "body\n".repeat(500)));
     const input = page.getByRole("textbox", { name: "Primary source", exact: true });
     const viewport = page.locator("#primary .st-viewport");
-    for (const gesture of ["drag", "track"]) {
+    for (const gesture of ["drag", "track", "track with delayed scroll events"]) {
         await page.evaluate(() => window.editingFixture.select("primary", { anchor: 0, head: 1 }));
         await input.focus();
         await ready(page);
@@ -227,6 +227,16 @@ test("typing after a native scrollbar drag or track click edits the selected sou
                 top: rect.top + el.clientTop, height: el.clientHeight };
         });
         expect(track.width).toBeGreaterThan(2);
+        const delayed = gesture === "track with delayed scroll events" ? await viewport.evaluateHandle(el => {
+            const started = new Promise<void>(resolve => el.addEventListener("scroll", () => resolve(), { once: true }));
+            // The native track still moves. Delay only delivery of its scroll events to the viewport.
+            const finished = new Promise<void>(resolve => el.ownerDocument.addEventListener("input", () => {
+                const events = new AbortController();
+                el.addEventListener("scroll", e => e.stopImmediatePropagation(), { capture: true, signal: events.signal });
+                setTimeout(() => { events.abort(); resolve(); }, 80);
+            }, { once: true }));
+            return { started, finished };
+        }) : undefined;
         const middle = track.top + track.height / 2;
         if (gesture === "drag") {
             await page.mouse.move(track.x, track.top + 23);
@@ -234,10 +244,12 @@ test("typing after a native scrollbar drag or track click edits the selected sou
             await page.mouse.move(track.x, middle, { steps: 8 });
             await page.mouse.up();
         } else await page.mouse.click(track.x, middle);
+        if (delayed) await delayed.evaluate(pending => pending.started);
         await expect.poll(() => viewport.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
         await expect(input).toBeFocused();
         const letter = gesture === "drag" ? "D" : "T";
         await page.keyboard.type(letter);
+        if (delayed) { await delayed.evaluate(pending => pending.finished); await delayed.dispose(); }
         // Track clicks may keep animating after pointerup. Check the final painted row.
         await viewport.evaluate(el => new Promise<void>(resolve => {
             let quietFrames = 0;
@@ -250,7 +262,13 @@ test("typing after a native scrollbar drag or track click edits the selected sou
             requestAnimationFrame(frame);
         }));
         const edited = viewport.locator('.st-viewport-row[data-line="0"]');
-        await expect(edited).toHaveText(letter + "arget");
-        await expect(edited).toBeInViewport();
+        const position = await viewport.evaluate(el => ({
+            nativeTop: el.scrollTop, paintedTop: window.editingFixture.snapshot().primary.viewport.scrollTop,
+            rowTop: el.querySelector('.st-viewport-row[data-line="0"]')?.getBoundingClientRect().top ?? null,
+            viewportTop: el.getBoundingClientRect().top,
+        }));
+        const target = expect(edited, gesture + " " + JSON.stringify(position));
+        await target.toHaveText(letter + "arget");
+        await target.toBeInViewport();
     }
 });

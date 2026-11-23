@@ -207,11 +207,23 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         if (revealSettling !== undefined) win.cancelAnimationFrame(revealSettling);
         revealSettling = undefined;
     }
+    function correctScrollbarReveal(): boolean {
+        const targetTop = y.toPhysical(top), targetLeft = x.toPhysical(left);
+        if (Math.abs(root.scrollTop - targetTop) <= 1 && Math.abs(root.scrollLeft - targetLeft) <= 1) return false;
+        root.scrollTo({ top: targetTop, left: targetLeft, behavior: "instant" });
+        return true;
+    }
     function settleScrollbarReveal(): void {
         if (revealSettling !== undefined) win.cancelAnimationFrame(revealSettling);
-        // A track click can keep scrolling on the compositor after pointerup. Give the
-        // reveal ownership until two paint opportunities pass without another native delta.
-        revealSettling = win.requestAnimationFrame(() => { revealSettling = win.requestAnimationFrame(releaseScrollbar); });
+        // A native track animation can move the viewport before its scroll event arrives.
+        let alignedLastFrame = false;
+        const check = () => {
+            const aligned = !correctScrollbarReveal();
+            if (aligned && alignedLastFrame) { releaseScrollbar(); return; }
+            alignedLastFrame = aligned;
+            revealSettling = win.requestAnimationFrame(check);
+        };
+        revealSettling = win.requestAnimationFrame(check);
     }
     let top = 0, left = 0, width = 0, height = 0, gutterWidth = 0, lineHeight = 22.4, columnWidth = 8.4;
     let x = scrollAxis(0, 0), y = scrollAxis(0, 0), renderedRevision: number | null = null, renderedIndex: RowIndex = view.folding.getSnapshot().index, renderedFoldGeneration = -1, observedFoldRevision = view.folding.getSnapshot().revision;
@@ -867,10 +879,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     }, { capture: true, signal: listeners.signal });
     root.addEventListener("scroll", () => {
         if (revealSettling !== undefined) {
-            const targetTop = y.toPhysical(top), targetLeft = x.toPhysical(left);
-            if (Math.abs(root.scrollTop - targetTop) > 1 || Math.abs(root.scrollLeft - targetLeft) > 1) {
-                root.scrollTo(targetLeft, targetTop); settleScrollbarReveal();
-            }
+            if (correctScrollbarReveal()) settleScrollbarReveal();
             return;
         }
         const newTop = y.toLogical(root.scrollTop), newLeft = x.toLogical(root.scrollLeft);
