@@ -1,5 +1,5 @@
-import { createPanelTextField, createToolPanel } from "./tool-panel.ts";
-import { changedFiles, createChangedFileList, editPageSize } from "./edit-review.ts";
+import { createPanelTextField, createDestinationList, createToolPanel } from "./tool-panel.ts";
+import { changedFiles, editPageSize } from "./edit-review.ts";
 import { pageActions } from "./panel-actions.ts";
 import type { HostRenameTools, RenameNote, HostRenameSnapshot } from "./rename.ts";
 type RenamePanelTools = Pick<HostRenameTools, "prepare" | "cancel" | "disconnect" | "reconnect" | "bindName" | "setName" | "openChanged">;
@@ -29,7 +29,7 @@ export function renamePanelModel(tools: RenamePanelTools, s: HostRenameSnapshot)
 }
 export function mountRenamePanel(host: HTMLElement, tools: HostRenameTools): () => void {
     const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => renamePanelModel(tools, state));
-    const name = createPanelTextField(owner, initial.name), targets = owner.createElement("ol"), changes = createChangedFileList(owner, initial.changes);
+    const name = createPanelTextField(owner, initial.name), targets = owner.createElement("ol"), changes = createDestinationList(owner, initial.changes);
     targets.setAttribute("aria-label", initial.targets.label);
     let previousTargets: unknown;
     return mount([name.label, controls, targets, changes.element], model => {

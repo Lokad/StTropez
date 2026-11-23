@@ -1,6 +1,6 @@
 import { bindPageButton, panelActionKey, type PanelAction } from "./panel-actions.ts";
-import type { PanelTextField } from "./tool-panel.ts";
-import { editPageSize, formatEditNote, type ChangedFileList, type EditNotes } from "./edit-review.ts";
+import type { DestinationList, PanelTextField } from "./tool-panel.ts";
+import { editPageSize, formatEditNote, type EditNotes } from "./edit-review.ts";
 import { memo, Profiler, StrictMode, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
@@ -34,6 +34,12 @@ import { transferFormModel, runPanelModel } from "./transfer-panel.ts";
 import "./style.css";
 
 import type { NativeEditorMount } from "./bindings.ts";
+
+function Destinations({ results }: { results: DestinationList }) {
+    return <ul ref={results.bind} tabIndex={results.bind ? -1 : undefined} aria-label={results.label}>
+        {results.items().map(item => <li key={item.key}><button disabled={results.disabled || item.available === false}
+            onClick={item.invoke}>{item.label}</button>{item.details !== undefined && <p>{item.details}</p>}</li>)}</ul>;
+}
 
 function LanguageField({ field }: { field: PanelTextField }) {
     return <label>{field.label}<input ref={field.bind} type="text" maxLength={field.maxLength}
@@ -204,11 +210,7 @@ function DocumentLinksTools() {
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
         <output aria-label={model.status.label}>{model.status.text}</output>
         <PanelControls actions={model.actions} />
-        <ul ref={model.results.bind} tabIndex={-1} aria-label={model.results.label}>{model.results.items().map(link => <li key={link.key}><button disabled={model.results.disabled || !link.available} onClick={link.invoke}>{link.label}</button><p>{link.details}</p></li>)}</ul></section>;
-}
-function ChangedFiles({ model }: { model: ChangedFileList }) {
-    return <ul aria-label={model.label}>{model.items().map(file =>
-        <li key={file.key}><button disabled={model.disabled} onClick={file.invoke}>{file.label}</button></li>)}</ul>;
+        <Destinations results={model.results} /></section>;
 }
 function ActionsTools() {
     const tools = bindings.actions, model = actionsPanelModel(tools, useObserved(tools.state));
@@ -218,7 +220,7 @@ function ActionsTools() {
         <PanelControls actions={model.actions} />
         <ol aria-label={model.choices.label} start={model.choices.start}>{model.choices.items().map(choice => <li key={choice.key}><button disabled={model.choices.disabled} aria-pressed={model.choices.isSelected(choice.key)} onClick={choice.invoke}>{choice.label}</button></li>)}</ol>
         <p aria-label={model.preview.label}>{model.preview.text}</p><EditNoteList {...model.edits} />
-        <ChangedFiles model={model.changes} /></section>;
+        <Destinations results={model.changes} /></section>;
 }
 function RenameTools() {
     const tools = bindings.rename, model = renamePanelModel(tools, useObserved(tools.state));
@@ -227,7 +229,7 @@ function RenameTools() {
         <LanguageField field={model.name} />
         <PanelControls actions={model.actions} />
         <ol aria-label={model.targets.label} start={model.targets.start}>{model.targets.items().map(at => <li key={at.key}>{at.text}</li>)}</ol>
-        <ChangedFiles model={model.changes} /></section>;
+        <Destinations results={model.changes} /></section>;
 }
 function ProjectTools() {
     const tools = bindings.project, model = projectPanelModel(tools, useObserved(tools.state));
@@ -236,7 +238,7 @@ function ProjectTools() {
         <PanelControls actions={model.actions} />
         {model.review.visible && <><p aria-label={model.review.titleLabel}>{model.review.title}</p><EditNoteList {...model.edits} /></>}
         {model.changesDescription && <p>{model.changesDescription}</p>}
-        <ChangedFiles model={model.changes} /></section>;
+        <Destinations results={model.changes} /></section>;
 }
 function NavigationTools() {
     const tools = bindings.navigation, model = navigationPanelModel(tools, useObserved(tools.state));
@@ -245,7 +247,7 @@ function NavigationTools() {
         <progress aria-label={model.progress.label} hidden={model.progress.hidden} />
         <label><input type="checkbox" checked={model.declarations.checked} onChange={event => model.declarations.change(event.currentTarget.checked)} />{model.declarations.label}</label>
         <PanelControls actions={model.actions} />
-        <ul aria-label={model.results.label}>{model.results.items().map(note => <li key={note.key}><button onClick={note.invoke}>{note.label}</button></li>)}</ul></section>;
+        <Destinations results={model.results} /></section>;
 }
 function DomainTools() {
     const tools = bindings.domain, model = domainPanelModel(tools, useObserved(tools.state));

@@ -1,6 +1,6 @@
 import type { HostNavigationTools, NavigationSnapshot } from "./navigation.ts";
 import { pageActions } from "./panel-actions.ts";
-import { createToolPanel } from "./tool-panel.ts";
+import { createDestinationList, createToolPanel } from "./tool-panel.ts";
 type NavigationPanelTools = Pick<HostNavigationTools, "findDefinition" | "findReferences" | "cancel" | "returnToOrigin" | "addCompanion" | "disconnect" | "reconnect" | "setIncludeDeclaration">;
 
 /** Pure presentation of one captured snapshot; list rows are read only when a renderer needs them. */
@@ -28,15 +28,10 @@ export function navigationPanelModel(tools: NavigationPanelTools, state: Navigat
 }
 export function mountNavigationPanel(host: HTMLElement, tools: HostNavigationTools): () => void {
     const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => navigationPanelModel(tools, state));
-    const progress = owner.createElement("progress"), notes = owner.createElement("ul"), label = owner.createElement("label"), include = owner.createElement("input");
-    progress.setAttribute("aria-label", initial.progress.label); notes.setAttribute("aria-label", initial.results.label); include.type = "checkbox"; label.append(include, initial.declarations.label); include.onchange = () => initial.declarations.change(include.checked);
-    let previous: typeof initial.results.identity | undefined;
-    return mount([progress, label, controls, notes], model => {
+    const progress = owner.createElement("progress"), notes = createDestinationList(owner, initial.results), label = owner.createElement("label"), include = owner.createElement("input");
+    progress.setAttribute("aria-label", initial.progress.label); include.type = "checkbox"; label.append(include, initial.declarations.label); include.onchange = () => initial.declarations.change(include.checked);
+    return mount([progress, label, controls, notes.element], model => {
         progress.hidden = model.progress.hidden; include.checked = model.declarations.checked;
-        if (previous !== model.results.identity) {
-            notes.replaceChildren(...model.results.items().map(note => { const item = owner.createElement("li"), button = owner.createElement("button");
-                button.textContent = note.label; button.onclick = note.invoke; item.append(button); return item; }));
-        }
-        previous = model.results.identity;
+        notes.render(model.results);
     });
 }

@@ -1,6 +1,6 @@
 import { pageActions } from "./panel-actions.ts";
-import { bindChoiceList, createPanelTextField, createToolPanel } from "./tool-panel.ts";
-import { changedFiles, createChangedFileList, createEditNoteList } from "./edit-review.ts";
+import { bindChoiceList, createPanelTextField, createDestinationList, createToolPanel } from "./tool-panel.ts";
+import { changedFiles, createEditNoteList } from "./edit-review.ts";
 import { actionChoicePageSize } from "./action-pages.ts";
 import type { CodeActionChoice } from "../../src/browser/index.ts";
 import type { HostActionsTools, ActionsSnapshot } from "./code-actions.ts";
@@ -37,7 +37,7 @@ export function actionsPanelModel(tools: ActionsPanelTools, s: ActionsSnapshot) 
 export function mountActionsPanel(host: HTMLElement, tools: HostActionsTools): () => void {
     const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => actionsPanelModel(tools, state));
     const module = createPanelTextField(owner, initial.module), title = owner.createElement("p"), edits = createEditNoteList(owner, initial.edits.label);
-    const choices = owner.createElement("ol"), changes = createChangedFileList(owner, initial.changes);
+    const choices = owner.createElement("ol"), changes = createDestinationList(owner, initial.changes);
     const renderChoices = bindChoiceList(choices, initial.choices);
     title.setAttribute("aria-label", initial.preview.label);
     return mount([module.label, controls, choices, title, edits.element, changes.element], model => {

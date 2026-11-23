@@ -2,7 +2,6 @@ import type { LspWorkspaceEditNote } from "../../src/protocol/index.ts";
 import type { DocumentId } from "../../src/index.ts";
 import type { ChangedFile } from "./language-host.ts";
 import { panelPaging } from "./panel-actions.ts";
-import { bindChoiceList } from "./tool-panel.ts";
 
 export const editPageSize = 64;
 export function editPaging(key: number, page: number, count: number, show: (page: number) => void) {
@@ -14,13 +13,6 @@ export function changedFiles(label: string, buttonPrefix: string, files: readonl
         label, identity: files, disabled,
         items: () => files.map(({ document, title }) => ({ key: document, label: buttonPrefix + title, invoke: () => open(document) })),
     };
-}
-
-export type ChangedFileList = ReturnType<typeof changedFiles>;
-
-export function createChangedFileList(owner: Document, initial: ChangedFileList) {
-    const element = owner.createElement("ul");
-    return { element, render: bindChoiceList(element, initial) };
 }
 
 export const formatEditNote = (at: LspWorkspaceEditNote): string => `${at.title} · ${at.resource} · ${at.document} @ revision ${at.revision} · [${at.from},${at.to})\nInsert ${JSON.stringify(at.insert)}${at.insertUnits > at.insert.length ? `… (${at.insertUnits} UTF-16 units)` : ""}\nContext: ${at.context}`;

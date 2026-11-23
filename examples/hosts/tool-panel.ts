@@ -16,32 +16,53 @@ export function createPanelTextField(owner: Document, field: PanelTextField) {
     };
 }
 
-type PanelChoice = Readonly<{ key: number | string; label: string; invoke: () => void }>;
-type ChoiceList<T extends PanelChoice> = Readonly<{ label: string; identity: readonly unknown[]; page?: number; disabled: boolean;
-    items: () => readonly T[]; isSelected?: (key: T["key"]) => boolean }>;
+type PanelChoice = Readonly<{ key: number | string; label: string; invoke: () => void; details?: string; available?: boolean }>;
+type ChoiceList<T extends PanelChoice> = Readonly<{ label: string; identity: readonly unknown[]; page?: number; disabled?: boolean;
+    items: () => readonly T[]; isSelected?: (key: T["key"]) => boolean; retainKeys?: boolean }>;
+export type DestinationList = ChoiceList<PanelChoice> & { bind?: (list: HTMLUListElement | null) => void };
 
-/** Keep each button while its result page is displayed, including when only selection changes. */
 export function bindChoiceList<T extends PanelChoice>(list: HTMLElement, initial: ChoiceList<T>, decoration?: (item: T) => HTMLElement) {
-    const owner = list.ownerDocument, buttons: [T["key"], HTMLButtonElement][] = [];
+    const owner = list.ownerDocument;
+    const rows: { item: T; li: HTMLLIElement; button: HTMLButtonElement }[] = [];
     list.setAttribute("aria-label", initial.label);
     let identity: readonly unknown[] | undefined, page: number | undefined;
     return (model: ChoiceList<T>) => {
         if (identity !== model.identity || page !== model.page) {
-            buttons.length = 0;
-            list.replaceChildren(...model.items().map(item => {
-                const row = owner.createElement("li"), button = owner.createElement("button");
-                button.textContent = item.label; button.onclick = item.invoke; buttons.push([item.key, button]);
-                if (decoration) row.append(decoration(item));
-                row.append(button);
-                return row;
-            }));
+            const items = model.items();
+            const batch = model.retainKeys ? null : owner.createDocumentFragment();
+            if (batch) rows.length = 0;
+            items.forEach((item, index) => {
+                let row = rows[index];
+                // A resolving link retains its key and focus. A new result replaces the button even during a press.
+                if (!row || row.item.key !== item.key) {
+                    const li = owner.createElement("li"), button = owner.createElement("button");
+                    if (decoration) li.append(decoration(item));
+                    li.append(button);
+                    if (row) row.li.replaceWith(li); else (batch ?? list).append(li);
+                    rows[index] = row = { item, li, button };
+                }
+                row.item = item; row.button.textContent = item.label; row.button.onclick = item.invoke;
+                if (item.details !== undefined) {
+                    const detail = row.button.nextElementSibling ?? row.li.appendChild(owner.createElement("p"));
+                    detail.textContent = item.details;
+                } else row.button.nextElementSibling?.remove();
+            });
+            if (batch) list.replaceChildren(batch);
+            else for (const row of rows.splice(items.length)) row.li.remove();
             identity = model.identity; page = model.page;
         }
-        for (const [key, button] of buttons) {
-            button.disabled = model.disabled;
-            if (model.isSelected) button.setAttribute("aria-pressed", String(model.isSelected(key)));
+        for (const { item, button } of rows) {
+            const disabled = !!model.disabled || item.available === false;
+            if (button.disabled !== disabled) button.disabled = disabled;
+            if (model.isSelected) button.setAttribute("aria-pressed", String(model.isSelected(item.key)));
         }
     };
+}
+
+export function createDestinationList(owner: Document, initial: DestinationList) {
+    const element = owner.createElement("ul"), render = bindChoiceList(element, initial);
+    if (initial.bind) { element.tabIndex = -1; initial.bind(element); }
+    return { element, render, dispose: () => initial.bind?.(null) };
 }
 
 type ToolPanel = Readonly<{ title: string; description?: string; status: { label: string; text: string };
@@ -50,7 +71,7 @@ type ToolPanel = Readonly<{ title: string; description?: string; status: { label
 /** Plain-host panels share the heading, status and command buttons. Each tool owns its form and results. */
 export function createToolPanel<S, M extends ToolPanel>(host: HTMLElement, state: Observable<S>, describe: (snapshot: S) => M) {
     const owner = host.ownerDocument, controls = owner.createElement("div"), initial = describe(state.getSnapshot());
-    function mount(body: HTMLElement[], render: (model: M, snapshot: S) => void, unbind?: () => void) {
+    function mount(body: HTMLElement[], render: (model: M) => void, unbind?: () => void) {
         const heading = owner.createElement("h2"), status = owner.createElement("output");
         host.setAttribute("aria-label", initial.title); heading.textContent = initial.title;
         status.setAttribute("aria-label", initial.status.label);
@@ -60,10 +81,10 @@ export function createToolPanel<S, M extends ToolPanel>(host: HTMLElement, state
         }
         host.append(status, ...body);
         const update = () => {
-            const snapshot = state.getSnapshot(), model = describe(snapshot);
+            const model = describe(state.getSnapshot());
             status.textContent = model.status.text;
             renderPanelActions(controls, model.actions);
-            render(model, snapshot);
+            render(model);
         };
         const stop = state.subscribe(update);
         const dispose = () => { stop(); unbind?.(); host.replaceChildren(); };
