@@ -25,9 +25,9 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         await input.waitFor(); assert.equal((await state()).provider.created, 0); await button("Connect").click(); await expect.poll(async () => (await state()).editor.connected).toBe(true);
         assert.equal(negotiations.length, 1);
         const advertised = negotiations[0];
-        assert.deepEqual(Object.keys(advertised?.textDocument ?? {}).sort(), ["codeAction", "colorProvider", "completion", "definition", "documentLink",
-            "hover", "publishDiagnostics", "references", "rename", "signatureHelp", "synchronization"]);
-        assert.equal(advertised?.workspace?.executeCommand, undefined);
+        assert.deepEqual(Object.keys(advertised?.textDocument ?? {}).sort(), ["codeAction", "colorProvider", "completion", "definition", "documentHighlight",
+            "documentLink", "foldingRange", "hover", "publishDiagnostics", "references", "rename", "signatureHelp", "synchronization"]);
+        assert.deepEqual(advertised?.workspace?.executeCommand, { dynamicRegistration: true });
         const marker = page.locator("#editor .st-diagnostic");
         await expect(marker).toHaveText("TODO");
         const firstDiagnostic = await page.evaluateHandle(() => {
