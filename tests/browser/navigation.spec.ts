@@ -55,6 +55,23 @@ test("adding carets carries the visual column across short lines and cursor undo
     expect(await heads()).toContain(1);
 });
 
+test("copying a selection vertically retains both columns through a blank row and Undo restores every range", async ({ page }) => {
+    for (const up of [false, true]) {
+        const text = "abcdef\r\n\r\nABCDEF", start = up ? 10 : 0, anchor = up ? 1 : 4, head = up ? 4 : 1;
+        await setup(page, text);
+        await page.evaluate(({ anchor, head }) => window.editingFixture.selections([{ anchor, head }]), { anchor: start + anchor, head: start + head });
+        const copy = up ? "Control+Alt+ArrowUp" : "Control+Alt+ArrowDown";
+        await page.keyboard.press(copy); await ready(page); await page.keyboard.press(copy); await ready(page);
+        const ranges = () => page.evaluate(() => window.editingFixture.selectionSet().ranges.map(({ anchor, head }) => [anchor, head]));
+        const expected = [[anchor, head], [8, 8], [10 + anchor, 10 + head]];
+        expect(await ranges()).toEqual(expected); expect((await snapshot(page)).primary.selection.head).toBe(up ? head : 10 + head);
+        await page.keyboard.type("X");
+        await expect(page.locator("#primary .st-viewport-row")).toHaveText(["aXef", "X", "AXEF"]);
+        await page.keyboard.press("Control+z"); await ready(page); expect(await ranges()).toEqual(expected);
+        expect(await page.evaluate(() => { const f = window.editingFixture; return f.range(0, f.snapshot().document!.length); })).toBe(text);
+    }
+});
+
 test("line selection grows on repeat and scrolling leaves its text and keyboard focus in place", async ({ page }) => {
     const source = "one\r\ntwo\nthree\n" + "row\n".repeat(200);
     await setup(page, source, 2);

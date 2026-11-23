@@ -179,7 +179,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     let keydownEvents = 0, lastKeydownMs = 0;
     let navigationTurns = 0, navigationPreparationMs = 0, maxNavigationTurnMs = 0, navigationWorkMs = 0, navigationDepth = 0;
     let wordSelectionEvents = 0, lastWordSelectionMs = 0, maxWordSelectionTurnMs = 0;
-    let preferred: Readonly<{ selections: SelectionSet; revision: number; layout: string; columns: readonly (number | undefined)[] }> | undefined;
+    type VisualColumns = Readonly<{ head: number | undefined; anchor?: number | undefined }>;
+    let preferred: Readonly<{ selections: SelectionSet; revision: number; layout: string; columns: readonly (VisualColumns | undefined)[] }> | undefined;
     let wordScanSteps = 0, maxWordScanStepMs = 0;
     let graphemeScanSteps = 0, maxGraphemeScanStepMs = 0;
     let visualMoves = 0;
@@ -771,17 +772,20 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     function verticalCount(page: boolean): number {
         const state = viewport.getSnapshot(); return page && state.lineHeight > 0 ? Math.max(1, Math.floor(state.height / state.lineHeight) - 1) : 1;
     }
-    function shortVertical(capture: CommandCapture, direction: -1 | 1, page: boolean): boolean {
+    function verticalRows(buffer: TextBuffer, ranges: readonly Selection[], add: boolean, next: (line: number) => number): Set<number> {
+        const lines = new Set<number>();
+        const include = (offset: number) => { const line = buffer.lineAt(offset); lines.add(line); lines.add(next(line)); };
+        for (const range of ranges) { include(range.head); if (add && range.anchor !== range.head) include(range.anchor); }
+        return lines;
+    }
+    function shortVertical(capture: CommandCapture, direction: -1 | 1, page: boolean, add: boolean): boolean {
         if (capture.selectionSet.ranges.length > 2) return false;
         // Page destinations use current viewport dimensions, including a pending resize.
         viewport.flush();
         if (viewport.activity().aligned) return false;
-        const buffer = capture.buffer, folds = view.folding.getSnapshot().index, count = verticalCount(page), lines = new Set<number>();
-        for (const range of capture.selectionSet.ranges) {
-            const line = buffer.lineAt(range.head), row = folds.rowAt(line);
-            lines.add(line); lines.add(folds.lineAt(Math.max(0, Math.min(folds.visibleLineCount - 1, row + direction * count))));
-        }
-        return shortRows(buffer, lines);
+        const buffer = capture.buffer, folds = view.folding.getSnapshot().index, count = verticalCount(page);
+        return shortRows(buffer, verticalRows(buffer, capture.selectionSet.ranges, add, line =>
+            folds.lineAt(Math.max(0, Math.min(folds.visibleLineCount - 1, folds.rowAt(line) + direction * count)))));
     }
     function prepareMovement(): void {
         hostInsertion?.cancel(); view.folding.revealSelection(view.folding.getSnapshot());
@@ -856,16 +860,25 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
         const state = viewport.getSnapshot(), layout = navigationLayout(style);
         const prior = preferred?.selections === capture.selectionSet && preferred.revision === capture.revision && preferred.layout === layout ? preferred.columns : undefined;
-        const columns: (number | undefined)[] = [], count = verticalCount(page);
+        const columns: (VisualColumns | undefined)[] = [], count = verticalCount(page);
         navigationPreparationMs = win.performance.now() - began;
         let index = 0, pageDelta = 0;
         eachRange(capture, "grapheme", (range, done) => {
             const at = index++, line = buffer.lineAt(range.head), row = navigation.visualRowAt(line), next = navigation.navigationLine(line, direction, count, page);
             if (at === capture.selectionSet.primary) pageDelta = (navigation.visualRowAt(next) - row) * state.lineHeight;
             if (next === line) { columns.push(prior?.[at]); done(add ? range : moved(range, direction < 0 ? 0 : buffer.length, extend)); return; }
-            const column = prior?.[at] ?? navigation.columnAt(range.head, range.headAffinity);
+            const previous = prior?.[at], column = previous?.head ?? navigation.columnAt(range.head, range.headAffinity);
             const hit = column === undefined ? undefined : navigation.caretAtColumn(next, column);
-            columns.push(column); done(hit ? moved(range, hit.offset, extend, hit.affinity) : range);
+            // Both ends can clamp to the same caret on a short row. Keep their goals for the next copy.
+            if (add && (range.head !== range.anchor || previous?.anchor !== undefined)) {
+                const anchorLine = buffer.lineAt(range.anchor), targetLine = navigation.navigationLine(anchorLine, direction, count, page);
+                const anchor = previous?.anchor ?? navigation.columnAt(range.anchor, range.anchorAffinity);
+                const anchorHit = anchor !== undefined && targetLine !== anchorLine ? navigation.caretAtColumn(targetLine, anchor) : undefined;
+                columns.push({ head: column, anchor });
+                done(hit && anchorHit ? { head: hit.offset, headAffinity: hit.affinity, anchor: anchorHit.offset, anchorAffinity: anchorHit.affinity } : range);
+            } else {
+                columns.push({ head: column }); done(hit ? moved(range, hit.offset, extend, hit.affinity) : range);
+            }
         }, destinations => {
             if (page) viewport.scrollTo({ top: state.scrollTop + pageDelta });
             const ranges = add ? [...capture.selectionSet.ranges, ...destinations] : destinations;
@@ -887,10 +900,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             preferred = { selections, revision: capture.revision, layout, columns: nextColumns };
         }, { validLayout: () => navigationLayout() === layout, navigation: true, inline, ...(capture.selectionSet.ranges.length > 1 ? {
             ...(capture.selectionSet.ranges.length <= commandBudget.inlineRanges ? { batchSize: commandBudget.shortRangeBatch } : {}),
-            prepare: (ranges: readonly Selection[]) => navigation.prepareNavigationRows([...new Set(ranges.flatMap(range => {
-                const line = buffer.lineAt(range.head); return [line, navigation.navigationLine(line, direction, count, page)];
-            }))]) } : {}) });
-        }, capture => shortVertical(capture, direction, page));
+            prepare: (ranges: readonly Selection[]) => navigation.prepareNavigationRows([...verticalRows(buffer, ranges, add,
+                line => navigation.navigationLine(line, direction, count, page))]) } : {}) });
+        }, capture => shortVertical(capture, direction, page, add));
         return true;
     }
     function languageCommand(command: EditingCommand | Readonly<{ character: string }>): boolean {

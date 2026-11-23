@@ -240,7 +240,7 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Ctrl/Cmd + L | Select the touched lines with their line breaks. Press again to extend by one line. |
 | Ctrl/Cmd + D | Select the word under or touching the caret, then add the next occurrence on each press, wrapping at EOF. Between separators the caret stays put. |
 | Ctrl/Cmd + Shift + L | Select all occurrences of the word under or touching the caret. Between separators the caret stays put. An explicit selection searches for its exact, case-sensitive text. |
-| Ctrl/Cmd + Alt/Option + Up / Down | Add a caret at the same visual column on the preceding or following visible row. |
+| Ctrl/Cmd + Alt/Option + Up / Down | Copy each caret or selection one visible row up or down. Both ends keep their visual columns across shorter rows. |
 | Ctrl/Cmd + U | Restore the previous selection set in this view. Each text revision starts a fresh caret history. |
 | Ctrl/Cmd + G | Move to the start of the requested line. An off-screen line appears in the center. Requires `requestLine`. |
 | Ctrl/Cmd + Shift + Backslash (physical key) | Jump from each selection's active end to the matching bracket. Uses the configured pairs and scan limits even when highlighting is off. |
