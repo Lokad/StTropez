@@ -231,6 +231,8 @@ against the revision of the pane they describe. [Decoration layers](viewport.md#
 A pure insertion or deletion marks the empty side with a point at the corresponding text position.
 Only the side containing changed text receives a changed-line background. The tint fills the
 visible text area as you scroll sideways. Its change bar stays beside the gutter.
+In forced colors, dashed bars and underlines mark removals and solid ones mark additions.
+A bracket marks an empty change. Aligned padding has a dotted bar.
 
 Set `--st-comparison-baseline-line` and `--st-comparison-working-line` on the host to theme the
 row tints. The matching `--st-comparison-baseline-bar` and `--st-comparison-working-bar` set

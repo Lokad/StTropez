@@ -105,6 +105,7 @@ Rulers and line highlights add no text or scroll range. Only a collapsed primary
 highlight. Each view has its own settings. Set `--st-column-ruler`, `--st-current-line` and
 `--st-current-line-border` in CSS to choose colors. Host `font-feature-settings` can override
 individual ligatures.
+In forced colors, a dotted outline identifies the current line.
 
 The minimap draws short files at their miniature height. For long files, it samples line prefixes
 across the folded or aligned document to fit the track. Decoration layers supply glyph colors and

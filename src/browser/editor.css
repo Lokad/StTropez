@@ -123,6 +123,17 @@
 }
 .st-comparison-removed { background-color: var(--st-comparison-removed, #873e4e); }
 .st-comparison-added { background-color: var(--st-comparison-added, #246246); }
+@media (forced-colors: active) {
+    .st-current-line-background { outline: 1px dotted CanvasText; outline-offset: -1px; }
+    .st-viewport-row.st-comparison-line-baseline::before { box-sizing: border-box; border-left: 3px dashed CanvasText; }
+    .st-viewport-row.st-comparison-line-working::before { box-sizing: border-box; border-left: 3px solid CanvasText; }
+    .st-comparison-removed { border-bottom: 2px dashed currentColor; }
+    .st-comparison-added { border-bottom: 2px solid currentColor; }
+    .st-viewport-row .st-comparison-anchor[data-ornament="point"]::after {
+        height: .65em; width: .25em; border: 1px solid currentColor; border-right: 0; border-left-width: 2px;
+    }
+    .st-comparison-padding { box-sizing: border-box; border-left: 3px dotted GrayText; }
+}
 .st-comparison-preview { display: grid; flex: none; max-height: min(8rem, 30%); overflow: auto; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .5rem; padding: .5rem; }
 .st-comparison-preview[hidden] { display: none; }
 .st-comparison-preview pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }

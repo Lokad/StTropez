@@ -146,6 +146,44 @@ test("paired rows highlight their own changed text and restore together", async 
     expect(await page.evaluate(n => window.comparisonFixture.range(0, n), work.length)).toBe(work);
 });
 
+test("forced colors distinguish changed rows, characters, empty changes and the current line", async ({ page }) => {
+    await page.emulateMedia({ forcedColors: "active" });
+    test.skip(!await page.evaluate(() => matchMedia("(forced-colors: active)").matches), "Engine does not emulate forced colors");
+    await page.evaluate(() => {
+        const f = window.comparisonFixture;
+        f.setText("value = 1;\nkeep\nlast"); f.begin("accept"); f.finish("accept"); f.setText("value = 9;\nkeep\nextra\nlast");
+        f.review.setRowsAligned(true); f.review.panes.working.configure({ highlightCurrentLine: true });
+        f.select({ anchor: 0, head: 0 }); f.focus();
+    }); await ready(page);
+    const sections = page.locator(".st-comparison-panes > section");
+    for (const [pane, side, mark, stroke] of [
+        [sections.first(), "baseline", "removed", "dashed"], [sections.last(), "working", "added", "solid"]
+    ] as const) {
+        const row = pane.locator(".st-comparison-line-" + side).first();
+        expect(await row.evaluate(node => getComputedStyle(node, "::before").borderLeftStyle)).toBe(stroke);
+        await expect(pane.locator(".st-comparison-" + mark).first()).toHaveCSS("border-bottom-style", stroke);
+    }
+    const empty = sections.first().locator(".st-comparison-anchor");
+    expect(await empty.evaluate(node => parseFloat(getComputedStyle(node, "::after").borderLeftWidth))).toBe(2);
+    await expect(sections.first().locator(".st-comparison-padding").first()).toHaveCSS("border-left-style", "dotted");
+    const layer = sections.last().locator(".st-viewport-layer");
+    const top = await layer.evaluate(node => node.querySelector(".st-current-line-background")!.getBoundingClientRect().top - node.getBoundingClientRect().top);
+    const image = await layer.screenshot({ scale: "css" });
+    const paint = await page.evaluate(async ({ png, top }) => {
+        const img = new Image(); img.src = "data:image/png;base64," + png; await img.decode();
+        const canvas = document.createElement("canvas"); canvas.width = img.width; canvas.height = img.height;
+        const ctx = canvas.getContext("2d")!; ctx.drawImage(img, 0, 0);
+        const pixel = (x: number, y: number) => ctx.getImageData(x, y, 1, 1).data.slice(0, 3).join(",");
+        const y = Math.round(top), fill = pixel(100, y + 8);
+        const dotted = [y - 1, y, y + 1].some(yy => {
+            const stripe = Array.from({ length: 50 }, (_, i) => pixel(100 + i, yy));
+            return new Set(stripe).size > 1;
+        });
+        return { bar: pixel(1, y + 8) !== fill, currentLine: dotted };
+    }, { png: image.toString("base64"), top });
+    expect(paint).toEqual({ bar: true, currentLine: true });
+});
+
 test("a one-sided change marks the empty range without tinting its unchanged neighbour", async ({ page }) => {
     const tail = "shared long line ".repeat(32);
     const original = "first\nmiddle\nlast\n" + tail;
