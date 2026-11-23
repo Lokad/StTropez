@@ -6,7 +6,7 @@ import { createPanelKeyBinding } from "./panel-keys.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { focusSourceCaret, onSourceFocus } from "./source-focus.ts";
 import { openChangedFile, type ChangedFile, type LanguageHost } from "./language-host.ts";
-import type { DocumentId, TabId } from "../../src/index.ts";
+import type { DocumentId, DocumentSnapshot, TabId } from "../../src/index.ts";
 import { createDocumentColorController } from "../../src/browser/index.ts";
 import type { ColorPresentationChoice, DecorationLayer, DocumentColorChoice, DocumentColorController, ReviewEditResult, TextEditor } from "../../src/browser/index.ts";
 import type { LspDocumentColor, LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
@@ -18,6 +18,11 @@ export type ColorHostOptions = Readonly<{ provider: LspWorkspace;
     prepare: (kind: "discovery" | "presentation", policy: FixturePolicy<ColorFault>) => LspPrepare }>;
 type Session = { id: string; editor: TextEditor; controller: DocumentColorController; swatches: ReturnType<typeof watchColorSwatches> };
 export type ColorNote = ColorReference & Readonly<{ ordinal: number; line: number; column: number; css: string; inspect: () => void }>;
+function colorReference(document: DocumentSnapshot, { from, to, color }: LspDocumentColor): ColorReference {
+    const text = document.buffer.slice(from, Math.min(to, from + colorLimits.literal));
+    const parsed = text.length === to - from ? parseColor(text) : undefined;
+    return { from, to, color, text, label: parsed && sameColor(parsed, color) ? text : rgbaColor(color) };
+}
 export type DocumentColorsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; view: string | null;
     status: "idle" | "scan" | "colors" | "presentations" | "applied" | "expired" | "failed"; message: string; count: number; page: number; paging: PanelPaging | null; colors: readonly ColorNote[];
     selected: number; value: string; css: string | null; presentation: string; choices: readonly ColorPresentationChoice[];
@@ -89,11 +94,11 @@ export class HostDocumentColors {
         const selected = patch.selected ?? (target ? state.colors.findIndex(c => c.from === target.from && c.to === target.to && sameColor(c.color, target.color))
             : fresh && state.colors.length ? Math.max(0, state.colors.findIndex(c => c.from <= head && head <= c.to)) : old.selected);
         const reference = state.colors[selected], page = patch.page ?? (fresh ? Math.max(0, Math.floor(selected / colorLimits.page)) : old.page);
-        const value = patch.value ?? (fresh && reference && !target ? rgbaColor(reference.color) : this.value), proposed = parseColor(value);
+        const value = patch.value ?? (fresh && reference && !target ? colorReference(doc, reference).label : this.value), proposed = parseColor(value);
         this.value = value;
         const colors = fresh || page !== old.page ? state.colors.slice(page * colorLimits.page, (page + 1) * colorLimits.page).map((c, i) => {
-            const { line, column } = doc.buffer.positionAt(c.from), ordinal = page * colorLimits.page + i, label = rgbaColor(c.color);
-            return { from: c.from, to: c.to, color: c.color, label, text: doc.buffer.slice(c.from, Math.min(c.to, c.from + 96)), css: label, ordinal, line: line + 1, column: column + 1,
+            const { line, column } = doc.buffer.positionAt(c.from), ordinal = page * colorLimits.page + i;
+            return { ...colorReference(doc, c), css: rgbaColor(c.color), ordinal, line: line + 1, column: column + 1,
                 inspect: () => this.inspect(s, ordinal, c) };
         }) : old.colors;
         const review = state.review, pending = state.status === "previewing";
@@ -167,7 +172,8 @@ export class HostDocumentColors {
     private inspect(s: Session, ordinal: number, color: DocumentColorChoice) {
         if (this.owner !== s || s.controller.getSnapshot().colors[ordinal] !== color) return;
         s.controller.dismissPreview();
-        this.render(s, { page: Math.floor(ordinal / colorLimits.page), selected: ordinal, value: rgbaColor(color.color) });
+        const value = colorReference(this.host.workspace.document(s.editor.view.documentId), color).label;
+        this.render(s, { page: Math.floor(ordinal / colorLimits.page), selected: ordinal, value });
         this.valueField.element?.focus(); this.valueField.element?.select();
     }
     private start(keyboard: boolean, swatch?: LspDocumentColor) {
@@ -180,7 +186,7 @@ export class HostDocumentColors {
         }
         this.cancel(); this.owner = s; this.metrics.requested++;
         s.swatches.cancel(); this.selectedSwatch = swatch;
-        if (swatch) this.value = rgbaColor(swatch.color);
+        if (swatch) this.value = colorReference(this.host.workspace.document(s.editor.view.documentId), swatch).label;
         void s.controller.request().then(() => { if (keyboard && this.owner === s && s.controller.getSnapshot().status === "ready" && s.editor.getSnapshot().focused) this.colorList.element?.focus(); });
         if (swatch) { this.valueField.element?.focus(); this.valueField.element?.select(); }
     }

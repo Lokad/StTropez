@@ -440,7 +440,8 @@ again or choose **Apply captured rename** to apply the reviewed edits. Focus ret
 pane that requested the rename, where Undo reverses the changes across all affected files.
 Color swatches appear after the provider scans the open file and refresh after typing pauses.
 Click a swatch to edit that literal, or press F6 to list the provider’s colors, including colors
-at the same source position. Press Enter in the value field to preview it. **Apply captured color** applies
+at the same source position. The value field keeps the source spelling when it matches the provider's
+color. Press Enter to preview it. **Apply captured color** applies
 the reviewed format. Changing formats during a press requires a fresh click.
 
 An action’s initial edit gets its own undo step. For later edits, open **Workspace provider** and
