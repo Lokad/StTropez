@@ -4,7 +4,7 @@ import { NotificationScope, Store } from "../core/observable.ts";
 import { anchoredRange } from "../core/positions.ts";
 import type { Observable } from "../core/observable.ts";
 import { TextBuffer } from "../core/text-buffer.ts";
-import { LspLineIndex } from "./lsp-positions.ts";
+import { cooperateDuringScan, LspLineIndex } from "./lsp-positions.ts";
 import { defaultDocumentUnits, LspSession } from "./lsp-session.ts";
 import type { LspDocument, LspDocumentCapture, LspDocumentFeature, LspDocumentSnapshot, LspRequestContext, LspSessionOptions, LspSessionSnapshot } from "./lsp-session.ts";
 import type { RpcCall } from "./json-rpc.ts";
@@ -294,12 +294,15 @@ export class LspWorkspace {
             let interrupt: (() => void) | undefined;
             const stop = context.onCancel(() => interrupt?.());
             try {
-                const index = capture?.index ?? await LspLineIndex.create(doc.buffer, () => new Promise<void>((resolve, reject) => {
+                const check = () => {
                     if (!isCurrent() || !context.isCurrent()) throw stale();
-                    const cancel = this.options.schedule(0, resolve);
+                };
+                const pause = () => new Promise<void>((resolve, reject) => {
+                    const cancel = this.options.schedule(0, () => { interrupt = undefined; resolve(); });
                     interrupt = () => { cancel(); reject(stale()); };
-                }));
-                if (!isCurrent() || !context.isCurrent()) throw stale();
+                });
+                const index = capture?.index ?? await LspLineIndex.create(doc.buffer, cooperateDuringScan(check, pause, this.options.now));
+                check();
                 const document = Object.freeze({ ...doc.language!, resourceId: doc.resourceId, documentId: doc.id, revision: doc.revision, buffer: doc.buffer });
                 return Object.freeze({ target: Object.freeze({ document, index, version: capture?.version ?? null, isCurrent }), release });
             } finally { stop(); }

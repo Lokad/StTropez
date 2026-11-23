@@ -16,6 +16,65 @@ function retained(f: ReturnType<typeof clientFixture>, addressed = uri) {
     return { get released() { return released; }, value };
 }
 
+test("a large unopened target yields with a stopped clock and cancels an outstanding index turn", async t => {
+    const line = "amount\r\n😀\r", lines = Math.ceil(524288 / line.length), text = line.repeat(lines) + "end";
+    const tail = { start: { line: lines * 2 - 1, character: 0 }, end: { line: lines * 2 - 1, character: 2 } };
+    const parked = latch<void>();
+    let loading = false, hold = false, turns = 0, cancelledTurn = false, releases = 0;
+    const f = clientFixture(t, undefined, async () => {
+        loading = true;
+        return { text, languageId: "generic", release: () => { releases++; } };
+    }, { now: () => 0, schedule(ms, run) {
+        if (loading && ms === 0) {
+            turns++;
+            if (hold) { parked.resolve(); return () => { cancelledTurn = true; }; }
+        }
+        const timer = setTimeout(run, ms); return () => clearTimeout(timer);
+    } });
+    const client = createLspNavigationClient(f.provider); t.after(client.dispose);
+    f.peer.onRequest("textDocument/definition", () => [{ uri, range: tail }]);
+    const lookup = () => client.run({ document: f.document(), offset: 0, kind: "definition" });
+    const answer = await lookup().result, location = answer.locations[0]!;
+    assert.equal(turns, 1); assert.equal(location.target.document.buffer.slice(location.from, location.to), "😀");
+    client.cancel(); await settled(); assert.equal(answer.isCurrent(), false); assert.equal(releases, 1);
+    loading = false; hold = true;
+    const call = lookup(), rejected = assert.rejects(call.result, cancelled);
+    await parked.promise; call.cancel(); await rejected; await settled();
+    assert.equal(cancelledTurn, true); assert.equal(releases, 2);
+    client.dispose(); await settled(); assert.equal(f.workspace.diagnostics().leases, 0);
+});
+
+test("reference loads overlap within a bound, preserve wire order and release siblings of a declined URI", async t => {
+    const firstFour = latch<void>(), gates = Array.from({ length: 6 }, () => latch<void>());
+    const started: number[] = [], released: number[] = [];
+    let decline = false;
+    const f = clientFixture(t, undefined, async addressed => {
+        const id = Number(addressed.slice(-1)); started.push(id);
+        if (started.length === 4) firstFour.resolve();
+        await gates[id]!.promise;
+        if (decline && id === 1) return;
+        return { text: "const name", languageId: "generic", release: () => { released.push(id); } };
+    });
+    const client = createLspNavigationClient(f.provider); t.after(client.dispose);
+    const order = [0, 1, 2, 3, 4, 5, 0];
+    f.peer.onRequest("textDocument/references", () => order.map(id => ({ uri: uri + id, range })));
+    const lookup = () => client.run({ document: f.document(), offset: 0, kind: "references" }).result;
+    const result = lookup(); await firstFour.promise;
+    assert.deepEqual(started, [0, 1, 2, 3]);
+    for (const id of [3, 2, 5, 4, 1, 0]) { gates[id]!.resolve(); await settled(); }
+    assert.deepEqual((await result).locations.map(item => item.target.document.uri), order.map(id => uri + id));
+    assert.deepEqual(started, [0, 1, 2, 3, 4, 5]);
+    client.cancel(); await settled(); assert.deepEqual(released.sort(), [0, 1, 2, 3, 4, 5]);
+
+    decline = true; released.length = started.length = 0;
+    for (let i = 0; i < 6; i++) gates[i] = latch<void>();
+    const refused = assert.rejects(lookup(), /target is unavailable/);
+    gates[1]!.resolve(); await refused;
+    for (const gate of gates) gate.resolve();
+    await settled(); assert.deepEqual(started, [0, 1, 2, 3]); assert.deepEqual(released.sort(), [0, 2, 3]);
+    client.dispose(); await settled(); assert.equal(f.workspace.diagnostics().leases, 0);
+});
+
 test("read-only target text survives an opened view and cannot supply editable workspace contents", async t => {
     let releases = 0;
     const f = clientFixture(t, undefined, async () => ({ text: "first\rline 😀", languageId: "generic", release: () => { releases++; } }));

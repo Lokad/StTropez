@@ -2,14 +2,15 @@ import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
 import { setImmediate } from "node:timers/promises";
 import { referencePeer } from "../../fixtures/protocol/reference-peer.ts";
-import type { LspTargetResolver, RpcTransport } from "../../src/protocol/index.ts";
+import type { LspTargetResolver, LspWorkspaceOptions, RpcTransport } from "../../src/protocol/index.ts";
 
 import { Workspace } from "../../src/index.ts";
 
 import * as protocol from "../../src/protocol/index.ts";
 export { protocol };
 export const settled = async () => { await setImmediate(); await setImmediate(); };
-export function clientFixture(t: TestContext, connect?: () => Promise<void>, resolveTarget?: LspTargetResolver) {
+export function clientFixture(t: TestContext, connect?: () => Promise<void>, resolveTarget?: LspTargetResolver,
+    timing: Pick<LspWorkspaceOptions, "now" | "schedule"> | undefined = undefined) {
     const workspace = new Workspace();
     const source = workspace.createTextResource({ scope: "public-client", resource: "source", variant: "working" }, "Source", { value: "alpha beta" }, undefined,
         { language: { uri: "generic:source", languageId: "generic" } });
@@ -42,6 +43,7 @@ export function clientFixture(t: TestContext, connect?: () => Promise<void>, res
         applyEdit: true,
         connect: async () => { await connect?.(); return ports[0]!; },
         schedule: (ms, callback) => { const timer = setTimeout(() => { timers.delete(timer); callback(); }, ms); timers.add(timer); return () => { clearTimeout(timer); timers.delete(timer); }; },
+        ...timing,
         onError: error => errors.push(error.message)
     });
     t.after(async () => {

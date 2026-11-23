@@ -6,7 +6,7 @@ import type { Observable } from "../core/observable.ts";
 import { JsonRpcConnection } from "./json-rpc.ts";
 import type { RpcCall, RpcOptions, RpcRequestContext, RpcScheduler, RpcTransport } from "./json-rpc.ts";
 import type { JsonValue } from "./wire.ts";
-import { LspLineIndex, lspTextChanges } from "./lsp-positions.ts";
+import { cooperateDuringScan, LspLineIndex, lspTextChanges } from "./lsp-positions.ts";
 import type { LspChangeHint, LspTextChange } from "./lsp-positions.ts";
 import { compileLspSelector } from "./lsp-selector.ts";
 import type { LspSelector, LspSelectorDocument, LspUriPath } from "./lsp-selector.ts";
@@ -405,13 +405,9 @@ export class LspSession {
                 if (old?.snapshot === snapshot) continue;
                 const expired = {}, retained = () => this.documents.get(uri) === entry;
                 const valid = () => entry.snapshot === snapshot && retained() && this.generation === generation;
-                const now = this.options.now ?? Date.now; let started = now(), checkpoints = 0;
-                const cooperate = async () => {
+                const cooperate = cooperateDuringScan(() => {
                     this.ready(epoch); if (!retained()) throw expired;
-                    if (++checkpoints < 32 && now() - started < 4) return;
-                    await this.pause(epoch); if (!retained()) throw expired;
-                    started = now(); checkpoints = 0;
-                };
+                }, () => this.pause(epoch), this.options.now);
                 const base = entry.index ?? old?.index;
                 const compact = denseBatch(hint, snapshot.buffer.length), planHint = compact ? undefined : hint;
                 let plan;

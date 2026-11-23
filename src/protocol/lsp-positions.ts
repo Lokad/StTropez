@@ -8,6 +8,17 @@ export type LspPosition = Readonly<{ line: number; character: number }>;
 export type LspRange = Readonly<{ start: LspPosition; end: LspPosition }>;
 export type LspTextChange = Readonly<{ range: LspRange; text: string }>;
 export type LspCooperate = () => Promise<void>;
+/** Share a time slice across scan checkpoints, even when the supplied clock stands still. */
+export function cooperateDuringScan(check: () => void, pause: () => Promise<void>, now: () => number = Date.now): LspCooperate {
+    let started = now(), checkpoints = 0;
+    return async () => {
+        check();
+        if (++checkpoints < 32 && now() - started < 4) return;
+        await pause();
+        check();
+        started = now(); checkpoints = 0;
+    };
+}
 export type LspChangeHint = Readonly<{ before: TextBuffer; edits: readonly TextEdit[] }>;
 type Span = { from: number; to: number; insertFrom: number; insertTo: number };
 const chunkUnits = 16384;

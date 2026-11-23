@@ -420,6 +420,9 @@ For a custom pointer UI, `prepareDefinition({ document, project, offset }).resul
 `hasTargets`, `originRange`, `isCurrent()` and `resolve()`. It validates the reply without
 loading a destination. The editor underlines the provider's origin range when supplied and
 uses a bounded local word for a plain location. Calling `resolve()` loads the captured targets.
+Navigation loads up to four distinct missing URIs at once and returns locations in the provider's
+original order. Repeated locations share a load. If the host declines a URI, the lookup fails and
+releases the other targets, including any that finish after cancellation.
 
 `decodeLspLocations` accepts Location, Location[] or LocationLink[] for definitions and
 Location[] for references; null yields an empty result. Mixed location/link arrays are refused.
@@ -437,7 +440,8 @@ belong to this workspace and carry the requested URI. For a read-only navigation
 `{ text, languageId }`, where `text` is a string or a `TextBuffer`. The workspace retains these
 contents in an internal read-only resource while the result or an opened view needs them.
 
-The provider builds the UTF-16 index, checks the resource and its edit permissions, and uses a
+The provider builds the UTF-16 index with the [synchronization budget](language-server.md#limits-and-failures),
+checks the resource and its edit permissions, and uses a
 wire version only for a matching synchronized document. Either form accepts an optional
 `release()` callback for host-owned I/O resources.
 

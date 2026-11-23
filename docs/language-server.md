@@ -347,7 +347,7 @@ WebSocket and server limits: JSON escaping can exceed a wire budget even when ra
 | WebSocket queued output | 16 MiB conservative UTF-8 estimate; configurable `maxBufferedBytes` |
 | Selectors | 32 filters, 256 units/pattern, 16 expanded alternatives/1,024 aggregate units, 4,096-unit path |
 | Commands | 128 names/static provider or registration, 256-unit names, 256-name combined union, 8,192 JSON units/argument array |
-| Cooperative synchronization | 4 ms or 32 checkpoints per turn; optional `now` clock, default `Date.now` |
+| Document synchronization and unopened-target indexing | Yield after 4 ms or 32 checkpoints. The optional `now` clock defaults to `Date.now`. |
 
 Transport or batch-count overflow closes the connection. An oversized response rejects the identified
 call and releases its deadline. A rejected batch rejects its identified calls together. Other calls

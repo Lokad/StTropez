@@ -39,30 +39,38 @@ export function createLspTargets(captured: ReadonlyMap<string, LspEditTarget>, r
     return Object.freeze({ isCurrent, dispose, get: (uri: string) => targets.get(uri),
         resolve: async (uris: readonly string[], purpose: LspTargetContext["purpose"]) => {
             if (!isCurrent()) throw stale();
-            for (const uri of new Set(uris)) {
-                if (targets.has(uri)) continue;
-                // Expose source/provider intent independently of resolved target guards. A host
-                // can reuse this check in its target guard without recursive target validation.
-                const context: LspTargetContext = Object.freeze({ purpose, source: lifetime.source, isCurrent: live,
-                    onCancel: listener => { let active = true;
-                        const notify = () => { if (active) { active = false; return listener(); } };
-                        if (!isCurrent()) void Promise.resolve().then(notify).catch(lifetime.reportError); else listeners.add(notify);
-                        return () => { active = false; listeners.delete(notify); }; } });
-                const loading = Promise.resolve().then(() => {
-                    if (!isCurrent()) throw stale(); return resolve(uri, context);
-                }).then(lease => {
-                    if (!lease) throw new TypeError(`LSP target is unavailable: ${uri}`);
-                    let retained = false;
-                    try {
-                        if (!isCurrent() || !lease.target.isCurrent()) throw stale();
+            const missing = [...new Set(uris)].filter(uri => !targets.has(uri));
+            if (!missing.length) return;
+            // A host can use this source/provider guard without recursively validating its own target.
+            const context: LspTargetContext = Object.freeze({ purpose, source: lifetime.source, isCurrent: live,
+                onCancel: listener => { let active = true;
+                    const notify = () => { if (active) { active = false; return listener(); } };
+                    if (!isCurrent()) void Promise.resolve().then(notify).catch(lifetime.reportError); else listeners.add(notify);
+                    return () => { active = false; listeners.delete(notify); }; } });
+            const pending = missing.values();
+            let failed = false;
+            async function load() {
+                try {
+                    for (const uri of pending) {
+                        if (failed || !isCurrent()) throw stale();
+                        const lease = await resolve(uri, context);
+                        if (!lease) throw new TypeError(`LSP target is unavailable: ${uri}`);
+                        // Own the lease before validating it so a failed or cancelled batch releases it.
+                        if (disposed || failed) { release(lease); throw stale(); }
+                        leases.add(lease);
                         const target = lease.target;
+                        if (!isCurrent() || !target.isCurrent()) throw stale();
                         if (target.document.uri !== uri || target.index.buffer !== target.document.buffer) throw new TypeError("Resolved LSP target does not match its URI and buffer.");
-                        const guarded = Object.freeze({ ...target, isCurrent: () => live() && target.isCurrent() });
-                        resolved.set(uri, target); targets.set(uri, guarded); leases.add(lease); retained = true;
-                    } finally { if (!retained) release(lease); }
-                });
-                await Promise.race([loading, cancellation]);
-                if (!isCurrent()) throw stale();
+                        resolved.set(uri, target);
+                        targets.set(uri, Object.freeze({ ...target, isCurrent: () => live() && target.isCurrent() }));
+                    }
+                } catch (error) { failed = true; throw error; }
             }
+            // Hosts can authorize and load independent navigation targets concurrently. Edits keep their original load order.
+            const count = purpose === "navigation" ? Math.min(4, missing.length) : 1;
+            try {
+                await Promise.race([Promise.all(Array.from({ length: count }, () => Promise.resolve().then(load))), cancellation]);
+                if (!isCurrent()) throw stale();
+            } catch (error) { dispose(); throw error; }
         } });
 }
