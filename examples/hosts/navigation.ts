@@ -1,6 +1,6 @@
 import { fixtureRequests, type FixturePolicy } from "../shared/language/fixture-requests.ts";
 import { captureDestinationPanes, isMountedEditor, presentDocument, type NavigationHost } from "./language-host.ts";
-import { onSourceFocus } from "./source-focus.ts";
+import { focusSource, onSourceFocus } from "./source-focus.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
 import { createWorkingSource } from "./working-source.ts";
@@ -182,7 +182,8 @@ export class HostNavigationTools {
             if (!editor || (!replacedOrigin && job.origin.controller.getSnapshot().result !== result) || !this.host.canCapture(document)) {
                 this.publish({ message: "The captured destination cannot be presented in an available candidate pane." }); return false;
             }
-            return !!editor.reveal(at, { expectedRevision: at.document.revision, select: true, focus: true });
+            if (!editor.reveal(at, { expectedRevision: at.document.revision, select: true })) return false;
+            focusSource(editor); return true;
         } finally {
             this.presenting = false;
             if (this.job === job && !this.sessions.has(job.origin)) this.clear("idle", "The requesting pane was replaced.");
@@ -202,11 +203,15 @@ export class HostNavigationTools {
     }
     readonly returnToOrigin = (): void => {
         if (this.active && !this.host.canCapture(this.active.editor.view.documentId)) return;
+        let origin: TextEditor | undefined;
         const result = this.history.back(view => {
             if (!this.host.canCapture(view.documentId)) return "busy";
-            for (const session of this.sessions.keys()) if (session.editor.view === view && this.available(session)) return session.editor;
+            for (const session of this.sessions.keys()) if (session.editor.view === view && this.available(session)) {
+                origin = session.editor; return origin;
+            }
             return undefined;
-        }, { focus: true });
+        });
+        if (result === "restored" && origin) focusSource(origin);
         this.publish({ message: result === "restored" ? "Returned to the captured origin and complete selection set."
             : result === "busy" ? "Finish pending input before returning." : "No navigation origin is still open." });
     };

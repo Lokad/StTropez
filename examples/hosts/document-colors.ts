@@ -3,7 +3,7 @@ import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.
 import { formatEditNote } from "./edit-review.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
-import { onSourceFocus } from "./source-focus.ts";
+import { focusSourceCaret, onSourceFocus } from "./source-focus.ts";
 import { openChangedFile, type ChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, TabId } from "../../src/index.ts";
 import { createDocumentColorController } from "../../src/browser/index.ts";
@@ -24,12 +24,6 @@ export type DocumentColorsSnapshot = Readonly<{ available: boolean; connected: b
 const initial: DocumentColorsSnapshot = { available: false, connected: false, disconnected: false, pending: false, view: null,
     status: "idle", message: "Focus a source to discover colors.", count: 0, page: 0, paging: null, colors: [], selected: -1, value: "", css: null,
     presentation: "", choices: Object.freeze([]), edits: Object.freeze([]), canPreview: false, canApply: false, reviewKey: null, apply: null, changed: null };
-
-function focusSource(editor: TextEditor) {
-    editor.viewport.revealOffset(editor.view.getSnapshot().selection.head);
-    editor.viewport.element.scrollIntoView({ block: "nearest", inline: "nearest" });
-    editor.focus();
-}
 
 /** The host owns the picker, swatches, preview list and focus after confirmation. */
 export class HostDocumentColors {
@@ -110,7 +104,7 @@ export class HostDocumentColors {
             presentation: review ? `provider-${choices.indexOf(review.choice)}` : "", edits, canPreview: !!reference && !!proposed && !pending,
             canApply: review?.canApply ?? false, reviewKey, apply: review ? () => {
                 const result = review.apply();
-                if (result.applied && this.sessions.has(s)) focusSource(s.editor);
+                if (result.applied && this.sessions.has(s)) focusSourceCaret(s.editor);
                 return result;
             } : null });
     }
@@ -145,7 +139,7 @@ export class HostDocumentColors {
                 enabled: () => this.owner === s && ownsValue(), run: this.preview }, { keys: ["Enter"], shared: true, priority: 34, repeat: false });
             register({ id: "colors.dismiss", label: "Dismiss color preview",
                 enabled: () => ownsValue() || (this.owner === s && this.colorList.focused),
-                run: () => { this.cancel(); focusSource(editor); } }, { keys: ["Escape"], shared: true, priority: 8 });
+                run: () => { this.cancel(); focusSourceCaret(editor); } }, { keys: ["Escape"], shared: true, priority: 8 });
             this.syncSwatches();
             onSourceFocus(editor, signal, () => { this.active = s; this.publish(); });
             editor.onEditIntent(() => {
@@ -173,7 +167,7 @@ export class HostDocumentColors {
     };
     readonly openChanged = (id: DocumentId) => {
         if (this.disposed || this.owner || this.cell.get().changed?.document !== id) return;
-        this.publish({ message: openChangedFile(this.host, id, this.sessions.keys(), focusSource) });
+        this.publish({ message: openChangedFile(this.host, id, this.sessions.keys()) });
     };
     debug() { return { ...this.metrics, state: this.cell.get(), sessions: this.sessions.size, subscriptions: this.cell.count(),
         decoratedViews: [...this.sessions.keys()].filter(s => !!s.painted).length, disposed: this.disposed }; }

@@ -3,7 +3,7 @@ import { createPanelKeyBinding } from "./panel-keys.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.ts";
 import { captureDestinationPanes, presentDocument, unavailablePaneMessage, type NavigationHost } from "./language-host.ts";
-import { onSourceFocus } from "./source-focus.ts";
+import { focusSource, onSourceFocus } from "./source-focus.ts";
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, DocumentSnapshot, TabId } from "../../src/index.ts";
 import { createDocumentLinkController } from "../../src/browser/index.ts";
@@ -108,7 +108,7 @@ export class HostDocumentLinks {
                 run: () => {
                     const origin = this.route?.origin;
                     this.cancel();
-                    if (origin && this.sessions.has(origin)) origin.editor.focus();
+                    if (origin && this.sessions.has(origin)) focusSource(origin.editor);
                 } }, { keys: ["Escape"], shared: true, priority: 7 });
             onSourceFocus(editor, signal, () => {
                 if (this.active !== session && this.cell.get().status === "resolving" && !this.presenting) this.cancel();
@@ -228,7 +228,7 @@ export class HostDocumentLinks {
             const placed = viewState ? editor.restoreView(viewState)
                 : editor.reveal({ from: 0, to: 0 }, { expectedRevision: doc.revision, select: true });
             if (!placed) return;
-            editor.focus(); return editor;
+            focusSource(editor); return editor;
         } catch (error) {
             if (current()) this.publish({ message: error instanceof Error ? error.message : "The host could not open the destination." });
         } finally { this.presenting = false; }

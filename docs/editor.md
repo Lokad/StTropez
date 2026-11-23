@@ -89,7 +89,9 @@ Use the [edit refusal event](host-integration.md#input-conflict-recovery) to exp
 
 ### Reveal a destination
 
-Call `editor.reveal(target, options)` to open folds covering a destination and scroll it into view.
+Call `editor.reveal(target, options)` to open folds covering a destination and scroll it into view
+inside the editor. If a host panel opens a destination elsewhere on the page, call
+`editor.element.scrollIntoView({ block: "nearest", inline: "nearest" })` to show the pane.
 Pass a zero-based `{ line, column }` or half-open UTF-16 offsets `{ from, to }`. Coordinates must be safe
 integers. Out-of-bounds values clamp to the document or line. Reversed ranges throw before the view changes.
 
@@ -98,7 +100,8 @@ integers. Out-of-bounds values clamp to the document or line. Reversed ranges th
 Use `"start"` to put the first row at the top or `"center"` to center the range. For a range taller
 than the viewport, the first row is the target. Scrolling takes effect on the next viewport paint.
 
-`select: true` replaces the selection set with the resolved range. `focus: true` focuses the editor.
+`select: true` replaces the selection set with the resolved range. `focus: true` focuses the editor
+and preserves the surrounding page’s scroll position.
 Both default to false and work in read-only views. The call returns the resolved offsets or `null`
 when the captured editor is unavailable, input or a command is pending, composition is active, or
 `expectedRevision` has expired. Keep the destination’s document identity when choosing a mounted editor.

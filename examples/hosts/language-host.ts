@@ -1,5 +1,6 @@
 import type { DocumentId, TabTarget, Workspace } from "../../src/index.ts";
 import type { TextEditor } from "../../src/browser/index.ts";
+import { focusSourceCaret } from "./source-focus.ts";
 
 export type ChangedFile = Readonly<{ document: DocumentId; title: string }>;
 
@@ -48,7 +49,7 @@ export function presentDocument(host: LanguageHost, id: DocumentId, sessions: It
 
 /** A completed edit identifies a document. Resolve its current editor when the user opens it. */
 export function openChangedFile(
-    host: LanguageHost, id: DocumentId, sessions: Iterable<{ editor: TextEditor }>, focus = (editor: TextEditor) => editor.focus(),
+    host: LanguageHost, id: DocumentId, sessions: Iterable<{ editor: TextEditor }>,
 ): string {
     let title: string;
     try { title = host.workspace.document(id).title; }
@@ -57,7 +58,7 @@ export function openChangedFile(
         if (!host.canCapture(id)) return "Finish the current edit before opening the changed file.";
         const editor = presentDocument(host, id, sessions);
         if (!editor) return unavailablePaneMessage;
-        focus(editor);
+        focusSourceCaret(editor);
         return `Opened ${title}.`;
     } catch {
         return `The host could not open ${title}.`;

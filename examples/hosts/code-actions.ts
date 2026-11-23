@@ -3,7 +3,7 @@ import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
 import { createActionPages } from "./action-pages.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
-import { onSourceFocus } from "./source-focus.ts";
+import { focusSourceCaret, onSourceFocus } from "./source-focus.ts";
 import { isMountedEditor, openChangedFile, type ChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, TabId, TabTarget } from "../../src/index.ts";
 import { createCodeActionController } from "../../src/browser/index.ts";
@@ -106,7 +106,7 @@ export class HostActionsTools {
             register({ id: "actions.submitModule", label: "Preview the entered module", enabled: ownsModule,
                 run: () => editor.commands.run("actions.request", "panel") }, { keys: ["Enter"], shared: true, priority: 35, repeat: false });
             register({ id: "actions.dismiss", label: "Dismiss action preview", enabled: ownsModule,
-                run: () => { this.cancel(); editor.focus(); } }, { keys: ["Escape"], shared: true, priority: 6 });
+                run: () => { this.cancel(); focusSourceCaret(editor); } }, { keys: ["Escape"], shared: true, priority: 6 });
         }, () => {
             if (this.active === s) this.active = undefined;
             if (this.panel?.source === s) {

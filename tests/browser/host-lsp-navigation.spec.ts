@@ -101,11 +101,13 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await expect(results(page)).toHaveText(["Navigation companion:1:7 · declaration"]);
         await results(page).first().evaluate(node => { node.dataset.retained = "navigation-row"; });
         await results(page).first().click(); await waitForNavigation(page); await expect(field(page, "Secondary source")).toBeFocused(); expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")!.documentId).toBe(companion);
+        await expect(field(page, "Secondary source").locator("..").locator(".st-viewport-selected").first()).toBeInViewport();
         const mounted = (await snapshot(page)).bindings.mounts;
         await results(page).first().click(); await expect(field(page, "Secondary source")).toBeFocused();
         expect((await snapshot(page)).bindings.mounts).toBe(mounted);
         await button(page, "Return to navigation origin").click(); await waitForNavigation(page); await expect(field(page)).toBeFocused(); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "primary")!.selectionSet);
         await expect(results(page).first()).toHaveAttribute("data-retained", "navigation-row");
+        await expect(field(page).locator("..").locator('.st-viewport-row[data-line="0"]')).toBeInViewport();
         await field(page).press("F12"); await expect(field(page, "Secondary source")).toBeFocused();
         await button(page, "Return to navigation origin").click(); await expect(field(page)).toBeFocused();
         await button(page, "Find references").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(3);

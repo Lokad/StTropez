@@ -82,6 +82,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         expect((await snapshot(page)).bindings.actions.capture?.view).toBe("primary");
         const requested = (await snapshot(page)).bindings.actions.requested;
         await module.press("Escape"); await expect(input(page)).toBeFocused(); await expect(choices(page)).toHaveCount(0);
+        await expect(input(page).locator("..").locator(".st-viewport-selected").first()).toBeInViewport();
         await module.focus(); await page.keyboard.down("Enter"); await page.keyboard.down("Enter"); await page.keyboard.up("Enter");
         await waitForActions(page); await expect(choices(page)).toHaveCount(9);
         expect((await snapshot(page)).bindings.actions.requested).toBe(requested + 1);

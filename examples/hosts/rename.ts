@@ -3,7 +3,7 @@ import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
 import { editPageSize, editPaging } from "./edit-review.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
-import { onSourceFocus } from "./source-focus.ts";
+import { focusSourceCaret, onSourceFocus } from "./source-focus.ts";
 import { openChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, TabId } from "../../src/index.ts";
 import { createRenameController } from "../../src/browser/index.ts";
@@ -97,10 +97,10 @@ export class HostRenameTools {
                     const state = this.cell.get();
                     if (state.pending) return;
                     if (!state.preview) this.prepareIn(session);
-                    else if (state.preview.confirm().applied && this.nameField.focused) editor.focus();
+                    else if (state.preview.confirm().applied && this.nameField.focused) focusSourceCaret(editor);
                 } }, { keys: ["Enter"], shared: true, priority: 33, repeat: false });
             register({ id: "rename.cancel", label: "Cancel rename", enabled: ownsField,
-                run: () => { this.cancel(); editor.focus(); } }, { keys: ["Escape"], shared: true, priority: 9 });
+                run: () => { this.cancel(); focusSourceCaret(editor); } }, { keys: ["Escape"], shared: true, priority: 9 });
             onSourceFocus(editor, signal, () => { this.active = session; this.publish(); });
             editor.onEditIntent(() => {
                 if (this.owner && this.owner !== session && this.host.workspace.document(editor.view.documentId).key.variant === "working") this.cancel();

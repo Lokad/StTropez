@@ -390,7 +390,9 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         const history = (await snapshot(page)).history, list = page.getByLabel("Module link results", { exact: true });
         await button(page, "Discover module links").click(); await expect(list.getByRole("button")).toHaveCount(1); await expect(list.getByRole("button")).toBeEnabled();
         await list.getByRole("button").click(); await expect.poll(async () => (await snapshot(page)).bindings.links.opened).toBe(1); await expect(field(page, "Secondary source")).toBeFocused();
+        await expect(field(page, "Secondary source").locator("..").locator('.st-viewport-row[data-line="0"]')).toBeInViewport();
         await button(page, "Return to link origin").click(); await expect(field(page)).toBeFocused(); expect((await snapshot(page)).history).toEqual(history);
+        await expect(field(page).locator("..").locator('.st-viewport-row[data-line="1"]')).toBeInViewport();
         await button(page, "Discover module links").click(); await expect(list.getByRole("button")).toBeEnabled();
         fault = "outside"; await list.getByRole("button").click(); expect(fault).toBeNull();
         await expect(page.getByLabel("Module link status", { exact: true })).toContainText("outside the host"); await expect(list.getByRole("button")).toBeDisabled(); expect((await snapshot(page)).bindings.links.opened).toBe(1);
