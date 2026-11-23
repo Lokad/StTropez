@@ -277,6 +277,32 @@ test("Find toggles regex on the existing query and replaces captured groups in o
     await expect(query).toHaveValue('import \\{ calculateTotal \\} from "\\./pricing";');
 });
 
+test("typing with Find open keeps unaffected highlights and the count on screen", async ({ page, baseURL }) => {
+    for (const [sample, query, rowText, count] of [["shipping", "number", "weightKg", 10], ["large", "Row", "Row 5:", 100000]] as const) {
+        const url = new URL(baseURL!); url.searchParams.set("sample", sample); await page.goto(url.href);
+        await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+        await page.locator("#find-toggle").click(); await page.locator("#find-query").fill(query);
+        await expect(page.locator("#find-status")).toHaveText(new RegExp(`^(1 of ${count}|${count} matches)$`));
+        const editor = page.locator("#editor"), row = editor.locator(".st-viewport-row").filter({ hasText: rowText }).first();
+        await row.click({ position: { x: 30, y: 8 } });
+        await page.keyboard.press("Home");
+        const before = await editor.locator(".st-search-match").count(); expect(before).toBeGreaterThan(1);
+        for (const key of ["a", "b", "c"]) {
+            const paint = await page.evaluateHandle(() => ({ result: new Promise<{ marks: number; status: string }[]>(resolve => {
+                document.addEventListener("beforeinput", () => {
+                    const snapshot = () => ({ marks: document.querySelectorAll("#editor .st-search-match").length,
+                        status: document.querySelector("#find-status")!.textContent! });
+                    requestAnimationFrame(() => { const first = snapshot(); requestAnimationFrame(() => resolve([first, snapshot()])); });
+                }, { once: true, capture: true });
+            }) }));
+            await page.keyboard.type(key);
+            expect(await paint.evaluate(value => value.result)).toEqual(Array(2).fill({ marks: before, status: `${count} matches` }));
+            await paint.dispose();
+        }
+        await expect(editor).toContainText("abc");
+    }
+});
+
 test("clicking Replace keeps the next keystroke in the Find bar", async ({ page, baseURL }) => {
     await page.goto(baseURL!);
     const source = page.locator("#editor textarea"), query = page.locator("#find-query"), replacement = page.locator("#replacement");

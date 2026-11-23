@@ -88,9 +88,11 @@ for new matches, resets, new queries and repairs. Moving to another match or sca
 one keeps it stable.
 
 After a complete scan, Next wraps from the last match to the first. While literal search repairs its
-index (`searching` with `retained: true`), the count covers the confirmed prefix. You can navigate or
-replace matches there. Next stops at the last confirmed match. Initial searches and regex searches
-wait for a complete scan.
+index (`searching` with `retained: true`), unchanged matches before the edit stay available.
+For a single-line query, an unchanged line break also proves the matches on the lines after it.
+The count and highlights include those matches. Next and Previous stay within the confirmed region
+until the search verifies the intervening text. Replace Current can act on a confirmed selection.
+Replace All, initial searches and regex navigation wait for a complete scan.
 
 `status` is `idle`, `searching`, `ready`, `replacing`, `failed`, `cancelled`, `expired` or `disposed`.
 A missing backend or failed worker sets a message. Expired or disposed controllers cannot target

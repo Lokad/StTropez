@@ -260,6 +260,27 @@ test("confirmed matches remain navigable and replaceable during repair without w
     } finally { f.dispose(); }
 });
 
+test("an edit inside a long row keeps later literal matches usable without navigating across unverified text", async () => {
+    const source = "cat\r\npadding\r\ncat" + ".".repeat(6000) + "\r\ncat cat", f = fixture(source);
+    try {
+        f.find.setQuery("cat"); f.drain();
+        const edited = source.indexOf("cat", 3), replacement = "dog cat cat cat";
+        f.edit(edited, edited + 3, replacement);
+        await Promise.resolve(); // The bounded first advance cannot reach the next row.
+        const last = f.document().buffer.length, suffix = last - 7;
+        assert.equal(f.find.getSnapshot().status, "searching");
+        assert.deepEqual(f.find.matchesIn(0, last), [{ from: 0, to: 3 }, { from: suffix, to: suffix + 3 }, { from: last - 3, to: last }]);
+        f.select(edited, edited + 3); assert.equal(f.find.replaceCurrent("wrong"), false);
+        f.find.replaceAll("wrong"); assert.equal(f.document().buffer.slice(edited, edited + 3), "dog");
+        f.select(3); assert.equal(f.find.next(), false);
+        f.select(suffix); assert.equal(f.find.next(-1), false); assert.equal(f.find.next(), true);
+        assert.equal(f.find.getSnapshot().current, 1);
+        f.drain(); assert.equal(f.find.getSnapshot().count, 6); assert.equal(f.find.getSnapshot().current, 4);
+        assert.equal(f.find.replaceCurrent("last"), true); f.drain();
+        assert.equal(f.document().buffer.slice(suffix, f.document().buffer.length), "last cat");
+    } finally { f.dispose(); }
+});
+
 test("rapid edits accumulate safe bounds and undo to the completed capture reuses it immediately", () => {
     const f = fixture("K k cat\n".repeat(2000));
     try {
