@@ -340,7 +340,10 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         if (value && (!document || value.documentId !== documentId || value.revision !== document.revision || value.foldGeneration !== folds.generation || !value.index.matches(document.buffer, folds.index))) return false;
         if (value && (!Number.isSafeInteger(value.id) || value.id < 1 || !Number.isFinite(value.lineHeight) || value.lineHeight <= 0)) throw new RangeError("Invalid comparison row capture.");
         if (comparisonRows?.id === value?.id) return true;
-        const at = verticalAnchor(); if (at && !anchor) anchor = { revision: at.revision, offset: at.offset, topRemainder: at.topRemainder, leftRemainder: left - (at.offset - document!.buffer.offsetAt(document!.buffer.lineAt(at.offset))) * columnWidth };
+        // At the top edge, newly inserted leading gaps must remain in view. At
+        // other positions keep the same source row under the reader's eye.
+        const at = top > 0 && !anchor ? verticalAnchor() : undefined;
+        if (at) anchor = { revision: at.revision, offset: at.offset, topRemainder: at.topRemainder, leftRemainder: left - (at.offset - document!.buffer.offsetAt(document!.buffer.lineAt(at.offset))) * columnWidth };
         comparisonRows = value && Object.freeze({ ...value }); rowGeneration++; clearPreparedRows(); schedule(); return true;
     }
     const validateScroll = (position: Readonly<{ top?: number; left?: number }>) => {

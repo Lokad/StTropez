@@ -91,6 +91,24 @@ test("clearing the working review keeps line one aligned through typing and undo
     await input.press("Control+z"); await aligned("");
 });
 
+test("deleting the first working lines leaves the removed lines visible in the saved pane", async ({ page, baseURL }) => {
+    const url = new URL(baseURL!); url.searchParams.set("sample", "shipping"); await page.goto(url.href);
+    await page.locator("#compare").click();
+    const panes = page.locator(".st-comparison-panes .st-viewport"), saved = panes.first();
+    const input = page.getByRole("textbox", { name: "Comparison working source" });
+    await input.press("Control+Home"); await input.press("Shift+ArrowDown"); await input.press("Shift+ArrowDown");
+    await input.press("Delete");
+    const removed = saved.locator('.st-comparison-line-baseline:is([data-line="0"], [data-line="1"])');
+    await expect(removed).toHaveCount(2); await expect(panes.last().locator(".st-comparison-padding").first()).toBeAttached();
+    const tops = () => panes.evaluateAll(nodes => nodes.map(node => node.scrollTop));
+    await expect.poll(tops).toEqual([0, 0]);
+    await expect.poll(() => removed.evaluateAll(nodes => nodes.every(node => node.getBoundingClientRect().top >= node.closest(".st-viewport")!.getBoundingClientRect().top))).toBe(true);
+    await input.press("Control+z"); await expect(page.locator(".st-comparison-controls output")).toHaveText("No changes");
+    expect(await tops()).toEqual([0, 0]);
+    await input.press("ArrowLeft"); await page.keyboard.type("!");
+    await expect(panes.last().locator('.st-viewport-row[data-line="0"]')).toContainText("!");
+});
+
 test("hiding Changes keeps the review panes and resumes from edits made while hidden", async ({ page, baseURL }) => {
     const url = new URL(baseURL!); url.searchParams.set("sample", "shipping"); await page.goto(url.href);
     const source = page.getByRole("region", { name: "Source code" }).getByRole("textbox");

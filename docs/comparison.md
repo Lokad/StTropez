@@ -266,7 +266,9 @@ scroll, focus, selection, history and reference identity are independent.
 
 Aligned panes use the same measured line height. If you insert three lines on the right, the
 grid adds three lines of padding on the left using the completed diff. An empty document keeps
-line 1 at the top, with padding below it. Each pane keeps its own folds.
+line 1 at the top, with padding below it. When a pane is at the top, adding leading
+padding leaves the removed or inserted first lines in view. A scrolled pane keeps
+its reading position. Each pane keeps its own folds.
 A row folded on one side leaves padding there. A row folded on both sides disappears
 from the grid. Each collapsed header says “contains changes” when it hides part of a hunk.
 Navigating to that change unfolds it in both panes. Padding contributes nothing to copied text and contains no focusable control.
