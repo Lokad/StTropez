@@ -327,6 +327,15 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await button(page, "Show symbol results").click(); await expect(first).toBeFocused();
         await expect(first).toHaveText("Primary source:65:1");
         await next.press("Space"); await expect(first).toHaveText("Primary source:129:1");
+        const previous = button(page, "Previous navigation results");
+        await expect(previous).toBeFocused();
+        await page.keyboard.press("Space"); await expect(first).toHaveText("Primary source:65:1");
+        await page.keyboard.down("Enter"); await expect(next).toBeFocused();
+        await page.keyboard.down("Enter"); await page.keyboard.up("Enter");
+        await expect(first).toHaveText("Primary source:1:7");
+        await page.keyboard.press("Enter"); await expect(first).toHaveText("Primary source:65:1");
+        await source.focus(); await next.evaluate(node => (node as HTMLButtonElement).click());
+        await expect(first).toHaveText("Primary source:129:1"); await expect(source).toBeFocused();
     });
     if (coversHost("candidate-hosts", host, "candidate")) test("Return retraces two symbol jumps with their selections, scroll and focus", async ({ page }) => {
         const text = "catalogue;\n" + "// padding\n".repeat(120) + "catalogue;\n";

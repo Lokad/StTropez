@@ -1,4 +1,4 @@
-import { bindPageButton, panelActionKey, type PanelAction } from "./panel-actions.ts";
+import { activatePanelAction, bindPageButton, panelActionKey, type PanelAction } from "./panel-actions.ts";
 import type { DestinationList, PanelTextField } from "./tool-panel.ts";
 import { editPageSize, formatEditNote, type EditNotes } from "./edit-review.ts";
 import { memo, Profiler, StrictMode, useSyncExternalStore } from "react";
@@ -197,7 +197,8 @@ const EditNoteList = memo(function EditNoteList({ label, page, notes }: EditNote
 });
 function PanelControls({ actions }: { actions: readonly PanelAction[] }) {
     return <div>{actions.map(action => <button key={panelActionKey(action)} ref={action.pageStart === undefined ? undefined : bindPageButton}
-        data-page={action.pageStart} disabled={action.disabled} onClick={action.invoke ?? undefined}>{action.label}</button>)}</div>;
+        data-page={action.pageStart} data-page-group={action.pageGroup} disabled={action.disabled}
+        onClick={action.pageGroup ? event => activatePanelAction(event.currentTarget, action) : action.invoke ?? undefined}>{action.label}</button>)}</div>;
 }
 function DocumentColorsTools() {
     const tools = bindings.colors, model = documentColorsPanelModel(tools, useObserved(tools.state));

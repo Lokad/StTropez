@@ -407,7 +407,8 @@ definition and selects its name. The heading identifies the file. **Show origina
 reopens the secondary pane’s original document with its selection and scroll position.
 **Return to navigation origin** skips the replaced tab.
 If a result list or review page changes while you hold Next or Previous, releasing the button
-leaves the new page in place. You can keep paging with the keyboard. Rename, code actions and
+leaves the new page in place. Next keeps focus until it reaches the last page, then Previous
+takes focus. Paging back to the first page returns focus to Next. Rename, code actions and
 provider workspace edits show up to 64 edits per page. Choosing a different code action starts
 its edit preview on page one.
 

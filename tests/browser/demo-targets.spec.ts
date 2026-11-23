@@ -63,7 +63,8 @@ test("an action preview includes a newly resolved module and applies one guarded
     await expect(popup.getByRole("button", { name: "Local note 1 (request 2)", exact: true })).toBeVisible();
     await next.hover(); await page.mouse.up();
     await expect(popup.getByRole("button", { name: "Previous fixes" })).toBeDisabled();
-    await next.click(); await popup.getByRole("button", { name: "Add captured module notes", exact: true }).click();
+    await next.press("Space"); await expect(popup.getByRole("button", { name: "Previous fixes" })).toBeFocused();
+    await popup.getByRole("button", { name: "Add captured module notes", exact: true }).click();
     await expect(popup.locator("ins")).toHaveText(["// main note\n", "// module note\n"]);
     await popup.getByRole("button", { name: "Apply fix", exact: true }).click(); await expect(popup).toBeHidden();
     await expect(page.locator("#editor")).toContainText("// main note");
