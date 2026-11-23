@@ -90,6 +90,21 @@ async function isolatedClipboard(baseURL: string | undefined, info: TestInfo, ru
 
 const normal = "const café = 'é 😀';\r\nconst end = 123;";
 const unverifiedBackend = "Only the guarded Chromium headless shell has a verified process-local clipboard backend; other engines and OS/browser-menu paths remain unverified.";
+test("Shift+Delete cuts a selection or caret line for the next Shift+Insert", async ({ browserName, baseURL }, info) => {
+    test.skip(browserName !== "chromium" || process.platform === "darwin", "This shortcut uses the Windows or Linux headless clipboard.");
+    await isolatedClipboard(baseURL, info, async page => {
+        await mount(page, "plain", "candidate", "cart: red\nlast");
+        const source = primary(page);
+        await select(page, 0, 4); await source.press("Shift+Delete"); await exact(page, ": red\nlast");
+        await source.press("Control+End"); await source.press("Shift+Insert"); await exact(page, ": red\nlastcart");
+        await select(page, 2); await source.press("Shift+Delete"); await exact(page, "lastcart");
+        await source.press("Shift+Insert"); await exact(page, ": red\nlastcart");
+        const events = await page.evaluate(() => window.hostKeyboardClipboardAudit.read());
+        expect(events.map(e => [e.type, normalized(e.text)])).toEqual([["cut", "cart"], ["paste", "cart"], ["cut", ": red\n"], ["paste", ": red\n"]]);
+        await source.press("Control+z"); await exact(page, "lastcart");
+        await dispose(page, info);
+    });
+});
 for (const host of ["plain", "react"] as const) test(`${host} trusted HTML table paste converts the actual clipboard and keeps captured save and undo`, async ({ browserName, baseURL }, info) => {
     test.skip(browserName !== "chromium", unverifiedBackend);
     await isolatedClipboard(baseURL, info, async page => {

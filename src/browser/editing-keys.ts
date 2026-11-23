@@ -39,6 +39,7 @@ export function classifyEditingKey(event: KeyStroke, apple: boolean, paired: (ke
     // After unbinding a word shortcut, keep the browser from moving or deleting in the input projection.
     if (word && ["ArrowLeft", "ArrowRight", "Backspace", "Delete"].includes(event.key)) return "prevent-native";
     if (!command && !event.altKey) {
+        if (event.key === "Delete" && event.shiftKey) return; // Let the browser dispatch Cut.
         if (arrowAndPageKeys.has(event.key) || ["Enter", "Backspace", "Delete"].includes(event.key)) return "prevent-native";
         if (paired(event.key)) return bind({ kind: "language", command: { character: event.key } }, true, event.key, true);
     }

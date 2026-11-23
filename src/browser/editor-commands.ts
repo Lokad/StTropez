@@ -55,9 +55,8 @@ export function bindEditorDefaults(keymap: EditorKeymap, apple: boolean): void {
     for (const [key, direction] of Object.entries(caretKeys)) {
         keymap.bind(key, `move-${direction}`); keymap.bind("Shift+" + key, `select-${direction}`);
     }
-    for (const modifier of ["", "Shift+"]) {
-        keymap.bind(modifier + "Backspace", "delete-backward"); keymap.bind(modifier + "Delete", "delete-forward");
-    }
+    keymap.bind("Backspace", "delete-backward"); keymap.bind("Shift+Backspace", "delete-backward");
+    keymap.bind("Delete", "delete-forward");
     function boundary(modifiers: string, key: string, to: "line-start" | "line-end" | "document-start" | "document-end") {
         keymap.bind(modifiers + key, `move-to-${to}`);
         keymap.bind(modifiers + "Shift+" + key, `select-to-${to}`);
