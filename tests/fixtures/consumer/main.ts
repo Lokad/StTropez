@@ -216,6 +216,11 @@ const fixture = { text: () => workspace.document(documentId).text(),
                     || history.getSnapshot() !== 1 || history.back(() => editor) !== "restored" || view.getSnapshot().selection.head !== start + 1
                     || !other.getSnapshot().focused)
                     throw new Error("The restored consumer lost a deferred Return.");
+                const clicked = history.capture(editor, start + 2);
+                if (!clicked || clicked.viewState.head !== start + 2 || view.getSnapshot().selection.head !== start + 1
+                    || !clicked.visit(() => !!other.reveal({ from: 0, to: 0 })) || history.back(() => editor) !== "restored"
+                    || view.getSnapshot().selection.head !== start + 2)
+                    throw new Error("The compiled history lost the pointer origin or moved the source before Return.");
                 const before = peer.getSnapshot().selectionSet;
                 point.visit(() => !!other.reveal({ from: 0, to: 0 }));
                 if (history.back(() => other) !== "empty" || peer.getSnapshot().selectionSet !== before)

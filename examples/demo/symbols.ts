@@ -1,10 +1,10 @@
-import type { DocumentId, Workspace } from "../../src/index.ts";
+import type { DocumentId } from "../../src/index.ts";
 import { captureViewRequest, createNavigationController, mountAnchoredOverlay } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, NavigationChoice, NavigationPage, TextEditor } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, NavigationChoice, NavigationOrigin, NavigationPage, TextEditor } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import { HostRenameTools } from "../hosts/rename.ts";
 import { pageActions, renderPanelActions, renderPanelButton } from "../hosts/panel-actions.ts";
-import type { DemoFile } from "./project.ts";
+import type { DemoFile, DemoProject } from "./project.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 import { bindPopupCommands } from "./language-commands.ts";
 import { locationExcerpt } from "../shared/location-excerpt.ts";
@@ -23,9 +23,10 @@ function locationButton(file: DemoFile, location: NavigationChoice): HTMLButtonE
 }
 
 /** Host presentation around validated public results. Navigation may replace this editor view. */
-export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, files: () => readonly DemoFile[], file: DemoFile, editor: TextEditor,
-    provider: LspWorkspace, valid: () => boolean, dismissOther: () => void, open: (target: DemoSymbolTarget) => void,
+export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file: DemoFile, editor: TextEditor,
+    provider: LspWorkspace, valid: () => boolean, dismissOther: () => void, open: (target: DemoSymbolTarget, origin: NavigationOrigin) => void,
     notice: (message: string, signal: AbortSignal) => void) {
+    const { workspace } = project;
     const events = new AbortController(); let disposed = false;
     scope.defer(() => { disposed = true; events.abort(); });
     const popup = document.createElement("section"); scope.defer(() => popup.remove());
@@ -37,10 +38,10 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     (editor.element.closest("#workspace") ?? editor.element.ownerDocument.body).append(renamePopup);
     const locationsOverlay = mountAnchoredOverlay(editor, popup, { dismissOn: ["focus-leave"], onDismiss: () => cancelNavigation() });
     scope.defer(locationsOverlay.dispose);
-    type Query = { message: string; offset: number; revision: number; page: NavigationPage | undefined };
+    type Query = { message: string; offset: number; revision: number; origin: NavigationOrigin; page: NavigationPage | undefined };
     let query: Query | undefined;
     const idle = () => { const s = editor.activity(); return !disposed && valid() && !s.composing && !s.pendingInput && !s.pendingCommand; };
-    const navigation = createNavigationController(editor, provider, { canCapture: idle, resultLifetime: "view", documents: () => files().map(file => workspace.document(file.resource.documentId)),
+    const navigation = createNavigationController(editor, provider, { canCapture: idle, resultLifetime: "view", documents: () => project.files.map(file => workspace.document(file.resource.documentId)),
         onDefinition: offset => request("definition", offset) });
     scope.defer(navigation.dispose);
     const pendingNavigation = editor.latestOperation();
@@ -53,9 +54,9 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         for (const button of popup.querySelectorAll<HTMLButtonElement>("[data-location]")) button.dataset.chosen = String(Number(button.dataset.location) === captured.page?.selected.index);
         popup.querySelector<HTMLElement>('[data-chosen="true"]')?.scrollIntoView({ block: "nearest" });
     };
-    const choose = (choice: NavigationChoice) => choice.open(at => {
-        const file = files().find(file => file.resource.documentId === at.document.documentId); if (!file) return;
-        cancelNavigation(); open({ documentId: file.resource.documentId, revision: at.document.revision, from: at.from, to: at.to });
+    const choose = (captured: Query, choice: NavigationChoice) => query === captured && choice.open(at => {
+        const file = project.files.find(file => file.resource.documentId === at.document.documentId); if (!file) return;
+        cancelNavigation(); open({ documentId: file.resource.documentId, revision: at.document.revision, from: at.from, to: at.to }, captured.origin);
     });
     const showNavigation = (captured: Query, message: string) => {
         captured.message = message;
@@ -64,10 +65,10 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         const page = captured.page;
         const buttons: HTMLButtonElement[] = [];
         for (const location of page?.locations ?? []) {
-            const file = files().find(file => file.resource.documentId === location.document.documentId); if (!file) continue;
+            const file = project.files.find(file => file.resource.documentId === location.document.documentId); if (!file) continue;
             const button = locationButton(file, location);
             button.dataset.location = String(location.index);
-            button.addEventListener("click", () => choose(location)); buttons.push(button);
+            button.addEventListener("click", () => choose(captured, location)); buttons.push(button);
         }
         const pages = document.createElement("div"), previous = document.createElement("button"), next = document.createElement("button"), count = document.createElement("span");
         previous.textContent = "Previous locations"; next.textContent = "Next locations";
@@ -88,14 +89,15 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         if (!idle()) return; dismissOther(); closeRename(false); cancelNavigation(); editor.focus();
         const caret = editor.view.getSnapshot().selection;
         if (pointed === undefined) editor.viewport.revealOffset(caret.head, { affinity: caret.headAffinity ?? "after" });
+        const origin = project.navigation.capture(editor, pointed); if (!origin) return;
         void pendingNavigation.run({}, op => {
-            const captured: Query = { page: undefined, message: "", offset: pointed ?? caret.head, revision: op.document.revision };
+            const captured: Query = { page: undefined, message: "", offset: pointed ?? caret.head, revision: op.document.revision, origin };
             query = captured; showNavigation(captured, kind === "definition" ? "Finding definition…" : "Finding references…");
             const reply = navigation.request(kind, captured.offset).catch((error: unknown) =>
                 error instanceof Error ? `Cannot open this location: ${error.message}` : "This location is unavailable in the sample.");
             return op.step(reply, result => {
                 if (typeof result === "string") { showNavigation(captured, result); return; }
-                if (kind === "definition" && result.count === 1) { choose(result.locationAt(0)!); return; }
+                if (kind === "definition" && result.count === 1) { choose(captured, result.locationAt(0)!); return; }
                 captured.page = result.pageFor();
                 showNavigation(captured, result.count ? `Choose a ${kind === "definition" ? "definition" : "reference"}.` : `No ${kind} in this sample.`);
             });
@@ -201,7 +203,7 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     bind("locations.pageDown", "Next locations page", "PageDown", () => move(1, true));
     bind("locations.open", "Open selected location", "Enter", () => {
         const location = query?.page?.selected;
-        return !!location && choose(location);
+        return !!query && !!location && choose(query, location);
     });
     scope.defer(rename.attach("source", file.tab, editor));
     scope.defer(navigation.subscribe(() => {

@@ -173,7 +173,7 @@ export class HostNavigationTools {
         }
         catch (error) { this.fixture.take(); this.clear("failed", error instanceof Error ? error.message : "Unsupported navigation capture."); return; }
         const targets = captureDestinationPanes(origin, this.sessions.keys(), sources);
-        const returnPoint = this.history.capture(origin.editor); if (!returnPoint) { this.cancel(); return; }
+        const returnPoint = this.history.capture(origin.editor, pointed); if (!returnPoint) { this.cancel(); return; }
         this.clear("idle", "Symbol navigation dismissed.", origin);
         const job: Job = { kind, symbol, origin, returnPoint, sources, targets, timer: 0, page: undefined };
         if (keyboard && origin.editor.getSnapshot().focused) job.mayFocus = mayFocus;

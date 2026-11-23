@@ -468,6 +468,10 @@ Use `createNavigationHistory(workspace)` to let users retrace jumps across edito
 `history.capture(editor)` saves an origin before a jump or lookup. It returns `undefined` for
 a busy, detached or foreign view. Wrap the code that opens a destination in `origin.visit(() => …)`
 and return true after the reveal succeeds. A changed source revision expires the visit.
+For a pointer jump, pass the clicked UTF-16 offset to `history.capture(editor, offset)`.
+A single caret returns to that offset. A selected range or multiple carets retain their places.
+Capturing leaves the editor untouched. `origin.viewState` holds the same selections and scroll
+position for hosts that reopen a replaced source view.
 Reuse the origin for choices
 in the same result list to give them one Return point. The history keeps the last 100 origins.
 `getSnapshot()` gives the count and `subscribe()` reports count changes.

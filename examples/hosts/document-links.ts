@@ -20,9 +20,9 @@ type Alias = Readonly<{ module: string; uri: string }>;
 export type LinkHostOptions = Readonly<{ provider: LspWorkspace;
     prepare: (aliases: readonly Alias[], policy: FixturePolicy<LinkFault>) => LspPrepare }>;
 type Session = { id: string; editor: TextEditor; controller: DocumentLinkController };
-type Origin = { origin: Session; source: DocumentSnapshot; viewState: ViewState };
+type Origin = { origin: Session; source: DocumentSnapshot };
 type Route = Origin & { documents: Map<string, DocumentSnapshot>; targets: Map<DocumentId, Session>; returnPoint: HostLocation; focusResults?: () => boolean };
-type Visit = Origin & { destination: TextEditor; release: () => void; returnPoint?: HostLocation };
+type Visit = Origin & { destination: TextEditor; viewState: ViewState; release: () => void; returnPoint?: HostLocation };
 type LinkRange = Pick<DocumentLinkChoice, "from" | "to">;
 export type LinkNote = Omit<ModuleLink, "target"> & Readonly<{ line: number; column: number; targetTitle: string | null; resolvable: boolean; open: () => void }>;
 export type DocumentLinksSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; requestView: string | null;
@@ -165,7 +165,7 @@ export class HostDocumentLinks {
         this.publish({ status, pending: false, links, page, paging, count: state.links.length, message: `${state.links.length} module links.` });
     }
     readonly discover = () => this.start(false);
-    private begin(origin: Session, returning = false) {
+    private begin(origin: Session, returning = false, pointedOffset?: number) {
         if (this.disconnected || !this.sessions.has(origin) || !this.host.canCapture(origin.editor.view.documentId)) return;
         const source = this.host.workspace.document(origin.editor.view.documentId);
         if (!source.language) return;
@@ -178,9 +178,9 @@ export class HostDocumentLinks {
             documents.set(target.language.uri, target);
         }
         const targets = captureDestinationPanes(origin, this.sessions.keys(), aliases);
-        const returnPoint = this.host.history.capture(origin.editor); if (!returnPoint) return;
+        const returnPoint = this.host.history.capture(origin.editor, pointedOffset); if (!returnPoint) return;
         this.release();
-        const route: Route = { origin, source, documents, targets, returnPoint, viewState: origin.editor.captureView() };
+        const route: Route = { origin, source, documents, targets, returnPoint };
         this.route = route; this.metrics.requested++;
         if (!returning) this.publish({ ...initial });
         return route;
@@ -193,7 +193,7 @@ export class HostDocumentLinks {
         void origin.controller.request().then(() => {
             const state = origin.controller.getSnapshot();
             if (this.route !== route || state.status !== "ready") return;
-            const head = route.viewState.head;
+            const head = route.returnPoint.viewState.head;
             const index = state.links.findIndex(link => link.from <= head && head <= link.to);
             if (index >= 0) this.render(route, Math.floor(index / linkLimits.page));
             if (route.focusResults) origin.editor.element.ownerDocument.defaultView!.requestAnimationFrame(() => {
@@ -226,11 +226,11 @@ export class HostDocumentLinks {
             if (!this.sessions.has(origin) || this.disconnected || this.aliases.get(module) !== alias || this.route !== previous
                 || this.host.workspace.document(source.id).revision !== source.revision) return;
             editor.focus(); this.active = origin;
-            const route = current ? previous : this.begin(origin);
+            const route = current ? previous : this.begin(origin, false, offset);
             if (!route) return;
             if (!current) { void this.open(route, selected, module); return; }
-            const returnPoint = this.host.history.capture(editor);
-            if (returnPoint) void this.open(route, selected, module, editor.captureView(), returnPoint);
+            const returnPoint = this.host.history.capture(editor, offset);
+            if (returnPoint) void this.open(route, selected, module, returnPoint);
         } };
     }
     private place(owner: Route | Visit, doc: DocumentSnapshot, captured: Session | undefined, viewState?: ViewState) {
@@ -250,7 +250,7 @@ export class HostDocumentLinks {
             if (current()) this.publish({ message: error instanceof Error ? error.message : "The host could not open the destination." });
         } finally { this.presenting = false; }
     }
-    private async open(route: Route, selected: LinkRange | DocumentLinkChoice, module: string, viewState = route.viewState, returnPoint = route.returnPoint) {
+    private async open(route: Route, selected: LinkRange | DocumentLinkChoice, module: string, returnPoint = route.returnPoint) {
         if (this.route !== route || !this.sessions.has(route.origin)) return;
         const owner = route.origin.editor.element.ownerDocument, list = this.linkList.element;
         // Resolving disables the row. Keep Escape and Tab in the results list.
@@ -289,7 +289,7 @@ export class HostDocumentLinks {
                 finally { if (!placed) release(); }
                 if (!placed) return;
                 this.releaseVisit();
-                this.visit = { origin, source, viewState, destination: placed, release,
+                this.visit = { origin, source, viewState: returnPoint.viewState, destination: placed, release,
                     ...(this.sessions.has(origin) && returnPoint.recorded() ? { returnPoint } : {}) }; this.metrics.opened++;
                 this.publish({ message: `Opened ${doc.title}.`, ...(!this.sessions.has(route.origin) ? { status: "away" as const } : {}) });
             });

@@ -164,11 +164,15 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await source.focus(); await select(page, text.indexOf("-")); await source.press("F12");
         await expect(field(page, "Secondary source")).toBeFocused();
         await button(page, "Return to link origin").click(); await expect(source).toBeFocused();
+        await select(page, text.length); await clickPath(0, "sample-utils");
+        await expect(field(page, "Secondary source")).toBeFocused();
+        await button(page, "Return to link origin").click(); await expect(source).toBeFocused();
+        expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection.head).toBe(text.indexOf("-"));
         await clickPath(1, "missing-utils"); await expect(status).toContainText("No destination for missing-utils");
         await expect(status).toBeInViewport(); await expect(source).toBeFocused();
         expect(methods.filter(method => method === "textDocument/documentLink")).toHaveLength(1);
         expect(methods).not.toContain("textDocument/definition");
-        expect((await snapshot(page)).bindings.links.opened).toBe(1);
+        expect((await snapshot(page)).bindings.links.opened).toBe(2);
         // A source edit retires the choice while resolution is in flight.
         await button(page, "Discover module links").click();
         await expect(page.getByLabel("Module link results", { exact: true }).getByRole("button")).toHaveCount(2);
@@ -176,7 +180,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await source.press("Control+End"); await page.keyboard.type("!"); await replies.release();
         await expect(source).toBeFocused(); await expect(editor.locator(".host-module-link")).toHaveCount(0);
         await expect(editor.locator('.st-viewport-row[data-line="2"]')).toHaveText("catalogue;!");
-        expect((await snapshot(page)).bindings.links.opened).toBe(1);
+        expect((await snapshot(page)).bindings.links.opened).toBe(2);
     });
     if (coversHost("candidate-hosts", host, "candidate")) test("a pending F4 keeps its results and leaves focus with a newer F12", async ({ page }) => {
         const links = await holdLspReplies(page, "textDocument/documentLink");

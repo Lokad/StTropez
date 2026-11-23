@@ -259,11 +259,12 @@ function detachView(): void {
     element("editor").replaceChildren(); element("panel-content").replaceChildren();
     if (metadataFrame !== undefined) cancelAnimationFrame(metadataFrame); metadataFrame = undefined;
 }
-function openLocation(capturedProject: DemoProject, capturedEditor: TextEditor, target: DemoSymbolTarget): void {
+function openLocation(capturedProject: DemoProject, capturedEditor: TextEditor, target: DemoSymbolTarget,
+    origin = capturedProject.navigation.capture(capturedEditor)): void {
     if (disposed || project !== capturedProject || editor !== capturedEditor) return;
     const destination = capturedProject.files.find(file => file.resource.documentId === target.documentId);
     if (!destination || capturedProject.workspace.document(target.documentId).revision !== target.revision) return;
-    capturedProject.navigation.capture(capturedEditor)?.visit(() => {
+    origin?.visit(() => {
         if (destination !== active) mountFile(destination);
         return editor?.view === destination.view && !!editor.reveal(target, { expectedRevision: target.revision, select: true, focus: true });
     });
@@ -278,8 +279,8 @@ function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEd
         languageViewFailure = { error }; renderLanguage();
     };
     try {
-        return mountDemoLanguage(capturedProject.workspace, () => capturedProject.files, file, capturedEditor, capturedProject.language,
-            target => openLocation(capturedProject, capturedEditor, target), report, element("language-command-status"), element("snippet-controls"));
+        return mountDemoLanguage(capturedProject, file, capturedEditor, capturedProject.language,
+            (target, origin) => openLocation(capturedProject, capturedEditor, target, origin), report, element("language-command-status"), element("snippet-controls"));
     } catch (error) { report(error); }
 }
 function detachLanguage(): void {

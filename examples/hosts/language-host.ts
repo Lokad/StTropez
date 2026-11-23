@@ -32,10 +32,10 @@ export function createNavigationHost(host: LanguageHost) {
     const history = createNavigationHistory(host.workspace);
     // The link panel has a targeted Return. Track opaque visit identities so it never pops a newer symbol jump.
     const visits = new HostCell<readonly symbol[]>([]);
-    function capture(editor: TextEditor) {
-        const point = history.capture(editor); if (!point) return;
+    function capture(editor: TextEditor, pointedOffset?: number) {
+        const point = history.capture(editor, pointedOffset); if (!point) return;
         const key = Symbol();
-        return {
+        return { viewState: point.viewState,
             isNext: () => visits.get().at(-1) === key,
             recorded: () => visits.get().includes(key),
             visit(open: () => boolean) {

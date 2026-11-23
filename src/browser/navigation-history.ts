@@ -3,10 +3,11 @@ import type { Observable } from "../core/observable.ts";
 import type { DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
 import type { TextEditor } from "./text-editor.ts";
 import type { ViewState } from "./view-state.ts";
+import { createSelectionSet } from "../core/selections.ts";
 
-export type NavigationOrigin = Readonly<{ visit: (open: () => boolean) => boolean }>;
+export type NavigationOrigin = Readonly<{ viewState: ViewState; visit: (open: () => boolean) => boolean }>;
 export type NavigationHistory = Observable<number> & Readonly<{
-    capture: (editor: TextEditor) => NavigationOrigin | undefined;
+    capture: (editor: TextEditor, pointedOffset?: number) => NavigationOrigin | undefined;
     back: (present: (view: DocumentView) => TextEditor | "busy" | undefined, options?: Readonly<{ focus?: boolean }>) => "restored" | "busy" | "empty";
     dispose: () => void;
 }>;
@@ -22,11 +23,17 @@ export function createNavigationHistory(workspace: Workspace): NavigationHistory
         const state = editor.activity();
         return state.composing || state.pendingCommand || state.pendingInput;
     }
-    function capture(editor: TextEditor): NavigationOrigin | undefined {
+    function capture(editor: TextEditor, pointedOffset?: number): NavigationOrigin | undefined {
         const { view, tab, signal } = editor;
         if (disposed || signal.aborted || !editor.element.isConnected || !workspace.ownsDocumentView(view, tab) || busy(editor)) return;
-        const entry = { view, tab, state: editor.captureView() }, revision = view.getSnapshot().revision;
-        return Object.freeze({ visit(open: () => boolean) {
+        let state = editor.captureView();
+        if (pointedOffset !== undefined) {
+            const set = createSelectionSet(workspace.document(view.documentId).buffer.length, [{ anchor: pointedOffset, head: pointedOffset }]);
+            if (state.anchor === state.head && pointedOffset !== state.head && (state.selectionSet?.ranges.length ?? 1) === 1)
+                state = Object.freeze({ ...state, ...set.ranges[0]!, selectionSet: set });
+        }
+        const entry = { view, tab, state }, revision = view.getSnapshot().revision;
+        return Object.freeze({ viewState: state, visit(open: () => boolean) {
             if (disposed || navigating || signal.aborted || !editor.element.isConnected || !owns(entry)
                 || view.getSnapshot().revision !== revision || busy(editor)) return false;
             scope.assertWritable(); navigating = true;

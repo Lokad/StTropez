@@ -1,8 +1,7 @@
 import { createCompletionController, createLspHighlightController, mountAnchoredOverlay } from "../../src/browser/index.ts";
-import type { TextEditor, CompletionController, CompletionSnippet, LspHighlightController } from "../../src/browser/index.ts";
-import type { Workspace } from "../../src/index.ts";
+import type { TextEditor, CompletionController, CompletionSnippet, LspHighlightController, NavigationOrigin } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
-import type { DemoFile } from "./project.ts";
+import type { DemoFile, DemoProject } from "./project.ts";
 import type { DemoLanguage } from "./language.ts";
 import { mountDemoInspection } from "./inspect.ts";
 import { mountDemoSymbols } from "./symbols.ts";
@@ -14,8 +13,9 @@ import { completionPageSize } from "../shared/language/completion-list.ts";
 import { mountCompletionList } from "./completion-list.ts";
 
 /** Contextual completion UI around the public editor controller. It never changes text itself. */
-export function mountDemoLanguage(workspace: Workspace, files: () => readonly DemoFile[], file: DemoFile, editor: TextEditor, language: DemoLanguage,
-    open: (target: DemoSymbolTarget) => void, reportError: (error: unknown) => void, feedback: HTMLElement, snippetHost: HTMLElement) {
+export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: TextEditor, language: DemoLanguage,
+    open: (target: DemoSymbolTarget, origin: NavigationOrigin) => void, reportError: (error: unknown) => void, feedback: HTMLElement, snippetHost: HTMLElement) {
+    const { workspace } = project;
     const scope = new CleanupScope(); let disposed = false;
     const dispose = () => { disposed = true; scope.dispose(); };
     try {
@@ -106,7 +106,7 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
                         if (state.status === "empty" || state.status === "failed") commands.feedback("signature", state.message, true);
                         else if (state.status === "ready") commands.feedback("signature", "", true);
                     });
-                symbols = mountDemoSymbols(scope, workspace, files, file, editor, provider, valid, () => { controller?.cancel(); inspection?.dismiss(); actions?.dismiss(); }, open, commands.notice);
+                symbols = mountDemoSymbols(scope, project, file, editor, provider, valid, () => { controller?.cancel(); inspection?.dismiss(); actions?.dismiss(); }, open, commands.notice);
                 actions = mountDemoActions(scope, workspace, file, editor, provider, language, valid, () => { controller?.cancel(); inspection?.dismiss(); symbols?.dismiss(); });
                 scope.defer(controller.subscribe(render));
                 const ready = () => { if (valid()) { controller!.connect(); render(); commands.ready(); } };

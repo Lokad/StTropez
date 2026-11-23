@@ -114,8 +114,8 @@ export async function runDemoUnopenedNavigation(page: Page, url = "/") {
     await expect.poll(() => page.evaluate(() => !!(window as unknown as { heldNavigationSave: HeldSave }).heldNavigationSave.acknowledge)).toBe(true);
     await expect(page.locator("#save")).toBeDisabled();
     await expect(page.locator("#files button")).toHaveText(["main.ts"]); await expect(main).toBeFocused();
-    await select(page, main, "const label = formatLabel"); await main.press("ArrowRight"); await main.press("ArrowLeft");
-    const cursor = "Ln 6, Col 25"; await expect(page.locator("#cursor")).toHaveText(cursor);
+    await main.press("Control+Home");
+    const cursor = "Ln 1, Col 1"; await expect(page.locator("#cursor")).toHaveText(cursor);
     const call = page.locator("#editor .st-viewport-row").filter({ hasText: "const label = formatLabel(record);" });
     const point = await paintedCharacter(call, "formatLabel", 3);
     await page.mouse.move(point.x, point.y); await page.keyboard.down("Control");
@@ -147,7 +147,11 @@ export async function runDemoUnopenedNavigation(page: Page, url = "/") {
     await main.press("Alt+ArrowLeft"); await expect(labels).toBeFocused();
     expect(await labels.evaluate(input => (input as HTMLTextAreaElement).selectionStart)).toBe(intermediate);
     await page.locator("#code-menu summary").click(); await page.getByRole("button", { name: "Back to previous location" }).click();
-    await expect(main).toBeFocused(); await expect(page.locator("#cursor")).toHaveText(cursor);
+    await expect(main).toBeFocused();
+    const sourceText = await main.inputValue(), returnOffset = sourceText.indexOf("formatLabel(record)") + 3;
+    expect(await main.evaluate(input => (input as HTMLTextAreaElement).selectionStart)).toBe(returnOffset);
+    await page.keyboard.type("!"); await expect(main).toHaveValue(sourceText.slice(0, returnOffset) + "!" + sourceText.slice(returnOffset));
+    await main.press("Control+z"); await expect(main).toHaveValue(sourceText);
     await expect(page.locator("#navigate-back")).toBeDisabled();
     await select(page, main, "const record: RecordId"); await main.press("ArrowRight"); await main.press("ArrowLeft"); await main.press("F12");
     const declaration = page.getByRole("textbox", { name: "contracts.d.ts", exact: true }); await expect(declaration).toBeVisible();
