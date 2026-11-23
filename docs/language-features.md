@@ -189,6 +189,8 @@ The controller registers `completion.request`, `completion.dismiss`, `completion
 (`snippet.previous` and `snippet.next`) uses 40 so Tab advances an active snippet first.
 Automatic completion follows one caret or the linked carets in a snippet field. Press Ctrl/Cmd+Space
 to request suggestions at collapsed carets or on a selected snippet field.
+Typing decimal digits alone keeps automatic completion closed. Digits in an identifier can
+request suggestions, and a provider's advertised trigger character always takes precedence.
 Up and Down select one choice. PageUp and PageDown move a page and stop at the first or last choice.
 Supply `getPageSize` to report the number of visible rows, or zero while the list is hidden.
 The default is ten rows. Home and End dismiss the list and navigate the source.
@@ -218,8 +220,9 @@ choice disappears, `preselect` applies. Manual requests initially show all choic
 
 `rebaseLspCompletion` maps an item across a single typing insertion or backward deletion inside
 its primary insert range. Core supplies the exact edit. With automatic completion enabled, Backspace
-refilters an open list and keeps the selected item when it matches the shorter word. Deleting past the caret
-where the provider returned the list requests fresh choices. The browser requires matching selections, fold
+refilters an open list and keeps the selected item when it matches the shorter word. Erasing the word
+prefix dismisses the list. Deleting past the provider's original request position with a word prefix
+remaining requests fresh choices. The browser requires matching selections, fold
 generation, authority, URI, binding and language configuration. Mapped primary/additional ranges
 are validated again.
 Undo, replacements, host edits, unknown/composed changes or incompatible navigation expire the

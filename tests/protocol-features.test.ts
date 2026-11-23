@@ -461,6 +461,42 @@ test("compatible prefix rebasing uses exact commit metadata and resolves additio
     assert.equal(rebaseLspCompletion(item, { ...next, buffer: second.buffer }, { ...change, mapping: composePositionMaps(first.mapping, second.mapping) }, 8), undefined);
 });
 
+test("rebased snippet plans match fresh insert and replace across typing and Backspace at an import boundary", async () => {
+    const { capture } = await captured("aMORE\r\nend");
+    const decode = (source: LspDocumentCapture, offset: number, width: number) => decodeLspCompletions([{
+        label: "template", insertTextFormat: 2, insertTextMode: 2,
+        textEdit: { insert: range(0, 0, width), replace: range(0, 0, width + 4), newText: "block {\n\t${1:name}\n}$0" },
+        additionalTextEdits: [{ range: range(0, 0, 0), newText: "// import\n" }, { range: range(1, 0, 3), newText: "last" }],
+    }], source, offset).items[0]!;
+    let item = decode(capture, 0, 1), caret = 0;
+    for (const [from, to, insert] of [[0, 0, "b"], [0, 1, ""]] as const) {
+        const edits = [{ from, to, insert }], before = item.source, applied = before.buffer.apply(edits);
+        const document = { ...before, revision: before.revision + 1, buffer: applied.buffer };
+        const change = { previousRevision: before.revision, revision: document.revision, transactionId: 1, origin: "human" as const,
+            kind: insert ? "typing" as const : "delete" as const, mapping: applied.mapping, edits };
+        const rebased = rebaseLspCompletion(item, document, change, caret); assert.ok(rebased);
+        caret = from + insert.length;
+        const fresh = decode({ ...capture, document, index: await LspLineIndex.create(document.buffer, async () => {}) }, caret, 1 + caret);
+        for (const mode of ["insert", "replace"] as const) assert.deepEqual(lspCompletionPlan(rebased, mode), lspCompletionPlan(fresh, mode));
+        item = rebased;
+    }
+    const before = capture.document, edits = [{ from: 0, to: 1, insert: "" }], applied = before.buffer.apply(edits);
+    const selected = decode(capture, 1, 1);
+    assert.equal(rebaseLspCompletion(selected, { ...before, buffer: applied.buffer, revision: before.revision + 1 },
+        { previousRevision: before.revision, revision: before.revision + 1, transactionId: 2, origin: "human", kind: "delete", mapping: applied.mapping, edits }, 1), undefined);
+});
+
+test("a rebased multiline insertion uses the new source line ending", async () => {
+    const { capture } = await captured("s\r\nend");
+    const item = decodeLspCompletions([{ label: "template", insertTextMode: 2, textEdit: { range: range(0, 0, 1), newText: "one\n  two" } }], capture, 1).items[0]!;
+    assert.equal(item.replace.edits[0]!.insert, "one\r\n  two");
+    const edits = [{ from: 1, to: 1, insert: "\n" }], applied = item.source.buffer.apply(edits);
+    const document = { ...item.source, revision: item.source.revision + 1, buffer: applied.buffer };
+    const next = rebaseLspCompletion(item, document, { previousRevision: item.source.revision, revision: document.revision,
+        transactionId: 1, origin: "human", kind: "typing", mapping: applied.mapping, edits }, 1);
+    assert.equal(next?.replace.edits[0]!.insert, "one\n  two");
+});
+
 test("diagnostics separate provider freshness from validated snapshot placement and retain unplaceable wire ranges", async () => {
     const { capture, expire } = await captured(), response: PublishDiagnosticsParams = { uri: capture.document.uri, version: 3,
         diagnostics: [{ range: range(1, 21, 25), message: "<img src=x onerror=unsafe()> TODO", severity: 2, source: "fixture",

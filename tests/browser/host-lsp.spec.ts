@@ -17,6 +17,52 @@ async function seed(page: Page, text: string, offset = text.indexOf("saMORE") + 
 }
 async function offer(page: Page) { await field(page).press("Control+Space"); await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible(); }
 
+test("numeric typing and an erased prefix leave automatic completion closed", async ({ page }) => {
+    const calls: { triggerKind: number; triggerCharacter?: string }[] = [];
+    let hold = false, release: (() => void) | undefined;
+    await page.routeWebSocket("**/lsp-fixture", client => {
+        const server = client.connectToServer();
+        server.onMessage(message => {
+            const value = JSON.parse(message.toString());
+            const completion = value.result?.capabilities?.completionProvider;
+            if (completion) { completion.triggerCharacters = ["8"]; client.send(JSON.stringify(value)); }
+            else client.send(message);
+        });
+        client.onMessage(message => {
+            const value = JSON.parse(message.toString());
+            if (value.method !== "textDocument/completion") { server.send(message); return; }
+            calls.push(value.params.context);
+            const reply = () => client.send(JSON.stringify({ jsonrpc: "2.0", id: value.id,
+                result: ["alpha", "beta", "item2"].map(label => ({ label })) }));
+            if (hold) { hold = false; release = reply; } else reply();
+        });
+    });
+    await page.goto("/hosts/plain/?editor=candidate&language=lsp");
+    const input = field(page);
+    await seed(page, "", 0); await expect.poll(async () => (await provider(page)).connected).toBe(true);
+    const settled = async () => {
+        await ready(page);
+        await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+        await page.evaluate(() => window.hostFixture.providerCustom("fixture/state", {}));
+    };
+    for (const digit of "1250") { await input.pressSequentially(digit); await settled(); }
+    expect(calls).toHaveLength(0);
+    await input.press("Control+Space"); await expect(page.getByRole("option", { name: "alpha", exact: true })).toBeVisible();
+    await input.press("Escape"); await input.pressSequentially("8"); await settled();
+    expect(calls).toEqual([{ triggerKind: 1 }, { triggerKind: 2, triggerCharacter: "8" }]);
+    await seed(page, "item", 4); await input.pressSequentially("2");
+    await expect(page.getByRole("option", { name: "item2", exact: true })).toBeVisible();
+    await seed(page, "", 0); await input.pressSequentially("b");
+    await expect(page.getByRole("option", { name: "beta", exact: true })).toBeVisible();
+    hold = true; await input.press("Control+Space"); await expect.poll(() => !!release).toBe(true);
+    const count = calls.length;
+    await input.press("Backspace"); release!(); await settled();
+    expect(calls).toHaveLength(count); await expect(page.getByRole("option")).toHaveCount(0);
+    await input.pressSequentially("a"); await expect(page.getByRole("option", { name: "alpha", exact: true })).toBeVisible();
+    await input.press("Backspace"); await settled(); expect(calls).toHaveLength(count + 1);
+    await expect(page.getByRole("option")).toHaveCount(0); expect(await source(page)).toBe("");
+});
+
 for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP editor host`, () => {
     test.beforeEach(async ({ page }) => {
          await page.goto(`/hosts/${mode}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); await ready(page);

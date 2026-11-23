@@ -43,6 +43,9 @@ export type CompletionController = Observable<CompletionSnapshot> & Readonly<{ r
         completionBeforeInputEvents: number; lastCompletionBeforeInputMs: number; completionCommands: number; lastCompletionCommandMs: number;
         connected: boolean; pending: boolean; offer: boolean; transport: "lsp3.17"; protocol: ReturnType<LspWorkspace["snapshot"]>["protocol"] }> }>;
 const word = new RegExp(`^(?:${codeWordConstituentPattern})$`, "u");
+// A word prefix can end in digits. A run of decimal digits on its own has no name to complete.
+const namedPrefix = new RegExp(`(?:\\$|(?!\\p{Nd})${codeWordConstituentPattern})\\p{Nd}*$`, "u");
+const hasNamedPrefix = (buffer: TextBuffer, head: number) => namedPrefix.test(buffer.slice(Math.max(0, head - 2048), head));
 
 /** Captured editor coordination; hosts render controls and supply provider/custom-message policy. */
 export function createCompletionController(editor: TextEditor, provider: LspWorkspace, options: CompletionControllerOptions = {}): CompletionController {
@@ -368,8 +371,10 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
         if (options.automatic === false || !editor.getSnapshot().focused || !snippet && after.selectionSet.ranges.length !== 1
             || after.selection.head !== after.selection.anchor) return;
         const text = detail.text, tail = text.slice(-8), head = after.selection.head;
-        if (head < tail.length || workspace.document(documentId).buffer.slice(head - tail.length, head) !== tail) return;
-        const isWord = text.length <= 2048 && Array.from(text).every(point => word.test(point));
+        const buffer = workspace.document(documentId).buffer;
+        if (head < tail.length || buffer.slice(head - tail.length, head) !== tail) return;
+        const isWord = text.length <= 2048 && Array.from(text).every(point => word.test(point))
+            && (!/\p{Nd}$/u.test(text) || hasNamedPrefix(buffer, head));
         inputIntent = { target: after, text: tail, word: isWord, backspace: false }; scheduleAuto();
     }
     function beforeInput(event: InputEvent): void {
@@ -398,6 +403,9 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
         const follows = edit && document.change?.origin === "human" && document.change.previousRevision === edit.before.revision
             && selected.ranges.length === 1 && caret.anchor === edit.head && caret.head === edit.head;
         if (follows && edit.backspace) {
+            if (!hasNamedPrefix(document.buffer, caret.head)) {
+                cancelAuto(); expire("Completion dismissed after deleting the prefix."); return;
+            }
             inputIntent = { target: after, text: "", word: true, backspace: true }; scheduleAuto();
         }
         if (follows && captured?.choices?.items.length && edit.before.revision === captured.revision && edit.before.selectionSet === captured.selections

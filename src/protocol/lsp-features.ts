@@ -1,6 +1,7 @@
 import { wireLimits, ProtocolDecodeError, isRecord, isLspUint, isLspInteger, staleRequest, isCapturedJson, jsonEqual, decodeJson } from "./wire.ts";
 import { validateTextEdits } from "../core/changes.ts";
 import { positionChanges } from "../core/positions.ts";
+import { lineEnding } from "../core/newlines.ts";
 import { parseSnippet, offsetSnippetStops } from "../core/snippets.ts";
 import { adjustInsertionText, insertionContext, validateInsertionIndentation } from "../core/insertion-text.ts";
 import type { InsertionIndentation } from "../core/insertion-text.ts";
@@ -278,8 +279,9 @@ function completionText(source: LspDocumentSnapshot, from: number, text: string,
 }
 function completionPlans(source: LspDocumentSnapshot, primary: LspCompletion["primary"], additional: readonly TextEdit[], snippet: readonly SnippetStop[] | null, insertion: LspCompletion["insertion"]) {
     const formatted = completionText(source, primary.from, primary.text, snippet, insertion);
-    return { insert: plan(source.buffer.length, Object.freeze({ from: primary.from, to: primary.insertTo, insert: formatted.text }), additional, formatted.snippet),
-        replace: plan(source.buffer.length, Object.freeze({ from: primary.from, to: primary.replaceTo, insert: formatted.text }), additional, formatted.snippet) };
+    const at = (to: number) => plan(source.buffer.length, Object.freeze({ from: primary.from, to, insert: formatted.text }), additional, formatted.snippet);
+    const insert = at(primary.insertTo);
+    return { insert, replace: primary.replaceTo === primary.insertTo ? insert : at(primary.replaceTo) };
 }
 /** Validate every edit before publication; unsupported snippet/command items have an explicit disposition. */
 export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture, offset: number, fallback: LspCompletionFallback | (() => LspCompletionFallback) = { from: offset, to: offset, replaceTo: offset }, options: LspCompletionOptions = {}): LspCompletions {
@@ -419,11 +421,29 @@ export function rebaseLspCompletion(original: LspCompletion, next: LspDocumentSn
     const inserted = change.kind === "typing" && units > 0 && edit.from === caret && edit.insertedLength === units;
     const deleted = change.kind === "delete" && units < 0 && edit.from === caret + units && edit.from >= primary.from && edit.insertedLength === 0;
     if (!inserted && !deleted) return;
-    const from = mapping.map(primary.from, "before").offset, insertTo = mapping.map(primary.insertTo, "after").offset, replaceTo = mapping.map(primary.replaceTo, "after").offset;
-    const additional = Object.freeze(original.additional.map(edit => Object.freeze({ from: mapping.map(edit.from, "after").offset, to: mapping.map(edit.to, edit.from === edit.to ? "after" : "before").offset, insert: edit.insert })));
-    const nextPrimary = Object.freeze({ from, insertTo, replaceTo, text: primary.text });
-    return Object.freeze({ ...original, source: next, offset: caret + units, primary: nextPrimary, additional,
-        ...completionPlans(next, nextPrimary, additional, original.snippet, original.insertion) });
+    // The edit is wholly inside both primary ranges. An import before the replacement
+    // stays there even when it shares the first character with the typed prefix.
+    const nextPrimary = Object.freeze({ ...primary, insertTo: primary.insertTo + units, replaceTo: primary.replaceTo + units });
+    let primaryIndex = 0;
+    const additional = original.additional.length ? Object.freeze(original.additional.map(extra => {
+        if (extra.to <= primary.from) { primaryIndex++; return extra; }
+        return Object.freeze({ ...extra, from: extra.from + units, to: extra.to + units });
+    })) : original.additional;
+    if (nextPrimary.insertTo === primary.from && additional.some(extra => extra.from === primary.from && extra.to === primary.from)) return;
+
+    // Accepting erases the prefix edit. The formatted text, final caret and stops
+    // therefore stay the same unless contextual formatting sees a different line ending.
+    const at = (previous: LspCompletionPlan, to: number): LspCompletionPlan => {
+        const edits = [...additional];
+        edits.splice(primaryIndex, 0, Object.freeze({ ...previous.edits[primaryIndex]!, to }));
+        return Object.freeze({ ...previous, edits: Object.freeze(edits) });
+    };
+    const result = { ...original, source: next, offset: caret + units, primary: nextPrimary, additional };
+    if (original.insertion.mode === 2 && (original.snippet || primary.text.includes("\n"))
+        && lineEnding(before.buffer, before.buffer.lineAt(primary.from)) !== lineEnding(next.buffer, next.buffer.lineAt(primary.from)))
+        return Object.freeze({ ...result, ...completionPlans(next, nextPrimary, additional, original.snippet, original.insertion) });
+    const insert = at(original.insert, nextPrimary.insertTo);
+    return Object.freeze({ ...result, insert, replace: nextPrimary.replaceTo === nextPrimary.insertTo ? insert : at(original.replace, nextPrimary.replaceTo) });
 }
 /** One atomic batch, optionally replicated at captured collapsed carets with identical replacement
  * text. Additional edits apply once. Each caret uses its own indentation and retains its selection. */
