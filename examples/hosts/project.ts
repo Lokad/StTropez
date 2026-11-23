@@ -1,3 +1,4 @@
+import { fixtureRequests } from "../shared/language/fixture-requests.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import { isMountedEditor, openChangedFile, type ChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget } from "../../src/index.ts";
@@ -39,8 +40,7 @@ export class HostProjectTools {
     private registered = false;
     private disconnected = false;
     private disposed = false;
-    private delay = 0;
-    private fault: ProjectCommand["fault"];
+    readonly fixture = fixtureRequests<NonNullable<ProjectCommand["fault"]>>("project");
     private readonly metrics = { requested: 0, serverRequests: 0, applied: 0, rejected: 0, cancelled: 0, failed: 0 };
     private readonly cell = new HostCell<ProjectSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, registered: false, pending: false, status: "idle", message: "Focus a candidate source to use workspace provider commands.", view: null, changes: [], review: null });
     readonly state = this.cell.observable;
@@ -274,10 +274,11 @@ export class HostProjectTools {
         if (kind === "register" ? this.registered : kind !== "status" && !this.registered) { this.publish({ message: "Register the review command before using it; unregister before registering again." }); return; }
         const docs = this.host.workspace.getSnapshot().documents.filter(d => d.key.variant === "working");
         if (docs.some(d => !this.host.canCapture(d.id))) { this.publish({ message: "Finish pending input, navigation, table conversion or composition first." }); return; }
+        const policy = this.fixture.take();
         let input: ProjectCommand;
-        try { input = validateProjectCommand({ kind, documents: docs.map(d => ({ document: d.id, revision: d.revision, length: d.buffer.length })), delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
-        catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid provider capture." }); return; }
-        this.fault = undefined; const win = origin.editor.element.ownerDocument.defaultView!;
+        try { input = validateProjectCommand({ kind, documents: docs.map(d => ({ document: d.id, revision: d.revision, length: d.buffer.length })), ...policy }); }
+        catch (error) { this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid provider capture." }); return; }
+        const win = origin.editor.element.ownerDocument.defaultView!;
         let job: Job | undefined;
         try { job = this.captureJob(origin, docs); }
         catch (error) { this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid provider capture." }); return; }
@@ -297,8 +298,6 @@ export class HostProjectTools {
             });
         } catch (error) { this.drop(); this.release(job); this.publish({ status: "failed", message: error instanceof Error ? error.message : "Workspace provider is unavailable." }); }
     }
-    setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid project delay."); this.delay = value; }
-    faultNext(value: NonNullable<ProjectCommand["fault"]>): void { this.fault = value; }
     faultIdle(): boolean { return this.lane.value?.faultIdle() ?? false; }
     debug() { return { ...this.metrics, state: this.cell.get(), pending: !!this.job, registered: this.registered, transport: this.lane.value?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
     dispose(): void { if (this.disposed) return; this.cancel(); this.registered = false; this.lane.dispose(); this.disposed = true; this.active = undefined; this.changes = []; this.publish(); }

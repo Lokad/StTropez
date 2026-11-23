@@ -1,3 +1,4 @@
+import { fixtureRequests, type FixturePolicy } from "../shared/language/fixture-requests.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.ts";
@@ -13,9 +14,10 @@ import type { LinksInput, ModuleLink } from "../../fixtures/language/links.ts";
 import { validDomainModule } from "../../fixtures/language/domain.ts";
 import { HostCell } from "../shared/observable.ts";
 
+type LinkFault = NonNullable<LinksInput["fault"]>;
 type Alias = Readonly<{ module: string; uri: string }>;
 export type LinkHostOptions = Readonly<{ provider: LspWorkspace;
-    prepare: (aliases: readonly Alias[], delay: number, fault?: LinksInput["fault"]) => LspPrepare }>;
+    prepare: (aliases: readonly Alias[], policy: FixturePolicy<LinkFault>) => LspPrepare }>;
 type Session = { id: string; editor: TextEditor; controller: DocumentLinkController };
 type Route = { origin: Session; source: DocumentSnapshot; viewState: ViewState; documents: Map<string, DocumentSnapshot>;
     targets: Map<DocumentId, Session>; destination?: TextEditor; releaseHistory?: () => void };
@@ -37,8 +39,7 @@ export class HostDocumentLinks {
     private disposed = false;
     private disconnected = false;
     private presenting = false;
-    private delay = 0;
-    private fault: LinksInput["fault"];
+    readonly fixture = fixtureRequests<LinkFault>("links");
     private readonly metrics = { requested: 0, opened: 0, returned: 0 };
     private readonly cell = new HostCell(initial);
     readonly state = this.cell.observable;
@@ -71,7 +72,7 @@ export class HostDocumentLinks {
             documents: () => [...(this.route?.documents.values() ?? [])], canCapture: this.host.canCapture,
             prepareRequest: () => {
                 const aliases = [...this.aliases].map(([module, id]) => ({ module, uri: this.host.workspace.document(id).language!.uri }));
-                const fault = this.fault; this.fault = undefined; return this.options.prepare(aliases, this.delay, fault);
+                return this.options.prepare(aliases, this.fixture.take());
             },
         });
         const session = { id, editor, controller };
@@ -231,8 +232,6 @@ export class HostDocumentLinks {
         this.companion ??= createWorkingSource(this.host.workspace, "module-companion", "Module companion", { value: "export const value = 1;\r\n" }).documentId;
         this.setAlias("sample-utils", this.companion); this.publish({ message: "Module companion registered for sample-utils." });
     };
-    setDelay(value: number) { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid links delay."); this.delay = value; }
-    faultNext(value: NonNullable<LinksInput["fault"]>) { this.fault = value; }
     debug() { return { ...this.metrics, state: this.cell.get(), companion: this.companion ?? null,
         sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
     dispose() {

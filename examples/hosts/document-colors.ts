@@ -1,3 +1,4 @@
+import { fixtureRequests, type FixturePolicy } from "../shared/language/fixture-requests.ts";
 import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.ts";
 import { formatEditNote } from "./edit-review.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
@@ -13,7 +14,7 @@ import type { ColorFault, ColorReference } from "../../fixtures/language/colors.
 import { HostCell } from "../shared/observable.ts";
 
 export type ColorHostOptions = Readonly<{ provider: LspWorkspace;
-    prepare: (kind: "discovery" | "presentation", delay: number, fault?: ColorFault) => LspPrepare }>;
+    prepare: (kind: "discovery" | "presentation", policy: FixturePolicy<ColorFault>) => LspPrepare }>;
 type Session = { id: string; editor: TextEditor; controller: DocumentColorController; layer: DecorationLayer; painted?: readonly DocumentColorChoice[] };
 export type ColorNote = ColorReference & Readonly<{ ordinal: number; line: number; column: number; css: string; inspect: () => void }>;
 export type DocumentColorsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; view: string | null;
@@ -43,8 +44,7 @@ export class HostDocumentColors {
     private readonly colorList = createPanelKeyBinding<HTMLElement>(this.panelEditor);
     private disposed = false;
     private disconnected = false;
-    private delay = 0;
-    private fault: ColorFault | undefined;
+    readonly fixture = fixtureRequests<ColorFault>("color");
     private readonly metrics = { requested: 0, previews: 0, applied: 0, unchanged: 0 };
     private readonly cell = new HostCell(initial);
     readonly state = this.cell.observable;
@@ -131,7 +131,7 @@ export class HostDocumentColors {
     attach(id: string, _tab: TabId, editor: TextEditor) {
         if (this.disposed) throw new Error("Color panel is disposed.");
         const controller = createDocumentColorController(editor, this.options.provider, { canCapture: () => this.host.canCapture(editor.view.documentId),
-            prepareRequest: kind => { const fault = this.fault; this.fault = undefined; return this.options.prepare(kind, this.delay, fault); } });
+            prepareRequest: kind => this.options.prepare(kind, this.fixture.take()) });
         let layer: DecorationLayer;
         try { layer = editor.decorations.add({ name: "document colors", order: 35 }); }
         catch (error) { controller.dispose(); throw error; }
@@ -175,8 +175,6 @@ export class HostDocumentColors {
         if (this.disposed || this.owner || this.cell.get().changed?.document !== id) return;
         this.publish({ message: openChangedFile(this.host, id, this.sessions.keys(), focusSource) });
     };
-    setDelay(value: number) { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid color delay."); this.delay = value; }
-    faultNext(value: ColorFault) { this.fault = value; }
     debug() { return { ...this.metrics, state: this.cell.get(), sessions: this.sessions.size, subscriptions: this.cell.count(),
         decoratedViews: [...this.sessions.keys()].filter(s => !!s.painted).length, disposed: this.disposed }; }
     dispose() { if (!this.disposed) { this.disposed = true; this.cancel(); this.colorList.dispose(); this.valueField.dispose(); for (const detach of this.sessions.values()) detach(); } }

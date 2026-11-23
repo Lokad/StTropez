@@ -1,3 +1,4 @@
+import { fixtureRequests, type FixturePolicy } from "../shared/language/fixture-requests.ts";
 import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
 import { editPageSize, editPaging } from "./edit-review.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
@@ -12,7 +13,7 @@ import { navigationSymbol } from "../../fixtures/language/navigation.ts";
 import type { NavigationFault } from "../../fixtures/language/navigation.ts";
 import { HostCell } from "../shared/observable.ts";
 
-export type RenameHostOptions = Readonly<{ provider: LspWorkspace; open?: () => boolean; prepare?: (delay: number, fault?: NavigationFault) => LspPrepare }>;
+export type RenameHostOptions = Readonly<{ provider: LspWorkspace; open?: () => boolean; prepare?: (policy: FixturePolicy<NavigationFault>) => LspPrepare }>;
 type Session = { id: string; editor: TextEditor; controller: RenameController };
 export type RenameNote = Omit<LspWorkspaceEditNote, "insert" | "insertUnits"> & Readonly<{ ordinal: number; line: number; column: number; after: string }>;
 export type HostRenameSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; status: RenameSnapshot["status"];
@@ -31,8 +32,7 @@ export class HostRenameTools {
     private readonly options: RenameHostOptions;
     private disconnected = false;
     private disposed = false;
-    private delay = 0;
-    private fault: NavigationFault | undefined;
+    readonly fixture = fixtureRequests<NavigationFault>("rename");
     private requested = 0;
     private readonly nameField = createPanelKeyBinding<HTMLInputElement>(() => (this.owner ?? this.active)?.editor);
     private readonly cell = new HostCell(initial);
@@ -78,7 +78,8 @@ export class HostRenameTools {
         const controller = createRenameController(editor, this.options.provider, {
             documents: () => this.host.workspace.getSnapshot().documents.filter(doc => doc.language !== null),
             canCapture: this.host.canCapture, prepareRequest: () => {
-                const fault = this.fault; this.fault = undefined; return this.options.prepare?.(this.delay, fault);
+                const policy = this.fixture.take();
+                return this.options.prepare?.(policy);
             },
         });
         const session = { id, editor, controller };
@@ -131,8 +132,6 @@ export class HostRenameTools {
         if (s.pending || s.preview || this.disposed || !s.changes.some(c => c.document === document)) return;
         this.publish({ message: openChangedFile(this.host, document, this.sessions.keys()) });
     }
-    setDelay(value: number) { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid rename delay."); this.delay = value; }
-    faultNext(value: NavigationFault) { this.fault = value; }
     faultIdle() {
         if (!this.owner || this.cell.get().pending || !this.cell.get().connected) return false;
         this.options.provider.disconnect(); return true;

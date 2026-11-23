@@ -1,3 +1,4 @@
+import { fixtureRequests, type FixturePolicy } from "../shared/language/fixture-requests.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
 import type { DocumentId, TabId } from "../../src/index.ts";
@@ -7,7 +8,8 @@ import type { LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import type { SignatureInput } from "../../fixtures/language/signature.ts";
 import { HostCell } from "../shared/observable.ts";
 
-export type SignatureHostOptions = Readonly<{ provider: LspWorkspace; prepare?: (delay: number, fault?: SignatureInput["fault"]) => LspPrepare }>;
+type SignatureFault = NonNullable<SignatureInput["fault"]>;
+export type SignatureHostOptions = Readonly<{ provider: LspWorkspace; prepare?: (policy: FixturePolicy<SignatureFault>) => LspPrepare }>;
 type Session = { editor: TextEditor; controller: SignatureController };
 const labels = { "signature.request": "Show signature help", "signature.previous": "Previous signature",
     "signature.next": "Next signature", "signature.dismiss": "Dismiss signature help" } as const;
@@ -25,8 +27,7 @@ export class HostSignatureTools {
     private active: Session | undefined;
     private disconnected = false;
     private disposed = false;
-    private delay = 0;
-    private fault: SignatureInput["fault"];
+    readonly fixture = fixtureRequests<SignatureFault>("signature");
     private readonly stopProvider: () => void;
     private readonly canCapture: (id: DocumentId) => boolean;
     private readonly beforeRequest: () => void;
@@ -59,10 +60,7 @@ export class HostSignatureTools {
         const controller = createSignatureController(editor, this.options.provider, {
             canCapture: () => !this.disconnected && this.canCapture(editor.view.documentId),
             beforeRequest: () => { this.active = session; this.beforeRequest(); },
-            ...(this.options.prepare ? { prepareRequest: access => {
-                const fault = this.fault; this.fault = undefined;
-                return this.options.prepare!(this.delay, fault)(access);
-            } } : {}),
+            ...(this.options.prepare ? { prepareRequest: access => this.options.prepare!(this.fixture.take())(access) } : {}),
         });
         const session: Session = { editor, controller };
         return attachPanelSession(this.sessions, session, signal => {
@@ -75,8 +73,6 @@ export class HostSignatureTools {
             this.publish();
         });
     }
-    setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid signature delay."); this.delay = value; }
-    faultNext(value: NonNullable<SignatureInput["fault"]>): void { this.fault = value; }
     debug() {
         const counts = { ...this.retired }, state = this.cell.get();
         for (const s of this.sessions.keys()) { const d = s.controller.getDiagnostics(); counts.requested += d.requested; counts.applied += d.applied; }

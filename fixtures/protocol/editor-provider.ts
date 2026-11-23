@@ -24,17 +24,17 @@ export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspa
     connection.createScope().setDocuments(owner.getSnapshot().documents.filter(document => document.language !== null));
     return Object.freeze({
         owner: connection,
-        signature: { provider: connection, prepare: (delay, fault) => session => connection.prepareRequest(session, "textDocument/signatureHelp", { delay, ...(fault ? { fault } : {}) }) },
-        links: { provider: connection, prepare: (aliases, delay, fault) => session =>
-            connection.prepareRequest(session, "textDocument/documentLink", { aliases: [...aliases], delay, ...(fault ? { fault } : {}) }) },
-        colors: { provider: connection, prepare: (kind, delay, fault) => session =>
-            connection.prepareRequest(session, kind === "discovery" ? "textDocument/documentColor" : "textDocument/colorPresentation", { delay, ...(fault ? { fault } : {}) }) },
+        signature: { provider: connection, prepare: policy => session => connection.prepareRequest(session, "textDocument/signatureHelp", policy) },
+        links: { provider: connection, prepare: (aliases, policy) => session =>
+            connection.prepareRequest(session, "textDocument/documentLink", { aliases: [...aliases], ...policy }) },
+        colors: { provider: connection, prepare: (kind, policy) => session =>
+            connection.prepareRequest(session, kind === "discovery" ? "textDocument/documentColor" : "textDocument/colorPresentation", policy) },
         provider: (editor, options) => createLspProviderController(editor, { ...options, provider: connection,
             beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/completion", configuration, { replacePending: true }) }),
         hover: { provider: connection, beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/hover", configuration) },
-        navigation: { provider: connection, prepare: (kind, delay, fault) => session => connection.prepareRequest(session,
-            kind === "definition" ? "textDocument/definition" : "textDocument/references", { delay, ...(fault ? { fault } : {}) }) },
-        rename: { provider: connection, prepare: (delay, fault) => session => connection.prepareRequest(session, "textDocument/rename", { delay, ...(fault ? { fault } : {}) }) },
+        navigation: { provider: connection, prepare: (kind, policy) => session => connection.prepareRequest(session,
+            kind === "definition" ? "textDocument/definition" : "textDocument/references", policy) },
+        rename: { provider: connection, prepare: policy => session => connection.prepareRequest(session, "textDocument/rename", policy) },
         actions: { provider: connection,
             beforeRequest: async (session, configuration) => {
                 await connection.prepareRequest(session, "textDocument/codeAction", configuration);

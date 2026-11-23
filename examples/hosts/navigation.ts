@@ -1,3 +1,4 @@
+import { fixtureRequests, type FixturePolicy } from "../shared/language/fixture-requests.ts";
 import { captureDestinationPanes, isMountedEditor, presentDocument, type LanguageHost } from "./language-host.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
@@ -12,7 +13,7 @@ import type { NavigationFault } from "../../fixtures/language/navigation.ts";
 import { HostCell } from "../shared/observable.ts";
 
 type Kind = LspNavigationRequest["kind"];
-export type NavigationHostOptions = Readonly<{ provider: LspWorkspace; prepare: (kind: Kind, delay: number, fault?: NavigationFault) => LspPrepare }>;
+export type NavigationHostOptions = Readonly<{ provider: LspWorkspace; prepare: (kind: Kind, policy: FixturePolicy<NavigationFault>) => LspPrepare }>;
 type Session = { id: string; target: TabTarget; editor: TextEditor; controller: NavigationController };
 type Job = { kind: Kind; symbol: string; origin: Session; returnPoint: NavigationOrigin; sources: Set<DocumentId>; targets: Map<DocumentId, Session>;
     timer: number; page: NavigationPage | undefined; followDefinition: boolean };
@@ -30,8 +31,7 @@ export class HostNavigationTools {
     private presenting = false;
     private disposed = false;
     private companion: DocumentId | undefined;
-    private delay = 0;
-    private fault: NavigationFault | undefined;
+    readonly fixture = fixtureRequests<NavigationFault>("navigation");
     private disconnected = false;
     private readonly cell = new HostCell<NavigationSnapshot>({ available: false, connected: false, disconnected: false, canCancel: false, status: "idle", message: "Focus a candidate source to navigate symbols.", includeDeclaration: true, locations: [], paging: null, canReturn: false });
     readonly state = this.cell.observable;
@@ -92,7 +92,7 @@ export class HostNavigationTools {
         const target = this.host.workspace.tabs.capture(tab);
         const controller = createNavigationController(editor, this.options.provider, { documents: () => this.host.workspace.getSnapshot().documents.filter(doc => doc.language !== null),
             canCapture: () => !this.disconnected && !this.disposed && this.host.canCapture(editor.view.documentId),
-            prepareRequest: kind => { const fault = this.fault; this.fault = undefined; return this.options.prepare(kind, this.delay, fault); },
+            prepareRequest: kind => this.options.prepare(kind, this.fixture.take()),
             onDefinition: offset => { this.active = session; editor.focus(); this.start("definition", true, offset); } });
         const session: Session = { id, target, editor, controller };
         return attachPanelSession(this.sessions, session, (signal, register) => {
@@ -141,7 +141,7 @@ export class HostNavigationTools {
         try {
             validateNavigationDocuments(documents.map(doc => ({ document: doc.id, revision: doc.revision, length: doc.buffer.length })));
         }
-        catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Unsupported navigation capture." }); return; }
+        catch (error) { this.fixture.take(); this.publish({ status: "failed", message: error instanceof Error ? error.message : "Unsupported navigation capture." }); return; }
         const targets = captureDestinationPanes(origin, this.sessions.keys(), sources);
         const returnPoint = this.history.capture(origin.editor); if (!returnPoint) return;
         const job: Job = { kind, symbol, origin, returnPoint, sources, targets, timer: 0, page: undefined,
@@ -208,8 +208,6 @@ export class HostNavigationTools {
         this.companion ??= createWorkingSource(this.host.workspace, "navigation-companion", "Navigation companion", { value: "const catalogue = 1;\r\ncatalogue;\r\n" }).documentId;
         this.publish({ message: "Navigation companion added. Find catalogue from a source view to open its captured definition." });
     };
-    setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid navigation delay."); this.delay = value; }
-    faultNext(value: NavigationFault): void { this.fault = value; }
     releaseCompanion(): boolean {
         if (!this.companion) return false; this.cancel();
         try { this.host.workspace.releaseDocument(this.companion); this.companion = undefined; this.publish(); return true; } catch { return false; }

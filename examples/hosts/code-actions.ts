@@ -1,3 +1,4 @@
+import { fixtureRequests } from "../shared/language/fixture-requests.ts";
 import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
 import { createActionPages } from "./action-pages.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
@@ -37,8 +38,7 @@ export class HostActionsTools {
 
     private disposed = false;
     private disconnected = false;
-    private delay = 0;
-    private fault: ActionSettings["fault"];
+    readonly fixture = fixtureRequests<NonNullable<ActionSettings["fault"]>>("action");
     private requested = 0;
     private readonly cell = new HostCell<ActionsSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, pending: false, canApply: false, confirm: null, reviewKey: null, active: false, module: "sample-utils", status: "idle", message: "Focus a candidate source to preview a module-import action.", title: "", disabled: null, command: null, edits: [], changes: [], choices: [], choice: null, choicePage: 0, choicePaging: null, editPaging: null, resolving: false, page: 0, editCount: 0 });
     readonly state = this.cell.observable;
@@ -91,8 +91,7 @@ export class HostActionsTools {
         const controller = createCodeActionController(editor, provider, { documents: this.documents, canCapture: this.host.canCapture,
             ...(commandPolicy && { commandPolicy }), ...(beforeRequest && { prepareRequest: session => beforeRequest(session, settings()) }),
             ...(beforeResolve && { prepareResolve: session => {
-                const resolveSettings = { module: settings().module, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) };
-                this.fault = undefined; return beforeResolve(session, resolveSettings);
+                return beforeResolve(session, { module: settings().module, ...this.fixture.take() });
             } }), ...(review && { runCommand: command => review.beginAction({ ...command, editor }) }) });
         const s = { id, target, editor, controller };
         const ownsModule = () => this.moduleField.focused && this.moduleSource === s;
@@ -129,8 +128,7 @@ export class HostActionsTools {
             this.publish({ message: "Finish pending input, navigation, table conversion or composition in the captured project first." }); return;
         }
         this.cancel();
-        const settings: ActionSettings = { module, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) };
-        this.fault = undefined;
+        const settings: ActionSettings = { module, ...this.fixture.take() };
         if (!validDomainModule(module)) { this.publish({ status: "failed", message: "Choose a valid module identifier." }); return; }
         const controller = origin.controller;
         this.panel = { source: origin, settings, stop: controller.subscribe(() => this.publish()), pages: createActionPages(controller, this.reviewKey, () => this.publish()) };
@@ -141,8 +139,6 @@ export class HostActionsTools {
         if (this.disposed || this.cell.get().active || !this.cell.get().changes.some(change => change.document === document)) return;
         this.publish({ message: openChangedFile(this.host, document, this.sessions.keys()) });
     }
-    setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid action delay."); this.delay = value; }
-    faultNext(value: NonNullable<ActionSettings["fault"]>): void { this.fault = value; }
 
     faultIdle(): boolean {
         if (!this.panel || this.cell.get().pending || this.options.provider.getSnapshot().phase !== "ready") return false;
