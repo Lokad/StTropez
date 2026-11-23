@@ -35,36 +35,24 @@ function fixture(t: test.TestContext, capabilities: InitializeResult["capabiliti
 const input = (text = "a😀\r\nb\rc\n", uri = "host+fixture://project/scope/doc%20one.ts", resourceId = "resource:one", revision = 40) =>
     ({ uri, resourceId, documentId: resourceId + ":working", revision, languageId: "typescript", buffer: TextBuffer.from(text) });
 
-test("initialize advertises installed features for this connection and keeps explicit limits across reconnect", async t => {
+test("initialize advertises the supported methods or the explicit subset on every connection", async t => {
     for (const limited of [false, true]) {
         const host = fixture(t), session = new LspSession({ ...host, ...(limited ? { features: ["textDocument/hover"], diagnostics: false } as const : {}) });
         t.after(() => session.dispose());
-        const firstPane = session.retainFeatures("textDocument/hover", "textDocument/publishDiagnostics");
-        const opening = session.connect();
-        const secondPane = session.retainFeatures("textDocument/hover", "textDocument/documentLink");
-        await opening;
-        const capabilities = () => host.peers.at(-1)!.initialize()!.capabilities;
-        assert.ok(capabilities().textDocument?.hover);
-        assert.equal(!!capabilities().textDocument?.documentLink, !limited);
-        assert.equal(!!capabilities().textDocument?.publishDiagnostics, !limited);
-        assert.equal(capabilities().workspace, undefined);
-
-        firstPane(); firstPane();
-        const old = session.getSnapshot().clientFeatures;
-        assert.ok(Object.isFrozen(old));
-        const later = session.retainFeatures("textDocument/rename");
-        assert.equal(session.getSnapshot().clientFeatures, old);
-        assert.equal(capabilities().textDocument?.rename, undefined);
-        session.disconnect(); await session.connect();
-        assert.ok(capabilities().textDocument?.hover);
-        assert.equal(capabilities().textDocument?.publishDiagnostics, undefined);
-        assert.equal(!!capabilities().textDocument?.rename, !limited);
-        secondPane(); later();
-        session.disconnect(); await session.connect();
-        assert.equal(!!capabilities().textDocument?.hover, limited);
-        assert.equal(capabilities().textDocument?.documentLink, undefined);
-        assert.equal(capabilities().textDocument?.rename, undefined);
-        assert.equal(capabilities().workspace, undefined);
+        for (let i = 0; i < 2; i++) {
+            await session.connect();
+            const caps = host.peers.at(-1)!.initialize()!.capabilities;
+            assert.ok(caps.textDocument?.hover);
+            assert.equal(!!caps.textDocument?.documentLink, !limited);
+            assert.equal(!!caps.textDocument?.publishDiagnostics, !limited);
+            assert.equal(!!caps.textDocument?.rename, !limited);
+            assert.equal(!!caps.workspace?.executeCommand, !limited);
+            assert.equal(caps.workspace?.applyEdit, undefined);
+            const advertised = session.getSnapshot().clientFeatures;
+            assert.ok(Object.isFrozen(advertised));
+            if (limited) assert.deepEqual(advertised, ["textDocument/hover"]);
+            session.disconnect();
+        }
     }
 });
 

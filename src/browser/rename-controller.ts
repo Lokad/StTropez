@@ -134,7 +134,6 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
         scope.assertWritable(); events.abort(); stop(); release(); editor.signal.removeEventListener("abort", dispose);
         publish({ status: "disposed" }); for (const unsubscribe of observers) unsubscribe();
     }
-    events.signal.addEventListener("abort", provider.retainFeatures("textDocument/rename"), { once: true });
     editor.signal.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ request, setName, cancel, dispose, getSnapshot: cell.observable.getSnapshot, subscribe(listener: () => void) {
         if (events.signal.aborted) throw new Error("Rename controller is disposed.");

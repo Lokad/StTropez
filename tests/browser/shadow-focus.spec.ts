@@ -56,30 +56,24 @@ async function mount(page: Page, language: boolean) {
 const text = (page: Page) => page.evaluate(() => { const f = window.shadowFocus, buffer = f.workspace.document(f.source.documentId).buffer; return buffer.slice(0, buffer.length); });
 const completion = (page: Page) => page.evaluate(() => window.shadowFocus.completion!.getSnapshot());
 
-test("reconnect advertises the surviving pane's controllers before its first link request", async ({ page }) => {
+test("a link controller on a later pane requests links on the already open connection", async ({ page }) => {
     await mount(page, true);
-    const epochs = await page.evaluate(async () => {
+    const result = await page.evaluate(async () => {
         const path = "/shadow-focus/browser.js";
-        const { mountTextEditor, createCompletionController, createDocumentLinkController } = await import(path) as typeof import("../../src/browser/index.ts");
+        const { mountTextEditor, createDocumentLinkController } = await import(path) as typeof import("../../src/browser/index.ts");
         const { workspace, source, editor, provider, dispose } = window.shadowFocus;
+        await provider!.connect();
+        const epoch = provider!.getSnapshot().epoch;
         const host = document.createElement("div"); document.body.append(host);
         const second = mountTextEditor(host, workspace, source.documentId);
         try {
-            await provider!.connect();
-            const advertised = () => [...provider!.getSnapshot().clientFeatures].sort();
-            const first = advertised();
-            createCompletionController(second, provider!, { autoConnect: false });
-            createDocumentLinkController(second, provider!);
+            const links = createDocumentLinkController(second, provider!);
             editor.dispose();
-            const unchanged = advertised();
-            await provider!.reconnect(); const survivor = advertised();
-            second.dispose();
-            await provider!.reconnect();
-            return [first, unchanged, survivor, advertised()];
+            await links.request();
+            return { status: links.getSnapshot().status, sameConnection: provider!.getSnapshot().epoch === epoch };
         } finally { second.dispose(); host.remove(); await dispose(); }
     });
-    const first = ["textDocument/completion", "textDocument/documentHighlight"];
-    expect(epochs).toEqual([first, first, ["textDocument/completion", "textDocument/documentLink"], []]);
+    expect(result).toEqual({ status: "ready", sameConnection: true });
 });
 
 test("completion distinguishes host preparation failures from malformed provider replies and keeps local typing available", async ({ page }) => {

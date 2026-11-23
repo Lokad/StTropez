@@ -156,7 +156,6 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
         scope.assertWritable(); events.abort(); stop(); release(); editor.signal.removeEventListener("abort", dispose);
         publish("disposed"); for (const unsubscribe of observers) unsubscribe();
     }
-    events.signal.addEventListener("abort", provider.retainFeatures("textDocument/documentLink"), { once: true });
     editor.signal.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ request, cancel, dispose, getSnapshot: state.observable.getSnapshot, subscribe(listener: () => void) {
         if (events.signal.aborted) throw new Error("Document link controller is disposed.");

@@ -6,8 +6,8 @@ files and decides which edits to apply. [Connect a provider](language-server.md)
 
 ## Use
 
-Before connecting, list the methods you use in `features`. Set `diagnostics` and `workspaceEdits`
-separately. Incoming edits and command execution have their own
+Connect before or after mounting a feature. Use `features` to restrict request methods,
+`diagnostics: false` to disable pushed diagnostics and `workspaceEdits` to enable edit support. Incoming edits and command execution have their own
 [connection policy](language-server.md#commands-and-edit-decisions).
 
 | Feature | Client or controller | Enabled method |

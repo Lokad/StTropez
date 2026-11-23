@@ -72,13 +72,12 @@ export function createDiagnosticController(editor: TextEditor, provider: LspWork
         notifications.assertWritable();
         stop?.(); stop = undefined; clear();
     };
-    const releaseFeature = provider.retainFeatures("textDocument/publishDiagnostics");
     const stopTabs = tab ? workspace.tabs.subscribe(() => { if (!available()) clear(); }) : undefined;
     const dispose = () => {
         if (disposed) return;
         notifications.assertWritable(); disposed = true;
         editor.signal.removeEventListener("abort", dispose);
-        releaseFeature(); cancel(); stopTabs?.(); layer.dispose(); scope.dispose();
+        cancel(); stopTabs?.(); layer.dispose(); scope.dispose();
         for (const release of observers) release();
     };
     try { request(); } catch (error) { dispose(); throw error; }

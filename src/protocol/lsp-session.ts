@@ -45,7 +45,7 @@ export type LspSessionOptions = Readonly<{ connect: (context: LspConnectContext)
     rootUri?: string | null; initializationOptions?: JsonValue; clientInfo?: Readonly<{ name: string; version?: string }>;
     /** Opt in when the host presents the documented Markdown subset for hover/signature help. */
     markdownDocumentation?: boolean;
-    /** Fixed request methods. When omitted, initialize advertises the methods retained by live clients. */
+    /** Fixed request methods. When omitted, initialize advertises every supported request method. */
     features?: readonly LspFeature[]; diagnostics?: boolean; workspaceEdits?: boolean; applyEdit?: boolean; pathForUri?: LspUriPath; maxDocuments?: number; maxDocumentUnits?: number; maxTotalUnits?: number;
     rpc?: Pick<RpcOptions, "timeoutMs" | "maxPending" | "maxMessageUnits" | "maxJsonNodes">; onError?: (error: Error) => void }>;
 type SelectorEntry = { snapshot: LspSelectorDocument; selectors?: { generation: number; values: Map<LspSelector, boolean> } };
@@ -86,7 +86,6 @@ export class LspSession {
     private readonly requestStops = new Map<string, () => void>();
     private readonly notifications = new Map<string, Set<NotificationHandler>>();
     private readonly notificationStops = new Map<string, () => void>();
-    private readonly retained = new Map<LspClientFeature, number>();
     private readonly initializeBase: Readonly<Record<string, JsonValue>>;
     private features = new Set<LspFeature>();
     private clientFeatures: readonly LspClientFeature[] = Object.freeze([]);
@@ -125,29 +124,10 @@ export class LspSession {
             this.subscriptions.add(release); return release;
         };
     }
-    /** Keep a client method installed until its owner releases it. Changes take effect at the next initialize. */
-    retainFeatures(...methods: LspClientFeature[]): () => void {
-        this.writable();
-        const unique = new Set(methods);
-        for (const method of unique) {
-            if (method !== "textDocument/publishDiagnostics" && !Object.hasOwn(providers, method)) throw new TypeError("Unknown LSP feature.");
-        }
-        for (const method of unique) this.retained.set(method, (this.retained.get(method) ?? 0) + 1);
-        let released = false;
-        return () => {
-            if (released) return;
-            released = true;
-            for (const method of unique) {
-                const count = this.retained.get(method) ?? 0;
-                if (count > 1) this.retained.set(method, count - 1);
-                else this.retained.delete(method);
-            }
-        };
-    }
     private initializeParams(): JsonValue {
         const options = this.options;
-        this.features = new Set(options.features ?? [...this.retained.keys()].filter(method => method !== "textDocument/publishDiagnostics"));
-        const diagnostics = options.diagnostics ?? this.retained.has("textDocument/publishDiagnostics");
+        this.features = new Set(options.features ?? Object.keys(providers) as LspFeature[]);
+        const diagnostics = options.diagnostics !== false;
         this.clientFeatures = Object.freeze(diagnostics ? [...this.features, "textDocument/publishDiagnostics"] : [...this.features]);
         const textDocument: Record<string, JsonValue> = { synchronization: { dynamicRegistration: true, didSave: false, willSave: false, willSaveWaitUntil: false } };
         for (const method of this.features) if (method.startsWith("textDocument/")) textDocument[method.slice("textDocument/".length)] = { dynamicRegistration: true };
@@ -543,7 +523,7 @@ export class LspSession {
         this.epoch++; this.release(this.cancelOpening); this.cancelOpening = undefined; this.connectWork = undefined;
         this.release(this.scheduled); this.scheduled = undefined; for (const pause of this.pauses) { this.release(pause.stop); pause.reject(failure); } this.pauses.clear();
         const rpc = this.rpc; this.rpc = undefined; this.release(() => rpc?.dispose(failure)); this.pumping = false; this.dirty.clear(); this.settle(failure); this.documentCalls.clear();
-        this.features.clear(); this.clientFeatures = Object.freeze([]); if (dispose) this.retained.clear();
+        this.features.clear(); this.clientFeatures = Object.freeze([]);
         this.remote.clear(); this.registrations.clear(); this.staticSelectors.clear(); this.requestStops.clear(); this.notificationStops.clear(); this.capabilities = empty; this.sync = { openClose: false, change: false }; this.generation++;
         for (const entry of this.documents.values()) { delete entry.failure; delete entry.change; delete entry.selectors; }
         if (dispose) { this.documents.clear(); this.totalUnits = 0; this.requests.clear(); this.notifications.clear(); }

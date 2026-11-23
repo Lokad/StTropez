@@ -99,15 +99,13 @@ scope to unregister. Lifecycle, synchronization and reserved methods cannot be o
 
 ### Transport and session
 
-The session advertises its installed features when it sends `initialize`. Controllers and typed
-clients register their methods when created and release them on disposal. Two panes can share the
-same feature. The last release removes it from the next handshake. The current connection keeps
-its advertised methods in `getSnapshot().clientFeatures`. Call `reconnect()` to negotiate a change.
+The session advertises all supported request methods and pushed diagnostics at initialization.
+Controllers created after connection can use any method the server has enabled. Set `features`
+to an explicit subset or `diagnostics: false` to omit pushed diagnostics. Each connection reports
+the advertised methods in `getSnapshot().clientFeatures`. Disposing a pane releases its requests
+and document bindings.
 
-Set `features` to a fixed method list when a host needs an exact subset. `diagnostics: true` or
-`false` overrides inference from diagnostic controllers. A host implementing its own method can
-call `retainFeatures(method)` and release it with the returned function. Command execution,
-workspace edits, incoming writes, Markdown presentation and URI access require their own host decisions.
+The host controls workspace edits, incoming writes, command invocation, Markdown presentation and URI access.
 
 `BrowserLspWorkspace` opens a connection on demand. Each opening gets a fresh `AbortSignal`.
 Pass it to credential lookup and transport startup. Disconnect, disposal and the opening deadline

@@ -48,7 +48,6 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
         void Promise.resolve().then(() => { if (!disposed && notificationQueued) notify(); });
     };
     const stop = scope.subscribe(notify);
-    const releaseFeatures = provider.retainFeatures(...methods);
     const release = () => {
         for (const document of documents.values()) document.dispose();
         documents = new Map();
@@ -194,7 +193,7 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
         dispose: () => {
             if (disposed) return;
             disposed = true;
-            releaseFeatures(); invalidate(true);
+            invalidate(true);
             stop();
             scope.dispose();
             listeners.clear();

@@ -102,8 +102,10 @@ test("a held project reply cannot rebind a source whose URI changed", async t =>
 });
 
 test("actions forward immutable diagnostic metadata only for matching current versions and placed overlapping ranges", async t => {
-    const f = clientFixture(t), client = createLspActionClient(f.provider), control = f.provider.createScope(); t.after(() => { client.dispose(); control.dispose(); });
+    const f = clientFixture(t), control = f.provider.createScope(); t.after(control.dispose);
     const binding = control.attachDocument(f.source.documentId); await control.ensureConnected();
+    const client = createLspActionClient(f.provider); t.after(client.dispose);
+    const diagnostics = control.observeDiagnostics(binding);
     assert.deepEqual((f.sent("initialize")[0]!.params as { capabilities: { textDocument: { publishDiagnostics: unknown } } }).capabilities.textDocument.publishDiagnostics,
         { versionSupport: true, relatedInformation: true, tagSupport: { valueSet: [1, 2] }, codeDescriptionSupport: true, dataSupport: true });
     const capture = control.synchronized(binding)!, range = { start: { line: 0, character: 6 }, end: { line: 0, character: 10 } };
@@ -118,7 +120,7 @@ test("actions forward immutable diagnostic metadata only for matching current ve
         await client.run({ document: f.document(), from, to }).result;
         return (f.sent("textDocument/codeAction").at(-1)!.params as { context: { diagnostics: unknown[] } }).context.diagnostics;
     };
-    await send(capture.version); assert.deepEqual(await run(), [diagnostic]); assert.deepEqual(await run(0, 1), []);
+    await send(capture.version); assert.equal(diagnostics.getSnapshot().status, "current"); assert.deepEqual(await run(), [diagnostic]); assert.deepEqual(await run(0, 1), []);
     await send(undefined); assert.deepEqual(await run(), []); // Fresh placement is not a known provider version.
     await send(capture.version); f.edit();
     const pending = control.observeDiagnostics(binding).getSnapshot(); assert.equal(pending.status, "pending");
