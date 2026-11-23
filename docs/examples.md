@@ -400,7 +400,8 @@ The Locations region below the editors reports the latest symbol or module looku
 including a missing import. **Show symbol results** and **Show module links** switch back
 to the retained page of an earlier lookup. Symbol results show the file, line, column
 and a short excerpt around the match. The navigation panel shows
-a waiting indicator during a definition or reference request.
+a waiting indicator during a definition or reference request. If a jump moves the caret while
+module discovery is pending, press F4 at the new location to refresh the links.
 Shift+F12 focuses the first reference. F12 jumps to a single definition or focuses the
 first of several. Use Up and Down to choose a result, Enter to open it, and Escape to
 return to the source. Leaving the editor during a lookup keeps focus where you put it.

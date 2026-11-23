@@ -623,6 +623,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
             const after = await snapshot(page);
             expect(after.bindings.links.opened).toBe(0);
             expect(after.bindings.links.state.links).toHaveLength(0);
+            if (mode === "selection") expect(after.bindings.links.state.message).toBe("Module links expired. Press F4 in the source to refresh them.");
             expect(after.history).toEqual(invalidated.history);
             expect(after.bindings.views.map(view => view.selectionSet)).toEqual(invalidated.bindings.views.map(view => view.selectionSet));
             await exact(page, current);

@@ -15,6 +15,7 @@ import { domainLimits, importedModule, validDomainModule } from "../../fixtures/
 import { HostCell } from "../shared/observable.ts";
 
 type LinkFault = NonNullable<LinksInput["fault"]>;
+const expiredMessage = "Module links expired. Press F4 in the source to refresh them.";
 type Alias = Readonly<{ module: string; uri: string }>;
 export type LinkHostOptions = Readonly<{ provider: LspWorkspace;
     prepare: (aliases: readonly Alias[], policy: FixturePolicy<LinkFault>) => LspPrepare }>;
@@ -74,7 +75,7 @@ export class HostDocumentLinks {
     private release() { this.releaseResults(); this.releaseVisit(); }
     private expireResults() {
         this.releaseResults();
-        this.publish({ ...initial, status: "expired", message: "The source or link target changed." });
+        this.publish({ ...initial, status: "expired", message: expiredMessage });
     }
     readonly cancel = () => { this.release(); this.publish({ ...initial, message: "Module links dismissed." }); };
     readonly disconnect = () => { this.disconnected = true; this.cancel(); };
@@ -146,7 +147,7 @@ export class HostDocumentLinks {
         if (status === "resolving") { this.publish({ status, pending: true, message: "Resolving the selected link…" }); return; }
         if (status !== "ready") {
             this.route = undefined;
-            this.publish({ ...initial, status, message: state.message || (status === "expired" ? "The source or link target changed." : "Module links dismissed.") });
+            this.publish({ ...initial, status, message: state.message || (status === "expired" ? expiredMessage : "Module links dismissed.") });
             return;
         }
         const { source } = route;
