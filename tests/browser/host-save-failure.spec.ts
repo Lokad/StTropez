@@ -72,7 +72,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
                 expect(failed.server).toEqual(before.server);
                 expect(failed.bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline);
                 expect(failed.comparisonReference).toEqual(before.comparisonReference);
-                expect(failed.diagnostics.leases).toBe(before.diagnostics.leases - 1);
+                expect(failed.pendingSaves).toEqual([]);
                 expect(failed.source).toMatchObject({ serverVersion: "v0", dirty: true });
                 if (editor === "candidate") expect(failed.source.exports).toBe(0); else expect(failed.source.exports).toBeGreaterThan(0);
                 expect(failed.activity).toMatchObject({ writes: 0, errors: 1 });
@@ -80,6 +80,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
                 await expect.poll(async () => (await snapshot(page)).pendingSaves).toEqual([
                     { revision: failed.source.revision, length: later.length, expectedServerVersion: "v0" },
                 ]);
+                await expect(messages).not.toContainText("Source save failed.");
                 await primary.press("Control+End"); await primary.pressSequentially(" newest"); await waitForSavedViews(page);
                 const newest = later + " newest", retained = selections(await snapshot(page));
                 await page.evaluate(() => window.hostFixture.unmount()); await page.evaluate(() => window.hostFixture.mount()); await waitForSavedViews(page);

@@ -307,7 +307,7 @@ command. Escape returns to the pane. Replacing the originating view closes the p
    confirmation. Changing the text, reference or owner expires it.
 4. Press Ctrl/Cmd+S in the source, reference or its Find/language controls. Type, then
    **Finish save**. The reply trims trailing whitespace on the captured revision. Later typing
-   stays unsaved. **Fail save** lets you try recovery.
+   stays unsaved. **Fail save** lets you try recovery. The failure message clears when the retry starts.
 5. **Simulate external source change**, save, then **Finish save**. Choose
    **Review remote source** and **Finish remote review**. Edit the working source and
    **Save reviewed source**. A further remote write conflicts again. A failed save preserves local

@@ -46,12 +46,14 @@ export class HostController {
     readonly recovery = this.recoveryCell.observable;
     private readonly sourceReview = new HostSourceReview(this.workspace, this.saves, this.source, {
         inputReady: () => this.sourceInputReady(), presentation: () => this.presentation.presentation(), present: () => this.openReview(),
-        server: () => this.services.server, save: submission => this.services.save(submission), track: task => { void this.track(task); },
-        saved: revision => {
+        server: () => this.services.server,
+        save: submission => {
             const modal = this.layout.getSnapshot().modal;
             if (modal.kind === "error" && modal.source === "source-save") this.presentation.clearError();
-            this.updateActivity({ lastSavedRevision: revision });
-        }, reportError: error => this.reportError(error),
+            return this.services.save(submission);
+        },
+        track: task => { void this.track(task); }, saved: revision => this.updateActivity({ lastSavedRevision: revision }),
+        reportError: error => this.reportError(error),
     });
     readonly comparisonReference = this.sourceReview.comparisonReference;
     readonly saveConflict = this.sourceReview.saveConflict;
