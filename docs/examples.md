@@ -396,7 +396,9 @@ For declarations loaded by a host URI resolver, it uses the returned document's 
 revision to label the result and select its range.
 Closing a pane outside the language project leaves a pending definition lookup active.
 Opening another result in the same destination reuses its editor. If the host cannot open the
-pane, the panel shows the error. You can retry the same result. Return records successful visits.
+pane, the panel shows the error. You can retry the same result. Alt+Left retraces successful
+definition, reference and module visits to open views, restoring selections and scroll.
+On Apple keyboards, use **Return to navigation origin** to keep Option+Left available for word movement.
 F12 can open a file in the same secondary pane that requested it. The new pane focuses the
 definition and selects its name. The heading identifies the file. **Show original source**
 reopens the secondary pane’s original document with its selection and scroll position.

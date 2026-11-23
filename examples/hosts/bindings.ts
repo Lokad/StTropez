@@ -58,6 +58,7 @@ export class ViewBindings {
     readonly tablePaste: HostTablePaste;
     readonly domain: HostDomainTools;
     readonly navigation: HostNavigationTools;
+    private readonly locationHistory: ReturnType<typeof createNavigationHost>["history"];
     readonly project: HostProjectTools;
     readonly signature: HostSignatureTools;
     readonly rename: HostRenameTools;
@@ -233,6 +234,7 @@ export class ViewBindings {
         this.hover = new HostHoverTools(kind => { if (kind === "pointer") return !this.signature?.state.getSnapshot().visible; this.signature?.dismiss(); return true; }, { ...lsp.hover, canCapture });
         const present = (document: DocumentId) => this.presentNavigationDocument(document);
         const languageHost = createNavigationHost({ workspace: controller.workspace, canCapture, present, reconnect: reconnectProvider });
+        this.locationHistory = languageHost.history;
         this.links = new HostDocumentLinks(languageHost, lsp.links);
         this.navigation = new HostNavigationTools(languageHost, { ...lsp.navigation, linkAt: (editor, offset) => this.links.linkAt(editor, offset) });
         this.project = new HostProjectTools(languageHost, lsp.project, lsp.owner);
@@ -384,7 +386,7 @@ export class ViewBindings {
         this.stopInputCapture(); this.stopDocumentCleanup();
         this.comparison(null); this.unmount(); this.colors.dispose(); this.links.dispose(); this.actions.dispose(); this.rename.dispose(); this.signature.dispose(); this.project.dispose(); this.navigation.dispose(); this.domain.dispose(); for (const selections of this.selections.values()) for (const view of selections.values()) view.dispose();
         this.selections.clear(); this.states.clear(); this.referenceState = undefined; this.language.clearRetainedView();
-        this.lspOwner?.dispose();
+        this.locationHistory.dispose(); this.lspOwner?.dispose();
         this.controller.collectLoadedDocument();
     }
     settled(): boolean {

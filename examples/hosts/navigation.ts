@@ -6,8 +6,8 @@ import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
 import { createPanelKeyBinding, focusResult, registerResultArrows } from "./panel-keys.ts";
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, TabId, TabTarget } from "../../src/index.ts";
-import { createNavigationController, createNavigationHistory } from "../../src/browser/index.ts";
-import type { NavigationChoice, NavigationController, NavigationDestination, NavigationHistory, NavigationOrigin, NavigationPage, NavigationPointerLink, NavigationResult, TextEditor } from "../../src/browser/index.ts";
+import { createNavigationController } from "../../src/browser/index.ts";
+import type { NavigationChoice, NavigationController, NavigationDestination, NavigationOrigin, NavigationPage, NavigationPointerLink, NavigationResult, TextEditor } from "../../src/browser/index.ts";
 import type { LspNavigationRequest, LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import { navigationSymbol, validateNavigationDocuments } from "../../fixtures/language/navigation.ts";
 import type { NavigationFault } from "../../fixtures/language/navigation.ts";
@@ -25,7 +25,8 @@ export type NavigationSnapshot = Readonly<{ available: boolean; connected: boole
 
 /** Host-owned project navigation; results carry identities, never a future focus target. */
 export class HostNavigationTools {
-    private readonly history: NavigationHistory;
+    private readonly history: NavigationHost["history"];
+    private readonly stopHistory: () => void;
     private readonly queryKey;
     private readonly sessions = new Map<Session, () => void>();
     private active: Session | undefined;
@@ -45,7 +46,8 @@ export class HostNavigationTools {
     private readonly options: NavigationHostOptions;
     constructor(host: NavigationHost, options: NavigationHostOptions) {
         this.host = host; this.options = options;
-        this.history = createNavigationHistory(host.workspace);
+        this.history = host.history;
+        this.stopHistory = this.history.subscribe(() => this.publish());
         this.queryKey = createReviewKey(host.workspace);
     }
     private available(session: Session): boolean {
@@ -131,6 +133,10 @@ export class HostNavigationTools {
             }
             const ownsList = () => this.job?.origin === session && this.resultList.focused;
             registerResultArrows(register, "navigation", 5, () => this.resultList.element, ownsList);
+            // Option+Left moves by word on Apple keyboards. Return remains available in the panel.
+            const apple = /Mac|iPhone|iPad|iPod/.test(editor.element.ownerDocument.defaultView!.navigator.platform);
+            register({ id: "navigation.back", label: "Back to previous location", enabled: () => this.history.getSnapshot() > 0,
+                run: () => { this.active = session; this.returnToOrigin(); } }, { keys: apple ? [] : ["Alt+ArrowLeft"], repeat: false });
             register({ id: "navigation.dismiss", label: "Cancel symbol navigation",
                 enabled: () => this.job?.origin === session && (editor.getSnapshot().focused || ownsList()),
                 run: () => { const restore = ownsList(); this.cancel(); if (restore) focusSource(editor); } }, { keys: ["Escape"], shared: true, priority: 5 });
@@ -217,16 +223,10 @@ export class HostNavigationTools {
         }
     }
     readonly returnToOrigin = (): void => {
-        if (this.active && !this.host.canCapture(this.active.editor.view.documentId)) return;
-        let origin: TextEditor | undefined;
-        const result = this.history.back(view => {
-            if (!this.host.canCapture(view.documentId)) return "busy";
-            for (const session of this.sessions.keys()) if (session.editor.view === view && this.available(session)) {
-                origin = session.editor; return origin;
-            }
-            return undefined;
-        });
-        if (result === "restored" && origin) focusSource(origin);
+        if (this.active && !this.host.canCapture(this.active.editor.view.documentId)) {
+            this.publish({ message: "Finish pending input before returning." }); return;
+        }
+        const result = this.host.back(this.sessions.keys());
         this.publish({ message: result === "restored" ? "Returned to the captured origin and complete selection set."
             : result === "busy" ? "Finish pending input before returning." : "No navigation origin is still open." });
     };
@@ -244,7 +244,7 @@ export class HostNavigationTools {
         pending: this.cell.get().status === "pending", results: this.job?.page?.count ?? 0, scope: this.job?.sources.size ?? 0, companion: this.companion ?? null, transport: this.job?.origin.controller.getDiagnostics() ?? null, disposed: this.disposed }; }
     dispose(): void {
         if (this.disposed) return;
-        this.disposed = true; this.history.dispose(); this.cancel(); this.resultList.dispose();
+        this.disposed = true; this.stopHistory(); this.cancel(); this.resultList.dispose();
         for (const detach of this.sessions.values()) detach();
     }
 }

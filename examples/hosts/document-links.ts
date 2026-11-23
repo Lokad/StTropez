@@ -2,7 +2,7 @@ import { fixtureRequests, type FixturePolicy } from "../shared/language/fixture-
 import { createPanelKeyBinding, focusResult, registerResultArrows } from "./panel-keys.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.ts";
-import { captureDestinationPanes, presentDocument, unavailablePaneMessage, type NavigationHost } from "./language-host.ts";
+import { captureDestinationPanes, presentDocument, unavailablePaneMessage, type HostLocation, type NavigationHost } from "./language-host.ts";
 import { focusSource, onSourceFocus } from "./source-focus.ts";
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, DocumentSnapshot, TabId } from "../../src/index.ts";
@@ -20,8 +20,8 @@ export type LinkHostOptions = Readonly<{ provider: LspWorkspace;
     prepare: (aliases: readonly Alias[], policy: FixturePolicy<LinkFault>) => LspPrepare }>;
 type Session = { id: string; editor: TextEditor; controller: DocumentLinkController };
 type Origin = { origin: Session; source: DocumentSnapshot; viewState: ViewState };
-type Route = Origin & { documents: Map<string, DocumentSnapshot>; targets: Map<DocumentId, Session>; focusResults?: () => boolean };
-type Visit = Origin & { destination: TextEditor; release: () => void };
+type Route = Origin & { documents: Map<string, DocumentSnapshot>; targets: Map<DocumentId, Session>; returnPoint: HostLocation; focusResults?: () => boolean };
+type Visit = Origin & { destination: TextEditor; release: () => void; returnPoint?: HostLocation };
 type LinkRange = Pick<DocumentLinkChoice, "from" | "to">;
 export type LinkNote = ModuleLink & Readonly<{ line: number; column: number; title: string; targetTitle: string | null; resolvable: boolean; open: () => void }>;
 export type DocumentLinksSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; requestView: string | null;
@@ -48,9 +48,14 @@ export class HostDocumentLinks {
     readonly state = this.cell.observable;
     private readonly host: NavigationHost;
     private readonly options: LinkHostOptions;
+    private readonly stopHistory: () => void;
     constructor(host: NavigationHost, options: LinkHostOptions) {
         this.host = host; this.options = options;
         this.pageKey = createReviewKey(host.workspace);
+        this.stopHistory = host.history.subscribe(() => {
+            const visit = this.visit;
+            if (visit?.returnPoint && !visit.returnPoint.recorded()) { this.releaseVisit(); this.publish(); }
+        });
     }
     private publish(patch: Partial<DocumentLinksSnapshot> = {}) {
         this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && !this.disposed && !this.active.editor.signal.aborted,
@@ -173,8 +178,9 @@ export class HostDocumentLinks {
             documents.set(target.language.uri, target);
         }
         const targets = captureDestinationPanes(origin, this.sessions.keys(), aliases);
+        const returnPoint = this.host.history.capture(origin.editor); if (!returnPoint) return;
         this.release();
-        const route: Route = { origin, source, documents, targets, viewState: origin.editor.captureView() };
+        const route: Route = { origin, source, documents, targets, returnPoint, viewState: origin.editor.captureView() };
         this.route = route; this.metrics.requested++;
         if (!returning) this.publish({ ...initial });
         return route;
@@ -221,7 +227,10 @@ export class HostDocumentLinks {
                 || this.host.workspace.document(source.id).revision !== source.revision) return;
             editor.focus(); this.active = origin;
             const route = current ? previous : this.begin(origin);
-            if (route) void this.open(route, selected, module, editor.captureView());
+            if (!route) return;
+            if (!current) { void this.open(route, selected, module); return; }
+            const returnPoint = this.host.history.capture(editor);
+            if (returnPoint) void this.open(route, selected, module, editor.captureView(), returnPoint);
         } };
     }
     private place(owner: Route | Visit, doc: DocumentSnapshot, captured: Session | undefined, viewState?: ViewState) {
@@ -241,7 +250,7 @@ export class HostDocumentLinks {
             if (current()) this.publish({ message: error instanceof Error ? error.message : "The host could not open the destination." });
         } finally { this.presenting = false; }
     }
-    private async open(route: Route, selected: LinkRange | DocumentLinkChoice, module: string, viewState = route.viewState) {
+    private async open(route: Route, selected: LinkRange | DocumentLinkChoice, module: string, viewState = route.viewState, returnPoint = route.returnPoint) {
         if (this.route !== route || !this.sessions.has(route.origin)) return;
         const owner = route.origin.editor.element.ownerDocument, list = this.linkList.element;
         // Resolving disables the row. Keep Escape and Tab in the results list.
@@ -276,11 +285,12 @@ export class HostDocumentLinks {
                 const { origin, source } = route;
                 const release = this.retainOrigin(source);
                 let placed: TextEditor | undefined;
-                try { placed = this.place(route, doc, route.targets.get(doc.id)); }
+                try { returnPoint.visit(() => !!(placed = this.place(route, doc, route.targets.get(doc.id)))); }
                 finally { if (!placed) release(); }
                 if (!placed) return;
                 this.releaseVisit();
-                this.visit = { origin, source, viewState, destination: placed, release }; this.metrics.opened++;
+                this.visit = { origin, source, viewState, destination: placed, release,
+                    ...(this.sessions.has(origin) && returnPoint.recorded() ? { returnPoint } : {}) }; this.metrics.opened++;
                 this.publish({ message: `Opened ${doc.title}.`, ...(!this.sessions.has(route.origin) ? { status: "away" as const } : {}) });
             });
             if (result.status === "no-target" && this.route === route && this.cell.get().status === "ready") {
@@ -305,8 +315,13 @@ export class HostDocumentLinks {
         const visit = this.visit;
         if (!visit) return;
         if (!this.host.canCapture(visit.destination.view.documentId)) { this.publish({ message: unavailablePaneMessage }); return; }
-        if (!this.place(visit, visit.source, visit.origin, visit.viewState)) return;
-        this.releaseVisit();
+        if (visit.returnPoint?.isNext()) {
+            const result = this.host.back(this.sessions.keys());
+            if (result !== "restored") { this.publish({ message: result === "busy" ? unavailablePaneMessage : "No navigation origin is still open." }); return; }
+        } else {
+            if (!this.place(visit, visit.source, visit.origin, visit.viewState)) return;
+            this.releaseVisit();
+        }
         this.metrics.returned++;
         if (this.route && !this.sessions.has(visit.origin)) this.start(false, true);
         else this.publish({ message: "Returned to the captured source and selection." });
@@ -326,7 +341,7 @@ export class HostDocumentLinks {
         sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
     dispose() {
         if (this.disposed) return;
-        this.disposed = true; this.cancel(); this.linkList.dispose(); this.aliases.clear();
+        this.disposed = true; this.stopHistory(); this.cancel(); this.linkList.dispose(); this.aliases.clear();
         for (const detach of this.sessions.values()) detach();
     }
 }

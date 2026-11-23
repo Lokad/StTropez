@@ -67,7 +67,7 @@ test("links and definitions retry a failed presentation and keep the requesting 
         editor.focus();
         return async () => {
             const loaded = destination && ws.observeDocument(destination.view.documentId);
-            removeLinks(); links.dispose(); removePanel(); detach(); host.dispose(); destination?.dispose(); editor.dispose(); provider.dispose();
+            removeLinks(); links.dispose(); removePanel(); detach(); host.dispose(); panes.history.dispose(); destination?.dispose(); editor.dispose(); provider.dispose();
             await new Promise<void>(done => requestAnimationFrame(() => done()));
             return loaded !== undefined && loaded.getSnapshot() === undefined;
         };

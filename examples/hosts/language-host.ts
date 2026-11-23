@@ -1,6 +1,8 @@
 import type { DocumentId, TabTarget, Workspace } from "../../src/index.ts";
 import type { TextEditor } from "../../src/browser/index.ts";
-import { focusSourceCaret } from "./source-focus.ts";
+import { createNavigationHistory } from "../../src/browser/index.ts";
+import { focusSource, focusSourceCaret } from "./source-focus.ts";
+import { HostCell } from "../shared/observable.ts";
 
 export type ChangedFile = Readonly<{ document: DocumentId; title: string }>;
 
@@ -14,12 +16,45 @@ export type LanguageHost = Readonly<{
 /** A later destination request owns focus even if its result is empty or fails. */
 export function createNavigationHost(host: LanguageHost) {
     let latest = 0;
-    return { ...host, claimNavigationFocus() {
+    const history = createNavigationHistory(host.workspace);
+    // The link panel has a targeted Return. Track opaque visit identities so it never pops a newer symbol jump.
+    const visits = new HostCell<readonly symbol[]>([]);
+    function capture(editor: TextEditor) {
+        const point = history.capture(editor); if (!point) return;
+        const key = Symbol();
+        return {
+            isNext: () => visits.get().at(-1) === key,
+            recorded: () => visits.get().includes(key),
+            visit(open: () => boolean) {
+                const opened = point.visit(open), depth = history.getSnapshot();
+                if (opened && depth && host.workspace.ownsDocumentView(editor.view, editor.tab) && visits.get().at(-1) !== key)
+                    visits.set([...visits.get(), key].slice(-depth));
+                return opened;
+            },
+        };
+    }
+    function back(panes: Iterable<{ editor: TextEditor }>) {
+        let origin: TextEditor | undefined;
+        const result = history.back(view => {
+            if (!host.canCapture(view.documentId)) return "busy";
+            for (const { editor } of panes) if (editor.view === view && isMountedEditor(host.workspace, editor)) {
+                origin = editor; return editor;
+            }
+            return undefined;
+        });
+        const depth = history.getSnapshot();
+        if (visits.get().length !== depth) visits.set(visits.get().slice(0, depth));
+        if (result === "restored" && origin) focusSource(origin);
+        return result;
+    }
+    return { ...host, history: { capture, getSnapshot: history.getSnapshot, subscribe: visits.observable.subscribe,
+        dispose() { history.dispose(); visits.set([]); } }, back, claimNavigationFocus() {
         const request = ++latest;
         return () => request === latest;
     } };
 }
 export type NavigationHost = ReturnType<typeof createNavigationHost>;
+export type HostLocation = NonNullable<ReturnType<NavigationHost["history"]["capture"]>>;
 
 export const unavailablePaneMessage = "Show a source pane or finish its pending input, then try again.";
 

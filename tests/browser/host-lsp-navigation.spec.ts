@@ -340,6 +340,35 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         expect(restored.metrics!.viewport.scrollTop).toBeCloseTo(origin.metrics!.viewport.scrollTop, 2);
         await expect(back).toBeDisabled();
     });
+    if (coversHost("candidate-hosts", host, "candidate")) test("Back retraces a module visit and a symbol visit in order", async ({ page }) => {
+        const text = 'import "sample-utils";\nconst sample = 1;\nsample;';
+        const symbol = text.lastIndexOf("sample") + 2, path = text.indexOf("-");
+        await seed(page, text, symbol);
+        await button(page, "Add module companion").click();
+        const primary = field(page), secondary = field(page, "Secondary source");
+        await primary.press("F12"); await expect(page.getByLabel("Symbol navigation status", { exact: true })).toContainText("Opened");
+        await select(page, path); await primary.press("F12"); await expect(secondary).toBeFocused();
+        await secondary.press("End"); await page.keyboard.insertText(" // edited");
+        const back = button(page, "Return to navigation origin");
+        const apple = await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform));
+        for (const offset of [path, symbol]) {
+            if (apple) await back.click(); else await page.keyboard.press("Alt+ArrowLeft");
+            await expect(primary).toBeFocused();
+            expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: offset, head: offset });
+        }
+        await expect(back).toBeDisabled();
+        await expect(button(page, "Return to link origin")).toBeDisabled();
+
+        // Targeted module Return must leave a later symbol visit in the shared history.
+        await select(page, path); await primary.press("F12"); await expect(secondary).toBeFocused();
+        await primary.focus(); await select(page, symbol); await primary.press("F12");
+        await expect.poll(async () => (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection.anchor)
+            .toBe(text.indexOf("sample ="));
+        await button(page, "Return to link origin").click(); await expect(primary).toBeFocused();
+        expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: path, head: path });
+        await back.click();
+        expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: symbol, head: symbol });
+    });
     if (coversHost("candidate-hosts", host, "candidate")) test("malformed navigation, changed authority and pending remount cannot publish stale targets", async ({ page, browserName, browserErrors }) => {
         const replies = await holdLspReplies(page, "textDocument/definition"); await page.reload();
         const text = "const target = 1;\r\ntarget"; await seed(page, text, text.length - 2); const before = await snapshot(page);
