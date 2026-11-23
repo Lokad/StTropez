@@ -530,10 +530,10 @@ export async function runDemoEditingRules(page: Page, url = "/") {
     await menu("Toggle block comment"); await expect(source).toHaveValue('/*function demo() {*/\n  "value";\n}');
     await menu("Toggle block comment"); await expect(source).toHaveValue('function demo() {\n  "value";\n}');
     await source.press("Control+a"); await source.press("Control+/");
-    await expect(source).toHaveValue('// function demo() {\n  // "value";\n// }');
+    await expect(source).toHaveValue('// function demo() {\n//   "value";\n// }');
     await source.press("Control+k"); await source.press("Control+u");
     await expect(source).toHaveValue('function demo() {\n  "value";\n}');
-    await source.press("Control+z"); await expect(source).toHaveValue('// function demo() {\n  // "value";\n// }');
+    await source.press("Control+z"); await expect(source).toHaveValue('// function demo() {\n//   "value";\n// }');
     await source.press("Control+z"); await expect(source).toHaveValue('function demo() {\n  "value";\n}');
     await replace("/*\n[comment]\n*/\n"); await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
     await source.press("Control+Home"); await source.press("ArrowDown"); await source.press("End");

@@ -55,6 +55,17 @@ test("configured line indentation and comments preserve reversed selections, bla
     assert.equal(commented.text, "  // one\n\t// two\n\nlast");
     assert.equal(plan(commented.text, commented.value.selectionSet.ranges, "line-comment").text, text);
     assert.equal(plan("// first\nsecond", selection(0, 15), "line-comment").text, "// // first\n// second");
+    const mixed = "// keep\r\n    deeper\r\n\t \r\n", reversed = selection(mixed.length, 0);
+    const once = plan(mixed, reversed, "add-line-comment"), twice = plan(once.text, once.value.selectionSet.ranges, "add-line-comment");
+    assert.equal(once.text, "// // keep\r\n//     deeper\r\n\t \r\n");
+    assert.equal(plan(twice.text, twice.value.selectionSet.ranges, "remove-line-comment").text, once.text);
+    const original = plan(once.text, once.value.selectionSet.ranges, "remove-line-comment");
+    assert.equal(original.text, mixed); assert.deepEqual(original.ranges, [[mixed.length, 0]]);
+    const tabs = "   a\n \tb\n  \tc", cfg = { ...configuration, tabSize: 4 };
+    const aligned = plan(tabs, selection(0, tabs.length), "line-comment", cfg);
+    assert.equal(aligned.text, " //   a\n // \tb\n //  \tc");
+    assert.equal(plan(aligned.text, aligned.value.selectionSet.ranges, "line-comment", cfg).text, tabs);
+    assert.equal(plan("  // a\n b", [...selection(4), ...selection(8)], "line-comment").text, "  a\n // b");
     assert.equal(plan("", selection(0), "line-comment").text, "// ");
     assert.equal(plan("\tx", selection(0, 2), "indent", { tabSize: 4, insertSpaces: false }).text, "\t\tx");
     const directed = [{ anchor: 5, head: 2, anchorAffinity: "before", headAffinity: "before" },

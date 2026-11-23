@@ -83,21 +83,24 @@ type LineColumns = { offset: number; column: number; previousStop: number; inden
 export function lineColumnScanner(read: (from: number, to: number) => string, tabSize: number) {
     let lineStart = -1, offset = 0, column = 0, previousStop = 0;
     let firstText: LineColumns | undefined;
-    return function* scan(start: number, to: number, indentOnly = false): Generator<void, LineColumns> {
-        if (lineStart !== start || offset > to) {
+    return function* scan(start: number, to: number, indentOnly = false, maxColumn = Infinity): Generator<void, LineColumns> {
+        if (lineStart !== start || offset > to || column > maxColumn) {
             lineStart = start; offset = previousStop = start; column = 0; firstText = undefined;
         }
         if (indentOnly && firstText && firstText.offset < to) return firstText;
-        while (offset < to) {
+        while (offset < to && column < maxColumn) {
             const chunk = indentOnly && offset === start ? 32 : 1024;
             const text = read(offset, Math.min(to, offset + chunk));
             for (let i = 0; i < text.length; i++) {
                 const ch = text.charCodeAt(i);
                 if (!firstText && ch !== 32 && ch !== 9) firstText = { offset, column, previousStop, indentation: false };
                 if (indentOnly && firstText) return firstText;
+                const next = column + (ch === 9 ? tabSize - column % tabSize : 1);
+                if (next > maxColumn) return { offset, column, previousStop, indentation: !firstText };
                 if (column % tabSize === 0) previousStop = offset;
-                column += ch === 9 ? tabSize - column % tabSize : 1;
+                column = next;
                 offset++;
+                if (column === maxColumn) break;
             }
             yield;
         }
@@ -193,6 +196,50 @@ function* lineGroups(buffer: TextBuffer, selections: SelectionSet, adjacent: boo
         state.workUnits++; if (checkpoint(state)) yield;
     }
     return groups;
+}
+
+function* lineComments(buffer: TextBuffer, selections: SelectionSet, command: "line-comment" | "add-line-comment" | "remove-line-comment",
+    marker: string, tabSize: number, read: (from: number, to: number) => string, state: MutablePlanning): Generator<void, SelectionEditPlan> {
+    const edits: TextEdit[] = [];
+    const intervals = yield* lineGroups(buffer, selections, false, state), scan = lineColumnScanner(read, tabSize);
+    for (const interval of intervals) {
+        const lines: { start: number; offset: number; column: number; commented: boolean; blank: boolean }[] = [];
+        let minimum = Infinity, allCommented = true;
+        for (let line = interval.first; line <= interval.last; line++) {
+            const start = buffer.offsetAt(line), end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
+            const { offset, column } = yield* scan(start, end, true), next = read(offset, Math.min(end, offset + marker.length));
+            const blank = !next || /^[\r\n]/.test(next), commented = next === marker;
+            if (!blank) { minimum = Math.min(minimum, column); allCommented &&= commented; }
+            lines.push({ start, offset, column, commented, blank });
+            state.workUnits++; if (checkpoint(state)) yield;
+        }
+        const uncomment = command === "remove-line-comment" || command === "line-comment" && minimum !== Infinity && allCommented;
+        let common = minimum;
+        if (!uncomment && minimum > 0 && minimum !== Infinity) for (const line of lines) {
+            state.workUnits++; if (checkpoint(state)) yield;
+            if (line.blank || line.column === minimum) continue;
+            if (line.offset - line.start === line.column) { line.offset = line.start + minimum; line.column = minimum; }
+            else {
+                const point = yield* scan(line.start, Math.min(line.offset, line.start + minimum), false, minimum);
+                line.offset = point.offset; line.column = point.column; common = Math.min(common, point.column);
+            }
+        }
+        for (const line of lines) {
+            state.workUnits++; if (checkpoint(state)) yield;
+            if (line.blank && minimum !== Infinity) continue;
+            if (uncomment) {
+                if (!line.commented) continue;
+                const end = line.offset + marker.length, space = read(end, Math.min(buffer.length, end + 1)) === " ";
+                edits.push({ from: line.offset, to: end + Number(space), insert: "" });
+            } else {
+                // If a tab straddled the minimum, every column back to its start lies
+                // in this same tab stop. Only literal spaces need to be stepped over.
+                const from = common === 0 ? line.start : common === Infinity ? line.offset : line.offset - (line.column - common);
+                edits.push({ from, to: from, insert: marker + " " });
+            }
+        }
+    }
+    return yield* mapped(buffer, selections, edits, state);
 }
 
 function* enterIndent(buffer: TextBuffer, from: number, to: number, config: ResolvedLanguageConfiguration, unit: string,
@@ -428,31 +475,9 @@ function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCom
         return yield* shiftLines(buffer, selections, command, read, state, folds);
     if (command === "indent" || command === "indent-lines" || command === "outdent") return yield* indent(buffer, selections, command, config, read, state);
     if (command === "block-comment" && config.blockComment) return yield* blockComments(buffer, selections, config.blockComment, read, state);
-    const commenting = command === "line-comment" || command === "add-line-comment" || command === "remove-line-comment";
-    if (commenting) {
+    if (command === "line-comment" || command === "add-line-comment" || command === "remove-line-comment") {
         if (!config.lineComment) return yield* publish(edits, selections, state);
-        const intervals = yield* lineGroups(buffer, selections, true, state);
-        const comments: { from: number; commented: boolean; blank: boolean }[] = [];
-        let allCommented = true, anyText = false;
-        for (const interval of intervals) for (let line = interval.first; line <= interval.last; line++) {
-            const from = buffer.offsetAt(line);
-            const end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
-            const at = yield* whitespace(read, state, from, end), next = read(at, Math.min(end, at + config.lineComment.length));
-            const blank = !next || /^[\r\n]/.test(next), commented = next === config.lineComment;
-            if (!blank) { anyText = true; allCommented &&= commented; }
-            comments.push({ from: at, commented, blank });
-            state.workUnits++; if (checkpoint(state)) yield;
-        }
-        for (const line of comments) {
-            state.workUnits++; if (checkpoint(state)) yield;
-            if (line.blank && anyText) continue;
-            if (command === "add-line-comment" && line.commented || command === "remove-line-comment" && !line.commented) continue;
-            const uncomment = command === "remove-line-comment" || command === "line-comment" && anyText && allCommented;
-            const end = line.from + config.lineComment.length;
-            const space = uncomment && read(end, Math.min(buffer.length, end + 1)) === " " ? 1 : 0;
-            edits.push({ from: line.from, to: uncomment ? end + space : line.from, insert: uncomment ? "" : config.lineComment + " " });
-        }
-        return yield* mapped(buffer, selections, edits, state);
+        return yield* lineComments(buffer, selections, command, config.lineComment, config.tabSize, read, state);
     }
     const ranges: Selection[] = []; let delta = 0;
     for (const range of selections.ranges) {

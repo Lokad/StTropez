@@ -637,8 +637,10 @@ test("comment chords and shifted slash act on the captured lines", async ({ page
     const stroke = (key: string, shiftKey = false, code = "") => input.evaluate((node, args) =>
         !node.dispatchEvent(new KeyboardEvent("keydown", { ...args, ctrlKey: true, bubbles: true, cancelable: true })), { key, shiftKey, code });
     await input.press("Control+a"); await input.press("Control+k"); expect(await stroke("c")).toBe(true);
-    await expect(rows).toHaveText(["  // alpha", "// beta"]);
-    await input.press("Control+k"); await input.press("Control+u"); await expect(rows).toHaveText(["  alpha", "beta"]);
+    await expect(rows).toHaveText(["//   alpha", "// // beta"]);
+    await input.press("Control+k"); await input.press("Control+u"); await expect(rows).toHaveText(["  alpha", "// beta"]);
+    await input.press("Control+z"); await expect(rows).toHaveText(["//   alpha", "// // beta"]);
+    await input.press("Control+Shift+z"); await expect(rows).toHaveText(["  alpha", "// beta"]);
     await page.evaluate(() => window.editingFixture.selections([{ anchor: 3, head: 5 }]));
     await input.press("Control+]"); await expect(rows.first()).toHaveJSProperty("textContent", "    alpha");
     expect(await stroke("Dead", false, "BracketLeft")).toBe(true);

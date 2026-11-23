@@ -384,6 +384,12 @@ The view commands `select-all`, `select-line`, `select-next-occurrence`, `select
 cannot edit, is composing/disposed, or lacks the requested comment rule. Long plans yield, then
 commit once after validating the captured target; intermediate planning publishes no text.
 
+Add line comment adds one marker to each selected line of code, including existing comments.
+Remove peels off one marker and its optional space. Markers align at the indentation of the
+least-indented selected line. If a tab spans that column, markers move left to the nearest
+column available on every line. Blank lines in a block keep their whitespace. Separate selections act independently
+unless they touch the same line.
+
 When a selection toggles off a block comment, a second caret inside either delimiter follows
 its removal. Selections elsewhere toggle independently in the same undo step.
 
