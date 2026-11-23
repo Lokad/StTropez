@@ -53,6 +53,23 @@ test("fold commands capture view/revision/generation and keep source, history an
     } finally { f.finish(); }
 });
 
+test("a complete selection through EOF keeps the block folded in either direction", () => {
+    const f = fixture();
+    try {
+        const folds = f.view.folding, end = f.model.document(f.source.documentId).buffer.length;
+        folds.setRanges(folds.getSnapshot(), [{ id: "block", from: 0, to: end, collapsed: true }]);
+        for (const range of [{ anchor: 0, head: end }, { anchor: end, head: 0 }]) {
+            f.view.setSelection(0, range);
+            assert.equal(folds.getSnapshot().index.collapsedCount, 1);
+        }
+        for (const anchor of [1, end]) {
+            folds.setCollapsed(folds.getSnapshot(), "block", true);
+            f.view.setSelection(0, { anchor, head: end });
+            assert.equal(folds.getSnapshot().index.collapsedCount, 0);
+        }
+    } finally { f.finish(); }
+});
+
 test("a group collapse publishes both visible carets and folds together or leaves both alone", () => {
     const f = fixture();
     try {

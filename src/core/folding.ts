@@ -130,9 +130,17 @@ export function revealSelectionFolds(buffer: TextBuffer, regions: readonly FoldR
     if (index?.collapsedCount === 0) return regions;
     const metadata = owned.get(regions);
     if (metadata?.collapsed === 0) return regions;
-    if (index && !selections.ranges.some(r => index.hiddenBy(buffer.lineAt(r.anchor)) || index.hiddenBy(buffer.lineAt(r.head)))) return regions;
     if (!metadata && !regions.some(r => r.collapsed)) return regions;
-    const lines = [...new Set(selections.ranges.flatMap(r => [buffer.lineAt(r.anchor), buffer.lineAt(r.head)]))].sort((a, b) => a - b); let changed = false;
+    const endpoints = new Set<number>();
+    for (const range of selections.ranges) {
+        const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
+        const first = buffer.lineAt(from), last = buffer.lineAt(to);
+        if (!index || index.hiddenBy(first)) endpoints.add(first);
+        // A whole-line selection through EOF includes the final folded row in full.
+        if (last !== first && (to !== buffer.length || from !== buffer.offsetAt(first)) && (!index || index.hiddenBy(last))) endpoints.add(last);
+    }
+    if (!endpoints.size) return regions;
+    const lines = [...endpoints].sort((a, b) => a - b); let changed = false;
     if (metadata && lines[0]! >= metadata.maxLineTo) return regions;
     const next = regions.map(r => {
         if (!r.collapsed) return r;
@@ -203,6 +211,13 @@ export class FoldIndex {
             && this.#hidden.every((range, index) => range.from === other.#hidden[index]!.from && range.to === other.#hidden[index]!.to);
     }
 }
+/** The collapsed block displayed as one row at this source line, including its header. */
+export function collapsedLineBlock(index: FoldIndex | undefined, line: number): FoldRegion | undefined {
+    if (!index?.collapsedCount) return;
+    const region = index.hiddenBy(line) ?? index.headerAt(line);
+    return region?.collapsed ? region : undefined;
+}
+
 export function foldingSnapshot(buffer: TextBuffer, revision: number, generation: number, regions: readonly FoldRegion[], previous?: FoldingSnapshot): FoldingSnapshot {
     return Object.freeze({ revision, generation, regions, index: previous && previous.regions === regions && previous.index.lineCount === buffer.lineCount ? previous.index : new FoldIndex(buffer.lineCount, regions) });
 }

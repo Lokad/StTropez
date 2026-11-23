@@ -2,6 +2,30 @@ import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 
+test("whole-line gestures select a collapsed block for deletion, including at EOF", async ({ page }) => {
+    await page.goto("/editing/");
+    const source = input(page), fold = page.locator("#primary .st-fold-button");
+    const block = "head\r\nbody\r\nlast", prefix = "before\r\n";
+    for (const [gesture, suffix] of [["gutter", "\r\ntail"], ["triple-click", ""], ["Ctrl+L", ""]] as const) {
+        const text = prefix + block + suffix, from = prefix.length, to = text.length - (suffix ? "tail".length : 0);
+        await page.evaluate(({ text, from, to }) => {
+            const f = window.editingFixture;
+            f.setText(text); f.folds([{ id: "section", from, to, collapsed: true }]);
+            f.select("primary", { anchor: from + 2, head: from + 2 });
+        }, { text, from, to }); await ready(page);
+        if (gesture === "gutter") await page.locator("#primary .st-line-numbers span").filter({ hasText: /^2$/ }).click();
+        else if (gesture === "triple-click") await page.locator('#primary .st-viewport-row[data-line="1"]').click({ clickCount: 3, position: { x: 12, y: 8 } });
+        else await source.press("Control+l");
+        await ready(page);
+        expect(await page.evaluate(() => window.editingFixture.selectionSet().ranges[0]), gesture).toMatchObject({ anchor: from, head: to });
+        await expect(fold).toHaveAttribute("aria-expanded", "false");
+        await source.press("Delete"); await ready(page);
+        const contents = () => page.evaluate(() => { const f = window.editingFixture; return f.range(0, f.snapshot().document!.length); });
+        expect(await contents()).toBe(prefix + (suffix ? "tail" : ""));
+        await source.press("Control+z"); expect(await contents()).toBe(text);
+    }
+});
+
 test("collapsing from a body caret moves it to the header for navigation and typing", async ({ page }) => {
     await page.goto("/editing/");
     await page.evaluate(() => {

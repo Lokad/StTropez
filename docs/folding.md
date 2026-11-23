@@ -161,6 +161,9 @@ Collapsing with a command or gutter button moves each newly hidden insertion car
 of its header. Typing there edits the header. Busy or unavailable views reject the command.
 
 A caret left inside a fold by a host paints at its header. Arrow/Page traversal skips hidden rows.
+Clicking or dragging line numbers, triple-clicking a line and pressing Ctrl/Cmd+L select a collapsed
+header with its entire body. The selection includes the line ending when one follows the block.
+Selecting through the end of the document this way keeps the last block folded.
 Explicit selection, typing, Find and reveal expand hidden targets. Fold buttons stay outside the Tab order. A focused button toggles
 with Enter or Space and keeps keyboard focus. Clicking a disclosure returns focus to the editor input,
 as does pressing Escape on the button. Buttons capture tab, revision and fold

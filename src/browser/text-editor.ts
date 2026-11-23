@@ -6,6 +6,7 @@ import { isFocused } from "./dom-focus.ts";
 import { Store, type Observable } from "../core/observable.ts";
 import { textDifference } from "../core/changes.ts";
 import { copyCaretLines, planClipboardPaste } from "../core/clipboard-edits.ts";
+import { collapsedLineBlock } from "../core/folding.ts";
 import { createWordCommandCursor, isCodeWordBase, WordCursor } from "../core/words.ts";
 import { createGraphemeCursor } from "../core/graphemes.ts";
 import { createSelectionSet, planSelectionEdits } from "../core/selections.ts";
@@ -372,7 +373,15 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         return Object.freeze({ from, to });
     }
     function revealCaret(selected = view.getSnapshot().selection, vertical: NonNullable<RevealOptions["vertical"]> = "nearest"): void {
-        viewport.revealOffset(selected.head, { horizontal: "nearest", vertical, affinity: selected.headAffinity ?? "after" });
+        let offset = selected.head;
+        if (selected.head !== selected.anchor) {
+            const buffer = workspace.document(documentId).buffer;
+            if (offset === buffer.length) {
+                const block = view.folding.getSnapshot().index.hiddenBy(buffer.lineCount - 1);
+                if (block) offset = lineContentEnd(buffer, block.lineFrom);
+            }
+        }
+        viewport.revealOffset(offset, { horizontal: "nearest", vertical, affinity: selected.headAffinity ?? "after" });
     }
     type ApplyOptions = { type?: string | undefined; expectedRevision?: number; recoveryText?: string | undefined;
         adjustNewlines?: boolean; accepted?: ((edits: readonly TextEdit[]) => void) | undefined; typedText?: string | undefined };
@@ -558,8 +567,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (capture.deleting) { const plan = planSelectionEdits(capture.buffer.length, selections, "");
             return apply(plan.edits, plan.selectionSet, "delete", { type, expectedRevision: capture.revision }); }
         else { cancelWord(); group = undefined; view.setSelections(capture.revision, selections.ranges, selections.primary);
-            const selected = view.getSnapshot().selection;
-            viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" }); refresh(); }
+            revealCaret(); refresh(); }
         return true;
         });
         return view.getSnapshot().selectionSet;
@@ -1022,14 +1030,14 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             }
             case "select-line": {
                 cancelWord(); syncSelection(); group = undefined; preferred = undefined;
-                const capture = commandCapture(false), buffer = capture.buffer;
+                const capture = commandCapture(false), buffer = capture.buffer, folds = view.folding.getSnapshot().index;
                 eachRange(capture, "grapheme", (range, done) => {
                     const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
-                    const anchor = buffer.offsetAt(buffer.lineAt(from)), last = buffer.lineAt(to);
-                    const endsAtStart = from < to && to === buffer.offsetAt(last);
-                    const through = endsAtStart && from !== anchor ? last : last + 1;
-                    done({ anchor, head: through < buffer.lineCount ? buffer.offsetAt(through) : buffer.length });
-                }, ranges => finishRanges(capture, ranges), { navigation: true });
+                    const { anchor } = wholeLine(buffer, from, folds);
+                    const endsAtStart = from < to && to === buffer.offsetAt(buffer.lineAt(to));
+                    const head = endsAtStart && from !== anchor ? to : wholeLine(buffer, to, folds).head;
+                    done({ anchor, head });
+                }, ranges => finishRanges(capture, ranges), { navigation: true, validLayout: () => folds.sameProjection(view.folding.getSnapshot().index) });
                 return true;
             }
             case "scroll-line-up": case "scroll-line-down": case "scroll-page-up": case "scroll-page-down": {
@@ -1316,9 +1324,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (press.armed) textDrag.disarm();
         beginPointer(press.event, event.detail, event);
     }, { signal: listeners.signal });
-    function wholeLine(buffer: TextBuffer, offset: number): Selection {
-        const line = buffer.lineAt(offset);
-        return { anchor: buffer.offsetAt(line), head: line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length };
+    function wholeLine(buffer: TextBuffer, offset: number, folds = view.folding.getSnapshot().index): Selection {
+        const line = buffer.lineAt(offset), block = collapsedLineBlock(folds, line);
+        const next = block?.lineTo ?? line + 1;
+        return { anchor: buffer.offsetAt(block?.lineFrom ?? line), head: next < buffer.lineCount ? buffer.offsetAt(next) : buffer.length };
     }
     function lineSelection(origin: Selection, target: Selection): Selection {
         return target.anchor < origin.anchor ? { anchor: origin.head, head: target.anchor } : { anchor: origin.anchor, head: target.head };
