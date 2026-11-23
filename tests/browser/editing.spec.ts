@@ -597,7 +597,7 @@ test("Backspace removes an automatic pair through a mapped edit and undo, but le
 test("line indentation/outdent, CRLF Enter, paired brackets and vertical navigation use model selections", async ({ page }) => {
     const events = await recordTypedText(page);
     await page.evaluate(() => { window.editingFixture.setText("one\n\ttwo\nthree"); window.editingFixture.select("primary", { anchor: 0, head: 9 }); window.editingFixture.focus("primary"); }); await ready(page);
-    await page.keyboard.press("Tab"); expect(await page.evaluate(() => window.editingFixture.range(0, 22))).toBe("    one\n    \ttwo\nthree");
+    await page.keyboard.press("Tab"); expect(await page.evaluate(() => window.editingFixture.range(0, 22))).toBe("    one\n\t    two\nthree");
     await page.keyboard.press("Shift+Tab"); expect(await page.evaluate(() => window.editingFixture.range(0, 14))).toBe("one\n\ttwo\nthree");
     await page.keyboard.press("ControlOrMeta+End"); await page.keyboard.press("End"); await page.keyboard.type("(");
     expect(await page.evaluate(() => window.editingFixture.range(14, 16))).toBe("()");

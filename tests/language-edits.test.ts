@@ -34,7 +34,11 @@ const selection = (anchor: number, head = anchor) => [{ anchor, head }];
 test("Tab advances each inline range to a stop and indents complete lines in the same transaction", () => {
     const config: LanguageConfiguration = { tabSize: 4, enter: () => ({ indent: 1 }) };
     const mixed = plan("a\tbcd\nx\n", [{ anchor: 3, head: 2 }, { anchor: 4, head: 5 }, { anchor: 6, head: 7 }], "indent", config);
-    assert.equal(mixed.text, "a\t    c  \n    x\n"); assert.deepEqual(mixed.ranges, [[6, 6], [9, 9], [14, 15]]);
+    assert.equal(mixed.text, "a\t    c  \n    x\n"); assert.deepEqual(mixed.ranges, [[6, 6], [9, 9], [10, 15]]);
+    const overlap = plan("   xy\nz", [{ anchor: 1, head: 4 }, { anchor: 5, head: 7 }], "indent", config);
+    assert.equal(overlap.text, "    y\n    z"); assert.deepEqual(overlap.ranges, [[4, 4], [5, 11]]);
+    const blanks = plan("\n\nx", [{ anchor: 2, head: 0 }, { anchor: 3, head: 3 }], "indent", config);
+    assert.equal(blanks.text, "\n\nx   "); assert.deepEqual(blanks.ranges, [[2, 0], [6, 6]]);
     const blank = plan("  {\r\n  ", selection(6), "indent", config);
     assert.equal(blank.text, "  {\r\n      "); assert.deepEqual(blank.ranges, [[11, 11]]);
     assert.equal(plan(blank.text, selection(11), "indent", config).text, blank.text + "  ");
@@ -45,7 +49,7 @@ test("Tab advances each inline range to a stop and indents complete lines in the
 test("configured line indentation and comments preserve reversed selections, blank lines and end-at-next-line", () => {
     const text = "  one\n\ttwo\n\nlast";
     const indented = plan(text, selection(11, 0), "indent");
-    assert.equal(indented.text, "    one\n  \ttwo\n\nlast"); assert.deepEqual(indented.ranges, [[15, 2]]);
+    assert.equal(indented.text, "    one\n\t  two\n\nlast"); assert.deepEqual(indented.ranges, [[15, 0]]);
     assert.equal(plan(indented.text, indented.value.selectionSet.ranges, "outdent").text, text);
     const commented = plan(text, selection(0, 12), "line-comment");
     assert.equal(commented.text, "  // one\n\t// two\n\nlast");
@@ -186,14 +190,15 @@ test("a first-on-line closer copies its matching opener's indentation in the sam
     assert.equal(tracked.text, "  {\n  }"); assert.deepEqual(tracked.ranges, [[7, 7]]);
 });
 
-test("outdent removes one visual indentation unit even when spaces precede tabs", () => {
-    for (const insertSpaces of [true, false]) for (const [prefix, expected] of [
-        ["  \t", ""], [" \t\t", "\t"], ["\t  \t", "  \t"], ["     \t", " \t"], ["  ", ""], ["      ", "  "], ["", ""],
+test("line commands use visual stops and Enter follows its configured indentation rule", () => {
+    for (const insertSpaces of [true, false]) for (const [prefix, previousStop, enterPrefix] of [
+        ["  \t", "", ""], [" \t\t", " \t", "\t"], ["\t  \t", "\t", "  \t"], ["     \t", "    ", " \t"],
+        ["  ", "", ""], ["      ", "    ", "  "], ["", "", ""],
     ]) {
         const config: LanguageConfiguration = { tabSize: 4, insertSpaces, enter: () => ({ indent: -1 }) };
         const source = prefix + "foo", result = plan(source, selection(source.length, 0), "outdent", config);
-        assert.equal(result.text, expected + "foo"); assert.deepEqual(result.ranges, [[expected!.length + 3, 0]]);
-        assert.equal(plan(prefix + "x\r\n", selection(prefix!.length), "newline", config).text, prefix + "\r\n" + expected + "x\r\n");
+        assert.equal(result.text, previousStop + "foo"); assert.deepEqual(result.ranges, [[previousStop!.length + 3, 0]]);
+        assert.equal(plan(prefix + "x\r\n", selection(prefix!.length), "newline", config).text, prefix + "\r\n" + enterPrefix + "x\r\n");
     }
 });
 

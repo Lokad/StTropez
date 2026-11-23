@@ -427,9 +427,11 @@ stay with the field. [Host command example](host-integration.md)
 
 Tab advances to the next configured tab stop. A partial single-line selection is replaced by that
 whitespace. On a whitespace-only line with one caret, Tab first fills missing indentation from the
-preceding line’s Enter rule. A whole-line or multiline selection shifts each touched line once.
-Shift+Tab removes one indentation level from each touched line, including mixed tabs and spaces.
-A selection ending at the next line’s start excludes that line.
+preceding line’s Enter rule. For whole lines, indent and outdent move the end of the existing
+indentation to the next or previous tab stop. With four-column stops, six spaces become eight
+on indent or four on outdent. A multiline selection leaves blank and whitespace-only lines
+alone. A selection starting at column one keeps that boundary. A selection ending at the start
+of the next line excludes that line.
 
 Line comments toggle nonblank lines. Block comments wrap or unwrap selections. Typing an opener
 can insert its closer or surround a selection. Typing the closer steps over it once if this view
