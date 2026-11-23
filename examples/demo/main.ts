@@ -654,9 +654,17 @@ for (const menu of [codeMenu, element("view-menu") as HTMLDetailsElement]) {
     window.addEventListener("scroll", position, { signal: listeners.signal });
     document.addEventListener("pointerdown", event => { if (!menu.contains(event.target as Node)) menu.open = false; }, { signal: listeners.signal });
     menu.addEventListener("keydown", event => {
-        if (menu.open && event.key === "Escape" && isUnmodifiedShortcut(event)) {
+        if (!menu.open || !isUnmodifiedShortcut(event)) return;
+        if (event.key === "Escape") {
             event.preventDefault(); menu.open = false; summary.focus();
+            return;
         }
+        if (event.key !== "ArrowDown" && event.key !== "ArrowUp" || event.target instanceof HTMLSelectElement) return;
+        const items = Array.from(menu.querySelectorAll<HTMLElement>("button:enabled, input:enabled, select:enabled, a[href]"))
+            .filter(item => item.getClientRects().length);
+        const current = items.indexOf(document.activeElement as HTMLElement);
+        const next = event.key === "ArrowDown" ? current + 1 : current <= 0 ? items.length - 1 : current - 1;
+        if (items.length) { event.preventDefault(); items[next % items.length]!.focus(); }
     }, { signal: listeners.signal });
 }
 on("language-retry", () => {

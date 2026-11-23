@@ -359,7 +359,8 @@ export async function runDemoFolding(page: Page, url = "/") {
     await expect(page.locator("#language-status")).toHaveText("Host outline · no language server");
     await expect(page.locator("#folding-status")).toContainText("7 folds");
     await page.locator("#code-menu summary").click();
-    await expect(page.locator("#fold")).toHaveAttribute("title", "Ctrl+Shift+[ or Meta+Shift+[");
+    const primary = await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "Cmd" : "Ctrl");
+    await expect(page.locator("#fold")).toHaveAttribute("data-shortcut", `${primary}+Shift+[`);
     await page.locator("#fold-group").selectOption("regions"); await page.locator("#fold-group-collapse").click();
     await expect(page.locator('#editor .st-fold-button[aria-expanded="false"]')).toHaveCount(1);
     await expect(page.locator('#editor .st-viewport-row[data-line="8"]')).toHaveCount(0);
@@ -529,7 +530,10 @@ export async function runDemoEditingRules(page: Page, url = "/") {
     await source.pressSequentially('value";'); await source.press("Escape");
     await expect(source).toHaveValue('function demo() {\n  "value";\n}');
     await source.press("Control+Home"); await source.press("Shift+End");
-    await menu("Toggle block comment"); await expect(source).toHaveValue('/* function demo() { */\n  "value";\n}');
+    const code = page.locator("#code-menu summary"), blockComment = page.getByRole("button", { name: "Toggle block comment", exact: true });
+    await code.press("Enter"); await page.locator("#line-comment").press("ArrowDown"); await expect(blockComment).toBeFocused();
+    await page.keyboard.press("Enter"); await expect(source).toBeFocused();
+    await expect(source).toHaveValue('/* function demo() { */\n  "value";\n}');
     await menu("Toggle block comment"); await expect(source).toHaveValue('function demo() {\n  "value";\n}');
     await source.press("Control+a"); await source.press("Control+/");
     await expect(source).toHaveValue('// function demo() {\n//   "value";\n// }');
@@ -566,7 +570,8 @@ export async function runDemoEditingRules(page: Page, url = "/") {
     const comment = page.locator("#line-comment");
     await comment.evaluate(node => (node as HTMLButtonElement).click());
     await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toHaveValue(block);
-    await expect(comment).toBeDisabled(); await page.locator("#code-menu summary").click();
+    await expect(comment).toBeDisabled(); await code.press("ArrowDown"); await expect(page.locator("#go-to-line")).toBeFocused();
+    await page.keyboard.press("Escape"); await expect(code).toBeFocused();
     await page.getByRole("button", { name: "JavaScript", exact: true }).click();
     const generated = page.getByRole("textbox", { name: "JavaScript output", exact: true });
     await generated.focus(); await menu("Go to line");
