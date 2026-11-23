@@ -387,7 +387,11 @@ If the color result changes while **Open** is pressed, click the new result to o
 Closing the review keeps F12 and Shift+F12 requests from the primary editor usable.
 A request made in the review itself expires when that pane closes.
 If you leave the source while F12 is pending, choose the destination in the results panel to open it.
-The navigation panel shows a waiting indicator during a definition or reference request.
+The Locations region below the editors holds symbol and module results. The navigation
+panel shows a waiting indicator during a definition or reference request.
+Shift+F12 focuses the first reference. F12 jumps to a single definition or focuses the
+first of several. Use Up and Down to choose a result, Enter to open it, and Escape to
+return to the source. Leaving the editor during a lookup keeps focus where you put it.
 For declarations loaded by a host URI resolver, it uses the returned document's text and
 revision to label the result and select its range.
 Closing a pane outside the language project leaves a pending definition lookup active.

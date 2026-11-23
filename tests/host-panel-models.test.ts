@@ -188,7 +188,7 @@ test("action controls invoke the choice and confirmation supplied by their snaps
 test("navigation presentation keeps a captured target while a newer snapshot supplies another page", () => {
     const opened: [number, number][] = [];
     const tools: Parameters<typeof navigationPanelModel>[0] = { findDefinition: noop, findReferences: noop, cancel: noop, returnToOrigin: noop,
-        addCompanion: noop, disconnect: noop, reconnect: noop, setIncludeDeclaration: noop };
+        addCompanion: noop, disconnect: noop, reconnect: noop, setIncludeDeclaration: noop, bindList: noop };
     let formatted = 0;
     const state: NavigationSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, canCancel: true,
         paging: { key: 7, first: 0, previous: null, next: noop }, status: "ready", message: "Captured results", includeDeclaration: true, canReturn: false,

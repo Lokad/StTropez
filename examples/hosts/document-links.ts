@@ -103,7 +103,7 @@ export class HostDocumentLinks {
                 run: () => { this.active = session; this.start(true); } }, { keys: ["F4"] });
             register({ id: "links.return", label: "Return to link origin", enabled: () => !!this.visit,
                 run: this.returnToOrigin }, { keys: ["Shift+F4"] });
-            registerResultArrows(register, "links", () => this.linkList.element, () => this.listEditor() === editor && this.linkList.focused);
+            registerResultArrows(register, "links", 7, () => this.linkList.element, () => this.listEditor() === editor && this.linkList.focused);
             const leave = () => { if (this.route?.origin === session) delete this.route.focusResults; };
             editor.element.addEventListener("focusout", leave, { signal });
             editor.element.ownerDocument.defaultView!.addEventListener("blur", leave, { signal });

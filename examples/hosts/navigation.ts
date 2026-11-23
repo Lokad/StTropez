@@ -3,6 +3,7 @@ import { captureDestinationPanes, isMountedEditor, presentDocument, type Navigat
 import { focusSource, onSourceFocus } from "./source-focus.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
+import { createPanelKeyBinding, focusResult, registerResultArrows } from "./panel-keys.ts";
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, TabId, TabTarget } from "../../src/index.ts";
 import { createNavigationController, createNavigationHistory } from "../../src/browser/index.ts";
@@ -17,7 +18,7 @@ export type NavigationHostOptions = Readonly<{ provider: LspWorkspace; prepare: 
     linkAt?: (editor: TextEditor, offset: number) => NavigationPointerLink | undefined }>;
 type Session = { id: string; target: TabTarget; editor: TextEditor; controller: NavigationController };
 type Job = { kind: Kind; symbol: string; origin: Session; returnPoint: NavigationOrigin; sources: Set<DocumentId>; targets: Map<DocumentId, Session>;
-    timer: number; page: NavigationPage | undefined; followDefinition?: () => boolean };
+    timer: number; page: NavigationPage | undefined; mayFocus?: () => boolean };
 export type NavigationNote = Readonly<{ ordinal: number; title: string; line: number; column: number; declaration: boolean; open: () => void }>;
 export type NavigationSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; canCancel: boolean; status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired" | "disconnected";
     message: string; includeDeclaration: boolean; locations: readonly NavigationNote[]; paging: PanelPaging | null; canReturn: boolean }>;
@@ -29,6 +30,8 @@ export class HostNavigationTools {
     private readonly sessions = new Map<Session, () => void>();
     private active: Session | undefined;
     private job: Job | undefined;
+    private readonly resultList = createPanelKeyBinding<HTMLUListElement>(() => this.job?.origin.editor);
+    readonly bindList = this.resultList.bind;
     private presenting = false;
     private disposed = false;
     private companion: DocumentId | undefined;
@@ -70,9 +73,13 @@ export class HostNavigationTools {
         const label = job.kind === "definition" ? "definition" : "reference";
         const locations = this.showPage(job, result.pageFor(), { status: result.count ? "ready" : "empty",
             message: `${result.count} ${label} locations for ${job.symbol}.` });
-        if (job.followDefinition && result.count === 1) {
+        if (!job.mayFocus || !locations.length) return;
+        const mayFocus = () => this.job === job && this.cell.get().locations === locations && job.mayFocus?.() && editor.getSnapshot().focused;
+        if (job.kind === "definition" && result.count === 1) {
             // Presenting a pane can write to the workspace. Finish controller notification first.
-            queueMicrotask(() => { if (job.followDefinition?.() && editor.getSnapshot().focused) locations[0]!.open(); });
+            queueMicrotask(() => { if (mayFocus()) locations[0]!.open(); });
+        } else {
+            editor.element.ownerDocument.defaultView!.requestAnimationFrame(() => { if (mayFocus()) focusResult(this.resultList.element, 0); });
         }
     }
     private publish(patch: Partial<NavigationSnapshot> = {}): void {
@@ -112,7 +119,7 @@ export class HostNavigationTools {
             });
             signal.addEventListener("abort", stop, { once: true });
             onSourceFocus(editor, signal, () => { this.active = session; this.publish(); });
-            const leaveSource = () => { if (this.job?.origin === session) delete this.job.followDefinition; };
+            const leaveSource = () => { if (this.job?.origin === session) delete this.job.mayFocus; };
             editor.element.addEventListener("focusout", leaveSource, { signal });
             editor.element.ownerDocument.defaultView!.addEventListener("blur", leaveSource, { signal });
             editor.onEditIntent(() => {
@@ -122,8 +129,11 @@ export class HostNavigationTools {
                 register({ id: "navigation." + kind, label, enabled: () => this.available(session),
                     run: from => { this.active = session; this.start(kind, from !== "panel"); } }, { keys: [key] });
             }
+            const ownsList = () => this.job?.origin === session && this.resultList.focused;
+            registerResultArrows(register, "navigation", 5, () => this.resultList.element, ownsList);
             register({ id: "navigation.dismiss", label: "Cancel symbol navigation",
-                enabled: () => this.job?.origin === session, run: this.cancel }, { keys: ["Escape"], priority: 5 });
+                enabled: () => this.job?.origin === session && (editor.getSnapshot().focused || ownsList()),
+                run: () => { const restore = ownsList(); this.cancel(); if (restore) focusSource(editor); } }, { keys: ["Escape"], shared: true, priority: 5 });
         }, () => {
             if (this.active === session) this.active = undefined;
             if (!this.presenting && this.job?.targets.get(editor.view.documentId) === session) this.cancel();
@@ -153,7 +163,7 @@ export class HostNavigationTools {
         this.clear("idle", "Symbol navigation dismissed.", origin);
         const mayFocus = this.host.claimNavigationFocus();
         const job: Job = { kind, symbol, origin, returnPoint, sources, targets, timer: 0, page: undefined };
-        if (keyboard && kind === "definition" && origin.editor.getSnapshot().focused) job.followDefinition = mayFocus;
+        if (keyboard && origin.editor.getSnapshot().focused) job.mayFocus = mayFocus;
         this.job = job; this.metrics.requested++; const win = origin.editor.element.ownerDocument.defaultView!;
         try {
             // The panel deadline also bounds host preparation and loading a target after the RPC reply.
@@ -229,7 +239,7 @@ export class HostNavigationTools {
         pending: this.cell.get().status === "pending", results: this.job?.page?.count ?? 0, scope: this.job?.sources.size ?? 0, companion: this.companion ?? null, transport: this.job?.origin.controller.getDiagnostics() ?? null, disposed: this.disposed }; }
     dispose(): void {
         if (this.disposed) return;
-        this.disposed = true; this.history.dispose(); this.cancel();
+        this.disposed = true; this.history.dispose(); this.cancel(); this.resultList.dispose();
         for (const detach of this.sessions.values()) detach();
     }
 }

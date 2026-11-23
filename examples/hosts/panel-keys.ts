@@ -8,7 +8,7 @@ export function focusResult(list: HTMLElement | null, index: number): void {
     (target && !target.disabled ? target : list.querySelector<HTMLButtonElement>("li > button:enabled") ?? list).focus();
 }
 
-export function registerResultArrows(register: ReturnType<typeof scopedCommands>, group: string, list: () => HTMLElement | null,
+export function registerResultArrows(register: ReturnType<typeof scopedCommands>, group: string, priority: number, list: () => HTMLElement | null,
     enabled: () => boolean): void {
     for (const [id, label, key, step] of [["previousResult", "Previous result", "ArrowUp", -1], ["nextResult", "Next result", "ArrowDown", 1]] as const) {
         register({ id: group + "." + id, label, enabled, run: () => {
@@ -16,7 +16,7 @@ export function registerResultArrows(register: ReturnType<typeof scopedCommands>
             const rows = [...root.querySelectorAll<HTMLButtonElement>("li > button:enabled")];
             const current = rows.findIndex(row => row === root.ownerDocument.activeElement);
             rows[Math.max(0, Math.min(rows.length - 1, current + step))]?.focus();
-        } }, { keys: [key], shared: true, priority: 7 });
+        } }, { keys: [key], shared: true, priority });
     }
 }
 

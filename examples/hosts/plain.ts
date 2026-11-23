@@ -49,7 +49,10 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const draftPanel = document.createElement("section"); draftPanel.className = "host-language";
     const configuration = document.createElement("section"); configuration.className = "host-language";
     const transfer = document.createElement("section"); transfer.className = "host-language";
-    host.replaceChildren(nav, status, recovery, conflict, scene, review, configuration, transfer, draftPanel, language, tablePaste, domain, navigation, project, rename, codeActions, links, colors, modal);
+    const locations = document.createElement("div"); locations.className = "host-locations";
+    locations.setAttribute("role", "region"); locations.setAttribute("aria-label", "Locations");
+    locations.append(navigation, links);
+    host.replaceChildren(nav, status, recovery, conflict, scene, review, locations, configuration, transfer, draftPanel, language, tablePaste, domain, project, rename, codeActions, colors, modal);
     const destroyConflict = mountSaveConflictPanel(conflict, controller);
     const destroyTransfer = mountTransferPanel(transfer, controller);
     const destroyConfiguration = mountConfigurationPanel(configuration, controller);

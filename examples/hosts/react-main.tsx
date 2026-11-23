@@ -186,7 +186,9 @@ function TablePasteTools() {
         <button disabled={model.cancel.disabled} onClick={model.cancel.invoke}>{model.cancel.label}</button></section>;
 }
 function App() {
-    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><ConfigurationSavePanel /><TransferWorkspace /><DraftRecovery /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentLinksTools /><DocumentColorsTools /><SignatureTools /><SymbolInfo /></>;
+    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview />
+        <div className="host-locations" role="region" aria-label="Locations"><NavigationTools /><DocumentLinksTools /></div>
+        <ConfigurationSavePanel /><TransferWorkspace /><DraftRecovery /><LanguageTools /><TablePasteTools /><DomainTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentColorsTools /><SignatureTools /><SymbolInfo /></>;
 }
 const EditNoteList = memo(function EditNoteList({ label, page, notes }: EditNotes) {
     return <ol aria-label={label} start={page * editPageSize + 1}>{notes?.map((note, i) => <li key={i}><pre>{formatEditNote(note)}</pre></li>)}</ol>;
@@ -209,8 +211,8 @@ function DocumentLinksTools() {
     const tools = bindings.links, model = documentLinksPanelModel(tools, useObserved(tools.state));
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
         <output aria-label={model.status.label}>{model.status.text}</output>
-        <PanelControls actions={model.actions} />
-        <Destinations results={model.results} /></section>;
+        <Destinations results={model.results} />
+        <PanelControls actions={model.actions} /></section>;
 }
 function ActionsTools() {
     const tools = bindings.actions, model = actionsPanelModel(tools, useObserved(tools.state));
@@ -245,9 +247,9 @@ function NavigationTools() {
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2>
         <output aria-label={model.status.label}>{model.status.text}</output>
         <progress aria-label={model.progress.label} hidden={model.progress.hidden} />
+        <Destinations results={model.results} />
         <label><input type="checkbox" checked={model.declarations.checked} onChange={event => model.declarations.change(event.currentTarget.checked)} />{model.declarations.label}</label>
-        <PanelControls actions={model.actions} />
-        <Destinations results={model.results} /></section>;
+        <PanelControls actions={model.actions} /></section>;
 }
 function DomainTools() {
     const tools = bindings.domain, model = domainPanelModel(tools, useObserved(tools.state));

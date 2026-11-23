@@ -1,7 +1,7 @@
 import type { HostNavigationTools, NavigationSnapshot } from "./navigation.ts";
 import { pageActions } from "./panel-actions.ts";
 import { createDestinationList, createToolPanel } from "./tool-panel.ts";
-type NavigationPanelTools = Pick<HostNavigationTools, "findDefinition" | "findReferences" | "cancel" | "returnToOrigin" | "addCompanion" | "disconnect" | "reconnect" | "setIncludeDeclaration">;
+type NavigationPanelTools = Pick<HostNavigationTools, "findDefinition" | "findReferences" | "cancel" | "returnToOrigin" | "addCompanion" | "disconnect" | "reconnect" | "setIncludeDeclaration" | "bindList">;
 
 /** Pure presentation of one captured snapshot; list rows are read only when a renderer needs them. */
 export function navigationPanelModel(tools: NavigationPanelTools, state: NavigationSnapshot) {
@@ -20,7 +20,7 @@ export function navigationPanelModel(tools: NavigationPanelTools, state: Navigat
             { label: "Disconnect navigation provider", invoke: tools.disconnect, disabled: !state.connected && !pending },
             { label: "Reconnect navigation provider", invoke: tools.reconnect, disabled: !state.disconnected && state.status !== "failed" }
         ],
-        results: { label: "Navigation results", identity: state.locations,
+        results: { label: "Navigation results", identity: state.locations, bind: tools.bindList,
             items: () => state.locations.map(note => ({ key: `${paging?.key}:${note.ordinal}`,
                 label: `${note.title}:${note.line}:${note.column}${note.declaration ? " · declaration" : ""}`,
                 invoke: note.open } as const)) },
@@ -30,8 +30,8 @@ export function mountNavigationPanel(host: HTMLElement, tools: HostNavigationToo
     const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => navigationPanelModel(tools, state));
     const progress = owner.createElement("progress"), notes = createDestinationList(owner, initial.results), label = owner.createElement("label"), include = owner.createElement("input");
     progress.setAttribute("aria-label", initial.progress.label); include.type = "checkbox"; label.append(include, initial.declarations.label); include.onchange = () => initial.declarations.change(include.checked);
-    return mount([progress, label, controls, notes.element], model => {
+    return mount([progress, notes.element, label, controls], model => {
         progress.hidden = model.progress.hidden; include.checked = model.declarations.checked;
         notes.render(model.results);
-    });
+    }, notes.dispose);
 }

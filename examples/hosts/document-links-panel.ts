@@ -29,5 +29,5 @@ export function documentLinksPanelModel(tools: DocumentLinksPanelTools, s: Docum
 export function mountDocumentLinksPanel(host: HTMLElement, tools: HostDocumentLinks): () => void {
     const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => documentLinksPanelModel(tools, state));
     const results = createDestinationList(owner, initial.results);
-    return mount([controls, results.element], model => results.render(model.results), results.dispose);
+    return mount([results.element, controls], model => results.render(model.results), results.dispose);
 }
