@@ -507,10 +507,10 @@ test("pasting at mixed line endings respects each caret and the host's literal o
         await ready(page);
         await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(input => {
             const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
-            event.clipboardData!.setData("text/plain", "1\r2\n"); input.dispatchEvent(event);
+            event.clipboardData!.setData("text/plain", "1\r2\n3"); input.dispatchEvent(event);
         });
         const text = await page.evaluate(() => { const f = window.editingFixture; return f.range(0, f.snapshot().document!.length); });
-        expect(text).toBe(mode === "local" ? "1\r\n2\r\na\r\n1\n2\nb\nc" : "1\r2\na\r\n1\r2\nb\nc");
+        expect(text).toBe(mode === "local" ? "1\r\n2\r\n3a\r\n1\n2\n3b\nc" : "1\r2\n3a\r\n1\r2\n3b\nc");
     }
 });
 
