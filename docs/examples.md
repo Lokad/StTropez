@@ -142,7 +142,8 @@ opens. The last choice appears, and returning to a sample keeps its edits. [Samp
   in prose and preserves tags inside code examples. Related locations page in groups of 16. Opaque
   provider data stays hidden and is never executed.
 - **Snippets & lazy completion** — In `templates.ts`, press Ctrl+End, then Ctrl+Space. Tab through
-  linked fields, use Alt+Up/Down for choices and Escape to keep the text. Resolution supplies the
+  linked fields, use Alt+Up/Down for choices and Escape to keep the text. Field controls appear above
+  the file tabs in both the source editor and Changes. Resolution supplies the
   declaration and import. The demo explains omitted unsupported variables. See
   [completion](language-features.md#completion).
 - **Project actions** — Review a two-file edit, a note or a refactor with a project check.

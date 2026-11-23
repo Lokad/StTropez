@@ -95,7 +95,7 @@ test("language mounting releases partial owners, preserves failures and rejects 
                     if (point === "cleanup" && !cleaned && this.classList.contains("demo-language-popups")) { cleaned = true; throw cleanupFailure; }
                 };
                 try {
-                    try { view = mountDemoLanguage(project.workspace, () => project.files, file, editor, point === "late" ? delayed : project.language, () => {}, error => errors.push(error), feedback); }
+                    try { view = mountDemoLanguage(project.workspace, () => project.files, file, editor, point === "late" ? delayed : project.language, () => {}, error => errors.push(error), feedback, document.body); }
                     catch (error) { errors.push(error); }
                     if (point === "late") { view!.dispose(); view!.dispose(); release!(provider); }
                     await frames();
@@ -108,7 +108,7 @@ test("language mounting releases partial owners, preserves failures and rejects 
                     view?.dispose(); view?.dispose();
                 }
             }
-            const view = mountDemoLanguage(project.workspace, () => project.files, file, editor, project.language, () => {}, error => { throw error; }, feedback);
+            const view = mountDemoLanguage(project.workspace, () => project.files, file, editor, project.language, () => {}, error => { throw error; }, feedback, document.body);
             await frames();
             results.push({ point: "retry", panels: document.querySelectorAll(panels).length }); view.dispose();
         } finally { editor.dispose(); project.dispose(); await project.language.dispose(); }

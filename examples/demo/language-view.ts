@@ -15,7 +15,7 @@ import { mountCompletionList } from "./completion-list.ts";
 
 /** Contextual completion UI around the public editor controller. It never changes text itself. */
 export function mountDemoLanguage(workspace: Workspace, files: () => readonly DemoFile[], file: DemoFile, editor: TextEditor, language: DemoLanguage,
-    open: (target: DemoSymbolTarget) => void, reportError: (error: unknown) => void, feedback: HTMLElement) {
+    open: (target: DemoSymbolTarget) => void, reportError: (error: unknown) => void, feedback: HTMLElement, snippetHost: HTMLElement) {
     const scope = new CleanupScope(); let disposed = false;
     const dispose = () => { disposed = true; scope.dispose(); };
     try {
@@ -32,7 +32,7 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         const renderChoices = mountCompletionList(choices, listeners.signal);
         const snippetPanel = document.createElement("div"); scope.defer(() => snippetPanel.remove());
         snippetPanel.className = "demo-snippet"; snippetPanel.hidden = true;
-        snippetPanel.setAttribute("role", "region"); snippetPanel.setAttribute("aria-label", "Snippet controls"); document.body.append(snippetPanel);
+        snippetPanel.setAttribute("role", "region"); snippetPanel.setAttribute("aria-label", "Snippet controls"); snippetHost.append(snippetPanel);
         let controller: CompletionController | undefined;
         let renderedSnippet: CompletionSnippet | undefined;
         let inspection: ReturnType<typeof mountDemoInspection> | undefined;

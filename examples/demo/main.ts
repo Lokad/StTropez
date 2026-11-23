@@ -279,7 +279,7 @@ function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEd
     };
     try {
         return mountDemoLanguage(capturedProject.workspace, () => capturedProject.files, file, capturedEditor, capturedProject.language,
-            target => openLocation(capturedProject, capturedEditor, target), report, element("language-command-status"));
+            target => openLocation(capturedProject, capturedEditor, target), report, element("language-command-status"), element("snippet-controls"));
     } catch (error) { report(error); }
 }
 function detachLanguage(): void {

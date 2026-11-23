@@ -595,15 +595,30 @@ export async function runDemoEditingRules(page: Page, url = "/") {
 /** The labeled template provider shares the public completion/input/history paths. */
 export async function runDemoSnippets(page: Page, url = "/") {
     page.on("dialog", dialog => dialog.accept());
+    await page.setViewportSize({ width: 1100, height: 520 });
     await page.goto(`${url}${url.includes("?") ? "&" : "?"}sample=templates`);
     const source = page.getByRole("textbox", { name: "templates.ts", exact: true }), editor = page.locator("#editor");
     const markers = editor.locator(".st-snippet-field");
     const controls = page.getByRole("region", { name: "Snippet controls", exact: true });
+    const expectFieldsUncovered = async (pane: Locator) => {
+        await expect.poll(async () => {
+            const bar = await controls.boundingBox(), workspace = await page.locator("#workspace").boundingBox();
+            if (!bar || !workspace || bar.y < 0 || bar.y + bar.height > workspace.y + 1) return false;
+            return pane.locator(".st-viewport").evaluate(viewport => {
+                const bounds = viewport.getBoundingClientRect();
+                return Array.from(viewport.querySelectorAll(".st-viewport-selected")).some(selection => {
+                    const field = selection.getBoundingClientRect();
+                    return field.top >= bounds.top - 1 && field.bottom <= bounds.bottom + 1;
+                });
+            });
+        }, { message: "A selected snippet field and its controls remain visible in separate areas" }).toBe(true);
+    };
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     const request = async (input = source) => { await input.press("Control+End"); await input.press("Control+Space");
         await expect(page.getByRole("option", { name: "Template · linked placeholders", exact: true })).toBeVisible(); };
     await request(); await expect(page.locator(".demo-completion-count")).toContainText("1 unsupported");
     await source.press("Tab"); await expect(controls).toContainText("Field 1 of 3");
+    await expectFieldsUncovered(editor);
     await expect(markers).toHaveText(["draft", "0"]); await expect(markers.first()).toHaveCSS("outline-style", "dotted");
     await expect(editor).toContainText("console.log(record)");
     await source.press("Control+z"); await expect(controls).toBeHidden(); await expect(editor).not.toContainText("console.log");
@@ -654,9 +669,11 @@ export async function runDemoSnippets(page: Page, url = "/") {
     await expect(markers).toHaveCount(0);
     await expect(editor).toContainText("const other:"); await expect(editor).toContainText("console.log(result)");
     await page.getByRole("button", { name: "Reset sample", exact: true }).click();
+    await page.setViewportSize({ width: 390, height: 700 });
     await page.locator('[data-panel="changes"]').click();
     const panes = page.locator(".st-comparison-panes > section"), working = panes.last().getByRole("textbox");
     await request(working); await working.press("Tab"); await expect(controls).toBeVisible();
+    await expectFieldsUncovered(panes.last());
     await expect(panes.last().locator(".st-snippet-field")).toHaveText(["draft", "0"]);
     await expect(panes.first().locator(".st-snippet-field")).toHaveCount(0);
     await page.locator('[data-file="types.ts"]').click(); await expect(controls).toBeHidden();
