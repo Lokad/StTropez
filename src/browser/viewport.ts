@@ -140,9 +140,9 @@ export type InlineDecoration = Readonly<{ from: number; to: number; className: s
 export type PresentedLine = Readonly<{ documentId: DocumentId; revision: number; line: number; lineStart: number; from: number; to: number; text: string }>;
 export type LineDecorator = (line: PresentedLine) => readonly InlineDecoration[];
 export type LineClass = (line: PresentedLine) => string | undefined;
-export type RevealAlignment = "start" | "center" | "nearest";
+export type RevealAlignment = "start" | "center" | "nearest" | "center-if-outside";
 export function validateRevealAlignment(align: RevealAlignment): void {
-    if (align !== "start" && align !== "center" && align !== "nearest") throw new RangeError("Invalid reveal alignment.");
+    if (align !== "start" && align !== "center" && align !== "nearest" && align !== "center-if-outside") throw new RangeError("Invalid reveal alignment.");
 }
 export type RevealOptions = Readonly<{ horizontal?: "center" | "nearest"; vertical?: "center" | "nearest" | "center-if-outside"; affinity?: Affinity }>;
 export type ViewportSettings = Readonly<{ columnRulers: readonly number[]; highlightCurrentLine: boolean; gutter: boolean;
@@ -649,7 +649,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
                         if (rowTop < top) top = rowTop - padding;
                         else if (visibleEnd > top + height) top = visibleEnd - height + padding;
                         break;
-                    default: top = rangeScroll(rowTop, bottom, top, height);
+                    case "center-if-outside": top = rangeScroll(rowTop, bottom, top, height); break;
                 }
                 horizontalEnd = document.buffer.lineAt(reveal.end) === line ? reveal.end : reveal.offset;
                 left = measuredRangeLeft(reveal.offset, horizontalEnd)
@@ -1091,13 +1091,13 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             reveal = { revision: document.revision, foldGeneration: view.folding.getSnapshot().generation, offset, horizontal, vertical, affinity }; schedule();
         },
-        revealRange: (from, to, align) => {
+        revealRange: (from, to, align = "center-if-outside") => {
             if (disposed || !live()) return;
-            if (align !== undefined) validateRevealAlignment(align);
+            validateRevealAlignment(align);
             const document = workspace.document(documentId);
             view.folding.reveal(view.folding.getSnapshot(), from, to);
             anchor = undefined; horizontalAnchor = undefined;
-            reveal = { revision: document.revision, foldGeneration: view.folding.getSnapshot().generation, offset: from, end: to, ...(align === undefined ? {} : { align }),
+            reveal = { revision: document.revision, foldGeneration: view.folding.getSnapshot().generation, offset: from, end: to, align,
                 horizontal: "nearest", vertical: "nearest", affinity: "after" };
             schedule();
         },

@@ -170,13 +170,27 @@ test("short windows keep the caret and the next edit on screen in wide and stack
     }
 });
 
+function visibleContext(viewport: Locator, line: number) {
+    return viewport.evaluate((view, line) => {
+        const row = view.querySelector(`.st-viewport-row[data-line="${line}"]`);
+        if (!row) return 0;
+        const bounds = row.getBoundingClientRect(), top = view.getBoundingClientRect().top;
+        return Math.min(bounds.top - top, top + view.clientHeight - bounds.bottom) / view.clientHeight;
+    }, line);
+}
+
 test("Go to line returns typing to the chosen large-file row and cancels when the source view closes", async ({ page, baseURL }) => {
     await page.goto(baseURL!); await page.locator("#sample").selectOption("large");
     const source = page.getByRole("textbox", { name: "large.ts", exact: true });
     await source.press("Control+g");
     const dialog = page.getByRole("dialog", { name: "Go to line" }), line = dialog.getByRole("spinbutton");
-    await line.fill("5000"); await line.press("Enter"); await expect(source).toBeFocused();
+    await line.fill("5001"); await line.press("Enter"); await expect(source).toBeFocused();
+    const viewport = source.locator("..");
+    await expect.poll(() => visibleContext(viewport, 5000)).toBeGreaterThan(.35);
+    const top = await viewport.evaluate(view => view.scrollTop);
+    await source.press("Control+g"); await line.fill("5000"); await line.press("Enter"); await expect(source).toBeFocused();
     await page.keyboard.type("// "); await expect(page.locator("#cursor")).toHaveText("Ln 5000, Col 4");
+    expect(await viewport.evaluate(view => view.scrollTop)).toBe(top);
     await expect(page.locator("#editor .st-viewport-row").filter({ hasText: "// // Row 5000:" })).toBeVisible();
     await page.locator("#compare").click();
     const saved = page.getByRole("textbox", { name: "Comparison baseline source", exact: true });
@@ -210,12 +224,7 @@ test("off-screen Undo and Redo reveal surrounding code and retain the typing tar
         for (const [jump, history, column] of [["Home", "z", 1], ["End", "y", 2]] as const) {
             await source.press(`Control+${jump}`); await expect(row).toHaveCount(0);
             await source.press(`Control+${history}`); await expect(cursor).toHaveText(`Ln 50000, Col ${column}`); await expect(source).toBeFocused();
-            await expect.poll(() => viewport.evaluate(view => {
-                const target = view.querySelector('.st-viewport-row[data-line="49999"]');
-                if (!target) return 0;
-                const bounds = target.getBoundingClientRect(), top = view.getBoundingClientRect().top;
-                return Math.min(bounds.top - top, top + view.clientHeight - bounds.bottom) / view.clientHeight;
-            })).toBeGreaterThan(.35);
+            await expect.poll(() => visibleContext(viewport, 49999)).toBeGreaterThan(.35);
         }
         await page.keyboard.insertText("Z"); await expect(row).toContainText("XZ// Row");
         const scroll = await viewport.evaluate(node => { node.scrollTop += 60; return node.scrollTop; });

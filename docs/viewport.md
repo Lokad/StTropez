@@ -132,8 +132,8 @@ Vertical `"center-if-outside"` keeps a fully visible row in place and centers it
 `revealRange(from, to, align?)` reveals a half-open UTF-16 range and opens folds that cover it.
 It preserves the scroll position on each axis where the range is visible. Otherwise it centers the range on that
 axis. If the range exceeds the viewport, it exposes the start. For multiline ranges it uses
-the starting column and the full span of rows. Pass `"start"`, `"center"` or `"nearest"`
-to set vertical placement. The selection stays in place.
+the starting column and the full span of rows. Vertical placement defaults to `"center-if-outside"`.
+Pass `"start"`, `"center"` or `"nearest"` to change it. The selection stays in place.
 
 Save `captureView()` by document and view. `restoreView(state, options?)` cancels a pending reveal
 and restores the scroll and selection together. A closed mount or a capture from another document returns `null`.

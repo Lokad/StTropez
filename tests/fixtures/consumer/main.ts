@@ -195,7 +195,10 @@ const fixture = { text: () => workspace.document(documentId).text(),
             } finally { restored.dispose(); fresh.dispose(); freshHost.remove(); }
             const buffer = model.document(source.documentId).buffer, line = buffer.lineAt(at), start = buffer.offsetAt(line);
             editor.commands.run("go-to-line"); reply(line + 1); await Promise.resolve(); await wait();
-            if (view.getSnapshot().selection.head !== start || view.folding.getSnapshot().index.collapsedCount || !editor.viewport.coordsAt(start)) throw new Error("Compiled line navigation did not reveal its folded destination.");
+            const row = editor.viewport.coordsAt(start), center = editor.element.getBoundingClientRect().top + editor.element.clientHeight / 2;
+            if (view.getSnapshot().selection.head !== start || view.folding.getSnapshot().index.collapsedCount
+                || !row || Math.abs(row.top + row.height / 2 - center) > row.height)
+                throw new Error("Compiled line navigation did not center its folded destination.");
             if (model.document(source.documentId).buffer.readMetrics().textExports) throw new Error("Compiled folding exported the source value.");
             const revealed = editor.reveal({ line, column: 1 }, { align: "start", select: true });
             editor.viewport.flush();

@@ -987,7 +987,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                         if (request !== lineRequest || !validCommand(capture) || !root.isConnected || !workspace.ownsDocumentView(view)) return;
                         if (line === undefined || !Number.isSafeInteger(line) || line < 1 || line > buffer.lineCount) return;
                         lineRequest = undefined;
-                        reveal({ line: line - 1, column: 0 }, { select: true, focus: true, expectedRevision: capture.revision });
+                        reveal({ line: line - 1, column: 0 }, { align: "center-if-outside", select: true, focus: true, expectedRevision: capture.revision });
                     } catch (error) {
                         if (!request.abort.signal.aborted) conflict("command-failed", undefined, capture.revision, 0, "", error);
                     } finally { if (request === lineRequest) lineRequest = undefined; }

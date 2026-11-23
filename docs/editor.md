@@ -93,7 +93,8 @@ Call `editor.reveal(target, options)` to open folds covering a destination and s
 Pass a zero-based `{ line, column }` or half-open UTF-16 offsets `{ from, to }`. Coordinates must be safe
 integers. Out-of-bounds values clamp to the document or line. Reversed ranges throw before the view changes.
 
-`align` controls vertical placement. The default, `"nearest"`, leaves a visible range in place.
+`align` controls vertical placement. The default, `"nearest"`, scrolls just enough to show the range.
+`"center-if-outside"` centers an off-screen range and keeps a visible range in place.
 Use `"start"` to put the first row at the top or `"center"` to center the range. For a range taller
 than the viewport, the first row is the target. Scrolling takes effect on the next viewport paint.
 
@@ -241,7 +242,7 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Ctrl/Cmd + Shift + L | Select all occurrences of the word under or touching the caret. Between separators the caret stays put. An explicit selection searches for its exact, case-sensitive text. |
 | Ctrl/Cmd + Alt/Option + Up / Down | Add a caret at the same visual column on the preceding or following visible row. |
 | Ctrl/Cmd + U | Restore the previous selection set in this view. Each text revision starts a fresh caret history. |
-| Ctrl/Cmd + G | Open the host's line prompt, then move to the start of the chosen line. Requires `requestLine`. |
+| Ctrl/Cmd + G | Move to the start of the requested line. An off-screen line appears in the center. Requires `requestLine`. |
 | Ctrl/Cmd + Shift + Backslash (physical key) | Jump from each selection's active end to the matching bracket. Uses the configured pairs and scan limits even when highlighting is off. |
 | Ctrl + Up / Down, Alt/Option + PageUp / PageDown | Scroll by one visible row or one viewport height. The caret and selections stay in place. |
 | Ctrl/Cmd + Z, Ctrl/Cmd + Shift+Z, Ctrl+Y | Undo, redo, redo |
