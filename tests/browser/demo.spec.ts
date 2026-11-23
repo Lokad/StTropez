@@ -1,6 +1,19 @@
 import { test, expect } from "./fixtures.ts";
 import { controlDemoAnalysis, holdDemoAnalysis, releaseDemoAnalysis } from "./demo-presentation.ts";
 
+test("fold discovery keeps an inserted line visible above the closing brace", async ({ page }) => {
+    await page.goto("/"); await page.locator("#sample").selectOption("shipping");
+    const fold = page.locator("#editor .st-fold-button").first(), source = page.locator("#editor textarea");
+    const edited = page.locator('#editor .st-viewport-row[data-line="7"]');
+    await fold.click(); await expect(fold).toHaveAttribute("aria-expanded", "false");
+    await expect(edited).toHaveText("}"); await edited.click({ position: { x: 2, y: 8 } });
+    await source.press("Home"); await source.press("Control+Shift+Enter");
+    await expect(fold).toHaveAttribute("aria-expanded", "true");
+    await expect(edited).toBeVisible(); await expect(edited).toHaveText(/^\s*$/);
+    await page.keyboard.type("visible"); await expect(edited).toHaveText(/^\s*visible$/);
+    await source.press("Control+z"); await expect(edited).toHaveText(/^\s*$/);
+});
+
 test("Undo restores 150 typed words and the earlier edit in another file", async ({ page }) => {
     await page.goto("/");
     const source = (name: string) => page.getByRole("textbox", { name, exact: true });

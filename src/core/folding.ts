@@ -126,7 +126,7 @@ export function revealFoldRange(buffer: TextBuffer, regions: readonly FoldRegion
         changed = true; return Object.freeze({ ...r, collapsed: false }); });
     return changed ? retain(next) : regions;
 }
-export function revealSelectionFolds(buffer: TextBuffer, regions: readonly FoldRegion[], selections: SelectionSet, index?: FoldIndex): readonly FoldRegion[] {
+export function revealSelectionFolds(buffer: TextBuffer, regions: readonly FoldRegion[], selections: SelectionSet, index?: FoldIndex, previous?: FoldIndex): readonly FoldRegion[] {
     if (index?.collapsedCount === 0) return regions;
     const metadata = owned.get(regions);
     if (metadata?.collapsed === 0) return regions;
@@ -135,9 +135,10 @@ export function revealSelectionFolds(buffer: TextBuffer, regions: readonly FoldR
     for (const range of selections.ranges) {
         const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
         const first = buffer.lineAt(from), last = buffer.lineAt(to);
-        if (!index || index.hiddenBy(first)) endpoints.add(first);
+        if ((!index || index.hiddenBy(first)) && !previous?.hiddenBy(first)) endpoints.add(first);
         // A whole-line selection through EOF includes the final folded row in full.
-        if (last !== first && (to !== buffer.length || from !== buffer.offsetAt(first)) && (!index || index.hiddenBy(last))) endpoints.add(last);
+        if (last !== first && (to !== buffer.length || from !== buffer.offsetAt(first))
+            && (!index || index.hiddenBy(last)) && !previous?.hiddenBy(last)) endpoints.add(last);
     }
     if (!endpoints.size) return regions;
     const lines = [...endpoints].sort((a, b) => a - b); let changed = false;

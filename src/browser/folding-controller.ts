@@ -4,7 +4,7 @@ import { reconcileFoldRanges } from "../core/fold-discovery.ts";
 import type { DiscoveredFold } from "../core/fold-discovery.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
 import type { TextEditor } from "./text-editor.ts";
-import type { FoldRegion } from "../core/folding.ts";
+import { createFoldRegions, FoldIndex, revealSelectionFolds, type FoldRegion } from "../core/folding.ts";
 import { commandBudget, createCooperativeRunner } from "./cooperative-runner.ts";
 import type { KernelCursor, KernelStatus } from "../core/kernel-cursor.ts";
 
@@ -60,7 +60,16 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
         if (authority && !authority()) { fail(capture, new Error("Fold provider capture expired.")); return; }
         if (busy()) { later(() => accept(capture, ranges, authority), 16); return; }
         try {
-            const before = view.folding.getSnapshot(), planned = reconcileFoldRanges(capture.document.buffer, ranges, before.regions);
+            const before = view.folding.getSnapshot(), buffer = capture.document.buffer;
+            let planned = reconcileFoldRanges(buffer, ranges, before.regions);
+            if (before.index.collapsedCount) {
+                const regions = createFoldRegions(buffer, planned, before.regions);
+                planned = regions;
+                if (regions !== before.regions) {
+                    const index = new FoldIndex(buffer.lineCount, regions);
+                    planned = revealSelectionFolds(buffer, regions, view.getSnapshot().selectionSet, index, before.index);
+                }
+            }
             if (!view.folding.setRanges(before, planned)) throw new Error("Fold discovery target changed.");
             job = undefined; publish("ready");
         } catch (error) { fail(capture, error); }
