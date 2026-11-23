@@ -140,7 +140,8 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
                 occupied.push({ top: rect.top - 4, bottom: rect.bottom + 4 });
         }
         const slots = popupSlots(top + 8, bottom - 8, point, occupied);
-        const slot = slots.find(s => s.above === previousSlot?.above && s.top === previousSlot.top && s.bottom === previousSlot.bottom)
+        const slot = slots.find(s => s.above === previousSlot?.above && s.top === previousSlot.top && s.bottom === previousSlot.bottom
+                && s.bottom - s.top >= size.height)
             ?? chooseSlot(slots, point, size.height, previousSlot?.above ?? options.prefer === "above");
         if (!slot) { conceal(); return; }
         previousSlot = slot;

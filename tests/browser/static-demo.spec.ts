@@ -920,13 +920,16 @@ test("completion holds its prefix and side while filtering and makes room for si
     const signature = page.getByRole("tooltip", { name: "Signature help", exact: true });
     await expect(signature).toContainText("applyDiscount"); await source.pressSequentially("5, di");
     await expect(list).toBeVisible(); await expect(signature).toBeVisible();
+    await expect(list.locator(".demo-completion-count")).toContainText("of 2 ·");
+    await expect(signature).toContainText("applyDiscount");
     await expect.poll(() => signature.evaluate(el => {
         const box = el.getBoundingClientRect(), other = document.querySelector(".demo-completion")!.getBoundingClientRect();
         const preferred = el.cloneNode(true) as HTMLElement;
         preferred.style.visibility = "hidden"; preferred.style.maxHeight = ""; el.after(preferred);
         const height = preferred.getBoundingClientRect().height; preferred.remove();
-        return box.top >= 0 && box.bottom <= innerHeight && (box.bottom <= other.top || box.top >= other.bottom) && box.height >= height - 1;
-    })).toBe(true);
+        return { inside: box.top >= 0 && box.bottom <= innerHeight, clear: box.bottom <= other.top || box.top >= other.bottom,
+            clippedPixels: Math.max(0, Math.round(height - box.height)) };
+    })).toEqual({ inside: true, clear: true, clippedPixels: 0 });
     await source.press("Escape"); await expect(list).toBeHidden(); await expect(signature).toBeVisible();
     await source.press("Escape"); await expect(signature).toBeHidden(); await expect(source).toBeFocused();
 });

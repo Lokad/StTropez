@@ -1,5 +1,29 @@
 import { ready, test, expect } from "./fixtures.ts";
 
+test("a growing popup moves when its opening side can no longer show the content", async ({ page }) => {
+    await page.goto("/editing/");
+    await page.evaluate(() => {
+        document.querySelector<HTMLElement>("#primary")!.style.cssText = "position:fixed;top:100px;left:50px;width:600px;height:450px";
+        window.editingFixture.setText("source");
+    });
+    await ready(page);
+    const call = await page.evaluateHandle(() => {
+        const f = window.editingFixture, element = document.createElement("aside");
+        element.textContent = "Result"; element.style.cssText = "width:160px;height:30px"; document.body.append(element);
+        const overlay = f.overlay(element, { prefer: "above" }), anchor = { revision: f.snapshot().document!.revision, offset: 1 };
+        overlay.show(anchor);
+        return { element, grow() { element.style.height = "250px"; overlay.show(anchor); }, dispose() { overlay.dispose(); element.remove(); } };
+    });
+    try {
+        await expect.poll(() => call.evaluate(({ element }) => !element.hidden && element.getBoundingClientRect().bottom <= window.editingFixture.coords(1)!.top)).toBe(true);
+        await call.evaluate(handle => handle.grow());
+        await expect.poll(() => call.evaluate(({ element }) => {
+            const box = element.getBoundingClientRect(), caret = window.editingFixture.coords(1)!;
+            return [box.height, box.top >= caret.top + caret.height];
+        })).toEqual([250, true]);
+    } finally { await call.evaluate(handle => handle.dispose()); await call.dispose(); }
+});
+
 test("a range follows its painted text through horizontal clipping and folding until focus leaves", async ({ page }) => {
     await page.goto("/editing/");
     const text = "head\r\n" + "0123456789".repeat(2000) + "\r\ntail";
