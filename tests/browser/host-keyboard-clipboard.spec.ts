@@ -90,6 +90,26 @@ async function isolatedClipboard(baseURL: string | undefined, info: TestInfo, ru
 
 const normal = "const café = 'é 😀';\r\nconst end = 123;";
 const unverifiedBackend = "Only the guarded Chromium headless shell has a verified process-local clipboard backend; other engines and OS/browser-menu paths remain unverified.";
+test("three selected source lines paste one per caret with their trailing line break", async ({ browserName, baseURL }, info) => {
+    test.skip(browserName !== "chromium", unverifiedBackend);
+    await isolatedClipboard(baseURL, info, async page => {
+        const original = "x1\r\nx2\r\nx3\r\naaa\r\nbbb\r\nccc";
+        await mount(page, "plain", "candidate", original);
+        const source = primary(page);
+        await source.press("Control+Home");
+        for (let i = 0; i < 3; i++) await source.press("Shift+ArrowDown");
+        await source.press("Control+c"); await source.press("ArrowRight");
+        await source.press("Control+Alt+ArrowDown"); await source.press("Control+Alt+ArrowDown");
+        await source.press("Control+v");
+        await exact(page, "x1\r\nx2\r\nx3\r\nx1aaa\r\nx2bbb\r\nx3ccc");
+        await page.keyboard.type("!"); await exact(page, "x1\r\nx2\r\nx3\r\nx1!aaa\r\nx2!bbb\r\nx3!ccc");
+        await source.press("Control+z"); await source.press("Control+z"); await exact(page, original);
+        const events = await page.evaluate(() => window.hostKeyboardClipboardAudit.read());
+        expect(events.map(e => [e.type, normalized(e.text)])).toEqual([["copy", "x1\nx2\nx3\n"], ["paste", "x1\nx2\nx3\n"]]);
+        await dispose(page, info);
+    });
+});
+
 test("Shift+Delete cuts a selection or caret line for the next Shift+Insert", async ({ browserName, baseURL }, info) => {
     test.skip(browserName !== "chromium" || process.platform === "darwin", "This shortcut uses the Windows or Linux headless clipboard.");
     await isolatedClipboard(baseURL, info, async page => {

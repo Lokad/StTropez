@@ -39,7 +39,7 @@ function clipboardLines(text: string, count: number, includeEndings: boolean): s
         if (lines.length > count) return;
         start = endings.lastIndex;
     }
-    if (!includeEndings || start < text.length) lines.push(text.slice(start));
+    if (start < text.length || !includeEndings && lines.length < count) lines.push(text.slice(start));
     return lines.length === count ? lines : undefined;
 }
 

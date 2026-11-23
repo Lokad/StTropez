@@ -301,8 +301,9 @@ copies its hidden body as well. Cut removes the same text in
 one undo step. Pasting an editor-marked line at a caret inserts it above the current line and
 preserves the caret’s column. Plain text from other applications inserts at the selection.
 
-When the clipboard has one line per selection, each receives its corresponding line. Otherwise
-each receives the full text. Paste converts CR, LF and CRLF to the line ending at each destination
+When the clipboard has one line per selection, each receives its corresponding line. A final line
+break may terminate the last line or represent an empty line for one more selection. If neither count matches,
+each selection receives the full text. Paste converts CR, LF and CRLF to the line ending at each destination
 and preserves indentation.
 Set `settings.pasteLineEndings` to `"preserve"` to insert clipboard text verbatim.
 An empty or nontext payload leaves selections and pending commands

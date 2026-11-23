@@ -24,6 +24,8 @@ test("only tagged lines paste above carets and retain each original column", () 
         return [buffer.apply(plan.edits).buffer.text(), plan.selectionSet.ranges.map(r => r.head)];
     };
     assert.deepEqual(insert("X\nY\n", true), ["X\r\na\r\nY\r\nb", [3, 10]]);
-    assert.deepEqual(insert("X\nY\n", false), ["X\r\nY\r\na\r\nbX\r\nY\r\n", [6, 16]]);
+    assert.deepEqual(insert("X\nY\n", false), ["Xa\r\nbY", [1, 6]]);
+    assert.deepEqual(insert("X\r\nY\r", false), ["Xa\r\nbY", [1, 6]]);
     assert.deepEqual(insert("X\n", false), ["Xa\r\nb", [1, 5]]);
+    assert.deepEqual(insert("X\nY\n\n", false), ["X\r\nY\r\n\r\na\r\nbX\r\nY\r\n\r\n", [8, 20]]);
 });
