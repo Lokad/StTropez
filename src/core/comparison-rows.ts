@@ -71,8 +71,10 @@ function bounds(a: TextBuffer, b: TextBuffer, h: DiffHunk): Span {
     const ae = a.lineAt(h.baseline.to), be = b.lineAt(h.working.to);
     // Scalar trimming can leave either end inside a row. Include that row on BOTH sides:
     // deleting a newline merges the following source row into the preceding target row.
-    const partial = h.baseline.to !== a.offsetAt(ae) || h.working.to !== b.offsetAt(be);
-    return { a0: a.lineAt(h.baseline.from), a1: ae + Number(partial), b0: b.lineAt(h.working.from), b1: be + Number(partial) };
+    // An empty document still has an editable first row. Pair it with the first
+    // changed row even when the nonempty document ends with a line break.
+    const includeEndRow = a.length === 0 || b.length === 0 || h.baseline.to !== a.offsetAt(ae) || h.working.to !== b.offsetAt(be);
+    return { a0: a.lineAt(h.baseline.from), a1: ae + Number(includeEndRow), b0: b.lineAt(h.working.from), b1: be + Number(includeEndRow) };
 }
 type Work = { units: number };
 const checkpoint = (work: Work) => ++work.units % 256 === 0;

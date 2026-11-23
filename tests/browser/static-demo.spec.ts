@@ -74,6 +74,23 @@ test("resizing Changes keeps both editors and the selected change preview within
     }
 });
 
+test("clearing the working review keeps line one aligned through typing and undo", async ({ page, baseURL }) => {
+    await page.goto(baseURL!); await page.locator("#compare").click();
+    const panes = page.locator(".st-comparison-panes > section"), working = panes.last();
+    const input = working.locator("textarea"), row = working.locator('.st-viewport-row[data-line="0"]');
+    const reference = panes.first().locator('.st-viewport-row[data-line="0"]');
+    await input.press("Control+a"); await input.press("Delete");
+    const aligned = async (expected: string) => {
+        await expect(row).toHaveText(expected);
+        await expect(working.locator(".st-comparison-padding").first()).toBeAttached();
+        await expect.poll(async () => Math.abs((await row.boundingBox())!.y - (await reference.boundingBox())!.y)).toBeLessThan(1);
+        await expect(input).toBeFocused();
+    };
+    await aligned("");
+    await page.keyboard.type("x"); await aligned("x");
+    await input.press("Control+z"); await aligned("");
+});
+
 test("hiding Changes keeps the review panes and resumes from edits made while hidden", async ({ page, baseURL }) => {
     const url = new URL(baseURL!); url.searchParams.set("sample", "shipping"); await page.goto(url.href);
     const source = page.getByRole("region", { name: "Source code" }).getByRole("textbox");

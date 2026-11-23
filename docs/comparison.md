@@ -265,8 +265,9 @@ and insertions/deletions map to opposite anchors. Each pane clamps to its own ex
 scroll, focus, selection, history and reference identity are independent.
 
 Aligned panes use the same measured line height. If you insert three lines on the right, the
-grid adds three lines of padding on the left using the completed diff. Each pane keeps its own
-folds. A row folded on one side leaves padding there. A row folded on both sides disappears
+grid adds three lines of padding on the left using the completed diff. An empty document keeps
+line 1 at the top, with padding below it. Each pane keeps its own folds.
+A row folded on one side leaves padding there. A row folded on both sides disappears
 from the grid. Each collapsed header says “contains changes” when it hides part of a hunk.
 Navigating to that change unfolds it in both panes. Padding contributes nothing to copied text and contains no focusable control.
 Click it to select an adjacent source boundary. Arrows skip it and Page commands follow the grid.
