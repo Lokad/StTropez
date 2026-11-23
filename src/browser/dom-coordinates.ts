@@ -1,3 +1,8 @@
+/** Resolve at hit time because hosts can move a mounted editor between trees. */
+export function hitTestRoot(element: Element): DocumentOrShadowRoot {
+    return element.isConnected ? element.getRootNode() as Document | ShadowRoot : element.ownerDocument;
+}
+
 /** CSS zoom scales client rectangles, while scrolling and inline styles keep local CSS units. */
 export function cssZoom(element: Element): number {
     const value = element.currentCSSZoom;

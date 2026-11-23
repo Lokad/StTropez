@@ -329,8 +329,9 @@ do not navigate. Preview text is capped at 160 UTF-16 units. Cancellation/dispos
 drop caret, preview and edge-scrolling work.
 
 A selection starts scrolling when the pointer leaves the viewport. For a text drop, the pointer enters
-a zone inside the edge. Both use the same bounded frame step. Each callback checks that the gesture is
-current, so an old frame cannot move or cancel a new target.
+a zone inside the edge, including when the destination is mounted in a shadow root. Both use the
+same bounded frame step. Each callback checks that the gesture is current, so an old frame cannot
+move or cancel a new target.
 
 ### Language configuration
 

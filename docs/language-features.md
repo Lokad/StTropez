@@ -378,8 +378,9 @@ the caret in the editor.
 ### Navigation and target loading
 
 `createNavigationController(editor, provider, options)` handles definition links for one mounted
-view. Hold Ctrl or Cmd over a symbol to underline it. Hover preserves focus, selections and open
-tabs. Releasing the modifier clears the underline. A primary click while the modifier is held
+view. Hold Ctrl or Cmd over a symbol to underline it, including when the editor is mounted in a
+shadow root. Hover preserves focus, selections and open tabs. Releasing the modifier clears the
+underline. A primary click while the modifier is held
 resolves the target even if the lookup is pending. Editing or remounting the source expires
 the gesture. Alt+click stays available for multiple carets.
 

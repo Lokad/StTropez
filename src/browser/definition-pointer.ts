@@ -1,4 +1,5 @@
 import { codeWordConstituentPattern } from "../core/words.ts";
+import { hitTestRoot } from "./dom-coordinates.ts";
 import { editorInput } from "./editor-input.ts";
 import type { TextEditor } from "./text-editor.ts";
 
@@ -15,8 +16,8 @@ export function bindDefinitionPointer(editor: TextEditor, inspect: (hit: Definit
     const stopTimer = () => { win.clearTimeout(timer); timer = undefined; };
     const clear = () => { stopTimer(); press = undefined; leave(); };
     const hitAt = (x: number, y: number): DefinitionHit | undefined => {
-        const over = owner.elementFromPoint(x, y);
-        const row = over === input ? owner.elementsFromPoint(x, y).find(element => element.matches(".st-viewport-row")) as HTMLElement | undefined
+        const tree = hitTestRoot(root), over = tree.elementFromPoint(x, y);
+        const row = over === input ? tree.elementsFromPoint(x, y).find(element => element.matches(".st-viewport-row")) as HTMLElement | undefined
             : over?.closest<HTMLElement>(".st-viewport-row");
         if (!row || !editor.viewport.element.contains(row)) return;
         const point = editor.viewport.hitTest(x, y), doc = editor.workspace.observeDocument(editor.view.documentId).getSnapshot();

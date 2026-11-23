@@ -1,6 +1,7 @@
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import type { Selection } from "../../src/index.ts";
+import { moveEditorIntoShadow } from "../helpers/shadow-editor.ts";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
@@ -51,9 +52,10 @@ async function edgeScrollAndCancel(page: Page): Promise<void> {
     await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollTop).toBe(0); await ready(page);
 }
 
-test("a replacement drop target survives a render callback during edge scrolling", async ({ page }) => {
+test("a replacement drop target in a shadow root survives a render callback during edge scrolling", async ({ page }) => {
     const original = "row abcdefghij\n".repeat(1000), payload = "inserted";
     await mount(page, "plain", original); const before = await snapshot(page);
+    await moveEditorIntoShadow(input(page)); await root(page).scrollIntoViewIfNeeded();
     await root(page).evaluate((element, payload) => {
         const data = new DataTransfer(); data.setData("text/plain", payload); Object.defineProperty(data, "effectAllowed", { value: "copy" });
         window.textDragStore = data;

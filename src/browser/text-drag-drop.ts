@@ -1,4 +1,4 @@
-import { clientBox } from "./dom-coordinates.ts";
+import { clientBox, hitTestRoot } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
 import type { Affinity } from "../core/positions.ts";
 import type { DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
@@ -76,7 +76,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
             const state = current(); invalidateSource();
             if (!state || state.revision !== captured.revision || input.readOnly || expired
                 || captured.token !== null && !activeDrags.get(document)?.source) return false;
-            const hit = document.elementFromPoint(captured.x, captured.y); return !!hit && root.contains(hit);
+            const hit = hitTestRoot(root).elementFromPoint(captured.x, captured.y); return !!hit && root.contains(hit);
         },
         velocity: captured => edgeVelocity(captured, clientBox(root, viewport.settings().minimap, viewport.getSnapshot().gutterWidth), viewport.getSnapshot(), "inside"),
         update: captured => {

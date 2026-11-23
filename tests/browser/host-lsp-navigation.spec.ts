@@ -46,7 +46,12 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         const text = "catalogue;\r\nconst local = 1;\r\n"; await seed(page, text, 3); await button(page, "Add navigation companion").click();
         await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 3, head: 3 }, { anchor: 22, head: 22 }]); });
         await moveEditorIntoShadow(field(page));
-        const before = await snapshot(page); replies.hold(); await field(page).press("F12"); await expect.poll(replies.waiting).toBe(true);
+        await field(page).focus();
+        const row = page.locator('.st-editor:has(> textarea[aria-label="Primary source"]) .st-viewport-row[data-line="0"]');
+        await row.scrollIntoViewIfNeeded(); const point = await paintedCharacter(row, "catalogue", 3);
+        const before = await snapshot(page); replies.hold();
+        await page.keyboard.down("Control"); await page.mouse.click(point.x, point.y); await page.keyboard.up("Control");
+        await expect.poll(replies.waiting).toBe(true);
         const progress = page.getByLabel("Symbol navigation progress", { exact: true });
         await expect(progress).toBeVisible();
         expect(await progress.evaluate(node => (node as HTMLProgressElement).position)).toBe(-1);
@@ -244,6 +249,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await button(page, "Find definition").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(1); await page.evaluate(() => window.hostFixture.setSourceReadOnly(true)); await expect(results(page)).toHaveCount(0); await page.evaluate(() => window.hostFixture.setSourceReadOnly(false));
         replies.hold(); await field(page).press("F12"); await expect.poll(replies.waiting).toBe(true); await expect.poll(async () => (await snapshot(page)).bindings.navigation.pending).toBe(true);
         await field(page).press("ArrowLeft"); await expect.poll(replies.cancelled).toBe(true); await replies.release(); await waitForNavigation(page); await expect(results(page)).toHaveCount(0);
+        if (host === "plain") await moveEditorIntoShadow(field(page));
         const row = page.locator('.st-editor:has(> textarea[aria-label="Primary source"]) .st-viewport-row[data-line="1"]');
         await row.scrollIntoViewIfNeeded(); const point = await paintedCharacter(row, "target", 2);
         const link = row.locator(".st-definition-link");
