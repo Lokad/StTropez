@@ -203,13 +203,24 @@ test("Alt-click removes a caret or selection and leaves the last caret ready to 
     await page.keyboard.type("X"); await expect(page.locator("#primary .st-viewport-row")).toHaveText(["abc", "def", "ghXi"]);
 });
 
-test("a click, modifier tap or selection change cancels Escape before Tab", async ({ page }) => {
+test("Escape keeps Tab in the editor after removing extra carets or an intervening gesture", async ({ page }) => {
     await page.goto("/editing/");
     await page.evaluate(() => window.editingFixture.setText("first\nsecond"));
     await ready(page);
     const input = page.getByRole("textbox", { name: "Primary source", exact: true });
     const editor = page.locator("#primary .st-editor");
-    await input.focus();
+    await input.press("Control+Home");
+    const secondLine = await textPoint(page, 6);
+    await page.keyboard.down("Alt");
+    try { await page.mouse.click(secondLine.x, secondLine.y); }
+    finally { await page.keyboard.up("Alt"); }
+    expect((await page.evaluate(() => window.editingFixture.selectionSet())).ranges).toHaveLength(2);
+    await page.keyboard.down("Escape"); await page.keyboard.down("Escape"); await page.keyboard.up("Escape");
+    await page.keyboard.press("Tab");
+    await expect(input).toBeFocused();
+    await expect(editor.locator(".st-viewport-row")).toHaveText(["first", "    second"]);
+    await input.press("Control+z");
+    await expect(editor.locator(".st-viewport-row")).toHaveText(["first", "second"]);
     for (const gesture of ["Shift tap", "selection", "click"]) {
         await page.keyboard.press("Escape");
         await expect(editor).toHaveAttribute("data-st-tab-escape", "");

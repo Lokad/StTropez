@@ -253,8 +253,8 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Alt/Option + Up or Down | Move touched lines one row. Add Shift to copy them and move each selection to its copy. |
 | Ctrl/Cmd + Shift + K | Delete touched lines. Keep each caret's column on the following line, or the preceding line at EOF, up to its end. |
 | Ctrl/Cmd + Enter / Ctrl/Cmd + Shift + Enter | Insert a blank line below / above the selection and place the caret at its indentation. |
-| Escape | Cancel pending commands and keep only the primary range; arm focus traversal |
-| Escape then Tab / Shift+Tab | Leave the editor for the next/previous host control |
+| Escape | Cancel pending commands. With multiple carets or selections, keep only the primary range. |
+| Escape then Tab / Shift+Tab | With a single range, leave the editor for the next/previous host control. |
 | Click / Shift+click | One caret / extend the primary range while retaining secondary ranges |
 | Alt+click / Alt+drag / Alt+double-click | Add a caret / range / code-word selection. With several ranges, Alt+click removes the one under the pointer. |
 | Double-click | Select the code-word, symbol or whitespace run within the clicked logical line |
@@ -262,8 +262,9 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Triple-click / triple-click and drag | Select a line including its ending / extend by whole lines |
 | Four clicks | Select the entire document |
 
-The focused editor has a solid outline. After Escape the outline becomes dashed and the root
-has the `data-st-tab-escape` attribute. A pointer press, selection change, or intervening key
+After Escape removes extra carets, Tab indents at the primary range. Press Escape a second time
+to arm focus traversal. The focused editor's solid outline becomes dashed and the root gains
+the `data-st-tab-escape` attribute. A pointer press, selection change, or intervening key
 cancels the exit. Holding Shift for the next Tab moves focus backward.
 
 Set `requestLine` to a `LinePrompt` to enable `go-to-line`. It receives the one-based current line,

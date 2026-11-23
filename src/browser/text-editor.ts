@@ -1231,7 +1231,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         // Clear the Escape prefix after the browser completes focus traversal.
         if (escapeSelection) queueMicrotask(() => { if (!disposed) escapeState(false); }); }, { signal: listeners.signal });
     function keydown(event: KeyboardEvent, captured?: KeyBinding): void {
-        if (escapeSelection && event.key !== "Tab" && event.key !== "Shift") escapeState(false);
+        const repeatedEscape = event.key === "Escape" && event.repeat;
+        if (escapeSelection && event.key !== "Tab" && event.key !== "Shift" && !repeatedEscape) escapeState(false);
         if (event.defaultPrevented || composing || event.isComposing || event.keyCode === 229) return;
         if (["Shift", "Control", "Meta", "Alt"].includes(event.key)) return;
         if (escapeSelection && event.key === "Tab" && !captured) return;
@@ -1267,7 +1268,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             cancelWord(); commandRunner.cancel(); preferred = undefined;
             const state = view.getSnapshot();
             if (state.selectionSet.ranges.length > 1) { event.preventDefault(); view.setSelection(revision, state.selection); refresh(); }
-            escapeState(true); return;
+            else if (!event.repeat) escapeState(true);
+            return;
         }
         escapeState(false); syncSelection();
         preferred = undefined;
