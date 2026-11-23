@@ -6,14 +6,15 @@ import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, TabId, TabTarget } from "../../src/index.ts";
 import { createNavigationController, createNavigationHistory } from "../../src/browser/index.ts";
-import type { NavigationChoice, NavigationController, NavigationDestination, NavigationHistory, NavigationOrigin, NavigationPage, NavigationResult, TextEditor } from "../../src/browser/index.ts";
+import type { NavigationChoice, NavigationController, NavigationDestination, NavigationHistory, NavigationOrigin, NavigationPage, NavigationPointerLink, NavigationResult, TextEditor } from "../../src/browser/index.ts";
 import type { LspNavigationRequest, LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import { navigationSymbol, validateNavigationDocuments } from "../../fixtures/language/navigation.ts";
 import type { NavigationFault } from "../../fixtures/language/navigation.ts";
 import { HostCell } from "../shared/observable.ts";
 
 type Kind = LspNavigationRequest["kind"];
-export type NavigationHostOptions = Readonly<{ provider: LspWorkspace; prepare: (kind: Kind, policy: FixturePolicy<NavigationFault>) => LspPrepare }>;
+export type NavigationHostOptions = Readonly<{ provider: LspWorkspace; prepare: (kind: Kind, policy: FixturePolicy<NavigationFault>) => LspPrepare;
+    linkAt?: (editor: TextEditor, offset: number) => NavigationPointerLink | undefined }>;
 type Session = { id: string; target: TabTarget; editor: TextEditor; controller: NavigationController };
 type Job = { kind: Kind; symbol: string; origin: Session; returnPoint: NavigationOrigin; sources: Set<DocumentId>; targets: Map<DocumentId, Session>;
     timer: number; page: NavigationPage | undefined; followDefinition?: () => boolean };
@@ -96,6 +97,7 @@ export class HostNavigationTools {
         const target = this.host.workspace.tabs.capture(tab);
         const controller = createNavigationController(editor, this.options.provider, { documents: () => this.host.workspace.getSnapshot().documents.filter(doc => doc.language !== null),
             canCapture: () => !this.disconnected && !this.disposed && this.host.canCapture(editor.view.documentId),
+            linkAt: offset => this.options.linkAt?.(editor, offset),
             prepareRequest: kind => this.options.prepare(kind, this.fixture.take()),
             onDefinition: offset => { this.active = session; editor.focus(); this.start("definition", true, offset); } });
         const session: Session = { id, target, editor, controller };

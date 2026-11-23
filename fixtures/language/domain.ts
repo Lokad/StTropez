@@ -8,6 +8,7 @@ export type DomainResult = Readonly<{ id: number; revision: number; folds: reado
 export type DomainProvider = Readonly<{ run: (input: DomainInput, signal: AbortSignal, progress: (units: number) => void) => Promise<unknown> }>;
 export const domainLimits = Object.freeze({ regions: 4096, labelUnits: 256, resultTextUnits: 65536, prefixUnits: 512, depth: 128 });
 export const validDomainModule = (value: string): boolean => /^[A-Za-z][A-Za-z0-9_./-]{0,63}$/.test(value);
+export const importedModule = (line: string): string | undefined => /^import "([A-Za-z][A-Za-z0-9_./-]{0,63})";$/.exec(line)?.[1];
 
 /** Local host fixture grammar, not a parser in the editor runtime.
  * Headers: // #region stable-id Label; closers: // #endregion stable-id.
@@ -43,8 +44,8 @@ export class DomainCursor {
         const raw = this.prefix.endsWith("\r") ? this.prefix.slice(0, -1) : this.prefix;
         const text = this.lineStart === 0 && raw.startsWith("\ufeff") ? raw.slice(1) : raw;
         if (this.importLine && !this.truncated) {
-            const match = /^import "([A-Za-z][A-Za-z0-9_./-]{0,63})";$/.exec(text);
-            if (match) { const from = this.lineStart + (this.lineStart === 0 && raw.startsWith("\ufeff") ? 1 : 0) + 8; this.importLine(from, from + match[1]!.length, match[1]!); }
+            const module = importedModule(text);
+            if (module) { const from = this.lineStart + (text === raw ? 0 : 1) + 8; this.importLine(from, from + module.length, module); }
         }
         if (text === `import ${JSON.stringify(this.input.module)};`) this.imported = true;
         if (this.input.kind === "import") { this.prefix = ""; this.truncated = false; this.lineStart = end; return; }

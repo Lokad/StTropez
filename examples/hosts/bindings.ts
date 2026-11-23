@@ -233,10 +233,10 @@ export class ViewBindings {
         this.hover = new HostHoverTools(kind => { if (kind === "pointer") return !this.signature?.state.getSnapshot().visible; this.signature?.dismiss(); return true; }, { ...lsp.hover, canCapture });
         const present = (document: DocumentId) => this.presentNavigationDocument(document);
         const languageHost = createNavigationHost({ workspace: controller.workspace, canCapture, present, reconnect: reconnectProvider });
-        this.navigation = new HostNavigationTools(languageHost, lsp.navigation);
+        this.links = new HostDocumentLinks(languageHost, lsp.links);
+        this.navigation = new HostNavigationTools(languageHost, { ...lsp.navigation, linkAt: (editor, offset) => this.links.pointerLink(editor, offset) });
         this.project = new HostProjectTools(languageHost, lsp.project, lsp.owner);
         this.colors = new HostDocumentColors(languageHost, lsp.colors);
-        this.links = new HostDocumentLinks(languageHost, lsp.links);
         this.actions = new HostActionsTools(languageHost, lsp.actions, this.project);
         this.rename = new HostRenameTools(languageHost, lsp.rename);
         this.signature = new HostSignatureTools(canCapture, () => this.hover.dismiss(), lsp.signature, reconnectProvider);

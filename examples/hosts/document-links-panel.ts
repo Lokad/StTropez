@@ -13,7 +13,7 @@ function documentLinkActions(tools: DocumentLinksPanelTools, s: DocumentLinksSna
         { label: "Reconnect link provider", invoke: tools.reconnect, disabled: !s.disconnected && s.status !== "failed" }
     ];
 }
-export const documentLinkDescription = 'Exact import-line fixture: import "module"; with LF/CRLF and optional leading BOM. Only host-registered working resources can open. Unresolved modules stay visible. This line grammar does not resolve general language syntax, scopes or URLs. F4 discovers/focuses the list; Shift+F4 returns to the captured source.';
+export const documentLinkDescription = 'Ctrl/Cmd+click the module name in an import "module"; line to open its registered source. F4 lists imports, including unresolved names. Shift+F4 returns to the source and selection.';
 export const documentLinkLabel = (link: LinkNote) => `Open ${link.module} at ${link.line}:${link.column} → ${link.targetTitle ?? "unresolved"}`;
 export const documentLinkDetails = (link: LinkNote) => `${link.title} [${link.from},${link.to}) · ${link.tooltip}${link.target ? ` · ${link.target.resource} · ${link.target.document} @ revision ${link.target.revision}` : ""}`;
 /** Result callbacks retain the displayed request even when a later page is published. */

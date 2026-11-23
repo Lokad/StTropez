@@ -7,11 +7,11 @@ import { onSourceFocus } from "./source-focus.ts";
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, DocumentSnapshot, TabId } from "../../src/index.ts";
 import { createDocumentLinkController } from "../../src/browser/index.ts";
-import type { DocumentLinkChoice, DocumentLinkController, DocumentLinkSnapshot, TextEditor, ViewState } from "../../src/browser/index.ts";
+import type { DocumentLinkChoice, DocumentLinkController, DocumentLinkSnapshot, NavigationPointerLink, TextEditor, ViewState } from "../../src/browser/index.ts";
 import type { LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import { linkLimits } from "../../fixtures/language/links.ts";
 import type { LinksInput, ModuleLink } from "../../fixtures/language/links.ts";
-import { validDomainModule } from "../../fixtures/language/domain.ts";
+import { domainLimits, importedModule, validDomainModule } from "../../fixtures/language/domain.ts";
 import { HostCell } from "../shared/observable.ts";
 
 type LinkFault = NonNullable<LinksInput["fault"]>;
@@ -22,6 +22,7 @@ type Session = { id: string; editor: TextEditor; controller: DocumentLinkControl
 type Origin = { origin: Session; source: DocumentSnapshot; viewState: ViewState };
 type Route = Origin & { documents: Map<string, DocumentSnapshot>; targets: Map<DocumentId, Session> };
 type Visit = Origin & { destination: TextEditor; release: () => void };
+type LinkRange = Pick<DocumentLinkChoice, "from" | "to">;
 export type LinkNote = ModuleLink & Readonly<{ line: number; column: number; title: string; targetTitle: string | null; resolvable: boolean; open: () => void }>;
 export type DocumentLinksSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; requestView: string | null;
     status: DocumentLinkSnapshot["status"] | "away"; message: string; count: number; page: number; paging: PanelPaging | null; links: readonly LinkNote[]; canReturn: boolean }>;
@@ -88,7 +89,15 @@ export class HostDocumentLinks {
         });
         const session = { id, editor, controller };
         return attachPanelSession(this.sessions, session, (signal, register) => {
-            const stop = controller.subscribe(() => { if (this.route?.origin === session) this.render(this.route); });
+            const marks = editor.decorations.add({ name: "module links", order: 100, minimap: false });
+            signal.addEventListener("abort", marks.dispose, { once: true });
+            const stop = controller.subscribe(() => {
+                const route = this.route, state = controller.getSnapshot();
+                if (route?.origin === session && state.status === "ready")
+                    marks.set(route.source.revision, state.links.map(({ from, to }) => ({ from, to, className: "host-module-link" })));
+                else if (state.status !== "resolving") marks.clear();
+                if (route?.origin === session) this.render(route);
+            });
             signal.addEventListener("abort", stop, { once: true });
             register({ id: "links.discover", label: "Discover module links", enabled: () => !this.disconnected,
                 run: () => { this.active = session; this.start(true); } }, { keys: ["F4"] });
@@ -147,9 +156,8 @@ export class HostDocumentLinks {
         this.publish({ status, pending: false, links, page, paging, count: state.links.length, message: `${state.links.length} module links.` });
     }
     readonly discover = () => this.start(false);
-    private start(keyboard: boolean, returning = false) {
-        const origin = this.active;
-        if (!origin || this.disconnected || !this.host.canCapture(origin.editor.view.documentId)) return;
+    private begin(origin: Session, returning = false) {
+        if (this.disconnected || !this.sessions.has(origin) || !this.host.canCapture(origin.editor.view.documentId)) return;
         const source = this.host.workspace.document(origin.editor.view.documentId);
         if (!source.language) return;
         const documents = new Map([[source.language.uri, source]]);
@@ -161,11 +169,16 @@ export class HostDocumentLinks {
             documents.set(target.language.uri, target);
         }
         const targets = captureDestinationPanes(origin, this.sessions.keys(), aliases);
-        const mayFocus = this.host.claimNavigationFocus();
         this.release();
         const route: Route = { origin, source, documents, targets, viewState: origin.editor.captureView() };
         this.route = route; this.metrics.requested++;
         if (!returning) this.publish({ ...initial });
+        return route;
+    }
+    private start(keyboard: boolean, returning = false) {
+        const origin = this.active, route = origin && this.begin(origin, returning);
+        if (!origin || !route) return;
+        const mayFocus = this.host.claimNavigationFocus();
         void origin.controller.request().then(() => {
             const state = origin.controller.getSnapshot();
             if (this.route !== route || state.status !== "ready") return;
@@ -174,6 +187,34 @@ export class HostDocumentLinks {
             if (index >= 0) this.render(route, Math.floor(index / linkLimits.page));
             if (keyboard && mayFocus() && origin.editor.getSnapshot().focused) this.linkList.element?.focus();
         });
+    }
+    pointerLink(editor: TextEditor, offset: number): NavigationPointerLink | undefined {
+        if (this.disconnected || this.disposed || !this.host.canCapture(editor.view.documentId)) return;
+        const origin = [...this.sessions.keys()].find(session => session.editor === editor);
+        if (!origin) return;
+        const source = this.host.workspace.document(editor.view.documentId), previous = this.route;
+        const current = previous?.origin === origin && origin.controller.getSnapshot().status === "ready";
+        let link: LinkRange | DocumentLinkChoice | undefined;
+        if (current) link = origin.controller.linkAt(offset);
+        else {
+            // Before discovery the sample recognises its provider's bounded import grammar.
+            // Only the provider's reply can supply the destination.
+            const line = source.buffer.line(source.buffer.lineAt(offset));
+            if (line.to - line.from > domainLimits.prefixUnits) return;
+            const raw = line.text, bom = line.from === 0 && raw.startsWith("\ufeff") ? 1 : 0;
+            const module = importedModule(raw.slice(bom)), from = line.from + bom + 8;
+            if (module && from <= offset && offset < from + module.length) link = { from, to: from + module.length };
+        }
+        if (!link) return;
+        const selected = link, module = source.buffer.slice(link.from, Math.min(link.to, link.from + 128));
+        const alias = this.aliases.get(module);
+        return { from: link.from, to: link.to, open: () => {
+            if (!this.sessions.has(origin) || this.disconnected || this.aliases.get(module) !== alias || this.route !== previous
+                || this.host.workspace.document(source.id).revision !== source.revision) return;
+            editor.focus(); this.active = origin;
+            const route = current ? previous : this.begin(origin);
+            if (route) void this.open(route, selected, module, editor.captureView());
+        } };
     }
     private place(owner: Route | Visit, doc: DocumentSnapshot, captured: Session | undefined, viewState?: ViewState) {
         const current = () => this.route === owner || this.visit === owner;
@@ -192,26 +233,39 @@ export class HostDocumentLinks {
             if (current()) this.publish({ message: error instanceof Error ? error.message : "The host could not open the destination." });
         } finally { this.presenting = false; }
     }
-    private async open(route: Route, item: DocumentLinkChoice, module: string) {
+    private async open(route: Route, selected: LinkRange | DocumentLinkChoice, module: string, viewState = route.viewState) {
         if (this.route !== route || !this.sessions.has(route.origin)) return;
         const owner = route.origin.editor.element.ownerDocument, list = this.linkList.element;
         // Resolving disables the row. Keep Escape and Tab in the results list.
-        if (item.canResolve && list?.matches(":focus-within")) list.focus({ preventScroll: true });
+        if ("open" in selected && selected.canResolve && list?.matches(":focus-within")) list.focus({ preventScroll: true });
         const focused = owner.activeElement;
+        const mayFocus = this.host.claimNavigationFocus();
         const events = new AbortController(); let follow = true;
-        if (item.canResolve) {
+        if (!("open" in selected) || selected.canResolve) {
             const leave = () => { follow = false; }, options = { capture: true, once: true, signal: events.signal };
             owner.addEventListener("pointerdown", leave, options);
             owner.addEventListener("focusin", leave, options);
+            owner.defaultView?.addEventListener("blur", leave, options);
             list?.addEventListener("focusout", leave, options);
         }
         try {
+            let item: DocumentLinkChoice | undefined;
+            if ("open" in selected) item = selected;
+            else {
+                await route.origin.controller.request();
+                if (this.route !== route || !follow || !mayFocus() || owner.activeElement !== focused) return;
+                item = route.origin.controller.linkAt(selected.from);
+                if (!item || item.from !== selected.from || item.to !== selected.to) {
+                    if (route.origin.controller.getSnapshot().status === "ready") this.publish({ message: `No destination for ${module}.` });
+                    return;
+                }
+            }
             const result = await item.open(uri => {
                 const doc = route.documents.get(uri);
                 if (!doc) { this.publish({ message: "Provider link target is outside the host's captured resources." }); return; }
-                if (!follow || owner.activeElement !== focused) return;
+                if (!follow || !mayFocus() || owner.activeElement !== focused) return;
                 // A host can replace the only mounted source while presenting the destination.
-                const { origin, source, viewState } = route;
+                const { origin, source } = route;
                 const release = this.retainOrigin(source);
                 let placed: TextEditor | undefined;
                 try { placed = this.place(route, doc, route.targets.get(doc.id)); }

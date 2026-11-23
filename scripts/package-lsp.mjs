@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import { expect } from "@playwright/test";
+import { paintedCharacter } from "../tests/helpers/painted-character.ts";
 
 /**
  * Package-boundary coverage; protocol permutations and host controls have their own primary tests.
@@ -114,6 +115,18 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         await button("Links").click(); await expect(button("Open link")).toBeEnabled();
         assert.deepEqual(await oldLink.evaluate(open => open?.(new PointerEvent("click"))), { status: "expired" }); await oldLink.dispose();
         assert.equal((await state()).notes.linkUri, undefined);
+        const moduleRow = page.locator("#editor .st-viewport-row").filter({ hasText: 'import "sample-utils";' });
+        await moduleRow.scrollIntoViewIfNeeded();
+        await page.keyboard.down("Control");
+        try {
+            // The row is wider than its text. Target the actual module glyph before its underline exists.
+            const point = await paintedCharacter(moduleRow, "sample-utils", 6);
+            await page.mouse.move(point.x, point.y);
+            const marked = moduleRow.locator(".st-definition-link"); await expect(marked).toHaveText("sample-utils");
+            await page.mouse.click(point.x, point.y);
+        } finally { await page.keyboard.up("Control"); }
+        await expect.poll(async () => (await state()).notes.linkUri).toBe("consumer+opaque:project/companion%2Fpart");
+        await button("Links").click(); await expect(button("Open link")).toBeEnabled();
         const duplicate = await button("Open link").evaluate(node => {
             const control = /** @type {HTMLButtonElement} */ (node), open = control.onclick?.bind(control);
             control.click();

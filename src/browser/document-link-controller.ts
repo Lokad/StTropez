@@ -27,6 +27,7 @@ export type DocumentLinkControllerOptions = Readonly<{
 }>;
 export type DocumentLinkController = Observable<DocumentLinkSnapshot> & Readonly<{
     request: () => Promise<void>; cancel: () => void; dispose: () => void;
+    linkAt: (offset: number) => DocumentLinkChoice | undefined;
 }>;
 type Job = {
     client: LspLinkClient; project: ReturnType<typeof retainDocuments>; capture?: CapturedViewRequest<TextEditor["tab"]>;
@@ -157,7 +158,12 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
         publish("disposed"); for (const unsubscribe of observers) unsubscribe();
     }
     editor.signal.addEventListener("abort", dispose, { once: true });
-    return Object.freeze({ request, cancel, dispose, getSnapshot: state.observable.getSnapshot, subscribe(listener: () => void) {
+    function linkAt(offset: number) {
+        const snapshot = state.get();
+        if (!Number.isSafeInteger(offset) || !job || snapshot.status !== "ready" || !current(job)) return;
+        return snapshot.links.find(link => link.from <= offset && offset < link.to);
+    }
+    return Object.freeze({ request, cancel, dispose, linkAt, getSnapshot: state.observable.getSnapshot, subscribe(listener: () => void) {
         if (events.signal.aborted) throw new Error("Document link controller is disposed.");
         const off = state.observable.subscribe(listener), unsubscribe = () => { off(); observers.delete(unsubscribe); };
         observers.add(unsubscribe); return unsubscribe;

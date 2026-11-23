@@ -19,6 +19,7 @@ export type NavigationPage = Readonly<{
 export type NavigationResult = Readonly<{ count: number; locationAt: (index: number) => NavigationChoice | undefined;
     pageFor: (index?: number) => NavigationPage | undefined }>;
 type Kind = "definition" | "references";
+export type NavigationPointerLink = Readonly<{ from: number; to: number; open: () => void }>;
 export type NavigationControllerOptions = Readonly<{
     documents?: () => readonly DocumentSnapshot[]; canCapture?: () => boolean;
     /** A view-bound chooser expires when its source caret or folded projection changes. */
@@ -26,6 +27,8 @@ export type NavigationControllerOptions = Readonly<{
     prepareRequest?: (kind: Kind) => LspPrepare | undefined;
     /** Handle a modifier click through the host's usual definition command. Call request synchronously to reuse its lookup. */
     onDefinition?: (offset: number) => void;
+    /** A document link at this UTF-16 offset takes precedence over a symbol under the pointer. */
+    linkAt?: (offset: number) => NavigationPointerLink | undefined;
 }>;
 export type NavigationSnapshot = Readonly<{ status: "idle" | "pending" | "ready" | "empty" | "expired" | "failed" | "disposed"; result: NavigationResult | null }>;
 export type NavigationController = Observable<NavigationSnapshot> & Readonly<{
@@ -84,9 +87,15 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
     type Hover = { hit: DefinitionHit; client: LspNavigationClient; source: Source; reply: Promise<LspDefinitionPreview>; result?: LspDefinitionPreview };
     type Request = { client: LspNavigationClient; source?: Source; stops: (() => void)[]; expired: boolean; reply?: LspNavigationResult };
     let hover: Hover | undefined, activation: Hover | undefined, explicit: Request | undefined;
+    let markedLink: { hit: DefinitionHit; source: Source } | undefined;
     const publish = (status: NavigationSnapshot["status"], result: NavigationResult | null = null) => notifications.publish(state, Object.freeze({ status, result }));
     const release = (job?: Hover, reuse?: LspNavigationClient) => { job?.source.cancel(); if (job && job.client !== reuse) job.client.dispose(); };
-    const leave = (reuse?: LspNavigationClient) => { if (hover) { const old = hover; hover = undefined; layer.clear(); release(old, reuse); } };
+    const leave = (reuse?: LspNavigationClient) => {
+        if (!hover && !markedLink) return;
+        const old = hover, link = markedLink;
+        hover = undefined; markedLink = undefined;
+        layer.clear(); release(old, reuse); link?.source.cancel();
+    };
     const clearExplicit = (reuse?: LspNavigationClient) => {
         const job = explicit; explicit = undefined;
         if (!job) return;
@@ -105,6 +114,16 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
     const matches = (job: Hover | undefined, hit: DefinitionHit) => job && job.hit.revision === hit.revision && job.source.isCurrent()
         && inside(hit.offset, job.result?.originRange ?? job.hit) && (!job.result || job.result.isCurrent());
     function inspect(hit: DefinitionHit) {
+        if (hit.open) {
+            if (markedLink?.hit.revision === hit.revision && markedLink.hit.from === hit.from && markedLink.hit.to === hit.to
+                && markedLink.source.isCurrent()) return;
+            leave();
+            const source = capture(); if (!source) return;
+            markedLink = { hit, source };
+            source.signal.addEventListener("abort", () => { if (markedLink?.source === source) leave(); }, { once: true });
+            layer.set(hit.revision, [{ from: hit.from, to: hit.to, className: "st-definition-link" }]);
+            return;
+        }
         if (matches(hover, hit)) return;
         const source = capture(); if (!source || source.document.revision !== hit.revision) { leave(); source?.cancel(); return; }
         const client = hover?.client ?? createLspNavigationClient(provider);
@@ -175,6 +194,11 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
         }
     }
     bindDefinitionPointer(editor, inspect, leave, hit => {
+        if (hit.open) {
+            const current = markedLink?.source.isCurrent(); leave();
+            if (current) hit.open();
+            return;
+        }
         if (!matches(hover, hit)) inspect(hit);
         if (!hover) return;
         activation = hover; hover = undefined; layer.clear();
@@ -182,8 +206,8 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
             if (options.onDefinition) options.onDefinition(hit.offset);
             else void request("definition", hit.offset).catch(() => {});
         } finally { const unused = activation; activation = undefined; release(unused); }
-    }, events.signal);
-    editor.onEditIntent(kind => { if (kind === "compositionstart") cancel(); }, events.signal);
+    }, events.signal, options.linkAt);
+    editor.onEditIntent(kind => { if (kind === "compositionstart") cancel(); else if (markedLink) leave(); }, events.signal);
     const stop = provider.subscribe(() => {
         const job = hover, request = explicit;
         if (job?.result && !job.result.isCurrent()) queueMicrotask(() => { if (hover === job) leave(); });

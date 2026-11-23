@@ -395,6 +395,11 @@ underline. A primary click while the modifier is held resolves the target even i
 is pending. Editing or remounting the source expires
 the gesture. Alt+click stays available for multiple carets.
 
+Use `options.linkAt(offset)` to handle a document link under the pointer. Return its UTF-16
+range and an `open()` action. Ctrl/Cmd hover underlines the whole range, including punctuation.
+Releasing the pointer over the same range and revision invokes the action captured on press.
+Return `undefined` to use symbol lookup. Keep `linkAt` synchronous and defer opening to the action.
+
 Supply the project with `options.documents`. Moving between symbols with the modifier held keeps
 unchanged project files open on the server. A new request on the same controller also reuses
 those files and checks the current project list. Dismissing the lookup releases its files.
@@ -642,7 +647,9 @@ after commit, report the uncertain delivery and leave the edit in history.
 `createDocumentLinkController(editor, provider, { documents })` discovers links in the mounted
 document. Include any project documents whose revision or edit permissions affect your URI mapping.
 Call `request()` and render `getSnapshot().links`. Each link carries its range, literal tooltip,
-optional target and an `open` action. Give each choice its own button.
+optional target and an `open` action. `linkAt(offset)` returns the first current provider choice
+whose range contains the offset, including its start and excluding its end. It returns `undefined`
+while discovery or resolution is pending. A button and the editor can open the same choice.
 
 ```ts
 import type { DocumentLinkChoice } from "sttropez/browser";

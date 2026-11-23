@@ -1,7 +1,7 @@
 import { TextBuffer, Workspace } from "sttropez";
 import type { DocumentId } from "sttropez";
 import { createLspHoverClient, RpcError, type LspHoverClient } from "sttropez/protocol";
-import type { AnchoredOverlay, CodeActionConfirmation, DiagnosticController, DocumentLinkOpenResult, HoverController, ReviewEditResult } from "sttropez/browser";
+import type { AnchoredOverlay, CodeActionConfirmation, DiagnosticController, DocumentLinkChoice, DocumentLinkOpenResult, HoverController, ReviewEditResult } from "sttropez/browser";
 import { BrowserLspWorkspace, createCodeActionController, createCompletionController, createDiagnosticController, createDocumentColorController, createDocumentLinkController, createHoverController, createNavigationController, createRenameController, createSignatureController, mountAnchoredOverlay, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
 
 const workspace = new Workspace();
@@ -29,7 +29,10 @@ const signature = createSignatureController(editor, provider), colors = createDo
 const project = () => [workspace.document(source.documentId), workspace.document(companion.documentId)];
 const links = createDocumentLinkController(editor, provider, { documents: project });
 const rename = createRenameController(editor, provider, { documents: project });
-const navigation = createNavigationController(editor, provider, { documents: project });
+const navigation = createNavigationController(editor, provider, { documents: project, linkAt(offset) {
+    const link = links.linkAt(offset);
+    return link && { from: link.from, to: link.to, open: () => openModule(link) };
+} });
 const actions = createCodeActionController(editor, provider, { documents: project });
 const text = () => { const buffer = workspace.document(source.documentId).buffer; return buffer.slice(0, buffer.length); };
 const position = () => text().indexOf("catalogue") + 2;
@@ -127,14 +130,13 @@ signature.subscribe(() => { const active = signature.getSnapshot().signature;
 command("Links", links.request);
 const openLink = command("Open link", () => {});
 openLink.disabled = true;
+async function openModule(link: DocumentLinkChoice) {
+    return notes.lastLink = await link.open(uri => { notes.linkUri = uri; result.textContent = uri; });
+}
 links.subscribe(() => {
     const state = links.getSnapshot(), link = state.links[0];
     openLink.disabled = state.status !== "ready" || !link;
-    openLink.onclick = link ? async () => {
-        const outcome = await link.open(uri => { notes.linkUri = uri; result.textContent = uri; });
-        notes.lastLink = outcome;
-        return outcome;
-    } : null;
+    openLink.onclick = link ? () => openModule(link) : null;
 });
 command("Colors", async () => {
     await colors.request(); await colors.getSnapshot().colors[0]?.preview({ red: 0, green: 1, blue: 0, alpha: 1 });
