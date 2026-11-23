@@ -2,7 +2,6 @@ import { CleanupScope } from "../shared/cleanup-scope.ts";
 import type { ViewBindings } from "./bindings.ts";
 import { documentLinksPanelModel } from "./document-links-panel.ts";
 import { navigationPanelModel } from "./navigation-panel.ts";
-import { focusResult } from "./panel-keys.ts";
 import { createDestinationList } from "./tool-panel.ts";
 
 /** Keep both captured pages mounted. Only the selected list occupies space beside the source. */
@@ -16,6 +15,16 @@ export function mountLocationsDock(host: HTMLElement, bindings: Pick<ViewBinding
         const moduleList = createDestinationList(owner, modules()); scope.defer(moduleList.dispose);
         const status = owner.createElement("output"), alternate = owner.createElement("button");
         status.setAttribute("aria-label", "Locations status"); alternate.type = "button";
+        const rememberRow = (event: FocusEvent) => {
+            const row = event.target;
+            if (!(row instanceof owner.defaultView!.HTMLButtonElement)) return;
+            const list = row.closest("ul");
+            if (list !== symbolList.element && list !== moduleList.element) return;
+            list.querySelector("[data-last-location]")?.removeAttribute("data-last-location");
+            row.setAttribute("data-last-location", "");
+        };
+        host.addEventListener("focusin", rememberRow);
+        scope.defer(() => host.removeEventListener("focusin", rememberRow));
         function render() {
             const { message, kind, alternate: other } = locationStatus.getSnapshot();
             status.textContent = message; alternate.hidden = other === null;
@@ -25,7 +34,9 @@ export function mountLocationsDock(host: HTMLElement, bindings: Pick<ViewBinding
         alternate.onclick = () => {
             bindings.switchLocations();
             const list = locationStatus.getSnapshot().kind === "symbols" ? symbolList.element : moduleList.element;
-            if (list.querySelector("button:enabled")) focusResult(list, 0);
+            const row = list.querySelector<HTMLButtonElement>("button[data-last-location]:enabled")
+                ?? list.querySelector<HTMLButtonElement>("button:enabled");
+            row?.focus();
         };
         const renderSymbols = () => symbolList.render(symbols()), renderModules = () => moduleList.render(modules());
         host.replaceChildren(status, alternate, symbolList.element, moduleList.element);

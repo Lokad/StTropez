@@ -330,6 +330,11 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await expect(link).toBeFocused(); await expect(link).toBeInViewport(); await expect(source.locator("..")).toBeInViewport();
         await button(page, "Show symbol results").click(); await expect(first).toBeFocused();
         await expect(first).toHaveText("Primary source:65:1");
+        const third = results(page).nth(2);
+        await page.keyboard.press("ArrowDown"); await page.keyboard.press("ArrowDown");
+        await expect(third).toBeFocused(); await expect(third).toHaveText("Primary source:67:1");
+        await button(page, "Show module links").click(); await expect(link).toBeFocused();
+        await button(page, "Show symbol results").click(); await expect(third).toBeFocused();
         await next.press("Space"); await expect(first).toHaveText("Primary source:129:1");
         const previous = button(page, "Previous navigation results");
         await expect(previous).toBeFocused();
@@ -340,6 +345,8 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await page.keyboard.press("Enter"); await expect(first).toHaveText("Primary source:65:1");
         await source.focus(); await next.evaluate(node => (node as HTMLButtonElement).click());
         await expect(first).toHaveText("Primary source:129:1"); await expect(source).toBeFocused();
+        await button(page, "Show module links").click(); await button(page, "Show symbol results").click();
+        await expect(first).toBeFocused();
     });
     if (coversHost("candidate-hosts", host, "candidate")) test("Return retraces two symbol jumps with their selections, scroll and focus", async ({ page }) => {
         const text = "catalogue;\n" + "// padding\n".repeat(120) + "catalogue;\n";

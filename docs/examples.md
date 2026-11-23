@@ -398,7 +398,8 @@ A request made in the review itself expires when that pane closes.
 If you leave the source while F12 is pending, choose the destination in the results panel to open it.
 The Locations region below the editors reports the latest symbol or module lookup,
 including a missing import. **Show symbol results** and **Show module links** switch back
-to the retained page of an earlier lookup. Symbol results show the file, line, column
+to the retained page of an earlier lookup. Focus returns to the last row you used on that page.
+If the row was replaced or disabled, the first available row takes focus. Symbol results show the file, line, column
 and a short excerpt around the match. The navigation panel shows
 a waiting indicator during a definition or reference request. If a jump moves the caret while
 module discovery is pending, press F4 at the new location to refresh the links.
