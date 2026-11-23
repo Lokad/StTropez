@@ -7,7 +7,8 @@ const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
 const source = '// TODO\r\nconst catalogue = 1;\r\ncatalogue;\r\nimport "other-utils";\r\nconst color = "#abc";\r\nlookup("key", )', caret = source.lastIndexOf("catalogue") + 2;
-const methods = ["textDocument/definition", "textDocument/rename", "textDocument/codeAction", "textDocument/documentLink", "textDocument/documentColor", "textDocument/colorPresentation", "textDocument/signatureHelp"];
+// Background swatches use documentColor too. blocked() and previews() count explicit color commands at the host.
+const methods = ["textDocument/definition", "textDocument/rename", "textDocument/codeAction", "textDocument/documentLink", "textDocument/colorPresentation", "textDocument/signatureHelp"];
 const signature = (page: Page) => page.getByRole("tooltip", { name: "Signature help", exact: true });
 
 async function settled(page: Page): Promise<void> {
@@ -148,7 +149,7 @@ for (const host of ["plain", "react"]) test(`${host} LSP captures wait for movem
     await expect.poll(async () => (await snapshot(page)).bindings.colors.state.count).toBe(1);
     await page.getByLabel("Proposed color", { exact: true }).fill("#112233"); await button(page, "Preview color presentations").click();
     await expect(button(page, "Apply captured color")).toBeEnabled();
-    const initialMethods = ["textDocument/signatureHelp", "textDocument/documentColor", "textDocument/colorPresentation"];
+    const initialMethods = ["textDocument/signatureHelp", "textDocument/colorPresentation"];
     expect(wire).toEqual(initialMethods);
 
     await seed(page, source, caret); await previews(page, true);
