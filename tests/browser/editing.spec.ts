@@ -308,7 +308,7 @@ test("Apple caret chords navigate the document and full line beyond native input
     expect(await page.evaluate(() => window.editingFixture.range(0, 2))).toBe("\nx");
 });
 
-test("IME confirmation keycode does not invoke a language newline after compositionend", async ({ page }) => {
+test("a composition confirmation key leaves the following Enter available for a newline", async ({ page }) => {
     await page.evaluate(() => { const f = window.editingFixture; f.setText("a"); f.select("primary", { anchor: 1, head: 1 }); f.configure({ language: { enter: "keep" } }); }); await ready(page);
     const source = page.getByRole("textbox", { name: "Primary source", exact: true });
     expect(await source.evaluate(node => {
@@ -433,8 +433,8 @@ test("a read-only view keeps bounded navigation and Find while its peer retains 
         input.setRangeText("blocked", input.selectionStart, input.selectionEnd, "end");
         input.dispatchEvent(new InputEvent("input", { inputType: "insertText", bubbles: true }));
         input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-        input.setRangeText("東京", input.selectionStart, input.selectionEnd, "end");
-        input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "東京" }));
+        input.setRangeText("ê", input.selectionStart, input.selectionEnd, "end");
+        input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "ê" }));
         const data = new DataTransfer(); data.setData("text/plain", "blocked");
         for (const type of ["dragenter", "dragover", "drop"]) input.parentElement!.dispatchEvent(new DragEvent(type, { dataTransfer: data, bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
     }); await ready(page);
@@ -520,12 +520,14 @@ test("synthetic composition commits once and rejects stale, readonly and expired
     const input = page.getByRole("textbox", { name: "Primary source" });
     const start = async () => input.evaluate(node => {
         const input = node as HTMLTextAreaElement; input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-        input.setRangeText("東京", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", isComposing: true }));
+        input.dispatchEvent(new CompositionEvent("compositionupdate", { bubbles: true, data: "ê" }));
+        input.setRangeText("ê", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", isComposing: true }));
     });
-    const end = async () => input.evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "東京" })));
+    const end = (data = "ê") => input.evaluate((node, data) => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data })), data);
     await start(); expect((await state(page)).primary.commits).toBe(0); expect(await events.jsonValue()).toHaveLength(0);
-    await end(); await ready(page);
-    expect(await page.evaluate(() => window.editingFixture.range(0, 8))).toBe("alpha 東京"); expect((await state(page)).primary.commits).toBe(1);
+    await expect(page.locator("#primary .st-input-caret")).toHaveText("ê");
+    await end(""); await ready(page);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 7))).toBe("alpha ê"); expect((await state(page)).primary.commits).toBe(1);
     for (const reason of ["stale-revision", "read-only", "expired-view"]) {
         await start();
         await page.evaluate(reason => {
@@ -535,11 +537,11 @@ test("synthetic composition commits once and rejects stale, readonly and expired
         }, reason);
         await end();
         expect((await state(page)).conflicts.at(-1)).toMatchObject({ reason });
-        expect(await page.evaluate(() => window.editingFixture.conflictText())).toContain("東京");
+        expect(await page.evaluate(() => window.editingFixture.conflictText())).toContain("ê");
         if (reason === "read-only") await page.evaluate(() => window.editingFixture.readOnly(false));
     }
     expect((await state(page)).primary.commits).toBe(1);
-    expect(await events.evaluate(list => list.map(event => event.text))).toEqual(["東京"]);
+    expect(await events.evaluate(list => list.map(event => event.text))).toEqual(["ê"]);
     expect((await state(page)).secondary.viewport.revision).toBe((await state(page)).document!.revision);
 });
 
@@ -888,15 +890,27 @@ test("short shaped rows grow horizontal extent and a later revision discards obs
     expect(small.horizontalExtent).toBeLessThan(small.width); expect(small.physicalWidth).toBe(small.width);
 });
 
-test("browser-protocol composition commits one bounded edit without qualifying native IME", async ({ page, browserName }) => {
-    test.skip(browserName !== "chromium", "Chromium CDP composition; native-device IME remains a separate gate on every engine.");
+test("a staged dead key occupies one cell and cancellation preserves the selected text", async ({ page, browserName }) => {
+    test.skip(browserName !== "chromium", "This gesture uses the Chromium input protocol.");
     await page.evaluate(() => { window.editingFixture.setText("alpha omega"); window.editingFixture.select("primary", { anchor: 6, head: 11 }); window.editingFixture.focus("primary"); }); await ready(page);
     const cdp = await page.context().newCDPSession(page);
-    await cdp.send("Input.imeSetComposition", { text: "に", selectionStart: 1, selectionEnd: 1 });
+    const stage = () => cdp.send("Input.imeSetComposition", { text: "^", selectionStart: 1, selectionEnd: 1 });
+    await stage();
     expect((await state(page)).primary).toMatchObject({ composing: true, commits: 0 });
-    await cdp.send("Input.insertText", { text: "日本語" }); await ready(page);
-    expect(await page.evaluate(() => window.editingFixture.range(0, 9))).toBe("alpha 日本語");
-    expect((await state(page)).primary).toMatchObject({ composing: false, commits: 1, selection: { head: 9 } });
+    const accent = page.locator("#primary .st-input-caret");
+    await expect(accent).toBeVisible(); await expect(accent).toHaveText("^");
+    expect(await accent.evaluate(el => {
+        const start = window.editingFixture.coords(6)!, end = window.editingFixture.coords(7)!;
+        const box = el.getBoundingClientRect();
+        return Math.abs(box.left - start.left) < 1 && Math.abs(box.width - (end.left - start.left)) < 1;
+    })).toBe(true);
+    await expect(page.locator("#primary textarea")).toHaveCSS("opacity", "0");
+    await cdp.send("Input.imeSetComposition", { text: "", selectionStart: 0, selectionEnd: 0 }); await ready(page);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 11))).toBe("alpha omega");
+    expect((await state(page)).primary).toMatchObject({ composing: false, commits: 0, selection: { anchor: 6, head: 11 } });
+    await stage(); await cdp.send("Input.insertText", { text: "ê" }); await ready(page);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 7))).toBe("alpha ê");
+    expect((await state(page)).primary).toMatchObject({ composing: false, commits: 1, selection: { head: 7 } });
     await page.keyboard.press("ControlOrMeta+z"); expect(await page.evaluate(() => window.editingFixture.range(0, 11))).toBe("alpha omega");
     await cdp.detach();
 });

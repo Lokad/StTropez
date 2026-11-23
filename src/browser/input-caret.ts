@@ -24,9 +24,11 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
         if (disposed) return;
         const composing = isComposing();
         const { selection: selected, selectionSet } = view.getSnapshot(), focused = isFocused(input);
+        const startOfSelection = composing && selected.anchor < selected.head;
+        const offset = startOfSelection ? selected.anchor : selected.head, affinity = startOfSelection ? selected.anchorAffinity : selected.headAffinity;
         let rectangle = clientBox(root, viewport.settings().minimap);
         const currentDocument = readDocument();
-        let state = viewport.getSnapshot(), activity = viewport.activity(), point = viewport.coordsAt(selected.head, selected.headAffinity);
+        let state = viewport.getSnapshot(), activity = viewport.activity(), point = viewport.coordsAt(offset, affinity);
         let visible = point && point.left >= rectangle.left + state.gutterWidth * rectangle.zoom && point.left < rectangle.right
             && point.top + point.height > rectangle.top && point.top < rectangle.bottom;
         const prior = caretLayout;
@@ -79,10 +81,10 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
         const left = ((point?.left ?? rectangle.left) - rectangle.left) / rectangle.zoom;
         const top = ((point?.top ?? rectangle.top) - rectangle.top) / rectangle.zoom;
         const caretHeight = point ? point.height / rectangle.zoom : state.lineHeight;
-        const row = point && buffer && bounds(buffer.lineAt(selected.head));
+        const row = point && buffer && bounds(buffer.lineAt(offset));
         // All geometry, including secondary heads and any post-reveal layout, is captured above.
         // Bound the native input anchor while the display caret follows the text, including clipped rows.
-        caret.hidden = !visible || composing || !active;
+        caret.hidden = !visible || !active || composing && !caret.textContent;
         input.style.left = `${scrollLeft + Math.max(0, Math.min(width - 2, left))}px`;
         input.style.top = `${scrollTop + Math.max(0, Math.min(height - 24, top))}px`;
         caret.style.left = `${scrollLeft + left}px`;
@@ -103,7 +105,7 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
             node.style.height = `${at.height / rectangle.zoom}px`;
         });
         // All visible insertion carets share one animation. Typing restarts the solid interval.
-        if ((!caret.hidden || points.length) && !ranged && !reducedMotion.matches) {
+        if ((!caret.hidden || points.length) && !composing && !ranged && !reducedMotion.matches) {
             if (!blink) blink = group.animate([{ opacity: 1, easing: "steps(1, end)" },
                 { opacity: 0, offset: .5, easing: "steps(1, end)" }, { opacity: 1 }], { delay: 400, duration: 1000, iterations: Infinity });
             else if (blinkSelection !== selectionSet) blink.currentTime = 0;
@@ -111,6 +113,7 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
         } else if (blink) { blink.cancel(); blink = undefined; blinkSelection = undefined; }
     }
     return Object.freeze({ schedule, pending: () => frame !== undefined,
+        showComposingText(text: string) { caret.textContent = text; schedule(); },
         dispose: () => {
             if (disposed) return;
             disposed = true;

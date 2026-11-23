@@ -158,9 +158,10 @@ it compares the bounded text around the edit. Typing the same text over a select
 without changing the revision. When the editor mirrors a selection into the textarea, matching
 endpoints keep their affinities.
 
-Composition uses the primary input and creates one shared undo command on commit. Starting
-composition cancels queued commands. If the revision, selection, permission or target changes, the
-editor sends stale input to host recovery.
+A dead key can start a composition in the primary input. The editor displays the pending character
+at the start of the selection. Committing replaces the selection in one undo step. Cancelling
+preserves the selected text. Starting composition cancels queued commands. If the revision,
+selection, permission or target changes before commit, the editor sends stale input to host recovery.
 
 Undo and Redo keep a fully visible caret row in place. If the restored caret is off screen, the
 editor centers its row vertically so you can read the surrounding code and continue typing there.

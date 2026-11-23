@@ -1199,15 +1199,20 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         publishState();
         scheduleCaret();
     }
-    function endComposition(): void {
+    function endComposition(event: CompositionEvent): void {
         const captured = composition;
         composition = undefined;
         composing = false;
+        caretLayer.showComposingText("");
         inputBinding.setComposing(false);
         publishState();
-        commit("insertCompositionText", captured);
+        // Cancellation can restore the native text or leave just the selected range erased.
+        const target = captured?.target;
+        if (event.data === "" && target && (input.value === target.before || resolveNativeInsertion(target, input, target.type)?.insert === "")) refresh();
+        else commit("insertCompositionText", captured);
     }
     input.addEventListener("compositionstart", startComposition, { signal: listeners.signal });
+    input.addEventListener("compositionupdate", event => { if (composing) caretLayer.showComposingText(event.data); }, { signal: listeners.signal });
     input.addEventListener("compositionend", endComposition, { signal: listeners.signal });
     input.addEventListener("select", syncSelection, { signal: listeners.signal });
     // Tab can reset the browser range after focus dispatch. It changes focus, not model selection.
