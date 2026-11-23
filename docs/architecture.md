@@ -183,5 +183,5 @@ for view updates. See [testing](testing.md#test-ownership) when changing a contr
 
 ## Not covered
 
-For questions about a specific browser or input device, such as IME popup placement or touch
+For questions about a specific browser or input device, such as dead keys or touch
 selection, check the [support matrix](README.md#support-matrix).

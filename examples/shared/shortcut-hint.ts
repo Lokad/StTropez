@@ -1,5 +1,5 @@
 const keyLabels = new Map([
-    ["code:bracketleft", "["], ["code:bracketright", "]"], ["code:space", "Space"],
+    ["code:bracketleft", "["], ["code:bracketright", "]"], ["code:backslash", "\\"], ["code:keya", "A"], ["code:space", "Space"],
     ["arrowup", "↑"], ["arrowdown", "↓"], ["arrowleft", "←"],
 ]);
 

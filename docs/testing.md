@@ -91,7 +91,7 @@ archive. Add another host or engine when it exercises a different behavior.
 | Demo recovery and syntax colors | Demo recovery, [syntax](../tests/demo-syntax.test.ts) and token colors | Save, switch files or samples, reload, and check stored text and visible colors. Exercise storage failures too. |
 | Position-based LSP requests and invalid replies | LSP clients, workspace edits and protocol features | Hover, navigate, rename or invoke an action while the document is changing. |
 | Protocol negotiation, selectors, shared providers and command handling | JSON-RPC, sessions, selectors and the protocol fixture | WebSocket tests and the minimal LSP application built from a restored package |
-| Native input and composition recovery | [Input context](../tests/input-context.test.ts) and input targets | Input targeting, queued keystrokes and IME composition |
+| Native input and composition recovery | [Input context](../tests/input-context.test.ts) and input targets | Input targeting, queued keystrokes and dead-key composition |
 | Caret, grapheme boundaries, scroll, focus and drag | Geometry-independent and Unicode models | Viewport/geometry/paint, zoom, grapheme, pointer/drag and shadow-focus suites |
 | Host conversion, source annotations and forms | Table paste, text transfer and host rules | [Table paste](../tests/browser/host-table-paste.spec.ts), domain examples and transfers through the form |
 | Framework mount/disposal and surrounding UI | Host controller/policy models | Plain/React attachment, Strict Mode, queued-work disposal and error recovery |
@@ -388,14 +388,13 @@ can run in the background.
 
 | Environment or path | Exercise |
 | --- | --- |
-| Windows with US English/French AZERTY hardware keyboards | Typing/navigation, shortcuts, AltGr/dead keys, focus to/from adjacent controls and read-only transitions |
-| Windows Japanese IME and Chinese Pinyin | Start/update/commit/cancel, reconversion, selection and IME popup placement at a scroll boundary, permission change during composition |
+| Windows with French AZERTY (France), US QWERTY and US International | Type characters and exercise every default and example shortcut. Check AltGr, dead-key commit and cancellation, focus traversal and read-only transitions. |
 | OS/application clipboard and browser-menu actions | Copy/cut/paste formats, permissions, large selections, converted/literal paste, source/history restoration and cross-application drag |
 | Native page/application lifecycle | Actual navigation/shutdown and browser-history restoration, recovery choices, unsaved inputs and pending services |
 | Target fonts, displays and constrained hardware | Caret/ink alignment, fallback fonts, physical display behavior and workload-specific responsiveness |
-| Other targeted native platforms | Separate macOS/Safari, Linux and touch/mobile input runs using their actual devices/input methods |
+| Other targeted native platforms | Exercise the supported layouts on macOS/Safari and Linux. Check touch selection on the target device. |
 
-Record the OS, browser, input method, keyboard and reproduction steps. Include the expected and
+Record the OS, browser, keyboard layout and reproduction steps. Include the expected and
 observed text and selections. Mark any devices you couldn't test.
 
 ## Contributor responsibilities
@@ -406,5 +405,5 @@ keystroke or frame, measure that interaction. [Shared-desktop and publishing rul
 
 ## Not covered
 
-The [support matrix](README.md#support-matrix) lists the IME, hardware keyboard, clipboard and
+The [support matrix](README.md#support-matrix) lists the hardware keyboard, clipboard and
 touch interactions that need a run on the target device.

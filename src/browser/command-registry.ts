@@ -86,10 +86,19 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
             reset(); return false;
         }
         if (["Control", "Meta", "Alt", "Shift"].includes(event.key)) return false;
-        const mods = (event.ctrlKey ? "ctrl+" : "") + (event.metaKey ? "meta+" : "") + (event.altKey ? "alt+" : "") + (event.shiftKey ? "shift+" : "");
-        const key = mods + (event.key === " " ? "space" : event.key === "+" ? "plus" : event.key.toLowerCase());
+        const modifiers = (event.ctrlKey ? "ctrl+" : "") + (event.metaKey ? "meta+" : "") + (event.altKey ? "alt+" : "");
+        const mods = modifiers + (event.shiftKey ? "shift+" : "");
+        const character = event.key === " " ? "space" : event.key === "+" ? "plus" : event.key.toLowerCase();
+        const key = mods + character;
         const physical = mods + "code:" + event.code.toLowerCase();
-        const pending = prefix, group = bindings.get(key) ?? bindings.get(physical);
+        // Shift can produce the bound character, for example a period or digit on French AZERTY.
+        const shiftedCharacter = event.shiftKey && /^[\p{P}\p{S}0-9]$/u.test(event.key);
+        function match(table: ReadonlyMap<string, unknown>): string {
+            if (table.has(key)) return key;
+            if (shiftedCharacter && !table.has(physical)) return modifiers + character;
+            return physical;
+        }
+        const pending = prefix, group = bindings.get(match(bindings));
         if (!group && !pending) return false;
         reset();
         if (!available()) return false;
@@ -102,7 +111,7 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
             return execute(binding.id);
         });
         if (pending && pending.target === chordTarget(event) && pending.current()) {
-            const suffix = pending.keys.has(key) ? key : physical;
+            const suffix = match(pending.keys);
             if (key === "escape" || accept(pending.keys, suffix)) { event.preventDefault(); return true; }
             if (pending.keys.get(suffix)?.some(binding => !sharedOnly || binding.shared)) return false;
         }

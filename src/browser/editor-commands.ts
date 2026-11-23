@@ -44,11 +44,11 @@ const defaults: readonly (readonly [string, keyof typeof editorCommandLabels])[]
     ["Mod+z", "undo"], ["Mod+Shift+z", "redo"], ["Ctrl+y", "redo"], ["Mod+a", "select-all"],
     ["Mod+k Mod+c", "add-line-comment"], ["Mod+k Mod+u", "remove-line-comment"], ["Mod+u", "undo-caret"],
     ["Mod+Alt+ArrowUp", "add-caret-above"], ["Mod+Alt+ArrowDown", "add-caret-below"], ["Mod+Shift+k", "delete-lines"],
-    ["Mod+Enter", "insert-line-below"], ["Mod+Shift+Enter", "insert-line-above"], ["Mod+]", "indent-lines"], ["Mod+[", "outdent"],
+    ["Mod+Enter", "insert-line-below"], ["Mod+Shift+Enter", "insert-line-above"], ["Mod+Code:BracketRight", "indent-lines"], ["Mod+Code:BracketLeft", "outdent"],
     ["Alt+ArrowUp", "move-line-up"], ["Alt+ArrowDown", "move-line-down"], ["Alt+Shift+ArrowUp", "copy-line-up"], ["Alt+Shift+ArrowDown", "copy-line-down"],
     ["Mod+l", "select-line"], ["Mod+d", "select-next-occurrence"], ["Mod+g", "go-to-line"], ["Mod+Shift+l", "select-all-occurrences"],
-    ["Mod+Shift+\\", "jump-to-bracket"], ["Mod+Shift+|", "jump-to-bracket"], ["Alt+PageUp", "scroll-page-up"], ["Alt+PageDown", "scroll-page-down"],
-    ["Mod+/", "line-comment"], ["Mod+Shift+/", "line-comment"], ["Alt+Shift+a", "block-comment"],
+    ["Mod+Shift+Code:Backslash", "jump-to-bracket"], ["Alt+PageUp", "scroll-page-up"], ["Alt+PageDown", "scroll-page-down"],
+    ["Mod+/", "line-comment"], ["Alt+Shift+a", "block-comment"],
 ];
 export function bindEditorDefaults(keymap: EditorKeymap, apple: boolean): void {
     const caretKeys = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down", PageUp: "page-up", PageDown: "page-down" } satisfies Record<string, CaretDirection>;
@@ -67,6 +67,7 @@ export function bindEditorDefaults(keymap: EditorKeymap, apple: boolean): void {
         boundary(modifiers, "Home", "document-start"); boundary(modifiers, "End", "document-end");
     }
     if (apple) {
+        keymap.bind("Alt+Shift+Code:KeyA", "block-comment");
         boundary("Meta+", "ArrowLeft", "line-start"); boundary("Meta+", "ArrowRight", "line-end");
         boundary("Meta+", "ArrowUp", "document-start"); boundary("Meta+", "ArrowDown", "document-end");
     }

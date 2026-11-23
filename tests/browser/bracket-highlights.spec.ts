@@ -76,7 +76,8 @@ for (const shadow of [false, true]) test(`${shadow ? "shadow" : "document"} brac
 
 test("bracket jump works without highlights and a delayed jump cannot move a replacement selection", async ({ page }) => {
     await fixture(page); await input(page).focus();
-    await input(page).press("Control+Shift+Backslash"); await page.keyboard.type("X");
+    await input(page).dispatchEvent("keydown", { key: "µ", code: "Backslash", ctrlKey: true, shiftKey: true });
+    await page.keyboard.type("X");
     await expect(page.locator(".st-viewport-row").first()).toHaveJSProperty("textContent", "(aX) [b]");
     expect((await state(page)).status).toBe("disabled");
     const pending = await page.evaluate(() => {

@@ -632,19 +632,37 @@ test("comment chords and shifted slash act on the captured lines", async ({ page
     });
     const input = page.getByRole("textbox", { name: "Primary source", exact: true });
     const rows = page.locator("#primary .st-viewport-row");
-    const stroke = (key: string, shiftKey = false) => input.evaluate((node, args) =>
-        !node.dispatchEvent(new KeyboardEvent("keydown", { ...args, ctrlKey: true, bubbles: true, cancelable: true })), { key, shiftKey });
+    const stroke = (key: string, shiftKey = false, code = "") => input.evaluate((node, args) =>
+        !node.dispatchEvent(new KeyboardEvent("keydown", { ...args, ctrlKey: true, bubbles: true, cancelable: true })), { key, shiftKey, code });
     await input.press("Control+a"); await input.press("Control+k"); expect(await stroke("c")).toBe(true);
     await expect(rows).toHaveText(["  // alpha", "// beta"]);
     await input.press("Control+k"); await input.press("Control+u"); await expect(rows).toHaveText(["  alpha", "beta"]);
     await page.evaluate(() => window.editingFixture.selections([{ anchor: 3, head: 5 }]));
     await input.press("Control+]"); await expect(rows.first()).toHaveJSProperty("textContent", "    alpha");
+    expect(await stroke("Dead", false, "BracketLeft")).toBe(true);
+    await expect(rows.first()).toHaveJSProperty("textContent", "  alpha");
+    expect(await stroke("$", false, "BracketRight")).toBe(true);
+    await expect(rows.first()).toHaveJSProperty("textContent", "    alpha");
     await input.press("Control+["); await expect(rows.first()).toHaveJSProperty("textContent", "  alpha");
     expect(await stroke("/", true)).toBe(true); await expect(rows.first()).toHaveJSProperty("textContent", "  // alpha");
     expect(await stroke("/", true)).toBe(true);
     await input.press("Shift+Alt+a"); await expect(rows.first()).toHaveJSProperty("textContent", "  a/*lp*/ha");
     await input.press("Control+k"); await page.evaluate(() => window.editingFixture.selections([{ anchor: 0, head: 0 }]));
     expect(await stroke("c")).toBe(false);
+});
+
+test("Option Shift A toggles a block comment when the Apple layout produces an accented letter", async ({ page }) => {
+    await page.addInitScript(() => Object.defineProperty(navigator, "platform", { value: "MacIntel" }));
+    await page.reload(); await ready(page);
+    await page.evaluate(() => {
+        const f = window.editingFixture; f.configure({ language: { blockComment: { open: "/*", close: "*/" } } });
+        f.setText("abc"); f.selections([{ anchor: 0, head: 3 }]); f.focus("primary");
+    });
+    const input = page.locator("#primary textarea");
+    await input.dispatchEvent("keydown", { key: "Å", code: "KeyA", altKey: true, shiftKey: true });
+    await expect(page.locator("#primary .st-viewport-row").first()).toHaveText("/*abc*/");
+    await input.press("Meta+z");
+    await expect(page.locator("#primary .st-viewport-row").first()).toHaveText("abc");
 });
 
 test("rebound history and Select All use the pane's document and leave native edits in host fields", async ({ page }) => {
@@ -698,23 +716,25 @@ test("a rebound chord belongs to its editor and leaves host field editing local"
         const forward = (event: KeyboardEvent) => { keymap.handle(event); };
         field.addEventListener("keydown", forward);
         document.body.addEventListener("keydown", forward);
-        const press = (key: string, isComposing = false) => !field.dispatchEvent(new KeyboardEvent("keydown", {
-            key, ctrlKey: true, cancelable: true, bubbles: true, composed: true, isComposing,
+        const press = (key: string, isComposing = false, shiftKey = false) => !field.dispatchEvent(new KeyboardEvent("keydown", {
+            key, ctrlKey: true, cancelable: true, bubbles: true, composed: true, isComposing, shiftKey,
         }));
         try {
             const prefix = press("k"), chord = press("j");
             press("k"); field.blur(); field.focus(); const afterBlur = press("j");
             press("k"); window.editingFixture.selections([{ anchor: 1, head: 1 }]); const afterMove = press("j");
             const local = press("d"), composing = press("k", true);
+            keymap.bind("Ctrl+k Ctrl+2", "sample.action", { shared: true });
+            press("k"); const shiftedDigit = press("2", false, true);
             enabled = false; const disabled = commands.run("sample.action");
             const listed = commands.list().find(entry => entry.id === "sample.action");
             command.dispose();
-            return { prefix, chord, afterBlur, afterMove, local, composing, disabled, listed, retired: commands.run("sample.action"), calls,
+            return { prefix, chord, afterBlur, afterMove, local, composing, shiftedDigit, disabled, listed, retired: commands.run("sample.action"), calls,
                 initial, frozen: Object.isFrozen(initial), unbound, rebound, disposed: keymap.getShortcuts("sample.action") };
         } finally { command.dispose(); document.body.removeEventListener("keydown", forward); host.remove(); }
     });
     expect(keys).toEqual({ prefix: true, chord: true, afterBlur: false, afterMove: false, local: false, composing: false, disabled: false,
-        listed: { id: "sample.action", label: "Sample action", enabled: false }, retired: false, calls: 1,
+        shiftedDigit: true, listed: { id: "sample.action", label: "Sample action", enabled: false }, retired: false, calls: 2,
         initial: ["Ctrl+k Ctrl+j"], frozen: true, unbound: [], rebound: ["Ctrl+k Ctrl+j"], disposed: [] });
 });
 

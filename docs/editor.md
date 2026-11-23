@@ -240,7 +240,7 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Ctrl/Cmd + Alt/Option + Up / Down | Add a caret at the same visual column on the preceding or following visible row. |
 | Ctrl/Cmd + U | Restore the previous selection set in this view. Each text revision starts a fresh caret history. |
 | Ctrl/Cmd + G | Open the host's line prompt, then move to the start of the chosen line. Requires `requestLine`. |
-| Ctrl/Cmd + Shift + backslash | Jump from each selection's active end to the matching bracket. Uses the configured pairs and scan limits even when highlighting is off. |
+| Ctrl/Cmd + Shift + Backslash (physical key) | Jump from each selection's active end to the matching bracket. Uses the configured pairs and scan limits even when highlighting is off. |
 | Ctrl + Up / Down, Alt/Option + PageUp / PageDown | Scroll by one visible row or one viewport height. The caret and selections stay in place. |
 | Ctrl/Cmd + Z, Ctrl/Cmd + Shift+Z, Ctrl+Y | Undo, redo, redo |
 | Tab / Shift+Tab | Indent/outdent; read-only views use normal focus traversal |
@@ -248,7 +248,7 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Ctrl/Cmd + / | Toggle the line comment, including when typing / requires Shift |
 | Ctrl/Cmd + K, then Ctrl/Cmd + C or U | Add or remove line comments |
 | Shift + Alt/Option + A | Toggle the block comment |
-| Ctrl/Cmd + ] or [ | Indent or outdent the touched lines |
+| Ctrl/Cmd + BracketRight or BracketLeft (physical keys) | Indent or outdent the touched lines |
 | Alt/Option + Up or Down | Move touched lines one row. Add Shift to copy them and move each selection to its copy. |
 | Ctrl/Cmd + Shift + K | Delete touched lines. Keep each caret's column on the following line, or the preceding line at EOF, up to its end. |
 | Ctrl/Cmd + Enter / Ctrl/Cmd + Shift + Enter | Insert a blank line below / above the selection and place the caret at its indentation. |
@@ -386,9 +386,13 @@ Disposing a registration removes its bindings. Disposing the editor retires the 
 
 `editor.keymap.bind("Mod+k Mod+i", id)` binds a two-stroke chord. A single stroke uses the
 same API. `Mod` means Meta on Apple platforms and Ctrl elsewhere. `Ctrl`, `Meta`, `Shift`
-and `Alt` match exact modifiers on `KeyboardEvent.key`. Use `Space` or `Plus` for those keys.
+and `Alt` name modifiers on `KeyboardEvent.key`. Use `Space` or `Plus` for those keys.
 For a physical key, use its code, as in `Ctrl+Shift+Code:BracketLeft`. A binding for the
 character produced by the event takes precedence over a physical binding for the same stroke.
+If neither matches, a shifted digit, punctuation mark or symbol can trigger its character binding
+without an explicit Shift. For example, Ctrl+Shift on the French period key runs `Ctrl+.`.
+AltGr stays available for text entry. On Apple keyboards, Option+Shift on the physical US A key
+can toggle a block comment even when the key produces an accented letter.
 Both strokes must come from the same control, including inside a shadow root. A chord expires
 after 1.5 seconds or a change of focus, selection or document revision.
 Bindings for the same sequence run in descending `priority` (default 0). A disabled command or one
@@ -584,5 +588,5 @@ separately. In React, [mount through stable refs](getting-started.md#host-respon
 
 ## Not covered
 
-Verify native IME, dead keys, AltGr and touch selection on your target devices.
+Verify dead keys, AltGr and touch selection on your target devices.
 [Editing and clipboard support](README.md#support-matrix)

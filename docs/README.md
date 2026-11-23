@@ -39,7 +39,8 @@ when choosing devices and integration tests for your application.
 
 | Area | Supported | Not supported | Unverified |
 | --- | --- | --- | --- |
-| Text and editing | UTF-16 range edits; multiple selections; shared undo/redo; host language rules; bounded native input and rendered rows | Word wrapping; general rich-text editing | Native IME reconversion/placement; dead keys and AltGr across keyboard layouts; touch/mobile selection; browser/OS menu undo and redo |
+| Text and editing | UTF-16 range edits; multiple selections; shared undo/redo; host language rules; bounded native input and rendered rows | Word wrapping; general rich-text editing | Touch/mobile selection; browser/OS menu undo and redo |
+| Keyboard layouts | French AZERTY (France), US QWERTY and US International | Dedicated support for other layouts or multi-character input methods | Physical shortcuts, dead keys and AltGr on the three supported layouts |
 | Clipboard and drag | Plain-text clipboard events; host conversion; captured text transfer | Arbitrary rich-document import | OS/app clipboard formats and permissions; native drag images and token-preserving transfer across applications |
 | Search and review | Literal/regular-expression search; replacement; immutable references; editable comparisons; independent folding and aligned rows | General merge/conflict-resolution UI | Consuming-host review policies and durable retention |
 | Lifecycle and recovery | Explicit teardown, cached-page retention, captured save conflicts and host-managed draft restoration | Portable previous-session undo; a crash/power-loss durability guarantee | Native application termination; interactive/cross-browser back/forward-cache restoration; consuming-host storage policy |
