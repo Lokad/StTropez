@@ -23,7 +23,7 @@ export function navigationPanelModel(tools: NavigationPanelTools, state: Navigat
         results: { label: "Navigation results", identity: state.locations, bind: tools.bindList,
             items: () => state.locations.map(note => ({ key: `${paging?.key}:${note.ordinal}`,
                 label: `${note.title}:${note.line}:${note.column}${note.declaration ? " · declaration" : ""}`,
-                invoke: note.open } as const)) },
+                details: note.excerpt, invoke: note.open } as const)) },
     } as const;
 }
 export function mountNavigationPanel(host: HTMLElement, tools: HostNavigationTools, inlineResults = true): () => void {

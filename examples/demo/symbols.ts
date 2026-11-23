@@ -7,21 +7,16 @@ import { pageActions, renderPanelActions, renderPanelButton } from "../hosts/pan
 import type { DemoFile } from "./project.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 import { bindPopupCommands } from "./language-commands.ts";
+import { locationExcerpt } from "../shared/location-excerpt.ts";
 
 export type DemoSymbolTarget = Readonly<{ documentId: DocumentId; revision: number; from: number; to: number }>;
 
 function locationButton(file: DemoFile, location: NavigationChoice): HTMLButtonElement {
-    const buffer = location.document.buffer;
-    const line = buffer.lineAt(location.from), { from: start, to: end } = buffer.line(line);
-    const offset = Math.min(location.from, end), from = Math.max(start, offset - 24), at = offset - from;
-    const clipped = end - from > 112, excerpt = buffer.slice(from, Math.min(end, from + 112));
-    const text = clipped ? excerpt.replace(/[\uD800-\uDBFF]$/u, "") : excerpt;
-    const stop = Math.min(text.length, location.to - from);
+    const excerpt = locationExcerpt(location);
     const button = document.createElement("button"), code = document.createElement("code"), match = document.createElement("mark");
-    button.textContent = file.name + " · " + (line + 1) + ":" + (offset - start + 1);
-    code.append((from > start ? "…" : "") + text.slice(0, at).replace(/^[\uDC00-\uDFFF]/u, "").trimStart());
-    match.textContent = text.slice(at, stop);
-    code.append(match, text.slice(stop), clipped ? "…" : "");
+    button.textContent = file.name + " · " + excerpt.line + ":" + excerpt.column;
+    match.textContent = excerpt.match;
+    code.append(excerpt.before, match, excerpt.after);
     button.append(code);
     return button;
 }

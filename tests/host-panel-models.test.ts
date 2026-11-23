@@ -135,8 +135,8 @@ test("link rows retain their own action through repaging and resolution", () => 
     let formatted = 0;
     const state: DocumentLinksSnapshot = { available: true, connected: true, disconnected: false, pending: false, requestView: "primary",
         status: "ready", message: "Captured links", count: 1, page: 0, paging: null, canReturn: false,
-        links: [{ from: 8, to: 20, module: "module", tooltip: "Resolve module", target: null, resolvable: true, line: 1, column: 9,
-            get title() { formatted++; return "First"; }, targetTitle: null, open: () => { opened.push("first"); } }] };
+        links: [{ from: 8, to: 20, get module() { formatted++; return "module"; }, tooltip: "Resolve module", resolvable: true, line: 1, column: 9,
+            targetTitle: null, open: () => { opened.push("first"); } }] };
     const first = documentLinksPanelModel(tools, state); assert.equal(formatted, 0);
     assert.equal(documentLinksPanelModel(tools, { ...state, status: "resolving" }).results.disabled, true);
     const newer = documentLinksPanelModel(tools, { ...state, page: 1, links: [{ ...state.links[0]!, open: () => { opened.push("next"); } }] });
@@ -193,7 +193,7 @@ test("navigation presentation keeps a captured target while a newer snapshot sup
     const state: NavigationSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, canCancel: true,
         paging: { key: 7, first: 0, previous: null, next: noop }, status: "ready", message: "Captured results", includeDeclaration: true, canReturn: false,
         locations: Object.freeze([Object.freeze({ declaration: true, ordinal: 0,
-            get title() { formatted++; return "First"; }, line: 1, column: 3, open: () => { opened.push([7, 0]); } })]) });
+            get title() { formatted++; return "First"; }, line: 1, column: 3, excerpt: "const rate = 1;", open: () => { opened.push([7, 0]); } })]) });
     const first = navigationPanelModel(tools, state), statusOnly = navigationPanelModel(tools, { ...state, message: "Origin focused", canReturn: true });
     assert.equal(formatted, 0, "status presentation does not format the retained result list");
     assert.equal(statusOnly.results.identity, first.results.identity);

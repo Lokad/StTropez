@@ -5,6 +5,7 @@ import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
 import { createPanelKeyBinding, focusResult, registerResultArrows } from "./panel-keys.ts";
 import { createWorkingSource } from "./working-source.ts";
+import { locationExcerpt } from "../shared/location-excerpt.ts";
 import type { DocumentId, TabId, TabTarget } from "../../src/index.ts";
 import { createNavigationController } from "../../src/browser/index.ts";
 import type { NavigationChoice, NavigationController, NavigationDestination, NavigationOrigin, NavigationPage, NavigationPointerLink, NavigationResult, TextEditor } from "../../src/browser/index.ts";
@@ -19,7 +20,7 @@ export type NavigationHostOptions = Readonly<{ provider: LspWorkspace; prepare: 
 type Session = { id: string; target: TabTarget; editor: TextEditor; controller: NavigationController };
 type Job = { kind: Kind; symbol: string; origin: Session; returnPoint: NavigationOrigin; sources: Set<DocumentId>; targets: Map<DocumentId, Session>;
     timer: number; page: NavigationPage | undefined; mayFocus?: () => boolean };
-export type NavigationNote = Readonly<{ ordinal: number; title: string; line: number; column: number; declaration: boolean; open: () => void }>;
+export type NavigationNote = Readonly<{ ordinal: number; title: string; line: number; column: number; excerpt: string; declaration: boolean; open: () => void }>;
 export type NavigationSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; canCancel: boolean; status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired" | "disconnected";
     message: string; includeDeclaration: boolean; locations: readonly NavigationNote[]; paging: PanelPaging | null; canReturn: boolean }>;
 
@@ -56,10 +57,10 @@ export class HostNavigationTools {
     private showPage(job: Job, page: NavigationPage | undefined, patch: Partial<NavigationSnapshot> = {}): readonly NavigationNote[] {
         const titles = new Map(this.host.workspace.getSnapshot().documents.map(doc => [doc.id, doc.title]));
         const locations = page?.locations.map(choice => {
-            const { document } = choice, { line, column } = document.buffer.positionAt(choice.from);
+            const { document } = choice, { line, column, before, match, after } = locationExcerpt(choice);
             const id = document.documentId as DocumentId, title = (titles.get(id) ?? document.uri).slice(0, 128);
             job.sources.add(id);
-            return { ordinal: choice.index, title, line: line + 1, column: column + 1, declaration: job.kind === "definition", open: () => this.open(job, choice, title) };
+            return { ordinal: choice.index, title, line, column, excerpt: before + match + after, declaration: job.kind === "definition", open: () => this.open(job, choice, title) };
         }) ?? [];
         const turn = (move: (() => NavigationPage) | null) => move && (() => {
             if (this.job?.page === page) this.showPage(job, move());

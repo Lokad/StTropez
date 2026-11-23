@@ -23,7 +23,7 @@ type Origin = { origin: Session; source: DocumentSnapshot; viewState: ViewState 
 type Route = Origin & { documents: Map<string, DocumentSnapshot>; targets: Map<DocumentId, Session>; returnPoint: HostLocation; focusResults?: () => boolean };
 type Visit = Origin & { destination: TextEditor; release: () => void; returnPoint?: HostLocation };
 type LinkRange = Pick<DocumentLinkChoice, "from" | "to">;
-export type LinkNote = ModuleLink & Readonly<{ line: number; column: number; title: string; targetTitle: string | null; resolvable: boolean; open: () => void }>;
+export type LinkNote = Omit<ModuleLink, "target"> & Readonly<{ line: number; column: number; targetTitle: string | null; resolvable: boolean; open: () => void }>;
 export type DocumentLinksSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; requestView: string | null;
     status: DocumentLinkSnapshot["status"] | "away"; message: string; count: number; page: number; paging: PanelPaging | null; links: readonly LinkNote[]; canReturn: boolean }>;
 const initial: DocumentLinksSnapshot = { available: false, connected: false, disconnected: false, pending: false, requestView: null,
@@ -154,9 +154,7 @@ export class HostDocumentLinks {
             const doc = item.target ? route.documents.get(item.target) : undefined, { line, column } = source.buffer.positionAt(item.from);
             const module = source.buffer.slice(item.from, Math.min(item.to, item.from + 128));
             return { from: item.from, to: item.to, tooltip: item.tooltip || item.target || "Unresolved provider link",
-                module, title: source.title.slice(0, 128),
-                target: doc ? { document: doc.id, resource: doc.resourceId, revision: doc.revision, length: doc.buffer.length } : null,
-                targetTitle: doc?.title.slice(0, 128) ?? null, resolvable: item.canResolve, line: line + 1, column: column + 1,
+                module, targetTitle: doc?.title.slice(0, 128) ?? null, resolvable: item.canResolve, line: line + 1, column: column + 1,
                 open: () => this.open(route, item, module) };
         });
         const paging = panelPaging(this.pageKey(route)!, page, state.links.length, linkLimits.page, next => {

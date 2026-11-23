@@ -15,14 +15,13 @@ function documentLinkActions(tools: DocumentLinksPanelTools, s: DocumentLinksSna
 }
 export const documentLinkDescription = 'Press F12 on an import path or Ctrl/Cmd+click it to open the module. F4 lists imports. Shift+F4 returns to the source and selection.';
 export const documentLinkLabel = (link: LinkNote) => `Open ${link.module} at ${link.line}:${link.column} → ${link.targetTitle ?? "unresolved"}`;
-export const documentLinkDetails = (link: LinkNote) => `${link.title} [${link.from},${link.to}) · ${link.tooltip}${link.target ? ` · ${link.target.resource} · ${link.target.document} @ revision ${link.target.revision}` : ""}`;
 /** Result callbacks retain the displayed request even when a later page is published. */
 export function documentLinksPanelModel(tools: DocumentLinksPanelTools, s: DocumentLinksSnapshot) {
     return {
         title: "Module document links", description: documentLinkDescription, status: { label: "Module link status", text: s.message },
         actions: documentLinkActions(tools, s),
         results: { label: "Module link results", identity: s.links, retainKeys: true, bind: tools.bindList, disabled: s.status !== "ready",
-            items: () => s.links.map((link, index) => ({ key: `${s.page}:${index}:${link.from}:${link.to}`, label: documentLinkLabel(link), details: documentLinkDetails(link), available: !!link.target || !!link.resolvable,
+            items: () => s.links.map((link, index) => ({ key: `${s.page}:${index}:${link.from}:${link.to}`, label: documentLinkLabel(link), details: link.tooltip, available: link.targetTitle !== null || link.resolvable,
                 invoke: link.open } as const)) },
     } as const;
 }

@@ -298,11 +298,14 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toEqual(selected);
     });
     if (coversHost("candidate-hosts", host, "candidate")) test("replacing references during a press needs a fresh click to advance the page", async ({ page }) => {
-        await seed(page, "const target = 1;\n" + "target;\n".repeat(130) + 'import "sample-utils";', 8);
+        const longLine = "target; // " + "padding ".repeat(10000);
+        await seed(page, "const target = 1;\n" + "target;\n".repeat(63) + longLine + "\n" + "target;\n".repeat(66) + 'import "sample-utils";', 8);
         const find = button(page, "Find references"), next = button(page, "Next navigation results");
         await find.click(); await waitForNavigation(page);
         const first = results(page).first();
         await expect(first).toHaveText("Primary source:1:7");
+        const excerpt = first.locator("..").locator("p");
+        await expect(excerpt).toHaveText("const target = 1;");
         const initial = (await snapshot(page)).bindings.navigation.applied;
         const oldNext = await next.elementHandle();
         if (!oldNext) throw new Error("Missing Next button on the original references list.");
@@ -315,6 +318,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await expect(first).toHaveText("Primary source:1:7");
         await next.focus(); await page.keyboard.press("Enter");
         await expect(first).toHaveText("Primary source:65:1"); await expect(next).toBeFocused();
+        await expect(excerpt).toHaveText(longLine.slice(0, 112) + "…");
         await page.setViewportSize({ width: 390, height: 844 });
         const source = field(page);
         await source.locator("..").scrollIntoViewIfNeeded(); await source.press("F4");
