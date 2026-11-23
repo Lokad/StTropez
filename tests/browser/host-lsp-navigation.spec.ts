@@ -134,7 +134,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await field(page).focus(); await select(page, text.indexOf(";") + 1); await button(page, "Find definition").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(0);
         expect(methods.filter(message => message.method === "textDocument/definition").length).toBe(definitions + 1);
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("modifier clicks follow whole module paths and respect later input", async ({ page }) => {
+    if (coversHost("candidate-hosts", host, "candidate")) test("F12 and modifier clicks follow whole module paths and respect later input", async ({ page }) => {
         const replies = await holdLspReplies(page, "documentLink/resolve");
         const methods: string[] = [];
         page.on("websocket", ws => ws.on("framesent", frame => {
@@ -161,7 +161,8 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         const path = field(page, "Configuration path"); await path.focus(); await replies.release();
         await expect(path).toBeFocused(); expect((await snapshot(page)).bindings.links.opened).toBe(0);
         await expect(editor.locator(".host-module-link")).toHaveText(["sample-utils", "missing-utils"]);
-        await clickPath(0, "sample-utils"); await expect(field(page, "Secondary source")).toBeFocused();
+        await source.focus(); await select(page, text.indexOf("-")); await source.press("F12");
+        await expect(field(page, "Secondary source")).toBeFocused();
         await button(page, "Return to link origin").click(); await expect(source).toBeFocused();
         await clickPath(1, "missing-utils"); await expect(status).toContainText("No destination for missing-utils");
         expect(methods.filter(method => method === "textDocument/documentLink")).toHaveLength(1);

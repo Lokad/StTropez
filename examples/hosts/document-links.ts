@@ -196,7 +196,7 @@ export class HostDocumentLinks {
             });
         });
     }
-    pointerLink(editor: TextEditor, offset: number): NavigationPointerLink | undefined {
+    linkAt(editor: TextEditor, offset: number): NavigationPointerLink | undefined {
         if (this.disconnected || this.disposed || !this.host.canCapture(editor.view.documentId)) return;
         const origin = [...this.sessions.keys()].find(session => session.editor === editor);
         if (!origin) return;

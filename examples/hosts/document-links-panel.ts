@@ -13,7 +13,7 @@ function documentLinkActions(tools: DocumentLinksPanelTools, s: DocumentLinksSna
         { label: "Reconnect link provider", invoke: tools.reconnect, disabled: !s.disconnected && s.status !== "failed" }
     ];
 }
-export const documentLinkDescription = 'Ctrl/Cmd+click the module name in an import "module"; line to open its registered source. F4 lists imports, including unresolved names. Shift+F4 returns to the source and selection.';
+export const documentLinkDescription = 'Press F12 on an import path or Ctrl/Cmd+click it to open the module. F4 lists imports. Shift+F4 returns to the source and selection.';
 export const documentLinkLabel = (link: LinkNote) => `Open ${link.module} at ${link.line}:${link.column} → ${link.targetTitle ?? "unresolved"}`;
 export const documentLinkDetails = (link: LinkNote) => `${link.title} [${link.from},${link.to}) · ${link.tooltip}${link.target ? ` · ${link.target.resource} · ${link.target.document} @ revision ${link.target.revision}` : ""}`;
 /** Result callbacks retain the displayed request even when a later page is published. */

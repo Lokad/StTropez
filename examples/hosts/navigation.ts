@@ -151,7 +151,12 @@ export class HostNavigationTools {
         const origin = this.active;
         if (!origin || !this.available(origin)) { this.publish({ message: "Focus an available candidate source." }); return; }
         if (!this.host.canCapture(origin.editor.view.documentId)) { this.publish({ message: "Finish pending input, navigation or composition first." }); return; }
-        const offset = pointed ?? origin.editor.view.getSnapshot().selection.head, document = this.host.workspace.document(origin.editor.view.documentId), symbol = navigationSymbol(document.buffer, offset) ?? "position";
+        const offset = pointed ?? origin.editor.view.getSnapshot().selection.head;
+        if (keyboard && kind === "definition" && pointed === undefined) {
+            const link = this.options.linkAt?.(origin.editor, offset);
+            if (link) { link.open(); return; }
+        }
+        const document = this.host.workspace.document(origin.editor.view.documentId), symbol = navigationSymbol(document.buffer, offset) ?? "position";
         const documents = this.host.workspace.getSnapshot().documents.filter(doc => doc.language !== null), sources = new Set(documents.map(doc => doc.id));
         if (!sources.has(document.id)) { this.clear("failed", "This source is outside the host navigation scope."); return; }
         try {

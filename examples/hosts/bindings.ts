@@ -234,7 +234,7 @@ export class ViewBindings {
         const present = (document: DocumentId) => this.presentNavigationDocument(document);
         const languageHost = createNavigationHost({ workspace: controller.workspace, canCapture, present, reconnect: reconnectProvider });
         this.links = new HostDocumentLinks(languageHost, lsp.links);
-        this.navigation = new HostNavigationTools(languageHost, { ...lsp.navigation, linkAt: (editor, offset) => this.links.pointerLink(editor, offset) });
+        this.navigation = new HostNavigationTools(languageHost, { ...lsp.navigation, linkAt: (editor, offset) => this.links.linkAt(editor, offset) });
         this.project = new HostProjectTools(languageHost, lsp.project, lsp.owner);
         this.colors = new HostDocumentColors(languageHost, lsp.colors);
         this.actions = new HostActionsTools(languageHost, lsp.actions, this.project);
