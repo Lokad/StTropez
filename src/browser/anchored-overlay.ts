@@ -73,9 +73,9 @@ function visibleAnchor(editor: TextEditor, anchor: OverlayAnchor, buffer: TextBu
             if (bounds.bottom <= clip.top || bounds.top >= clip.bottom) continue;
             const range = rowTextRanges(row).range(from - start, to - start);
             for (const rect of range?.getClientRects() ?? []) {
-                const left = Math.max(rect.left, clip.left), top = Math.max(rect.top, clip.top);
-                const height = Math.min(rect.bottom, clip.bottom) - top;
-                if (left < Math.min(rect.right, clip.right) && height > 0) consider({ left, top, height });
+                const left = Math.max(rect.left, clip.left);
+                if (left < Math.min(rect.right, clip.right) && rect.bottom > clip.top && rect.top < clip.bottom)
+                    consider({ left, top: bounds.top, height: bounds.height });
             }
         } else if (anchor.from <= end + 1 && end < anchor.to && end < buffer.length) {
             // CRLF has two source units at one painted edge. A clipped row is not a line ending.

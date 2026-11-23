@@ -906,7 +906,10 @@ test("completion holds its prefix and side while filtering and makes room for si
     await expect(list).toBeVisible(); await expect(signature).toBeVisible();
     await expect.poll(() => signature.evaluate(el => {
         const box = el.getBoundingClientRect(), other = document.querySelector(".demo-completion")!.getBoundingClientRect();
-        return box.top >= 0 && box.bottom <= other.top && el.scrollHeight <= el.clientHeight + 1;
+        const preferred = el.cloneNode(true) as HTMLElement;
+        preferred.style.visibility = "hidden"; preferred.style.maxHeight = ""; el.after(preferred);
+        const height = preferred.getBoundingClientRect().height; preferred.remove();
+        return box.top >= 0 && box.bottom <= innerHeight && (box.bottom <= other.top || box.top >= other.bottom) && box.height >= height - 1;
     })).toBe(true);
     await source.press("Escape"); await expect(list).toBeHidden(); await expect(signature).toBeVisible();
     await source.press("Escape"); await expect(signature).toBeHidden(); await expect(source).toBeFocused();

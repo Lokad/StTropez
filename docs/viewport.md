@@ -186,7 +186,8 @@ Disposal removes all listeners.
 Append your popup to the document body and pass it to `mountAnchoredOverlay(editor, element)`.
 Use `show({ revision, offset })` for a caret, with optional `affinity`. Use
 `show({ revision, from, to })` for a half-open UTF-16 range. A range anchors to the left edge of its
-first visible text row, even when both endpoints are offscreen. An empty range uses the caret.
+first visible text row, even when both endpoints are offscreen. The popup clears the row's full
+height. An empty range uses the caret.
 Scrolling, resizing and folding update the placement. The popup hides while its anchor is outside
 the text viewport and reappears when the source is visible again. A new revision expires the anchor.
 If the popup contains a focused control, `onFocusedAnchorHidden` lets the host return focus
