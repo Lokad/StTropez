@@ -21,7 +21,7 @@ export type SignatureController = Observable<SignatureSnapshot> & Readonly<{
     getDiagnostics: () => Readonly<{ requested: number; applied: number; scheduled: boolean }>;
 }>;
 type Call = ReturnType<LspSignatureClient["run"]>;
-type Request = { capture: CapturedViewRequest<TextEditor["tab"]>; call?: Call; help?: NonNullable<Awaited<Call["result"]>>; timer?: number };
+type Request = { capture: CapturedViewRequest<TextEditor["tab"]>; call?: Call; help?: NonNullable<Awaited<Call["result"]>>; timer?: number; typing?: boolean };
 const idle: SignatureSnapshot = Object.freeze({ status: "idle", message: "", anchor: null, signature: null, activeSignature: 0, signatureCount: 0 });
 const manual = Object.freeze({ triggerKind: 1, isRetrigger: false } as const);
 const changed = Object.freeze({ triggerKind: 3, isRetrigger: true } as const);
@@ -83,24 +83,32 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         publish({ status: "ready", message: `Signature ${index + 1} of ${help.signatures.length}.`, anchor: cell.get().anchor,
             signature, activeSignature: index, signatureCount: help.signatures.length });
     }
+    function captureRequest(): Request | undefined {
+        const capture = captureViewRequest(workspace, tab, view, { available });
+        if (!capture) return;
+        const current: Request = { capture }; job = current; armed = true;
+        capture.signal.addEventListener("abort", () => expire(current), { once: true });
+        return current;
+    }
     function request(context: LspSignatureContext = manual) {
         notifications.assertWritable(); if (!available()) return;
-        options.beforeRequest?.(); stopTimer(); release();
+        options.beforeRequest?.(); stopTimer();
+        const retained = context.isRetrigger && job && !job.call && job.capture.isCurrent() ? job : undefined;
+        if (!retained) release();
         if (context === manual) {
             const caret = view.getSnapshot().selection;
             editor.viewport.revealOffset(caret.head, { horizontal: "nearest", vertical: "nearest", affinity: caret.headAffinity ?? "after" });
             if (editor.getSnapshot().focused) editor.viewport.element.scrollIntoView({ block: "nearest", inline: "nearest" });
         }
-        const capture = captureViewRequest(workspace, tab, view, { available });
-        if (!capture) { cancel(); return; }
-        const current: Request = { capture }; job = current; armed = true;
+        const current = retained ?? captureRequest();
+        if (!current) { cancel(); return; }
+        const { capture } = current;
         const doc = capture.document, offset = capture.selectionSet.ranges[capture.selectionSet.primary]!.head;
-        capture.signal.addEventListener("abort", () => expire(current), { once: true });
         try {
             client ??= createLspSignatureClient(provider); requested++;
             current.call = client.run({ document: doc, offset, context, prepare: options.prepareRequest });
             current.timer = win.setTimeout(() => fail(current, new Error("Signature help timed out.")), 30000);
-            publish({ ...idle, status: "pending", message: "Reading signature help.", anchor: Object.freeze({ revision: doc.revision, offset }) });
+            if (!retained) publish({ ...idle, status: "pending", message: "Reading signature help.", anchor: Object.freeze({ revision: doc.revision, offset }) });
             void current.call.result.then(help => {
                 if (current !== job) return;
                 if (!capture.isCurrent() || help && !help.isCurrent()) { expire(current); return; }
@@ -117,6 +125,20 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         const help = job?.help; if (!help || !canCycle()) return;
         const index = (cell.get().activeSignature + delta + help.signatures.length) % help.signatures.length;
         if (help.selectOverload(help.signatures[index]!)) show(index);
+    }
+    function followArgument(text: string, after: DocumentViewSnapshot) {
+        const previous = cell.get(), { anchor, signature } = previous, caret = after.selection.head;
+        if (!job?.typing || !anchor || !signature || after.selectionSet.ranges.length !== 1
+            || after.selection.anchor !== caret || caret !== anchor.offset + text.length || !/^[\p{ID_Continue}$, \t]+$/u.test(text)) return;
+        const change = workspace.document(view.documentId).change;
+        if (change?.previousRevision !== anchor.revision || change.origin !== "human" || change.kind !== "typing" || change.edits.length !== 1) return;
+        const edit = change.edits[0]!;
+        if (edit.from !== anchor.offset || edit.to !== anchor.offset || edit.insert !== text) return;
+        // Transfer only the displayed label. The new caret owns cancellation and the next request.
+        release();
+        if (!captureRequest()) { cancel(); return; }
+        publish({ ...previous, status: "pending", message: "Updating signature help.", anchor: Object.freeze({ revision: after.revision, offset: caret }),
+            signature: text.includes(",") ? Object.freeze({ ...signature, activeParameter: null }) : signature });
     }
     function typed(event: Event) {
         const detail = (event as CustomEvent<TypedTextDetail>).detail, after = view.getSnapshot();
@@ -136,6 +158,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         if (!trigger && !armed) return;
         const prior = queued?.context;
         const context = trigger ? { triggerKind: 2 as const, triggerCharacter: trigger, isRetrigger: prior?.isRetrigger ?? armed } : prior ?? changed;
+        followArgument(detail.text, after);
         armed = true; schedule(context, after);
     }
     function bind(id: string, label: string, keys: string[], enabled: () => boolean, run: () => void | boolean) {
@@ -150,10 +173,16 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
     } catch (error) { events.abort(); throw error; }
     editor.element.addEventListener(typedTextEvent, typed, { signal: events.signal });
     editor.element.addEventListener("focusout", cancel, { signal: events.signal });
-    editor.onEditIntent(kind => { if (kind !== "beforeinput") cancel(); }, events.signal);
+    editor.onEditIntent(kind => {
+        if (kind !== "beforeinput") cancel();
+        else if (job) job.typing = job.capture.isCurrent() && (!job.help || job.help.isCurrent());
+    }, events.signal);
+    let providerState = provider.getSnapshot();
     const stopProvider = provider.subscribe(() => {
-        const current = job;
-        if (current?.help && !current.help.isCurrent()) queueMicrotask(() => expire(current));
+        const current = job, next = provider.getSnapshot();
+        const changedProvider = next.phase !== "ready" || next.epoch !== providerState.epoch || next.registrationGeneration !== providerState.registrationGeneration;
+        providerState = next;
+        if (current && (current.help && !current.help.isCurrent() || cell.get().signature && changedProvider)) queueMicrotask(() => expire(current));
     });
     function dispose() {
         if (events.signal.aborted) return;

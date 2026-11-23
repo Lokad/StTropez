@@ -615,9 +615,22 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await seed(page, "lookup");
         await field(page).pressSequentially("("); await expect(parameter).toHaveText("key: string"); expect(contexts[0]).toMatchObject({ triggerKind: 2, triggerCharacter: "(", isRetrigger: false });
         await field(page).press("ArrowDown"); await expect(parameter).toHaveText("keys: readonly string[]");
-        await field(page).pressSequentially("x");
+        await field(page).evaluate((input, name) => input.closest(".st-editor")!.addEventListener(name, () => queueMicrotask(() => {
+            const { presentation, scheduled } = window.hostFixture.snapshot().bindings.signature;
+            input.setAttribute("data-refresh-parameter", scheduled ? presentation.signature?.label ?? "" : "");
+        }), { once: true }), typedTextEvent);
+        replies.hold(); await field(page).pressSequentially("x");
+        await expect(field(page)).toHaveAttribute("data-refresh-parameter", /keys: readonly string\[\]/);
+        await expect.poll(replies.waiting).toBe(true);
+        await expect(parameter).toHaveText("keys: readonly string[]");
+        await expect(popup).toBeVisible();
+        await replies.release();
         await expect.poll(() => contexts.at(-1)).toMatchObject({ triggerKind: 3, isRetrigger: true, activeSignatureHelp: { activeSignature: 1 } });
-        await field(page).pressSequentially(","); await expect(parameter).toHaveText("fallback?: string");
+        await expect.poll(async () => (await snapshot(page)).bindings.signature.presentation.status).toBe("ready");
+        const priorLabel = await popup.locator("pre").innerText();
+        replies.hold(); await field(page).pressSequentially(","); await expect.poll(replies.waiting).toBe(true);
+        await expect(popup.locator("pre")).toHaveText(priorLabel); await expect(parameter).toBeHidden();
+        await replies.release(); await expect(parameter).toHaveText("fallback?: string");
         expect(contexts.at(-1)).toMatchObject({ triggerKind: 2, triggerCharacter: ",", isRetrigger: true }); expect(contexts.at(-1)!.activeSignatureHelp).toBeTruthy();
         const before = await snapshot(page), posted = before.bindings.language.sessions.find(session => session.id === "primary")!.provider.posted;
         await field(page).press("Control+Shift+Space"); await expect.poll(async () => (await snapshot(page)).bindings.signature.applied).toBe(before.bindings.signature.applied + 1); await expect(parameter).toHaveText("fallback?: string");
@@ -632,6 +645,18 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await field(page, "Configuration path").fill("while-signature.csv"); await expect.poll(async () => (await snapshot(page)).bindings.signature.pending).toBe(false);
         await expect.poll(replies.cancelled).toBe(true); await replies.release();
         await expect(field(page, "Configuration path")).toBeFocused(); expect((await snapshot(page)).source.exports).toBe(0);
+    });
+    if (host === "plain") test("a nested call and a moved caret discard earlier signature text while replies wait", async ({ page }) => {
+        const replies = await holdLspReplies(page, "textDocument/signatureHelp"); await page.reload();
+        const source = field(page), popup = page.getByRole("tooltip", { name: "Signature help", exact: true });
+        const parameter = popup.getByLabel("Active signature parameter", { exact: true });
+        await seed(page, "lookup(format"); await source.press("Control+Shift+Space"); await expect(parameter).toHaveText("key: string");
+        replies.hold(); await source.pressSequentially("("); await expect.poll(replies.waiting).toBe(true);
+        await expect(popup).not.toContainText("lookup("); await replies.release(); await expect(parameter).toHaveText("value: unknown");
+        replies.hold(); await source.pressSequentially("a"); await expect.poll(replies.waiting).toBe(true);
+        await expect(parameter).toHaveText("value: unknown"); await source.press("Home");
+        await expect.poll(replies.cancelled).toBe(true); await replies.release();
+        await expect(popup).toBeHidden(); await expect(source).toBeFocused();
     });
     test("read-only manual signature help keeps complete selections and yields only to explicit hover", async ({ page }) => {
         const raw = "lookup('a', )\r\nformat(1, )"; await seed(page, raw);

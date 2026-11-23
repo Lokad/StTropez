@@ -42,11 +42,11 @@ export function mountSignaturePopup(host: HTMLElement, source: Observable<Signat
     const placement = bindPopup(popup, { prefer: "above" });
     const render = () => { const s = source.getSnapshot(), editor = activeEditor();
         const sig = s.signature, label = sig?.label ?? "", arg = sig?.activeParameter == null ? undefined : sig.parameters[sig.activeParameter];
-        before.textContent = arg ? label.slice(0, arg.from) : s.status === "pending" ? s.message : label;
+        before.textContent = arg ? label.slice(0, arg.from) : sig ? label : s.message;
         parameter.textContent = arg ? label.slice(arg.from, arg.to) : ""; parameter.hidden = !parameter.textContent;
         after.textContent = arg ? label.slice(arg.to) : "";
         documentation.setContent(sig?.content ?? []);
-        detail.setContent(arg?.content ?? (sig ? [{ kind: "plaintext", value: "No declared parameter for this argument in this overload." }] : []));
+        detail.setContent(arg?.content ?? (sig && s.status === "ready" ? [{ kind: "plaintext", value: "No declared parameter for this argument in this overload." }] : []));
         controls.hidden = s.signatureCount < 2;
         if (withControls && !controls.hidden) for (const { button, id } of buttons) {
             const command = editor?.commands.get(id); button.textContent = command?.label ?? "";
