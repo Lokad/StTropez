@@ -871,7 +871,11 @@ test("broader project actions retain preview, stale recovery and atomic multi-fi
 test("unopened targets load for navigation and atomic rename with read-only declarations and return", async ({ page, baseURL }) => {
     await runDemoUnopenedNavigation(page, baseURL!);
 });
-import { runDemoCompletionCatalogue, runDemoConflict, runDemoSnippets, runDemoWalkthrough, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoFoldingBoundaries, runDemoHighlights, runDemoDocumentation } from "./demo-walkthrough.ts";
+import { runDemoCompletionCatalogue, runDemoConflict, runDemoSnippets, runDemoWalkthrough, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoFoldingBoundaries, runDemoHighlights, runDemoDocumentation, runDemoRenameTargets } from "./demo-walkthrough.ts";
+
+test("rename preparation distinguishes declarations, string values and quoted property names", async ({ page, baseURL }) => {
+    await runDemoRenameTargets(page, baseURL!);
+});
 
 test("documentation and diagnostic details preserve metadata and open permitted help through the host", async ({ page, baseURL }) => { await runDemoDocumentation(page, baseURL!); });
 

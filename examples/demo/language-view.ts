@@ -106,7 +106,7 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
                         if (state.status === "empty" || state.status === "failed") commands.feedback("signature", state.message, true);
                         else if (state.status === "ready") commands.feedback("signature", "", true);
                     });
-                symbols = mountDemoSymbols(scope, workspace, files, file, editor, provider, valid, () => { controller?.cancel(); inspection?.dismiss(); actions?.dismiss(); }, open);
+                symbols = mountDemoSymbols(scope, workspace, files, file, editor, provider, valid, () => { controller?.cancel(); inspection?.dismiss(); actions?.dismiss(); }, open, commands.notice);
                 actions = mountDemoActions(scope, workspace, file, editor, provider, language, valid, () => { controller?.cancel(); inspection?.dismiss(); symbols?.dismiss(); });
                 scope.defer(controller.subscribe(render));
                 const ready = () => { if (valid()) { controller!.connect(); render(); commands.ready(); } };

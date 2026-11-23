@@ -13,7 +13,7 @@ import { navigationSymbol } from "../../fixtures/language/navigation.ts";
 import type { NavigationFault } from "../../fixtures/language/navigation.ts";
 import { HostCell } from "../shared/observable.ts";
 
-export type RenameHostOptions = Readonly<{ provider: LspWorkspace; open?: () => boolean; prepare?: (policy: FixturePolicy<NavigationFault>) => LspPrepare }>;
+export type RenameHostOptions = Readonly<{ provider: LspWorkspace; open?: (prompt: (name?: string) => void) => boolean; prepare?: (policy: FixturePolicy<NavigationFault>) => LspPrepare }>;
 type Session = { id: string; editor: TextEditor; controller: RenameController };
 export type RenameNote = Omit<LspWorkspaceEditNote, "insert" | "insertUnits"> & Readonly<{ ordinal: number; line: number; column: number; after: string }>;
 export type HostRenameSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; status: RenameSnapshot["status"];
@@ -89,7 +89,11 @@ export class HostRenameTools {
                 this.render(state);
             } });
             register({ id: "rename.start", label: "Rename symbol", enabled: () => !this.disconnected && this.host.canCapture(editor.view.documentId),
-                run: () => { if (this.options.open && !this.options.open()) return false; this.active = session; this.prompt(session); return true; } }, { keys: ["F2"] });
+                run: () => {
+                    const prompt = (name?: string) => { if (this.sessions.has(session)) { this.active = session; this.prompt(session, name); } };
+                    if (this.options.open) return this.options.open(prompt);
+                    prompt(); return true;
+                } }, { keys: ["F2"] });
             const ownsField = () => (this.owner ?? this.active) === session && this.nameField.focused;
             register({ id: "rename.submit", label: "Preview or apply rename", enabled: ownsField,
                 run: () => {
@@ -112,9 +116,8 @@ export class HostRenameTools {
         });
     }
     private hint(session: Session) { return navigationSymbol(this.host.workspace.document(session.editor.view.documentId).buffer, session.editor.view.getSnapshot().selection.head); }
-    private prompt(session: Session) {
+    private prompt(session: Session, name = this.hint(session) ?? "") {
         this.cancel(); this.owner = session;
-        const name = this.hint(session) ?? "";
         session.controller.setName(name);
         this.publish({ name, message: "Enter a name, then preview its changes." });
         const field = this.nameField.element;

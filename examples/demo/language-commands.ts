@@ -73,6 +73,12 @@ export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, o
     return {
         ready() { phase = "ready"; resume?.(); },
         failed() { phase = "failed"; lane.cancel(); },
+        notice(message: string, signal: AbortSignal) {
+            void lane.run({ signal }, op => new Promise<void>(done => {
+                show(message);
+                op.signal.addEventListener("abort", () => { show(""); done(); }, { once: true });
+            })).catch(reportError);
+        },
         feedback: (...args: Parameters<Feedback>) => receive?.(...args),
     };
 }

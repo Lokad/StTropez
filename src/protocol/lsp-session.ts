@@ -139,6 +139,7 @@ export class LspSession {
         this.clientFeatures = Object.freeze(diagnostics ? [...this.features, "textDocument/publishDiagnostics"] : [...this.features]);
         const textDocument: Record<string, JsonValue> = { synchronization: { dynamicRegistration: true, didSave: false, willSave: false, willSaveWaitUntil: false } };
         for (const method of this.features) if (method.startsWith("textDocument/")) textDocument[method.slice("textDocument/".length)] = { dynamicRegistration: true };
+        if (this.features.has("textDocument/rename")) textDocument.rename = { dynamicRegistration: true, prepareSupport: true };
         if (this.features.has("textDocument/completion")) textDocument.completion = { dynamicRegistration: true, contextSupport: true,
             completionItem: { snippetSupport: true, insertReplaceSupport: true, documentationFormat: ["plaintext"], insertTextModeSupport: { valueSet: [1, 2] },
                 commitCharactersSupport: true, preselectSupport: true, resolveSupport: { properties: ["detail", "documentation", "additionalTextEdits", "insertText", "textEdit"] } },
@@ -493,12 +494,15 @@ export class LspSession {
             isCurrent: () => this.store.get().phase === "ready" && this.epoch === epoch && this.generation === generation && this.documents.get(remote.snapshot.uri) === entry
                 && entry.snapshot === remote.snapshot && this.remote.get(remote.snapshot.uri) === remote });
     }
-    requestDocument(method: LspDocumentFeature, document: LspDocument, params: (index: LspLineIndex, snapshot: LspDocumentSnapshot, capture: LspDocumentCapture) => Readonly<Record<string, JsonValue>>): LspCall<JsonValue> {
+    requestDocument(method: LspDocumentFeature | "textDocument/prepareRename", document: LspDocument, params: (index: LspLineIndex, snapshot: LspDocumentSnapshot, capture: LspDocumentCapture) => Readonly<Record<string, JsonValue>>): LspCall<JsonValue> {
         this.writable(); this.ready(); if (this.documentCalls.size >= (this.options.rpc?.maxPending ?? wireLimits.pendingRequests)) throw new RpcError(rpcCodes.pendingLimit, "Too many pending document requests.");
         const entry = this.entry(document), snapshot = entry.snapshot, epoch = this.epoch, generation = this.generation, waiting = this.waitForSync([entry]); let cancelled = false, call: RpcCall<JsonValue> | undefined;
         const guard = () => { if (cancelled) throw cancelError(); this.ready(epoch); if (this.documents.get(snapshot.uri) !== entry || entry.snapshot !== snapshot || generation !== this.generation) throw stale(); };
         const result = (async () => { await waiting.result; guard(); const failure = this.failed(entry); if (failure) throw failure;
-            if (!this.canRequest(method, document)) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable for this document.");
+            const supported = method === "textDocument/prepareRename"
+                ? this.featureOptions("textDocument/rename", document).some(options => options.prepareProvider === true)
+                : this.canRequest(method, document);
+            if (!supported) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable for this document.");
             const capture = this.synchronized(document); if (capture?.document !== snapshot) throw stale();
             const value = params(capture.index, snapshot, capture); guard(); call = this.ready(epoch).request(method, { ...value, textDocument: { uri: snapshot.uri } }); const response = await call.result; guard(); return response;
         })();

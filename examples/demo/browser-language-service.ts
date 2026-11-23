@@ -209,7 +209,7 @@ export class BrowserLanguageService {
         if (method === "textDocument/prepareRename" || method === "textDocument/rename") {
             const info = this.service.getRenameInfo(file.path, offset, { allowRenameOfImportPath: false });
             if (!info.canRename || info.fileToRename) throw new RpcError(-32602, info.canRename ? "File renaming is unsupported." : info.localizedErrorMessage);
-            if (method === "textDocument/prepareRename") return { range: this.span(file, info.triggerSpan), placeholder: info.displayName };
+            if (method === "textDocument/prepareRename") return this.span(file, info.triggerSpan);
             const name = string(p.newName), scanner = ts.createScanner(ts.ScriptTarget.ES2022, false, ts.LanguageVariant.Standard, name);
             if (scanner.scan() !== ts.SyntaxKind.Identifier || scanner.scan() !== ts.SyntaxKind.EndOfFileToken) throw new RpcError(-32602, "Enter an identifier.");
             const locations = this.service.findRenameLocations(file.path, offset, false, false, { providePrefixAndSuffixTextForRename: true }) ?? [];

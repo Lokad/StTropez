@@ -8,6 +8,7 @@ import type { DemoFile } from "./project.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 import { bindPopupCommands } from "./language-commands.ts";
 import { locationExcerpt } from "../shared/location-excerpt.ts";
+import { prepareRenameTarget } from "./rename-target.ts";
 
 export type DemoSymbolTarget = Readonly<{ documentId: DocumentId; revision: number; from: number; to: number }>;
 
@@ -23,7 +24,8 @@ function locationButton(file: DemoFile, location: NavigationChoice): HTMLButtonE
 
 /** Host presentation around validated public results. Navigation may replace this editor view. */
 export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, files: () => readonly DemoFile[], file: DemoFile, editor: TextEditor,
-    provider: LspWorkspace, valid: () => boolean, dismissOther: () => void, open: (target: DemoSymbolTarget) => void) {
+    provider: LspWorkspace, valid: () => boolean, dismissOther: () => void, open: (target: DemoSymbolTarget) => void,
+    notice: (message: string, signal: AbortSignal) => void) {
     const events = new AbortController(); let disposed = false;
     scope.defer(() => { disposed = true; events.abort(); });
     const popup = document.createElement("section"); scope.defer(() => popup.remove());
@@ -116,7 +118,10 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         renamePopup.hidden = true; previous?.cancel(); rename.cancel(); if (focus && valid()) editor.focus();
     };
     scope.defer(() => closeRename(false));
-    function beginRename() {
+    const cancelUnopenedRename = () => { if (renameSource && renamePopup.hidden) closeRename(false); };
+    editor.element.addEventListener("focusout", cancelUnopenedRename, { signal: events.signal });
+    editor.element.ownerDocument.defaultView!.addEventListener("blur", cancelUnopenedRename, { signal: events.signal });
+    function beginRename(prompt: (name?: string) => void) {
         if (!idle()) return false;
         dismissOther(); cancelNavigation(); closeRename(false);
         const caret = editor.view.getSnapshot().selection;
@@ -126,7 +131,19 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         source.signal.addEventListener("abort", () => {
             if (renameSource === source) closeRename(rename.state.getSnapshot().status === "applied" || renamePopup.contains(document.activeElement));
         }, { once: true });
-        renamePopup.hidden = false; return true;
+        const showPrompt = (name?: string) => { renamePopup.hidden = false; prompt(name); };
+        if (!provider.queryFeatureOptions("textDocument/rename", source.document).some(options => options.prepareProvider === true)) {
+            showPrompt(); return true;
+        }
+        notice("Checking rename target…", source.signal);
+        void prepareRenameTarget(provider, source, caret.head, name.maxLength).then(name => {
+            if (renameSource !== source || !source.isCurrent()) return;
+            if (name === null) notice("Place the caret on a name to rename it.", source.signal);
+            else showPrompt(name);
+        }, () => {
+            if (renameSource === source && source.isCurrent()) notice("TypeScript could not prepare a rename here.", source.signal);
+        });
+        return true;
     }
     name.addEventListener("input", () => rename.setName(name.value), { signal: events.signal });
     preview.addEventListener("click", rename.prepare, { signal: events.signal }); cancel.addEventListener("click", () => closeRename(true), { signal: events.signal });

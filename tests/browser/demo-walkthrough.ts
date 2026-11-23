@@ -752,6 +752,24 @@ async function select(page: Page, source: Locator, text: string) {
     await page.getByRole("button", { name: "Close", exact: true }).click();
 }
 
+/** F2 uses the provider range, including quoted property names. */
+export async function runDemoRenameTargets(page: Page, url = "/") {
+    await page.goto(url); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true }), dialog = page.getByRole("dialog", { name: "Rename symbol" });
+    const message = page.getByLabel("Language command", { exact: true }), name = dialog.getByLabel("New name");
+    const text = 'const model = { "unitPrice": 9 };\nconsole.log("Receipt", model.unitPrice);';
+    await source.press("Control+a"); await page.keyboard.insertText(text); await source.press("Control+Home"); await source.press("ArrowRight");
+    await source.press("F2"); await expect(message).toContainText("Place the caret on a name"); await expect(dialog).toBeHidden();
+    await expect(source).toBeFocused(); await source.press("Escape"); await expect(message).toBeHidden();
+    await select(page, source, "Receipt"); await source.press("ArrowLeft"); await source.press("ArrowRight"); await source.press("F2");
+    await expect(message).toHaveText(/could not prepare|Place the caret/); await expect(dialog).toBeHidden(); await expect(source).toBeFocused();
+    await select(page, source, '"unitPrice"'); await source.press("ArrowLeft"); await source.press("ArrowRight"); await source.press("ArrowRight");
+    await source.press("F2"); await expect(name).toBeFocused(); await expect(name).toHaveValue("unitPrice");
+    await name.fill("unitCost"); await name.press("Enter"); await expect(dialog.getByLabel("Rename edits").locator("li")).toHaveCount(2);
+    await name.press("Enter"); await expect(dialog).toBeHidden(); await expect(source).toBeFocused(); await expect(source).toHaveValue(text.replaceAll("unitPrice", "unitCost"));
+    await source.press("Control+z"); await expect(source).toHaveValue(text);
+}
+
 /** The same user workflow is reusable by the source demo and a restored-assets consumer. */
 export async function runDemoWalkthrough(page: Page, url = "/") {
       page.on("dialog", dialog => dialog.accept());

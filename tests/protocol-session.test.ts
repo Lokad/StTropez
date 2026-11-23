@@ -43,6 +43,7 @@ test("initialize advertises the supported methods or the explicit subset on ever
             await session.connect();
             const caps = host.peers.at(-1)!.initialize()!.capabilities;
             assert.ok(caps.textDocument?.hover);
+            assert.equal(caps.textDocument?.rename?.prepareSupport, limited ? undefined : true);
             assert.equal(!!caps.textDocument?.documentLink, !limited);
             assert.equal(!!caps.textDocument?.publishDiagnostics, !limited);
             assert.equal(!!caps.textDocument?.rename, !limited);
@@ -54,6 +55,24 @@ test("initialize advertises the supported methods or the explicit subset on ever
             session.disconnect();
         }
     }
+});
+
+test("prepareRename requires a matching provider that advertises preparation", async t => {
+    const host = fixture(t, { textDocumentSync: 2, renameProvider: true }), session = new LspSession(host);
+    t.after(() => session.dispose());
+    const source = input(), document = session.bindDocument(source); await session.connect();
+    const peer = host.peers[0]!.rpc, received: unknown[] = [];
+    peer.onRequest("textDocument/prepareRename", (params: unknown) => { received.push(params); return null; });
+    const prepare = () => session.requestDocument("textDocument/prepareRename", document, index => ({ position: index.at(1) })).result;
+    const refused = () => assert.rejects(prepare(), error => error instanceof RpcError && error.code === -32601);
+    await refused();
+    const register = (id: string, language: string) => peer.sendRequest(RegistrationRequest.type, { registrations: [{
+        id, method: "textDocument/rename", registerOptions: { documentSelector: [{ language }], prepareProvider: true },
+    }] });
+    await register("other", "sql"); await refused();
+    await register("source", "typescript"); assert.equal(await prepare(), null);
+    await peer.sendRequest(UnregistrationRequest.type, { unregisterations: [{ id: "source", method: "textDocument/rename" }] });
+    await refused(); assert.deepEqual(received, [{ textDocument: { uri: source.uri }, position: { line: 0, character: 1 } }]);
 });
 
 test("unbound capability queries share selectors and synchronization policy without binding or sending documents", async t => {

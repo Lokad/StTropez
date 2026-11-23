@@ -260,6 +260,9 @@ JSON result needs a feature decoder before presentation. `scope.isDocumentCurren
 workspace edits before deferred binding synchronization. `isBindingCurrent` allows revision changes
 and does not establish range freshness. No capture or syntax cache grants edit authority.
 
+Sessions with rename enabled advertise `prepareSupport`. A captured `requestDocument("textDocument/prepareRename", …)`
+requires a matching rename provider with `prepareProvider: true`, including providers registered for a document selector.
+
 ### Capabilities and supported subset
 
 `canRequest` checks the enabled methods against static and matching dynamic capabilities. Registration

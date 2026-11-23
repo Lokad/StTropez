@@ -1,6 +1,7 @@
 import { test, expect, expectPanelKeyReserved } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { holdDemoFolds } from "./demo-folding-gate.ts";
+import { runDemoRenameTargets } from "./demo-walkthrough.ts";
 
 async function symbol(page: Page) {
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
@@ -115,17 +116,56 @@ test("a delayed definition leaves output focus, Back history and the next typing
     await expect(page.locator(".demo-symbols")).toBeHidden();
 });
 
+test("rename preparation distinguishes declarations, string values and quoted property names", async ({ page }) => {
+    await runDemoRenameTargets(page);
+});
+
+test("leaving the source while rename preparation is pending preserves the next typing target", async ({ page }) => {
+    let request: number | undefined, release: (() => void) | undefined, cancelled = false;
+    await page.routeWebSocket("**/demo-provider/*", client => {
+        const server = client.connectToServer();
+        client.onMessage(message => {
+            const value = JSON.parse(message.toString());
+            if (value.method === "textDocument/prepareRename") request = value.id;
+            if (value.method === "$/cancelRequest" && value.params.id === request) cancelled = true;
+            server.send(message);
+        });
+        server.onMessage(message => {
+            const value = JSON.parse(message.toString());
+            if (request !== undefined && value.id === request) { expect(value.result).toBeTruthy(); release = () => client.send(message); }
+            else client.send(message);
+        });
+    });
+    await openDemo(page); const source = await symbol(page); await source.press("F2"); await expect.poll(() => !!release).toBe(true);
+    const output = page.getByRole("region", { name: "JavaScript output" }).getByRole("textbox"); await output.focus();
+    await expect.poll(() => cancelled).toBe(true); await source.focus(); release!();
+    await page.keyboard.insertText("X"); await expect(source).toBeFocused(); await expect(source).toHaveValue(/cXalculateTotal/);
+    await expect(page.getByRole("dialog", { name: "Rename symbol" })).toBeHidden(); await expect(page.locator("#language-command-status")).toBeHidden();
+});
+
 test("typing invalidates a held rename preview while retaining the actual edit", async ({ page }) => {
-    let held = false, release: (() => void) | undefined;
+    let held = false, prepared = false, release: (() => void) | undefined;
     await page.routeWebSocket("**/demo-provider/*", client => {
         const server = client.connectToServer(), ids = new Set<number>();
-        client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "textDocument/rename") ids.add(value.id); server.send(message); });
-        server.onMessage(message => { const value = JSON.parse(message.toString()); if (!held && ids.has(value.id)) { held = true; release = () => client.send(message); } else client.send(message); });
+        client.onMessage(message => {
+            const value = JSON.parse(message.toString());
+            if (value.method === "textDocument/prepareRename") prepared = true;
+            if (value.method === "textDocument/rename") ids.add(value.id);
+            server.send(message);
+        });
+        server.onMessage(message => {
+            const value = JSON.parse(message.toString());
+            if (value.result?.capabilities?.renameProvider) {
+                value.result.capabilities.renameProvider = true; client.send(JSON.stringify(value));
+            } else if (!held && ids.has(value.id)) { held = true; release = () => client.send(message); }
+            else client.send(message);
+        });
     });
     await openDemo(page); const source = await symbol(page); await source.press("F2");
     const dialog = page.getByRole("dialog", { name: "Rename symbol", exact: true });
     await dialog.getByRole("textbox", { name: "New name", exact: true }).fill("cartTotal");
     await dialog.getByRole("button", { name: "Preview rename", exact: true }).click(); await expect.poll(() => held).toBe(true);
+    expect(prepared).toBe(false);
     await source.press("Control+Home"); await source.pressSequentially("// Actual edit\n"); release!();
     await expect(dialog).toBeHidden(); await expect(source).toBeFocused();
     await expect(page.locator("#editor")).toContainText("// Actual edit"); await expect(page.locator("#editor")).toContainText("calculateTotal(cart, 0.1)");
