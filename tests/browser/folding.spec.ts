@@ -416,7 +416,7 @@ test("folded rows keep independent views, disclosure keys and visible-line navig
     })); expect(painted).toBe(true);
     await page.mouse.up(); await expect(page.getByRole("button", { name: "Collapse lines 2–3", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Collapse lines 2–3", exact: true }).press("Enter"); await ready(page);
-    await page.getByRole("textbox", { name: "Find", exact: true }).fill("two"); await expect(page.locator("#find-status")).toContainText("1 matches · ready");
+    await page.getByRole("textbox", { name: "Find", exact: true }).fill("two"); await expect(page.locator("#find-status")).toHaveText("1 match");
     await page.getByRole("button", { name: "Next match", exact: true }).click(); await ready(page);
     expect((await page.evaluate(() => window.editingFixture.snapshot())).primary.selection).toMatchObject({ anchor: 11, head: 14 });
     expect((await page.evaluate(() => window.editingFixture.folding())).regions[0]!.collapsed).toBe(false);

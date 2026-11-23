@@ -1,10 +1,11 @@
 import { isSaveKey, isUnmodifiedShortcut } from "../shared/host-shortcuts.ts";
 import { mountTextEditor, mountTextComparison, createFindController, createRegexFindBackend, createFoldingController, editRefusedEvent } from "../../src/browser/index.ts";
-import type { EditRefusedDetail, TextEditor, FindController, FindSnapshot, TextComparison, FoldingController, DecorationLayer, DecorationProvider } from "../../src/browser/index.ts";
+import type { EditRefusedDetail, TextEditor, FindController, TextComparison, FoldingController, DecorationLayer, DecorationProvider } from "../../src/browser/index.ts";
 import { discoverIndentationFolds } from "../../src/index.ts";
 import { DemoProject } from "./project.ts";
 import { linePrompt } from "../shared/line-prompt.ts";
 import { bindFindCommands } from "../shared/find-commands.ts";
+import { findStatus } from "../shared/find-status.ts";
 import { selectDemoProvider } from "./provider.ts";
 import type { DemoFile } from "./project.ts";
 import { DemoPresentation } from "./presentation.ts";
@@ -535,16 +536,6 @@ function setActivePane(target: TextEditor, repeat = false): void {
 function findFlags() {
     const pressed = (id: string) => button(id).getAttribute("aria-pressed") === "true";
     return { matchCase: pressed("find-case"), wholeWord: pressed("find-word"), regularExpression: pressed("find-regex") };
-}
-function findStatus(state: FindSnapshot): string {
-    if (!state.query) return "";
-    if (state.message && state.reason !== "replaced") return state.message;
-    const count = state.current !== null ? `${state.current + 1} of ${state.count}`
-        : state.count ? `${state.count} ${state.count === 1 ? "match" : "matches"}` : "";
-    if (state.status === "searching") return count ? `Searching… ${count}` : "Searching…";
-    const result = count || "No matches";
-    if (state.reason === "replaced") return `${state.message} ${result}`;
-    return state.wrappedTo ? `${result} · Wrapped to ${state.wrappedTo}` : result;
 }
 function selectedFindQuery(source: TextEditor, regex: boolean): string | undefined {
     const { anchor, head } = source.view.getSnapshot().selection, length = Math.abs(head - anchor);

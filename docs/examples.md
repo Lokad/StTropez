@@ -525,6 +525,8 @@ undo step.
 
 `/editing/` colors keywords, numbers and comments with a local tokenizer. It caches up to 128
 visible fragments. Its typing, selection, history and Find tests run without a language server.
+Ctrl/Cmd+F and Ctrl/Cmd+H switch between the search fields. Escape returns to the primary
+editor. F3 and Shift+F3 resume the last query and show the selected match’s position.
 
 Use the development hosts for the synthetic provider or the [root demo](#typescript-demo) for
 TypeScript.

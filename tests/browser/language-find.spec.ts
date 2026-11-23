@@ -119,8 +119,12 @@ test("keyboard find routing, read-only replacement and a pilot-sized replace-all
     }
     await page.keyboard.press("Shift+Enter");
     await expect(query).toBeFocused();
+    await expect(page.locator("#find-status")).toHaveText("4 of 10000");
     expect((await snapshot(page)).document!.revision).toBe(revision);
     const replacement = page.getByRole("textbox", { name: "Replace with", exact: true });
+    await query.press("Escape"); await page.keyboard.press("F3"); await expect(page.locator("#find-status")).toHaveText("5 of 10000");
+    await page.keyboard.press("Shift+F3"); await expect(page.locator("#find-status")).toHaveText("4 of 10000");
+    await page.keyboard.press("ControlOrMeta+f"); await query.press("ControlOrMeta+h"); await expect(replacement).toBeFocused();
     await replacement.fill("let"); await page.keyboard.press("Enter"); await found(page, 9_999);
     await expect(replacement).toBeFocused();
     await expect(page.locator("#primary .st-viewport-row").filter({ hasText: /^let sample/ })).toBeVisible();

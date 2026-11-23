@@ -1,5 +1,8 @@
 import { createFindController, createRegexFindBackend } from "../../src/browser/index.ts";
 import type { TextEditor } from "../../src/browser/index.ts";
+import { bindFindCommands } from "../shared/find-commands.ts";
+import { findStatus } from "../shared/find-status.ts";
+import { scopedCommands } from "../shared/editor-attachment.ts";
 
 export function mountFindUI(editor: TextEditor) {
     const owner = editor.element.ownerDocument;
@@ -12,7 +15,7 @@ export function mountFindUI(editor: TextEditor) {
     const controls = ["find-next", "find-previous", "replace-current", "replace-all"].map(id => owner.getElementById(id) as HTMLButtonElement);
     const render = () => {
         const state = find.getSnapshot();
-        owner.getElementById("find-status")!.textContent = state.message || (state.status === "searching" ? `Searching… ${state.count} matches` : `${state.count} matches · ${state.status}`);
+        owner.getElementById("find-status")!.textContent = findStatus(state);
         for (const control of controls) control.disabled = !state.count || !(state.status === "ready" || control.id !== "replace-all" && state.status === "searching" && state.retained);
         wholeWord.checked = state.wholeWord; matchCase.checked = state.matchCase; regularExpression.checked = state.regularExpression;
     };
@@ -21,21 +24,26 @@ export function mountFindUI(editor: TextEditor) {
     wholeWord.addEventListener("change", optionsChanged, { signal: listeners.signal });
     matchCase.addEventListener("change", optionsChanged, { signal: listeners.signal });
     regularExpression.addEventListener("change", optionsChanged, { signal: listeners.signal });
-    for (const field of [query, replacement]) field.addEventListener("keydown", event => {
-        if (event.key === "Escape") { event.preventDefault(); find.cancel(); editor.focus(); }
-        else if (event.key === "Enter" || event.key === "F3") { event.preventDefault();
-            if (field === replacement && event.key === "Enter") find.replaceCurrent(replacement.value); else find.next(event.shiftKey ? -1 : 1);
-        }
-    }, { signal: listeners.signal });
+    const resume = () => {
+        const state = find.getSnapshot();
+        if (state.status === "cancelled") find.setQuery(state.query);
+    };
+    const navigate = (direction: 1 | -1) => {
+        if (!find.getSnapshot().query) return false;
+        resume(); find.next(direction, { whenReady: true }); return true;
+    };
+    bindFindCommands(editor, listeners.signal, replace => {
+        resume(); const field = replace ? replacement : query; field.focus(); field.select();
+    }, navigate, () => owner.activeElement === query);
+    const panel = query.closest("section")!, register = scopedCommands(editor, listeners.signal);
+    register({ id: "find.dismiss", label: "Dismiss Find", enabled: () => panel.contains(owner.activeElement),
+        run: () => { find.cancel(); editor.focus(); } }, { keys: ["Escape"], shared: true, repeat: false });
+    register({ id: "find.replaceCurrent", label: "Replace match", enabled: () => owner.activeElement === replacement,
+        run: () => { find.replaceCurrent(replacement.value); } }, { keys: ["Enter", "Shift+Enter"], shared: true, priority: 41, repeat: false });
+    panel.addEventListener("keydown", event => { editor.keymap.handle(event); }, { signal: listeners.signal });
     const on = (id: string, action: () => void) => owner.getElementById(id)!.addEventListener("click", action, { signal: listeners.signal });
-    on("find-next", () => find.next()); on("find-previous", () => find.next(-1)); on("replace-current", () => find.replaceCurrent(replacement.value));
+    on("find-next", () => navigate(1)); on("find-previous", () => navigate(-1)); on("replace-current", () => find.replaceCurrent(replacement.value));
     on("replace-all", () => find.replaceAll(replacement.value, { focusEditor: true })); on("find-cancel", find.cancel);
-    editor.element.addEventListener("keydown", event => {
-        if ((event.ctrlKey || event.metaKey) && !event.altKey && ["f", "h"].includes(event.key.toLowerCase())) {
-            event.preventDefault(); if (find.getSnapshot().status === "cancelled") find.setQuery(query.value);
-            const field = event.key.toLowerCase() === "h" ? replacement : query; field.focus(); field.select();
-        } else if (event.key === "F3") { event.preventDefault(); find.next(event.shiftKey ? -1 : 1); }
-    }, { signal: listeners.signal });
     const unsubscribe = find.subscribe(render); render();
     return { find, dispose: () => { listeners.abort(); unsubscribe(); find.dispose(); } };
 }
