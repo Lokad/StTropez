@@ -877,6 +877,41 @@ test("reset names its sample and recovery follows the stored draft across sample
     await expect(page.locator("#editor")).not.toContainText("My previous large-file edits");
 });
 
+test("completion holds its prefix and side while filtering and makes room for signature help", async ({ page, baseURL }) => {
+    await page.setViewportSize({ width: 1280, height: 800 }); await page.goto(baseURL!);
+    const source = page.locator("#editor textarea"), list = page.locator(".demo-completion");
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    await source.press("Control+End"); await source.pressSequentially("c");
+    const placement = () => list.evaluate(el => {
+        const box = el.getBoundingClientRect(), caret = document.querySelector("#editor .st-input-caret")!.getBoundingClientRect();
+        return { above: box.bottom <= caret.top + 1, left: Math.round(box.left) };
+    });
+    await expect(list).toBeVisible(); await expect.poll(placement).toMatchObject({ above: true });
+    const opening = await placement();
+    await source.pressSequentially("al"); await expect(list.locator(".demo-completion-count")).toContainText("1 of 1 ·");
+    await expect.poll(placement).toEqual(opening);
+    await source.press("Backspace"); await expect(list.locator(".demo-completion-count")).not.toContainText("1 of 1 ·");
+    await expect.poll(placement).toEqual(opening);
+    await page.setViewportSize({ width: 1280, height: 1400 });
+    await expect.poll(placement).toMatchObject({ above: false });
+    await source.press("Escape"); await expect(list).toBeHidden(); await expect(source).toBeFocused();
+
+    await page.setViewportSize({ width: 1280, height: 800 }); await page.locator("#sample").selectOption("documentation");
+    await expect(source).toHaveAttribute("aria-label", "documentation.ts");
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    await source.press("Control+End"); await source.pressSequentially("applyDiscount");
+    await expect(list).toBeVisible(); await source.press("Escape"); await source.pressSequentially("(");
+    const signature = page.getByRole("tooltip", { name: "Signature help", exact: true });
+    await expect(signature).toContainText("applyDiscount"); await source.pressSequentially("5, di");
+    await expect(list).toBeVisible(); await expect(signature).toBeVisible();
+    await expect.poll(() => signature.evaluate(el => {
+        const box = el.getBoundingClientRect(), other = document.querySelector(".demo-completion")!.getBoundingClientRect();
+        return box.top >= 0 && box.bottom <= other.top && el.scrollHeight <= el.clientHeight + 1;
+    })).toBe(true);
+    await source.press("Escape"); await expect(list).toBeHidden(); await expect(signature).toBeVisible();
+    await source.press("Escape"); await expect(signature).toBeHidden(); await expect(source).toBeFocused();
+});
+
 test("browser global completion filters its catalogue after a typed prefix", async ({ page, baseURL }) => {
     await page.goto(baseURL!); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });

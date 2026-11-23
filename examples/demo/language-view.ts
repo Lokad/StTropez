@@ -67,14 +67,12 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
                     const node = button(value || "Empty value", () => snippet.choose(index)); node.setAttribute("aria-pressed", String(index === snippet.choiceIndex)); return node;
                 }), button("Previous field", () => snippet.move(-1)), button("Next field", () => snippet.move(1)), button("Finish snippet", snippet.finish));
             }
-            if (!valid() || !state?.choices.length || state.offerText === null) { renderChoices(); completionOverlay.hide(); return; }
+            if (!valid() || !state?.anchor) { renderChoices(); completionOverlay.hide(); return; }
             count.textContent = `${state.choiceIndex + 1} of ${state.choices.length}${state.completionIncomplete ? " · partial list" : ""}${state.omittedCompletions.length ? ` · ${state.omittedCompletions.length} unsupported` : ""} · type to filter`;
             count.title = state.omittedCompletions.map(item => `${item.label}: ${item.reason}`).join("\n");
             renderChoices(state);
             detail.textContent = state.resolving ? "Loading details…" : state.completionDetail;
-            const selection = editor.view.getSnapshot().selection;
-            completionOverlay.show({ revision: workspace.document(editor.view.documentId).revision, offset: selection.head,
-                affinity: selection.headAffinity ?? "after" });
+            completionOverlay.show(state.anchor);
         };
         snippetPanel.addEventListener("pointerdown", event => event.preventDefault(), { signal: listeners.signal });
         popup.addEventListener("pointerdown", event => event.preventDefault(), { signal: listeners.signal });

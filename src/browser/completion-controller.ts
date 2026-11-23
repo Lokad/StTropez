@@ -27,6 +27,7 @@ export type CompletionChoice = Readonly<{ label: string; select: () => boolean; 
 export type CompletionSnippet = Readonly<{ stop: number; position: number; count: number; choices: readonly string[]; choiceIndex: number;
     move: (direction: -1 | 1) => boolean; choose: (index: number) => boolean; finish: () => boolean }>;
 export type CompletionSnapshot = Readonly<{ message: string; connected: boolean; pending: boolean; offerText: string | null;
+    anchor: Readonly<{ revision: number; from: number; to: number }> | null;
     snippet: CompletionSnippet | null; omittedCompletions: LspCompletions["omitted"];
     choices: readonly string[]; choiceIndex: number; completionAt: (index: number) => CompletionChoice | undefined; completionIncomplete: boolean; completionDetail: string; resolving: boolean }>;
 export type CompletionControllerOptions = Readonly<{ autoConnect?: boolean; automatic?: boolean;
@@ -63,7 +64,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     const emptyMessages: readonly string[] = Object.freeze([]);
     let labelItems: readonly LspCompletion[] | undefined, labelGeneration: number | undefined, labels = emptyMessages;
     const notifications = workspace.createNotificationScope(error => options.onError?.(error)), observers = new Set<() => void>();
-    const cell = new Store<CompletionSnapshot>(Object.freeze({ message: "LSP provider disconnected; local editing remains available.", connected: false, pending: false, offerText: null, choices: Object.freeze([]), choiceIndex: 0, completionAt: () => undefined, completionIncomplete: false, completionDetail: "", resolving: false, snippet: null, omittedCompletions: Object.freeze([]) }), notifications);
+    const cell = new Store<CompletionSnapshot>(Object.freeze({ message: "LSP provider disconnected; local editing remains available.", connected: false, pending: false, offerText: null, anchor: null, choices: Object.freeze([]), choiceIndex: 0, completionAt: () => undefined, completionIncomplete: false, completionDetail: "", resolving: false, snippet: null, omittedCompletions: Object.freeze([]) }), notifications);
     const state: Observable<CompletionSnapshot> = Object.freeze({ getSnapshot: cell.observable.getSnapshot, subscribe: listener => {
         notifications.assertWritable(); if (disposed) throw new Error("Completion controller is disposed."); const stop = cell.observable.subscribe(listener);
         const release = () => { stop(); observers.delete(release); }; observers.add(release); return release;
@@ -115,6 +116,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
             }
         }
         const selected = job?.visible[job.choice]; notifications.publish(cell, Object.freeze({ message, connected: scope.getSnapshot().phase === "ready", pending: !!job && (job.pendingList || !!job.resolution || !!selected?.resolve),
+        anchor: selected && job ? Object.freeze({ revision: job.revision, from: Math.min(selected.primary.from, job.caret), to: job.caret }) : null,
         offerText: selected?.label ?? null, choices: labels, choiceIndex: job?.choice ?? 0, completionAt: (index: number) => completionAt(generation, index),
         completionIncomplete: job?.choices?.incomplete ?? false, completionDetail: selected ? [selected.detail, selected.documentation].filter(Boolean).join("\n") : "", resolving: !!job?.resolution,
         snippet: field,

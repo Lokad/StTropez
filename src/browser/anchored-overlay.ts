@@ -18,6 +18,35 @@ const activeOverlays = new WeakMap<TextEditor, Set<Placement>>();
 
 type Clip = Readonly<{ left: number; top: number; right: number; bottom: number }>;
 type Point = Readonly<{ left: number; top: number; height: number }>;
+type Slot = { top: number; bottom: number; above: boolean };
+
+function popupSlots(top: number, bottom: number, line: Point, occupied: { top: number; bottom: number }[]): Slot[] {
+    // The text line and overlapping higher-priority popups divide the window into free intervals.
+    occupied.push({ top: line.top - 4, bottom: line.top + line.height + 4 });
+    occupied.sort((a, b) => a.top - b.top);
+    const slots: Slot[] = [];
+    let start = top;
+    for (const rect of occupied) {
+        const end = Math.min(bottom, rect.top);
+        if (start < end) slots.push({ top: start, bottom: end, above: end <= line.top });
+        start = Math.max(start, rect.bottom);
+        if (start >= bottom) break;
+    }
+    if (start < bottom) slots.push({ top: start, bottom, above: false });
+    return slots;
+}
+
+function chooseSlot(slots: Slot[], line: Point, height: number, preferAbove: boolean): Slot | undefined {
+    let best: Slot | undefined, visible = 0, distance = Infinity;
+    for (const slot of slots) {
+        const fit = Math.min(height, slot.bottom - slot.top);
+        const gap = slot.above ? line.top - slot.bottom : slot.top - (line.top + line.height);
+        if (fit > visible || fit === visible && (gap < distance || gap === distance && slot.above === preferAbove)) {
+            best = slot; visible = fit; distance = gap;
+        }
+    }
+    return best;
+}
 
 function visibleAnchor(editor: TextEditor, anchor: OverlayAnchor, buffer: TextBuffer, clip: Clip): Point | undefined {
     const { viewport, view } = editor, folds = view.folding.getSnapshot();
@@ -67,7 +96,8 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
     if (!Number.isFinite(priority)) throw new RangeError("Overlay priority must be finite.");
     const peers = activeOverlays.get(editor) ?? new Set<Placement>();
     activeOverlays.set(editor, peers);
-    const placement: Placement = { priority, rectangle: undefined, schedule };
+    let previousSlot: Slot | undefined;
+    const placement: Placement = { priority, rectangle: undefined, schedule: reconsider };
     const style = element.style, original = { left: style.left, top: style.top, maxWidth: style.maxWidth, maxHeight: style.maxHeight };
     const alreadyStyled = element.classList.contains("st-editor-overlay");
     element.classList.add("st-editor-overlay"); element.hidden = true;
@@ -96,8 +126,6 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
         const point = visibleAnchor(editor, anchor, document.buffer, { left: Math.max(left, box.left), right: Math.min(right, box.right),
             top: Math.max(top, box.top), bottom: Math.min(bottom, box.bottom) });
         if (!point) { conceal(); return; }
-        const lineEnd = point.top + point.height;
-
         element.hidden = false;
         // Measure at the host's preferred size before choosing a side. A prior short window may have constrained it.
         style.maxWidth = original.maxWidth; style.maxHeight = original.maxHeight;
@@ -105,31 +133,32 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
         if (element.getBoundingClientRect().width > width) style.maxWidth = `${width / zoom}px`;
         const size = element.getBoundingClientRect();
         const x = Math.max(left + 8, Math.min(point.left, right - size.width - 8));
-        let upperEdge = top + 8, lowerEdge = bottom - 8;
+        const occupied: { top: number; bottom: number }[] = [];
         for (const peer of peers) {
-            const occupied = peer.rectangle;
-            if (peer.priority <= priority || !occupied || occupied.right <= x || occupied.left >= x + size.width) continue;
-            if (occupied.top < point.top) upperEdge = Math.max(upperEdge, occupied.bottom + 4);
-            if (occupied.bottom > lineEnd) lowerEdge = Math.min(lowerEdge, occupied.top - 4);
+            const rect = peer.rectangle;
+            if (peer.priority > priority && rect && rect.right > x && rect.left < x + size.width)
+                occupied.push({ top: rect.top - 4, bottom: rect.bottom + 4 });
         }
-        const above = Math.max(0, point.top - 4 - upperEdge), below = Math.max(0, lowerEdge - lineEnd - 4);
-        const bothFit = Math.min(above, below) >= size.height;
-        const openAbove = bothFit ? options.prefer === "above" : above > below;
-        const room = openAbove ? above : below;
-        if (!room) { conceal(); return; }
+        const slots = popupSlots(top + 8, bottom - 8, point, occupied);
+        const slot = slots.find(s => s.above === previousSlot?.above && s.top === previousSlot.top && s.bottom === previousSlot.bottom)
+            ?? chooseSlot(slots, point, size.height, previousSlot?.above ?? options.prefer === "above");
+        if (!slot) { conceal(); return; }
+        previousSlot = slot;
+        const room = slot.bottom - slot.top;
         if (size.height > room) style.maxHeight = `${room / zoom}px`;
         style.left = `${x / zoom}px`;
-        style.top = `${(openAbove ? point.top - 4 - Math.min(room, size.height) : lineEnd + 4) / zoom}px`;
+        style.top = `${(slot.above ? slot.bottom - Math.min(room, size.height) : slot.top) / zoom}px`;
         report(element.getBoundingClientRect());
     }
     function schedule(): void {
         if (anchor && frame === undefined) frame = win.requestAnimationFrame(position);
     }
+    function reconsider(): void { previousSlot = undefined; schedule(); }
     const resize = new win.ResizeObserver(schedule);
     function hide(): void {
         element.hidden = true; report();
         if (!anchor) return;
-        anchor = undefined; peers.delete(placement);
+        anchor = undefined; previousSlot = undefined; peers.delete(placement);
         events?.abort(); events = undefined; resize.disconnect(); stopRender?.(); stopRender = undefined;
         if (frame !== undefined) { win.cancelAnimationFrame(frame); frame = undefined; }
     }
@@ -162,9 +191,9 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
             stopRender = viewport.onRender(schedule); resize.observe(element);
             if (editor.tab) signal.addEventListener("abort", workspace.tabs.subscribe(schedule), { once: true });
             win.addEventListener("scroll", schedule, { capture: true, passive: true, signal });
-            win.addEventListener("resize", schedule, { signal });
+            win.addEventListener("resize", reconsider, { signal });
             win.visualViewport?.addEventListener("scroll", schedule, { signal });
-            win.visualViewport?.addEventListener("resize", schedule, { signal });
+            win.visualViewport?.addEventListener("resize", reconsider, { signal });
         }
         schedule();
     }

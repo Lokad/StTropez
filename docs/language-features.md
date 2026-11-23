@@ -200,6 +200,8 @@ During a snippet, Tab selects the next field. Other editable fields have a dotte
 including a small marker for an empty field. The final caret stop has no marker. Set
 `--st-snippet-field-border` to change the outline color.
 
+Position a completion list with the snapshot's `anchor`. It spans the selected item's edit prefix
+up to the caret at that revision and is `null` when the list is empty.
 Read `completionAt(index)` from the snapshot that supplied the labels. Only rendered choices
 need handles. `select()` and `accept(mode)` act on that item. Filtering the list expires its
 handles. Diagnostics, selection and detail updates retain the same `choices` array.

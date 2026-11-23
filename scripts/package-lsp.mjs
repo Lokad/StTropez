@@ -88,10 +88,15 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         await expect(button("sampleWithImport")).toBeVisible(); await expect.poll(async () => (await state()).editor.pending).toBe(false);
         const retained = await button("sampleWithImport").elementHandle(); assert.ok(retained, "Expected the captured completion control");
         await input.pressSequentially("p"); await expect.poll(async () => (await state()).editor.pending).toBe(false);
-        const requests = (await state()).editor.posted;
+        const filtered = await state(), requests = filtered.editor.posted;
+        assert.ok(filtered.completion.anchor);
+        assert.equal(filtered.completion.anchor.to, filtered.completion.anchor.from + 4, "The restored list anchors to the typed prefix");
         await input.press("Backspace"); await expect(button("sampleWithImport")).toBeVisible();
         await expect.poll(async () => (await state()).editor.pending).toBe(false);
-        assert.equal((await state()).editor.posted, requests, "Backspace inside a complete prefix reuses the restored list");
+        const narrowed = await state();
+        assert.equal(narrowed.editor.posted, requests, "Backspace inside a complete prefix reuses the restored list");
+        assert.deepEqual(narrowed.completion.anchor, { revision: filtered.completion.anchor.revision + 1,
+            from: filtered.completion.anchor.from, to: filtered.completion.anchor.to - 1 });
         await input.press("PageDown");
         const paged = (await state()).completion;
         assert.ok(paged.choices.length > 1);

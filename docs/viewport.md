@@ -193,9 +193,10 @@ If the popup contains a focused control, `onFocusedAnchorHidden` lets the host r
 before an offscreen or folded anchor hides that control.
 
 The popup opens below the line by default. Pass `{ prefer: "above" }` to prefer the other side.
-If it cannot fit there, it uses the side with more room and limits its height. The host supplies
-content and styling. Set a numeric `priority` when several popups share an editor. Each leaves
-room for visible popups with a higher priority. The default is zero.
+The popup stays on the same side while its content changes. It chooses a new position when its
+available space changes. Set a numeric `priority` when several popups share an editor. A popup
+can stack beyond a higher-priority popup to show its full height. When space is tight, it takes
+the largest available interval and scrolls its content. The default priority is zero.
 
 Pass `dismissOn: ["focus-leave"]` to close when focus leaves both the editor and the popup.
 `"outside-pointerdown"` closes on a pointer press outside both. `onDismiss(reason)` runs once
