@@ -60,11 +60,17 @@ test("resizing Changes keeps both editors and the selected change preview within
             const preview = comparison.querySelector(".st-comparison-preview")!, box = preview.getBoundingClientRect();
             const panes = [...comparison.querySelectorAll(".st-viewport")];
             const [left, right] = panes.map(pane => pane.getBoundingClientRect());
+            const labels = [...root.querySelectorAll(".demo-review-labels > span:not(.demo-review-hint)")];
             const gap = parseFloat(getComputedStyle(comparison).rowGap);
             return {
                 outerScroll: root.scrollHeight - root.clientHeight,
                 fillsHeight: Math.abs(box.top - right!.bottom - gap) < 1,
                 stacked: right!.top >= left!.bottom,
+                captions: labels.map((label, i) => {
+                    const caption = label.getBoundingClientRect(), pane = panes[i]!.getBoundingClientRect();
+                    return right!.top >= left!.bottom ? Math.abs(caption.bottom - pane.top) < 1 && Math.abs(caption.left - pane.left) < 1
+                        : caption.bottom <= pane.top && caption.left + caption.width / 2 > pane.left && caption.left + caption.width / 2 < pane.right;
+                }),
                 twoLinesFit: panes.every(pane => {
                     const row = pane.querySelector(".st-viewport-row")?.getBoundingClientRect();
                     return row && row.height > 0 && pane.clientHeight >= 2 * row.height;
@@ -74,7 +80,7 @@ test("resizing Changes keeps both editors and the selected change preview within
                     return pane.contains(document.elementFromPoint(p.left + p.width / 2, p.bottom - 2)); })
             };
         }), `Changes at ${width} × ${height}`).toEqual({
-            outerScroll: 0, fillsHeight: true, stacked: width < 700, twoLinesFit: true, previewHit: true, panesHit: [true, true]
+            outerScroll: 0, fillsHeight: true, stacked: width <= 700, captions: [true, true], twoLinesFit: true, previewHit: true, panesHit: [true, true]
         });
         const heights = () => panes.evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
         const changed = await heights();

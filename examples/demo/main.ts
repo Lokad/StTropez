@@ -316,7 +316,7 @@ function mountFile(file: DemoFile, focus = false): void {
         savedLabel.textContent = project.isReviewingConflict() ? "Other page's saved copy" : "Saved copy"; workingLabel.textContent = "Your changes";
         const hint = document.createElement("span"); hint.className = "demo-review-hint";
         hint.textContent = "Fold each pane independently. Shaded gaps keep matching lines aligned.";
-        labels.append(savedLabel, workingLabel, hint); surface.prepend(labels);
+        labels.append(savedLabel, workingLabel, hint); surface.append(labels);
         setReviewCollapsed = reviewLayout(surface, comparison);
         editor = comparison.panes.working;
         const reference = comparison.panes.reference, plain = hostLanguage();

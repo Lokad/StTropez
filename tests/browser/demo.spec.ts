@@ -196,9 +196,14 @@ test("demo local save persists both files and prevents a stale page from replaci
     const download = peer.waitForEvent("download");
     await peer.getByRole("button", { name: "Download my changes", exact: true }).click();
     expect((await download).suggestedFilename()).toBe("pricing-changes.json");
+    await peer.setViewportSize({ width: 680, height: 900 });
     await peer.getByRole("button", { name: "Review saved copy", exact: true }).click();
     await expect(peer.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
     await expect(peer.locator(".demo-review-labels > span:not(.demo-review-hint)")).toHaveText(["Other page's saved copy", "Your changes"]);
+    await expect.poll(() => peer.locator(".demo-review-labels > span").first().evaluate(caption => {
+        const pane = document.querySelector(".st-comparison-panes .st-viewport")!.getBoundingClientRect();
+        return Math.abs(caption.getBoundingClientRect().bottom - pane.top);
+    })).toBeLessThan(1);
     await expect(peer.locator(".st-comparison-panes > section").first()).toContainText("// First page");
     await expect(peer.locator(".st-comparison-panes > section").last()).toContainText("// Peer changes");
     const saveReviewed = peer.getByRole("button", { name: "Save my reviewed version", exact: true });

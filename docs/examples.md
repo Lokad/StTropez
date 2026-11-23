@@ -158,7 +158,8 @@ the editor more room, or choose **JavaScript**, **Problems** or **Changes** to o
 In short windows the description and footer scroll so the source and output can each show a code row.
 In the file and panel button strips, Left and Right move focus. Enter or Space opens the choice.
 
-In **Changes**, **Hide** leaves the working file open for editing.
+On narrow screens, **Changes** shows the saved copy above the working file, with a caption above each pane.
+**Hide** leaves the working file open for editing.
 **Show** returns to the same review. Typing while the saved copy is hidden updates the diff,
 and saving locally compares against the new saved copy. Each pane has its own syntax coloring and folds. The saved file
 has its own compiler worker. The Code menu targets the last source pane you clicked or focused. Hidden-line
