@@ -947,9 +947,17 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     await expect(firstResult.locator("code")).toHaveText("const sharedValue = 1;");
     await expect(firstResult.locator("mark")).toHaveText("sharedValue");
     const originCursor = await page.locator("#cursor").innerText();
+    await page.keyboard.press("PageDown"); await expect(locations.locator('[data-chosen="true"]')).toHaveAttribute("data-location", "64");
+    await locations.locator('[data-location="64"]').press("PageUp"); await expect(firstResult).toHaveAttribute("data-chosen", "true");
+    await expect(page.locator("#cursor")).toHaveText(originCursor);
     // Up wraps to the last result and must reveal its page without creating 1,201 buttons.
     await locations.locator('[data-location="0"]').press("ArrowUp"); await expect(locations).toContainText("1153–1201 of 1201");
     await expect(locations.locator('[data-location="1200"] code')).toHaveText("const use1199 = sharedValue;");
+    const backPage = locations.getByRole("button", { name: "Previous locations" });
+    await expect.poll(() => backPage.evaluate(button => {
+        const box = button.getBoundingClientRect();
+        return button.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
+    })).toBe(true);
     await locations.getByRole("button", { name: "Previous locations" }).click();
     await expect(locations.locator('[data-chosen="true"]')).toHaveAttribute("data-location", "1136");
     await locations.locator('[data-location="1150"]').press("ArrowDown");

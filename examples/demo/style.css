@@ -30,10 +30,13 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .demo-actions [data-chosen="true"] { background: #365474; color: #e2fff6; }
 .demo-actions > button { margin-right: 6px; } .demo-actions ol { padding-left: 20px; line-height: 1.8; }
 .demo-actions del { color: #ed9a9a; } .demo-actions ins { color: #8ce0ca; }
-.demo-symbols > button { display: block; width: 100%; margin-top: 5px; text-align: left; }
-.demo-symbols > button code { display: block; margin-top: 2px; font: 12px/1.4 var(--st-font); color: #b4c7d9; overflow-wrap: anywhere; }
-.demo-symbols > button mark { background: transparent; color: #e2fff6; font-weight: 700; }
-.demo-symbols > button[data-chosen="true"] { background: #365474; color: #e2fff6; }
+.demo-symbols:not([hidden]) { display: flex; flex-direction: column; }
+.demo-symbols > :not(.demo-location-rows) { flex: none; }
+.demo-location-rows { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.demo-location-rows > button, .demo-symbols > button { display: block; width: 100%; margin-top: 5px; text-align: left; }
+.demo-location-rows code { display: block; margin-top: 2px; font: 12px/1.4 var(--st-font); color: #b4c7d9; overflow-wrap: anywhere; }
+.demo-location-rows mark { background: transparent; color: #e2fff6; font-weight: 700; }
+.demo-location-rows [data-chosen="true"] { background: #365474; color: #e2fff6; }
 .demo-symbols p, .demo-rename p { margin: 0 0 10px; }
 .demo-rename h2 { margin: 0 0 10px; font-size: 15px; }
 .demo-rename label { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }

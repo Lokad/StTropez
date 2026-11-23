@@ -78,7 +78,8 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         };
         previous.onclick = () => movePage("previousPage"); next.onclick = () => movePage("nextPage"); pages.append(previous, count, next);
         const close = document.createElement("button"); close.textContent = "Close locations"; close.addEventListener("click", () => { if (query === captured) { cancelNavigation(); editor.focus(); } });
-        popup.replaceChildren(note, pages, ...buttons, close); locationsOverlay.show({ revision: captured.revision, offset: captured.offset }); markChoice(captured);
+        const rows = document.createElement("div"); rows.className = "demo-location-rows"; rows.append(...buttons);
+        popup.replaceChildren(note, pages, rows, close); locationsOverlay.show({ revision: captured.revision, offset: captured.offset }); markChoice(captured);
         if (focused) editor.focus();
     };
     function request(kind: "definition" | "references", pointed?: number) {
@@ -160,19 +161,27 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         run: () => closeRename(true) }, { keys: ["Escape"], priority: 39, shared: true }).dispose);
     const bind = bindPopupCommands(scope, editor, popup, 36);
     bind("locations.dismiss", "Close locations", "Escape", () => { cancelNavigation(); editor.focus(); });
-    const move = (direction: -1 | 1) => {
-        if (!query?.page) return false;
+    const move = (direction: -1 | 1, byPage = false) => {
+        const result = navigation.getSnapshot().result;
+        if (!query?.page || !result) return false;
         const focused = popup.querySelector<HTMLElement>("[data-location]:focus")?.dataset.location;
-        const current = focused === undefined ? query.page : navigation.getSnapshot().result?.pageFor(Number(focused));
+        const current = focused === undefined ? query.page : result.pageFor(Number(focused));
         if (!current) return false;
+        let moved: NavigationPage | undefined;
+        if (!byPage) moved = current.moveSelection(direction);
+        else if (direction < 0) moved = current.previousPage?.() ?? result.pageFor(0);
+        else moved = current.nextPage?.() ?? result.pageFor(result.count - 1);
+        if (!moved) return false;
         editor.focus();
         const first = query.page.first;
-        query.page = current.moveSelection(direction);
+        query.page = moved;
         if (query.page.first !== first) showNavigation(query, query.message); else markChoice(query);
         return true;
     };
     bind("locations.previous", "Previous location", "ArrowUp", () => move(-1));
     bind("locations.next", "Next location", "ArrowDown", () => move(1));
+    bind("locations.pageUp", "Previous locations page", "PageUp", () => move(-1, true));
+    bind("locations.pageDown", "Next locations page", "PageDown", () => move(1, true));
     bind("locations.open", "Open selected location", "Enter", () => {
         const location = query?.page?.selected;
         return !!location && choose(location);
