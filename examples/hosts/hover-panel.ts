@@ -34,8 +34,18 @@ export function mountHoverPanel(host: HTMLElement, tools: HostHoverTools, option
     }, { signal: listeners.signal });
     popup.addEventListener("keydown", event => {
         const anchor = tools.popupAnchor(), origin = previousFocus;
-        if (anchor?.editor.keymap.handle(event) && !tools.popupAnchor() && origin?.isConnected
-            && (owner.activeElement === owner.body || popup.contains(owner.activeElement))) origin.focus({ preventScroll: true });
+        if (!anchor) return;
+        if (anchor.editor.keymap.handle(event)) {
+            if (!tools.popupAnchor() && origin?.isConnected && (owner.activeElement === owner.body || popup.contains(owner.activeElement)))
+                origin.focus({ preventScroll: true });
+            return;
+        }
+        if (event.target === popup && !event.defaultPrevented && !event.isComposing && event.keyCode !== 229
+            && !event.ctrlKey && !event.metaKey && !event.altKey && [...event.key].length === 1
+            && origin?.isConnected && anchor.editor.element.contains(origin)) {
+            // Return focus before the browser delivers the character's native input event.
+            origin.focus({ preventScroll: true }); tools.dismiss();
+        }
     }, { signal: listeners.signal });
     popup.addEventListener("pointerenter", tools.enterPopup, { signal: listeners.signal }); popup.addEventListener("pointerleave", tools.leavePopup, { signal: listeners.signal });
     popup.addEventListener("pointerdown", event => {

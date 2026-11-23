@@ -1,6 +1,7 @@
 import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { holdLspReplies } from "../helpers/lsp-replies.ts";
+import { paintedCharacter } from "../helpers/painted-character.ts";
 import { publishFixtureDiagnostics, sourceDiagnosticUri } from "./fixture-diagnostics.ts";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const primary = (page: Page) => page.getByRole("textbox", { name: "Primary source", exact: true });
@@ -65,7 +66,10 @@ for (const host of ["plain", "react"]) {
         expect((await snapshot(page)).history).toEqual(before.history); expect((await snapshot(page)).source.revision).toBe(before.source.revision);
         await page.evaluate(() => window.hostFixture.faultHoverNext("primary", "markup")); await primary(page).press("Control+k"); await primary(page).press("Control+i");
         await expect(tooltip(page)).toContainText("<img"); await expect(tooltip(page).locator("img,script")).toHaveCount(0); expect(await page.evaluate(() => Reflect.get(window, "hoverExecuted"))).toBeUndefined();
-        await primary(page).pressSequentially("X"); await ready(page); await expect(tooltip(page)).toBeHidden();
+        const word = await paintedCharacter(tooltip(page), "literal information", 2);
+        await page.mouse.dblclick(word.x, word.y);
+        await expect.poll(() => page.evaluate(() => getSelection()?.toString().trim())).toBe("literal");
+        await page.keyboard.type("X"); await ready(page); await expect(tooltip(page)).toBeHidden(); await expect(primary(page)).toBeFocused();
         expect(await page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length))).toBe(original.slice(0, 2) + "X" + original.slice(2, 7) + "X" + original.slice(7));
         expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1); expect((await snapshot(page)).source.exports).toBe(0);
         const counters = (await snapshot(page)).bindings.hover.sessions.find(s => s.id === "primary")!.counters;
