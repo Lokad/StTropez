@@ -1283,6 +1283,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             if (event.clientX < bounds.left || event.clientX >= bounds.right
                 || event.clientY < bounds.top || event.clientY >= bounds.bottom) return undefined;
         }
+        const painted = viewport.activity();
+        if (painted.revision !== revision || painted.foldGeneration !== view.folding.getSnapshot().generation) viewport.flush();
         return viewport.hitTest(event.clientX, event.clientY);
     }
     let draggedWord = false;

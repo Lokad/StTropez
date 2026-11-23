@@ -283,7 +283,8 @@ PageUp and PageDown
 move `max(1, floor(viewportHeight / lineHeight) - 1)` visible rows, accounting for folds and
 [aligned comparison rows](comparison.md).
 
-Clicking selects source text even where the transparent input overlaps it. Right- or middle-click
+Clicking uses the current document and folds, including edits awaiting paint.
+It selects source text even where the transparent input overlaps it. Right- or middle-click
 places the caret at the pointer, or keeps the selections when you click inside one. Dragging a
 scrollbar or clicking its track keeps the selection. Typing brings the edited line back into view,
 even during a track-click animation.

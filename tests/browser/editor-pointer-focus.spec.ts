@@ -36,6 +36,22 @@ test.describe("fractional display scale", () => {
     });
 });
 
+test("a click during a host edit places the next character in the clicked text", async ({ page }) => {
+    await page.goto("/editing/"); await ready(page);
+    await page.evaluate(() => window.editingFixture.setText("first\nsecond"));
+    await ready(page);
+    const point = await textPoint(page, 9);
+    await page.evaluate(() => {
+        document.querySelector("#primary")!.addEventListener("pointerdown", () => {
+            window.editingFixture.edit([{ from: 0, to: 0, insert: "updated " }]);
+        }, { capture: true, once: true });
+    });
+    await page.mouse.click(point.x, point.y);
+    expect(await page.evaluate(() => window.editingFixture.selectionSet().ranges[0]?.head)).toBe(17);
+    await page.keyboard.type("!");
+    await expect(page.locator('#primary .st-viewport-row[data-line="1"]')).toHaveText("sec!ond");
+});
+
 test("three clicks select the line ending and four select the document", async ({ page }) => {
     await page.goto("/editing/");
     await page.evaluate(() => window.editingFixture.setText("one two\r\n\r\nlast"));
