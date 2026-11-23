@@ -1,4 +1,5 @@
 import type { LinePrompt } from "../../src/browser/index.ts";
+import { isPrimaryShortcut } from "./host-shortcuts.ts";
 import "./line-prompt.css";
 
 export function linePrompt(owner: Document): LinePrompt {
@@ -7,6 +8,7 @@ export function linePrompt(owner: Document): LinePrompt {
         const label = owner.createElement("label"), input = owner.createElement("input");
         const go = owner.createElement("button"), cancel = owner.createElement("button");
         dialog.className = "host-line-prompt"; dialog.setAttribute("aria-label", "Go to line");
+        dialog.setAttribute("closedby", "any");
         label.textContent = `Line (1–${lineCount})`;
         input.type = "number"; input.required = true; input.min = "1"; input.max = String(lineCount);
         input.value = String(currentLine); label.append(input);
@@ -20,6 +22,11 @@ export function linePrompt(owner: Document): LinePrompt {
         form.addEventListener("submit", event => { event.preventDefault(); finish(input.valueAsNumber); });
         cancel.addEventListener("click", dismiss);
         dialog.addEventListener("cancel", event => { event.preventDefault(); dismiss(); });
+        dialog.addEventListener("keydown", event => {
+            if (!isPrimaryShortcut(event) || event.shiftKey || event.key.toLowerCase() !== "g") return;
+            event.preventDefault(); event.stopPropagation();
+            if (!event.repeat) { input.focus(); input.select(); }
+        });
         if (signal.aborted) { resolve(undefined); return; }
         signal.addEventListener("abort", dismiss, { once: true });
         owner.body.append(dialog); dialog.showModal(); input.select();

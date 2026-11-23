@@ -240,6 +240,13 @@ test("Go to line returns typing to the chosen large-file row and cancels when th
     await page.keyboard.type("// "); await expect(page.locator("#cursor")).toHaveText("Ln 5000, Col 4");
     expect(await viewport.evaluate(view => view.scrollTop)).toBe(top);
     await expect(page.locator("#editor .st-viewport-row").filter({ hasText: "// // Row 5000:" })).toBeVisible();
+    await source.press("Control+g"); await line.fill("123");
+    await dialog.getByRole("button", { name: "Go", exact: true }).press("Control+g");
+    await expect(line).toBeFocused(); await page.keyboard.type("8"); await expect(line).toHaveValue("8");
+    const target = await viewport.boundingBox();
+    await page.mouse.click(target!.x + 18, target!.y + 20); await expect(dialog).toHaveCount(0);
+    await expect(source).toBeFocused(); await page.keyboard.type("7");
+    await expect(page.locator("#editor .st-viewport-row").filter({ hasText: "// 7// Row 5000:" })).toBeVisible();
     await page.locator("#compare").click();
     const saved = page.getByRole("textbox", { name: "Comparison baseline source", exact: true });
     await saved.press("Control+g"); await line.fill("20"); await line.press("Enter"); await expect(saved).toBeFocused();
@@ -247,12 +254,12 @@ test("Go to line returns typing to the chosen large-file row and cancels when th
     await expect(cursor).toHaveText("Ln 20, Col 1");
     await saved.press("ArrowRight"); await expect(cursor).toHaveText("Ln 20, Col 2");
     await page.getByRole("textbox", { name: "Comparison working source", exact: true }).focus();
-    await expect(cursor).toHaveText("Ln 5000, Col 4");
+    await expect(cursor).toHaveText("Ln 5000, Col 5");
     await saved.press("Control+g"); await expect(line).toHaveValue("20");
     // A host can change files while its own prompt is open.
     await page.locator('[data-panel="javascript"]').evaluate(button => (button as HTMLButtonElement).click());
     await expect(dialog).toHaveCount(0); await expect(source).toBeVisible();
-    await expect(cursor).toHaveText("Ln 5000, Col 4");
+    await expect(cursor).toHaveText("Ln 5000, Col 5");
 });
 
 test("off-screen Undo and Redo reveal surrounding code and retain the typing target in source and review", async ({ page, baseURL }) => {

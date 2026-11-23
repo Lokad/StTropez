@@ -93,6 +93,8 @@ Escape returns to the search pane. F3 and Shift+F3 continue the last query with 
 
 The Code menu follows the last focused editor. The saved copy and generated JavaScript
 offer **Go to line**. Editing commands are disabled in both read-only panes.
+In **Go to line**, Ctrl/Cmd+G selects the number again. Escape or a click outside the prompt
+returns to the original caret.
 
 | Action | Workflow |
 | --- | --- |
