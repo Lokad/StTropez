@@ -97,11 +97,19 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await expect(choices(page).nth(5)).toHaveAttribute("data-retained", "action-choice"); await expect(choices(page).nth(5)).toHaveAttribute("aria-pressed", "true");
         await expect(input(page, "Action module")).toHaveAttribute("data-retained", "action-module");
         replies.hold(); await choices(page).nth(2).click(); await expect.poll(replies.waiting).toBe(true);
+        await page.evaluate(() => window.hostFixture.snapshot().bindings.actions.state.choices[2]!.select(() => {
+            Reflect.set(window, "retiredDirectFix", true); return true;
+        }));
+        await choices(page).first().click(); await expect(choices(page).first()).toHaveAttribute("aria-pressed", "true");
+        await expect.poll(replies.cancelled).toBe(true); await expect(edits(page).first()).toContainText("sample-utils");
+        // Return to the same lazy row while the first reply is still held. Its old direct-fix predicate has expired.
+        await choices(page).nth(2).click(); await expect(edits(page).first()).toContainText('Insert "DONE"');
         await input(page, "Configuration path").focus(); await replies.release(); await waitForActions(page); await expect(input(page, "Configuration path")).toBeFocused(); await expect(edits(page)).toHaveCount(1); await expect(edits(page).first()).toContainText('Insert "DONE"');
+        expect(await page.evaluate(() => Reflect.get(window, "retiredDirectFix"))).toBeUndefined(); await exact(page, raw);
         const request = requests.find(r => r.method === "textDocument/codeAction")!;
         expect(request.params._fixture).toEqual({ module: "sample-utils", delay: 0 });
         expect(request.params.range).toEqual({ start: { line: 0, character: 7 }, end: { line: 0, character: 10 } }); expect(request.params.context.triggerKind).toBe(1); expect(request.params.context.diagnostics).toHaveLength(1); expect(request.params.context.diagnostics[0].range).toEqual({ start: { line: 0, character: 6 }, end: { line: 0, character: 10 } });
-        expect(requests.filter(r => r.method === "codeAction/resolve")).toHaveLength(1); const initialize = requests.find(r => r.method === "initialize" && r.params.capabilities.textDocument.codeAction)!; expect(initialize.params.capabilities.textDocument.codeAction.resolveSupport.properties).toEqual(["edit"]);
+        expect(requests.filter(r => r.method === "codeAction/resolve")).toHaveLength(2); const initialize = requests.find(r => r.method === "initialize" && r.params.capabilities.textDocument.codeAction)!; expect(initialize.params.capabilities.textDocument.codeAction.resolveSupport.properties).toEqual(["edit"]);
         expect((await snapshot(page)).history).toEqual(before.history); await button(page, "Apply captured action").click(); await waitForActions(page); await exact(page, raw.replace("TODO", "DONE")); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
         await input(page, "Secondary source").press("Control+z"); await waitForActions(page); await exact(page, raw); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet.ranges.map(r => ({ anchor: r.anchor, head: r.head }))).toEqual(ranges);
         await input(page, "Secondary source").press("Control+Shift+z"); await waitForActions(page); await exact(page, raw.replace("TODO", "DONE")); expect((await snapshot(page)).source.exports).toBe(0); await dispose(page); await expect.poll(() => closed).toBe(opened);

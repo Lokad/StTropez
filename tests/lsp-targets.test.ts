@@ -203,6 +203,24 @@ test("rename and resolved actions retain unloaded null-version edit targets thro
     actions.cancel(); await settled(); assert.equal(action.edit!.isCurrent(), false); assert.equal(leases[1]!.released, 1);
 });
 
+test("switching lazy actions releases a late unopened target and leaves the replacement edit current", async t => {
+    const entered = latch<LspTargetContext>(), loaded = latch<LspTargetSource>();
+    const f = clientFixture(t, undefined, async (_uri, context) => { entered.resolve(context); return loaded.promise; });
+    const client = createLspActionClient(f.provider); t.after(client.dispose);
+    const source = f.document(), lease = retained(f); t.after(() => loaded.resolve(lease.value));
+    f.peer.onRequest("textDocument/codeAction", () => [{ title: "Unopened file", data: 1 }, { title: "Current file", data: 2 }]);
+    f.peer.onRequest("codeAction/resolve", (action: { data: number }) => ({ ...action,
+        edit: { changes: { [action.data === 1 ? uri : source.language!.uri]: [{ range, newText: "new" }] } } }));
+    const batch = await client.run({ document: source, from: 6, to: 10 }).result;
+    const first = assert.rejects(batch.resolve(batch.actions[0]!), cancelled); const context = await entered.promise;
+    const next = await batch.resolve(batch.actions[1]!); await first;
+    assert.equal(context.isCurrent(), false); assert.equal(client.isBusy(), false);
+    loaded.resolve(lease.value); await settled();
+    assert.equal(lease.released, 1); assert.ok(batch.isCurrent()); assert.ok(next.edit!.isCurrent());
+    assert.equal(next.edit!.documents[0]!.target.document.documentId, source.id);
+    assert.equal(f.sent("textDocument/codeAction").length, 1);
+});
+
 test("a closed target cannot satisfy an invented wire version or bypass read-only host authority", async t => {
     const f = clientFixture(t, undefined, async () => retained(f).value), client = createLspRenameClient(f.provider); t.after(client.dispose);
     const source = f.document();

@@ -26,7 +26,7 @@ export function actionsPanelModel(tools: ActionsPanelTools, s: ActionsSnapshot) 
         module: { label: "Action module ", value: s.module, maxLength: 64, bind: tools.bindModule, change: (value: string) => tools.setModule(value) },
         actions: actionsControls(tools, s),
         choices: { label: "Provider code actions", identity: s.choices, page: s.choicePage, start: s.choicePage * actionChoicePageSize + 1,
-            disabled: s.pending, isSelected: (index: number) => s.choice === index,
+            disabled: s.pending && !s.resolving, isSelected: (index: number) => s.choice === index,
             items: () => s.choices.slice(s.choicePage * actionChoicePageSize, (s.choicePage + 1) * actionChoicePageSize).map(choice => ({ key: choice.index, label: actionChoiceLabel(choice),
                 invoke: () => choice.select() } as const)) },
         preview: { label: "Captured action title", text: s.title },

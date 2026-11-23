@@ -1,4 +1,4 @@
-import { staleRequest } from "./wire.ts";
+import { staleRequest, type JsonValue } from "./wire.ts";
 import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspProjectClientDiagnostics, type LspProjectRequest } from "./lsp-client.ts";
 import { decodeLspCodeActions, decodeLspResolvedCodeAction, lspCodeActionUris } from "./lsp-code-actions.ts";
 import type { LspCodeAction, LspCodeActions } from "./lsp-code-actions.ts";
@@ -14,6 +14,7 @@ export type LspActionResult = Readonly<{
     actions: LspCodeActions; isCurrent: () => boolean; commandCurrent: () => boolean; supports: (command: LspCommand) => boolean;
     execute: (action: LspCodeAction, scope: LspCommandScope) => Promise<LspCommandReceipt>;
     resolve: (action: LspCodeAction, prepare?: LspPrepare) => Promise<LspCodeAction>;
+    cancelResolve: () => void;
 }>;
 export type LspActionClient = LspFeatureClient<"textDocument/codeAction", LspActionRequest, LspActionResult, LspProjectClientDiagnostics>;
 
@@ -21,14 +22,18 @@ export type LspActionClient = LspFeatureClient<"textDocument/codeAction", LspAct
 export function createLspActionClient(provider: LspWorkspace, options: LspActionOptions = {}): LspActionClient {
     const client = createLspClient(provider, "textDocument/codeAction"), session = client.scope;
     let executing = false, runner: LspCommandRunner | undefined;
+    let resolver: ReturnType<typeof createLspClient<"textDocument/codeAction">> | undefined;
+    const releaseResolve = () => { const previous = resolver; resolver = undefined; previous?.dispose(); };
     const commands = () => runner ??= createLspCommandRunner(session, client.notify);
-    const busy = () => executing || client.isBusy();
+    const busy = () => executing || client.isBusy() || !!resolver?.isBusy();
     return Object.freeze({ ...lspFeatureHandle(client, { isBusy: busy,
-        cancel: () => { runner?.cancel(); client.cancel(); }, dispose: () => { runner?.dispose(); client.dispose(); } }),
+        cancel: () => { releaseResolve(); runner?.cancel(); client.cancel(); }, dispose: () => { releaseResolve(); runner?.dispose(); client.dispose(); } }),
         run: (request: LspActionRequest) => {
             const { document, from, to } = request;
             if (executing) return Object.freeze({ result: Promise.reject(new Error("A confirmed action command is still running.")), cancel: () => {} });
-            return client.request(request, "textDocument/codeAction", capture => {
+            releaseResolve();
+            const captured = request.project ? { ...request, project: [...request.project] } : request;
+            return client.request(captured, "textDocument/codeAction", capture => {
                 const index = capture.index;
                 const target = session.attachDocument(document.id);
                 const diagnostics = session.observeDiagnostics(target).getSnapshot(), batch = diagnostics.result;
@@ -61,11 +66,28 @@ export function createLspActionClient(provider: LspWorkspace, options: LspAction
                         try { return await commands().runAuthorized(action.command, scope, route); }
                         finally { executing = false; client.notify(); }
                     },
-                    resolve: async (action: LspCodeAction, prepareResolve?: LspPrepare) => {
-                        if (!value.isCurrent() || busy() || !actions.includes(action) || !action.resolve) throw staleRequest("Captured action cannot be resolved.");
-                        const response = await value.follow("textDocument/codeAction", "codeAction/resolve", action.resolve, prepareResolve);
-                        const uris = value.decode(() => lspCodeActionUris([response])); await value.resolveTargets(uris, "edit");
-                        return value.decode(() => decodeLspResolvedCodeAction(response, action, value.capture, value.targetForUri));
+                    cancelResolve: () => { if (value.isGenerationCurrent()) releaseResolve(); },
+                    resolve: async (action: LspCodeAction, prepare?: LspPrepare) => {
+                        if (!value.isCurrent() || executing || !actions.includes(action) || !action.resolve) throw staleRequest("Captured action cannot be resolved.");
+                        releaseResolve();
+                        // The choice owns its wire request, host target loads and leases. The list keeps its original capture.
+                        const lane = resolver = createLspClient(provider, "textDocument/codeAction");
+                        lane.subscribe(client.notify);
+                        try {
+                            return await lane.request({ ...captured, prepare }, "textDocument/codeAction",
+                                () => value.decode(() => action.resolve as Record<string, JsonValue>), async reply => {
+                                    const missing = reply.decode(() => lspCodeActionUris([reply.response])).filter(uri => !value.targetForUri(uri));
+                                    await reply.resolveTargets(missing, "edit");
+                                    return reply.decode(() => value.decode(() => decodeLspResolvedCodeAction(reply.response, action, value.capture,
+                                        uri => value.targetForUri(uri) ?? reply.targetForUri(uri))));
+                                }, "codeAction/resolve").result;
+                        } catch (error) {
+                            if (resolver === lane) {
+                                releaseResolve();
+                                if (value.isGenerationCurrent()) value.decode(() => { throw error; });
+                            }
+                            throw error;
+                        }
                     } });
             });
         },

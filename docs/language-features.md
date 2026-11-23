@@ -536,6 +536,8 @@ The browser controller owns these lifetimes for a mounted editor.
 `createCodeActionController(editor, provider, options?)` requests actions for the editor’s primary
 selection. The origin document is always included. Supply `documents` to include other project files.
 Render `getSnapshot().choices` and call the chosen item’s `select()` to resolve and preview it.
+The user can choose another action while a preview loads. Only the latest choice can open a
+preview or run its direct-fix predicate.
 If the first choice already has an edit, its preview opens with the list. A preview page contains up
 to 64 edits. For an edit-only action, `confirm()` applies the full edit across all affected files in
 one undo step and returns `{ status: "applied" }`.
@@ -575,7 +577,8 @@ failure returns `{ status: "failed", message }`.
 
 `createLspActionClient(provider, options).run({ document, project, from, to }).result` resolves to
 validated `actions`, currentness guards, `supports(command)`, `resolve(action)` and
-`execute(action, scope)`. Requests carry trigger kind Invoked and overlapping current versioned
+`execute(action, scope)`. Each list has one active resolution. Another `resolve` or
+`cancelResolve()` releases that resolution and keeps the list available. Requests carry trigger kind Invoked and overlapping current versioned
 diagnostics, preserving their metadata. The request range is primary; it does not assert completed
 analysis. No automatic trigger, `only` filter or partial-result token is sent.
 

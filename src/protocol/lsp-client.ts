@@ -84,7 +84,7 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
     };
     type Params = (capture: LspDocumentCapture) => Record<string, JsonValue>;
     async function receive(op: Request, { document, project, prepare }: LspProjectRequest, method: LspDocumentFeature,
-        params: Params, wireMethod?: "completionItem/resolve") {
+        params: Params, wireMethod?: "completionItem/resolve" | "codeAction/resolve") {
         if (project && !sameDocument(project.find(snapshot => snapshot.id === document.id), document)) throw stale();
         documents = scope.setDocuments(project ?? [document]);
         op.identities = new Map([...documents.values()].map(document => [document, document.getSnapshot()]));
@@ -149,7 +149,7 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
             }) });
     }
     function request<T>(input: LspProjectRequest, method: LspDocumentFeature, params: Params,
-        read: (response: Awaited<ReturnType<typeof receive>>) => T | Promise<T>, wireMethod?: "completionItem/resolve"): LspCall<T> {
+        read: (response: Awaited<ReturnType<typeof receive>>) => T | Promise<T>, wireMethod?: "completionItem/resolve" | "codeAction/resolve"): LspCall<T> {
         if (disposed) throw new Error("LSP feature client is disposed.");
         invalidate(false);
         let reject!: (error: unknown) => void;

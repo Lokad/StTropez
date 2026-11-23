@@ -44,6 +44,7 @@ export type CodeActionControllerOptions = Readonly<{
 type Job = {
     id: number; capture: CapturedViewRequest<TabTarget | undefined>; project: ReturnType<typeof retainEditProject>;
     timer?: number; invalid: boolean; batch?: LspActionResult; selection?: LspCodeAction;
+    resolving?: { index: number; applyWhen: ((action: LspCodeAction) => boolean) | undefined };
 };
 const empty: CodeActionSnapshot = Object.freeze({ status: "idle", message: "", choices: Object.freeze([]), choice: null, preview: null, changes: Object.freeze([]) });
 export type CodeActionController = Observable<CodeActionSnapshot> & Readonly<{
@@ -166,19 +167,31 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
         const reason = disabled(j.batch, action);
         const preview = makePreview(index, action.title, action.command?.command ?? null, reason, !reason && writableEdit(editor, action.edit));
         publish({ ...cell.get(), status: "ready", choice: index, preview, message: reason ?? "Review the selected action before confirming." });
-        if (!reason && applyWhen?.(action)) preview.confirm();
+        if (!reason && cell.get().preview === preview && applyWhen?.(action)) preview.confirm();
     }
     function choose(id: number, index: number, applyWhen?: (action: LspCodeAction) => boolean): void {
         scope.assertWritable();
         const j = job, batch = j?.batch, action = batch?.actions[index];
-        if (!j || j.id !== id || !batch || !action || cell.get().status !== "ready" || !current(j)) return;
+        if (!j || j.id !== id || !batch || !action || !current(j)) return;
+        const status = cell.get().status;
+        if (status !== "ready" && status !== "resolving") return;
+        if (status === "resolving" && j.resolving?.index === index) { j.resolving.applyWhen = applyWhen; return; }
+        if (j.resolving) {
+            delete j.resolving; win.clearTimeout(j.timer);
+        }
+        batch.cancelResolve();
         if (!action.resolve || disabled(batch, action)) { present(j, index, action, applyWhen); return; }
+        const choice = j.resolving = { index, applyWhen };
         publish({ ...cell.get(), status: "resolving", choice: index, preview: null, message: "Resolving the selected action." });
+        if (job !== j || j.resolving !== choice) return;
         timeout(j);
         void batch.resolve(action, options.prepareResolve).then(resolved => {
+            if (job !== j || j.resolving !== choice) return;
             if (!current(j)) { expire(j); return; }
-            win.clearTimeout(j.timer); if (resolved.edit) j.project.includeEdit(resolved.edit); present(j, index, resolved, applyWhen);
-        }).catch(error => requestFailed(j, error));
+            win.clearTimeout(j.timer); if (resolved.edit) j.project.includeEdit(resolved.edit);
+            present(j, index, resolved, choice.applyWhen);
+            if (j.resolving === choice) delete j.resolving;
+        }).catch(error => { if (job === j && j.resolving === choice) requestFailed(j, error); });
     }
     function cancel(): void {
         scope.assertWritable(); if (disposed) return;
