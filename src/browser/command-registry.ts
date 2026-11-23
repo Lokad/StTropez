@@ -112,8 +112,11 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
         });
         if (pending && pending.target === chordTarget(event) && pending.current()) {
             const suffix = match(pending.keys);
-            if (key === "escape" || accept(pending.keys, suffix)) { event.preventDefault(); return true; }
-            if (pending.keys.get(suffix)?.some(binding => !sharedOnly || binding.shared)) return false;
+            const bound = pending.keys.get(suffix)?.some(binding => !sharedOnly || binding.shared);
+            if (key === "escape" || bound) {
+                if (key !== "escape") accept(pending.keys, suffix);
+                event.preventDefault(); return true;
+            }
         }
         if (!group) return false;
         if (group.has("")) {

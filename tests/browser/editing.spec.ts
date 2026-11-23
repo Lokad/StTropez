@@ -651,6 +651,12 @@ test("comment chords and shifted slash act on the captured lines", async ({ page
     await input.press("Shift+Alt+a"); await expect(rows.first()).toHaveJSProperty("textContent", "  a/*lp*/ha");
     await input.press("Control+k"); await page.evaluate(() => window.editingFixture.selections([{ anchor: 0, head: 0 }]));
     expect(await stroke("c")).toBe(false);
+    await page.evaluate(() => window.editingFixture.configure({ language: {} }));
+    for (const suffix of ["c", "u"]) {
+        await input.press("Control+k"); expect(await stroke(suffix)).toBe(true);
+    }
+    await expect(rows.first()).toHaveJSProperty("textContent", "  a/*lp*/ha");
+    await input.press("Control+k"); await input.press("Escape"); expect(await stroke("c")).toBe(false);
 });
 
 test("toggling a shared block comment places the next edit at the merged caret and undoes both", async ({ page }) => {

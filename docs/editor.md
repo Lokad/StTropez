@@ -407,7 +407,9 @@ can toggle a block comment even when the key produces an accented letter.
 Both strokes must come from the same control, including inside a shadow root. A chord expires
 after 1.5 seconds or a change of focus, selection or document revision.
 Bindings for the same sequence run in descending `priority` (default 0). A disabled command or one
-that returns `false` lets the next binding try. A handled command consumes the keystroke. Bindings repeat by default. Set `repeat: false`
+that returns `false` lets the next binding try. A handled command consumes the keystroke.
+After a chord prefix, a bound second stroke is consumed even if every eligible command declines.
+Bindings repeat by default. Set `repeat: false`
 to consume a held shortcut without invoking its enabled command again.
 Equal priorities for the same sequence and single strokes that conflict with chord prefixes throw.
 `keymap.unbind(keys)` removes all bindings for a sequence. Disposing a binding removes only that registration.
