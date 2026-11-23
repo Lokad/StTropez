@@ -2,7 +2,7 @@ import { fixtureRequests, type FixturePolicy } from "../shared/language/fixture-
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.ts";
-import { captureDestinationPanes, presentDocument, unavailablePaneMessage, type LanguageHost } from "./language-host.ts";
+import { captureDestinationPanes, presentDocument, unavailablePaneMessage, type NavigationHost } from "./language-host.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, DocumentSnapshot, TabId } from "../../src/index.ts";
@@ -43,9 +43,9 @@ export class HostDocumentLinks {
     private readonly metrics = { requested: 0, opened: 0, returned: 0 };
     private readonly cell = new HostCell(initial);
     readonly state = this.cell.observable;
-    private readonly host: LanguageHost;
+    private readonly host: NavigationHost;
     private readonly options: LinkHostOptions;
-    constructor(host: LanguageHost, options: LinkHostOptions) {
+    constructor(host: NavigationHost, options: LinkHostOptions) {
         this.host = host; this.options = options;
         this.pageKey = createReviewKey(host.workspace);
     }
@@ -145,6 +145,7 @@ export class HostDocumentLinks {
             documents.set(target.language.uri, target);
         }
         const targets = captureDestinationPanes(origin, this.sessions.keys(), aliases);
+        const mayFocus = this.host.claimNavigationFocus();
         this.release();
         const route: Route = { origin, source, documents, targets, viewState: origin.editor.captureView() };
         this.route = route; this.metrics.requested++;
@@ -155,7 +156,7 @@ export class HostDocumentLinks {
             const head = route.viewState.head;
             const index = state.links.findIndex(link => link.from <= head && head <= link.to);
             if (index >= 0) this.render(route, Math.floor(index / linkLimits.page));
-            if (keyboard && origin.editor.getSnapshot().focused) this.linkList.element?.focus();
+            if (keyboard && mayFocus() && origin.editor.getSnapshot().focused) this.linkList.element?.focus();
         });
     }
     private place(route: Route, doc: DocumentSnapshot, viewState?: ViewState) {

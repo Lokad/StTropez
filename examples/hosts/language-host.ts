@@ -10,6 +10,16 @@ export type LanguageHost = Readonly<{
     reconnect?: () => void;
 }>;
 
+/** A later destination request owns focus even if its result is empty or fails. */
+export function createNavigationHost(host: LanguageHost) {
+    let latest = 0;
+    return { ...host, claimNavigationFocus() {
+        const request = ++latest;
+        return () => request === latest;
+    } };
+}
+export type NavigationHost = ReturnType<typeof createNavigationHost>;
+
 export const unavailablePaneMessage = "Show a source pane or finish its pending input, then try again.";
 
 export function isMountedEditor(workspace: Workspace, editor: TextEditor, target = editor.tab): boolean {

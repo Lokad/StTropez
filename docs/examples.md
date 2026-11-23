@@ -393,6 +393,8 @@ provider workspace edits show up to 64 edits per page. Choosing a different code
 its edit preview on page one.
 
 F4 opens the module links list. Closing another view of the source keeps those links available.
+When a module link lookup overlaps a definition or reference lookup, only the latest request
+can move focus. You can open either result from its panel.
 Escape dismisses the list and returns focus to its mounted source,
 including while a link resolves. If you Tab away, the resolved link stays in the list until you
 open it. If the destination pane is busy with a paste or fails to open, the panel shows the

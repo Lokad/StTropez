@@ -1,5 +1,5 @@
 import { fixtureRequests, type FixturePolicy } from "../shared/language/fixture-requests.ts";
-import { captureDestinationPanes, isMountedEditor, presentDocument, type LanguageHost } from "./language-host.ts";
+import { captureDestinationPanes, isMountedEditor, presentDocument, type NavigationHost } from "./language-host.ts";
 import { onSourceFocus } from "./source-focus.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
@@ -16,7 +16,7 @@ type Kind = LspNavigationRequest["kind"];
 export type NavigationHostOptions = Readonly<{ provider: LspWorkspace; prepare: (kind: Kind, policy: FixturePolicy<NavigationFault>) => LspPrepare }>;
 type Session = { id: string; target: TabTarget; editor: TextEditor; controller: NavigationController };
 type Job = { kind: Kind; symbol: string; origin: Session; returnPoint: NavigationOrigin; sources: Set<DocumentId>; targets: Map<DocumentId, Session>;
-    timer: number; page: NavigationPage | undefined; followDefinition: boolean };
+    timer: number; page: NavigationPage | undefined; followDefinition?: () => boolean };
 export type NavigationNote = Readonly<{ ordinal: number; title: string; line: number; column: number; declaration: boolean; open: () => void }>;
 export type NavigationSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; canCancel: boolean; status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired" | "disconnected";
     message: string; includeDeclaration: boolean; locations: readonly NavigationNote[]; paging: PanelPaging | null; canReturn: boolean }>;
@@ -37,9 +37,9 @@ export class HostNavigationTools {
     readonly state = this.cell.observable;
     private readonly metrics = { requested: 0, applied: 0, cancelled: 0, expired: 0, failed: 0 };
     private readonly queries = { completed: 0, failed: 0 };
-    private readonly host: LanguageHost;
+    private readonly host: NavigationHost;
     private readonly options: NavigationHostOptions;
-    constructor(host: LanguageHost, options: NavigationHostOptions) {
+    constructor(host: NavigationHost, options: NavigationHostOptions) {
         this.host = host; this.options = options;
         this.history = createNavigationHistory(host.workspace);
         this.queryKey = createReviewKey(host.workspace);
@@ -71,7 +71,7 @@ export class HostNavigationTools {
             message: `${result.count} ${label} locations for ${job.symbol}.` });
         if (job.followDefinition && result.count === 1) {
             // Presenting a pane can write to the workspace. Finish controller notification first.
-            queueMicrotask(() => { if (job.followDefinition && editor.getSnapshot().focused) locations[0]!.open(); });
+            queueMicrotask(() => { if (job.followDefinition?.() && editor.getSnapshot().focused) locations[0]!.open(); });
         }
     }
     private publish(patch: Partial<NavigationSnapshot> = {}): void {
@@ -106,7 +106,7 @@ export class HostNavigationTools {
             });
             signal.addEventListener("abort", stop, { once: true });
             onSourceFocus(editor, signal, () => { this.active = session; this.publish(); });
-            const leaveSource = () => { if (this.job?.origin === session) this.job.followDefinition = false; };
+            const leaveSource = () => { if (this.job?.origin === session) delete this.job.followDefinition; };
             editor.element.addEventListener("focusout", leaveSource, { signal });
             editor.element.ownerDocument.defaultView!.addEventListener("blur", leaveSource, { signal });
             editor.onEditIntent(() => {
@@ -144,8 +144,9 @@ export class HostNavigationTools {
         catch (error) { this.fixture.take(); this.publish({ status: "failed", message: error instanceof Error ? error.message : "Unsupported navigation capture." }); return; }
         const targets = captureDestinationPanes(origin, this.sessions.keys(), sources);
         const returnPoint = this.history.capture(origin.editor); if (!returnPoint) return;
-        const job: Job = { kind, symbol, origin, returnPoint, sources, targets, timer: 0, page: undefined,
-            followDefinition: keyboard && kind === "definition" && origin.editor.getSnapshot().focused };
+        const mayFocus = this.host.claimNavigationFocus();
+        const job: Job = { kind, symbol, origin, returnPoint, sources, targets, timer: 0, page: undefined };
+        if (keyboard && kind === "definition" && origin.editor.getSnapshot().focused) job.followDefinition = mayFocus;
         this.job = job; this.metrics.requested++; const win = origin.editor.element.ownerDocument.defaultView!;
         try {
             // The panel deadline also bounds host preparation and loading a target after the RPC reply.

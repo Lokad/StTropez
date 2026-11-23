@@ -10,6 +10,7 @@ import { comparisonSettled, editorSettled } from "../shared/readiness.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
 import { linePrompt } from "../shared/line-prompt.ts";
 import { HostLanguageTools } from "./language.ts";
+import { createNavigationHost } from "./language-host.ts";
 import { hostLspFactories } from "../../fixtures/protocol/editor-provider.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import { HostHoverTools } from "./hover.ts";
@@ -231,7 +232,7 @@ export class ViewBindings {
         this.language = new HostLanguageTools(controller.workspace, { canCapture, providerFactory: lsp.provider });
         this.hover = new HostHoverTools(kind => { if (kind === "pointer") return !this.signature?.state.getSnapshot().visible; this.signature?.dismiss(); return true; }, { ...lsp.hover, canCapture });
         const present = (document: DocumentId) => this.presentNavigationDocument(document);
-        const languageHost = { workspace: controller.workspace, canCapture, present, reconnect: reconnectProvider };
+        const languageHost = createNavigationHost({ workspace: controller.workspace, canCapture, present, reconnect: reconnectProvider });
         this.navigation = new HostNavigationTools(languageHost, lsp.navigation);
         this.project = new HostProjectTools(languageHost, lsp.project, lsp.owner);
         this.colors = new HostDocumentColors(languageHost, lsp.colors);

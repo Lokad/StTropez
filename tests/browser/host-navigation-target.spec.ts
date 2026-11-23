@@ -1,12 +1,11 @@
 import { build } from "esbuild";
 import { basename } from "node:path";
 import { test, expect } from "./fixtures.ts";
-import type { LanguageHost } from "../../examples/hosts/language-host.ts";
 
 test("links and definitions retry a failed presentation and keep the requesting source", async ({ page }) => {
     const path = "/navigation-target/";
     const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/index.ts",
-        host: "examples/hosts/navigation.ts", panel: "examples/hosts/navigation-panel.ts",
+        host: "examples/hosts/navigation.ts", panel: "examples/hosts/navigation-panel.ts", panes: "examples/hosts/language-host.ts",
         links: "examples/hosts/document-links.ts", linkPanel: "examples/hosts/document-links-panel.ts" },
         outdir: "artifacts/navigation-target", bundle: true, splitting: true, format: "esm", platform: "browser", write: false });
     const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
@@ -33,6 +32,7 @@ test("links and definitions retry a failed presentation and keep the requesting 
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextEditor, openWebSocketTransport, BrowserLspWorkspace } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const { HostNavigationTools } = await import(path + "host.js") as typeof import("../../examples/hosts/navigation.ts");
+        const { createNavigationHost } = await import(path + "panes.js") as typeof import("../../examples/hosts/language-host.ts");
         const { mountNavigationPanel } = await import(path + "panel.js") as typeof import("../../examples/hosts/navigation-panel.ts");
         const { HostDocumentLinks } = await import(path + "links.js") as typeof import("../../examples/hosts/document-links.ts");
         const { mountDocumentLinksPanel } = await import(path + "linkPanel.js") as typeof import("../../examples/hosts/document-links-panel.ts");
@@ -47,12 +47,12 @@ test("links and definitions retry a failed presentation and keep the requesting 
             { value: "export const currency = 1;" }, undefined, { language: { uri: "project:currency", languageId: "generic" } });
         let destination: typeof editor | undefined;
         const attempted = new Set<string>();
-        const panes: LanguageHost = { workspace: ws, canCapture: () => true, present: id => {
+        const panes = createNavigationHost({ workspace: ws, canCapture: () => true, present: id => {
             const label = id === module.documentId ? "Module" : "Declaration";
             if (!attempted.has(id)) { attempted.add(id); throw new Error(label + " pane is unavailable."); }
             destination?.dispose();
             return destination = mountTextEditor(document.getElementById("destination")!, ws, id, { ariaLabel: label });
-        } };
+        } });
         const notes = ws.createTextResource({ scope: "host", resource: "notes", variant: "working" }, "Notes", { value: "Plain text" });
         const notesTab = ws.tabs.open({ kind: "text", documentId: notes.documentId }, "Notes");
         const notesEditor = mountTextEditor(document.body.appendChild(document.createElement("div")), ws, notesTab, { ariaLabel: "Notes" });
