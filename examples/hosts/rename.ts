@@ -4,7 +4,7 @@ import { editPageSize, editPaging } from "./edit-review.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { focusSourceCaret, onSourceFocus } from "./source-focus.ts";
-import { openChangedFile, type LanguageHost } from "./language-host.ts";
+import { isMountedEditor, openChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, TabId } from "../../src/index.ts";
 import { createRenameController } from "../../src/browser/index.ts";
 import type { RenameController, RenamePreview, RenameSnapshot, TextEditor } from "../../src/browser/index.ts";
@@ -97,7 +97,7 @@ export class HostRenameTools {
                     const state = this.cell.get();
                     if (state.pending) return;
                     if (!state.preview) this.prepareIn(session);
-                    else if (state.preview.confirm().applied && this.nameField.focused) focusSourceCaret(editor);
+                    else this.apply(state.preview);
                 } }, { keys: ["Enter"], shared: true, priority: 33, repeat: false });
             register({ id: "rename.cancel", label: "Cancel rename", enabled: ownsField,
                 run: () => { this.cancel(); focusSourceCaret(editor); } }, { keys: ["Escape"], shared: true, priority: 9 });
@@ -125,6 +125,13 @@ export class HostRenameTools {
         }
     }
     readonly prepare = () => this.prepareIn(this.owner ?? this.active);
+    apply(preview: RenamePreview | null): void {
+        const owner = this.owner;
+        if (!owner || !preview || owner.controller.getSnapshot().preview !== preview) return;
+        const doc = owner.editor.element.ownerDocument, focused = doc.activeElement;
+        if (preview.confirm().applied && this.owner === owner && isMountedEditor(this.host.workspace, owner.editor)
+            && doc.hasFocus() && (doc.activeElement === focused || doc.activeElement === doc.body)) focusSourceCaret(owner.editor);
+    }
     private prepareIn(s: Session | undefined) {
         const name = this.cell.get().name;
         if (!s || this.disconnected || !this.host.canCapture(s.editor.view.documentId)) return;

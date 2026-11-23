@@ -146,7 +146,7 @@ test("link rows retain their own action through repaging and resolution", () => 
 
 test("rename presentation retains its preview name, confirmation action and changed resource", () => {
     const applied: (number | null)[] = [], opened: DocumentId[] = [], firstId = "first" as DocumentId, secondId = "second" as DocumentId;
-    const tools: Parameters<typeof renamePanelModel>[0] = { prepare: noop, cancel: noop,
+    const tools: Parameters<typeof renamePanelModel>[0] = { prepare: noop, apply: target => { target?.confirm(); }, cancel: noop,
         disconnect: noop, reconnect: noop, bindName: noop, setName: noop, openChanged: id => { opened.push(id); } };
     let formatted = 0;
     const preview = (id: number, name: string) => ({ name, count: 1, canApply: true, readPage: () => undefined, confirm: () => { applied.push(id); return { applied: true } as const; } });

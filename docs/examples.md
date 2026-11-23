@@ -426,7 +426,8 @@ Changing result pages during a press requires a fresh click to open a link on th
 Press F2 on the symbol to rename. Its name is selected, so typing replaces it.
 Enter and **Prepare rename preview** both use that pane,
 even if you focus another pane before requesting the preview. Press Enter in the name field
-again to apply the reviewed edits.
+again or choose **Apply captured rename** to apply the reviewed edits. Focus returns to the
+pane that requested the rename, where Undo reverses the changes across all affected files.
 Color swatches appear after the provider scans the open file and refresh after typing pauses.
 Click a swatch to edit that literal, or press F6 to list the provider’s colors, including colors
 at the same source position. Press Enter in the value field to preview it. **Apply captured color** applies

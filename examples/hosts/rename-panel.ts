@@ -2,11 +2,11 @@ import { createPanelTextField, createDestinationList, createToolPanel } from "./
 import { changedFiles, editPageSize } from "./edit-review.ts";
 import { pageActions } from "./panel-actions.ts";
 import type { HostRenameTools, RenameNote, HostRenameSnapshot } from "./rename.ts";
-type RenamePanelTools = Pick<HostRenameTools, "prepare" | "cancel" | "disconnect" | "reconnect" | "bindName" | "setName" | "openChanged">;
+type RenamePanelTools = Pick<HostRenameTools, "prepare" | "apply" | "cancel" | "disconnect" | "reconnect" | "bindName" | "setName" | "openChanged">;
 function renameActions(tools: RenamePanelTools, s: HostRenameSnapshot) {
     return [
         { label: "Prepare rename preview", invoke: tools.prepare, disabled: !s.available || s.disconnected || s.pending },
-        { label: "Apply captured rename", reviewKey: s.reviewKey, invoke: () => s.preview?.confirm(), disabled: !s.canApply },
+        { label: "Apply captured rename", reviewKey: s.reviewKey, invoke: () => tools.apply(s.preview), disabled: !s.canApply },
         { label: "Dismiss rename preview", invoke: tools.cancel, disabled: !s.pending && !s.preview },
         ...pageActions("rename targets", s.paging),
         { label: "Disconnect rename provider", invoke: tools.disconnect, disabled: !s.connected && !s.pending },
