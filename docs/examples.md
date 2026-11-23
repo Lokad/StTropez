@@ -383,7 +383,8 @@ Escape dismisses the preview and returns focus to the source editor.
 
 After applying a code action, rename, color change or provider edit, use **Open** to focus the changed file.
 The result survives hiding and showing the source views. If no pane is available, show the
-views or finish the pending input and click **Open** again. Color changes also reveal the caret.
+views or finish the pending input and click **Open** again. Opening a color change reveals the caret.
+The color panel offers that link until the edited document changes again, including through Undo.
 If the color result changes while **Open** is pressed, click the new result to open its file.
 
 Closing the review keeps F12 and Shift+F12 requests from the primary editor usable.

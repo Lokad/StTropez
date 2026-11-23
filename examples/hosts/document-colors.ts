@@ -32,6 +32,7 @@ export class HostDocumentColors {
     private readonly reviewKey;
     private active: Session | undefined;
     private owner: Session | undefined;
+    private stopApplied: (() => void) | undefined;
     private selectedSwatch: LspDocumentColor | undefined;
     private displayed: readonly DocumentColorChoice[] | undefined;
     private value = "";
@@ -56,7 +57,8 @@ export class HostDocumentColors {
     }
     private render(s: Session, patch: Partial<Pick<DocumentColorsSnapshot, "page" | "value" | "selected">> = {}) {
         if (this.owner !== s) return;
-        const state = s.controller.getSnapshot(), old = this.cell.get(), doc = this.host.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
+        const document = this.host.workspace.observeDocument(s.editor.view.documentId);
+        const state = s.controller.getSnapshot(), old = this.cell.get(), doc = document.getSnapshot();
         const fresh = this.displayed !== state.colors;
         this.displayed = state.colors;
         if (!doc) { this.owner = undefined; this.publish({ ...initial, status: "expired", message: "The source closed." }); return; }
@@ -65,9 +67,18 @@ export class HostDocumentColors {
             if (state.status === "failed") s.swatches.clear();
             else if (state.status === "expired" || state.status === "idle") s.swatches.resume();
             const applied = state.status === "applied";
-            if (applied) { if (state.changed) this.metrics.applied++; else this.metrics.unchanged++; }
+            if (applied) {
+                if (state.changed) this.metrics.applied++; else this.metrics.unchanged++;
+                const revision = doc.revision;
+                const stop = document.subscribe(() => {
+                    if (this.stopApplied !== stop || document.getSnapshot()?.revision === revision) return;
+                    stop(); this.stopApplied = undefined;
+                    this.publish({ ...initial, value: this.value, message: "Source changed. Discover colors again." });
+                });
+                this.stopApplied = stop;
+            }
             const offline = this.options.provider.getSnapshot().phase === "disconnected";
-            this.publish({ ...initial, value: this.value, status: offline ? "failed" : state.status === "disposed" ? "idle" : state.status, changed: applied ? { document: doc.id, title: doc.title } : null,
+            this.publish({ ...initial, value: this.value, status: offline ? "failed" : state.status === "disposed" ? "idle" : state.status, changed: applied && state.changed ? { document: doc.id, title: doc.title } : null,
                 message: state.message || (offline ? "Color provider disconnected." : applied ? state.changed ? "Applied the reviewed color presentation." : "The presentation already matches." : "Discover fresh colors.") });
             return;
         }
@@ -103,6 +114,7 @@ export class HostDocumentColors {
             } : null });
     }
     readonly cancel = () => {
+        this.stopApplied?.(); this.stopApplied = undefined;
         const owner = this.owner; this.owner = undefined; this.selectedSwatch = undefined; this.displayed = undefined; this.value = ""; owner?.controller.cancel();
         owner?.swatches.resume();
         this.publish({ ...initial, message: "Color preview dismissed." });

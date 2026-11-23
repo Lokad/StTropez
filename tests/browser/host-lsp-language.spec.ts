@@ -267,8 +267,6 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await button(page, "Toggle views").click(); await open.click(); await expect(secondary).toBeFocused();
         expect(await oldEditor!.evaluate(node => node.isConnected)).toBe(false); await oldEditor!.dispose();
         expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")!.documentId).toBe(companion);
-        await field(page, "Secondary source").press("Control+z"); await settledColorsAndLinks(page); expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(original);
-        await field(page, "Secondary source").press("Control+Shift+z"); await settledColorsAndLinks(page); expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(expected);
         await button(page, "Run captured inputs").click(); expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(text); await page.evaluate(() => window.hostFixture.finishRun());
         await button(page, "Save source").click(); await page.evaluate(() => window.hostFixture.finishSave()); await settledColorsAndLinks(page);
         await exact(page, text); expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(expected);
@@ -281,7 +279,13 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await expect(replacement).not.toHaveText("Open color changes in Module companion");
         await secondary.focus(); await replacement.hover(); await page.mouse.up();
         await expect(secondary).toBeFocused();
-        await replacement.click(); await expect(field(page)).toBeFocused(); await disposeColorsAndLinks(page);
+        await secondary.press("Control+z"); await settledColorsAndLinks(page); expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(original);
+        await secondary.press("Control+Shift+z"); await settledColorsAndLinks(page); expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(expected);
+        await replacement.click(); await expect(field(page)).toBeFocused();
+        await expect(page.getByLabel("Document color status", { exact: true })).toContainText("Opened");
+        await field(page).press("Control+z"); await exact(page, text); await expect(replacement).toBeHidden();
+        await expect(page.getByLabel("Document color status", { exact: true })).toContainText("Source changed");
+        await disposeColorsAndLinks(page);
     });
     if (coversHost("plain-candidate", host, "candidate")) test("a long color insertion has a bounded review and applies in full", async ({ page }) => {
         const raw = 'const color = "#abc";', insert = "#aabbcc/*" + "x".repeat(12_000) + "*/";
@@ -318,6 +322,8 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         const unchanged = await snapshot(page); expect(unchanged.source.revision).toBe(before.source.revision); expect(unchanged.history).toEqual(before.history);
         expect(unchanged.bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "primary")!.selectionSet);
         expect(unchanged.bindings.colors).toMatchObject({ unchanged: 1, applied: 0 });
+        const openChanges = page.getByRole("button", { name: /^Open color changes in / });
+        await expect(openChanges).toBeHidden();
         await expect(field(page).locator("..").locator(".host-inline-swatch")).toHaveCount(1);
         await button(page, "Discover document colors").click(); await settledColorsAndLinks(page);
         await proposed.fill("rgba(1, 2, 3, 0.5)"); await button(page, "Preview color presentations").click(); await expect(button(page, "Apply captured color")).toBeEnabled();
@@ -327,7 +333,9 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         expect(applied.primary).toBe(1); expect(applied.ranges.map(({ anchor, head }) => [anchor, head])).toEqual([[prefix.length + 4, prefix.length + 1], [prefix.length + 20, prefix.length + 20]]);
         await expect(page.locator('.st-viewport:has(> textarea[aria-label="Primary source"]) .st-viewport-row').filter({ hasText: "rgba(1, 2, 3, 0.5)" })).toBeInViewport();
         expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(expected); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
+        await expect(openChanges).toBeVisible();
         await field(page, "Secondary source").press("Control+z"); expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(raw);
+        await expect(openChanges).toBeHidden(); await expect(page.getByLabel("Document color status", { exact: true })).toContainText("Source changed");
         expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "primary")!.selectionSet);
         expect(methods).toContain("textDocument/documentColor"); expect(methods).toContain("textDocument/colorPresentation");
         expect((await snapshot(page)).source.exports).toBe(0); await disposeColorsAndLinks(page);
