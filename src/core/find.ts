@@ -40,7 +40,7 @@ export function createFindReplacementPlan(positions: FindIndex, total: number, r
 export function createLiteralFindBackend(index: () => FindIndex, maxUnits: number, maxMatches: number) {
     return Object.freeze({
         search: ({ buffer, query, wholeWord, matchCase }: FindQueryCapture) => {
-            const search = new LiteralSearch(buffer, query, { wholeWord, matchCase });
+            const search = new LiteralSearch(buffer, query, { wholeWord, matchCase, lineEndings: "equivalent" });
             return { next: () => search.next(maxUnits, maxMatches), dispose: () => search.dispose() };
         },
         replace: (_capture: FindQueryCapture, replacement: string, range?: SearchMatch) => {

@@ -259,12 +259,11 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             || index > 0 && endAt(index - 1) > low) ? { from: low, to: high } : undefined;
         if (state.wholeWord) return undefined;
         const buffer = workspace.document(documentId).buffer;
-        if (state.matchCase) return high - low === state.query.length && buffer.slice(low, high) === state.query ? { from: low, to: high } : undefined;
-        // Preserve replacement of a manually selected literal, including a non-indexed overlap.
-        // Simple folding keeps code-point count; reject impossible spans before rescanning.
+        if (state.matchCase && !state.query.includes("\n")) return high - low === state.query.length && buffer.slice(low, high) === state.query ? { from: low, to: high } : undefined;
+        // Recheck a manually selected overlap using the same newline and case rules as the index.
         if (high - low < Math.ceil(state.query.length / 2) || high - low > state.query.length * 2) return undefined;
-        const selectedSearch = new LiteralSearch(buffer, state.query, { from: low, to: high, matchCase: false });
-        try { const match = selectedSearch.next(high - low + 1, 1).matches[0]; return match?.from === low && match.to === high ? match : undefined; }
+        const selectedSearch = new LiteralSearch(buffer, state.query, { from: low, to: high, matchCase: state.matchCase, lineEndings: "equivalent" });
+        try { const match = selectedSearch.next(high - low + 3, 1).matches[0]; return match?.from === low && match.to === high ? match : undefined; }
         finally { selectedSearch.dispose(); }
     };
     function nextMatch(direction: 1 | -1): { index: number; wrappedTo: FindSnapshot["wrappedTo"] } | undefined {

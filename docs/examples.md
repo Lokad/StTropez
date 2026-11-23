@@ -75,9 +75,10 @@ with a line break. Enter in the replacement field replaces the current match. Ho
 in either field performs its action once.
 In regex replacements, `\n` starts a new line and `\\` inserts one backslash.
 Opening Find picks up a selection of up to 4,096 UTF-16 units and escapes it in regex mode.
-An empty or oversized selection keeps the previous query. For a selection containing carriage
-returns, use regex mode to preserve the exact line endings.
-Typing a query previews a match while focus stays in Find. Enter selects it. The counter shows
+Literal Find accepts selected text with LF or CRLF endings. Regex mode keeps each ending exact
+and can also seed a query from a bare carriage return. An empty or oversized selection keeps
+the previous query. Typing a query previews a match while focus stays in Find. Enter selects it.
+Escape selects a completed preview and returns to the editor. The counter shows
 the active match and total, and reports when navigation wraps.
 Choose **Find** after focusing generated JavaScript or the saved copy to search that pane.
 The bar names the read-only target. Escape returns focus to it. Focusing the working source

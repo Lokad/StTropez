@@ -552,9 +552,9 @@ function selectedFindQuery(source: TextEditor, regex: boolean): string | undefin
     const limit = 4096;
     if (!length || length > limit) return;
     const text = source.workspace.document(source.view.documentId).buffer.slice(Math.min(anchor, head), Math.max(anchor, head));
-    // A textarea normalizes CR to LF. Preserve an exact CR match as a regex escape.
-    if (!regex && text.includes("\r")) return;
-    const query = regex ? text.replace(/[.*+?^$(){}|[\]\\]/g, "\\$&").replace(/\r/g, "\\r") : text;
+    const query = regex ? text.replace(/[.*+?^$(){}|[\]\\]/g, "\\$&").replace(/\r/g, "\\r") : text.replaceAll("\r\n", "\n");
+    // A textarea would turn a remaining literal CR into a different query.
+    if (query.includes("\r")) return;
     return query.length <= limit ? query : undefined;
 }
 function openFind(replace = false): void {

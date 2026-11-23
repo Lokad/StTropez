@@ -3,7 +3,7 @@ import { wordConstituent } from "./words.ts";
 import { highSurrogate as high, lowSurrogate as low } from "./utf16.ts";
 export type SearchMatch = Readonly<{ from: number; to: number }>;
 export type SearchStep = Readonly<{ done: boolean; scanned: number; readUnits: number; matches: readonly SearchMatch[] }>;
-export type LiteralSearchOptions = Readonly<{ from?: number; to?: number; wholeWord?: boolean; matchCase?: boolean }>;
+export type LiteralSearchOptions = Readonly<{ from?: number; to?: number; wholeWord?: boolean; matchCase?: boolean; lineEndings?: "exact" | "equivalent" }>;
 
 /** Non-overlapping literal UTF-16 matches over immutable pieces. The caller supplies scheduling. */
 export class LiteralSearch {
@@ -17,16 +17,30 @@ export class LiteralSearch {
     private done = false;
     private boundaryBuffer: TextBuffer | undefined;
     private pending: { match: SearchMatch; before: string; after: string } | undefined;
-    private folded: CaseInsensitiveMatcher | undefined;
+    private matcher: TokenMatcher | undefined;
+    private readonly ignoreCase: boolean;
+    private readonly equivalentBreaks: boolean;
+    private readonly from: number;
+    private readonly to: number;
     private leading: { text: string; from: number } | undefined;
     private queued: { text: string; from: number } | undefined;
     constructor(buffer: TextBuffer, query: string, options: LiteralSearchOptions = {}) {
-        const start = options.from ?? 0;
-        this.iterator = buffer.chunks(start, options.to ?? buffer.length)[Symbol.iterator](); this.offset = start; this.query = query;
+        const start = this.from = options.from ?? 0, end = this.to = options.to ?? buffer.length;
+        this.iterator = buffer.chunks(start, end)[Symbol.iterator](); this.offset = start;
+        this.ignoreCase = options.matchCase === false;
+        this.equivalentBreaks = options.lineEndings === "equivalent" && query.includes("\n");
+        if (this.equivalentBreaks) query = query.replaceAll("\r\n", "\n");
+        this.query = query;
         if (options.wholeWord) this.boundaryBuffer = buffer;
-        if (options.matchCase === false) this.folded = new CaseInsensitiveMatcher(query);
-        this.prefix = new Uint32Array(this.folded ? 0 : query.length);
-        for (let index = 1, length = 0; !this.folded && index < query.length; index++) {
+        if (this.equivalentBreaks && start < end && (start > 0 || end < buffer.length)) {
+            // Read one neighbour on either side through the normal budget. A range cutting
+            // a CRLF cannot match half of it. Returned offsets stay within the requested range.
+            this.offset = Math.max(0, start - 1);
+            this.iterator = buffer.chunks(this.offset, Math.min(buffer.length, end + 1))[Symbol.iterator]();
+        }
+        if (this.ignoreCase || this.equivalentBreaks) this.matcher = new TokenMatcher(query, this.ignoreCase);
+        this.prefix = new Uint32Array(this.matcher ? 0 : query.length);
+        for (let index = 1, length = 0; !this.matcher && index < query.length; index++) {
             while (length && query[index] !== query[length]) length = this.prefix[length - 1]!;
             if (query[index] === query[length]) length++;
             this.prefix[index] = length;
@@ -55,11 +69,11 @@ export class LiteralSearch {
                 const splitPair = low(this.query.charCodeAt(0)) && high(last) || high(this.query.charCodeAt(this.query.length - 1)) && low(first);
                 const accepted = !splitPair && !wordConstituent(beforeText) && !wordConstituent(afterText);
                 this.pending = undefined;
-                if (this.folded) this.folded.settle(accepted); else this.matched = accepted ? 0 : this.prefix[this.query.length - 1]!;
+                if (this.matcher) this.matcher.settle(accepted); else this.matched = accepted ? 0 : this.prefix[this.query.length - 1]!;
                 if (accepted) matches.push(pending.match);
                 continue;
             }
-            if (!this.folded) {
+            if (!this.matcher) {
                 if (this.index === this.chunk.length) {
                     const next = this.iterator!.next();
                     if (next.done) { this.dispose(); break; }
@@ -101,37 +115,41 @@ export class LiteralSearch {
                 }
                 if (!point) {
                     const text = this.chunk[this.index++]!, from = this.offset++; readUnits++;
+                    const startsPair = this.ignoreCase && high(text.charCodeAt(0)) && from >= this.from && from + 1 < this.to
+                        || this.equivalentBreaks && text === "\r";
                     if (this.leading) {
                         point = this.leading; this.leading = undefined;
-                        if (low(text.charCodeAt(0))) point = { text: point.text + text, from: point.from };
-                        else if (high(text.charCodeAt(0))) this.leading = { text, from };
+                        if (point.text === "\r" ? text === "\n" : low(text.charCodeAt(0))) point = { text: point.text + text, from: point.from };
+                        else if (startsPair) this.leading = { text, from };
                         else this.queued = { text, from };
-                    } else if (high(text.charCodeAt(0))) { this.leading = { text, from }; continue; }
+                    } else if (startsPair) { this.leading = { text, from }; continue; }
                     else point = { text, from };
                 }
             }
-            const match = this.folded.push(point.text, point.from);
+            if (point.from < this.from || point.from + point.text.length > this.to) continue;
+            const match = this.matcher.push(point.text, point.from);
             if (match) {
                 if (this.boundaryBuffer) this.pending = { match, before: "", after: "" };
-                else { matches.push(match); this.folded.settle(true); }
+                else { matches.push(match); this.matcher.settle(true); }
             }
         }
-        return Object.freeze({ done: this.done, scanned: this.offset, readUnits, matches: Object.freeze(matches) });
+        return Object.freeze({ done: this.done, scanned: Math.min(this.to, Math.max(this.from, this.offset)), readUnits, matches: Object.freeze(matches) });
     }
-    dispose(): void { this.done = true; this.iterator?.return?.(); this.iterator = undefined; this.chunk = ""; this.index = 0; this.pending = undefined; this.boundaryBuffer = undefined; this.folded = undefined; this.leading = undefined; this.queued = undefined; }
+    dispose(): void { this.done = true; this.iterator?.return?.(); this.iterator = undefined; this.chunk = ""; this.index = 0; this.pending = undefined; this.boundaryBuffer = undefined; this.matcher = undefined; this.leading = undefined; this.queued = undefined; }
 }
 
-/** Same KMP search over code points; native fixed literals supply Unicode simple-fold equality.
- * No document normalization, general regular-expression execution or vendored folding table. */
-class CaseInsensitiveMatcher {
+/** Keep raw offsets for KMP tokens whose source widths can differ from the query. */
+class TokenMatcher {
     private readonly points: readonly string[];
     private readonly prefix: Uint32Array;
     private readonly starts: Float64Array;
     private readonly patterns = new Map<string, RegExp>();
     private matched = 0;
     private position = 0;
-    constructor(query: string) {
-        this.points = Array.from(query); this.prefix = new Uint32Array(this.points.length); this.starts = new Float64Array(this.points.length);
+    private readonly ignoreCase: boolean;
+    constructor(query: string, ignoreCase: boolean) {
+        this.ignoreCase = ignoreCase;
+        this.points = ignoreCase ? Array.from(query) : query.split(""); this.prefix = new Uint32Array(this.points.length); this.starts = new Float64Array(this.points.length);
         for (let index = 1, length = 0; index < this.points.length; index++) {
             while (length && !this.same(this.points[index]!, this.points[length]!)) length = this.prefix[length - 1]!;
             if (this.same(this.points[index]!, this.points[length]!)) length++;
@@ -140,17 +158,19 @@ class CaseInsensitiveMatcher {
     }
     private same(a: string, b: string): boolean {
         if (a === b) return true;
+        if (!this.ignoreCase) return false;
         const x = a.codePointAt(0)!, y = b.codePointAt(0)!;
         if (x < 128 && y < 128) return (x >= 65 && x <= 90 ? x + 32 : x) === (y >= 65 && y <= 90 ? y + 32 : y);
         let pattern = this.patterns.get(a);
         if (!pattern) { pattern = new RegExp(`^\\u{${x.toString(16)}}$`, "iu"); this.patterns.set(a, pattern); }
         return pattern.test(b);
     }
-    push(point: string, from: number): SearchMatch | undefined {
+    push(raw: string, from: number): SearchMatch | undefined {
+        const point = raw === "\r\n" ? "\n" : raw;
         this.starts[this.position] = from; this.position = (this.position + 1) % this.points.length;
         while (this.matched && !this.same(this.points[this.matched]!, point)) this.matched = this.prefix[this.matched - 1]!;
         if (this.same(this.points[this.matched]!, point)) this.matched++;
-        return this.matched === this.points.length ? Object.freeze({ from: this.starts[this.position]!, to: from + point.length }) : undefined;
+        return this.matched === this.points.length ? Object.freeze({ from: this.starts[this.position]!, to: from + raw.length }) : undefined;
     }
     settle(accepted: boolean): void { this.matched = accepted ? 0 : this.prefix[this.points.length - 1]!; }
 }

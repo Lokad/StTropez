@@ -138,7 +138,11 @@ export function findNotice(state: FindSnapshot): string {
 Use `LiteralSearch(buffer, query, options?)` for headless literal search. `LiteralSearchOptions`
 accepts `from` (default 0), `to` (default `buffer.length`), `wholeWord` and `matchCase`. Pass an
 options object if supplied. Bounds and `SearchMatch` ranges use original UTF-16 offsets, with an
-exclusive end. Matches cannot overlap. They preserve raw line endings. An empty query has no matches.
+exclusive end. Matches cannot overlap. An empty query has no matches.
+
+The kernel matches line endings exactly by default. With `lineEndings: "equivalent"`, as in
+browser Find, an LF or CRLF in a literal query matches either ending, including in
+mixed files. The range includes both units of a matched CRLF. A bare CR stays literal.
 
 ```ts
 import { LiteralSearch } from "sttropez/kernels";

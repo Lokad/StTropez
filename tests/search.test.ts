@@ -16,6 +16,21 @@ function all(buffer: TextBuffer, query: string, budget = 3, options?: LiteralSea
         matches.push(...step.matches); if (step.done) return matches;
     }
 }
+test("equivalent query line endings return complete raw spans across pieces and single-unit advances", () => {
+    const body = "A\n𐐀\nb a\n𐐨\r\nB a\rb" + " ".repeat(200);
+    const buffer = TextBuffer.from(body).replace(1, 1, "\r"), text = "A\r" + body.slice(1);
+    for (const matchCase of [true, false]) {
+        const pattern = matchCase ? /A\r?\n𐐀\r?\nb/gu : /A\r?\n𐐀\r?\nb/giu;
+        const expected = [...text.matchAll(pattern)].map(m => ({ from: m.index, to: m.index + m[0].length }));
+        for (const query of ["A\n𐐀\nb", "A\r\n𐐀\r\nb"]) {
+            assert.deepEqual(all(buffer, query, 1, { matchCase, lineEndings: "equivalent", wholeWord: true }), expected);
+        }
+    }
+    assert.deepEqual(all(buffer, "\n", 1, { from: 2, to: 3, lineEndings: "equivalent" }), []);
+    assert.deepEqual(all(buffer, "\n", 1, { from: 1, to: 2, lineEndings: "equivalent" }), []);
+    assert.deepEqual(all(buffer, "\n", 1, { from: 1, to: 3, lineEndings: "equivalent" }), [{ from: 1, to: 3 }]);
+    assert.deepEqual(all(buffer, "\n", 1, { from: 1, to: 3 }), [{ from: 2, to: 3 }]);
+});
 test("literal search crosses piece/step boundaries, preserves UTF-16/newlines and does not export", () => {
     const tail = "x".repeat(128), buffer = TextBuffer.from("a😀\r\néa😀\r\n" + tail).replace(1, 1, "_").replace(2, 2, "!");
     assert.ok([...buffer.chunks()].length > 1, "Keep the search seam even when small edit fragments coalesce.");

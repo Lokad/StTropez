@@ -12,7 +12,7 @@ import type { FindHost } from "../src/browser/find.ts";
 
 const options = { matchCase: true, wholeWord: false };
 function scan(buffer: TextBuffer, query: string, settings = options) {
-    const cursor = new LiteralSearch(buffer, query, settings), index = new FindIndex(); let reads = 0;
+    const cursor = new LiteralSearch(buffer, query, { ...settings, lineEndings: "equivalent" }), index = new FindIndex(); let reads = 0;
     for (;;) { const step = cursor.next(); reads += step.readUnits; step.matches.forEach(m => index.append(m)); if (step.done) break; }
     cursor.dispose(); return { index, reads };
 }
@@ -118,6 +118,19 @@ function fixture(text: string, clock: Pick<Performance, "now"> = performance) {
     const dispose = () => { find.dispose(); view.dispose(); workspace.tabs.close(tab); assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().subscriptions, 0); };
     return { workspace, documentId, view, find, document, tasks, step, drain, edit, select, dispose };
 }
+
+test("multiline Find repairs mixed endings and replaces a manually selected overlap in its original coordinates", () => {
+    const f = fixture("a\r\na\r\na\r\na");
+    try {
+        f.find.setQuery("a\na"); f.drain(); assert.equal(f.find.getSnapshot().count, 2);
+        f.select(3, 7); assert.equal(f.find.replaceCurrent("b"), true); f.drain();
+        assert.equal(f.document().text(), "a\r\nb\r\na"); assert.equal(f.find.getSnapshot().count, 0);
+        f.edit(3, 4, "a"); f.drain();
+        assert.deepEqual(f.find.matchesIn(0, f.document().buffer.length), [{ from: 0, to: 4 }]);
+        f.edit(1, 2, ""); f.drain();
+        assert.deepEqual(f.find.matchesIn(0, f.document().buffer.length), [{ from: 0, to: 3 }]);
+    } finally { f.dispose(); }
+});
 
 test("preview keeps the selection, replacement advances, and edits cancel a pending preview", () => {
     const f = fixture("a cat, a cat, a cat");

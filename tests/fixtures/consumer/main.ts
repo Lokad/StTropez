@@ -256,6 +256,10 @@ const fixture = { text: () => workspace.document(documentId).text(),
             editor.viewport.revealRange(buffer.offsetAt(50001), buffer.offsetAt(50002)); editor.viewport.flush();
             if (!scrolled || editor.viewport.getSnapshot().scrollTop !== scrolled || editor.view.getSnapshot() !== beforeReveal)
                 throw new Error("Restored range reveal moved a visible result or changed the selection.");
+            find.setQuery("𐐨\nconst"); await wait("ready");
+            const lineBreak = find.matchesIn(0, buffer.offsetAt(2))[0];
+            if (!lineBreak || buffer.slice(lineBreak.from, lineBreak.to) !== "𐐨\r\nconst")
+                throw new Error("Restored multiline Find lost the original CRLF range.");
             find.setQuery("foobar", { preview: true }); await wait("ready"); editor.viewport.flush();
             if (find.getSnapshot().current !== 0 || editor.viewport.getSnapshot().scrollTop > editor.viewport.getSnapshot().lineHeight || editor.view.getSnapshot() !== beforeReveal)
                 throw new Error("Restored Find did not preview the offscreen match independently of selection.");

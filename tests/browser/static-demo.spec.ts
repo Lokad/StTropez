@@ -305,9 +305,18 @@ test("opening Find and Replace keeps the same code under the pointer", async ({ 
 
 test("multiline Find and Replace preserves line breaks, regex captures and one-step Undo", async ({ page, baseURL }) => {
     await page.goto(baseURL!);
-    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    await page.locator("#sample").selectOption("host");
+    await page.locator("#files").getByRole("button", { name: "inventory.csv", exact: true }).click();
+    const source = page.getByRole("textbox", { name: "inventory.csv", exact: true });
     const original = "start\nitem 2\nend\nstart\nitem 4\nend";
-    await source.press("Control+a"); await page.keyboard.insertText(original); await source.press("Control+Home");
+    const raw = original.replaceAll("\n", "\r\n");
+    await source.press("Control+a");
+    await source.evaluate((el, text) => {
+        const paste = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
+        paste.clipboardData!.setData("text/plain", text); el.dispatchEvent(paste);
+    }, raw);
+    await expect(source).toHaveValue(original);
+    await source.press("Control+a"); expect(await copyOutput(source)).toBe(raw); await source.press("Control+Home");
     await source.press("Shift+ArrowDown"); await source.press("Shift+End"); await source.press("Control+f");
     const query = page.locator("#find-query"), status = page.locator("#find-status"), replacement = page.locator("#replacement");
     await expect(query).toHaveValue("start\nitem 2");
@@ -325,10 +334,11 @@ test("multiline Find and Replace preserves line breaks, regex captures and one-s
     await replacement.press("Enter"); await expect(source).toHaveValue("start\nitem 2\nend\nstart\nlast\nline");
     await replacement.press("Escape"); await source.press("Control+z"); await expect(source).toHaveValue(original);
     await source.press("Control+h"); await page.locator("#find-regex").click();
-    await query.fill("start\nitem (\\d)\nend"); await expect(status).toHaveText(/2 matches|of 2/);
+    await query.fill("start\\r?\nitem (\\d)\\r?\nend"); await expect(status).toHaveText(/2 matches|of 2/);
     await replacement.fill("$1\\nnext\\\\n"); await page.locator("#replace-all").click();
     await expect(source).toHaveValue("2\nnext\\n\n4\nnext\\n");
     await source.press("Control+z"); await expect(source).toHaveValue(original);
+    await source.press("Control+a"); expect(await copyOutput(source)).toBe(raw);
 });
 
 test("Find combines case and word boundaries and keeps the options across files", async ({ page, baseURL }) => {
