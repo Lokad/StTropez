@@ -162,6 +162,25 @@ test("batch range overhead falls back before sending when the host message or JS
     }
 });
 
+test("dense updates and their inverses use one range unless escaped gaps exceed the wire limit", async t => {
+    const row = "😀xxx" + "\0".repeat(32) + "\r\n", half = row.repeat(64), text = half + half;
+    const edits = Array.from({ length: 128 }, (_, line) => ({ from: line * row.length + 3, to: line * row.length + 4, insert: "y" }));
+    for (const maxMessageUnits of [64000, 18000]) {
+        const host = fixture(t), session = new LspSession({ ...host, rpc: { maxMessageUnits } }); t.after(() => session.dispose());
+        const initial = input(half), document = session.bindDocument(initial); await session.connect();
+        const before = initial.buffer.replace(half.length, half.length, half), after = before.apply(edits).buffer;
+        document.update(40, 41, before); await session.flush();
+        const peer = host.peers[0]!, inverse = edits.map(edit => ({ ...edit, insert: "x" }));
+        for (const [revision, buffer, changes, expected] of [[42, after, edits, text.replaceAll("xxx", "xyx")], [43, before, inverse, text]] as const) {
+            document.update(revision - 1, revision, buffer, changes); await session.flush(); await settled();
+            const last = peer.wire.messages[0]!.at(-1) as { method: string; params: DidChangeTextDocumentParams };
+            assert.equal(last.method, "textDocument/didChange");
+            assert.equal(last.params.contentChanges.length, maxMessageUnits === 64000 ? 1 : edits.length);
+            assert.equal(peer.documents.get(initial.uri)!.getText(), expected);
+        }
+    }
+});
+
 test("released notification methods recover capacity and do not retain installed dispatchers", async t => {
     const host = fixture(t), session = new LspSession(host); t.after(() => session.dispose()); await session.connect();
     let delivered = 0;

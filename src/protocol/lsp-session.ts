@@ -52,6 +52,14 @@ type SelectorEntry = { snapshot: LspSelectorDocument; selectors?: { generation: 
 type Entry = SelectorEntry & { snapshot: LspDocumentSnapshot; handle: LspDocument; index?: LspLineIndex; change?: LspChangeHint;
     failure?: Readonly<{ snapshot: LspDocumentSnapshot; generation: number; error: Error }> };
 type Remote = { entry: Entry; snapshot: LspDocumentSnapshot; index: LspLineIndex; version: number };
+
+// Each separate JSON range needs two line/character pairs before any text is sent.
+// Estimate the changed interval from the hint; the actual replacement is proved from the buffers.
+function denseBatch(hint: LspChangeHint | undefined, length: number): boolean {
+    if (!hint || hint.edits.length < 64) return false;
+    const edits = hint.edits, span = edits[edits.length - 1]!.to - edits[0]!.from + length - hint.before.length;
+    return span >= 0 && span <= 64 * (edits.length - 1);
+}
 type SyncWaiter = { resolve: () => void; reject: (error: Error) => void; ready: (() => boolean) | undefined };
 type Registration = { value: LspRegistration; selector: LspSelector };
 type RequestHandler = (params: unknown, context: LspRequestContext) => unknown | Promise<unknown>;
@@ -405,15 +413,16 @@ export class LspSession {
                     started = now(); checkpoints = 0;
                 };
                 const base = entry.index ?? old?.index;
+                const compact = denseBatch(hint, snapshot.buffer.length), planHint = compact ? undefined : hint;
                 let plan;
-                try { plan = base ? await base.change(snapshot.buffer, cooperate, hint) : { index: await LspLineIndex.create(snapshot.buffer, cooperate), changes: [] }; }
+                try { plan = base ? await base.change(snapshot.buffer, cooperate, planHint) : { index: await LspLineIndex.create(snapshot.buffer, cooperate), changes: [] }; }
                 catch (error) { if (error !== expired) throw error; this.dirty.add(uri); continue; }
                 // Restart ownership cleanup too: replacing a URI during planning must close/open, never change the old resource.
                 this.ready(epoch); if (!retained()) { this.dirty.add(uri); continue; }
                 // A revision/capability change does not invalidate useful text indexing work.
                 entry.index = plan.index; if (!valid()) { this.dirty.add(uri); continue; }
                 let changes: readonly LspTextChange[];
-                try { changes = old && old.index !== base ? await lspTextChanges(old.index, snapshot.buffer, cooperate, hint) : plan.changes; }
+                try { changes = old && old.index !== base ? await lspTextChanges(old.index, snapshot.buffer, cooperate, planHint) : plan.changes; }
                 catch (error) { if (error !== expired) throw error; this.dirty.add(uri); continue; }
                 this.ready(epoch); if (!valid()) { this.dirty.add(uri); continue; }
                 const version = (old?.version ?? 0) + 1; if (version > 0x7fffffff) throw new RangeError("LSP document version exhausted; reconnect required.");
@@ -421,9 +430,10 @@ export class LspSession {
                     const send = () => rpc.notify("textDocument/didChange", { textDocument: { uri, version }, contentChanges: changes });
                     try { send(); } catch (error) {
                         // notify validates/encodes before sending; transport failures dispose RPC.
-                        // Range overhead can exceed a host limit even when one replacement fits.
-                        if (changes.length < 2 || rpc.snapshot().disposed || !(error instanceof TypeError || error instanceof RangeError)) throw error;
-                        try { changes = await lspTextChanges(old.index, snapshot.buffer, cooperate); }
+                        // Escaped text or range overhead can make the other encoding smaller.
+                        const retryRanges = compact && hint?.before === old.index.buffer;
+                        if ((!retryRanges && changes.length < 2) || rpc.snapshot().disposed || !(error instanceof TypeError || error instanceof RangeError)) throw error;
+                        try { changes = await lspTextChanges(old.index, snapshot.buffer, cooperate, retryRanges ? hint : undefined); }
                         catch (error) { if (error !== expired) throw error; this.dirty.add(uri); continue; }
                         this.ready(epoch); if (!valid()) { this.dirty.add(uri); continue; }
                         send();

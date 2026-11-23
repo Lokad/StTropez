@@ -230,7 +230,8 @@ The client opens a document only when static or matching dynamic capabilities co
 and incremental change. Losing that coverage closes the remote copy. Regaining it sends the current
 full text. Workspace bindings use `DocumentChange.edits`. A direct session binding accepts the
 same previous-revision edits in `document.update(expectedRevision, revision, buffer, edits)`.
-The client sends proven ranges in descending original-offset order.
+The client sends sparse edits as proven ranges in descending original-offset order. For dense
+batches it can send one replacement covering the changed text to reduce the message size.
 If it skipped a revision, lacks usable edits, cannot prove a gap, or the batch would cost too
 much to encode, it sends one replacement between the known shared edges. A transport failure leaves
 the edit unsent or unacknowledged. The client does not retry it.
