@@ -235,8 +235,8 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Word modifier + Backspace / Delete | Delete the selection, an adjacent run of two or more whitespace characters, or one word toward the key. |
 | Ctrl/Cmd + A | One whole-document selection |
 | Ctrl/Cmd + L | Select the touched lines with their line breaks. Press again to extend by one line. |
-| Ctrl/Cmd + D | Select the word at the caret, then add the next occurrence on each press, wrapping at EOF. |
-| Ctrl/Cmd + Shift + L | Select all occurrences. A caret searches for whole words. An explicit selection searches for its exact, case-sensitive text. |
+| Ctrl/Cmd + D | Select the word under or touching the caret, then add the next occurrence on each press, wrapping at EOF. Between separators the caret stays put. |
+| Ctrl/Cmd + Shift + L | Select all occurrences of the word under or touching the caret. Between separators the caret stays put. An explicit selection searches for its exact, case-sensitive text. |
 | Ctrl/Cmd + Alt/Option + Up / Down | Add a caret at the same visual column on the preceding or following visible row. |
 | Ctrl/Cmd + U | Restore the previous selection set in this view. Each text revision starts a fresh caret history. |
 | Ctrl/Cmd + G | Open the host's line prompt, then move to the start of the chosen line. Requires `requestLine`. |

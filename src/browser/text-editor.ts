@@ -6,7 +6,7 @@ import { isFocused } from "./dom-focus.ts";
 import { Store, type Observable } from "../core/observable.ts";
 import { textDifference } from "../core/changes.ts";
 import { copyCaretLines, planClipboardPaste } from "../core/clipboard-edits.ts";
-import { createWordCommandCursor, WordCursor } from "../core/words.ts";
+import { createWordCommandCursor, isCodeWordBase, WordCursor } from "../core/words.ts";
 import { createGraphemeCursor } from "../core/graphemes.ts";
 import { createSelectionSet, planSelectionEdits } from "../core/selections.ts";
 import { selectionOccurrences } from "../core/selection-occurrences.ts";
@@ -626,7 +626,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         }, ranges => finishRanges(capture, ranges));
         return true;
     }
-    function wordRange(capture: CommandCapture, offset: number, accept: (range?: Selection) => void): void {
+    function wordRange(capture: CommandCapture, offset: number, accept: (range?: Selection) => void, wordsOnly = false): void {
         const buffer = capture.buffer;
         const line = buffer.lineAt(offset), from = buffer.offsetAt(line);
         const to = lineContentEnd(buffer, line);
@@ -650,9 +650,13 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             }); step();
         };
         withGraphemes(capture, Math.min(offset, to), -1, "word-selection", point => {
-            const probe = Math.max(from, offset >= to ? point.preceding ?? from : point.floor);
-            const width = buffer.slice(probe, Math.min(to, probe + 2)).codePointAt(0)! > 0xffff ? 2 : 1;
-            scan(Math.min(to, probe + width), -1, left => scan(probe, 1, right => {
+            const characterAt = (at: number) => Array.from(buffer.slice(at, Math.min(to, at + 2)))[0] ?? "";
+            let probe = Math.max(from, point.floor), character = characterAt(probe);
+            if (probe === to || wordsOnly && probe === offset && !isCodeWordBase(character)) {
+                probe = Math.max(from, point.preceding ?? from); character = characterAt(probe);
+            }
+            if (wordsOnly && !isCodeWordBase(character)) { accept(); return; }
+            scan(probe + character.length, -1, left => scan(probe, 1, right => {
                 withGraphemes(capture, left, -1, "word-selection", low => withGraphemes(capture, right, 1, "word-selection", high => {
                     if (rangeCommand?.capture === capture && validCommand(capture)) accept({ anchor: Math.max(from, low.floor), head: Math.min(to, high.ceil) });
                 }));
@@ -704,7 +708,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             });
             step();
         };
-        if (empty) wordRange(capture, selection.head, begin); else begin(selection);
+        if (empty) wordRange(capture, selection.head, begin, true); else begin(selection);
     }
     function navigationTurn(work: () => void): void {
         if (navigationDepth) { work(); return; }

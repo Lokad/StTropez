@@ -25,6 +25,21 @@ test("occurrence shortcuts wrap, keep the current word primary and type over the
     expect(await page.evaluate(() => { const f = window.editingFixture, length = f.snapshot().document!.length; return [f.range(0, 2), f.range(length - 2, length)]; })).toEqual(["Z\n", "\nZ"]);
 });
 
+test("occurrence shortcuts take a touching word and leave a caret between separators", async ({ page }) => {
+    const row = page.locator("#primary .st-viewport-row").first();
+    for (const shortcut of ["Control+d", "Control+Shift+l"]) {
+        // A combining accent and a supplementary letter both belong to this word.
+        const word = "cafe\u0301𐐀", text = word + ":  " + word;
+        await setup(page, text, word.length); await page.keyboard.press(shortcut); await page.keyboard.type("X");
+        await expect(row).toHaveJSProperty("textContent", shortcut === "Control+d" ? "X:  " + word : "X:  X");
+        await setup(page, text, word.length + 1); await page.keyboard.press(shortcut); await page.keyboard.type("X");
+        await expect(row).toHaveJSProperty("textContent", word + ":X  " + word);
+    }
+    await setup(page, "a: b:c", 1);
+    await page.keyboard.press("Shift+ArrowRight"); await page.keyboard.press("Control+Shift+l"); await page.keyboard.type("!");
+    await expect(row).toHaveJSProperty("textContent", "a! b!c");
+});
+
 test("adding carets carries the visual column across short lines and cursor undo restores the primary range", async ({ page }) => {
     await setup(page, "abcd\nx\nlast", 3);
     const heads = () => page.evaluate(() => window.editingFixture.selectionSet().ranges.map(range => range.head));

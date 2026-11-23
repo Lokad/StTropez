@@ -13,7 +13,8 @@ const extendPattern = "[\\p{M}\\u200c\\u200d]", basePattern = "[\\p{L}\\p{N}\\p{
 /** One code point in the editor's code-word policy, for host-owned Unicode expressions. */
 export const codeWordConstituentPattern = `(?:${basePattern}|${extendPattern})`;
 const extendExpression = new RegExp(`^${extendPattern}$`, "u"), baseExpression = new RegExp(`^${basePattern}$`, "u");
-const kind = (text: string): Kind => extendExpression.test(text) ? "extend" : /^\p{White_Space}$/u.test(text) ? "space" : baseExpression.test(text) ? "word" : "symbol";
+export const isCodeWordBase = (text: string): boolean => baseExpression.test(text);
+const kind = (text: string): Kind => extendExpression.test(text) ? "extend" : /^\p{White_Space}$/u.test(text) ? "space" : isCodeWordBase(text) ? "word" : "symbol";
 /** Search boundaries use the same code-word constituents, including attached marks/joiners. */
 export const wordConstituent = (text: string): boolean => { const value = kind(text); return value === "word" || value === "extend"; };
 const symbolPattern = "[^\\p{M}\\u200c\\u200d\\p{White_Space}\\p{L}\\p{N}\\p{Pc}]";
