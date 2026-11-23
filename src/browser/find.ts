@@ -69,12 +69,12 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         retained: false, current: null, wrappedTo: null, matchesVersion: 0, reason: null, message: "" }), scope);
     const runner = createCooperativeRunner(win);
     let disposed = false, cursor: FindSearchCursor | undefined, planCursor: FindPlanCursor | undefined, generation = 0, focusGeneration = 0;
-    let navigatedZero: Readonly<{ index: number; selectionSet: SelectionSet }> | undefined;
+    let navigatedMatch: Readonly<{ index: number; selectionSet: SelectionSet }> | undefined;
     let replacedZero: Readonly<{ revision: number; head: number; selectionSet: SelectionSet }> | undefined;
     let advanceAfterReplace: SelectionSet | undefined;
     let focusOrigin: Element | null | undefined;
     let pendingNext: { direction: 1 | -1; selection: SelectionSet; origin: Element | null | undefined } | undefined;
-    let pendingPreview: { selection: SelectionSet; scrollUnchanged: () => boolean; listeners: AbortController } | undefined;
+    let pendingPreview: { selection: SelectionSet; followSelected: boolean; scrollUnchanged: () => boolean; listeners: AbortController } | undefined;
     let previewed: { index: number; selection: SelectionSet } | undefined;
     const cancelPreview = () => { pendingPreview?.listeners.abort(); pendingPreview = undefined; };
     let stopPlanAuthority: (() => void) | undefined;
@@ -101,7 +101,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     };
     const stop = () => { generation++; runner.cancel();
         const active = cursor, plan = planCursor, authority = stopPlanAuthority; cursor = undefined; planCursor = undefined; stopPlanAuthority = undefined;
-        navigatedZero = undefined; replacedZero = undefined; advanceAfterReplace = undefined;
+        navigatedMatch = undefined; replacedZero = undefined; advanceAfterReplace = undefined;
         cancelPreview(); previewed = undefined; pendingNext = undefined;
         active?.dispose(); plan?.dispose(); authority?.(); };
     const reset = (patch: FindPatch) => {
@@ -274,7 +274,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         if (previewed?.selection === selection.selectionSet) low = previewed.index;
         else if (state.status !== "ready" && direction === -1 && bound > navigationTo) return;
         else if (direction === 1 && low < count && offsetAt(low) === bound && endAt(low) === bound
-            && (navigatedZero?.index === low && navigatedZero.selectionSet === selection.selectionSet || replacedHere())) low++;
+            && (navigatedMatch?.index === low && navigatedMatch.selectionSet === selection.selectionSet || replacedHere())) low++;
         const raw = direction === 1 ? low : low - 1;
         if (state.status !== "ready" && (raw < 0 || raw >= count)) return;
         return { index: (raw + count) % count, wrappedTo: raw < 0 ? "end" : raw >= count ? "start" : null };
@@ -283,7 +283,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const { from, to } = matches.at(index);
         if (!editor.view.setSelection(store.get().revision, { anchor: from, head: to })) return false;
         previewed = undefined;
-        navigatedZero = from === to ? { index, selectionSet: editor.view.getSnapshot().selectionSet } : undefined; replacedZero = undefined;
+        navigatedMatch = { index, selectionSet: editor.view.getSnapshot().selectionSet }; replacedZero = undefined;
         publish(clearNotice ? { current: index, wrappedTo, reason: null, message: "" } : { current: index, wrappedTo });
         editor.viewport.revealRange(from, to); return true;
     }
@@ -293,7 +293,10 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const current = () => valid() && preview.scrollUnchanged() && !editor.activity().composing && editor.view.getSnapshot().selectionSet === preview.selection;
         if (!count || !current()) { cancelPreview(); return; }
         const selected = preview.selection.ranges[preview.selection.primary]!;
-        const preferred = indexAt(Math.min(selected.anchor, selected.head)) % count;
+        const start = Math.min(selected.anchor, selected.head), preferred = indexAt(start) % count;
+        if (preview.followSelected && !pendingNext && offsetAt(preferred) === start) {
+            cancelPreview(); selectMatch(preferred, true); return;
+        }
         const visible = viewport && visibleFindMatch(viewport, matches, preferred), index = visible ?? preferred;
         // Flushing painted fragments can notify a host, which may replace the search or the view.
         if (pendingPreview !== preview) return;
@@ -466,13 +469,17 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     return Object.freeze({ ...store.observable, getDiagnostics: () => Object.freeze({ maxScanStepMs: scanMaximum, replaceTransactionMs }), matchesIn,
         setQuery: (query, queryOptions) => {
             scope.assertWritable(); if (disposed) return;
+            const previous = store.get().query;
+            const selected = navigatedMatch?.selectionSet ?? (pendingPreview?.followSelected ? pendingPreview.selection : undefined);
+            const refinement = !!previous && (query.startsWith(previous) || previous.startsWith(query));
             restart(query);
             if (!queryOptions?.preview || options.highlightMatches === false || store.get().status !== "searching") return;
             const listeners = new AbortController(), events = { signal: listeners.signal, passive: true };
             const root = viewport?.element, top = root?.scrollTop, left = root?.scrollLeft;
             const scrollUnchanged = () => root?.scrollTop === top && root?.scrollLeft === left;
             captureFocus();
-            pendingPreview = { selection: editor.view.getSnapshot().selectionSet, scrollUnchanged, listeners };
+            const selection = editor.view.getSnapshot().selectionSet;
+            pendingPreview = { selection, followSelected: refinement && selected === selection, scrollUnchanged, listeners };
             owner.addEventListener("focusout", cancelPreview, events);
             if (root) {
                 root.addEventListener("wheel", cancelPreview, events);

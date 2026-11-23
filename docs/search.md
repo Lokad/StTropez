@@ -53,7 +53,7 @@ notice.
 | `matchCase` | Defaults to `true`; locale-independent simple folding when disabled in literal mode |
 | `regularExpression` | Defaults to `false`; requires a configured `FindBackend` when enabled |
 | `setQuery(query)` | Cancels obsolete work and starts a search; an empty query is idle |
-| `setQuery(query, { preview: true })` | Once the search finishes, marks a visible match or reveals the next one from the source selection. Preserves focus and the selection. |
+| `setQuery(query, { preview: true })` | Shows a match when the search finishes and keeps focus in the Find panel. |
 | `setFlags(flags)` | Patches supplied flags and restarts only when a value changes |
 | `next(direction?)` | Selects a match in the captured view; direction is `1` by default or `-1` |
 | `next(direction, { whenReady: true })` | Accepts one navigation request while the search finishes. The latest direction wins. Changing the query, revision, focus, selection or visible folds cancels the request. |
@@ -69,6 +69,8 @@ Next and Previous leave a visible match in place. An offscreen match scrolls int
 match inside a fold opens that fold.
 Preview prefers a painted match at or after the start of the selection, then any other painted
 match. If all matches are offscreen, it reveals the next one and wraps at the end of the file.
+Preview preserves the source selection. Once you navigate to a match, appending or removing
+characters at the end of the query adjusts that selection if the new match starts at the same offset.
 Call `acceptPreview()` when closing a Find panel to select the displayed match. It returns
 `false` if there is no completed preview for the current selection. Forward navigation also
 selects the preview. Losing focus, scrolling, starting a new query

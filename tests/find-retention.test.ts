@@ -159,6 +159,26 @@ test("preview keeps the selection, replacement advances, and edits cancel a pend
     } finally { f.dispose(); }
 });
 
+test("refining a query follows the last Find selection at the same start", () => {
+    const f = fixture("quantities, quantity, quantity");
+    const query = (value: string) => f.find.setQuery(value, { preview: true });
+    const range = () => [f.view.getSnapshot().selection.anchor, f.view.getSnapshot().selection.head];
+    try {
+        f.select(11); query("quan"); f.drain(); f.find.next();
+        assert.deepEqual(range(), [12, 16]);
+        query("quant"); query("quanti"); query("quantity"); f.drain();
+        assert.deepEqual(range(), [12, 20]); assert.equal(f.find.getSnapshot().current, 0);
+        assert.equal(f.find.next(), true); assert.deepEqual(range(), [22, 30]);
+        query("quan"); f.drain(); assert.deepEqual(range(), [22, 26]);
+        query("quantities"); f.drain();
+        assert.deepEqual(range(), [22, 26]); assert.equal(f.find.getSnapshot().current, 0);
+        assert.equal(f.find.acceptPreview(), true); assert.deepEqual(range(), [0, 10]);
+        query("quan"); f.select(12, 16); f.drain();
+        assert.deepEqual(range(), [12, 16]); assert.equal(f.find.getSnapshot().current, null);
+        query("quantity"); f.drain(); assert.deepEqual(range(), [12, 16]);
+    } finally { f.dispose(); }
+});
+
 test("deferred Find follows the latest direction until the selection, query or visible folds change", () => {
     const f = fixture("cat\ndog\ncat");
     try {

@@ -281,6 +281,12 @@ test("clearing Find returns to the caret and Escape keeps typing at the previewe
     await query.press("Escape"); await expect(source).toBeFocused();
     await page.keyboard.type("logger"); await expect(rows.filter({ hasText: "logger.log" })).toBeInViewport();
     await source.press("Control+z"); await expect(match).toBeInViewport();
+    await source.press("Control+f"); await query.fill("conso"); await query.press("Enter");
+    await expect.poll(() => copyOutput(source)).toBe("conso");
+    await query.press("End"); await query.pressSequentially("le.log");
+    await expect.poll(() => copyOutput(source)).toBe("console.log"); await expect(query).toBeFocused();
+    await query.press("Escape"); await page.keyboard.type("report");
+    await expect(rows.filter({ hasText: "report(quote.name" })).toBeInViewport();
 });
 
 test("opening Find and Replace keeps the same code under the pointer", async ({ page, baseURL }) => {
