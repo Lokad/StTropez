@@ -16,9 +16,9 @@ import { createSelectionSet, mapSelectionSet, sameSelectionSet } from "./selecti
 import type { SelectionSet } from "./selections.ts";
 import { NotificationScope, Store } from "./observable.ts";
 import type { Observable } from "./observable.ts";
-import { collapseFoldRegions, createFoldRegions, foldingSnapshot, mapFoldRegions, revealFoldRange, revealSelectionFolds } from "./folding.ts";
+import { collapseFoldRegions, createFoldRegions, foldingSnapshot, mapFoldIndex, revealIndexRange, revealIndexSelection, snapshotFromIndex } from "./folding.ts";
 import { lineContentEnd } from "./newlines.ts";
-import type { DocumentFolding, FoldingSnapshot, FoldVersion } from "./folding.ts";
+import type { DocumentFolding, FoldIndex, FoldingSnapshot, FoldVersion } from "./folding.ts";
 import { plannedLineSwaps, type LineSwap } from "./line-moves.ts";
 import { equalValue, snapshotValue } from "./values.ts";
 import type { Immutable, SnapshotValue } from "./values.ts";
@@ -374,16 +374,24 @@ export class Workspace {
                 const regions = collapseFoldRegions(folds.get().regions, ids, collapsed);
                 return !!regions && setFoldRegions(regions, collapsed && options?.moveHiddenCarets === true);
             },
-            reveal: (expected, from, to) => foldTarget(expected) && setFoldRegions(revealFoldRange(record.buffer!, folds.get().regions, from, to, folds.get().index)),
-            revealSelection: expected => foldTarget(expected) && setFoldRegions(revealSelectionFolds(record.buffer!, folds.get().regions, state.get().selectionSet, folds.get().index)) });
+            reveal: (expected, from, to) => {
+                if (!foldTarget(expected)) return false;
+                const index = folds.get().index, next = revealIndexRange(record.buffer!, index, from, to);
+                return next === index || setFoldRegions(next.regions);
+            },
+            revealSelection: expected => {
+                if (!foldTarget(expected)) return false;
+                const index = folds.get().index, next = revealIndexSelection(record.buffer!, index, state.get().selectionSet);
+                return next === index || setFoldRegions(next.regions);
+            } });
         const setSelections = (expectedRevision: number, ranges: readonly Selection[], primary = 0): boolean => {
             if (!record.views.has(viewId) || record.state.get().state !== "ready" || record.state.get().revision !== expectedRevision) return false;
             const next = createSelectionSet(record.buffer!.length, ranges, primary), previous = state.get();
-            const priorFolds = folds.get(), revealed = revealSelectionFolds(record.buffer!, priorFolds.regions, next, priorFolds.index);
-            if (sameSelectionSet(next, previous.selectionSet) && revealed === priorFolds.regions) return true;
+            const priorFolds = folds.get(), revealed = revealIndexSelection(record.buffer!, priorFolds.index, next);
+            if (sameSelectionSet(next, previous.selectionSet) && revealed === priorFolds.index) return true;
             this.scope.assertWritable(); this.history.seal(id);
             const changed = new Set<Store<unknown>>();
-            if (revealed !== priorFolds.regions) folds.set(foldingSnapshot(record.buffer!, expectedRevision, priorFolds.generation + 1, revealed, priorFolds), changed);
+            if (revealed !== priorFolds.index) folds.set(snapshotFromIndex(expectedRevision, priorFolds.generation + 1, revealed), changed);
             if (!sameSelectionSet(next, previous.selectionSet)) state.set(viewSnapshot(id, previous.revision, next), changed);
             this.scope.deliver([...changed]); return true;
         };
@@ -464,7 +472,7 @@ export class Workspace {
             const text = result.buffer !== before ? this.prepareText(record, result.buffer, result.mapping,
                 target => target === view ? afterSelections : undefined) : undefined;
             const selection = !text && view && afterSelections
-                ? this.prepareView(view, request.documentId, record.state.get().revision, before, afterSelections, view.folds.get().regions) : undefined;
+                ? this.prepareView(view, request.documentId, record.state.get().revision, before, afterSelections, view.folds.get().index) : undefined;
             prepared.push({ request, record, before, after: result.buffer, mapping: result.mapping, units: result.changedUnits, view, text, selection });
         }
         const actual = prepared.filter(change => change.before !== change.after);
@@ -532,20 +540,22 @@ export class Workspace {
         selectionFor?: (view: ViewRecord) => SelectionSet | undefined, adopted?: ResourceMetadata): PreparedText {
         const current = record.state.get(), revision = current.revision + 1, before = record.buffer!;
         const state = readySnapshot(adopted ?? { ...current.metadata, dirty: record.savedBuffer === null || !buffer.equals(record.savedBuffer) }, revision, buffer), views = [];
+        const shared = record.views.size > 1 ? new Map<FoldIndex, FoldIndex>() : undefined;
         for (const view of record.views.values()) {
             const selections = selectionFor?.(view) ?? mapSelectionSet(mapping, view.state.get().selectionSet);
-            const priorFolds = view.folds.get(), mapped = mapFoldRegions(buffer, mapping, priorFolds.regions, before, this.lineSwaps.get(mapping));
+            const prior = view.folds.get().index;
+            let mapped = shared?.get(prior);
+            if (!mapped) { mapped = mapFoldIndex(buffer, mapping, before, prior, this.lineSwaps.get(mapping)); shared?.set(prior, mapped); }
             views.push(this.prepareView(view, record.documentId!, revision, buffer, selections, mapped));
         }
         return { record, buffer, mapping, state, views };
     }
     private prepareView(view: ViewRecord, documentId: DocumentId, revision: number, buffer: TextBuffer,
-        selections: SelectionSet, mapped: FoldingSnapshot["regions"]): PreparedView {
+        selections: SelectionSet, mapped: FoldIndex): PreparedView {
         const priorFolds = view.folds.get(), priorState = view.state.get();
-        const regions = revealSelectionFolds(buffer, mapped, selections,
-            mapped === priorFolds.regions && buffer.lineCount === priorFolds.index.lineCount ? priorFolds.index : undefined);
-        return { view, folds: revision === priorFolds.revision && regions === priorFolds.regions ? priorFolds
-            : foldingSnapshot(buffer, revision, priorFolds.generation + 1, regions, priorFolds),
+        const index = revealIndexSelection(buffer, mapped, selections);
+        return { view, folds: revision === priorFolds.revision && index === priorFolds.index ? priorFolds
+            : snapshotFromIndex(revision, priorFolds.generation + 1, index),
             state: revision === priorState.revision && sameSelectionSet(priorState.selectionSet, selections) ? priorState : viewSnapshot(documentId, revision, selections) };
     }
     private commitView(prepared: PreparedView, changed: Set<Store<unknown>>): void {

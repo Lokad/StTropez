@@ -17,7 +17,7 @@ class ComparisonRowIndex {
     readonly lineCount: number;
     readonly visibleLineCount: number;
     readonly collapsedCount: number;
-    readonly regions: readonly FoldRegion[];
+    get regions(): readonly FoldRegion[] { return this.#folds.regions; }
     readonly #buffer: TextBuffer;
     readonly #folds: FoldIndex;
     readonly #runs: readonly Run[];
@@ -25,7 +25,7 @@ class ComparisonRowIndex {
     readonly #side: Side;
     constructor(buffer: TextBuffer, folds: FoldIndex, runs: readonly Run[], real: readonly Run[], side: Side, count: number) {
         this.#buffer = buffer; this.#folds = folds; this.#runs = runs; this.#real = real; this.#side = side;
-        this.lineCount = buffer.lineCount; this.visibleLineCount = count; this.collapsedCount = folds.collapsedCount; this.regions = folds.regions;
+        this.lineCount = buffer.lineCount; this.visibleLineCount = count; this.collapsedCount = folds.collapsedCount;
         Object.freeze(this);
     }
     matches(buffer: TextBuffer, folds: FoldIndex): boolean { return this.#buffer === buffer && this.#folds === folds; }

@@ -82,7 +82,9 @@ Use `FoldIndex.rowAt` and `lineAt` to move between source lines and visible rows
 collapsed region hiding a line. `headerAt` finds the fold at a header. The index stores collapsed
 intervals. `sameProjection(other)` compares just the hidden rows. For example, adding an expanded
 region leaves the projection equal. Check the document, selection and provider separately before using
-a delayed result. Updating folds can visit every supplied region.
+a delayed result. When an edit shifts the entire outline, use `headerAt` and `hiddenBy` to query
+individual folds. Reading `snapshot.regions` resolves the full list at that revision. Older snapshots
+keep their original positions. Edits that cross fold boundaries can visit every region.
 
 ### Discovery
 

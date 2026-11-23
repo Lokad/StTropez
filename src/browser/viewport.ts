@@ -1041,7 +1041,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
                 : verticalAnchor();
             return Object.freeze({ ...selection, selectionSet, scrollTop: top, scrollLeft: left,
                 ...(vertical ? { verticalAnchor: Object.freeze(vertical) } : {}),
-                folding: Object.freeze({ documentId, viewId: view.id, revision: folds.revision, generation: folds.generation, regions: folds.regions }),
+                folding: Object.freeze({ documentId, viewId: view.id, revision: folds.revision, generation: folds.generation, get regions() { return folds.regions; } }),
                 ...(horizontalAnchor ? { horizontalAnchor: Object.freeze({ ...horizontalAnchor }) } : {}) }); },
         restoreView: (state, options = {}) => {
             if (disposed || !live() || resource.getSnapshot().state !== "ready") return null;

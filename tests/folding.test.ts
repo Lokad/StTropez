@@ -36,6 +36,38 @@ function fixture() {
     const text = () => { const b = model.document(source.documentId).buffer; return b.slice(0, b.length); };
     return { model, source, view, peer, text, finish: () => { view.dispose(); peer.dispose(); model.releaseResource(source.id, true); assert.equal(model.diagnostics().views, 0); assert.equal(model.diagnostics().leases, 0); assert.equal(model.diagnostics().subscriptions, 0); } };
 }
+
+test("shifted headers and hidden rows keep their revision and per-view collapse state through Undo", () => {
+    const f = fixture(), id = f.source.documentId;
+    try {
+        const buffer = f.model.document(id).buffer, header = buffer.offsetAt(1);
+        const range = { id: "body", group: "outline", from: header, to: buffer.offsetAt(3) };
+        for (const view of [f.view, f.peer]) view.folding.setRanges(view.folding.getSnapshot(), [{ ...range, collapsed: view === f.view }]);
+        const original = f.view.folding.getSnapshot();
+        const insert = (text: string) => f.model.edit({ documentId: id, expectedRevision: f.model.document(id).revision,
+            origin: "human", edits: [{ from: 0, to: 0, insert: text }] });
+        insert("🌲\r\n");
+        const first = f.view.folding.getSnapshot();
+        const captured = first.index.headerAt(2)!;
+        assert.deepEqual(captured, { ...range, from: header + 4, to: range.to + 4, lineFrom: 2, lineTo: 4, collapsed: true });
+        assert.equal(first.index.hiddenBy(3), captured);
+        assert.equal(first.index.rowAt(3), 2); assert.equal(first.index.lineAt(3), 4);
+        assert.equal(f.peer.folding.getSnapshot().index.hiddenBy(3), undefined);
+        insert("x");
+        const second = f.view.folding.getSnapshot();
+        assert.equal(second.index.headerAt(2)!.from, header + 5); assert.ok(first.index.sameProjection(second.index));
+        assert.equal(second.index.sameProjection(original.index), false);
+        assert.equal(f.view.folding.reveal(second, 0, header), true); assert.equal(f.view.folding.getSnapshot(), second);
+        f.model.undo({ documentId: id, expectedRevision: 2 });
+        assert.deepEqual(f.view.folding.getSnapshot().index.headerAt(2), captured);
+        f.model.redo({ documentId: id, expectedRevision: 3 });
+        const current = f.view.folding.getSnapshot();
+        assert.equal(f.view.folding.reveal(current, f.model.document(id).buffer.offsetAt(3)), true);
+        assert.equal(f.view.folding.getSnapshot().index.collapsedCount, 0);
+        assert.equal(first.regions[0], captured); assert.equal(first.index.collapsedRegions().next().value, captured);
+        assert.equal(original.regions[0]!.from, header); assert.equal(second.index.hiddenBy(3), second.regions[0]);
+    } finally { f.finish(); }
+});
 test("fold commands capture view/revision/generation and keep source, history and other views independent", () => {
     const f = fixture(); try {
         const folds = f.view.folding, before = folds.getSnapshot(), document = f.model.document(f.source.documentId), history = f.model.observeHistory(f.source.documentId).getSnapshot();
