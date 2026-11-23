@@ -155,7 +155,9 @@ Call `review.navigateHunk(1)` for the next change or `review.navigateHunk(-1)` f
 one. Both start at the active caret, wrap at either end and select the change in both panes.
 Each pane registers `comparison.nextChange` (F7) and `comparison.previousChange` (Shift+F7).
 The command starts at that pane’s caret and leaves focus in place. Hosts can rebind either shortcut on
-the pane’s keymap. The built-in toolbar uses the last active pane.
+the pane’s keymap. Clicking Previous or Next returns focus to the last active pane. Activating
+either button from the keyboard keeps focus on the button. Clicking a disabled review button
+preserves editor focus.
 
 `review.revertSelectedHunk()` restores the change at the active caret and focuses the working pane.
 If a button press or host confirmation spans multiple events, capture `review.getSnapshot()` at

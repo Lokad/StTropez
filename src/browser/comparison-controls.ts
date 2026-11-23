@@ -9,12 +9,19 @@ export function mountComparisonControls(
     controls.className = "st-comparison-controls";
     const button = (label: string) => { const result = owner.createElement("button"); result.type = "button"; result.textContent = label; controls.append(result); return result; };
     const previous = button("Previous change"), next = button("Next change"), revert = button("Use baseline");
+    controls.addEventListener("pointerdown", event => {
+        if (event.pointerType === "mouse" && event.button === 0
+            && (event.target === previous || event.target === next || event.target === revert)) event.preventDefault();
+    }, { capture: true, signal: listeners.signal });
     function bindNavigation(control: HTMLButtonElement, id: string): void {
         const hint = () => { control.title = comparison.activePane().keymap.getShortcuts(id).join(" or "); };
         const options = { signal: listeners.signal };
         control.addEventListener("pointerenter", hint, options);
         control.addEventListener("focus", hint, options);
-        control.addEventListener("click", () => comparison.activePane().commands.run(id), options);
+        control.addEventListener("click", event => {
+            const pane = comparison.activePane();
+            if (pane.commands.run(id) && event.detail > 0) pane.focus();
+        }, options);
         hint();
     }
     bindNavigation(previous, "comparison.previousChange"); bindNavigation(next, "comparison.nextChange");

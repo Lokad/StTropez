@@ -2,6 +2,25 @@ import { ready, test, expect } from "./fixtures.ts";
 
 test.beforeEach(async ({ page }) => {  await page.goto("/comparison/"); await ready(page); });
 
+test("mouse review controls preserve the typing target and keyboard activation retains toolbar focus", async ({ page }) => {
+    const working = page.getByRole("textbox", { name: "Comparison working source", exact: true });
+    const reference = page.getByRole("textbox", { name: "Comparison baseline source", exact: true });
+    const next = page.getByRole("button", { name: "Next change", exact: true });
+    const previous = page.getByRole("button", { name: "Previous change", exact: true });
+    const restore = page.getByRole("button", { name: "Use baseline", exact: true });
+    const sections = page.locator(".st-comparison-panes > section");
+    const unchanged = sections.last().locator('.st-viewport-row[data-line="1"]');
+    await unchanged.click({ position: { x: 6, y: 8 } }); await expect(restore).toBeDisabled();
+    const box = (await restore.boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); await expect(working).toBeFocused();
+    await next.click(); await expect(working).toBeFocused();
+    await page.keyboard.type("Q"); await expect(sections.last().locator('.st-viewport-row[data-line="2"]')).toContainText("Q");
+    await working.press("Control+z"); await ready(page);
+    await sections.first().locator('.st-viewport-row[data-line="1"]').click();
+    await previous.click(); await expect(reference).toBeFocused();
+    await next.focus(); await next.press("Enter"); await expect(next).toBeFocused();
+});
+
 for (const custom of [false, true]) test(`${custom ? "host" : "built-in"} review controls follow the caret through navigation, restore and undo`, async ({ page }) => {
     if (custom) { await page.goto("/comparison/?controls=host"); await ready(page); }
     const base = "top\nold 1\nkeep A\nold 2\nkeep B\nold 3\nend", work = base.replaceAll("old", "new");
