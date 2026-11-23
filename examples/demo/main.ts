@@ -765,6 +765,7 @@ element("files").addEventListener("click", event => {
     const file = project?.files.find(file => file.name === name); if (file) mountFile(file, true);
 }, { signal: listeners.signal });
 window.addEventListener("keydown", event => {
+    if (event.target === document.body) activePane?.keymap.handle(event);
     if (!isSaveKey(event) || editor?.getSnapshot().composing) return;
     event.preventDefault();
     if (!event.repeat) void save();

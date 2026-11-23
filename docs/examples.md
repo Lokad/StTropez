@@ -89,6 +89,7 @@ Choose **Find** after focusing generated JavaScript or the saved copy to search 
 The bar names the read-only target. Escape returns focus to it. Focusing the working source
 while the bar is open searches the same query there and enables replacement for matches.
 Ctrl/Cmd+F and Ctrl/Cmd+H open Find and Replace from the panes, Find fields and toolbar.
+With focus on the page background, both shortcuts use the last active pane.
 Replace focuses the query when it is empty. With a query in an editable pane, it focuses the replacement.
 The bar opens below the workspace. In short windows it uses the top of the window to keep code visible.
 Escape returns to the search pane. F3 and Shift+F3 continue the last query with the bar closed.

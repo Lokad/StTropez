@@ -498,14 +498,15 @@ test("the Find toolbar follows generated output and both Changes panes", async (
     const label = page.locator("#find-target"), replace = page.locator("#replace-current"), replaceAll = page.locator("#replace-all");
     const output = page.getByRole("region", { name: "JavaScript output", exact: true });
     const reader = output.getByRole("textbox"), source = page.locator("#editor");
-    await reader.focus(); await open.click(); await query.fill("const cart =");
+    await reader.focus(); await page.locator(".intro p").first().click();
+    await page.keyboard.press("Control+f"); await expect(query).toBeFocused(); await query.fill("const cart =");
     await expect(label).toHaveText("JavaScript output · read-only"); await expect(status).toHaveText("1 of 1");
     const codeSummary = page.locator("#code-menu summary");
     await codeSummary.click(); await codeSummary.press("Escape");
     await codeSummary.dispatchEvent("keydown", { key: "Escape", repeat: true });
     await expect(codeSummary).toBeFocused(); await expect(query).toBeVisible();
     await expect(output.locator(".st-search-match").first()).toBeVisible(); await expect(source.locator(".st-search-match")).toHaveCount(0);
-    await query.press("Control+h"); await expect(query).toBeFocused(); await expect(replace).toBeVisible();
+    await page.locator(".intro p").first().click(); await page.keyboard.press("Control+h"); await expect(query).toBeFocused(); await expect(replace).toBeVisible();
     await expect(replace).toBeDisabled(); await expect(replaceAll).toBeDisabled();
     await expect(replace).toHaveAttribute("title", "JavaScript output is read-only.");
     await reader.press("Escape"); await expect(reader).toBeFocused(); await expect(query).toBeHidden();
