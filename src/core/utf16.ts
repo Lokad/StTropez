@@ -3,6 +3,13 @@ export const lowSurrogate = (unit: number): boolean => unit >= 0xdc00 && unit <=
 /** Whether a raw offset separates a valid surrogate pair; string edges never split one. */
 export const splitsSurrogatePair = (text: string, offset: number): boolean => highSurrogate(text.charCodeAt(offset - 1)) && lowSurrogate(text.charCodeAt(offset));
 
+/** A forwarded range or a caret in replacement text must keep these two-unit sequences together. */
+export function splitsTextPair(source: { length: number; slice(from: number, to: number): string }, offset: number): boolean {
+    if (offset <= 0 || offset >= source.length) return false;
+    const pair = source.slice(offset - 1, offset + 1);
+    return pair === "\r\n" || splitsSurrogatePair(pair, 1);
+}
+
 /** Read at most 256 units toward a validated bound, plus one in-range surrogate peek.
  * Raw range edges stay clipped. readUnits includes an unsuccessful peek as well. */
 export function readUtf16Window(source: { slice(from: number, to: number): string }, start: number, bound: number, direction: -1 | 1 = 1): Readonly<{ from: number; to: number; text: string; readUnits: number }> {

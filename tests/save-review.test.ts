@@ -79,6 +79,33 @@ test("whole-text writes retain unchanged ranges, report no-ops and guard the cap
     view.dispose();
 });
 
+test("whole-file replacement and saved adoption retain each pane's directed selection through undo and redo", () => {
+    const { workspace, source } = fixture(), id = source.documentId;
+    const options = { origin: "host", history: "record" } as const;
+    workspace.replaceText(id, "x = 1\n", options);
+    const first = workspace.createDocumentView(id, { anchor: 0, head: 0 });
+    const second = workspace.createDocumentView(id, { anchor: 6, head: 0 });
+    const inner = workspace.createDocumentView(id, { anchor: 4, head: 2 });
+    const endpoints = () => [first, second, inner].map(view => {
+        const { anchor, head } = view.getSnapshot().selection; return [anchor, head];
+    });
+    assert.ok(workspace.replaceText(id, "y = 2", { ...options, view: first }).applied);
+    assert.deepEqual(endpoints(), [[0, 0], [5, 0], [4, 2]]);
+    assert.ok(workspace.undo({ documentId: id, expectedRevision: 2 }).applied);
+    assert.deepEqual(endpoints(), [[0, 0], [6, 0], [4, 2]]);
+    assert.ok(workspace.redo({ documentId: id, expectedRevision: 3 }).applied);
+    assert.deepEqual(endpoints(), [[0, 0], [5, 0], [4, 2]]);
+    assert.ok(workspace.adoptSaved(source.id, { text: TextBuffer.from("y😀!2"), serverVersion: "v2", history: "record" }).applied);
+    assert.deepEqual(endpoints(), [[0, 0], [5, 0], [4, 1]]);
+    assert.ok(workspace.undo({ documentId: id, expectedRevision: 5 }).applied);
+    assert.deepEqual(endpoints(), [[0, 0], [5, 0], [4, 2]]);
+    assert.ok(workspace.editDocuments([{ documentId: id, text: "", origin: "host", expectedRevision: 6 }]).applied);
+    assert.deepEqual(endpoints(), [[0, 0], [0, 0], [0, 0]]);
+    assert.ok(workspace.editDocuments([{ documentId: id, text: "again", origin: "host", expectedRevision: 7,
+        view: first, selection: { anchor: 5, head: 1 } }]).applied);
+    assert.deepEqual(endpoints(), [[5, 1], [0, 0], [0, 0]]);
+});
+
 test("adopting a saved buffer publishes the revision, authority and mapped view together", () => {
     const { workspace, source, edit } = fixture();
     edit("head\n  child\nend");

@@ -1,5 +1,8 @@
 import type { TextEdit } from "./changes.ts";
 import type { Affinity, PositionMapping } from "./positions.ts";
+import { unchangedPositionEdges } from "./positions.ts";
+import type { TextBuffer } from "./text-buffer.ts";
+import { splitsTextPair } from "./utf16.ts";
 
 export type Selection = Readonly<{ anchor: number; head: number; anchorAffinity?: Affinity; headAffinity?: Affinity }>;
 export type SelectionSet = Readonly<{ ranges: readonly Selection[]; primary: number }>;
@@ -66,13 +69,31 @@ export function mapSelectionSet(mapping: PositionMapping, value: SelectionSet): 
 /** @internal Map validated ranges; language commands override mapping sides, retaining stored affinities. */
 export function mapSelectionRanges(mapping: PositionMapping, value: SelectionSet, side?: Affinity): SelectionSet {
     const map = mapping.createMapper?.() ?? ((offset, affinity) => mapping.map(offset, affinity));
-    return createSelectionSet(mapping.newLength, value.ranges.map(range => {
+    return mapEndpoints(mapping.newLength, value, (offset, affinity) => map(offset, side ?? affinity).offset);
+}
+
+function mapEndpoints(length: number, value: SelectionSet, map: (offset: number, affinity?: Affinity) => number): SelectionSet {
+    return createSelectionSet(length, value.ranges.map(range => {
         // Reverse selections still feed the cursor ordered original endpoints.
         const forward = range.anchor <= range.head;
-        const first = map(forward ? range.anchor : range.head, side ?? (forward ? range.anchorAffinity : range.headAffinity)).offset;
-        const second = map(forward ? range.head : range.anchor, side ?? (forward ? range.headAffinity : range.anchorAffinity)).offset;
+        const first = map(forward ? range.anchor : range.head, forward ? range.anchorAffinity : range.headAffinity);
+        const second = map(forward ? range.head : range.anchor, forward ? range.headAffinity : range.anchorAffinity);
         return { ...range, anchor: forward ? first : second, head: forward ? second : first };
     }), value.primary);
+}
+
+/** The whole-text APIs supply a single compact replacement. Retain each pane's place within it. */
+export function mapWholeTextSelections(mapping: PositionMapping, after: TextBuffer, selections: SelectionSet): SelectionSet {
+    const { prefix, suffix } = unchangedPositionEdges(mapping)!;
+    const oldEnd = mapping.oldLength - suffix, newEnd = after.length - suffix;
+    return mapEndpoints(after.length, selections, (offset, affinity) => {
+        if (offset === 0) return 0;
+        if (offset === mapping.oldLength) return after.length;
+        if (offset < prefix) return offset;
+        if (offset > oldEnd) return newEnd + (offset - oldEnd);
+        const next = oldEnd === prefix ? mapping.map(offset, affinity).offset : offset === oldEnd ? newEnd : Math.min(offset, newEnd);
+        return splitsTextPair(after, next) ? next - 1 : next;
+    });
 }
 
 /** Preserve each endpoint's relative offset inside a replacement, including backwards selections. */

@@ -12,7 +12,7 @@ import type { PositionMapping } from "./positions.ts";
 import { replacementMap } from "./positions.ts";
 import { TextHistory, validateHistoryGroup } from "./history.ts";
 import type { EditKind, HistoryChange, HistoryOptions, HistorySnapshot, Selection } from "./history.ts";
-import { createSelectionSet, mapSelectionSet, sameSelectionSet } from "./selections.ts";
+import { createSelectionSet, mapSelectionSet, mapWholeTextSelections, sameSelectionSet } from "./selections.ts";
 import type { SelectionSet } from "./selections.ts";
 import { NotificationScope, Store } from "./observable.ts";
 import type { Observable } from "./observable.ts";
@@ -468,9 +468,9 @@ export class Workspace {
                 if (swaps) this.lineSwaps.set(result.mapping, swaps);
             }
             const afterSelections = request.selectionSet ? createSelectionSet(result.buffer.length, request.selectionSet.ranges, request.selectionSet.primary)
-                : request.selection ? createSelectionSet(result.buffer.length, [request.selection]) : view ? mapSelectionSet(result.mapping, view.state.get().selectionSet) : undefined;
-            const text = result.buffer !== before ? this.prepareText(record, result.buffer, result.mapping,
-                target => target === view ? afterSelections : undefined) : undefined;
+                : request.selection ? createSelectionSet(result.buffer.length, [request.selection]) : undefined;
+            const text = result.buffer !== before ? this.prepareText(record, result.buffer, result.mapping, {
+                wholeText: "text" in request, selectionFor: target => target === view ? afterSelections : undefined }) : undefined;
             const selection = !text && view && afterSelections
                 ? this.prepareView(view, request.documentId, record.state.get().revision, before, afterSelections, view.folds.get().index) : undefined;
             prepared.push({ request, record, before, after: result.buffer, mapping: result.mapping, units: result.changedUnits, view, text, selection });
@@ -525,7 +525,7 @@ export class Workspace {
                 this.lineSwaps.set(mapping, swaps.map(({ first, middle, end }) => ({ first, middle: first + (end - middle), end })));
             }
             return this.prepareText(participant, direction === "undo" ? change.before : change.after, mapping,
-                view => selections.get(view.handle.id));
+                { selectionFor: view => selections.get(view.handle.id) });
         });
         this.history.move(entry, direction);
         const changed = new Set<Store<unknown>>(), transactionId = ++this.nextTransaction, revisions = [];
@@ -537,12 +537,14 @@ export class Workspace {
     }
     /** Prepare every projection before history, resource or view mutation, including linked documents. */
     private prepareText(record: ResourceRecord, buffer: TextBuffer, mapping: PositionMapping,
-        selectionFor?: (view: ViewRecord) => SelectionSet | undefined, adopted?: ResourceMetadata): PreparedText {
+        options: { selectionFor?: (view: ViewRecord) => SelectionSet | undefined; wholeText?: boolean; adopted?: ResourceMetadata } = {}): PreparedText {
         const current = record.state.get(), revision = current.revision + 1, before = record.buffer!;
-        const state = readySnapshot(adopted ?? { ...current.metadata, dirty: record.savedBuffer === null || !buffer.equals(record.savedBuffer) }, revision, buffer), views = [];
+        const state = readySnapshot(options.adopted ?? { ...current.metadata, dirty: record.savedBuffer === null || !buffer.equals(record.savedBuffer) }, revision, buffer), views = [];
         const shared = record.views.size > 1 ? new Map<FoldIndex, FoldIndex>() : undefined;
         for (const view of record.views.values()) {
-            const selections = selectionFor?.(view) ?? mapSelectionSet(mapping, view.state.get().selectionSet);
+            const previous = view.state.get().selectionSet;
+            const selections = options.selectionFor?.(view) ?? (options.wholeText
+                ? mapWholeTextSelections(mapping, buffer, previous) : mapSelectionSet(mapping, previous));
             const prior = view.folds.get().index;
             let mapped = shared?.get(prior);
             if (!mapped) { mapped = mapFoldIndex(buffer, mapping, before, prior, this.lineSwaps.get(mapping)); shared?.set(prior, mapped); }
@@ -714,7 +716,7 @@ export class Workspace {
                 prepared.push({ record, buffer: before, state: sameMetadata(state.metadata, metadata) ? state : withMetadata(state, metadata) });
                 continue;
             }
-            const text = this.prepareText(record, buffer, mapping, undefined, metadata);
+            const text = this.prepareText(record, buffer, mapping, { wholeText: true, adopted: metadata });
             prepared.push(text);
             if (options.history === "record") history.push({ documentId: record.documentId, before, after: buffer, mapping, units,
                 initiatingView: null, selections: historySelections(text) });
@@ -779,7 +781,7 @@ export class Workspace {
                 && record.editLease === null && options.applyCanonical !== false
                 && (savedBuffer ? !record.buffer!.equals(savedBuffer) : !equalValue(current.value(), savedValue));
             const canonical = savedBuffer && canonicalApplied ? record.buffer!.apply([textDifference(current.value() as string, savedValue as string)!]) : undefined;
-            const text = canonical ? this.prepareText(record, canonical.buffer, canonical.mapping) : undefined;
+            const text = canonical ? this.prepareText(record, canonical.buffer, canonical.mapping, { wholeText: true }) : undefined;
             if (canonical && text) this.history.record([Object.freeze({ documentId: record.documentId!, before: record.buffer!, after: canonical.buffer,
                 mapping: canonical.mapping, units: canonical.changedUnits, initiatingView: null, selections: historySelections(text) })], "host", "canonical");
             record.saved = savedBuffer ? undefined : savedValue; record.savedBuffer = savedBuffer; settled = true;

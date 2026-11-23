@@ -167,6 +167,11 @@ policy of `"record"` or `"reset"`. Supply `expectedRevision` for a delayed comma
 result reports `changed` and `revision`. Equal text keeps the revision. A reset also clears undo and
 redo. For a linked multi-file replacement, give each `editDocuments` request its replacement `text`
 and captured revision. Both forms accept a string or an immutable `TextBuffer`.
+Whole-text writes, including saved-text adoption and canonical saves, keep each view’s selection
+direction and its endpoints at the start or end of the file. An empty view starts at zero.
+Endpoints in unchanged text follow that text. Inside the replacement they keep their relative
+UTF-16 offset, clamped to the new span and moved back if they fall inside a surrogate pair or CRLF.
+A selection supplied for the initiating view takes precedence.
 
 Use `transact(documentId, expectedRevision, callback, options)` when later edits depend on earlier
 ones. Inside the synchronous callback, `tx.buffer` holds the staged text and `tx.edit(ranges)` uses
