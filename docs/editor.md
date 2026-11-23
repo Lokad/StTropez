@@ -524,6 +524,10 @@ Mixed nesting is validated, including openings that share a closing delimiter. A
 both eligible roles is `ambiguous`; symmetric quote pairs are insertion/surrounding rules.
 `allowPair` supplies lexical eligibility for each examined delimiter's existing range.
 
+`jump-to-bracket` moves to the partner of a bracket touching the caret. From inside a pair,
+it moves to the innermost enclosing closing bracket. Both directions share one work budget.
+The caret stays in place if the scan encounters mismatched brackets or reaches a limit.
+
 ```ts
 import { BracketMatcher } from "sttropez";
 import type { TextBuffer } from "sttropez";

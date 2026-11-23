@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { nextSeed } from "../fixtures/workloads.ts";
 import test from "node:test";
 import { BracketMatcher, TextBuffer } from "../src/index.ts";
+import { createBracketNavigationCursor } from "../src/core/bracket-matching.ts";
 import type { BracketMatchCursor, BracketMatchOptions, LanguageConfiguration, PairingContext } from "../src/index.ts";
 
 function checkedCursor(matcher: BracketMatcher, buffer: TextBuffer, caret: number, options?: BracketMatchOptions): BracketMatchCursor {
@@ -74,6 +75,23 @@ test("crossed nesting and EOF are unmatched; symmetric insertion pairs do not be
     assert.equal(match('"text"', 0, quotes).kind, "none"); assert.equal(match('"()"', 1, quotes).kind, "matched");
     assert.equal(match("()", 0, { pairs: [] }).kind, "none");
     assert.equal(match("()[]", 2).match, 3); // At-caret bracket takes precedence over the previous one.
+});
+
+test("interior navigation skips balanced neighbors and shares eligibility, depth and work limits across both scans", () => {
+    const jump = (text: string, caret: number, options?: BracketMatchOptions, language?: LanguageConfiguration) =>
+        finish(createBracketNavigationCursor(new BracketMatcher(language).configuration, TextBuffer.from(text), caret, options));
+    const nested = "({[]} left 😀 right [()])";
+    assert.equal(jump(nested, nested.indexOf("😀")).result!.match, nested.length - 1);
+    assert.equal(jump("outer(inner(value))", 14).result!.match, 17);
+    assert.equal(jump("<ignore> text", 11).result!.kind, "none");
+    assert.equal(jump("([]) text", 7).result!.kind, "none");
+    assert.equal(jump("([)] text", 7).result!.kind, "unmatched");
+    assert.equal(jump("( left ]", 4).result!.kind, "unmatched");
+    assert.equal(jump("( left [ x ] right )", 9, undefined, { allowPair: ({ pair }) => pair.open !== "[" }).result!.match, 19);
+    assert.equal(jump("( [] left )", 7, { maxDepth: 1 }).result!.limit, "depth");
+    assert.equal(jump("( left [] )", 3, { maxDepth: 1 }).result!.limit, "depth");
+    const limited = jump("(" + "x".repeat(1200) + ")", 600, { maxWorkUnits: 1000 });
+    assert.equal(limited.result!.limit, "work"); assert.equal(limited.workUnits, 1000);
 });
 
 test("host veto examines each existing delimiter with its direction, exact immutable buffer and range", () => {

@@ -80,9 +80,12 @@ test("bracket jump works without highlights and a delayed jump cannot move a rep
     await page.keyboard.type("X");
     await expect(page.locator(".st-viewport-row").first()).toHaveJSProperty("textContent", "(aX) [b]");
     expect((await state(page)).status).toBe("disabled");
+    await page.evaluate(() => window.bracketFixture.set("outer(inner(value))", 14));
+    await input(page).press("Control+Shift+Backslash"); await page.keyboard.type("!");
+    await expect(page.locator(".st-viewport-row").first()).toHaveJSProperty("textContent", "outer(inner(value!))");
     const pending = await page.evaluate(() => {
         const f = window.bracketFixture;
-        f.set("[" + "x".repeat(50_000) + "]", 0);
+        f.set("[" + "x".repeat(50_000) + "]", 25_000);
         f.editor.commands.run("jump-to-bracket");
         const pending = f.editor.activity().pendingCommand;
         f.set("new", 1);

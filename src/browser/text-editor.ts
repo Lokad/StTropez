@@ -1024,7 +1024,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 cancelWord(); syncSelection(); group = undefined; preferred = undefined;
                 const capture = commandCapture(false);
                 eachRange(capture, "grapheme", (range, done) => {
-                    const cursor = brackets!.cursor(capture.buffer, range.head);
+                    const cursor = brackets!.navigationCursor(capture.buffer, range.head);
                     const active = () => rangeCommand?.capture === capture && validCommand(capture);
                     const advance = () => commandTurn(() => {
                         const result = commandRunner.slice(() => cursor.next(commandBudget.languageUnits),

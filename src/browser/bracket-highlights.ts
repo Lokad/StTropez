@@ -1,4 +1,4 @@
-import { BracketMatcher } from "../core/bracket-matching.ts";
+import { BracketMatcher, createBracketNavigationCursor } from "../core/bracket-matching.ts";
 import type { BracketMatchCursor, BracketMatchOptions, BracketMatchProgress, BracketMatchResult } from "../core/bracket-matching.ts";
 import type { ResolvedLanguageConfiguration } from "../core/language-edits.ts";
 import { Store } from "../core/observable.ts";
@@ -102,6 +102,7 @@ export function mountBracketHighlights(workspace: Workspace, target: TabTarget |
     const handle: BracketHighlights = Object.freeze({ ...cell.observable,
         refresh: () => { notifications.assertWritable(); refresh(true); } });
     configure(initial);
-    return Object.freeze({ handle, cursor, configure, refresh: observed,
+    return Object.freeze({ handle, configure, refresh: observed,
+        navigationCursor: (buffer: TextBuffer, at: number) => createBracketNavigationCursor(configuration(), buffer, at, limits),
         dispose: () => { if (disposed) return; disposed = true; current = undefined; cancel(); events?.abort(); stops.splice(0).forEach(stop => stop()); matcher = undefined; language = undefined; publish("disposed"); layer.dispose(); } });
 }

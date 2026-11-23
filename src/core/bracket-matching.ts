@@ -34,7 +34,11 @@ export class BracketMatcher {
 
 /** Match a closer at the insertion point without changing the host callback’s buffer. */
 export function createClosingBracketCursor(configuration: ResolvedLanguageConfiguration, buffer: TextBuffer, at: number, closer: string): BracketMatchCursor {
-    return bracketCursor(configuration, buffer, at, {}, closer);
+    return bracketCursor(configuration, buffer, at, {}, { closer });
+}
+/** The explicit jump command also accepts a caret inside a pair. */
+export function createBracketNavigationCursor(configuration: ResolvedLanguageConfiguration, buffer: TextBuffer, caret: number, options?: BracketMatchOptions): BracketMatchCursor {
+    return bracketCursor(configuration, buffer, caret, options ?? {}, "enclosing");
 }
 const compiled = new WeakMap<ResolvedLanguageConfiguration, Map<string, Roles>>();
 function bracketTokens(configuration: ResolvedLanguageConfiguration) {
@@ -51,7 +55,8 @@ function bracketTokens(configuration: ResolvedLanguageConfiguration) {
     }
     return tokens;
 }
-function bracketCursor(configuration: ResolvedLanguageConfiguration, buffer: TextBuffer, caret: number, options: BracketMatchOptions, typedCloser?: string): BracketMatchCursor {
+function bracketCursor(configuration: ResolvedLanguageConfiguration, buffer: TextBuffer, caret: number, options: BracketMatchOptions, mode?: "enclosing" | { closer: string }): BracketMatchCursor {
+    const typedCloser = typeof mode === "object" ? mode.closer : undefined;
     const tokens = bracketTokens(configuration);
     if (!Number.isSafeInteger(caret) || caret < 0 || caret > buffer.length) throw new RangeError("Invalid bracket caret.");
     const { maxWorkUnits: maxWork, maxDepth } = bracketMatchLimits(options);
@@ -84,12 +89,12 @@ function bracketCursor(configuration: ResolvedLanguageConfiguration, buffer: Tex
                 if (!found.open && !found.close.size) { vetoed = true; continue; }
                 at = offset; initial = found; break;
             }
-            if (!initial) return result(vetoed ? "vetoed" : "none");
-            if (initial.open && initial.close.size) return result("ambiguous");
-            direction = initial.open ? 1 : -1;
+            if (!initial && (vetoed || mode !== "enclosing")) return result(vetoed ? "vetoed" : "none");
+            if (initial?.open && initial.close.size) return result("ambiguous");
+            direction = initial?.open ? 1 : -1;
             // Each backward frame may admit several openings that share a closing character.
-            const pending: Roles[] = [initial];
-            let offset = at! + direction;
+            const pending: Roles[] = initial ? [initial] : [];
+            let offset = at === null ? caret - 1 : at + direction;
             while (offset >= 0 && offset < buffer.length) {
                 const from = direction === 1 ? offset : Math.max(0, offset - 255);
                 const to = direction === 1 ? Math.min(buffer.length, offset + 256) : offset + 1;
@@ -104,19 +109,24 @@ function bracketCursor(configuration: ResolvedLanguageConfiguration, buffer: Tex
                     const push = direction === 1 ? found.open : found.close.size;
                     const pop = direction === 1 ? found.close.size : found.open;
                     if (push) {
-                        if (pending.length === maxDepth) return result("limited", null, null, "depth");
+                        if (pending.length + (at === null ? 1 : 0) >= maxDepth) return result("limited", null, null, "depth");
                         pending.push(found);
                     } else if (pop) {
+                        // Balanced pairs left of the caret have already been checked. Resume
+                        // at the caret to match the first opener that still encloses it.
+                        if (!pending.length) {
+                            at = offset; pending.push(found); direction = 1; offset = caret; break;
+                        }
                         const expected = pending[pending.length - 1]!, pair = direction === 1
                             ? found.close.has(expected.open!) ? expected.open : undefined
                             : expected.close.has(found.open!) ? found.open : undefined;
                         if (!pair) return result("unmatched");
-                        pending.pop(); if (!pending.length) return result("matched", offset, pair);
+                        pending.pop(); if (!pending.length && at !== null) return result("matched", offset, pair);
                     }
                     offset += direction;
                 }
             }
-            return result("unmatched");
+            return result(at === null ? "none" : "unmatched");
         } catch (error) { if (error === exhausted) return result("limited", null, null, "work"); throw error; }
     }
     return kernelCursor(scan(), () => work, (status, result, failure): BracketMatchProgress => Object.freeze({
