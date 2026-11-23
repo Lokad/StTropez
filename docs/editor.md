@@ -66,7 +66,7 @@ clears focus and composition, and releases its listeners.
 | Setting | Behavior |
 | --- | --- |
 | `language` | Host indentation, comment, pair and Enter rules; see [language configuration](#language-configuration) |
-| `columnRulers`, `highlightCurrentLine`, `fontLigatures`, `scrollBeyondLastLine`, `minimap` | [Viewport settings](viewport.md#viewport-settings) |
+| `gutter`, `columnRulers`, `highlightCurrentLine`, `fontLigatures`, `scrollBeyondLastLine`, `minimap` | [Viewport settings](viewport.md#viewport-settings) |
 | `pasteLineEndings` | `"local"` by default. `"preserve"` inserts clipboard line endings verbatim. |
 | `bracketMatching` | Off by default; `true` or explicit matching limits enable it |
 | `characterWarnings` | Off by default; `true` or a [character-warning policy](unicode.md#character-warnings) enables it |

@@ -46,6 +46,7 @@ workspace and document.
 | --- | --- |
 | `columnRulers` | Empty; at most 128 positive safe integers, copied, sorted and deduplicated |
 | `highlightCurrentLine` | `false`; boolean |
+| `gutter` | `true`; boolean |
 | `fontLigatures` | `false`; boolean |
 | `minimap` | `false`; boolean |
 | `scrollBeyondLastLine` | `false`; boolean |
@@ -91,10 +92,14 @@ An unchanged viewport setting schedules no paint. Configuration returns `false` 
 | Setting | Effect |
 | --- | --- |
 | `columnRulers` | Guides at measured monospace cells from the left text origin |
+| `gutter` | Shows line numbers and fold controls. Turning it off gives their width back to the text. |
 | `highlightCurrentLine` | Background for the primary collapsed caret, including a folded header |
 | `fontLigatures` | Native common and contextual font ligatures. Changes invalidate font and caret measurements. |
 | `minimap` | A document overview with a draggable visible-region marker |
 | `scrollBeyondLastLine` | Space to scroll the last visible row to the top text padding |
+
+The gutter reserves four digits and grows for longer line numbers, up to a third of the viewport width.
+Both comparison panes size their gutters for the longer document. Hiding the gutter preserves folds and keyboard commands.
 
 Rulers and line highlights add no text or scroll range. Only a collapsed primary caret gets a line
 highlight. Each view has its own settings. Set `--st-column-ruler`, `--st-current-line` and

@@ -142,6 +142,29 @@ test("double and triple click drags extend by whole words and lines in both dire
     await page.keyboard.type("X"); await expect(page.locator("#primary .st-viewport-row")).toHaveText(["Xlast"]);
 });
 
+test("typing across a line-number boundary preserves the text origin and a hidden gutter gives its width back", async ({ page }) => {
+    await page.goto("/editing/");
+    const root = page.locator("#primary .st-editor"), input = root.locator("textarea");
+    const origin = () => root.locator(".st-viewport-row").first().evaluate(el => el.getBoundingClientRect().left);
+    for (const count of [9, 99, 999]) {
+        await page.evaluate(n => window.editingFixture.setText("x\n".repeat(n - 1) + "end"), count); await ready(page);
+        await input.press("Control+End"); await ready(page);
+        const x = await origin();
+        await input.press("Enter"); await page.keyboard.type("z"); await ready(page);
+        await expect(root.locator(`.st-viewport-row[data-line="${count}"]`)).toHaveText("z");
+        expect(await origin()).toBe(x);
+        await input.press("Control+z"); await input.press("Control+z"); await ready(page);
+        await expect(root.locator(`.st-viewport-row[data-line="${count - 1}"]`)).toHaveText("end");
+        expect(await origin()).toBe(x);
+    }
+    const x = await origin(), width = (await root.locator(".st-viewport-gutter").boundingBox())!.width;
+    await page.evaluate(() => window.editingFixture.configure({ gutter: false })); await ready(page);
+    await expect(root.locator(".st-viewport-gutter")).toBeHidden(); expect(await origin()).toBeCloseTo(x - width);
+    await page.keyboard.type("!"); await expect(root.locator('.st-viewport-row[data-line="998"]')).toHaveText("end!");
+    await page.evaluate(() => window.editingFixture.configure({ gutter: true })); await ready(page);
+    expect(await origin()).toBe(x); await expect(input).toBeFocused();
+});
+
 test("gutter selects complete source lines, extends backwards and scrolls with the editor", async ({ page }) => {
     await page.goto("/editing/");
     await page.evaluate(() => window.editingFixture.setText("first\r\n\r\nthird\r\nlast\r\n" + "more\r\n".repeat(90)));

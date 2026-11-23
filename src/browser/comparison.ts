@@ -114,10 +114,13 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         return range && range.from < range.to ? `st-comparison-line-${side}` : undefined;
     };
     const paneOptions = { ...(options.settings ? { settings: options.settings } : {}), ...(options.requestLine ? { requestLine: options.requestLine } : {}) };
-    const foldContainsChange = (side: "baseline" | "working") => (buffer: TextBuffer, from: number, to: number) =>
-        state[side]?.buffer === buffer && firstHunkInLines(side, from, to) !== undefined;
+    const presentation = (side: "baseline" | "working") => ({
+        foldContainsChange: (buffer: TextBuffer, from: number, to: number) =>
+            state[side]?.buffer === buffer && firstHunkInLines(side, from, to) !== undefined,
+        gutterLineCount: () => Math.max(state.working?.buffer.lineCount ?? 0, state.baseline?.buffer.lineCount ?? 0),
+    });
     let workingMount: MountedTextEditor;
-    try { workingMount = mountEditor(workingPane.content, workspace, identity, { view: controller.view, ...paneOptions, ariaLabel: "Comparison working source" }, foldContainsChange("working")); }
+    try { workingMount = mountEditor(workingPane.content, workspace, identity, { view: controller.view, ...paneOptions, ariaLabel: "Comparison working source" }, presentation("working")); }
     catch (error) { root.remove(); controller.dispose(); throw error; }
     const working = workingMount.editor, pair = createComparisonPanes(workingMount, changed), referenceEditor = () => pair.reference()?.editor, referenceViewport = () => referenceEditor()?.viewport;
     const differences = (editor: TextEditor, side: "working" | "baseline") => editor.decorations.addProvider({
@@ -191,7 +194,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
             if (typeof baseline !== "string") display = workspace.createTextResourceFromBuffer(workspace.createResourceKey("comparison", "baseline"), "Comparison baseline",
                 { buffer: state.baseline.buffer, serverVersion: state.baseline.version }, { edit: [], save: false }, { visibility: "internal" });
             const referenceId = typeof baseline === "string" ? baseline : display!.documentId;
-            const mounted = mountEditor(referencePane.content, workspace, referenceId, { ariaLabel: "Comparison baseline source", readOnly: true, ...paneOptions }, foldContainsChange("baseline"));
+            const mounted = mountEditor(referencePane.content, workspace, referenceId, { ariaLabel: "Comparison baseline source", readOnly: true, ...paneOptions }, presentation("baseline"));
             const editor = mounted.editor;
             referenceDiff = differences(editor, "baseline");
             try { pair.setReference(mounted); } catch (error) { editor.dispose(); throw error; }

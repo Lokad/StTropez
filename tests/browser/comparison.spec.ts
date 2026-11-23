@@ -2,6 +2,18 @@ import { ready, test, expect } from "./fixtures.ts";
 
 test.beforeEach(async ({ page }) => {  await page.goto("/comparison/"); await ready(page); });
 
+test("both review panes reserve space for the longer line number through typing and undo", async ({ page }) => {
+    await page.evaluate(() => window.comparisonFixture.setText("x\n".repeat(9998) + "last")); await ready(page);
+    const work = page.getByRole("textbox", { name: "Comparison working source", exact: true });
+    const widths = () => page.locator(".st-comparison-panes .st-viewport-gutter").evaluateAll(nodes => nodes.map(el => el.getBoundingClientRect().width));
+    const [initial, other] = await widths(); expect(initial).toBe(other);
+    await work.press("Control+End"); await work.press("Enter"); await page.keyboard.type("x"); await ready(page);
+    const [baseline, working] = await widths(); expect(baseline).toBe(working); expect(working!).toBeGreaterThan(initial!);
+    await expect(page.locator('.st-comparison-panes section:last-child .st-viewport-row[data-line="9999"]')).toHaveText("x");
+    await work.press("Control+z"); await work.press("Control+z"); await ready(page);
+    expect(await widths()).toEqual([initial, initial]);
+});
+
 test("mouse review controls preserve the typing target and keyboard activation retains toolbar focus", async ({ page }) => {
     const working = page.getByRole("textbox", { name: "Comparison working source", exact: true });
     const reference = page.getByRole("textbox", { name: "Comparison baseline source", exact: true });

@@ -145,13 +145,16 @@ export function validateRevealAlignment(align: RevealAlignment): void {
     if (align !== "start" && align !== "center" && align !== "nearest") throw new RangeError("Invalid reveal alignment.");
 }
 export type RevealOptions = Readonly<{ horizontal?: "center" | "nearest"; vertical?: "center" | "nearest" | "center-if-outside"; affinity?: Affinity }>;
-export type ViewportSettings = Readonly<{ columnRulers: readonly number[]; highlightCurrentLine: boolean;
+export type ViewportSettings = Readonly<{ columnRulers: readonly number[]; highlightCurrentLine: boolean; gutter: boolean;
     fontLigatures: boolean; scrollBeyondLastLine: boolean; minimap: boolean }>;
 export type TextViewportOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; settings?: Partial<ViewportSettings> }>;
-export type FoldContainsChange = (buffer: TextBuffer, firstHiddenLine: number, lineTo: number) => boolean;
+export type ComparisonPresentation = Readonly<{
+    foldContainsChange: (buffer: TextBuffer, firstHiddenLine: number, lineTo: number) => boolean;
+    gutterLineCount: () => number;
+}>;
 
 const defaultSettings: ViewportSettings = Object.freeze({ columnRulers: resolveColumnRulers(), highlightCurrentLine: false,
-    fontLigatures: false, scrollBeyondLastLine: false, minimap: false });
+    fontLigatures: false, scrollBeyondLastLine: false, minimap: false, gutter: true });
 function viewportSettings(previous: ViewportSettings, changes?: Partial<ViewportSettings>): ViewportSettings {
     if (!changes) return previous;
     const flag = (key: Exclude<keyof ViewportSettings, "columnRulers">) => {
@@ -166,10 +169,11 @@ function viewportSettings(previous: ViewportSettings, changes?: Partial<Viewport
         if (next.length !== columns.length || next.some((value, i) => value !== columns[i])) columns = next;
     }
     const highlightCurrentLine = flag("highlightCurrentLine"), fontLigatures = flag("fontLigatures");
-    const scrollBeyondLastLine = flag("scrollBeyondLastLine"), minimap = flag("minimap");
+    const scrollBeyondLastLine = flag("scrollBeyondLastLine"), minimap = flag("minimap"), gutter = flag("gutter");
     if (columns === previous.columnRulers && highlightCurrentLine === previous.highlightCurrentLine
-        && fontLigatures === previous.fontLigatures && scrollBeyondLastLine === previous.scrollBeyondLastLine && minimap === previous.minimap) return previous;
-    return Object.freeze({ columnRulers: columns, highlightCurrentLine, fontLigatures, scrollBeyondLastLine, minimap });
+        && fontLigatures === previous.fontLigatures && scrollBeyondLastLine === previous.scrollBeyondLastLine && minimap === previous.minimap
+        && gutter === previous.gutter) return previous;
+    return Object.freeze({ columnRulers: columns, highlightCurrentLine, fontLigatures, scrollBeyondLastLine, minimap, gutter });
 }
 
 /** Bounded DOM view layer with local native text geometry. Native-device qualification remains separate. */
@@ -184,7 +188,7 @@ export type MountedViewport = Readonly<{
 }>;
 
 export function mountViewport(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId | ReturnType<typeof captureTextSurface>,
-    options: TextViewportOptions = {}, foldContainsChange?: FoldContainsChange): MountedViewport {
+    options: TextViewportOptions = {}, comparison?: ComparisonPresentation): MountedViewport {
     let settings = viewportSettings(defaultSettings, options.settings);
     const { documentId, resource, tab } = typeof identity === "string" ? captureTextSurface(workspace, identity) : identity;
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
@@ -499,7 +503,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const fold = item.endsLine && index?.headerAt(item.line);
         if (fold && fold.collapsed) {
             const count = fold.lineTo - fold.lineFrom - 1;
-            const changes = foldContainsChange?.(document.buffer, fold.lineFrom + 1, fold.lineTo) ? " · contains changes" : "";
+            const changes = comparison?.foldContainsChange(document.buffer, fold.lineFrom + 1, fold.lineTo) ? " · contains changes" : "";
             parts.push({ text: "", className: "st-fold-summary", ornament: "fold", label: `… ${count} ${count === 1 ? "line" : "lines"} hidden${changes}` });
         }
         return renderRowChildren(element, selections.length && parts.length > 1 ? selectedTokenRuns(parts) : parts) || changed;
@@ -598,7 +602,9 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         if (font !== measuredFont) { measuredWidth = 0; measuredFont = font; }
         const document = live() ? workspace.observeDocument(documentId).getSnapshot() : undefined;
         // Reserve space by document line count. Scrolling and folding keep the text origin fixed.
-        gutterWidth = document ? Math.min(Math.floor(clientWidth / 3), Math.ceil(columnWidth * String(document.buffer.lineCount).length) + 26) : 0;
+        const lineCount = Math.max(document?.buffer.lineCount ?? 0, comparison?.gutterLineCount() ?? 0);
+        const gutterDigits = Math.max(4, String(lineCount).length);
+        gutterWidth = document && settings.gutter ? Math.min(Math.floor(clientWidth / 3), Math.ceil(columnWidth * gutterDigits) + 26) : 0;
         width = clientWidth - mapWidth - gutterWidth;
         if (!document) {
             lineNumbers.clear(); numbers.replaceChildren(); gutter.style.width = "0px";
@@ -682,7 +688,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         }
         const key = [document.revision, selectionSet, folds.generation, rowGeneration, comparisonRows?.id,
             top, left, width, height, gutterWidth, zoom, columnWidth, naturalLineHeight, lineHeight, font, x.maximum, y.extent, paintEpoch, settings.highlightCurrentLine,
-            inputOwner?.composing ?? false];
+            settings.gutter, inputOwner?.composing ?? false];
         if (!requested && painted && painted.horizontalAnchor === horizontalAnchor && painted.placement === fragmentPlacement
             && key.every((value, index) => value === painted!.key[index])
             && Math.abs(root.scrollTop - y.toPhysical(top)) <= 1 && Math.abs(root.scrollLeft - x.toPhysical(left)) <= 1) {
@@ -775,7 +781,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         root.removeAttribute("aria-disabled"); root.dataset.revision = String(document.revision);
         renderedRevision = document.revision; rowSourceRevision = document.revision; renderedSelection = selected; renderedSelectionSet = selectionSet; previous = document; renderedIndex = index; renderedFoldGeneration = folds.generation; renderedAlignmentId = comparisonRows?.id ?? null; renders++;
         const visibleFolds = new Set<string>(), orderedButtons: HTMLButtonElement[] = [];
-        for (const item of next) {
+        for (const item of settings.gutter ? next : []) {
             const rowTop = padding + index.rowAt(item.line) * lineHeight - top;
             let number = lineNumbers.get(item.line);
             if (!number) {
@@ -802,13 +808,14 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             button.tabIndex = -1;
             button.style.top = `${rowTop}px`; button.style.height = `${lineHeight}px`;
         }
-        for (const [line, number] of lineNumbers) if (!rows.has(line)) { number.remove(); lineNumbers.delete(line); }
+        for (const [line, number] of lineNumbers) if (!settings.gutter || !rows.has(line)) { number.remove(); lineNumbers.delete(line); }
         for (const [id, button] of foldButtons) if (!visibleFolds.has(id)) {
             const focused = isFocused(button); button.remove(); foldButtons.delete(id);
             if (focused) notify("focus");
             if (disposed || !live()) return;
         }
         orderedButtons.forEach((button, index) => { if (foldLayer.children.item(index) !== button) foldLayer.insertBefore(button, foldLayer.children.item(index)); });
+        gutter.hidden = !settings.gutter;
         // A bounded batch of native shaping measurements follows the row writes. Extent corrections
         // are scheduled for the next frame, without alternating reads and writes for each row.
         // Full-row backgrounds can have a minimum width unrelated to their source text.

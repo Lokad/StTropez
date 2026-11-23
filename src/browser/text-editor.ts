@@ -29,7 +29,7 @@ import type { InputContext } from "./input-context.ts";
 import { dispatchTypedText, editRefusedEvent, inputConflictEvent } from "./input-events.ts";
 import type { EditRefusedDetail, InputConflictDetail } from "./input-events.ts";
 import { mountViewport, validateRevealAlignment } from "./viewport.ts";
-import type { FoldContainsChange, MountedViewport, RevealAlignment, RevealOptions, TextViewport, ViewportSettings } from "./viewport.ts";
+import type { ComparisonPresentation, MountedViewport, RevealAlignment, RevealOptions, TextViewport, ViewportSettings } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
 import { lineColumnScanner, planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
 import { exportText, lineContentEnd, lineEnding } from "../core/newlines.ts";
@@ -118,7 +118,7 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, identit
 
 /** Private pane mount; the comparison capability belongs to this exact editor lifetime. */
 export function mountEditor(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId,
-    options: TextEditorOptions = {}, foldContainsChange?: FoldContainsChange): MountedTextEditor {
+    options: TextEditorOptions = {}, comparison?: ComparisonPresentation): MountedTextEditor {
     const initial = options.settings;
     const matching = (value: boolean | BracketMatchOptions) => value === false ? false : bracketMatchLimits(value === true ? {} : value);
     const classifyWarnings = (value: boolean | CharacterWarningOptions) => value === false ? undefined : new CharacterWarnings(value === true ? {} : value);
@@ -139,7 +139,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     const view = options.view ?? workspace.createDocumentView(documentId);
     const live = () => workspace.ownsDocumentView(view, target);
     let setComparisonRows: MountedTextEditor["setComparisonRows"], viewport: TextViewport, navigation: MountedViewport["navigation"], brackets: ReturnType<typeof mountBracketHighlights> | undefined, warnings: ReturnType<typeof mountCharacterWarnings> | undefined;
-    try { const mounted = mountViewport(host, workspace, surface, { ...options, view }, foldContainsChange);
+    try { const mounted = mountViewport(host, workspace, surface, { ...options, view }, comparison);
         viewport = mounted.viewport; navigation = mounted.navigation; setComparisonRows = mounted.setComparisonRows; }
     catch (error) { if (!options.view) view.dispose(); throw error; }
     const root = viewport.element;
