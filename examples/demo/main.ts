@@ -606,7 +606,7 @@ for (const toggle of element("find-options").querySelectorAll("button")) {
     });
 }
 on("replace-toggle", () => {
-    const show = element("replace-controls").hidden; showReplacement(show);
+    const show = Boolean(element("replace-controls").hidden); showReplacement(show);
     (show ? replacement : findQuery).focus({ preventScroll: true });
 });
 for (const [id, command] of [["find-next", "find.next"], ["find-previous", "find.previous"]] as const) {
