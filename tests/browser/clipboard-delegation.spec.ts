@@ -20,6 +20,27 @@ test("caret-only copy and cut take whole lines and paste above the destination c
     await expect(page.locator("#primary .st-viewport-row")).toHaveText(["beta", "alpha", "laXst"]);
 });
 
+test("caret-line Cut and Copy include a collapsed body once and paste it as whole lines", async ({ page }) => {
+    await page.goto("/editing/");
+    const result = await page.evaluate(() => {
+        const f = window.editingFixture, original = "start\r\nhead\r\nbody\r\nend";
+        f.setText(original); f.folds([{ id: "last", from: 7, to: original.length, collapsed: true }]);
+        f.selections([{ anchor: 8, head: 8 }, { anchor: 10, head: 10 }]); f.focus("primary");
+        const input = document.querySelector('textarea[aria-label="Primary source"]')!;
+        const dispatch = (type: string, contents?: DataTransfer) => {
+            const event = new ClipboardEvent(type, { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
+            if (contents) for (const format of contents.types) event.clipboardData!.setData(format, contents.getData(format));
+            input.dispatchEvent(event); return event.clipboardData!;
+        };
+        const copy = dispatch("copy").getData("text/plain"), cut = dispatch("cut");
+        const remaining = f.range(0, f.snapshot().document!.length);
+        dispatch("paste", cut);
+        return { copy, cut: cut.getData("text/plain"), remaining, restored: f.range(0, f.snapshot().document!.length) };
+    });
+    expect(result).toEqual({ copy: "head\r\nbody\r\nend\r\n", cut: "head\r\nbody\r\nend\r\n", remaining: "start", restored: "head\nbody\nend\nstart" });
+    await page.keyboard.type("X"); await expect(page.locator("#primary .st-viewport-row").last()).toHaveText("startX");
+});
+
 test("host-cancelled copy/cut/paste preserve captured text, clipboard ownership and selections", async ({ page }) => {
     await page.goto("/editing/");
     const result = await page.evaluate(() => {

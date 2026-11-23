@@ -296,7 +296,8 @@ movement. During composition the native input handles the pointer.
 
 The browser handles clipboard shortcuts, including Shift+Delete for Cut and Shift+Insert for Paste
 on Windows. Copy joins nonempty selections in source order with LF. With only carets, it copies each distinct
-line with its line ending, including a terminator for the last line. Cut removes the same text in
+visible line with its line ending, including a terminator for the last line. A collapsed header
+copies its hidden body as well. Cut removes the same text in
 one undo step. Pasting an editor-marked line at a caret inserts it above the current line and
 preserves the caret’s column. Plain text from other applications inserts at the selection.
 

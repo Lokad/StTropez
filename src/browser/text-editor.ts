@@ -1497,7 +1497,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             if (type === "cut") hostInsertion?.cancel();
             const buffer = workspace.document(documentId).buffer;
             if (selections.ranges.every(range => range.anchor === range.head)) {
-                const lines = copyCaretLines(buffer, selections, type === "cut");
+                const lines = copyCaretLines(buffer, selections, type === "cut", view.folding.getSnapshot().index);
                 event.clipboardData.setData("text/plain", lines.text);
                 event.clipboardData.setData(lineCopyFormat, "1");
                 if (lines.edits.length) apply(lines.edits, lines.selectionSet, "delete");

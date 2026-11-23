@@ -1,4 +1,5 @@
 import { lineContentEnd, lineEnding } from "./newlines.ts";
+import { collapsedLineBlock, type FoldIndex } from "./folding.ts";
 import { PositionMap } from "./positions.ts";
 import { mapSelectionRanges, planSelectionEdits } from "./selections.ts";
 import type { SelectionEditPlan, SelectionSet } from "./selections.ts";
@@ -6,7 +7,7 @@ import type { TextBuffer } from "./text-buffer.ts";
 import type { TextEdit } from "./changes.ts";
 
 /** Carets on the same line copy or cut that line once. Group adjacent lines for the final EOF cut. */
-export function copyCaretLines(buffer: TextBuffer, selections: SelectionSet, cut: boolean) {
+export function copyCaretLines(buffer: TextBuffer, selections: SelectionSet, cut: boolean, folds?: FoldIndex) {
     const text: string[] = [], edits: TextEdit[] = [];
     let first = -1, last = -1;
     const flush = () => {
@@ -18,10 +19,11 @@ export function copyCaretLines(buffer: TextBuffer, selections: SelectionSet, cut
         if (cut && from < end) edits.push({ from, to: end, insert: "" });
     };
     for (const range of selections.ranges) {
-        const line = buffer.lineAt(range.head);
-        if (line === last) continue;
-        if (line !== last + 1 || first < 0) { if (first >= 0) flush(); first = line; }
-        last = line;
+        const line = buffer.lineAt(range.head), block = collapsedLineBlock(folds, line);
+        const start = block?.lineFrom ?? line, end = block ? block.lineTo - 1 : line;
+        if (end <= last) continue;
+        if (first < 0 || start > last + 1) { if (first >= 0) flush(); first = start; }
+        last = end;
     }
     flush();
     const selectionSet = edits.length ? mapSelectionRanges(new PositionMap(buffer.length, edits), selections, "after") : selections;
