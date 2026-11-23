@@ -7,6 +7,35 @@ async function textPoint(page: Page, offset: number) {
     return { x: at.left + 1, y: at.top + at.height / 2 };
 }
 
+test.describe("fractional display scale", () => {
+    test.use({ deviceScaleFactor: 1.25, viewport: { width: 1280, height: 800 } });
+    test("a selection paints continuously across syntax tokens", async ({ page }) => {
+        await page.goto("/editing/"); await ready(page);
+        const source = page.getByRole("textbox", { name: "Primary source", exact: true });
+        await source.press("Control+Home"); await source.press("ArrowDown"); await source.press("Home"); await source.press("Shift+End");
+        await ready(page);
+        const spans = await page.locator("#primary .st-viewport-selected").evaluateAll(nodes => nodes.map(node => {
+            const { left, right, top } = node.getBoundingClientRect();
+            return { left, right, top };
+        }));
+        expect(spans.length).toBeGreaterThan(1);
+        const first = spans[0]!, last = spans.at(-1)!, x = Math.floor(first.left), y = Math.floor(first.top);
+        const png = await page.screenshot({ clip: { x, y, width: Math.ceil(last.right) - x, height: 5 } });
+        const colors = await page.evaluate(async ({ data, left, right, top }) => {
+            const image = new Image(); image.src = "data:image/png;base64," + data; await image.decode();
+            const canvas = document.createElement("canvas"); canvas.width = image.width; canvas.height = image.height;
+            const ctx = canvas.getContext("2d")!; ctx.drawImage(image, 0, 0);
+            const start = Math.round(left * devicePixelRatio), end = Math.round(right * devicePixelRatio);
+            const pixels = ctx.getImageData(start, Math.round(top * devicePixelRatio), end - start, 1).data;
+            const colors = new Set<string>();
+            for (let i = 0; i < pixels.length; i += 4) colors.add(pixels.subarray(i, i + 3).join(","));
+            return [...colors];
+        }, { data: png.toString("base64"), left: first.left - x + 2, right: last.right - x - 2, top: first.top - y + 1.2 });
+        expect(colors).toEqual(["36,73,107"]);
+        await page.keyboard.type("X"); await expect(page.locator('#primary .st-viewport-row[data-line="1"]')).toHaveText("X");
+    });
+});
+
 test("three clicks select the line ending and four select the document", async ({ page }) => {
     await page.goto("/editing/");
     await page.evaluate(() => window.editingFixture.setText("one two\r\n\r\nlast"));

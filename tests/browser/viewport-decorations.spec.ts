@@ -30,18 +30,20 @@ test("decorated viewport bounds endpoint reads and preserves overlap order, sele
             reads = 0; viewport.flush(); const endpointReads = reads, row = host.querySelector<HTMLElement>('.st-viewport-row[data-line="0"]')!;
             const exact = row.textContent === "x".repeat(512), colored = row.querySelectorAll(".paint-first").length;
             overlap = true; viewport.view.setSelection(0, { anchor: 3, head: 7 }); tokens.invalidate(0, 1); viewport.flush();
-            const parts = [...row.childNodes].map(node => ({ text: node.textContent, className: node instanceof HTMLElement ? node.className : "" }));
+            const run = row.querySelector<HTMLElement>(".st-selection-run")!;
+            const leaves = () => [...row.childNodes].flatMap(node => node === run ? [...run.childNodes] : [node]);
+            const parts = leaves().map(node => ({ text: node.textContent, className: node instanceof HTMLElement ? node.className : "" }));
             const first = row.querySelector<HTMLElement>(".paint-first.paint-second")!, paint = getComputedStyle(first);
             const unselected = row.querySelector<HTMLElement>(".paint-second:not(.st-viewport-selected)")!;
-            const color = paint.color, selectedBackground = paint.backgroundColor, decorationBackground = getComputedStyle(unselected).backgroundColor;
-            const children = [...row.childNodes], texts = children.map(node => node.firstChild);
+            const color = paint.color, tokenBackground = paint.backgroundColor, selectedBackground = getComputedStyle(run).backgroundColor, decorationBackground = getComputedStyle(unselected).backgroundColor;
+            const children = leaves(), texts = children.map(node => node.firstChild);
             tokens.invalidate(0, 1); viewport.flush();
-            const reused = children.every((node, i) => row.childNodes[i] === node && node.firstChild === texts[i]);
-            return { endpointReads, exact, colored, parts, color, selectedBackground, decorationBackground, reused, exports: workspace.document(source.documentId).buffer.readMetrics().textExports };
+            const after = leaves(), reused = children.every((node, i) => after[i] === node && node.firstChild === texts[i]);
+            return { endpointReads, exact, colored, parts, color, tokenBackground, selectedBackground, decorationBackground, reused, exports: workspace.document(source.documentId).buffer.readMetrics().textExports };
         } finally { viewport.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); style.remove(); }
     });
     expect(result).toMatchObject({ endpointReads: 512, exact: true, colored: 256, color: "rgb(200, 20, 30)",
-        selectedBackground: "rgb(36, 73, 107)", decorationBackground: "rgb(10, 30, 60)", reused: true, exports: 0 });
+        tokenBackground: "rgba(0, 0, 0, 0)", selectedBackground: "rgb(36, 73, 107)", decorationBackground: "rgb(10, 30, 60)", reused: true, exports: 0 });
     expect(result.parts).toEqual([
         { text: "xxx", className: "paint-second" }, { text: "x", className: "paint-second st-viewport-selected" },
         { text: "x", className: "paint-first paint-second paint-first st-viewport-selected" },

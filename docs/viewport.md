@@ -69,6 +69,7 @@ export function markColor(editor: TextEditor, revision: number, from: number, to
 Style the marker with a host CSS class. For example, give `.color-swatch` a width, height and
 `background: var(--swatch-color)`. Labels render as plain text after the line. Markers and labels
 contribute no characters to selections or copied source. A point range paints a short mark at the caret stop.
+Within a row, the selection background runs continuously across syntax tokens and inline decorations.
 
 `set(revision, ranges)` copies its input and returns `false` for a stale revision or a retired view.
 Offsets outside the revision throw. Edits move surviving ranges until the layer receives a replacement.

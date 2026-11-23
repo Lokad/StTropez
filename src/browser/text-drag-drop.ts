@@ -164,7 +164,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
         arm: (event: PointerEvent): boolean => {
             clearArm(); const state = current();
             if (!state || event.button !== 0 || event.pointerType && event.pointerType !== "mouse" || event.altKey || event.shiftKey || event.target === input || !(event.target instanceof win.Element)
-                || !event.target.closest(".st-viewport-selected")) return false;
+                || !event.target.closest(".st-viewport-selected, .st-selection-run")) return false;
             const point = viewport.hitTest(event.clientX, event.clientY), set = view.getSnapshot().selectionSet;
             if (!point || !set.ranges.some(range => range.anchor !== range.head && point.offset >= Math.min(range.anchor, range.head) && point.offset <= Math.max(range.anchor, range.head))) return false;
             armed = { revision: state.revision, selectionSet: set, pointer: event.pointerId, offset: point.offset, affinity: point.affinity }; root.draggable = true; return true;

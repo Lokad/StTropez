@@ -83,9 +83,31 @@ function rowCaretOffset(buffer: TextBuffer, end: number, offset: number): number
     if (offset <= end) return offset;
     return offset === end + 1 && offset < buffer.length && buffer.slice(end, end + 2) === "\r\n" ? end : undefined;
 }
-function renderRowChildren(element: HTMLElement, parts: readonly RowPart[]): boolean {
-    if (element.childNodes.length === parts.length && parts.every((part, index) => {
-        const node = element.childNodes.item(index); if (!node || node.textContent !== part.text) return false;
+type RowChild = RowPart | { tokens: readonly RowPart[] };
+function selectedTokenRuns(parts: readonly RowPart[]): RowChild[] {
+    const children: RowChild[] = [];
+    const selected = (part: RowPart) => part.className === "st-viewport-selected" || part.className.endsWith(" st-viewport-selected");
+    for (let i = 0; i < parts.length;) {
+        const part = parts[i]!, start = i++;
+        if (selected(part)) {
+            for (let j = i; j < parts.length; j++) {
+                const next = parts[j]!;
+                if (selected(next)) i = j + 1;
+                else if (!next.ornament) break;
+            }
+        }
+        children.push(i === start + 1 ? part : { tokens: parts.slice(start, i) });
+    }
+    return children;
+}
+function matchesRowChildren(element: HTMLElement, parts: readonly RowChild[]): boolean {
+    return element.childNodes.length === parts.length && parts.every((part, index) => {
+        const node = element.childNodes.item(index);
+        if ("tokens" in part) {
+            const run = node as HTMLSpanElement;
+            return node?.nodeName === "SPAN" && run.className === "st-selection-run" && matchesRowChildren(run, part.tokens);
+        }
+        if (!node || node.textContent !== part.text) return false;
         if (!part.className) return node.nodeType === Node.TEXT_NODE;
         const span = node as HTMLSpanElement;
         if (node.nodeName !== "SPAN" || span.className !== part.className || span.dataset.ornament !== part.ornament || span.dataset.label !== part.label) return false;
@@ -94,16 +116,23 @@ function renderRowChildren(element: HTMLElement, parts: readonly RowPart[]): boo
             if (valid.length !== span.style.length || valid.some(([name, value]) => span.style.getPropertyValue(name) !== value)) return false;
         }
         return part.ornament ? !span.childNodes.length : span.childNodes.length === 1 && span.firstChild?.nodeType === Node.TEXT_NODE;
-    })) return false;
-    const owner = element.ownerDocument;
-    element.replaceChildren(...parts.map(part => {
-        if (!part.className) return owner.createTextNode(part.text);
-        const span = owner.createElement("span"); span.className = part.className; span.textContent = part.text;
-        if (part.properties) applyDecorationProperties(span, part.properties);
-        if (part.ornament) { span.dataset.ornament = part.ornament; span.setAttribute("aria-hidden", "true"); }
-        if (part.label !== undefined) span.dataset.label = part.label;
-        return span;
-    }));
+    });
+}
+function rowNode(owner: Document, part: RowChild): Node {
+    if ("tokens" in part) {
+        const span = owner.createElement("span"); span.className = "st-selection-run";
+        span.append(...part.tokens.map(token => rowNode(owner, token))); return span;
+    }
+    if (!part.className) return owner.createTextNode(part.text);
+    const span = owner.createElement("span"); span.className = part.className; span.textContent = part.text;
+    if (part.properties) applyDecorationProperties(span, part.properties);
+    if (part.ornament) { span.dataset.ornament = part.ornament; span.setAttribute("aria-hidden", "true"); }
+    if (part.label !== undefined) span.dataset.label = part.label;
+    return span;
+}
+function renderRowChildren(element: HTMLElement, parts: readonly RowChild[]): boolean {
+    if (matchesRowChildren(element, parts)) return false;
+    element.replaceChildren(...parts.map(part => rowNode(element.ownerDocument, part)));
     return true;
 }
 export type InlineDecoration = Readonly<{ from: number; to: number; className: string;
@@ -473,7 +502,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             const changes = foldContainsChange?.(document.buffer, fold.lineFrom + 1, fold.lineTo) ? " · contains changes" : "";
             parts.push({ text: "", className: "st-fold-summary", ornament: "fold", label: `… ${count} ${count === 1 ? "line" : "lines"} hidden${changes}` });
         }
-        return renderRowChildren(element, parts) || changed;
+        return renderRowChildren(element, selections.length && parts.length > 1 ? selectedTokenRuns(parts) : parts) || changed;
     };
     type MeasuredRow = Readonly<{ complete: boolean; point: (offset: number, affinity?: Affinity) => CaretRectangle | undefined;
         visual: (offset: number, direction: -1 | 1) => CaretRectangle | undefined;

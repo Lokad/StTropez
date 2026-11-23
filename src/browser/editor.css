@@ -80,7 +80,8 @@
 .st-snippet-field { outline: 1px dotted var(--st-snippet-field-border, currentColor); outline-offset: -1px; }
 .st-viewport-row .st-snippet-field[data-ornament="point"]::after { height: 1em; width: .3em; border: 1px dotted var(--st-snippet-field-border, currentColor); }
 .st-character-warning { background: var(--st-character-warning-background, #d89b2430); outline: 1px dotted var(--st-character-warning-border, #e9ad43); }
-.st-viewport .st-viewport-selected { background-color: var(--st-selection, #24496b); padding-block: var(--st-selection-pad-top, 0) var(--st-selection-pad-bottom, 0); }
+.st-viewport .st-viewport-selected, .st-viewport .st-selection-run { background-color: var(--st-selection, #24496b); padding-block: var(--st-selection-pad-top, 0) var(--st-selection-pad-bottom, 0); }
+.st-viewport .st-selection-run > .st-viewport-selected { background-color: transparent; }
 .st-viewport-row .st-selected-line-break { display: inline-block; width: 0; height: 1lh; vertical-align: top; }
 .st-viewport-row .st-selected-line-break[data-ornament="point"]::after { height: 100%; width: 1ch; border: 0; background: var(--st-selection, #24496b); }
 .st-editor { cursor: text; user-select: none; }
@@ -90,7 +91,7 @@
 .st-caret-layer { position: absolute; top: 0; left: 0; pointer-events: none; }
 .st-input-caret, .st-input-secondary-caret { position: absolute; width: 2px; pointer-events: none; background: var(--st-foreground, #e1e7ef); }
 @media (forced-colors: active) {
-    .st-viewport .st-viewport-selected { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+    .st-viewport .st-viewport-selected, .st-viewport .st-selection-run { forced-color-adjust: none; background: Highlight; color: HighlightText; }
     .st-viewport-row .st-selected-line-break[data-ornament="point"]::after { forced-color-adjust: none; background: Highlight; }
     .st-input-caret, .st-input-secondary-caret { forced-color-adjust: none; background: CanvasText; }
     .st-viewport-row .st-search-match:not([data-ornament])::before { forced-color-adjust: none; background: CanvasText; }
