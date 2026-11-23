@@ -3,6 +3,7 @@ import test from "node:test";
 import { TextBuffer, createSelectionSet, planLanguageEdit, resolveLanguageConfiguration } from "../src/index.ts";
 import { parseSnippet, offsetSnippetStops, planSnippetEdit, planSnippetChoice, snippetChoiceText, planSelectionEdits } from "../src/kernels/index.ts";
 import type { SnippetStop } from "../src/index.ts";
+import { planLinkedFieldEdit } from "../src/core/snippets.ts";
 
 test("snippets expand forward mirrors, literal defaults, escaped choices and numeric/final stops", () => {
     const result = parseSnippet('$2 ${1:😀name} = ${2|one\\,two,three\\|four|}; $1$0');
@@ -33,6 +34,20 @@ test("ordinary edits update mirrors and following stops in one atomic plan", () 
     assert.equal(next.slice(changed.stops[1]!.ranges[0]!.from, changed.stops[1]!.ranges[0]!.to), 'yes');
     assert.equal(planSnippetEdit(buffer, snippet.stops, 0, [{ from: 0, to: buffer.length, insert: 'outside' }], before,
         createSelectionSet(7, [{ anchor: 7, head: 7 }])), undefined);
+});
+
+test("a field completion maps single-caret mirrors around disjoint edits and rejects edits to other fields", () => {
+    const { text, stops } = parseSnippet('${1:x} $1 ${2:rest}$0!').snippet!, buffer = TextBuffer.from(text);
+    const before = createSelectionSet(text.length, [{ anchor: 1, head: 0 }]), after = createSelectionSet(text.length + 1, [{ anchor: 2, head: 2 }]);
+    const complete = (additional: { from: number; to: number; insert: string }[]) =>
+        planLinkedFieldEdit(buffer, stops, 0, [{ from: 0, to: 1, insert: "xy" }], before, after, true, additional)!;
+    const plan = complete([0, 2, text.length].map(at => ({ from: at, to: at, insert: "+" })));
+    const next = buffer.apply(plan.edits).buffer;
+    assert.equal(next.text(), "+xy +xy rest!+");
+    assert.deepEqual(plan.selectionSet.ranges.map(r => r.head), [3, 7]);
+    const second = plan.stops[1]!.ranges[0]!;
+    assert.equal(next.slice(second.from, second.to), "rest");
+    assert.throws(() => complete([{ from: 5, to: 6, insert: "z" }]), RangeError);
 });
 
 test("coincident empty and adjacent mirrored stops stay distinct after typing and deletion", () => {

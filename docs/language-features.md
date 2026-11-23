@@ -187,16 +187,19 @@ The controller registers `completion.request`, `completion.dismiss`, `completion
 `completion.replace` on the owning editor at shortcut priority 30. Snippet choice commands
 (`snippet.choice-previous` and `snippet.choice-next`) also use 30. Placeholder navigation
 (`snippet.previous` and `snippet.next`) uses 40 so Tab advances an active snippet first.
-Escape cancels an invisible request and lets the next binding or focus traversal handle the key.
-It needs one collapsed caret and no composition. Press Ctrl/Cmd+Space to request suggestions yourself.
+Automatic completion follows one caret or the linked carets in a snippet field. Press Ctrl/Cmd+Space
+to request suggestions at collapsed carets or on a selected snippet field.
 Up and Down select one choice. PageUp and PageDown move a page and stop at the first or last choice.
 Supply `getPageSize` to report the number of visible rows, or zero while the list is hidden.
 The default is ten rows. Home and End dismiss the list and navigate the source.
-Enter replaces, Tab inserts and Escape dismisses the choices or active snippet. When
-neither is visible, Escape cancels pending requests and reaches the editor. Escape then Tab or
-Shift+Tab leaves the view.
+Enter replaces and Tab inserts. Escape dismisses the list. Outside a snippet, Escape on an
+invisible request also reaches the editor. Escape then Tab or Shift+Tab leaves the view.
 
-During a snippet, Tab selects the next field. Other editable fields have a dotted outline,
+Inside a snippet, Tab and Shift+Tab move between fields even with the list open. Enter accepts
+a suggestion in all mirrors. An import or other disjoint edit applies once in the same undo step.
+A suggestion that expands to a template inserts its default text and keeps the outer Tab order.
+Escape dismisses a field's suggestions first. With no request or list, Escape ends the snippet.
+Other editable fields have a dotted outline,
 including a small marker for an empty field. The final caret stop has no marker. Set
 `--st-snippet-field-border` to change the outline color.
 

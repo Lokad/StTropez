@@ -599,6 +599,7 @@ export async function runDemoSnippets(page: Page, url = "/") {
     await expect(markers).toHaveCount(0);
     await source.press("Control+y"); await expect(editor).toContainText("console.log(record)"); await expect(controls).toBeHidden();
     await page.getByRole("button", { name: "Reset sample", exact: true }).click(); await request(); await source.press("Tab");
+    await expect(controls).toContainText("Field 1 of 3"); await source.press("Control+Space");
     await expect(controls).toContainText("Field 1 of 3"); await source.pressSequentially("entry");
     await expect(editor).toContainText("const entry"); await expect(editor).toContainText("console.log(entry)");
     const previousField = await controls.getByRole("button", { name: "Finish snippet" }).elementHandle();

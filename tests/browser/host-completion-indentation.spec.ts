@@ -8,21 +8,28 @@ const snippet = (page: Page) => page.evaluate(() => window.hostFixture.providerS
 const view = async (page: Page) => (await state(page)).bindings.views.find(view => view.id === "primary")!;
 const body = "${1|first\n\tline,second\n\tline|}\n$1\n${2:done}$0";
 
-async function fixture(page: Page, mode: "plain" | "react") {
-    let held = false, release: (() => void) | undefined, capabilities: unknown;
+async function fixture(page: Page, mode: "plain" | "react", template = body) {
+    let held = false, fieldOffers = false, release: (() => void) | undefined, capabilities: unknown;
     await page.routeWebSocket("**/lsp-fixture", client => {
         const server = client.connectToServer(); server.onMessage(message => client.send(message));
         client.onMessage(message => {
             const value = JSON.parse(message.toString());
             if (value.method === "initialize") capabilities = value.params.capabilities.textDocument.completion;
             if (value.method === "textDocument/completion") {
+                if (fieldOffers) {
+                    client.send(JSON.stringify({ jsonrpc: "2.0", id: value.id, result: [
+                        { label: "entryName", insertTextFormat: 2, insertText: "${1:entry}Name$0" },
+                    ] })); return;
+                }
                 const end = value.params.position, start = { line: end.line, character: end.character - 2 };
                 client.send(JSON.stringify({ jsonrpc: "2.0", id: value.id, result: { isIncomplete: false,
                     itemDefaults: { insertTextFormat: 2, editRange: { start, end } }, items: [{ label: "Context snippet", textEditText: "provisional" }] } })); return;
             }
             if (value.method === "completionItem/resolve") {
+                const entry = value.params.label === "entryName";
                 const response = JSON.stringify({ jsonrpc: "2.0", id: value.id, result: { ...value.params,
-                    textEdit: { ...value.params.textEdit, newText: body }, additionalTextEdits: [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }, newText: "// shared\n" }] } });
+                    ...(entry ? {} : { textEdit: { ...value.params.textEdit, newText: template } }),
+                    additionalTextEdits: [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }, newText: entry ? "// import\n" : "// shared\n" }] } });
                 if (held) release = () => client.send(response); else client.send(response); return;
             }
             server.send(message);
@@ -32,7 +39,7 @@ async function fixture(page: Page, mode: "plain" | "react") {
     await expect.poll(async () => (await state(page)).bindings.language.sessions.find(session => session.id === "primary")!.provider.connected).toBe(true);
     await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "interactive" }));
     expect(capabilities).toMatchObject({ insertTextMode: 2, completionItem: { insertTextModeSupport: { valueSet: [1, 2] } } });
-    return { hold: () => { held = true; }, waiting: () => !!release, release: () => { held = false; release!(); release = undefined; } };
+    return { offerField: () => { fieldOffers = true; }, hold: () => { held = true; }, waiting: () => !!release, release: () => { held = false; release!(); release = undefined; } };
 }
 
 async function seed(page: Page, source: string, positions: readonly number[], primary = positions.length - 1) {
@@ -47,6 +54,28 @@ async function offer(page: Page) {
     await field(page).press("Control+Space"); await expect(page.getByRole("option", { name: "Context snippet", exact: true })).toBeVisible();
     await expect.poll(() => page.evaluate(() => window.hostFixture.providerState()?.pending)).toBe(false);
 }
+
+test("dismissing and accepting completions in a linked field preserves the next field", async ({ page }) => {
+    const peer = await fixture(page, "plain", "${1:name} = ${2:value}; $1$0");
+    const input = field(page), item = page.getByRole("option", { name: "entryName", exact: true });
+    await seed(page, "  sn", [4]); await offer(page); await input.press("Tab");
+    await expect.poll(() => snippet(page)).toMatchObject({ stop: 1 });
+    peer.offerField();
+    await input.press("Control+Space"); await expect(item).toBeVisible(); await input.press("Escape");
+    expect(await snippet(page)).toMatchObject({ stop: 1 });
+    await input.pressSequentially("ent"); await expect(item).toBeVisible();
+    expect(await text(page)).toBe("// shared\n  ent = value; ent");
+    await input.press("Enter");
+    await expect.poll(() => text(page)).toBe("// import\n// shared\n  entryName = value; entryName");
+    expect(await snippet(page)).toMatchObject({ stop: 1 });
+    peer.hold(); await input.press("Control+Space"); await expect.poll(peer.waiting).toBe(true);
+    await input.press("Tab"); peer.release();
+    await expect.poll(() => snippet(page)).toMatchObject({ stop: 2 }); await expect(item).toBeHidden();
+    await input.pressSequentially("42");
+    expect(await text(page)).toBe("// import\n// shared\n  entryName = 42; entryName");
+    await input.press("Control+z"); await input.press("Control+z");
+    expect(await text(page)).toBe("// shared\n  ent = value; ent");
+});
 
 for (const mode of ["plain", "react"] as const) test.describe(`${mode} contextual completion`, () => {
     test("nested multicaret snippets preserve choices, mirrored Enter, primary traversal and atomic history", async ({ page }) => {

@@ -88,12 +88,18 @@ export type SnippetEditPlan = Readonly<{ edits: readonly TextEdit[]; selectionSe
 /** Mirror an ordinary input edit through every flat occurrence, including coincident empty stops. */
 export function planSnippetEdit(buffer: TextBuffer, stops: readonly SnippetStop[], active: number,
     edits: readonly TextEdit[], before: SelectionSet, after: SelectionSet, adjustNewlines = false): SnippetEditPlan | undefined {
+    return planLinkedFieldEdit(buffer, stops, active, edits, before, after, adjustNewlines, []);
+}
+
+/** @internal Additional source edits (for example, a completion's import) apply once outside the fields. */
+export function planLinkedFieldEdit(buffer: TextBuffer, stops: readonly SnippetStop[], active: number,
+    edits: readonly TextEdit[], before: SelectionSet, after: SelectionSet, adjustNewlines: boolean, additional: readonly TextEdit[]): SnippetEditPlan | undefined {
     const stop = stops[active], selected = before.ranges[before.primary];
     if (!stop || stop.index === 0 || !selected || edits.length !== before.ranges.length) return;
     const occurrence = stop.ranges.find(range => range.from <= Math.min(selected.anchor, selected.head) && range.to >= Math.max(selected.anchor, selected.head));
     const primary = edits[before.primary]; if (!occurrence || !primary || primary.from < occurrence.from || primary.to > occurrence.to) return;
     validateTextEdits(buffer.length, edits);
-    if (stop.ranges.some(range => range.insertion)) return contextualEdit(buffer, stops, active, edits, before, after, occurrence, adjustNewlines);
+    if (stop.ranges.some(range => range.insertion)) return contextualEdit(buffer, stops, active, edits, before, after, occurrence, adjustNewlines, additional);
     const from = primary.from - occurrence.from, to = primary.to - occurrence.from;
     const permitted = new Set(stop.ranges.map(range => `${range.from + from}:${range.from + to}`));
     if (edits.some(edit => edit.insert !== primary.insert || !permitted.has(`${edit.from}:${edit.to}`))) return;
@@ -101,26 +107,45 @@ export function planSnippetEdit(buffer: TextBuffer, stops: readonly SnippetStop[
     const mapping = new PositionMap(buffer.length, edits), origin = mapping.map(occurrence.from, "before").offset;
     const caret = after.ranges[after.primary]!, anchor = caret.anchor - origin, head = caret.head - origin;
     if (anchor < 0 || head < 0 || anchor > text.length || head > text.length) return;
-    return finishSnippetEdit(buffer.length, stops, active, stop.ranges.map(range => ({ edit: { from: range.from + from, to: range.from + to, insert: primary.insert }, anchor, head })), stop.ranges.indexOf(occurrence));
+    return finishSnippetEdit(buffer.length, stops, active, stop.ranges.map(range => ({ edit: { from: range.from + from, to: range.from + to, insert: primary.insert }, anchor, head })), stop.ranges.indexOf(occurrence), additional);
 }
 type FieldEdit = { edit: TextEdit; anchor: number; head: number };
-function finishSnippetEdit(length: number, stops: readonly SnippetStop[], active: number, edits: readonly FieldEdit[], primary: number): SnippetEditPlan {
+function finishSnippetEdit(length: number, stops: readonly SnippetStop[], active: number, edits: readonly FieldEdit[], primary: number, additional: readonly TextEdit[] = []): SnippetEditPlan {
     const activeRanges = new Map(stops[active]!.ranges.map((range, index) => [range, edits[index]!]));
-    const replacements = Object.freeze(edits.map(item => Object.freeze(item.edit))); validateTextEdits(length, replacements);
+    const replacements = edits.map(item => Object.freeze(item.edit));
+    if (additional.length) {
+        const insertedAt = new Set<number>();
+        for (const extra of additional) {
+            replacements.push(extra);
+            if (extra.from === extra.to) insertedAt.add(extra.from);
+        }
+        replacements.sort((a, b) => a.from - b.from || a.to - b.to);
+        if (edits.some(({ edit }) => edit.from === edit.to && insertedAt.has(edit.from)))
+            throw new RangeError("Additional insertion coincides with a mirrored insertion.");
+    }
+    Object.freeze(replacements); validateTextEdits(length, replacements);
     const occurrences = stops.flatMap(item => item.ranges).sort((a, b) => a.order - b.order);
-    const mapped = new Map<SnippetOccurrence, SnippetOccurrence>(); let delta = 0;
+    const mapped = new Map<SnippetOccurrence, SnippetOccurrence>(); let delta = 0, nextExtra = 0;
     for (const range of occurrences) {
+        while (nextExtra < additional.length && additional[nextExtra]!.to <= range.from) {
+            const extra = additional[nextExtra++]!; delta += extra.insert.length - (extra.to - extra.from);
+        }
+        if (nextExtra < additional.length && additional[nextExtra]!.from < range.to)
+            throw new RangeError("Additional completion edit touches a snippet field.");
         const edit = activeRanges.get(range)?.edit, growth = edit ? edit.insert.length - (edit.to - edit.from) : 0;
         const from = range.from + delta, to = range.to + delta + growth;
         mapped.set(range, Object.freeze({ ...range, from, to })); delta += growth;
     }
     const next = Object.freeze(stops.map(stop => Object.freeze({ ...stop, ranges: Object.freeze(stop.ranges.map(range => mapped.get(range)!)) })));
+    for (; nextExtra < additional.length; nextExtra++) {
+        const extra = additional[nextExtra]!; delta += extra.insert.length - (extra.to - extra.from);
+    }
     return Object.freeze({ edits: replacements, stops: next, selectionSet: createSelectionSet(length + delta,
         next[active]!.ranges.map((range, index) => ({ anchor: range.from + edits[index]!.anchor, head: range.from + edits[index]!.head })), primary) });
 }
 
 function contextualEdit(buffer: TextBuffer, stops: readonly SnippetStop[], active: number, edits: readonly TextEdit[], before: SelectionSet, after: SelectionSet,
-    occurrence: SnippetOccurrence, adjustNewlines: boolean): SnippetEditPlan | undefined {
+    occurrence: SnippetOccurrence, adjustNewlines: boolean, additional: readonly TextEdit[]): SnippetEditPlan | undefined {
     const stop = stops[active]!, primary = edits[before.primary]!, source = buffer.slice(occurrence.from, occurrence.to);
     const relative = { from: primary.from - occurrence.from, to: primary.to - occurrence.from, insert: primary.insert };
     const value = applyTextEdits(source, [relative]), origin = new PositionMap(buffer.length, edits).map(occurrence.from, "before").offset;
@@ -155,7 +180,7 @@ function contextualEdit(buffer: TextBuffer, stops: readonly SnippetStop[], activ
         }
         if (!accepted) return;
     }
-    return finishSnippetEdit(buffer.length, stops, active, fields, stop.ranges.indexOf(occurrence));
+    return finishSnippetEdit(buffer.length, stops, active, fields, stop.ranges.indexOf(occurrence), additional);
 }
 
 /** The provider's choice text is contextual only at explicit choice acceptance. Ordinary
