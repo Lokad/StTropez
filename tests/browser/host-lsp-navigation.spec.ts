@@ -20,6 +20,40 @@ async function seed(page: Page, text: string, offset: number) {
 async function hover(page: Page) { await field(page).press("Control+k"); await field(page).press("Control+i"); }
 for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspection/navigation`, () => {
     test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); await waitForNavigation(page); });
+    if (host === "plain") test("successive symbol lookups share unopened project files and release them on dismissal", async ({ page }) => {
+        const opens: string[] = [], closes: string[] = [];
+        let companionUri: string | undefined;
+        page.on("websocket", socket => socket.on("framesent", frame => {
+            const { method, params } = JSON.parse(frame.payload.toString());
+            if (method === "textDocument/didOpen") {
+                opens.push(params.textDocument.uri);
+                if (params.textDocument.text.startsWith("const catalogue = 1;")) companionUri = params.textDocument.uri;
+            } else if (method === "textDocument/didClose") closes.push(params.textDocument.uri);
+        }));
+        await page.reload(); await seed(page, "catalogue;\r\ncatalogue;", 3);
+        await button(page, "Add navigation companion").click(); await field(page).focus();
+        const editor = page.locator('.st-editor:has(> textarea[aria-label="Primary source"])');
+        await editor.scrollIntoViewIfNeeded(); await page.keyboard.down("Control");
+        for (const line of [0, 1]) {
+            const row = editor.locator(`.st-viewport-row[data-line="${line}"]`), at = await paintedCharacter(row, "catalogue", 3);
+            await page.mouse.move(at.x, at.y); await expect(row.locator(".st-definition-link")).toHaveText("catalogue");
+        }
+        const opened = () => opens.filter(uri => uri === companionUri).length, closed = () => closes.filter(uri => uri === companionUri).length;
+        expect(opened()).toBe(1); expect(closed()).toBe(0);
+        await page.keyboard.up("Control"); await expect.poll(closed).toBe(1);
+        for (let i = 0; i < 2; i++) {
+            await button(page, "Find references").click(); await waitForNavigation(page); await expect(results(page).first()).toBeVisible();
+        }
+        const row = editor.locator('.st-viewport-row[data-line="0"]'); await row.scrollIntoViewIfNeeded();
+        const at = await paintedCharacter(row, "catalogue", 3);
+        await page.keyboard.down("Control"); await page.mouse.move(at.x, at.y); await expect(row.locator(".st-definition-link")).toHaveText("catalogue");
+        await page.keyboard.up("Control"); await expect(row.locator(".st-definition-link")).toHaveCount(0);
+        await expect(results(page).first()).toBeEnabled();
+        expect(opened()).toBe(2); expect(closed()).toBe(1);
+        await button(page, "Cancel symbol navigation").click();
+        await expect.poll(closed).toBe(2); await expect(results(page)).toHaveCount(0);
+        expect(await page.evaluate(() => window.hostFixture.releaseNavigationCompanion())).toBe(true);
+    });
     if (coversHost("candidate-hosts", host, "candidate")) test("standard hover content and absent ranges preserve selections, safe text and focus", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/hover"); await page.reload();
         const packets: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const data = JSON.parse(frame.payload.toString()); if (data.method) packets.push(data.method); }));

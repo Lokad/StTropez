@@ -85,13 +85,13 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
     type Request = { client: LspNavigationClient; source?: Source; stops: (() => void)[]; expired: boolean; reply?: LspNavigationResult };
     let hover: Hover | undefined, activation: Hover | undefined, explicit: Request | undefined;
     const publish = (status: NavigationSnapshot["status"], result: NavigationResult | null = null) => notifications.publish(state, Object.freeze({ status, result }));
-    const release = (job?: Hover) => { job?.source.cancel(); job?.client.dispose(); };
-    const leave = () => { if (hover) { const old = hover; hover = undefined; layer.clear(); release(old); } };
-    const clearExplicit = () => {
+    const release = (job?: Hover, reuse?: LspNavigationClient) => { job?.source.cancel(); if (job && job.client !== reuse) job.client.dispose(); };
+    const leave = (reuse?: LspNavigationClient) => { if (hover) { const old = hover; hover = undefined; layer.clear(); release(old, reuse); } };
+    const clearExplicit = (reuse?: LspNavigationClient) => {
         const job = explicit; explicit = undefined;
         if (!job) return;
         for (const stop of job.stops.splice(0)) stop();
-        job.source?.cancel(); delete job.source; delete job.reply; job.client.dispose();
+        job.source?.cancel(); delete job.source; delete job.reply; if (job.client !== reuse) job.client.dispose();
     };
     const expire = (job: Request) => {
         if (explicit !== job || job.expired) return;
@@ -106,8 +106,9 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
         && inside(hit.offset, job.result?.originRange ?? job.hit) && (!job.result || job.result.isCurrent());
     function inspect(hit: DefinitionHit) {
         if (matches(hover, hit)) return;
-        leave(); const source = capture(); if (!source || source.document.revision !== hit.revision) { source?.cancel(); return; }
-        const client = createLspNavigationClient(provider);
+        const source = capture(); if (!source || source.document.revision !== hit.revision) { leave(); source?.cancel(); return; }
+        const client = hover?.client ?? createLspNavigationClient(provider);
+        leave(client);
         try {
             const reply = client.prepareDefinition({ document: source.document, project: project(source), offset: hit.offset, prepare: options.prepareRequest?.("definition") }).result;
             const job: Hover = { hit, client, source, reply }; hover = job;
@@ -126,10 +127,10 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
         notifications.assertWritable();
         const prepared = kind === "definition" && activation && inside(offset, activation.result?.originRange ?? activation.hit) ? activation : undefined;
         if (prepared) activation = undefined;
-        leave(); clearExplicit();
         const source = prepared?.source ?? capture();
-        if (!source || !source.isCurrent()) { release(prepared); publish("expired"); throw new Error("Navigation source is unavailable."); }
-        const client = prepared?.client ?? createLspNavigationClient(provider);
+        if (!source || !source.isCurrent()) { leave(); clearExplicit(); release(prepared); publish("expired"); throw new Error("Navigation source is unavailable."); }
+        const client = prepared?.client ?? explicit?.client ?? hover?.client ?? createLspNavigationClient(provider);
+        leave(client); clearExplicit(client);
         const job: Request = { client, source, stops: [], expired: false }; explicit = job;
         const abort = () => { if (job.source) expire(job); };
         source.signal.addEventListener("abort", abort, { once: true });

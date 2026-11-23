@@ -79,12 +79,16 @@ export class HostNavigationTools {
             connected: !!this.job && this.options.provider.getSnapshot().phase === "ready", disconnected: this.disconnected,
             canCancel: !!this.job, canReturn: this.history.getSnapshot() > 0 });
     }
-    private clear(status: NavigationSnapshot["status"], message: string): void {
+    private clear(status: NavigationSnapshot["status"], message: string, successor?: Session): void {
         const job = this.job; this.job = undefined;
-        if (job) { job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.origin.controller.cancel(); }
+        if (job) {
+            if (status === "idle") this.metrics.cancelled++;
+            job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer);
+            if (job.origin !== successor) job.origin.controller.cancel();
+        }
         this.publish({ status, message, locations: [], paging: null });
     }
-    readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.clear("idle", "Symbol navigation dismissed."); };
+    readonly cancel = (): void => this.clear("idle", "Symbol navigation dismissed.");
     readonly disconnect = (): void => { this.cancel(); this.disconnected = true; this.publish({ status: "disconnected", message: "Navigation provider disconnected; local editing remains available." }); };
     readonly reconnect = (): void => { this.cancel(); this.disconnected = false; this.host.reconnect?.(); this.publish({ status: "idle", message: "Request fresh navigation with current resources." }); };
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
@@ -135,15 +139,16 @@ export class HostNavigationTools {
         const origin = this.active;
         if (!origin || !this.available(origin)) { this.publish({ message: "Focus an available candidate source." }); return; }
         if (!this.host.canCapture(origin.editor.view.documentId)) { this.publish({ message: "Finish pending input, navigation or composition first." }); return; }
-        this.cancel(); const offset = pointed ?? origin.editor.view.getSnapshot().selection.head, document = this.host.workspace.document(origin.editor.view.documentId), symbol = navigationSymbol(document.buffer, offset) ?? "position";
+        const offset = pointed ?? origin.editor.view.getSnapshot().selection.head, document = this.host.workspace.document(origin.editor.view.documentId), symbol = navigationSymbol(document.buffer, offset) ?? "position";
         const documents = this.host.workspace.getSnapshot().documents.filter(doc => doc.language !== null), sources = new Set(documents.map(doc => doc.id));
-        if (!sources.has(document.id)) { this.publish({ status: "failed", message: "This source is outside the host navigation scope." }); return; }
+        if (!sources.has(document.id)) { this.clear("failed", "This source is outside the host navigation scope."); return; }
         try {
             validateNavigationDocuments(documents.map(doc => ({ document: doc.id, revision: doc.revision, length: doc.buffer.length })));
         }
-        catch (error) { this.fixture.take(); this.publish({ status: "failed", message: error instanceof Error ? error.message : "Unsupported navigation capture." }); return; }
+        catch (error) { this.fixture.take(); this.clear("failed", error instanceof Error ? error.message : "Unsupported navigation capture."); return; }
         const targets = captureDestinationPanes(origin, this.sessions.keys(), sources);
-        const returnPoint = this.history.capture(origin.editor); if (!returnPoint) return;
+        const returnPoint = this.history.capture(origin.editor); if (!returnPoint) { this.cancel(); return; }
+        this.clear("idle", "Symbol navigation dismissed.", origin);
         const mayFocus = this.host.claimNavigationFocus();
         const job: Job = { kind, symbol, origin, returnPoint, sources, targets, timer: 0, page: undefined };
         if (keyboard && kind === "definition" && origin.editor.getSnapshot().focused) job.followDefinition = mayFocus;

@@ -383,11 +383,14 @@ the caret in the editor.
 `createNavigationController(editor, provider, options)` handles definition links for one mounted
 view. Hold Ctrl or Cmd over a symbol to underline it, including when the editor is mounted in a
 shadow root. Hover preserves focus, selections and open tabs. Releasing the modifier clears the
-underline. A primary click while the modifier is held
-resolves the target even if the lookup is pending. Editing or remounting the source expires
+underline. A primary click while the modifier is held resolves the target even if the lookup
+is pending. Editing or remounting the source expires
 the gesture. Alt+click stays available for multiple carets.
 
-Supply the project with `options.documents`. A host that opens tabs or shows a chooser handles
+Supply the project with `options.documents`. Moving between symbols with the modifier held keeps
+unchanged project files open on the server. A new request on the same controller also reuses
+those files and checks the current project list. Dismissing the lookup releases its files.
+A host that opens tabs or shows a chooser handles
 `options.onDefinition(offset)` by calling `controller.request("definition", offset)` during the
 callback. This reuses the hover reply. F12 and reference commands can call the same controller
 at the caret. For a single destination use `result.locationAt(index)`. For a list,
