@@ -129,21 +129,64 @@ function* publish(edits: TextEdit[], selectionSet: SelectionSet, state: MutableP
     return result;
 }
 
-function* blockComments(buffer: TextBuffer, selections: SelectionSet, pair: EditingPair,
+function* blockComments(buffer: TextBuffer, selections: SelectionSet, pair: EditingPair, allowPair: ResolvedLanguageConfiguration["allowPair"],
     read: (from: number, to: number) => string, state: MutablePlanning): Generator<void, SelectionEditPlan> {
     const { open, close } = pair, edits: TextEdit[] = [];
     const comments: { from: number; to: number }[] = [];
+    // Read each window once as ordered selections advance. The overlap keeps a
+    // multi-unit delimiter intact at a window edge, including in fragmented text.
+    let windowStart = 0, window = "";
+    function* find(delimiter: string, from: number, before: number): Generator<void, number> {
+        const limit = Math.min(before, buffer.length - delimiter.length + 1);
+        while (from < limit) {
+            if (from < windowStart || from + delimiter.length > windowStart + window.length) {
+                windowStart = from;
+                window = read(from, Math.min(buffer.length, from + 2048 + Math.max(open.length, close.length) - 1));
+                if (checkpoint(state)) yield;
+            }
+            const end = Math.min(limit, windowStart + window.length - delimiter.length + 1);
+            const part = window.slice(from - windowStart, end - windowStart + delimiter.length - 1);
+            const found = part.indexOf(delimiter);
+            if (found >= 0) return from + found;
+            from = end;
+        }
+        return -1;
+    }
+    let after = 0, enclosing: { from: number; to: number } | undefined;
     for (const range of selections.ranges) {
         const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
+        // Selections explicitly touching their delimiters toggle even when the host
+        // has no lexical information for the new text.
         const includes = to - from >= open.length + close.length && read(from, from + open.length) === open && read(to - close.length, to) === close;
-        const inside = !includes && from >= open.length && to + close.length <= buffer.length
-            && read(from - open.length, from) === open && read(to, to + close.length) === close;
-        if (includes || inside) {
-            const start = includes ? from : from - open.length, end = includes ? to : to + close.length;
+        let left = from, right = to;
+        if (!includes && left && read(left - 1, left) === " ") left--;
+        if (!includes && right < buffer.length && read(right, right + 1) === " ") right++;
+        const surrounded = !includes && left >= open.length && right + close.length <= buffer.length
+            && read(left - open.length, left) === open && read(right, right + close.length) === close;
+        if (includes || surrounded) {
+            const start = includes ? from : left - open.length, end = includes ? to : right + close.length;
             if (start >= (comments.at(-1)?.to ?? 0)) {
-                comments.push({ from: start, to: end });
-                edits.push({ from: start, to: start + open.length, insert: "" }, { from: end - close.length, to: end, insert: "" });
+                enclosing = { from: start, to: end }; after = end;
             }
+        }
+        while (after <= from) {
+            const start = yield* find(open, after, from + 1);
+            if (start < 0) { after = from + 1; break; }
+            if (allowPair && !allowPair({ buffer, from: start, to: start + open.length, pair, operation: "open" })) {
+                after = start + open.length; state.workUnits++; if (checkpoint(state)) yield; continue;
+            }
+            const end = yield* find(close, start + open.length, buffer.length);
+            if (end < 0) { after = buffer.length + 1; break; }
+            enclosing = { from: start, to: end + close.length }; after = enclosing.to;
+            state.workUnits++; if (checkpoint(state)) yield;
+        }
+        if (enclosing && from >= enclosing.from && to <= enclosing.to && (to > from || from > enclosing.from && from < enclosing.to)
+            && enclosing !== comments.at(-1)) {
+            comments.push(enclosing);
+            let innerFrom = enclosing.from + open.length, innerTo = enclosing.to - close.length;
+            if (innerFrom < innerTo && read(innerFrom, innerFrom + 1) === " ") innerFrom++;
+            if (innerFrom < innerTo && read(innerTo - 1, innerTo) === " ") innerTo--;
+            edits.push({ from: enclosing.from, to: innerFrom, insert: "" }, { from: innerTo, to: enclosing.to, insert: "" });
         }
         state.workUnits++; if (checkpoint(state)) yield;
     }
@@ -158,9 +201,11 @@ function* blockComments(buffer: TextBuffer, selections: SelectionSet, pair: Edit
         let low = map(from).offset + inserted, high = map(to).offset + inserted;
         // Unwrap once. A neighboring caret inside the delimiter follows that deletion.
         if (!comment || comment.from >= to) {
+            const padding = from === to ? "" : " ";
             if (from === to) edits.push({ from, to, insert: open + close });
-            else edits.push({ from, to: from, insert: open }, { from: to, to, insert: close });
-            low += open.length; high += open.length; inserted += open.length + close.length;
+            else edits.push({ from, to: from, insert: open + padding }, { from: to, to, insert: padding + close });
+            low += open.length + padding.length; high += open.length + padding.length;
+            inserted += open.length + close.length + 2 * padding.length;
         }
         ranges.push(forward ? { anchor: low, head: high } : { anchor: high, head: low });
         state.workUnits++; if (checkpoint(state)) yield;
@@ -474,7 +519,7 @@ function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCom
     if (command === "move-line-up" || command === "move-line-down" || command === "copy-line-up" || command === "copy-line-down")
         return yield* shiftLines(buffer, selections, command, read, state, folds);
     if (command === "indent" || command === "indent-lines" || command === "outdent") return yield* indent(buffer, selections, command, config, read, state);
-    if (command === "block-comment" && config.blockComment) return yield* blockComments(buffer, selections, config.blockComment, read, state);
+    if (command === "block-comment" && config.blockComment) return yield* blockComments(buffer, selections, config.blockComment, config.allowPair, read, state);
     if (command === "line-comment" || command === "add-line-comment" || command === "remove-line-comment") {
         if (!config.lineComment) return yield* publish(edits, selections, state);
         return yield* lineComments(buffer, selections, command, config.lineComment, config.tabSize, read, state);

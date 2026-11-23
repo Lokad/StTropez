@@ -390,8 +390,12 @@ least-indented selected line. If a tab spans that column, markers move left to t
 column available on every line. Blank lines in a block keep their whitespace. Separate selections act independently
 unless they touch the same line.
 
-When a selection toggles off a block comment, a second caret inside either delimiter follows
-its removal. Selections elsewhere toggle independently in the same undo step.
+Toggle block comment wraps selected text with one space inside each delimiter. An empty caret
+in code inserts an empty pair. A caret or selection inside a complete comment removes its
+delimiters and up to one padding space at each end. Carets in the same comment remove it once.
+The editor matches the configured delimiters as text. A host can reject an inferred opener in a
+string or other context through `allowPair`. Explicitly selected wrappers toggle directly.
+All affected selections share one undo step.
 
 `editor.commands.list()` returns immutable entries with an ID, label and current enabled state.
 `commands.get(id, argument?)` looks up one entry and checks availability for that argument.

@@ -527,7 +527,7 @@ export async function runDemoEditingRules(page: Page, url = "/") {
     await source.pressSequentially('value";'); await source.press("Escape");
     await expect(source).toHaveValue('function demo() {\n  "value";\n}');
     await source.press("Control+Home"); await source.press("Shift+End");
-    await menu("Toggle block comment"); await expect(source).toHaveValue('/*function demo() {*/\n  "value";\n}');
+    await menu("Toggle block comment"); await expect(source).toHaveValue('/* function demo() { */\n  "value";\n}');
     await menu("Toggle block comment"); await expect(source).toHaveValue('function demo() {\n  "value";\n}');
     await source.press("Control+a"); await source.press("Control+/");
     await expect(source).toHaveValue('// function demo() {\n//   "value";\n// }');
@@ -539,6 +539,11 @@ export async function runDemoEditingRules(page: Page, url = "/") {
     await source.press("Control+Home"); await source.press("ArrowDown"); await source.press("End");
     await expect(page.locator("#editor .st-matching-bracket")).toHaveCount(0);
     await source.pressSequentially('"'); await expect(source).toHaveValue('/*\n[comment]"\n*/\n');
+    await replace('const marker = "/*";\n/* value */');
+    await source.press("Control+End"); for (let i = 0; i < 5; i++) await source.press("ArrowLeft");
+    await source.press("Shift+Alt+a"); await expect(source).toHaveValue('const marker = "/*";\nvalue');
+    await page.keyboard.type("!"); await expect(source).toHaveValue('const marker = "/*";\nval!ue');
+    await source.press("Control+z"); await source.press("Control+z"); await expect(source).toHaveValue('const marker = "/*";\n/* value */');
     const block = "      a\n\n \t\n\t  b\n";
     await replace(block); await source.press("Control+End"); await source.press("Control+Shift+Home"); await menu("Indent lines");
     await expect(source).toHaveValue("        a\n\n \t\n\t    b\n"); await source.press("Control+z");

@@ -18,6 +18,11 @@ test("demo rules preserve lexical authority through new lines, stale earlier edi
     assert.equal(allow(commented, at + 2), false);
     const regex = TextBuffer.from("const r = /abc"), escaped = TextBuffer.from('const s = "a\\');
     assert.equal(allow(regex, regex.length), false); assert.equal(allow(escaped, escaped.length), false);
+    const markers = 'const label = "/*"; const value = n / d /* scaled */;', capture = TextBuffer.from(markers);
+    rules.accept(capture, analyzeTypeScript(markers).spans);
+    const opener = (from: number) => rules.configuration().allowPair!({ buffer: capture, from, to: from + 2,
+        pair: { open: "/*", close: "*/" }, operation: "open" });
+    assert.equal(opener(markers.indexOf("/*")), false); assert.equal(opener(markers.lastIndexOf("/*")), true);
 });
 
 test("demo pairing bounds synchronous reads on large unknown prefixes without exporting text", () => {

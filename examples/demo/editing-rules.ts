@@ -9,6 +9,14 @@ export class DemoEditingRules {
     private prefix = 0;
     accept(buffer: TextBuffer, spans: Uint32Array): void { this.base = buffer; this.spans = spans; this.current = undefined; }
     clear(): void { this.base = undefined; this.current = undefined; this.spans = new Uint32Array(); }
+    private spanAt(offset: number): number {
+        let low = 0, high = this.spans.length / 3;
+        while (low < high) {
+            const middle = (low + high) >>> 1, at = middle * 3;
+            if (this.spans[at]! + this.spans[at + 1]! <= offset) low = middle + 1; else high = middle;
+        }
+        return low * 3;
+    }
     private context(buffer: TextBuffer, offset: number): "code" | "unknown" | "'" | '"' {
         if (this.current !== buffer) {
             this.current = buffer; this.prefix = this.base === buffer ? buffer.length : 0;
@@ -22,10 +30,7 @@ export class DemoEditingRules {
         const start = buffer.offsetAt(buffer.lineAt(Math.min(offset, this.prefix)));
         if (offset - start > 4096) return "unknown";
         if (start && this.base) {
-            let low = 0, high = this.spans.length / 3;
-            while (low < high) { const middle = (low + high) >>> 1, at = middle * 3;
-                if (this.spans[at]! + this.spans[at + 1]! <= start) low = middle + 1; else high = middle; }
-            const at = low * 3;
+            const at = this.spanAt(start);
             if (this.spans[at]! < start && [1, 6, 7, 24].includes(this.spans[at + 2]!)) return "unknown";
         }
         const text = buffer.slice(start, offset); let quote: "'" | '"' | undefined, escaped = false;
@@ -43,6 +48,10 @@ export class DemoEditingRules {
         return { tabSize, insertSpaces, lineComment: "//", blockComment: { open: "/*", close: "*/" },
             pairs: [{ open: "(", close: ")" }, { open: "[", close: "]" }, { open: "{", close: "}" }, { open: '"', close: '"' }, { open: "'", close: "'" }],
             allowPair: ({ buffer, from, pair, operation }) => {
+                if (pair.open === "/*" && buffer === this.base) {
+                    const at = this.spanAt(from);
+                    return this.spans[at] === from && this.spans[at + 2] === 1;
+                }
                 const context = this.context(buffer, from);
                 if (operation === "open" && pair.open === pair.close && /[\p{L}\p{N}_$]/u.test(buffer.slice(Math.max(0, from - 1), from))) return false;
                 return context === "code" || operation === "close" && context === pair.close;

@@ -140,7 +140,7 @@ test("inserting and deleting lines keeps local endings, collapses overlapping ro
 test("block comments and pair surrounds retain directed and adjacent selections without copying selected text", () => {
     const selected = [{ anchor: 2, head: 0 }, { anchor: 2, head: 4 }];
     const comment = plan("abcd", selected, "block-comment");
-    assert.equal(comment.text, "/*ab*//*cd*/"); assert.deepEqual(comment.ranges, [[4, 2], [8, 10]]);
+    assert.equal(comment.text, "/* ab *//* cd */"); assert.deepEqual(comment.ranges, [[5, 3], [11, 13]]);
     assert.equal(plan(comment.text, comment.value.selectionSet.ranges, "block-comment").text, "abcd");
     const pair = plan("abcd", selected, { character: '"' });
     assert.equal(pair.text, '"ab""cd"'); assert.deepEqual(pair.ranges, [[3, 1], [5, 7]]);
@@ -150,6 +150,32 @@ test("block comments and pair surrounds retain directed and adjacent selections 
     assert.equal(touching.text, "ab/**/"); assert.deepEqual(touching.ranges, [[1, 1], [4, 4]]);
     const between = plan("/**/X/**/", [...selection(2), ...selection(7), ...selection(6, 3)], "block-comment");
     assert.equal(between.text, "X"); assert.deepEqual(between.ranges, [[1, 0]]);
+    const source = 'const marker = "/*";\n/*  one\r\n two  */';
+    const real = source.lastIndexOf("/*"), inside = source.indexOf("two") + 1;
+    const inferred = plan(source, selection(inside), "block-comment", { ...configuration, allowPair: ({ from }) => from === real });
+    assert.equal(inferred.text, 'const marker = "/*";\n one\r\n two ');
+    assert.deepEqual(inferred.ranges, [[inside - 3, inside - 3]]);
+    assert.equal(plan("/* a */ x /* b */", selection(8), "block-comment").text, "/* a */ /**/x /* b */");
+    const padded = plan(" x ", selection(3, 0), "block-comment");
+    assert.equal(padded.text, "/*  x  */");
+    assert.deepEqual(plan(padded.text, padded.value.selectionSet.ranges, "block-comment").ranges, [[3, 0]]);
+});
+
+test("block comment discovery shares bounded scans across distant and adjacent carets", () => {
+    const source = "x".repeat(2048) + "<!--" + "y".repeat(30000) + "-->", buffer = TextBuffer.from(source);
+    const ranges = Array.from({ length: 120 }, (_, i) => ({ anchor: 2060 + 200 * i, head: 2060 + 200 * i }));
+    const cursor = planLanguageEdit(buffer, createSelectionSet(source.length, ranges), "block-comment",
+        resolveLanguageConfiguration({ blockComment: { open: "<!--", close: "-->" } }));
+    let last = cursor.snapshot(), turns = 0;
+    while (last.status === "running") {
+        const next = cursor.next(256);
+        assert.ok(next.readUnits - last.readUnits <= 2600); assert.equal(next.readUnits, buffer.readMetrics().sliceUnits);
+        if (next.status === "running") assert.equal(next.result, null);
+        last = next; turns++;
+    }
+    assert.ok(turns > 10); assert.ok(last.readUnits < source.length * 2);
+    assert.equal(buffer.apply(last.result!.edits).buffer.length, source.length - 7);
+    assert.equal(last.result!.selectionSet.ranges.length, ranges.length); cursor.dispose();
 });
 
 test("host pairing and Enter rules see exact buffers and can reject string/comment contexts", () => {

@@ -650,14 +650,14 @@ test("comment chords and shifted slash act on the captured lines", async ({ page
     await input.press("Control+["); await expect(rows.first()).toHaveJSProperty("textContent", "  alpha");
     expect(await stroke("/", true)).toBe(true); await expect(rows.first()).toHaveJSProperty("textContent", "  // alpha");
     expect(await stroke("/", true)).toBe(true);
-    await input.press("Shift+Alt+a"); await expect(rows.first()).toHaveJSProperty("textContent", "  a/*lp*/ha");
+    await input.press("Shift+Alt+a"); await expect(rows.first()).toHaveJSProperty("textContent", "  a/* lp */ha");
     await input.press("Control+k"); await page.evaluate(() => window.editingFixture.selections([{ anchor: 0, head: 0 }]));
     expect(await stroke("c")).toBe(false);
     await page.evaluate(() => window.editingFixture.configure({ language: {} }));
     for (const suffix of ["c", "u"]) {
         await input.press("Control+k"); expect(await stroke(suffix)).toBe(true);
     }
-    await expect(rows.first()).toHaveJSProperty("textContent", "  a/*lp*/ha");
+    await expect(rows.first()).toHaveJSProperty("textContent", "  a/* lp */ha");
     await input.press("Control+k"); await input.press("Escape"); expect(await stroke("c")).toBe(false);
 });
 
@@ -683,7 +683,7 @@ test("Option Shift A toggles a block comment when the Apple layout produces an a
     });
     const input = page.locator("#primary textarea");
     await input.dispatchEvent("keydown", { key: "Å", code: "KeyA", altKey: true, shiftKey: true });
-    await expect(page.locator("#primary .st-viewport-row").first()).toHaveText("/*abc*/");
+    await expect(page.locator("#primary .st-viewport-row").first()).toHaveText("/* abc */");
     await input.press("Meta+z");
     await expect(page.locator("#primary .st-viewport-row").first()).toHaveText("abc");
 });
