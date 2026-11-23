@@ -275,7 +275,7 @@ export async function runDemoDocumentation(page: Page, url = "/") {
     const helpOpening = page.context().waitForEvent("page"); await warning.getByRole("button", { name: "Diagnostic help", exact: true }).click();
     const diagnosticHelp = await helpOpening; await expect(diagnosticHelp).toHaveURL(diagnosticGuide);
     expect(await diagnosticHelp.evaluate(() => window.opener)).toBeNull(); await diagnosticHelp.close();
-    await warning.getByRole("button", { name: /^details.ts · legacy-price:/ }).click(); await page.keyboard.insertText("currentPrice");
+    await warning.getByRole("button", { name: /^details\.ts:\d+:\d+ · legacy-price:/ }).click(); await page.keyboard.insertText("currentPrice");
     await expect(warning).toHaveCount(0); await expect(error).toBeVisible();
     await details.press("Control+z"); await expect(warning).toBeVisible();
     await page.locator("#sample").selectOption("pricing"); await expect(problems).toContainText("No problems in this project.");
@@ -782,7 +782,7 @@ export async function runDemoWalkthrough(page: Page, url = "/") {
     await expect(page.getByRole("region", { name: "JavaScript output", exact: true })).toContainText("basketTotal(cart, 0.2)", { timeout: 30000 });
     await select(page, main, "basketTotal(cart"); await main.pressSequentially("basketTotl(cart");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
-    await page.locator('[data-panel="problems"]').click(); await page.getByRole("button", { name: /main.ts · TS2552:/ }).click(); await main.press("Control+.");
+    await page.locator('[data-panel="problems"]').click(); await page.getByRole("button", { name: /main\.ts:\d+:\d+ · TS2552:/ }).click(); await main.press("Control+.");
     const fixes = page.getByRole("region", { name: "Quick fixes", exact: true });
     await expect(fixes.getByRole("button", { name: "Change spelling to 'basketTotal'", exact: true })).toBeVisible();
     await fixes.getByRole("button", { name: "Change spelling to 'basketTotal'", exact: true }).click(); await expect(fixes).toBeHidden();
@@ -924,10 +924,14 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await expect(page.locator('[data-panel="problems"]')).toHaveText("Problems (300)");
     await page.locator('[data-panel="problems"]').click();
-    const problems = page.locator(".demo-problems"), rows = problems.getByRole("button", { name: /^problems.ts · TS2322:/ });
+    const problems = page.locator(".demo-problems"), rows = problems.locator(".problem-location");
     await expect(rows).toHaveCount(64);
-    for (let i = 0; i < 4; i++) await problems.getByRole("button", { name: "Next problems", exact: true }).click();
-    await expect(rows).toHaveCount(44); await expect(problems).toContainText("257–300 of 300"); await rows.last().click();
+    await expect(rows.first()).toContainText("problems.ts:1:7 · TS2322:");
+    await problems.getByRole("button", { name: "Next problems", exact: true }).focus();
+    for (let i = 0; i < 4; i++) await page.keyboard.press("Space");
+    await expect(problems.getByRole("button", { name: "Previous problems" })).toBeFocused();
+    await expect(rows).toHaveCount(44); await expect(problems).toContainText("257–300 of 300");
+    await expect(rows.last()).toContainText("problems.ts:300:7 · TS2322:"); await rows.last().click();
     const problemSource = page.getByRole("textbox", { name: "problems.ts", exact: true });
     await expect(problemSource).toBeFocused(); await expect(page.locator("#cursor")).toContainText("Ln 300,");
     await expect(page.locator("#editor")).toContainText("problem299");

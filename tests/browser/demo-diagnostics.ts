@@ -37,7 +37,7 @@ export async function runDemoDiagnosticRetention(page: Page, url = "/") {
     await page.goto(url); await page.locator("#sample").selectOption("errors");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await page.locator('[data-panel="problems"]').click();
-    const problem = page.getByRole("button", { name: /main.ts · TS2345:/ }), source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    const problem = page.getByRole("button", { name: /main\.ts:\d+:\d+ · TS2345:/ }), source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await expect(problem).toBeEnabled();
     const marker = page.locator("#editor .st-diagnostic").first(), tooltip = page.getByRole("tooltip");
     await source.focus(); await marker.hover();
@@ -61,7 +61,7 @@ export async function runDemoDiagnosticRetention(page: Page, url = "/") {
     const helper = page.getByRole("textbox", { name: "pricing.ts", exact: true });
     await page.evaluate(() => { (window as unknown as { demoDiagnosticProbe: DiagnosticProbe }).demoDiagnosticProbe.requests = []; });
     await helper.press("Control+a"); await page.keyboard.insertText('export interface CartItem { name: string; price: number; quantity: number; }\nexport function calculateTotal(items: readonly CartItem[], discount: number): string { return ""; }\n');
-    const dependent = page.getByRole("button", { name: /main.ts · TS2551:/ });
+    const dependent = page.getByRole("button", { name: /main\.ts:\d+:\d+ · TS2551:/ });
     await expect(dependent).toBeEnabled(); await expect(dependent).toContainText("toFixed");
     const dependencyRequests = await requests();
     expect(dependencyRequests.sort()).toEqual(["main.ts:semantic", "pricing.ts:semantic", "pricing.ts:syntactic"]);

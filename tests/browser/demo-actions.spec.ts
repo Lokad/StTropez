@@ -13,13 +13,13 @@ async function typo(page: Page) {
     await expect(page.locator("#find-status")).toHaveText("1 of 1"); await page.locator("#find-next").click();
     await page.getByRole("button", { name: "Close", exact: true }).click(); await source.pressSequentially("calculateTotl(cart");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
-    await page.locator('[data-panel="problems"]').click(); await page.getByRole("button", { name: /main.ts · TS2552:/ }).click(); return source;
+    await page.locator('[data-panel="problems"]').click(); await page.getByRole("button", { name: /main\.ts:\d+:\d+ · TS2552:/ }).click(); return source;
 }
 
 test("selecting a real spelling fix applies once and shares undo/redo with actual typing", async ({ page }) => {
     await openDemo(page); const source = await typo(page);
     await page.locator('[data-file="pricing.ts"]').click();
-    const problem = page.locator(".demo-problem").filter({ hasText: "main.ts · TS2552:" });
+    const problem = page.locator(".demo-problem").filter({ hasText: /main\.ts:\d+:\d+ · TS2552:/ });
     await problem.getByRole("button", { name: "Check quick fixes", exact: true }).click();
     await expect(source).toBeFocused();
     const popup = page.getByRole("region", { name: "Quick fixes", exact: true });
@@ -81,7 +81,7 @@ test("explicit lazy fix activation applies once after resolution and expires wit
     await expect(popup).toBeHidden(); await expect(page.locator("#editor")).toContainText("calculateTotal(cart, 0.1)");
     await source.press("Control+z"); await expect(page.locator("#editor")).toContainText("calculateTotl(cart, 0.1)");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
-    await page.getByRole("button", { name: /main.ts · TS2552:/ }).click(); await source.press("Control+."); await choice.click(); await expect.poll(() => resolutions).toBe(2);
+    await page.getByRole("button", { name: /main\.ts:\d+:\d+ · TS2552:/ }).click(); await source.press("Control+."); await choice.click(); await expect.poll(() => resolutions).toBe(2);
     await source.press("Control+End"); await page.keyboard.insertText("\n// Keep later input"); release!();
     await expect(popup.getByRole("button", { name: "Apply fix", exact: true })).toBeDisabled();
     await expect(page.locator("#editor")).toContainText("calculateTotl(cart, 0.1)"); await expect(page.locator("#editor")).toContainText("// Keep later input");
@@ -98,7 +98,7 @@ test("provider restart expires pending fixes and a fresh request fixes current c
     disconnect!(); await expect(page.locator("#language-status")).toHaveText("Language service unavailable");
     await page.getByRole("button", { name: "Retry language service", exact: true }).click();
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
-    await page.getByRole("button", { name: /main.ts · TS2552:/ }).click(); await source.press("Control+.");
+    await page.getByRole("button", { name: /main\.ts:\d+:\d+ · TS2552:/ }).click(); await source.press("Control+.");
     const popup = page.getByRole("region", { name: "Quick fixes", exact: true });
     await expect(popup.getByRole("button", { name: "Apply fix", exact: true })).toBeEnabled();
     await source.press("Enter"); await expect(popup).toBeHidden(); await expect(page.locator("#editor")).toContainText("calculateTotal(cart, 0.1)");

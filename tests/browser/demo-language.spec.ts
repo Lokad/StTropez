@@ -73,7 +73,7 @@ test("real TypeScript diagnostics select the captured error and clear after corr
     await page.goto("/"); await page.locator("#sample").selectOption("errors");
     await expect(page.locator("#language-status")).toHaveText("Language ready");
     await page.locator('[data-panel="problems"]').click();
-    const problem = page.getByRole("button", { name: /main.ts · TS2345:/ });
+    const problem = page.getByRole("button", { name: /main\.ts:\d+:\d+ · TS2345:/ });
     await expect(problem).toContainText("not assignable"); await problem.click();
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await expect(source).toBeFocused(); await source.pressSequentially("0.1");

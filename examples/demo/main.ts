@@ -18,6 +18,7 @@ import { initializeDemoFolds, mountDemoFolding, outlineFolds } from "./folding.t
 import { mountDemoFoldMenu } from "./fold-menu.ts";
 import { mountCodeMenuCommands } from "./code-menu.ts";
 import { canOpenDemoHelp } from "./diagnostics.ts";
+import { mountProblemPages } from "./problem-pages.ts";
 import { hostConfiguration, hostDecorations, mountHostIntegrations } from "./host-integrations.ts";
 import { inspectCharacters } from "./character-warnings.ts";
 import { demoSurface, DemoStylesUnavailable, prepareDemoShadowStyles } from "./shadow-surface.ts";
@@ -62,7 +63,7 @@ function presentationSettings() {
 let referencePresentation: DemoPresentation | undefined;
 let syntaxLayer: DecorationProvider | undefined, diagnosticsLayer: DecorationLayer | undefined;
 let paintedDiagnostics: unknown;
-let problemPage = 0, problemBatch: unknown;
+let problemPage = 0, problemBatch: unknown, renderedProblemState: unknown;
 function refreshBrackets(captured: TextEditor | undefined) {
     // Plain-source notifications may run inside a Workspace publication; retain the owning view.
     if (captured) queueMicrotask(() => { if (!captured.activity().disposed) captured.bracketMatching.refresh(); });
@@ -101,34 +102,27 @@ function renderOutput(): void {
 function renderProblems(): void {
     if (!project || panel !== "problems") return;
     const captured = project, state = captured.language.state.getSnapshot(), host = element("panel-content");
+    if (renderedProblemState === state && host.firstElementChild?.classList.contains("demo-problems")) return;
+    renderedProblemState = state;
     const confirmed = state.status === "ready" && !state.checking;
     if (problemBatch !== state.diagnostics) { problemBatch = state.diagnostics; problemPage = 0; }
     const list = document.createElement("div"); list.className = "demo-problems";
     if (!state.diagnostics.length) {
         const note = document.createElement("p"); note.className = "panel-note";
         note.textContent = state.status === "failed" ? state.message : state.checking || state.status === "starting" ? "Checking types…" : "No problems in this project.";
-        list.append(note);
+        list.append(note); host.replaceChildren(list); return;
     }
-    if (state.diagnostics.length > 64) {
-        const pages = document.createElement("div"), previous = document.createElement("button"), next = document.createElement("button"), count = document.createElement("span");
-        pages.className = "problem-pages"; previous.textContent = "Previous problems"; next.textContent = "Next problems";
-        previous.disabled = problemPage === 0; next.disabled = (problemPage + 1) * 64 >= state.diagnostics.length;
-        count.textContent = `${problemPage * 64 + 1}–${Math.min((problemPage + 1) * 64, state.diagnostics.length)} of ${state.diagnostics.length}`;
-        const move = (direction: number) => {
-            if (project !== captured || captured.language.state.getSnapshot().diagnostics !== state.diagnostics) return;
-            problemPage += direction; renderProblems();
-        };
-        previous.onclick = () => move(-1); next.onclick = () => move(1); pages.append(previous, count, next); list.append(pages);
-    }
-    for (const problem of state.diagnostics.slice(problemPage * 64, (problemPage + 1) * 64)) {
+    const key = captured.workspace.allocateIdentity();
+    const current = () => project === captured && captured.language.state.getSnapshot() === state && list.parentElement === host;
+    mountProblemPages(list, "problems", state.diagnostics, 64, key, current, problem => {
         const row = document.createElement("section"), item = document.createElement("button"), metadata = document.createElement("div");
         row.className = "demo-problem"; item.className = "problem-location"; metadata.className = "problem-metadata";
         const code = problem.code === undefined ? "" : `${problem.source === "typescript" ? "TS" : ""}${problem.code}: `;
-        item.textContent = `${problem.name} · ${code}${problem.message}`;
-        const current = () => project === captured && captured.language.state.getSnapshot() === state;
+        const { line, character } = problem.range.start;
+        item.textContent = `${problem.name}:${line + 1}:${character + 1} · ${code}${problem.message}`;
         const open = (target: { documentId: typeof problem.documentId; revision: number; from: number; to: number }) => {
             const activity = editor?.activity();
-            if (!current() || !confirmed || activity?.composing || activity?.pendingCommand || activity?.pendingInput) return false;
+            if (!current() || !list.contains(row) || !confirmed || activity?.composing || activity?.pendingCommand || activity?.pendingInput) return false;
             const file = captured.files.find(file => file.resource.documentId === target.documentId);
             if (!file || captured.workspace.document(target.documentId).revision !== target.revision) return false;
             if (file !== active) mountFile(file);
@@ -153,23 +147,17 @@ function renderProblems(): void {
             const details = document.createElement("details"), summary = document.createElement("summary"), related = document.createElement("div");
             summary.textContent = `Related locations (${problem.related.length})`; details.append(summary, related); let page = 0;
             const render = () => {
-                related.replaceChildren(); if (!details.open) return;
-                for (const info of problem.related.slice(page * 16, (page + 1) * 16)) {
+                if (!details.open) { related.replaceChildren(); return; }
+                mountProblemPages(related, "related locations", problem.related, 16, key, () => current() && details.open && list.contains(details), info => {
                     const location = document.createElement("button"); location.textContent = `${info.name}:${info.line + 1}:${info.character + 1} · ${info.message}`;
                     location.disabled = !confirmed || !info.target; if (!info.target) location.title = "This related file is not loaded in the editor, or its range cannot be placed.";
-                    location.onclick = () => { if (info.target) open(info.target); }; related.append(location);
-                }
-                if (problem.related.length > 16) {
-                    const previous = document.createElement("button"), next = document.createElement("button");
-                    previous.textContent = "Previous related locations"; next.textContent = "Next related locations";
-                    previous.disabled = page === 0; next.disabled = (page + 1) * 16 >= problem.related.length;
-                    previous.onclick = () => { if (current()) { page--; render(); } }; next.onclick = () => { if (current()) { page++; render(); } }; related.append(previous, next);
-                }
+                    location.onclick = () => { if (info.target) open(info.target); }; return location;
+                }, page, at => { page = at; });
             };
             details.addEventListener("toggle", render); row.append(details);
         }
-        list.append(row);
-    }
+        return row;
+    }, problemPage, at => { problemPage = at; });
     host.replaceChildren(list);
 }
 function renderLanguage(): void {
