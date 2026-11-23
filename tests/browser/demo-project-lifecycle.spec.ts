@@ -67,7 +67,13 @@ test("failed project opening leaves startup and the current sample retryable", a
     const sample = page.locator("#sample"), source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await expect(page.locator("#status")).toContainText("Could not open this sample");
     await expect(sample).toBeEnabled(); await expect(source).toHaveCount(0);
+    const compare = page.getByRole("button", { name: "Compare", exact: true });
+    const panels = page.locator("[data-panel]"), save = page.getByRole("button", { name: "Save locally" });
+    await expect(compare).toBeDisabled(); await expect(save).toBeDisabled();
+    await expect(page.locator("[data-panel]:disabled")).toHaveCount(await panels.count());
     await sample.selectOption("errors");
+    await expect(compare).toBeEnabled(); await expect(save).toBeEnabled();
+    await expect(page.locator("[data-panel]:disabled")).toHaveCount(0);
     await expect(source).toBeVisible(); await expect(page.locator("#language-status")).toHaveText("Language ready");
     await sample.selectOption("pricing");
     await expect(source).toBeVisible(); await expect(page.locator("#language-status")).toHaveText("Language ready");

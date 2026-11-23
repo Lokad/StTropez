@@ -454,6 +454,7 @@ async function openSample(id: SampleId): Promise<void> {
     stopRecovery = next.recovery.state.subscribe(renderMetadata);
     stopLanguage = next.language.state.subscribe(renderLanguage);
     mountFile(next.files.find(file => file.name === activeFiles.get(id)) ?? next.files[0]!);
+    for (const control of document.querySelectorAll<HTMLButtonElement>("#compare:disabled, [data-panel]:disabled")) control.disabled = false;
 }
 function setPanel(next: typeof panel): void {
     if (!active || editor?.getSnapshot().composing) return;

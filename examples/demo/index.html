@@ -51,8 +51,8 @@
                 <label class="menu-check"><input id="view-minimap" type="checkbox"> Minimap</label>
                 <p>Fira Code · <a href="./FiraCode-LICENSE.txt" target="_blank" rel="noopener">Font license</a></p>
             </div></details>
-            <button id="compare">Compare</button><button id="reset" disabled title="Restore the selected sample's original files; other samples and stored drafts are kept">Reset sample</button>
-            <button id="save" class="primary" title="Save in this browser (Ctrl+S)">Save locally</button>
+            <button id="compare" disabled>Compare</button><button id="reset" disabled title="Restore the selected sample's original files; other samples and stored drafts are kept">Reset sample</button>
+            <button id="save" class="primary" title="Save in this browser (Ctrl+S)" disabled>Save locally</button>
         </div>
     </header>
     <div class="intro"><p id="description">Opening the editor…</p><button id="walkthrough-toggle">Quick tour</button></div>
@@ -66,8 +66,8 @@
     <main id="workspace">
         <section id="source-column" aria-label="Source code"><div id="editor"></div></section>
         <section id="secondary" aria-label="Output and review">
-            <nav id="panels" aria-label="Output panels"><button data-panel="javascript" aria-pressed="true">JavaScript</button>
-                <button data-panel="problems" aria-pressed="false">Problems</button><button data-panel="changes" aria-pressed="false">Changes</button>
+            <nav id="panels" aria-label="Output panels"><button data-panel="javascript" aria-pressed="true" disabled>JavaScript</button>
+                <button data-panel="problems" aria-pressed="false" disabled>Problems</button><button data-panel="changes" aria-pressed="false" disabled>Changes</button>
                 <button id="panel-collapse" title="Toggle output panel">Hide</button></nav>
             <div id="panel-content"></div>
         </section>
