@@ -224,7 +224,11 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         };
         await turnAfterRefresh("links"); await expect(links.getByRole("listitem")).toHaveCount(7);
         await expect(button(page, "Next module links")).toBeDisabled(); await expect(links.getByRole("button").last()).toBeEnabled();
-        await links.getByRole("button").last().click(); await settledColorsAndLinks(page); await expect(links.getByRole("button").last()).toBeDisabled();
+        await field(page).focus(); await page.evaluate(at => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: at, head: at }); }, text.lastIndexOf("missing-utils") + 2);
+        await field(page).press("F4"); await expect(links.getByRole("button").last()).toBeFocused();
+        await page.keyboard.press("ArrowUp"); await expect(links.getByRole("button").nth(5)).toBeFocused();
+        await page.keyboard.press("ArrowDown"); await expect(links.getByRole("button").last()).toBeFocused();
+        await page.keyboard.press("Enter"); await settledColorsAndLinks(page); await expect(links.getByRole("button").last()).toBeDisabled();
         await expect(page.getByLabel("Module link status", { exact: true })).toContainText("No destination for missing-utils");
         expect((await snapshot(page)).bindings.links.opened).toBe(0); await button(page, "Previous module links").click(); await expect(links.getByRole("listitem")).toHaveCount(64);
         await turnAfterRefresh("colors"); await expect(colors.getByRole("listitem")).toHaveCount(6);
@@ -527,8 +531,8 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
             });
             await expect.poll(readingLine).toMatch(/^const row/);
             const line = await readingLine();
-            const before = await snapshot(page); await source.press("F4"); await settledColorsAndLinks(page); await expect(list).toBeFocused();
-            await page.keyboard.press("Tab"); await expect(row).toBeFocused(); await page.keyboard.press("Enter"); await settledColorsAndLinks(page);
+            const before = await snapshot(page); await source.press("F4"); await settledColorsAndLinks(page); await expect(row).toBeFocused();
+            await page.keyboard.press("Enter"); await settledColorsAndLinks(page);
             await expect(field(page, "Secondary source")).toBeFocused();
             expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")!.documentId).toBe(before.bindings.links.companion);
             // Resolution changes row contents. Subsequent focus/navigation publications retain that resolved row.
@@ -544,12 +548,12 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
             if (origin === "comparison") expect(after.bindings.comparison!.selectionSet).toEqual(before.bindings.comparison!.selectionSet);
             else expect(after.bindings.views.find(view => view.id === "secondary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "secondary")!.selectionSet);
             expect(after.bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline); expect(after.history).toEqual(before.history);
-            await source.press("F4"); await expect(list).toBeFocused(); await row.focus(); await expectPanelKeyReserved(row, "Escape");
+            await source.press("F4"); await expect(row).toBeFocused(); await expectPanelKeyReserved(row, "Escape");
             await row.press("Escape"); await expect(source).toBeFocused();
             expect((await snapshot(page)).bindings.links.state).toMatchObject({ status: "idle", canReturn: false, count: 0 });
             if (origin === "secondary") {
                 // Dismissing while away releases the route without focusing the replacement editor.
-                await source.press("F4"); await expect(list).toBeFocused();
+                await source.press("F4"); await expect(row).toBeFocused();
                 await row.click(); await expect.poll(async () => (await snapshot(page)).bindings.links.state.status).toBe("away");
                 await list.focus(); await list.press("Escape"); await expect(list).toBeFocused();
                 const dismissed = await snapshot(page);

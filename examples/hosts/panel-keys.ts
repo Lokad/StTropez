@@ -1,4 +1,24 @@
 import type { TextEditor } from "../../src/browser/index.ts";
+import type { scopedCommands } from "../shared/editor-attachment.ts";
+
+export function focusResult(list: HTMLElement | null, index: number): void {
+    if (!list) return;
+    const rows = list.querySelectorAll<HTMLButtonElement>("li > button");
+    const target = rows[index];
+    (target && !target.disabled ? target : list.querySelector<HTMLButtonElement>("li > button:enabled") ?? list).focus();
+}
+
+export function registerResultArrows(register: ReturnType<typeof scopedCommands>, group: string, list: () => HTMLElement | null,
+    enabled: () => boolean): void {
+    for (const [id, label, key, step] of [["previousResult", "Previous result", "ArrowUp", -1], ["nextResult", "Next result", "ArrowDown", 1]] as const) {
+        register({ id: group + "." + id, label, enabled, run: () => {
+            const root = list(); if (!root) return;
+            const rows = [...root.querySelectorAll<HTMLButtonElement>("li > button:enabled")];
+            const current = rows.findIndex(row => row === root.ownerDocument.activeElement);
+            rows[Math.max(0, Math.min(rows.length - 1, current + step))]?.focus();
+        } }, { keys: [key], shared: true, priority: 7 });
+    }
+}
 
 /** Forward shared shortcuts to the panel's current owner, including after a view replacement. */
 export function createPanelKeyBinding<T extends HTMLElement>(owner: () => TextEditor | undefined) {

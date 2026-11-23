@@ -1,5 +1,5 @@
 import { fixtureRequests, type FixturePolicy } from "../shared/language/fixture-requests.ts";
-import { createPanelKeyBinding } from "./panel-keys.ts";
+import { createPanelKeyBinding, focusResult, registerResultArrows } from "./panel-keys.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.ts";
 import { captureDestinationPanes, presentDocument, unavailablePaneMessage, type NavigationHost } from "./language-host.ts";
@@ -20,7 +20,7 @@ export type LinkHostOptions = Readonly<{ provider: LspWorkspace;
     prepare: (aliases: readonly Alias[], policy: FixturePolicy<LinkFault>) => LspPrepare }>;
 type Session = { id: string; editor: TextEditor; controller: DocumentLinkController };
 type Origin = { origin: Session; source: DocumentSnapshot; viewState: ViewState };
-type Route = Origin & { documents: Map<string, DocumentSnapshot>; targets: Map<DocumentId, Session> };
+type Route = Origin & { documents: Map<string, DocumentSnapshot>; targets: Map<DocumentId, Session>; focusResults?: () => boolean };
 type Visit = Origin & { destination: TextEditor; release: () => void };
 type LinkRange = Pick<DocumentLinkChoice, "from" | "to">;
 export type LinkNote = ModuleLink & Readonly<{ line: number; column: number; title: string; targetTitle: string | null; resolvable: boolean; open: () => void }>;
@@ -103,6 +103,10 @@ export class HostDocumentLinks {
                 run: () => { this.active = session; this.start(true); } }, { keys: ["F4"] });
             register({ id: "links.return", label: "Return to link origin", enabled: () => !!this.visit,
                 run: this.returnToOrigin }, { keys: ["Shift+F4"] });
+            registerResultArrows(register, "links", () => this.linkList.element, () => this.listEditor() === editor && this.linkList.focused);
+            const leave = () => { if (this.route?.origin === session) delete this.route.focusResults; };
+            editor.element.addEventListener("focusout", leave, { signal });
+            editor.element.ownerDocument.defaultView!.addEventListener("blur", leave, { signal });
             register({ id: "links.dismiss", label: "Dismiss module links",
                 enabled: () => this.listEditor() === editor && this.linkList.focused,
                 run: () => {
@@ -179,13 +183,17 @@ export class HostDocumentLinks {
         const origin = this.active, route = origin && this.begin(origin, returning);
         if (!origin || !route) return;
         const mayFocus = this.host.claimNavigationFocus();
+        if (keyboard && origin.editor.getSnapshot().focused) route.focusResults = mayFocus;
         void origin.controller.request().then(() => {
             const state = origin.controller.getSnapshot();
             if (this.route !== route || state.status !== "ready") return;
             const head = route.viewState.head;
             const index = state.links.findIndex(link => link.from <= head && head <= link.to);
             if (index >= 0) this.render(route, Math.floor(index / linkLimits.page));
-            if (keyboard && mayFocus() && origin.editor.getSnapshot().focused) this.linkList.element?.focus();
+            if (route.focusResults) origin.editor.element.ownerDocument.defaultView!.requestAnimationFrame(() => {
+                if (this.route === route && route.focusResults?.() && origin.editor.getSnapshot().focused
+                    && origin.controller.getSnapshot().links === state.links) focusResult(this.linkList.element, Math.max(0, index) % linkLimits.page);
+            });
         });
     }
     pointerLink(editor: TextEditor, offset: number): NavigationPointerLink | undefined {

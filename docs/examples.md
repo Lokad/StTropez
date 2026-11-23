@@ -402,7 +402,8 @@ leaves the new page in place. You can keep paging with the keyboard. Rename, cod
 provider workspace edits show up to 64 edits per page. Choosing a different code action starts
 its edit preview on page one.
 
-F4 opens the module links list. Closing another view of the source keeps those links available.
+F4 focuses the module link at the caret, or the first available link on the page.
+Use Up and Down to choose a link and Enter to open it. Closing another view of the source keeps those links available.
 When a module link lookup overlaps a definition or reference lookup, only the latest request
 can move focus. You can open either result from its panel.
 Escape dismisses the list and returns focus to its mounted source,
