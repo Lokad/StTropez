@@ -569,7 +569,13 @@ function openFind(replace = false): void {
     const target = replace && activePane === editor && !active?.readOnly ? replacement : findQuery;
     target.focus(); target.select();
 }
+function revealFindCaret(): void {
+    if (!activePane) return;
+    const { head } = activePane.view.getSnapshot().selection;
+    activePane.viewport.revealRange(head, head);
+}
 function closeFind(): void {
+    if (!find?.acceptPreview()) revealFindCaret();
     findBar.hidden = true;
     releaseFind(); activePane?.focus();
 }
@@ -726,6 +732,7 @@ for (const strip of [element("files"), element("panels")]) {
 }
 findQuery.addEventListener("input", () => {
     sizeFindField(findQuery); find?.setQuery(findQuery.value, { preview: true });
+    if (!findQuery.value) revealFindCaret();
 }, { signal: listeners.signal });
 replacement.addEventListener("input", () => sizeFindField(replacement), { signal: listeners.signal });
 findBar.addEventListener("keydown", event => {

@@ -135,6 +135,14 @@ test("preview keeps the selection, replacement advances, and edits cancel a pend
         assert.equal(f.find.getSnapshot().count, 1); assert.equal(f.find.getSnapshot().current, null);
         f.find.setQuery("cat", { preview: true }); f.select(0); f.drain();
         assert.equal(f.find.getSnapshot().current, null); assert.equal(f.find.getSnapshot().wrappedTo, null);
+        assert.equal(f.find.acceptPreview(), false);
+        f.find.setQuery("dog", { preview: true }); f.drain(); f.select(1);
+        assert.equal(f.find.acceptPreview(), false, "dismissing an old preview preserves a newer selection");
+        f.find.setQuery("dog", { preview: true });
+        assert.equal(f.find.acceptPreview(), false, "closing before discovery cannot schedule a later selection");
+        f.drain(); assert.equal(f.find.acceptPreview(), true); assert.equal(f.find.acceptPreview(), false);
+        const { anchor, head } = f.view.getSnapshot().selection;
+        assert.equal(f.document().buffer.slice(anchor, head), "dog");
     } finally { f.dispose(); }
 });
 

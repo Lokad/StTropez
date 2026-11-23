@@ -44,6 +44,7 @@ export type FindController = Observable<FindSnapshot> & Readonly<{
     matchesIn: (from: number, to: number, capture?: FindSnapshot) => readonly SearchMatch[];
     setQuery: (query: string, options?: Readonly<{ preview?: boolean }>) => void;
     setFlags: (flags: FindFlags) => void;
+    acceptPreview: () => boolean;
     next: (direction?: 1 | -1, options?: Readonly<{ whenReady?: boolean }>) => boolean;
     replaceCurrent: (replacement: string) => boolean; replaceAll: (replacement: string, options?: Readonly<{ focusEditor?: boolean }>) => void; cancel: () => void; dispose: () => void }>;
 // A notice is replaced atomically; progress-only patches retain both fields.
@@ -484,6 +485,12 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             scope.assertWritable();
             const state = store.get(), wholeWord = flags.wholeWord ?? state.wholeWord, matchCase = flags.matchCase ?? state.matchCase, regularExpression = flags.regularExpression ?? state.regularExpression;
             if (!disposed && (wholeWord !== store.get().wholeWord || matchCase !== store.get().matchCase || regularExpression !== store.get().regularExpression)) restart(store.get().query, wholeWord, matchCase, regularExpression);
+        },
+        acceptPreview: () => {
+            scope.assertWritable();
+            if (!previewed || !valid() || editor.activity().composing || store.get().status !== "ready"
+                || previewed.selection !== editor.view.getSnapshot().selectionSet) return false;
+            return selectMatch(previewed.index, true);
         },
         next, replaceCurrent, replaceAll, cancel: () => { scope.assertWritable(); if (!disposed) { stop(); reset({ status: "cancelled", reason: "cancelled", message: "Search cancelled." }); } },
         dispose });

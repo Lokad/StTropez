@@ -69,7 +69,9 @@ Next and Previous leave a visible match in place. An offscreen match scrolls int
 match inside a fold opens that fold.
 Preview prefers a painted match at or after the start of the selection, then any other painted
 match. If all matches are offscreen, it reveals the next one and wraps at the end of the file.
-The next forward navigation selects the preview. Losing focus, scrolling, starting a new query
+Call `acceptPreview()` when closing a Find panel to select the displayed match. It returns
+`false` if there is no completed preview for the current selection. Forward navigation also
+selects the preview. Losing focus, scrolling, starting a new query
 or changing the selection, document or visible folds abandons a pending preview. After explicit navigation,
 `wrappedTo` reports `"start"`, `"end"` or `null`. The `current` index starts at zero.
 A match inside a line ending appears at the end of the row and keeps its original UTF-16 offsets.

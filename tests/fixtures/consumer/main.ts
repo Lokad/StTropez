@@ -259,7 +259,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             find.setQuery("foobar", { preview: true }); await wait("ready"); editor.viewport.flush();
             if (find.getSnapshot().current !== 0 || editor.viewport.getSnapshot().scrollTop > editor.viewport.getSnapshot().lineHeight || editor.view.getSnapshot() !== beforeReveal)
                 throw new Error("Restored Find did not preview the offscreen match independently of selection.");
-            if (!find.next() || find.getSnapshot().wrappedTo !== null || !find.next() || find.getSnapshot().wrappedTo !== "start")
+            if (!find.acceptPreview() || find.acceptPreview() || find.getSnapshot().wrappedTo !== null || !find.next() || find.getSnapshot().wrappedTo !== "start")
                 throw new Error("Restored Find did not select the preview and then wrap.");
             find.setFlags({ regularExpression: true, matchCase: false, wholeWord: true }); find.setQuery("(?<value>foo|foobar|k|𐐨)"); await wait("ready");
             if (find.getSnapshot().count !== 6 || workers < 1) throw new Error("Compiled regex worker was not used.");

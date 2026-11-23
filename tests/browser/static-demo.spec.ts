@@ -268,6 +268,21 @@ test("Find toggles regex on the existing query and replaces captured groups in o
     await expect(query).toHaveValue('import \\{ calculateTotal \\} from "\\./pricing";');
 });
 
+test("clearing Find returns to the caret and Escape keeps typing at the previewed match", async ({ page, baseURL }) => {
+    await page.goto(baseURL!);
+    await page.locator("#sample").selectOption("shipping");
+    const source = page.getByRole("textbox", { name: "shipping.ts", exact: true });
+    const query = page.locator("#find-query"), rows = page.locator("#editor .st-viewport-row");
+    const first = rows.filter({ hasText: "type Zone" }), match = rows.filter({ hasText: "console.log" });
+    await source.press("Control+Home"); await source.press("Control+f"); await query.fill("console");
+    await expect(match).toBeInViewport(); await expect(first).not.toBeInViewport();
+    await query.fill(""); await expect(first).toBeInViewport(); await expect(query).toBeFocused();
+    await query.fill("console"); await expect(match).toBeInViewport();
+    await query.press("Escape"); await expect(source).toBeFocused();
+    await page.keyboard.type("logger"); await expect(rows.filter({ hasText: "logger.log" })).toBeInViewport();
+    await source.press("Control+z"); await expect(match).toBeInViewport();
+});
+
 test("opening Find and Replace keeps the same code under the pointer", async ({ page, baseURL }) => {
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     const row = page.locator('#editor .st-viewport-row[data-line="0"]'), query = page.locator("#find-query");
