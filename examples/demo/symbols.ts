@@ -36,10 +36,10 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     const renamePopup = document.createElement("section"); scope.defer(() => renamePopup.remove());
     renamePopup.className = "demo-rename"; renamePopup.hidden = true;
     renamePopup.setAttribute("role", "dialog"); renamePopup.setAttribute("aria-label", "Rename symbol");
-    document.body.append(popup, renamePopup);
+    document.body.append(popup);
+    document.getElementById("workspace")!.append(renamePopup);
     const locationsOverlay = mountAnchoredOverlay(editor, popup, { dismissOn: ["focus-leave"], onDismiss: () => cancelNavigation() });
-    const renameOverlay = mountAnchoredOverlay(editor, renamePopup, { onFocusedAnchorHidden: editor.focus });
-    scope.defer(locationsOverlay.dispose); scope.defer(renameOverlay.dispose);
+    scope.defer(locationsOverlay.dispose);
     type Query = { message: string; offset: number; revision: number; page: NavigationPage | undefined };
     let query: Query | undefined;
     const idle = () => { const s = editor.activity(); return !disposed && valid() && !s.composing && !s.pendingInput && !s.pendingCommand; };
@@ -49,10 +49,6 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     const pendingNavigation = editor.latestOperation();
     scope.defer(pendingNavigation.dispose);
     const target = workspace.tabs.capture(file.tab);
-    const sourceAnchor = (capture: CapturedViewRequest) => {
-        const caret = capture.selectionSet.ranges[capture.selectionSet.primary]!;
-        return { revision: capture.document.revision, offset: caret.head, affinity: caret.headAffinity ?? "after" };
-    };
     const hideLocations = () => { pendingNavigation.cancel(); query = undefined; locationsOverlay.hide(); };
     const cancelNavigation = () => { hideLocations(); navigation.cancel(); };
     scope.defer(cancelNavigation);
@@ -121,7 +117,7 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     let renameSource: CapturedViewRequest | undefined;
     const closeRename = (focus: boolean) => {
         const previous = renameSource; renameSource = undefined;
-        renameOverlay.hide(); previous?.cancel(); rename.cancel(); if (focus && valid()) editor.focus();
+        renamePopup.hidden = true; previous?.cancel(); rename.cancel(); if (focus && valid()) editor.focus();
     };
     scope.defer(() => closeRename(false));
     function beginRename() {
@@ -134,8 +130,7 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
         source.signal.addEventListener("abort", () => {
             if (renameSource === source) closeRename(rename.state.getSnapshot().status === "applied" || renamePopup.contains(document.activeElement));
         }, { once: true });
-        // F2 gives the name field focus immediately, including before the first placement frame.
-        renamePopup.hidden = false; renameOverlay.show(sourceAnchor(source)); return true;
+        renamePopup.hidden = false; return true;
     }
     name.addEventListener("input", () => rename.setName(name.value), { signal: events.signal });
     preview.addEventListener("click", rename.prepare, { signal: events.signal }); cancel.addEventListener("click", () => closeRename(true), { signal: events.signal });

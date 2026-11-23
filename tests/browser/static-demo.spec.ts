@@ -268,6 +268,22 @@ test("Find toggles regex on the existing query and replaces captured groups in o
     await expect(query).toHaveValue('import \\{ calculateTotal \\} from "\\./pricing";');
 });
 
+test("clicking Replace keeps the next keystroke in the Find bar", async ({ page, baseURL }) => {
+    await page.goto(baseURL!);
+    const source = page.locator("#editor textarea"), query = page.locator("#find-query"), replacement = page.locator("#replacement");
+    const status = page.locator("#find-status");
+    await source.press("Control+Home"); await source.press("Control+f"); await page.locator("#find-regex").click();
+    await query.fill(String.raw`quant\w+`); await expect(status).toHaveText("1 of 4");
+    await page.locator("#find-next").click(); await expect(query).toBeFocused();
+    await page.locator("#replace-toggle").click(); await expect(replacement).toBeFocused();
+    await page.keyboard.type("qty"); await page.locator("#replace-current").click();
+    await expect(status).toContainText("1 of 3"); await expect(replacement).toBeFocused();
+    await page.keyboard.press("F3"); await expect(status).toHaveText("2 of 3");
+    await page.locator("#find-previous").click(); await expect(replacement).toBeFocused();
+    await page.keyboard.type("X"); await expect(replacement).toHaveValue("qtyX");
+    await page.keyboard.press("Escape"); await expect(query).toBeHidden(); await expect(source).toBeFocused();
+});
+
 test("clearing Find returns to the caret and Escape keeps typing at the previewed match", async ({ page, baseURL }) => {
     await page.goto(baseURL!);
     await page.locator("#sample").selectOption("shipping");

@@ -69,7 +69,9 @@ In Shopping cart, open **Find** and enter `quantity:\s*(\d+)`. Choose **Use regu
 (`.*`) to highlight both quantities in `main.ts`. Enter and Shift+Enter navigate the matches.
 Under **Replace…**, use `quantity: $1 + 1` and choose **Replace all**. Open Changes to see both
 edits. One undo restores both quantities. **Match case** and **Match whole word** work with
-literal text and regular expressions. The query and search options follow the active file while Find is open.
+literal text and regular expressions. Clicking a navigation arrow keeps the active Find field
+ready for typing. Clicking **Replace** returns focus to the replacement field. The query and
+search options follow the active file while Find is open.
 Paste multiple lines into either field, or press Ctrl/Cmd+Enter to replace the selected field text
 with a line break. Enter in the replacement field replaces the current match. Holding Enter
 in either field performs its action once.
@@ -98,7 +100,7 @@ offer **Go to line**. Editing commands are disabled in both read-only panes.
 | Type inspection | Hover over a symbol, or use **Inspect type** / Ctrl+K, Ctrl+I at the caret. Select tooltip text to copy it or follow a help link. A plain click returns focus to the previous control. Escape closes the tooltip. Keyboard inspection also closes when focus leaves both the editor and the tooltip. |
 | Signature help | Type a provider trigger or use **Show signature help** / Ctrl+Shift+Space. Moving between arguments updates the active parameter. The overload controls choose another signature. |
 | Definition and references | F12 / Shift+F12 request locations. Each result shows its file, line, column and an excerpt with the symbol highlighted. **Back to previous location** restores the source selection and view. Alt+Left also returns on Windows and Linux. Option+Left moves by word on Apple platforms. |
-| Rename | F2 / **Rename symbol** previews the proposed name across files. The list scrolls independently. Next and Previous show the first edit on the chosen page and keep numbering across pages. Changing the name requires another preview. Apply creates one shared undo step for the validated files. |
+| Rename | F2 / **Rename symbol** opens a form in the upper-right corner of the workspace. Scrolling the source keeps the name field and preview in place. The edit list scrolls and pages independently. Changing the name requires another preview. Apply creates one shared undo step for the validated files. |
 | Quick fix | Press Ctrl+. in the source or choose **Check quick fixes** on a problem. The preview hides when its caret scrolls out of view and returns with the caret. Clicking an edit-only quick fix applies it directly if it touches only the current file, uses at most four edits and totals at most 256 replaced or inserted UTF-16 units. Broader changes require confirmation. Switching previews while holding Apply requires a fresh click, even when switching back to the original choice. Enter applies a ready fix. With no applicable fix, Enter inserts a newline. |
 | Problems | Choose a current diagnostic to open its named file and range. Related locations expand on demand; help links require an explicit click and the demo's HTTPS TypeScript-documentation policy. |
 | Occurrences | Place the caret on a symbol to shade its occurrences. Browser-provider writes also have an outline; the pinned local server reports reads for the sample's variable declarations and assignments. |

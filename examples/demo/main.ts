@@ -605,9 +605,22 @@ for (const toggle of element("find-options").querySelectorAll("button")) {
         findQuery.focus();
     });
 }
-on("replace-toggle", () => showReplacement(Boolean(element("replace-controls").hidden)));
-on("find-next", () => { activePane?.commands.run("find.next"); }); on("find-previous", () => { activePane?.commands.run("find.previous"); });
-on("replace-current", () => { activePane?.commands.run("find.replaceCurrent", "button"); });
+on("replace-toggle", () => {
+    const show = element("replace-controls").hidden; showReplacement(show);
+    (show ? replacement : findQuery).focus({ preventScroll: true });
+});
+for (const [id, command] of [["find-next", "find.next"], ["find-previous", "find.previous"]] as const) {
+    button(id).addEventListener("pointerdown", event => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        if (document.activeElement !== replacement) findQuery.focus({ preventScroll: true });
+    }, { signal: listeners.signal });
+    on(id, () => { activePane?.commands.run(command); });
+}
+on("replace-current", () => {
+    replacement.focus({ preventScroll: true });
+    activePane?.commands.run("find.replaceCurrent", "button");
+});
 on("replace-all", () => { find?.replaceAll(replacementText(), { focusEditor: true }); });
 on("compare", () => setPanel("changes")); on("analysis-retry", () => { presentation.retry(); referencePresentation?.retry(); referenceFolding?.refresh(); });
 on("inspect-characters", () => { if (editor && project) inspectCharacters(editor, project.workspace, element("character-warning-details")); });
