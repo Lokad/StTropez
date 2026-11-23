@@ -113,7 +113,7 @@ forwards overlapping, placed diagnostics only when their provider version is cur
 unversioned diagnostic cannot supply that context.
 
 Use `createDiagnosticController(editor, provider)` to paint diagnostics. The controller underlines
-ranges and marks empty ranges at their offset. Read `diagnostics`, `diagnosticsPending`,
+ranges and marks an empty range with a small triangle beneath its insertion point. Read `diagnostics`, `diagnosticsPending`,
 `diagnosticRevision` and `unversionedDiagnostics` from its snapshot. Each placed diagnostic has a
 `select()` method that reveals its range. An expired item returns `false`.
 

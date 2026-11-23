@@ -116,7 +116,7 @@ button.demo-source-note { pointer-events: auto; cursor: pointer; text-decoration
 .demo-occurrence-text { background: #8a8a8a33; }
 .demo-occurrence-read { background: #649ed638; }
 .demo-occurrence-write { background: #649ed638; outline: 1px solid #649ed6; outline-offset: -1px; }
-.demo-diagnostic { text-decoration: underline wavy #ed9a9a; text-underline-offset: 3px; }
+#editor { --st-diagnostic-color: #ed9a9a; }
 .demo-problems { display: flex; flex-direction: column; padding: 12px; gap: 8px; }
 .demo-problem { border: 1px solid #41414a; border-radius: 5px; padding: 8px; }
 .demo-problem button { text-align: left; line-height: 1.7; }

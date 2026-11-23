@@ -810,6 +810,13 @@ export async function runDemoWalkthrough(page: Page, url = "/") {
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await expect(page.locator("#analysis-status")).toContainText("syntax & emit", { timeout: 30000 });
 
+    await main.press("Control+End"); await main.pressSequentially("cart."); await main.press("Escape");
+    const point = page.locator('#editor .st-diagnostic[data-ornament="point"]');
+    await expect(point).toHaveCount(1);
+    await expect(point.locator("..")).toHaveText("cart.");
+    await main.pressSequentially("length"); await expect(point).toHaveCount(0);
+    await expect(page.locator("#editor .st-viewport-row").last()).toHaveText("cart.length");
+
     return Object.freeze({ provider: true, syntaxAndEmission: true, hover: true, signature: true, definition: true, crossFileRenameAndUndo: true,
         quickFix: true, comparisonRevertUndo: true, projectSave: true, explicitRecoveryAndUndo: true, reload: true });
 }
@@ -915,7 +922,7 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     const problemSource = page.getByRole("textbox", { name: "problems.ts", exact: true });
     await expect(problemSource).toBeFocused(); await expect(page.locator("#cursor")).toContainText("Ln 300,");
     await expect(page.locator("#editor")).toContainText("problem299");
-    await expect(page.locator("#editor .demo-diagnostic").last()).toBeVisible();
+    await expect(page.locator("#editor .st-diagnostic").last()).toBeVisible();
 
     await page.locator('[data-file="uses.ts"]').click();
     const source = page.getByRole("textbox", { name: "uses.ts", exact: true });

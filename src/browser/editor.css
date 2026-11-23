@@ -55,7 +55,10 @@
 .st-viewport-row [data-ornament="point"]::after { content: ""; position: absolute; bottom: 0; left: 0; width: .35em; border-bottom: 2px solid currentColor; }
 .st-viewport-row .st-diagnostic { text-decoration: underline wavy var(--st-diagnostic-color, #da8550); text-underline-offset: 3px; }
 .st-viewport-row .st-definition-link { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; color: var(--st-definition-link-color, currentColor); }
-.st-viewport-row .st-diagnostic[data-ornament="point"]::after { border-color: var(--st-diagnostic-color, #da8550); }
+.st-viewport-row .st-diagnostic[data-ornament="point"]::after {
+    width: .6em; height: .35em; bottom: -.15em; border: 0;
+    clip-path: polygon(0 100%, 50% 0, 100% 100%); background: var(--st-diagnostic-color, #da8550);
+}
 .st-viewport-row [data-ornament="before"] { display: inline-block; }
 .st-viewport-row [data-ornament="afterLine"]::after { content: attr(data-label); margin-left: .75em; }
 .st-viewport-row .st-search-match { background: var(--st-search-match, #5c4719); outline: 1px solid var(--st-search-border, #a88c40); outline-offset: -1px; }
@@ -94,6 +97,7 @@
     .st-viewport .st-viewport-selected, .st-viewport .st-selection-run { forced-color-adjust: none; background: Highlight; color: HighlightText; }
     .st-viewport-row .st-selected-line-break[data-ornament="point"]::after { forced-color-adjust: none; background: Highlight; }
     .st-input-caret, .st-input-secondary-caret { forced-color-adjust: none; background: CanvasText; }
+    .st-viewport-row .st-diagnostic[data-ornament="point"]::after { forced-color-adjust: none; background: CanvasText; }
     .st-viewport-row .st-search-match:not([data-ornament])::before { forced-color-adjust: none; background: CanvasText; }
 }
 .st-text-drop-caret { position: absolute; width: 2px; pointer-events: none; background: var(--st-foreground, #e1e7ef); }

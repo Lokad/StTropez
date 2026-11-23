@@ -195,7 +195,7 @@ function renderLanguage(): void {
     if (active && diagnosticsLayer && paintedDiagnostics !== state.diagnostics) {
         const revision = project.workspace.document(active.resource.documentId).revision;
         const ranges = state.diagnostics.filter(problem => problem.documentId === active!.resource.documentId && problem.revision === revision);
-        diagnosticsLayer.set(revision, ranges.map(({ from, to }) => ({ from, to, className: "demo-diagnostic" })));
+        diagnosticsLayer.set(revision, ranges.map(({ from, to }) => ({ from, to, className: "st-diagnostic" })));
         paintedDiagnostics = state.diagnostics;
     }
     renderProblems();

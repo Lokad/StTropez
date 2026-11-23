@@ -39,7 +39,7 @@ export async function runDemoDiagnosticRetention(page: Page, url = "/") {
     await page.locator('[data-panel="problems"]').click();
     const problem = page.getByRole("button", { name: /main.ts · TS2345:/ }), source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await expect(problem).toBeEnabled();
-    const marker = page.locator("#editor .demo-diagnostic").first(), tooltip = page.getByRole("tooltip");
+    const marker = page.locator("#editor .st-diagnostic").first(), tooltip = page.getByRole("tooltip");
     await source.focus(); await marker.hover();
     await expect(tooltip).toContainText("is not assignable to parameter of type 'number'");
     await expect(source).toBeFocused(); await source.press("Escape"); await expect(tooltip).toBeHidden();
@@ -47,7 +47,7 @@ export async function runDemoDiagnosticRetention(page: Page, url = "/") {
     await source.press("Control+Home"); await page.keyboard.insertText("// retained 😀\n");
     await expect(problem).toBeVisible(); await expect(problem).toBeDisabled();
     await expect(page.locator("#panel-content")).toContainText("Awaiting recheck");
-    await expect(page.locator("#editor .demo-diagnostic").first()).toHaveText('"10%"');
+    await expect(marker).toHaveText('"10%"');
     await marker.hover(); await expect(tooltip).toContainText("Awaiting recheck.");
     await page.waitForFunction(() => (window as unknown as { demoDiagnosticProbe: DiagnosticProbe }).demoDiagnosticProbe.pending.length > 0);
     await page.evaluate(() => (window as unknown as { demoDiagnosticProbe: DiagnosticProbe }).demoDiagnosticProbe.release());
@@ -70,7 +70,7 @@ export async function runDemoDiagnosticRetention(page: Page, url = "/") {
     await marker.hover(); await expect(tooltip).toContainText("is not assignable to parameter of type 'number'");
     await page.evaluate(() => { (window as unknown as { demoDiagnosticProbe: DiagnosticProbe }).demoDiagnosticProbe.hold = true; });
     await page.keyboard.insertText("0.1");
-    await expect(problem).toHaveCount(0); await expect(page.locator("#editor .demo-diagnostic")).toHaveCount(0);
+    await expect(problem).toHaveCount(0); await expect(marker).toHaveCount(0);
     await expect(tooltip).toBeHidden();
     await page.waitForFunction(() => (window as unknown as { demoDiagnosticProbe: DiagnosticProbe }).demoDiagnosticProbe.pending.length > 0);
     await page.evaluate(() => (window as unknown as { demoDiagnosticProbe: DiagnosticProbe }).demoDiagnosticProbe.release());

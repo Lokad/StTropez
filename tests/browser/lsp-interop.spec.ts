@@ -102,10 +102,12 @@ test("pending LSP diagnostics remain painted and navigable while server analysis
     await expect(point).toHaveCount(1);
     expect(await point.evaluate(mark => {
         const ink = getComputedStyle(mark, "::after");
-        return ink.content !== "none" && parseFloat(ink.width) > 0 && parseFloat(ink.borderBottomWidth) > 0;
+        return mark.getBoundingClientRect().width === 0 && ink.content === '""' && ink.clipPath.startsWith("polygon(")
+            && parseFloat(ink.width) > 0 && parseFloat(ink.height) > 0 && ink.backgroundColor !== "rgba(0, 0, 0, 0)";
     })).toBe(true);
     await diagnostic.click();
     expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: original.length, head: original.length });
+    expect(await source(page)).toBe(original);
 });
 
 test("unsupported completion commands preserve usable choices without issuing a command", async ({ page }) => {
