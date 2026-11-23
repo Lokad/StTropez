@@ -261,6 +261,23 @@ test("later edits block linked undo; branching invalidates dependent redo and re
     workspace.releaseResource(other.id, true); assert.deepEqual(workspace.observeHistory(source.documentId).getSnapshot(), { undoDepth: 0, redoDepth: 0 });
 });
 
+test("undo and redo map a later view through a long group of separated edits", () => {
+    const workspace = new Workspace();
+    const id = workspace.createDocument({ scope: "history", resource: "group", variant: "working" }, "Group", "abc".repeat(1_101));
+    for (let i = 0; i < 1_101; i++) {
+        const at = i * 4 + 1;
+        workspace.edit({ documentId: id, expectedRevision: i, origin: "human", history: { kind: "typing", group: "one" },
+            edits: [{ from: at, to: at + 1, insert: "BB" }] });
+    }
+    assert.equal(workspace.observeHistory(id).getSnapshot().undoDepth, 1);
+    const view = workspace.createDocumentView(id, { anchor: 4 * 999, head: 4 * 503 });
+    assert.ok(workspace.undo({ documentId: id, expectedRevision: 1_101 }).applied);
+    assert.deepEqual(view.getSnapshot().selection, { anchor: 3 * 999, head: 3 * 503, anchorAffinity: "before", headAffinity: "after" });
+    assert.ok(workspace.redo({ documentId: id, expectedRevision: 1_102 }).applied);
+    assert.deepEqual(view.getSnapshot().selection, { anchor: 4 * 999, head: 4 * 503, anchorAffinity: "before", headAffinity: "after" });
+    view.dispose();
+});
+
 test("history bounds count groups, changes and changed units without flattening, including grouped rollover and oversized edits", () => {
     const { workspace, document, state, replace, undo, redo } = fixture("", { maxGroups: 3, maxChanges: 3, maxChangedUnits: 30 });
     for (let index = 1; index <= 10; index++) {
@@ -313,7 +330,7 @@ test("workspace history snapshots follow changed stack depths rather than all op
     for (const result of results) assert.deepEqual(result.calls, result.expected, result.action);
 });
 
-test("history publication includes transitive redo clearing, unrelated eviction and oversized linked boundaries", () => {
+test("history publishes transitive redo clearing and oversized linked boundaries and keeps unrelated history", () => {
     const errors: unknown[] = [], workspace = new Workspace({ history: { maxGroups: 3, maxChangedUnits: 16 }, onListenerError: error => errors.push(error) });
     const [a, b, c, d] = ["a", "b", "c", "d"].map(resource => workspace.createDocument({ scope: "linked", resource, variant: "working" }, resource, "")) as [DocumentId, DocumentId, DocumentId, DocumentId];
     const edit = (ids: DocumentId[], insert = "x") => assert.equal(workspace.editDocuments(ids.map(documentId => ({ documentId,
@@ -331,10 +348,13 @@ test("history publication includes transitive redo clearing, unrelated eviction 
     edit([a]); stopDocument(); assert.equal(documentCalls, 1);
     assert.deepEqual([...notifications.keys()].sort(), [a, b, c].sort()); assert.equal(state(d), unrelated);
     edit([a, b]); notifications.clear(); edit([b, c]);
-    assert.deepEqual(state(d), { undoDepth: 0, redoDepth: 0 }); assert.equal(notifications.get(d), 1);
+    assert.equal(state(d), unrelated); assert.equal(notifications.has(d), false);
     edit([d]); const independent = state(d); notifications.clear();
     edit([a], "!".repeat(100));
-    for (const id of [a, b, c]) { assert.deepEqual(state(id), { undoDepth: 0, redoDepth: 0 }); assert.equal(notifications.get(id), 1); }
+    assert.deepEqual(state(a), { undoDepth: 0, redoDepth: 0 });
+    assert.deepEqual(state(b), { undoDepth: 1, redoDepth: 0 }); assert.equal(state(c).undoDepth, 1);
+    assert.deepEqual([...notifications.keys()].sort(), [a, b].sort());
+    undo(c); assert.equal(state(b).redoDepth, 1);
     assert.equal(state(d), independent); assert.equal(notifications.has(d), false); assert.deepEqual(errors, []);
     stops.forEach(stop => stop());
 });

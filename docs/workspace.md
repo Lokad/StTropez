@@ -282,20 +282,21 @@ responses and proposals use the same text history as human edits. Remote persist
 
 ### History limits
 
-Configure `WorkspaceOptions.history` with nonnegative safe integers. Shared units count
-once across the workspace.
+Configure `WorkspaceOptions.history` with nonnegative safe integers. Each document has its own
+budget. A multi-file edit costs each file one group and the text and selections changed in that file.
 
 | Option | Default | Bound |
 | --- | ---: | --- |
-| `maxGroups` | 100 | Retained history units |
-| `maxChanges` | 1,000 | Recorded transactions |
+| `maxGroups` | Unlimited | Retained history units per document |
+| `maxChanges` | Unlimited | Recorded transactions per document |
 | `maxChangedUnits` | 8,388,608 | Inserted plus removed UTF-16 units after no-op filtering |
 | `maxSelectionRanges` | 1,000,000 | Captured before/after selection ranges |
 
-A zero limit disables that kind of retention. When history fills, the workspace evicts whole units,
-starting with the least recently extended. A group starts a new unit before exceeding its transaction
-or changed-unit limit. An oversized edit applies. If it cannot fit in history, the affected and
-linked documents lose their history. Use `diagnostics().history` for counts. For heap usage, also
+A full document budget drops its oldest undo groups. If it drops a shared edit, undo in every
+participating file stops at that edit. Newer edits and independent files keep their history.
+A group splits before an extension exceeds its own budget. An oversized edit applies and sets
+an undo boundary for its participants. Set `maxGroups` to zero to disable history.
+`diagnostics().history` counts shared groups once across the workspace. For heap usage, also
 account for live buffers, saved baselines, pending operations and any snapshots you hold. The host
 persists drafts separately from in-memory undo.
 

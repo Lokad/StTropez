@@ -15,7 +15,7 @@ class Ledger {
     rows: Row[] = [];
     last = new Map<string, number>();
     id = 0; stamp = 0;
-    coverage = { grouped: 0, evictedUndo: 0, evictedRedo: 0, linkedClear: 0, moved: 0 };
+    coverage = { grouped: 0, evictedUndo: 0, linkedClear: 0, moved: 0 };
     readonly limits: Required<HistoryOptions>;
     constructor(limits: Required<HistoryOptions>) { this.limits = limits; }
     peek(id: string, direction: "undo" | "redo") {
@@ -44,11 +44,24 @@ class Ledger {
         row.direction = direction === "undo" ? "redo" : "undo"; row.stamp = ++this.stamp;
         row.changes.forEach(change => this.last.delete(change.documentId));
     }
+    trim(through: Row) {
+        const lost = new Set([through]);
+        for (const removed of lost) for (const prior of this.rows) {
+            if (prior.id < removed.id && prior.changes.some(a => removed.changes.some(b => a.documentId === b.documentId))) lost.add(prior);
+        }
+        for (const removed of lost) assert.equal(removed.direction, "undo");
+        this.coverage.evictedUndo += lost.size;
+        this.rows = this.rows.filter(row => !lost.has(row));
+    }
     record(changes: readonly Change[], origin: string, kind: EditKind, group?: string) {
         this.clear(changes.map(change => change.documentId), true);
         const first = changes[0]!, units = changes.reduce((sum, change) => sum + change.units, 0);
-        if (!this.limits.maxGroups || !this.limits.maxChanges || units > this.limits.maxChangedUnits || ranges(changes) > this.limits.maxSelectionRanges) {
-            this.clear(changes.map(change => change.documentId), false); return;
+        if (!this.limits.maxGroups || !this.limits.maxChanges || changes.some(change =>
+            change.units > this.limits.maxChangedUnits || ranges([change]) > this.limits.maxSelectionRanges)) {
+            for (const change of changes) {
+                const top = this.peek(change.documentId, "undo"); if (top) this.trim(top);
+            }
+            return;
         }
         const previous = this.rows.find(row => row.id === this.last.get(first.documentId)), old = previous?.changes[0];
         let content = changes, steps = 1, totalUnits = units;
@@ -57,7 +70,8 @@ class Ledger {
             && first.before === old.after && first.initiatingView === old.initiatingView
             && first.selections.length === old.selections.length && first.selections.every(view => old.selections.some(other => view.viewId === other.viewId))
             && this.peek(first.documentId, "undo") === previous && previous.steps + 1 <= this.limits.maxChanges
-            && previous.units + units <= this.limits.maxChangedUnits) {
+            && previous.units + units <= this.limits.maxChangedUnits
+            && old.selections.reduce((sum, view, i) => sum + view.before.ranges.length + first.selections[i]!.after.ranges.length, 0) <= this.limits.maxSelectionRanges) {
             this.coverage.grouped++;
             content = [{ ...old, after: first.after, units: old.units + units,
                 selections: old.selections.map(view => ({ ...view, after: first.selections.find(other => other.viewId === view.viewId)!.after })) }];
@@ -65,15 +79,12 @@ class Ledger {
         }
         const row: Row = { id: ++this.id, stamp: ++this.stamp, direction: "undo", origin, kind, group: group ?? null, changes: content, steps, units: totalUnits };
         this.rows.push(row); changes.forEach(change => this.last.set(change.documentId, row.id));
-        while (true) {
-            const totals = this.diagnostics();
-            if (totals.groups <= this.limits.maxGroups && totals.changes <= this.limits.maxChanges
-                && totals.changedUnits <= this.limits.maxChangedUnits && this.rows.reduce((sum, row) => sum + ranges(row.changes), 0) <= this.limits.maxSelectionRanges) break;
-            const oldest = this.rows.reduce((a, b) => a.id < b.id ? a : b);
-            this.coverage[oldest.direction === "undo" ? "evictedUndo" : "evictedRedo"]++;
-            if (oldest.direction === "redo") this.clear(oldest.changes.map(change => change.documentId), true);
-            else this.rows = this.rows.filter(row => row !== oldest);
-            oldest.changes.forEach(change => { if (this.last.get(change.documentId) === oldest.id) this.last.delete(change.documentId); });
+        for (const { documentId } of changes) for (;;) {
+            const rows = this.rows.filter(row => row.changes.some(change => change.documentId === documentId));
+            const charges = rows.flatMap(row => row.changes.filter(change => change.documentId === documentId));
+            if (rows.length <= this.limits.maxGroups && rows.reduce((sum, row) => sum + row.steps, 0) <= this.limits.maxChanges
+                && charges.reduce((sum, change) => sum + change.units, 0) <= this.limits.maxChangedUnits && ranges(charges) <= this.limits.maxSelectionRanges) break;
+            this.trim(rows[0]!);
         }
     }
 }
@@ -84,7 +95,7 @@ function summary(entry: HistoryEntry | Row | undefined) {
 }
 
 test("bounded history matches a recomputing ledger through grouping, linked movement, branching and every limit", t => {
-    const coverage = { grouped: 0, evictedUndo: 0, evictedRedo: 0, linkedClear: 0, moved: 0 };
+    const coverage = { grouped: 0, evictedUndo: 0, linkedClear: 0, moved: 0 };
     for (const options of [{}, { maxGroups: 0 }, { maxChanges: 0 }, { maxChangedUnits: 0 }, { maxSelectionRanges: 0 },
         { maxGroups: 2 }, { maxChanges: 3 }, { maxChangedUnits: 9 }, { maxSelectionRanges: 6 }]) {
         const limits = { maxGroups: 12, maxChanges: 18, maxChangedUnits: 60, maxSelectionRanges: 32, ...options };
@@ -131,17 +142,17 @@ test("bounded history matches a recomputing ledger through grouping, linked move
 });
 
 test("history admission, eviction and diagnostics do not recount unrelated retained entries", t => {
-    const history = new TextHistory({ maxGroups: 1001, maxChanges: 2000 });
+    const history = new TextHistory({ maxGroups: 1 });
     const before = TextBuffer.from("a"), result = before.apply([{ from: 1, to: 1, insert: "b" }]);
     let selectionReads = 0;
     for (let i = 0; i < 1000; i++) history.record([Object.freeze({ documentId: String(i), before, after: result.buffer, mapping: result.mapping,
         units: 1, initiatingView: null, get selections() { selectionReads++; return []; } })], "human", "replace");
     const change = { documentId: "new", before, after: result.buffer, mapping: result.mapping, units: 1, initiatingView: null, selections: [] };
     selectionReads = 0; history.record([change], "human", "replace"); const admission = selectionReads;
-    selectionReads = 0; history.record([{ ...change, documentId: "last" }], "human", "replace"); const eviction = selectionReads;
+    selectionReads = 0; history.record([change], "human", "replace"); const eviction = selectionReads;
     selectionReads = 0; const totals = history.diagnostics(), diagnostics = selectionReads;
     t.diagnostic(JSON.stringify({ admission, eviction, diagnostics }));
     assert.deepEqual({ admission, eviction, diagnostics }, { admission: 0, eviction: 0, diagnostics: 0 });
     assert.deepEqual(totals, { groups: 1001, changes: 1001, changedUnits: 1001 });
-    assert.equal(history.snapshot("0").undoDepth, 0); assert.equal(history.snapshot("1").undoDepth, 1);
+    assert.equal(history.snapshot("0").undoDepth, 1); assert.equal(history.snapshot("new").undoDepth, 1);
 });
