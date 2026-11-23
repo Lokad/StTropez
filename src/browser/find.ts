@@ -332,7 +332,8 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         cancelPreview();
         if (!current()) return;
         previewed = { index, selection: preview.selection }; publish({ current: index });
-        if (visible === undefined) { const match = matches.at(index); editor.viewport.revealRange(match.from, match.to); }
+        const match = matches.at(index);
+        editor.viewport.revealRange(match.from, match.to, visible === undefined ? "center-if-outside" : "nearest");
     }
     function capturePreview(previousSelection?: SelectionSet): void {
         if (options.highlightMatches === false || store.get().status !== "searching") return;

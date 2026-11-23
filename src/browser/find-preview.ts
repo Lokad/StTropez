@@ -2,11 +2,11 @@ import type { FindIndex } from "../core/find-index.ts";
 import { clientBox } from "./dom-coordinates.ts";
 import type { TextViewport } from "./viewport.ts";
 
-/** Inspect only painted fragments. Folded and horizontally clipped matches cannot win. */
+/** Prefer text inside the viewport over a highlight clipped by its edge. */
 export function visibleFindMatch(viewport: TextViewport, matches: FindIndex, preferred: number): number | undefined {
     viewport.flush();
     const root = viewport.element, box = clientBox(root, viewport.settings().minimap, viewport.getSnapshot().gutterWidth);
-    let first: number | undefined, after: number | undefined;
+    let best: number | undefined, bestRank = Infinity;
     for (const row of root.querySelectorAll<HTMLElement>(".st-viewport-row")) {
         const bounds = row.getBoundingClientRect();
         if (bounds.bottom <= box.top || bounds.top >= box.bottom) continue;
@@ -18,15 +18,17 @@ export function visibleFindMatch(viewport: TextViewport, matches: FindIndex, pre
                     let index = matches.lowerBound(offset);
                     // A match can continue from the previous line or span several styled fragments.
                     if (index > 0 && matches.at(index - 1).to > offset) index--;
-                    if (index === preferred) return index;
                     if (index < matches.count) {
-                        if (first === undefined || index < first) first = index;
-                        if (index > preferred && (after === undefined || index < after)) after = index;
+                        const inside = bounds.top >= box.top && bounds.bottom <= box.bottom && rect.left >= box.left && rect.right <= box.right;
+                        const distance = (index - preferred + matches.count) % matches.count;
+                        const rank = inside ? distance : matches.count + distance;
+                        if (rank === 0) return index;
+                        if (rank < bestRank) { bestRank = rank; best = index; }
                     }
                 }
             }
             offset += part.textContent?.length ?? 0;
         }
     }
-    return after ?? first;
+    return best;
 }

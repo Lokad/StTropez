@@ -67,8 +67,9 @@ Find paints matches on its editor and outlines the current match. Style them wit
 has a short mark at its offset. A matched character with no visible width has a vertical edge.
 Next and Previous leave a visible match in place. An offscreen match scrolls into view and a
 match inside a fold opens that fold.
-Preview prefers a painted match at or after the start of the selection, then any other painted
-match. If all matches are offscreen, it reveals the next one and wraps at the end of the file.
+Preview prefers highlights inside the viewport, starting at the selection and wrapping in document
+order. If only part of a highlight is visible, preview brings the match into view. If all matches
+are offscreen, it reveals the next one.
 Preview preserves the source selection. Once you navigate to a match, appending or removing
 characters at the end of the query adjusts that selection if the new match starts at the same offset.
 Call `acceptPreview()` when closing a Find panel to select the displayed match. It returns

@@ -1166,6 +1166,21 @@ test("large browser-only sample keeps scroll content, editing/history and langua
     await query.fill("Row 75000:");
     await expect(page.locator("#find-status")).toHaveText("1 of 1");
     await expect(viewport.locator(".st-search-match")).toHaveText("Row 75000:");
+    const matchedRow = viewport.locator('.st-viewport-row[data-line="74999"]');
+    await matchedRow.evaluate(async row => {
+        const root = row.closest<HTMLElement>(".st-viewport")!;
+        const top = root.getBoundingClientRect().top + root.clientTop;
+        root.scrollTop += row.getBoundingClientRect().bottom - top - 3;
+        await new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+    });
+    const rowTop = () => matchedRow.evaluate(row => {
+        const root = row.closest<HTMLElement>(".st-viewport")!;
+        return row.getBoundingClientRect().top - root.getBoundingClientRect().top - root.clientTop;
+    });
+    expect(await rowTop()).toBeLessThan(0);
+    await query.fill("Row 75000: try");
+    await expect(viewport.locator(".st-search-match")).toHaveText("Row 75000: try");
+    await expect.poll(rowTop).toBeGreaterThanOrEqual(0);
     await expect(query).toBeFocused(); await expect(page.locator("#cursor")).toHaveText(cursor);
     await query.press("Enter"); await expect(page.locator("#cursor")).toContainText("Ln 75000,");
     await page.locator("#find-close").click(); await expect(page.locator("#editor .st-search-match")).toHaveCount(0);
