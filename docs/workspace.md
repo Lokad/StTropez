@@ -220,8 +220,11 @@ export function undoFrom(workspace: Workspace, documentId: DocumentId) {
 
 Every text change, including undo and redo, advances the revision. `onDocumentChange` delivers
 each committed change, including each revision inside a notification batch. Its `edits` use
-previous-revision offsets and reproduce the new text. A transaction, grouped undo or redo can describe several
-successive steps with one replacement. `mapping` retains the position and selection semantics of every step.
+previous-revision offsets and reproduce the new text. Transactions, grouped undo and redo leave
+untouched spans between edits out of the payload. An edit expands to include a whole surrogate
+pair or CRLF when either boundary would split it in the old or new text. Edits that need the
+same unit merge. Each `insert` string is read from the new buffer on first access.
+`mapping` retains the position and selection semantics of every step.
 Documents edited together share a transaction ID. An edit that produces the same text keeps the buffer, revision and (by default)
 history, though it can change the initiating view’s selection. A no-op `updateResource` also
 keeps the revision of a typed resource. Typed panels have no text undo stack.

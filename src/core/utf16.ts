@@ -7,7 +7,12 @@ export const splitsSurrogatePair = (text: string, offset: number): boolean => hi
 export function splitsTextPair(source: { length: number; slice(from: number, to: number): string }, offset: number): boolean {
     if (offset <= 0 || offset >= source.length) return false;
     const pair = source.slice(offset - 1, offset + 1);
-    return pair === "\r\n" || splitsSurrogatePair(pair, 1);
+    return splitsTextPairAt(pair, 1);
+}
+
+export function splitsTextPairAt(text: string, offset: number): boolean {
+    const left = text.charCodeAt(offset - 1), right = text.charCodeAt(offset);
+    return left === 13 && right === 10 || highSurrogate(left) && lowSurrogate(right);
 }
 
 /** Read at most 256 units toward a validated bound, plus one in-range surrogate peek.

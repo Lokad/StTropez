@@ -66,6 +66,62 @@ test("edits, grouped history and batches publish immutable changes in previous c
     stop();
 });
 
+test("forwarded transactions and history send the two distant changes and keep inserted text lazy", () => {
+    const { workspace, documentId } = fixture(), body = "x".repeat(100_000), options = { origin: "host", history: "reset" } as const;
+    workspace.replaceText(documentId, body, options);
+    const before = workspace.document(documentId);
+    const result = workspace.transact(documentId, before.revision, tx => {
+        tx.edit([{ from: 0, to: 0, insert: "[" }]);
+        tx.edit([{ from: tx.buffer.length, to: tx.buffer.length, insert: "]" }]);
+    }, { ...options, history: "record" });
+    assert.ok(result.applied);
+    const forward = [{ from: 0, to: 0, insert: "[" }, { from: body.length, to: body.length, insert: "]" }];
+    const peer = workspace.createDocument({ scope: "fixture", resource: "peer", variant: "working" }, "Peer", body);
+    const replay = (expected: typeof forward) => {
+        const current = workspace.document(documentId), reads = current.buffer.readMetrics().sliceUnits, edits = current.change!.edits;
+        assert.ok(current.buffer.readMetrics().sliceUnits - reads < 32);
+        assert.deepEqual(edits, expected);
+        assert.ok(workspace.edit({ documentId: peer, expectedRevision: workspace.document(peer).revision, origin: "host", edits }).applied);
+        assert.ok(current.buffer.equals(workspace.document(peer).buffer));
+    };
+    replay(forward);
+    assert.ok(workspace.undo({ documentId, expectedRevision: result.revision }).applied);
+    replay([{ from: 0, to: 1, insert: "" }, { from: body.length + 1, to: body.length + 2, insert: "" }]);
+    assert.ok(workspace.redo({ documentId, expectedRevision: result.revision + 1 }).applied); replay(forward);
+    workspace.replaceText(documentId, "q".repeat(100_000), options);
+    const current = workspace.document(documentId), reads = current.buffer.readMetrics().sliceUnits, [whole] = current.change!.edits;
+    assert.equal(whole!.from, 0); assert.equal(current.buffer.readMetrics().sliceUnits, reads);
+    assert.equal(whole!.insert.length, 100_000); assert.equal(current.buffer.readMetrics().sliceUnits - reads, 100_000);
+    assert.equal(whole!.insert.length, 100_000); assert.equal(current.buffer.readMetrics().sliceUnits - reads, 100_000);
+});
+
+test("forwarded edits keep surrogate pairs and CRLF together in both coordinate spaces", () => {
+    const { workspace, documentId } = fixture();
+    const options = { origin: "host", history: "record" } as const;
+    workspace.replaceText(documentId, "a😀\r\nb", options);
+    workspace.replaceText(documentId, "a😁\r\nb", options);
+    assert.deepEqual(workspace.document(documentId).change!.edits, [{ from: 1, to: 3, insert: "😁" }]);
+    workspace.replaceText(documentId, "a😁\nb", options);
+    assert.deepEqual(workspace.document(documentId).change!.edits, [{ from: 3, to: 5, insert: "\n" }]);
+    const before = workspace.document(documentId);
+    // Two touching raw edits form one scalar in the result, and a separate insertion forms a CRLF.
+    const result = workspace.edit({ documentId, expectedRevision: before.revision, origin: "host", edits: [
+        { from: 1, to: 2, insert: "\ud83e" }, { from: 2, to: 3, insert: "\udd8a" }, { from: 3, to: 3, insert: "\r" }] });
+    assert.ok(result.applied);
+    const after = workspace.document(documentId), edits = after.change!.edits;
+    assert.deepEqual(edits, [{ from: 1, to: 3, insert: "🦊" }, { from: 3, to: 4, insert: "\r\n" }]);
+    assert.equal(applyTextEdits(before.text(), edits), after.text());
+    workspace.undo({ documentId, expectedRevision: after.revision });
+    assert.equal(applyTextEdits(after.text(), workspace.document(documentId).change!.edits), before.text());
+    const rows = "😀\r\n".repeat(400);
+    workspace.replaceText(documentId, rows, options);
+    const dense = Array.from({ length: 400 }, (_, i) => ({ from: 4 * i + 1, to: 4 * i + 3, insert: "\ude01" }));
+    assert.ok(workspace.edit({ documentId, expectedRevision: workspace.document(documentId).revision, origin: "host", edits: dense }).applied);
+    const changes = workspace.document(documentId).change!.edits;
+    assert.equal(changes.length, dense.length);
+    assert.ok(changes.every((edit, i) => edit.from === i * 4 && edit.to === i * 4 + 4 && edit.insert === "😁\n"));
+});
+
 test("a branching follow-up loop stops without discarding independent notifications or later edits", async () => {
     const errors: unknown[] = [];
     const workspace = new Workspace({ onListenerError: error => { errors.push(error); throw new Error("reporter failed"); } });

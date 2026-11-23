@@ -1,6 +1,6 @@
 import { validateTextEdits } from "./changes.ts";
 import type { TextEdit } from "./changes.ts";
-import { batchGeometry, composeGeometry, geometryInvalidates, geometryPieces, pieceAt, pieceOffset } from "./position-geometry.ts";
+import { batchGeometry, composeGeometry, geometryChanges, geometryInvalidates, geometryPieces, pieceAt, pieceOffset } from "./position-geometry.ts";
 import type { MappingGeometry } from "./position-geometry.ts";
 import { partitionPoint } from "./bound-search.ts";
 
@@ -205,6 +205,11 @@ export function unchangedPositionEdges(mapping: PositionMapping): UnchangedEdges
 /** Internal batch metadata only. Consumers must still prove its relationship to their buffers. */
 export function positionChanges(mapping: PositionMapping): readonly Readonly<{ from: number; to: number; insertedLength: number }>[] | undefined {
     return knownMapping(mapping) && mapping instanceof ChangePositionMap ? mapping[batchChanges]() : undefined;
+}
+
+/** Forwarding needs net text edits. Selections and history still use the full position map. */
+export function forwardedChanges(mapping: PositionMapping) {
+    return mapping instanceof ComposedPositionMap ? geometryChanges(mapping[compiledGeometry]().forward) : positionChanges(mapping)!;
 }
 
 /** Cost of retaining this map for another composition. Opaque maps have no known bound. */

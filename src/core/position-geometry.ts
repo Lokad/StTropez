@@ -141,6 +141,35 @@ export function composeGeometry(first: MappingGeometry, second: MappingGeometry)
 }
 
 export function geometryPieces(geometry: MappingGeometry, side: Affinity): readonly PositionPiece[] { return geometry.points[sideIndex(side)]!; }
+
+/** An original unit survives from its start mapped "after" to its end mapped "before".
+ * Touching that unit collapses or crosses these endpoints. Later edits cannot uncross them.
+ * On a pair of linear pieces the difference is affine and at most one, so checking the ends
+ * finds the entire surviving run without visiting individual UTF-16 units. */
+export function geometryChanges(geometry: MappingGeometry) {
+    const [before, after] = geometry.points, changes: { from: number; to: number; insertedLength: number }[] = [];
+    let oldAt = 0, newAt = 0, left = 0, right = 0;
+    function gap(to: number, newTo: number) {
+        if (oldAt !== to || newAt !== newTo) changes.push({ from: oldAt, to, insertedLength: newTo - newAt });
+    }
+    for (let from = 0; from < geometry.oldLength;) {
+        while (before[left]!.to <= from + 1) left++;
+        while (after[right]!.to <= from) right++;
+        const start = after[right]!, end = before[left]!, to = Math.min(geometry.oldLength, start.to, end.to - 1);
+        const firstSurvives = pieceOffset(end, from + 1) - pieceOffset(start, from) === 1;
+        const lastSurvives = pieceOffset(end, to) - pieceOffset(start, to - 1) === 1;
+        if (firstSurvives || lastSurvives) {
+            const keepFrom = firstSurvives ? from : to - 1, keepTo = lastSurvives ? to : from + 1;
+            const mapped = pieceOffset(start, keepFrom);
+            gap(keepFrom, mapped);
+            oldAt = keepTo; newAt = mapped + (keepTo - keepFrom);
+        }
+        from = to;
+    }
+    gap(geometry.oldLength, geometry.newLength);
+    return changes;
+}
+
 export function geometryInvalidates(geometry: MappingGeometry, from: number, to: number, fromSide: Affinity, toSide: Affinity, pointDeleted: boolean): boolean {
     if (from === to) return fromSide === "before" && toSide === "after" ? covered(geometry.expandedPointDeletes, from, to) : pointDeleted;
     return covered(geometry.covers[sideIndex(fromSide) * 2 + sideIndex(toSide)]!, from, to);

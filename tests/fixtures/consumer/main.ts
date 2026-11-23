@@ -137,15 +137,17 @@ const fixture = { text: () => workspace.document(documentId).text(),
             let forwarded = false;
             const stop = model.onDocumentChange(source.documentId, (change, afterDelivery) => {
                 afterDelivery(() => {
-                    const edit = change.edits[0];
+                    const [edit, tail] = change.edits;
                     forwarded = change.source === "fold-pilot" && change.previousRevision === 0 && change.revision === 1
-                        && edit?.from === at && edit.to === at && edit.insert === "x\r\n";
+                        && change.edits.length === 2 && edit?.from === at && edit.to === at && edit.insert === "x\r\n"
+                        && tail?.from === original.length && tail.to === original.length && tail.insert === "!";
                 });
             });
             try {
                 model.transact(source.documentId, 0, tx => {
                     tx.edit([{ from: at, to: at, insert: "x" }]);
                     tx.edit([{ from: at + 1, to: at + 1, insert: "\r\n" }]);
+                    tx.edit([{ from: tx.buffer.length, to: tx.buffer.length, insert: "!" }]);
                 }, { origin: "host", source: "fold-pilot", history: "record" });
                 await wait();
                 if (!forwarded) throw new Error("Restored change subscription lost the edit or its provenance.");

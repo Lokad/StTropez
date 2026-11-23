@@ -566,7 +566,7 @@ export class Workspace {
     private commitText(prepared: PreparedText, origin: EditOrigin, kind: DocumentChange["kind"], transactionId: number, changed: Set<Store<unknown>>, source?: string): void {
         const { record, buffer, mapping, state, views } = prepared;
         record.change = documentChange({ previousRevision: record.state.get().revision, revision: state.revision, mapping,
-            transactionId, origin, kind, ...(source === undefined ? {} : { source }) }, buffer);
+            transactionId, origin, kind, ...(source === undefined ? {} : { source }) }, record.buffer!, buffer);
         record.buffer = buffer; this.setRecord(record, state, changed);
         for (const view of views) this.commitView(view, changed);
     }
