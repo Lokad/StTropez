@@ -1,6 +1,21 @@
 import type { Observable } from "../../src/index.ts";
 import { renderPanelActions } from "./panel-actions.ts";
 
+export type PanelTextField = Readonly<{ label: string; value: string; maxLength: number;
+    bind: (input: HTMLInputElement | null) => void; change: (value: string) => void }>;
+
+export function createPanelTextField(owner: Document, field: PanelTextField) {
+    const label = owner.createElement("label"), input = owner.createElement("input");
+    input.type = "text"; input.maxLength = field.maxLength; input.value = field.value;
+    input.oninput = () => field.change(input.value);
+    label.append(field.label, input); field.bind(input);
+    return {
+        label,
+        render(value: string) { if (input.value !== value) input.value = value; },
+        dispose() { input.oninput = null; field.bind(null); },
+    };
+}
+
 type PanelChoice = Readonly<{ key: number | string; label: string; invoke: () => void }>;
 type ChoiceList<T extends PanelChoice> = Readonly<{ label: string; identity: readonly unknown[]; page?: number; disabled: boolean;
     items: () => readonly T[]; isSelected?: (key: T["key"]) => boolean }>;

@@ -1,4 +1,4 @@
-import { createToolPanel } from "./tool-panel.ts";
+import { createPanelTextField, createToolPanel } from "./tool-panel.ts";
 import { changedFiles, createChangedFileList, editPageSize } from "./edit-review.ts";
 import { pageActions } from "./panel-actions.ts";
 import type { HostRenameTools, RenameNote, HostRenameSnapshot } from "./rename.ts";
@@ -29,15 +29,13 @@ export function renamePanelModel(tools: RenamePanelTools, s: HostRenameSnapshot)
 }
 export function mountRenamePanel(host: HTMLElement, tools: HostRenameTools): () => void {
     const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => renamePanelModel(tools, state));
-    const label = owner.createElement("label"), name = owner.createElement("input"), targets = owner.createElement("ol"), changes = createChangedFileList(owner, initial.changes);
-    name.maxLength = initial.name.maxLength; name.type = "text"; name.value = initial.name.value; name.oninput = () => initial.name.change(name.value); label.append(initial.name.label, name);
-    initial.name.bind(name);
+    const name = createPanelTextField(owner, initial.name), targets = owner.createElement("ol"), changes = createChangedFileList(owner, initial.changes);
     targets.setAttribute("aria-label", initial.targets.label);
     let previousTargets: unknown;
-    return mount([label, controls, targets, changes.element], model => {
-        if (name.value !== model.name.value) name.value = model.name.value;
+    return mount([name.label, controls, targets, changes.element], model => {
+        name.render(model.name.value);
         if (previousTargets !== model.targets.identity) { previousTargets = model.targets.identity; targets.start = model.targets.start;
             targets.replaceChildren(...model.targets.items().map(at => { const li = owner.createElement("li"); li.textContent = at.text; return li; })); }
         changes.render(model.changes);
-    }, () => initial.name.bind(null));
+    }, name.dispose);
 }

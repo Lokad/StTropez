@@ -229,7 +229,16 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
             await input(page).pressSequentially("x");
             await waitForActions(page);
             await input(page).press("Control+z");
-        } else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
+        } else {
+            const module = input(page, "Action module"), current = await module.inputValue();
+            await module.evaluate(retiring => {
+                if (!(retiring instanceof HTMLInputElement)) throw new Error("Missing module field.");
+                window.hostFixture.unmount(); window.hostFixture.mount();
+                retiring.value = "retired-module";
+                retiring.dispatchEvent(new Event("input", { bubbles: true }));
+            });
+            await expect(module).toHaveValue(current);
+        }
         await expect.poll(replies.cancelled).toBe(true); await replies.release();
         await waitForActions(page);
         await expect(button(page, "Apply captured action")).toBeDisabled();

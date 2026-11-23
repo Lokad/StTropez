@@ -1,4 +1,5 @@
 import { bindPageButton, panelActionKey, type PanelAction } from "./panel-actions.ts";
+import type { PanelTextField } from "./tool-panel.ts";
 import { editPageSize, formatEditNote, type ChangedFileList, type EditNotes } from "./edit-review.ts";
 import { memo, Profiler, StrictMode, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
@@ -33,6 +34,11 @@ import { transferFormModel, runPanelModel } from "./transfer-panel.ts";
 import "./style.css";
 
 import type { NativeEditorMount } from "./bindings.ts";
+
+function LanguageField({ field }: { field: PanelTextField }) {
+    return <label>{field.label}<input ref={field.bind} type="text" maxLength={field.maxLength}
+        value={field.value} onChange={event => field.change(event.currentTarget.value)} /></label>;
+}
 
 export function startReactHost(mountNative?: NativeEditorMount) {
 const controller = new HostController(), bindings = new ViewBindings(controller, mountNative ? hostEditor() : "candidate", mountNative);
@@ -188,7 +194,7 @@ function DocumentColorsTools() {
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
         <output aria-label={model.status.label}>{model.status.text}</output><PanelControls actions={model.actions} />
         <ul ref={model.results.bind} tabIndex={-1} aria-label={model.results.label}>{model.results.items().map(color => <li key={color.key}><span className="host-color-swatch" aria-hidden="true" style={{backgroundColor: color.css}} /><button disabled={model.results.disabled} aria-pressed={model.results.isSelected(color.key)} onClick={color.invoke}>{color.label}</button></li>)}</ul>
-        <label>{model.value.label}<input ref={model.value.bind} type="text" maxLength={model.value.maxLength} value={model.value.value} onChange={event => model.value.change(event.currentTarget.value)} /></label><span className="host-color-swatch" aria-hidden="true" style={{backgroundColor: model.value.css}} />
+        <LanguageField field={model.value} /><span className="host-color-swatch" aria-hidden="true" style={{backgroundColor: model.value.css}} />
         <button disabled={model.preview.disabled} onClick={model.preview.invoke}>{model.preview.label}</button><label>{model.presentation.label}<select disabled={model.presentation.disabled} value={model.presentation.value} onChange={event => model.presentation.change(event.currentTarget.selectedIndex)}>{model.presentation.choices.map((choice, i) => <option key={i} value={`provider-${i}`}>{choice.label}</option>)}</select></label>
         <button key={panelActionKey(model.apply)} disabled={model.apply.disabled} onClick={model.apply.invoke}>{model.apply.label}</button><ol aria-label={model.edits.label}>{model.edits.items.map((text,i) => <li key={i}><pre>{text}</pre></li>)}</ol>
         {model.changed.visible && <button key={panelActionKey(model.changed)} disabled={model.changed.disabled} onClick={model.changed.invoke}>{model.changed.label}</button>}</section>;
@@ -208,7 +214,7 @@ function ActionsTools() {
     const tools = bindings.actions, model = actionsPanelModel(tools, useObserved(tools.state));
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
         <output aria-label={model.status.label}>{model.status.text}</output>
-        <label>{model.module.label}<input ref={model.module.bind} type="text" maxLength={model.module.maxLength} value={model.module.value} onChange={event => model.module.change(event.currentTarget.value)} /></label>
+        <LanguageField field={model.module} />
         <PanelControls actions={model.actions} />
         <ol aria-label={model.choices.label} start={model.choices.start}>{model.choices.items().map(choice => <li key={choice.key}><button disabled={model.choices.disabled} aria-pressed={model.choices.isSelected(choice.key)} onClick={choice.invoke}>{choice.label}</button></li>)}</ol>
         <p aria-label={model.preview.label}>{model.preview.text}</p><EditNoteList {...model.edits} />
@@ -218,7 +224,7 @@ function RenameTools() {
     const tools = bindings.rename, model = renamePanelModel(tools, useObserved(tools.state));
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
         <output aria-label={model.status.label}>{model.status.text}</output>
-        <label>{model.name.label}<input ref={model.name.bind} type="text" maxLength={model.name.maxLength} value={model.name.value} onChange={event => model.name.change(event.currentTarget.value)} /></label>
+        <LanguageField field={model.name} />
         <PanelControls actions={model.actions} />
         <ol aria-label={model.targets.label} start={model.targets.start}>{model.targets.items().map(at => <li key={at.key}>{at.text}</li>)}</ol>
         <ChangedFiles model={model.changes} /></section>;
