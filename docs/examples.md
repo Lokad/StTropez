@@ -388,7 +388,8 @@ Closing the review keeps F12 and Shift+F12 requests from the primary editor usab
 A request made in the review itself expires when that pane closes.
 If you leave the source while F12 is pending, choose the destination in the results panel to open it.
 The Locations region below the editors reports the latest symbol or module lookup,
-including a missing import. Earlier results stay available. The navigation panel shows
+including a missing import. **Show symbol results** and **Show module links** switch back
+to the retained page of an earlier lookup. The navigation panel shows
 a waiting indicator during a definition or reference request.
 Shift+F12 focuses the first reference. F12 jumps to a single definition or focuses the
 first of several. Use Up and Down to choose a result, Enter to open it, and Escape to

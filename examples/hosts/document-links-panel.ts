@@ -26,8 +26,8 @@ export function documentLinksPanelModel(tools: DocumentLinksPanelTools, s: Docum
                 invoke: link.open } as const)) },
     } as const;
 }
-export function mountDocumentLinksPanel(host: HTMLElement, tools: HostDocumentLinks, showStatus = true): () => void {
-    const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => documentLinksPanelModel(tools, state), showStatus);
-    const results = createDestinationList(owner, initial.results);
-    return mount([results.element, controls], model => results.render(model.results), results.dispose);
+export function mountDocumentLinksPanel(host: HTMLElement, tools: HostDocumentLinks, inlineResults = true): () => void {
+    const { owner, initial, controls, mount } = createToolPanel(host, tools.state, state => documentLinksPanelModel(tools, state), inlineResults);
+    const results = inlineResults ? createDestinationList(owner, initial.results) : undefined;
+    return mount(results ? [results.element, controls] : [controls], model => results?.render(model.results), results?.dispose);
 }

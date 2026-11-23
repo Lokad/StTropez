@@ -19,6 +19,7 @@ import { revealCompletionRow } from "../shared/language/completion-list.ts";
 import { domainPanelModel } from "./domain-panel.ts";
 import { tablePastePanelModel } from "./table-panel.ts";
 import { navigationPanelModel } from "./navigation-panel.ts";
+import { mountLocationsDock } from "./locations-dock.ts";
 import { projectPanelModel } from "./project-panel.ts";
 import { documentColorsPanelModel } from "./document-colors-panel.ts";
 import { documentLinksPanelModel } from "./document-links-panel.ts";
@@ -65,9 +66,7 @@ function Status() {
     const model = operationStatusModel(useObserved(controller.activity), useObserved(controller.source.metadata));
     return <output aria-label={model.label}>{model.text}</output>;
 }
-function LocationStatus() {
-    return <output aria-label="Locations status">{useObserved(bindings.locationStatus)}</output>;
-}
+const locationDockRef = (host: HTMLDivElement | null) => host ? mountLocationsDock(host, bindings) : undefined;
 function SourceMetadata() {
     const metadata = useObserved(controller.source.metadata);
     return <p>{metadata.title} · {metadata.dirty ? "Unsaved" : "Saved"}</p>;
@@ -190,7 +189,7 @@ function TablePasteTools() {
 }
 function App() {
     return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview />
-        <div className="host-locations" role="region" aria-label="Locations"><LocationStatus /><NavigationTools /><DocumentLinksTools /></div>
+        <div ref={locationDockRef} className="host-locations" role="region" aria-label="Locations" /><NavigationTools /><DocumentLinksTools />
         <ConfigurationSavePanel /><TransferWorkspace /><DraftRecovery /><LanguageTools /><TablePasteTools /><DomainTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentColorsTools /><SignatureTools /><SymbolInfo /></>;
 }
 const EditNoteList = memo(function EditNoteList({ label, page, notes }: EditNotes) {
@@ -213,7 +212,6 @@ function DocumentColorsTools() {
 function DocumentLinksTools() {
     const tools = bindings.links, model = documentLinksPanelModel(tools, useObserved(tools.state));
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
-        <Destinations results={model.results} />
         <PanelControls actions={model.actions} /></section>;
 }
 function ActionsTools() {
@@ -248,7 +246,6 @@ function NavigationTools() {
     const tools = bindings.navigation, model = navigationPanelModel(tools, useObserved(tools.state));
     return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2>
         <progress aria-label={model.progress.label} hidden={model.progress.hidden} />
-        <Destinations results={model.results} />
         <label><input type="checkbox" checked={model.declarations.checked} onChange={event => model.declarations.change(event.currentTarget.checked)} />{model.declarations.label}</label>
         <PanelControls actions={model.actions} /></section>;
 }

@@ -193,10 +193,11 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await expect(source).toBeFocused();
         await links.release();
         const row = page.getByLabel("Module link results", { exact: true }).getByRole("button");
-        await expect(row).toHaveCount(1);
+        await expect.poll(async () => (await snapshot(page)).bindings.links.state.count).toBe(1);
         await expect(page.getByLabel("Locations status", { exact: true })).toContainText("0 definition locations");
         await expect(source).toBeFocused();
-        await row.click();
+        await button(page, "Show module links").click(); await expect(row).toBeFocused();
+        await page.keyboard.press("Enter");
         await expect(field(page, "Secondary source")).toBeFocused();
         await button(page, "Return to link origin").click();
         await expect(source).toBeFocused();
@@ -217,11 +218,12 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await expect(status).toHaveText(failure);
         await definitions.release();
         const row = results(page).filter({ hasText: "Navigation companion:" });
-        await expect(row).toBeVisible();
+        await expect.poll(async () => (await snapshot(page)).bindings.navigation.results).toBe(1);
         await expect(status).toHaveText(failure);
         await expect(source).toBeFocused();
         await expect(button(page, "Return to navigation origin")).toBeDisabled();
-        await row.click();
+        await button(page, "Show symbol results").click(); await expect(row).toBeFocused();
+        await page.keyboard.press("Enter");
         await expect(field(page, "Secondary source")).toBeFocused();
         await button(page, "Return to navigation origin").click();
         await expect(source).toBeFocused();
@@ -296,7 +298,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toEqual(selected);
     });
     if (coversHost("candidate-hosts", host, "candidate")) test("replacing references during a press needs a fresh click to advance the page", async ({ page }) => {
-        await seed(page, "const target = 1;\n" + "target;\n".repeat(130), 8);
+        await seed(page, "const target = 1;\n" + "target;\n".repeat(130) + 'import "sample-utils";', 8);
         const find = button(page, "Find references"), next = button(page, "Next navigation results");
         await find.click(); await waitForNavigation(page);
         const first = results(page).first();
@@ -313,7 +315,14 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await expect(first).toHaveText("Primary source:1:7");
         await next.focus(); await page.keyboard.press("Enter");
         await expect(first).toHaveText("Primary source:65:1"); await expect(next).toBeFocused();
-        await page.keyboard.press("Space"); await expect(first).toHaveText("Primary source:129:1");
+        await page.setViewportSize({ width: 390, height: 844 });
+        const source = field(page);
+        await source.locator("..").scrollIntoViewIfNeeded(); await source.press("F4");
+        const link = page.getByLabel("Module link results", { exact: true }).getByRole("button").first();
+        await expect(link).toBeFocused(); await expect(link).toBeInViewport(); await expect(source.locator("..")).toBeInViewport();
+        await button(page, "Show symbol results").click(); await expect(first).toBeFocused();
+        await expect(first).toHaveText("Primary source:65:1");
+        await next.press("Space"); await expect(first).toHaveText("Primary source:129:1");
     });
     if (coversHost("candidate-hosts", host, "candidate")) test("Return retraces two symbol jumps with their selections, scroll and focus", async ({ page }) => {
         const text = "catalogue;\n" + "// padding\n".repeat(120) + "catalogue;\n";
