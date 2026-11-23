@@ -19,8 +19,9 @@ type Alias = Readonly<{ module: string; uri: string }>;
 export type LinkHostOptions = Readonly<{ provider: LspWorkspace;
     prepare: (aliases: readonly Alias[], policy: FixturePolicy<LinkFault>) => LspPrepare }>;
 type Session = { id: string; editor: TextEditor; controller: DocumentLinkController };
-type Route = { origin: Session; source: DocumentSnapshot; viewState: ViewState; documents: Map<string, DocumentSnapshot>;
-    targets: Map<DocumentId, Session>; destination?: TextEditor; releaseHistory?: () => void };
+type Origin = { origin: Session; source: DocumentSnapshot; viewState: ViewState };
+type Route = Origin & { documents: Map<string, DocumentSnapshot>; targets: Map<DocumentId, Session> };
+type Visit = Origin & { destination: TextEditor; release: () => void };
 export type LinkNote = ModuleLink & Readonly<{ line: number; column: number; title: string; targetTitle: string | null; resolvable: boolean; open: () => void }>;
 export type DocumentLinksSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; requestView: string | null;
     status: DocumentLinkSnapshot["status"] | "away"; message: string; count: number; page: number; paging: PanelPaging | null; links: readonly LinkNote[]; canReturn: boolean }>;
@@ -34,6 +35,7 @@ export class HostDocumentLinks {
     private readonly sessions = new Map<Session, () => void>();
     private active: Session | undefined;
     private route: Route | undefined;
+    private visit: Visit | undefined;
     private companion: DocumentId | undefined;
     private readonly linkList = createPanelKeyBinding<HTMLElement>(() => this.listEditor());
     private disposed = false;
@@ -52,18 +54,27 @@ export class HostDocumentLinks {
     private publish(patch: Partial<DocumentLinksSnapshot> = {}) {
         this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && !this.disposed && !this.active.editor.signal.aborted,
             connected: !!this.route && !this.disconnected && this.options.provider.getSnapshot().phase === "ready",
-            disconnected: this.disconnected, requestView: this.route?.origin.id ?? null, canReturn: !!this.route?.destination });
+            disconnected: this.disconnected, requestView: this.route?.origin.id ?? null, canReturn: !!this.visit });
     }
-    private release() {
+    private releaseResults() {
         const route = this.route; this.route = undefined;
-        route?.releaseHistory?.(); route?.origin.controller.cancel();
+        route?.origin.controller.cancel();
+    }
+    private releaseVisit() {
+        const visit = this.visit; this.visit = undefined;
+        visit?.release();
+    }
+    private release() { this.releaseResults(); this.releaseVisit(); }
+    private expireResults() {
+        this.releaseResults();
+        this.publish({ ...initial, status: "expired", message: "The source or link target changed." });
     }
     readonly cancel = () => { this.release(); this.publish({ ...initial, message: "Module links dismissed." }); };
     readonly disconnect = () => { this.disconnected = true; this.cancel(); };
     readonly reconnect = () => { this.disconnected = false; this.cancel(); this.host.reconnect?.(); };
     private listEditor() {
         const route = this.route;
-        return route && (this.sessions.has(route.origin) ? route.origin.editor : route.destination);
+        return route && this.sessions.has(route.origin) ? route.origin.editor : this.visit?.destination;
     }
     readonly bindList = this.linkList.bind;
     attach(id: string, _tab: TabId, editor: TextEditor) {
@@ -81,7 +92,7 @@ export class HostDocumentLinks {
             signal.addEventListener("abort", stop, { once: true });
             register({ id: "links.discover", label: "Discover module links", enabled: () => !this.disconnected,
                 run: () => { this.active = session; this.start(true); } }, { keys: ["F4"] });
-            register({ id: "links.return", label: "Return to link origin", enabled: () => !!this.route?.destination,
+            register({ id: "links.return", label: "Return to link origin", enabled: () => !!this.visit,
                 run: this.returnToOrigin }, { keys: ["Shift+F4"] });
             register({ id: "links.dismiss", label: "Dismiss module links",
                 enabled: () => this.listEditor() === editor && this.linkList.focused,
@@ -95,13 +106,18 @@ export class HostDocumentLinks {
                 this.active = session; this.publish();
             });
             editor.onEditIntent(() => {
-                const uri = this.host.workspace.document(editor.view.documentId).language?.uri;
-                if (!this.presenting && uri && this.route?.documents.has(uri)) this.cancel();
+                if (this.presenting) return;
+                const id = editor.view.documentId, uri = this.host.workspace.document(id).language?.uri;
+                if (this.visit?.source.id === id) this.cancel();
+                else if (uri && this.route?.documents.has(uri)) this.expireResults();
             }, signal);
         }, () => {
             if (this.active === session) this.active = undefined;
             const route = this.route;
-            if (!this.presenting && route && (route.targets.get(editor.view.documentId) === session || route.destination === editor)) this.cancel();
+            if (!this.presenting) {
+                if (this.visit?.destination === editor || this.visit?.origin === session) this.cancel();
+                else if (route?.targets.get(editor.view.documentId) === session) this.expireResults();
+            }
             this.publish();
         });
     }
@@ -159,21 +175,21 @@ export class HostDocumentLinks {
             if (keyboard && mayFocus() && origin.editor.getSnapshot().focused) this.linkList.element?.focus();
         });
     }
-    private place(route: Route, doc: DocumentSnapshot, viewState?: ViewState) {
+    private place(owner: Route | Visit, doc: DocumentSnapshot, captured: Session | undefined, viewState?: ViewState) {
+        const current = () => this.route === owner || this.visit === owner;
         const live = this.host.workspace.observeDocument(doc.id).getSnapshot();
-        if (this.route !== route || live?.revision !== doc.revision || live.buffer !== doc.buffer) return;
-        const captured = route.targets.get(doc.id);
+        if (!current() || live?.revision !== doc.revision || live.buffer !== doc.buffer) return;
         this.presenting = true;
         try {
             const editor = this.host.canCapture(doc.id) && presentDocument(this.host, doc.id, captured && this.sessions.has(captured) ? [captured] : []);
-            if (this.route !== route) return;
+            if (!current()) return;
             if (!editor) { this.publish({ message: unavailablePaneMessage }); return; }
             const placed = viewState ? editor.restoreView(viewState)
                 : editor.reveal({ from: 0, to: 0 }, { expectedRevision: doc.revision, select: true });
             if (!placed) return;
             editor.focus(); return editor;
         } catch (error) {
-            if (this.route === route) this.publish({ message: error instanceof Error ? error.message : "The host could not open the destination." });
+            if (current()) this.publish({ message: error instanceof Error ? error.message : "The host could not open the destination." });
         } finally { this.presenting = false; }
     }
     private async open(route: Route, item: DocumentLinkChoice, module: string) {
@@ -195,12 +211,14 @@ export class HostDocumentLinks {
                 if (!doc) { this.publish({ message: "Provider link target is outside the host's captured resources." }); return; }
                 if (!follow || owner.activeElement !== focused) return;
                 // A host can replace the only mounted source while presenting the destination.
-                const release = this.retainReturn(route);
+                const { origin, source, viewState } = route;
+                const release = this.retainOrigin(source);
                 let placed: TextEditor | undefined;
-                try { placed = this.place(route, doc); }
-                finally { if (!placed || this.sessions.has(route.origin)) release(); else route.releaseHistory = release; }
+                try { placed = this.place(route, doc, route.targets.get(doc.id)); }
+                finally { if (!placed) release(); }
                 if (!placed) return;
-                route.destination = placed; this.metrics.opened++;
+                this.releaseVisit();
+                this.visit = { origin, source, viewState, destination: placed, release }; this.metrics.opened++;
                 this.publish({ message: `Opened ${doc.title}.`, ...(!this.sessions.has(route.origin) ? { status: "away" as const } : {}) });
             });
             if (result.status === "no-target" && this.route === route && this.cell.get().status === "ready") {
@@ -208,18 +226,27 @@ export class HostDocumentLinks {
             }
         } finally { events.abort(); }
     }
-    private retainReturn(route: Route) {
-        const { source } = route, lease = this.host.workspace.acquire(source.resourceId), handle = this.host.workspace.observeDocument(source.id);
+    private retainOrigin(source: DocumentSnapshot) {
+        const lease = this.host.workspace.acquire(source.resourceId), handle = this.host.workspace.observeDocument(source.id);
         const metadata = this.host.workspace.resourceForDocument(source.id).metadata;
-        const invalidate = () => { delete route.destination; queueMicrotask(() => { if (this.route === route) this.cancel(); }); };
+        const invalidate = () => {
+            if (this.visit?.release !== release) return;
+            this.visit = undefined;
+            // Workspace subscribers cannot release a lease during the transaction that notified them.
+            queueMicrotask(() => { release(); this.publish(); });
+        };
         const stop = handle.subscribe(invalidate), stopMetadata = metadata.subscribe(invalidate);
-        return () => { stop(); stopMetadata(); lease.release(); };
+        function release() { stop(); stopMetadata(); lease.release(); }
+        return release;
     }
     readonly returnToOrigin = () => {
-        const route = this.route;
-        if (!route?.destination || !this.place(route, route.source, route.viewState)) return;
+        const visit = this.visit;
+        if (!visit) return;
+        if (!this.host.canCapture(visit.destination.view.documentId)) { this.publish({ message: unavailablePaneMessage }); return; }
+        if (!this.place(visit, visit.source, visit.origin, visit.viewState)) return;
+        this.releaseVisit();
         this.metrics.returned++;
-        if (!this.sessions.has(route.origin)) this.start(false, true);
+        if (this.route && !this.sessions.has(visit.origin)) this.start(false, true);
         else this.publish({ message: "Returned to the captured source and selection." });
     };
     setAlias(module: string, document: DocumentId | null) {

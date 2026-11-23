@@ -453,7 +453,21 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         const mounted = (await snapshot(page)).bindings.mounts;
         await row.click(); await expect(secondary).toBeFocused();
         expect((await snapshot(page)).bindings.mounts).toBe(mounted);
+        await secondary.press("End"); await secondary.pressSequentially(" // edited");
+        await expect(row).toHaveCount(0);
+        const back = button(page, "Return to link origin");
+        await expect(back).toBeEnabled();
+        await back.evaluate(node => {
+            const paste = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
+            paste.clipboardData!.setData("text/plain", "three\tfour"); document.activeElement!.dispatchEvent(paste);
+            (node as HTMLButtonElement).click();
+        });
+        await expect(secondary).toBeFocused();
+        await expect(page.getByLabel("Module link status", { exact: true })).toContainText("pending input");
+        await expect.poll(async () => (await snapshot(page)).bindings.tablePaste.status).toBe("applied");
         await secondary.press("Shift+F4"); await expect(field(page)).toBeFocused(); await exact(page, raw);
+        expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, before.bindings.links.companion!)).toContain(' // edited"three","four"');
+        await expect(back).toBeDisabled();
         await disposeColorsAndLinks(page);
     });
     test("F4 links restore complete comparison and secondary selections without taking later form focus", async ({ page }) => {
@@ -482,12 +496,15 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
             await field(page, "Secondary source").press("Shift+F4"); await settledColorsAndLinks(page); await expect(source).toBeFocused();
             await expect.poll(readingLine).toBe(line);
             await row.click(); await settledColorsAndLinks(page); await expect(field(page, "Secondary source")).toBeFocused();
+            await expect(row).toHaveAttribute("data-retained", "module-link");
+            await field(page, "Secondary source").pressSequentially("x"); await expect(row).toHaveCount(0);
             await field(page, "Secondary source").press("Shift+F4"); await settledColorsAndLinks(page); await expect(source).toBeFocused();
-            const after = await snapshot(page); await expect(row).toHaveAttribute("data-retained", "module-link");
+            await expect.poll(readingLine).toBe(line);
+            const after = await snapshot(page);
             if (origin === "comparison") expect(after.bindings.comparison!.selectionSet).toEqual(before.bindings.comparison!.selectionSet);
             else expect(after.bindings.views.find(view => view.id === "secondary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "secondary")!.selectionSet);
             expect(after.bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline); expect(after.history).toEqual(before.history);
-            await row.focus(); await expectPanelKeyReserved(row, "Escape");
+            await source.press("F4"); await expect(list).toBeFocused(); await row.focus(); await expectPanelKeyReserved(row, "Escape");
             await row.press("Escape"); await expect(source).toBeFocused();
             expect((await snapshot(page)).bindings.links.state).toMatchObject({ status: "idle", canReturn: false, count: 0 });
             if (origin === "secondary") {
@@ -592,6 +609,14 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")!.documentId).toBe(companion);
         expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe("// target\r\n" + linkCaptureTarget);
         await exact(page, current);
+        const back = button(page, "Return to link origin");
+        await expect(back).toBeEnabled();
+        await page.evaluate(() => {
+            const host = window.hostFixture;
+            host.editSource(host.snapshot().source.revision, [{ from: 0, to: 0, insert: "// changed origin\n" }]);
+        });
+        await expect(back).toBeDisabled();
+        await field(page, "Secondary source").press("Shift+F4"); await expect(field(page, "Secondary source")).toBeFocused();
         await disposeColorsAndLinks(page);
     });
     test("advertised signature triggers and retriggers show active parameters without taking completion shortcuts", async ({ page }) => {

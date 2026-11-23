@@ -401,7 +401,8 @@ can move focus. You can open either result from its panel.
 Escape dismisses the list and returns focus to its mounted source,
 including while a link resolves. If you Tab away, the resolved link stays in the list until you
 open it. If the destination pane is busy with a paste or fails to open, the panel shows the
-reason. Click the link again to retry. Shift+F4 restores the original document, selections and scroll position.
+reason. Click the link again to retry. Editing the destination clears the old links.
+Shift+F4 restores the original document, selections and scroll position if the source is unchanged.
 Changing result pages during a press requires a fresh click to open a link on the new page.
 Press F2 on the symbol to rename. Its name is selected, so typing replaces it.
 Enter and **Prepare rename preview** both use that pane,
