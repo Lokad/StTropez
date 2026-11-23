@@ -5,6 +5,7 @@ import type { SelectionSet } from "./selections.ts";
 import type { Observable } from "./observable.ts";
 import { partitionPoint } from "./bound-search.ts";
 import { appendNestedFold } from "./fold-nesting.ts";
+import { lineContentEnd } from "./newlines.ts";
 
 /** Host-owned raw anchors include a visible header and at least one complete body row. */
 export type FoldRange = Readonly<{ id: string; from: number; to: number; collapsed?: boolean; group?: string }>;
@@ -72,12 +73,12 @@ export function createFoldRegions(buffer: TextBuffer, ranges: readonly FoldRange
     prepareFoldRanges(buffer, result, result); return result;
 }
 /** View metadata follows document mappings. Degenerate/merged headers cease to be folds. */
-export function mapFoldRegions(buffer: TextBuffer, mapping: PositionMapping, regions: readonly FoldRegion[], previous?: TextBuffer): readonly FoldRegion[] {
+export function mapFoldRegions(buffer: TextBuffer, mapping: PositionMapping, regions: readonly FoldRegion[], previous: TextBuffer): readonly FoldRegion[] {
     if (!regions.length) return regions;
-    const metadata = owned.get(regions), edges = previous && metadata ? unchangedPositionEdges(mapping) : undefined;
+    const metadata = owned.get(regions), edges = metadata ? unchangedPositionEdges(mapping) : undefined;
     if (edges && metadata!.maxTo <= edges.prefix) return regions;
     const suffix = edges ? mapping.oldLength - edges.suffix : Infinity;
-    const units = mapping.newLength - mapping.oldLength, lines = previous ? buffer.lineCount - previous.lineCount : 0;
+    const units = mapping.newLength - mapping.oldLength, lines = buffer.lineCount - previous.lineCount;
     const mapped: FoldRegion[] = [], headers = new Map<number, number>(), stack: FoldRegion[] = [];
     for (const r of regions) {
         let next: FoldRegion | undefined;
@@ -89,7 +90,15 @@ export function mapFoldRegions(buffer: TextBuffer, mapping: PositionMapping, reg
             if (from.offset < to.offset) {
                 const lineFrom = edges && r.from < edges.prefix ? r.lineFrom : edges && r.from >= suffix ? r.lineFrom + lines : buffer.lineAt(from.offset);
                 const lineTo = edges && r.to <= edges.prefix ? r.lineTo : edges && r.to > suffix ? r.lineTo + lines : buffer.lineAt(to.offset - 1) + 1;
-                if (lineFrom + 1 < lineTo) next = Object.freeze({ ...r, from: from.offset, to: to.offset, lineFrom, lineTo, collapsed: r.collapsed && !from.deleted && !to.deleted });
+                if (lineFrom + 1 < lineTo) {
+                    let keepEnd = !to.deleted;
+                    if (!keepEnd && r.lineTo < previous.lineCount && r.to === previous.offsetAt(r.lineTo)) {
+                        // Removing the following row at EOF can take the terminator after an intact folded body.
+                        const contentEnd = mapping.map(lineContentEnd(previous, r.lineTo - 1), "before");
+                        keepEnd = !contentEnd.deleted && contentEnd.offset === to.offset;
+                    }
+                    next = Object.freeze({ ...r, from: from.offset, to: to.offset, lineFrom, lineTo, collapsed: r.collapsed && !from.deleted && keepEnd });
+                }
             }
         }
         if (!next) continue;

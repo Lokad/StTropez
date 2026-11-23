@@ -899,19 +899,21 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             || command === "block-comment" && !language.blockComment) return false;
         cancelWord(); syncSelection();
         const capture = commandCapture(true), overtyped: number[] = [];
+        const folds = command === "delete-lines" || command === "insert-line-above" || command === "insert-line-below"
+            ? view.folding.getSnapshot().index : undefined;
         const opening = typeof command === "object" ? language.pairs.find(pair => pair.open === command.character) : undefined;
         const planner = planLanguageEdit(capture.buffer, capture.selectionSet, typeof command === "string" ? command : {
             character: command.character, canOvertype: at => {
                 if (!paired.has(at)) return false;
                 overtyped.push(at); return true;
             },
-        }, language);
+        }, language, folds);
         const acceptPairs = (edits: readonly TextEdit[]) => paired.accept(workspace.document(documentId), capture.revision, edits, capture.selectionSet, opening, overtyped);
         let planning = false;
         const job = { capture, purpose: "grapheme" as const, release: () => { if (!planning) planner.dispose(); } }; rangeCommand = job;
         const step = () => commandTurn(() => {
             if (rangeCommand !== job) return;
-            if (!validCommand(capture)) { cancelWord(); return; }
+            if (!validCommand(capture) || folds && !folds.sameProjection(view.folding.getSnapshot().index)) { cancelWord(); return; }
             let result;
             try {
                 planning = true;

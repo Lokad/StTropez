@@ -1,10 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { TextBuffer, createSelectionSet, resolveLanguageConfiguration, planLanguageEdit, Workspace } from "../src/index.ts";
+import { FoldIndex, TextBuffer, createFoldRegions, createSelectionSet, resolveLanguageConfiguration, planLanguageEdit, Workspace } from "../src/index.ts";
 import type { LanguageConfiguration, LanguageEditProgress, Selection } from "../src/index.ts";
 
 const configuration: LanguageConfiguration = { tabSize: 2, lineComment: "//", blockComment: { open: "/*", close: "*/" }, enter: "keep",
     pairs: [{ open: "{", close: "}" }, { open: '"', close: '"' }] };
+test("deleting the last visible line leaves the caret on the preceding collapsed header", () => {
+    const buffer = TextBuffer.from("head\r\ninner\r\nlast"), config = resolveLanguageConfiguration();
+    const folds = new FoldIndex(3, createFoldRegions(buffer, [{ id: "section", from: 0, to: 13, collapsed: true }]));
+    const at = buffer.length - 1, carets = createSelectionSet(buffer.length, [{ anchor: at, head: at }]);
+    const cursor = planLanguageEdit(buffer, carets, "delete-lines", config, folds);
+    const result = cursor.next(4096).result!;
+    assert.equal(buffer.apply(result.edits).buffer.text(), "head\r\ninner");
+    assert.equal(result.selectionSet.ranges[0]!.head, 3); cursor.dispose();
+    const mismatch = planLanguageEdit(buffer, carets, "delete-lines", config, new FoldIndex(2, []));
+    assert.throws(() => mismatch.next(), /planning buffer/); mismatch.dispose();
+});
+
 function plan(text: string, ranges: readonly Selection[], command: Parameters<typeof planLanguageEdit>[2], config = configuration) {
     const buffer = TextBuffer.from(text), selections = createSelectionSet(text.length, ranges, ranges.length - 1);
     const iterator = planLanguageEdit(buffer, selections, command, resolveLanguageConfiguration(config));

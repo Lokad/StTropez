@@ -433,7 +433,9 @@ edit in the view removes it if the selection has left that line. Undo restores i
 Pairing, comments and cancellable non-composing line-break input
 use the same transaction/transform path. Composition and noncancellable input use literal capture.
 
-For headless planning, use `resolveLanguageConfiguration` and `planLanguageEdit`. A character
+For headless planning, use `resolveLanguageConfiguration` and `planLanguageEdit`. Pass the
+view’s current fold index as the fifth argument to insert above, insert below or delete a collapsed
+block as one line. Omit it to plan in source lines. A character
 command can supply `canOvertype(offset)` to identify closers the caller inserted. Without it,
 typing a closer inserts the character. Advance the lazy
 cursor with `next(workBudget?)` or inspect it with `snapshot()`. Frozen progress gives `status`

@@ -198,7 +198,8 @@ test("mapped sparse folds agree with a naive row oracle across bounded structura
             model.edit({ documentId: source.documentId, expectedRevision: before.revision, origin: "host", edits: [{ from, to, insert }] }); verify();
             if (model.document(source.documentId).revision !== before.revision) {
                 const after = model.document(source.documentId);
-                const expected = revealSelectionFolds(after.buffer, mapFoldRegions(after.buffer, after.change!.mapping, prior), view.getSnapshot().selectionSet);
+                // A fresh array exercises full remapping without the retained range metadata.
+                const expected = revealSelectionFolds(after.buffer, mapFoldRegions(after.buffer, after.change!.mapping, [...prior], before.buffer), view.getSnapshot().selectionSet);
                 assert.deepEqual(view.folding.getSnapshot().regions, expected, `full row-resolution oracle at step ${step}`);
             }
             if (step % 7 === 0 && model.document(source.documentId).revision !== before.revision) {

@@ -26,6 +26,30 @@ test("whole-line gestures select a collapsed block for deletion, including at EO
     }
 });
 
+test("inserting beside a collapsed header and deleting its line keep typing on visible rows", async ({ page }) => {
+    await page.goto("/editing/");
+    const source = input(page), fold = page.locator("#primary .st-fold-button");
+    const reset = async () => {
+        await page.evaluate(() => {
+            const f = window.editingFixture;
+            f.setText("head\r\nbody\r\ntail"); f.folds([{ id: "section", from: 0, to: 12, collapsed: true }]);
+            f.select("primary", { anchor: 2, head: 2 }); f.focus("primary");
+        }); await ready(page);
+    };
+    for (const [shortcut, expected] of [["Control+Enter", ["head", "X", "tail"]], ["Control+Shift+Enter", ["X", "head", "tail"]]] as const) {
+        await reset(); await source.press(shortcut); await page.keyboard.type("X");
+        await expect(fold).toHaveAttribute("aria-expanded", "false");
+        await expect(page.locator("#primary .st-viewport-row")).toHaveText([...expected]);
+    }
+    await reset(); await source.press("Control+Shift+k"); await expect(page.locator("#primary .st-viewport-row")).toHaveText(["tail"]);
+    await page.keyboard.type("X"); await expect(page.locator("#primary .st-viewport-row")).toHaveText(["taXil"]);
+    await source.press("Control+z"); await source.press("Control+z");
+    expect(await page.evaluate(() => window.editingFixture.range(0, 16))).toBe("head\r\nbody\r\ntail");
+    await reset(); await source.press("ArrowDown"); await source.press("Control+Shift+k");
+    await expect(page.locator("#primary .st-viewport-row")).toHaveText(["head"]);
+    await page.keyboard.type("Y"); await expect(page.locator("#primary .st-viewport-row")).toHaveText(["heYad"]);
+});
+
 test("collapsing from a body caret moves it to the header for navigation and typing", async ({ page }) => {
     await page.goto("/editing/");
     await page.evaluate(() => {

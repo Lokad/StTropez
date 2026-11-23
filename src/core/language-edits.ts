@@ -1,4 +1,5 @@
 import { lineContentEnd, lineEnding } from "./newlines.ts";
+import { collapsedLineBlock, type FoldIndex } from "./folding.ts";
 import { createClosingBracketCursor } from "./bracket-matching.ts";
 import type { EditingPair, PairingContext, ResolvedLanguageConfiguration } from "./language-configuration.ts";
 import type { TextBuffer } from "./text-buffer.ts";
@@ -124,10 +125,16 @@ function touchedLines(buffer: TextBuffer, range: Selection) {
     return { first: buffer.lineAt(from), last: to > from && to === buffer.offsetAt(last) ? last - 1 : last };
 }
 
-function* lineGroups(buffer: TextBuffer, selections: SelectionSet, adjacent: boolean, state: MutablePlanning) {
+function* lineGroups(buffer: TextBuffer, selections: SelectionSet, adjacent: boolean, state: MutablePlanning, folds?: FoldIndex) {
     const groups: { first: number; last: number; firstRange: number; endRange: number }[] = [];
     for (const [i, range] of selections.ranges.entries()) {
         const lines = touchedLines(buffer, range), previous = groups.at(-1);
+        if (folds?.collapsedCount) {
+            const first = collapsedLineBlock(folds, lines.first);
+            const last = lines.first === lines.last ? first : collapsedLineBlock(folds, lines.last);
+            if (first) lines.first = first.lineFrom;
+            if (last) lines.last = last.lineTo - 1;
+        }
         if (previous && lines.first <= previous.last + Number(adjacent)) {
             previous.last = Math.max(previous.last, lines.last); previous.endRange = i + 1;
         } else groups.push({ ...lines, firstRange: i, endRange: i + 1 });
@@ -148,28 +155,31 @@ function* enterIndent(buffer: TextBuffer, from: number, to: number, config: Reso
 }
 
 function* insertOrDeleteLines(buffer: TextBuffer, selections: SelectionSet, command: LineInsertion | "delete-lines",
-    config: ResolvedLanguageConfiguration, unit: string, read: (from: number, to: number) => string, state: MutablePlanning): Generator<void, SelectionEditPlan> {
+    config: ResolvedLanguageConfiguration, unit: string, read: (from: number, to: number) => string, state: MutablePlanning, folds?: FoldIndex): Generator<void, SelectionEditPlan> {
     const edits: TextEdit[] = [], ranges: Selection[] = [];
     let delta = 0;
-    for (const group of yield* lineGroups(buffer, selections, command === "delete-lines", state)) {
+    for (const group of yield* lineGroups(buffer, selections, command === "delete-lines", state, folds)) {
         const start = buffer.offsetAt(group.first), end = lineContentEnd(buffer, group.last);
         let rowStart: number, rowLength = 0;
         if (command === "delete-lines") {
             const following = group.last + 1 < buffer.lineCount;
             const from = !following && group.first > 0 ? lineContentEnd(buffer, group.first - 1) : start;
             const to = following ? buffer.offsetAt(group.last + 1) : end;
-            const survivor = following ? group.last + 1 : group.first - 1;
+            const neighbor = following ? group.last + 1 : group.first - 1;
+            const survivor = neighbor < 0 ? neighbor : collapsedLineBlock(folds, neighbor)?.lineFrom ?? neighbor;
             rowLength = survivor < 0 ? 0 : lineContentEnd(buffer, survivor) - buffer.offsetAt(survivor);
             rowStart = delta + (!following && survivor >= 0 ? buffer.offsetAt(survivor) : start);
             if (from !== to) edits.push({ from, to, insert: "" });
             delta -= to - from;
         } else {
             const above = command === "insert-line-above", preceding = above ? group.first - 1 : group.last;
-            const at = above ? start : end, context = preceding < 0 ? 0 : lineContentEnd(buffer, preceding);
+            const beforeLine = above || group.last + 1 < buffer.lineCount && !!collapsedLineBlock(folds, group.last);
+            const at = beforeLine ? buffer.offsetAt(above ? group.first : group.last + 1) : end;
+            const context = preceding < 0 ? 0 : lineContentEnd(buffer, preceding);
             const indent = preceding < 0 ? "" : (yield* enterIndent(buffer, context, context, config, unit, read, state)).inner;
-            const ending = lineEnding(buffer, Math.max(0, preceding)), insert = above ? indent + ending : ending + indent;
+            const ending = lineEnding(buffer, Math.max(0, preceding)), insert = beforeLine ? indent + ending : ending + indent;
             edits.push({ from: at, to: at, insert });
-            rowStart = at + delta + indent.length + (above ? 0 : ending.length);
+            rowStart = at + delta + indent.length + (beforeLine ? 0 : ending.length);
             delta += insert.length; bulk(state, insert.length);
         }
         for (let i = group.firstRange; i < group.endRange; i++) {
@@ -312,14 +322,15 @@ function* indent(buffer: TextBuffer, selections: SelectionSet, config: ResolvedL
 
 /** Lazy, DOM-free planning. Budgets count work, not milliseconds; only ready publishes a complete proposal. */
 export function planLanguageEdit(buffer: TextBuffer, selections: SelectionSet, command: EditingCommand | TypedCharacter,
-    config: ResolvedLanguageConfiguration): LanguageEditCursor {
+    config: ResolvedLanguageConfiguration, folds?: FoldIndex): LanguageEditCursor {
     const state: MutablePlanning = { phase: "validate", workUnits: 0, readUnits: 0, bulkWorkUnits: 0, checkpoint: 0 };
-    return kernelCursor(plan(buffer, selections, command, config, state), () => state.workUnits,
+    return kernelCursor(plan(buffer, selections, command, config, state, folds), () => state.workUnits,
         (status, result, failure) => Object.freeze({ status, phase: state.phase, workUnits: state.workUnits,
             readUnits: state.readUnits, bulkWorkUnits: state.bulkWorkUnits, result, failure }), "Language edit");
 }
 function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCommand | TypedCharacter,
-    config: ResolvedLanguageConfiguration, state: MutablePlanning): Generator<void, SelectionEditPlan> {
+    config: ResolvedLanguageConfiguration, state: MutablePlanning, folds?: FoldIndex): Generator<void, SelectionEditPlan> {
+    if (folds && folds.lineCount !== buffer.lineCount) throw new RangeError("Fold index must cover the planning buffer.");
     bulk(state, selections.ranges.length);
     const normalized = createSelectionSet(buffer.length, selections.ranges, selections.primary);
     if (checkpoint(state)) yield;
@@ -338,7 +349,7 @@ function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCom
     const reader = { lineCount: buffer.lineCount, offsetAt: (line: number) => buffer.offsetAt(line), slice: read };
     const unit = config.insertSpaces ? " ".repeat(config.tabSize) : "\t", edits: TextEdit[] = [];
     if (command === "insert-line-above" || command === "insert-line-below" || command === "delete-lines")
-        return yield* insertOrDeleteLines(buffer, selections, command, config, unit, read, state);
+        return yield* insertOrDeleteLines(buffer, selections, command, config, unit, read, state, folds);
     if (command === "move-line-up" || command === "move-line-down" || command === "copy-line-up" || command === "copy-line-down")
         return yield* shiftLines(buffer, selections, command, read, state);
     if (command === "indent") return yield* indent(buffer, selections, config, read, state);
