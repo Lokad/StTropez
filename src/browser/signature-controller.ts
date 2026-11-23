@@ -129,7 +129,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
     function followArgument(text: string, after: DocumentViewSnapshot) {
         const previous = cell.get(), { anchor, signature } = previous, caret = after.selection.head;
         if (!job?.typing || !anchor || !signature || after.selectionSet.ranges.length !== 1
-            || after.selection.anchor !== caret || caret !== anchor.offset + text.length || !/^[\p{ID_Continue}$, \t]+$/u.test(text)) return;
+            || after.selection.anchor !== caret || caret !== anchor.offset + text.length || /[()[\]{};\r\n\u2028\u2029]/u.test(text)) return;
         const change = workspace.document(view.documentId).change;
         if (change?.previousRevision !== anchor.revision || change.origin !== "human" || change.kind !== "typing" || change.edits.length !== 1) return;
         const edit = change.edits[0]!;
@@ -158,7 +158,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         if (!trigger && !armed) return;
         const prior = queued?.context;
         const context = trigger ? { triggerKind: 2 as const, triggerCharacter: trigger, isRetrigger: prior?.isRetrigger ?? armed } : prior ?? changed;
-        followArgument(detail.text, after);
+        if (!trigger || trigger === ",") followArgument(detail.text, after);
         armed = true; schedule(context, after);
     }
     function bind(id: string, label: string, keys: string[], enabled: () => boolean, run: () => void | boolean) {

@@ -345,10 +345,10 @@ cycle through overloads. Escape closes the topmost popup. A higher-priority comp
 these keys first.
 
 Subscribe to the controller and render `getSnapshot().signature`. Its label and parameter offsets
-describe the highlighted text. Use the snapshot's `anchor` to position the popup. When you type
-an argument name, horizontal whitespace or a comma at the same caret, a `pending` snapshot keeps
-the last signature at the new position. A comma clears the previous parameter highlight until the
-provider identifies the next one. Moving the caret or opening a nested call clears the previous
+describe the highlighted text. Use the snapshot's `anchor` to position the popup. While you type
+an argument expression such as `item.price` at the same caret, a `pending` snapshot keeps the last
+signature at the new position. A comma clears the previous parameter highlight until the provider
+identifies the next one. Moving the caret or opening a nested call clears the previous
 signature and requests fresh information. Blur, composition and `cancel()` dismiss help.
 Disposing the editor also disposes its controller.
 

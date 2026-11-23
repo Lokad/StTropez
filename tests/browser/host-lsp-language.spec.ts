@@ -619,7 +619,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
             const { presentation, scheduled } = window.hostFixture.snapshot().bindings.signature;
             input.setAttribute("data-refresh-parameter", scheduled ? presentation.signature?.label ?? "" : "");
         }), { once: true }), typedTextEvent);
-        replies.hold(); await field(page).pressSequentially("x");
+        replies.hold(); await field(page).pressSequentially("x.");
         await expect(field(page)).toHaveAttribute("data-refresh-parameter", /keys: readonly string\[\]/);
         await expect.poll(replies.waiting).toBe(true);
         await expect(parameter).toHaveText("keys: readonly string[]");
