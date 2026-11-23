@@ -84,6 +84,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     const referencePane = pane(), workingPane = pane();
     root.append(panes); host.append(root);
     let state = controller.getSnapshot();
+    let referenceBuffer = state.baseline?.buffer;
     let epoch = -1, scheduled = false, disposed = false;
     let measuredGeneration = -1, steps = 0, advances = 0, maxStepMs = 0, totalStepMs = 0;
     let decoratedGeneration = -1, decoratedStatus: string | undefined;
@@ -116,7 +117,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     const paneOptions = { ...(options.settings ? { settings: options.settings } : {}), ...(options.requestLine ? { requestLine: options.requestLine } : {}) };
     const presentation = (side: "baseline" | "working") => ({
         foldContainsChange: (buffer: TextBuffer, from: number, to: number) =>
-            state[side]?.buffer === buffer && firstHunkInLines(side, from, to) !== undefined,
+            (side === "baseline" ? referenceBuffer : state.working?.buffer) === buffer && firstHunkInLines(side, from, to) !== undefined,
         gutterLineCount: () => Math.max(state.working?.buffer.lineCount ?? 0, state.baseline?.buffer.lineCount ?? 0),
     });
     let workingMount: MountedTextEditor;
@@ -199,7 +200,12 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
             referenceDiff = differences(editor, "baseline");
             try { pair.setReference(mounted); } catch (error) { editor.dispose(); throw error; }
         } else if (!state.baseline && referenceViewport()) clearReference();
-        epoch = state.baseline?.epoch ?? -1;
+        const nextEpoch = state.baseline?.epoch ?? -1;
+        if (epoch !== nextEpoch) {
+            // An equal saved reference keeps the editor's existing document buffer.
+            referenceBuffer = display ? workspace.document(display.documentId).buffer : state.baseline?.buffer;
+            epoch = nextEpoch;
+        }
         if (root.dataset.status !== state.status) root.dataset.status = state.status;
         alignment.update(); scroll.update();
         const generation = String(state.generation); if (root.dataset.generation !== generation) root.dataset.generation = generation;

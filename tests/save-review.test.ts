@@ -98,12 +98,19 @@ test("adopting a saved buffer publishes the revision, authority and mapped view 
     assert.deepEqual(observed, [{ edits: [{ from: 0, to: 0, insert: "note\n" }], source: "review", saved: "v2",
         dirty: false, selection: { anchor: 18, head: 21, anchorAffinity: "after", headAffinity: "before" }, folded: 1 }]);
     assert.equal(workspace.document(source.documentId).buffer, saved);
-    // An equal adoption advances the authority revision and preserves existing undo entries.
-    workspace.adoptSaved(source.id, { text: TextBuffer.from("note\nhead\n  child\nend"), serverVersion: "v3", history: "record" });
-    assert.equal(workspace.undo({ documentId: source.documentId, expectedRevision: 3 }).applied, true);
+    const doc = workspace.document(source.documentId), selection = view.getSnapshot(), folding = view.folding.getSnapshot();
+    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "review"), close = workspace.tabs.beginClose(tab);
+    assert.deepEqual(workspace.adoptSaved(source.id, { text: TextBuffer.from("note\nhead\n  child\nend"), serverVersion: "v3", history: "record", expectedRevision: 2 }),
+        { applied: true, revision: 2 });
+    assert.equal(workspace.document(source.documentId), doc); assert.equal(view.getSnapshot(), selection); assert.equal(view.folding.getSnapshot(), folding);
+    assert.equal(source.metadata.getSnapshot().serverVersion, "v3"); assert.equal(close.complete("close"), true);
+    assert.equal(workspace.undo({ documentId: source.documentId, expectedRevision: 2 }).applied, true);
     assert.equal(workspace.document(source.documentId).buffer, old.buffer);
     assert.equal(source.metadata.getSnapshot().dirty, true);
-    assert.equal(workspace.redo({ documentId: source.documentId, expectedRevision: 4 }).applied, true);
+    assert.deepEqual(workspace.adoptSaved(source.id, { text: saved, serverVersion: "late", history: "reset", expectedRevision: 2 }),
+        { applied: false, reason: "stale-revision" });
+    assert.equal(workspace.document(source.documentId).buffer, old.buffer); assert.equal(source.metadata.getSnapshot().serverVersion, "v3");
+    assert.equal(workspace.redo({ documentId: source.documentId, expectedRevision: 3 }).applied, true);
     assert.equal(source.metadata.getSnapshot().dirty, false);
     workspace.adoptSaved(source.id, { text: saved, serverVersion: "v4", history: "reset" });
     assert.equal(workspace.observeHistory(source.documentId).getSnapshot().undoDepth, 0);
@@ -130,6 +137,23 @@ test("reviewed documents adopt together, reject a stale participant and share Un
         [["local", "v2", true], ["helper", "v2", true]]);
     assert.equal(workspace.redo({ documentId: source.documentId, expectedRevision: 3 }).applied, true);
     for (const file of [source, helper]) assert.equal(file.metadata.getSnapshot().dirty, false);
+});
+
+test("a reviewed batch can mark local text saved while changing another document", () => {
+    const { workspace, source, edit } = fixture(); edit("local");
+    const helper = workspace.createTextResource({ scope: "review", resource: "other", variant: "working" }, "Other", { value: "old" });
+    const doc = workspace.document(source.documentId), versions = [
+        { resourceId: helper.id, text: "new", serverVersion: "v2", expectedRevision: 0 },
+        { resourceId: source.id, text: doc.buffer, serverVersion: "v2", expectedRevision: doc.revision },
+    ];
+    const changes: string[] = [];
+    const stop = workspace.onDocumentChange(source.documentId, () => changes.push("source"));
+    assert.deepEqual(workspace.adoptSavedDocuments(versions, { history: "record" }), { applied: true,
+        revisions: [{ documentId: helper.documentId, revision: 1 }, { documentId: source.documentId, revision: doc.revision }] });
+    assert.equal(source.metadata.getSnapshot().dirty, false); assert.equal(workspace.document(source.documentId), doc);
+    assert.ok(workspace.undo({ documentId: helper.documentId, expectedRevision: 1 }).applied);
+    assert.equal(workspace.document(helper.documentId).text(), "old"); assert.equal(workspace.document(source.documentId), doc);
+    assert.deepEqual(changes, []); stop();
 });
 
 test("saved text respects outstanding saves, reload reservations and dirty read-only work", () => {

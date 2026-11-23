@@ -51,12 +51,13 @@ test("independent comparison modules share workspace identity and release retain
         const defaultWorking = one.activePane() === one.panes.working;
         const folded = editor.commands.run("fold.collapse-all"), activeReference = one.activePane() === editor && editor.getSnapshot().focused;
         const retired = one.hunkAt(0)!, next = initial.buffer.replace(initial.buffer.length, initial.buffer.length, "\nneedle");
-        const refresh = (version: string) => one.controller.beginRefresh().complete({ buffer: next, version });
+        const refresh = (version: string, buffer = next) => one.controller.beginRefresh().complete({ buffer, version });
         if (!refresh("two")) throw new Error("Reference refresh failed.");
-        // A second authority revision can share the same buffer while discovery for the first is pending.
-        if (!refresh("three")) throw new Error("Equal reference refresh failed.");
         const revision = workspace.document(editor.view.documentId).revision;
+        if (!refresh("three", TextBuffer.from(next.text()))) throw new Error("Equal reference refresh failed.");
+        if (workspace.document(editor.view.documentId).revision !== revision) throw new Error("Equal refresh changed the text revision.");
         await wait(() => one.getSnapshot().canNavigate && find.getSnapshot().count === 2 && folds.getSnapshot().status === "ready" && folds.getSnapshot().revision === revision);
+        await wait(() => !!editor.element.querySelector('.st-fold-summary[data-label*="contains changes"]'));
         const afterRefresh = { stable: one.panes.reference === editor, oldText: initial.text(), text: workspace.document(editor.view.documentId).text(),
             retiredRejected: !retired.select(), rulers: editor.settings().columnRulers, query: find.getSnapshot().query,
             folded, collapsed: folds.getSnapshot().collapsed, defaultWorking, activeReference };

@@ -684,8 +684,8 @@ export class Workspace {
     }
 
     /** Install an authoritative text version and its saved baseline in one publication. */
-    adoptSaved(id: ResourceId, version: Readonly<{ text: string | TextBuffer; serverVersion: string | null; history: "record" | "reset"; source?: string }>): EditResult {
-        const result = this.adoptSavedDocuments([{ resourceId: id, text: version.text, serverVersion: version.serverVersion }], version);
+    adoptSaved(id: ResourceId, version: Readonly<{ text: string | TextBuffer; serverVersion: string | null; history: "record" | "reset"; expectedRevision?: number; source?: string }>): EditResult {
+        const result = this.adoptSavedDocuments([{ ...version, resourceId: id }], version);
         return result.applied ? { applied: true, revision: result.revisions[0]!.revision } : result;
     }
     /** Install related saved versions together. Undo restores the previous working text across the batch. */
@@ -695,7 +695,8 @@ export class Workspace {
         if (!versions.length) throw new RangeError("At least one saved document is required.");
         if ((options.source !== undefined && typeof options.source !== "string") || (options.history !== "record" && options.history !== "reset"))
             throw new TypeError("Invalid saved text options.");
-        const documents = new Set<DocumentId>(), prepared: PreparedText[] = [], history: HistoryChange[] = [];
+        const documents = new Set<DocumentId>(), history: HistoryChange[] = [];
+        const prepared: (PreparedText | Pick<PreparedText, "record" | "buffer" | "state">)[] = [];
         for (const version of versions) {
             const record = this.records.get(version.resourceId);
             if (!record?.documentId) return { applied: false, reason: "missing-document" };
@@ -708,23 +709,26 @@ export class Workspace {
             if (state.metadata.dirty && !state.metadata.capabilities.edit.includes("host")) return { applied: false, reason: "read-only" };
             if (version.serverVersion !== null && typeof version.serverVersion !== "string") throw new TypeError("Invalid saved text version.");
             const before = record.buffer, { buffer, mapping, changedUnits: units } = replaceDocumentBuffer(before, version.text);
-            // Reset may install an equal buffer. Recorded undo entries need their exact after-buffer.
-            const after = options.history === "reset" && typeof version.text !== "string" ? version.text : buffer;
-            const text = this.prepareText(record, after, mapping, undefined, { ...state.metadata, serverVersion: version.serverVersion,
-                dirty: false, saveStatus: "idle", failure: null });
+            const metadata: ResourceMetadata = { ...state.metadata, serverVersion: version.serverVersion, dirty: false, saveStatus: "idle", failure: null };
+            if (!units) {
+                prepared.push({ record, buffer: before, state: sameMetadata(state.metadata, metadata) ? state : withMetadata(state, metadata) });
+                continue;
+            }
+            const text = this.prepareText(record, buffer, mapping, undefined, metadata);
             prepared.push(text);
-            if (units && options.history === "record") history.push({ documentId: record.documentId, before, after, mapping, units,
+            if (options.history === "record") history.push({ documentId: record.documentId, before, after: buffer, mapping, units,
                 initiatingView: null, selections: historySelections(text) });
         }
         for (const id of documents) { if (options.history === "reset") this.history.forget(id); else this.history.seal(id); }
         if (history.length) this.history.record(history, "host", "canonical");
-        const changed = new Set<Store<unknown>>(), transaction = ++this.nextTransaction;
+        const changed = new Set<Store<unknown>>(); let transaction: number | undefined;
         const revisions = prepared.map(text => {
             text.record.savedBuffer = text.buffer;
-            this.commitText(text, "host", "canonical", transaction, changed, options.source);
+            if ("mapping" in text) this.commitText(text, "host", "canonical", transaction ??= ++this.nextTransaction, changed, options.source);
+            else if (text.record.state.get() !== text.state) this.setRecord(text.record, text.state, changed);
             return Object.freeze({ documentId: text.record.documentId!, revision: text.state.revision });
         });
-        this.syncHistory(changed); this.publish(changed);
+        this.syncHistory(changed); if (changed.size) this.publish(changed);
         return Object.freeze({ applied: true, revisions: Object.freeze(revisions) });
     }
 

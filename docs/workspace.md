@@ -381,10 +381,12 @@ lease.
 ### Save and conflicts
 
 To install text that the host already has on disk or at the server, call `workspace.adoptSaved(resourceId,
-{ text, serverVersion, history })`. Supply a string or `TextBuffer`. Listeners see the new revision, clean
-state, server version and mapped selections and folds together. `history: "record"` makes a changed
-value undoable. `"reset"` clears history. An equal adoption advances the revision and preserves undo
-when recording. Pending saves, reload reservations, edit locks and unready documents refuse adoption.
+{ text, serverVersion, history })`. Supply a string or `TextBuffer`. Include `expectedRevision` when
+the saved version came from a review or delayed read. A stale revision refuses the entire adoption.
+Listeners see changed text, clean state, server version and mapped selections and folds together.
+Equal text keeps its buffer, revision and view state while the saved metadata updates.
+`history: "record"` makes a changed value undoable. `"reset"` clears history even for equal text.
+Pending saves, reload reservations, edit locks and unready documents refuse adoption.
 A clean read-only document can receive a saved version. Replacing a dirty document requires host edit permission.
 
 Use `workspace.adoptSavedDocuments(versions, { history: "record" })` when a saved revision spans
