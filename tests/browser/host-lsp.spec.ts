@@ -188,6 +188,17 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         await expect.poll(() => source(page)).toBe("const sample = 1;"); expect((await snapshot(page)).history.undoDepth).toBe(depth + 1);
         await field(page).press("Control+z"); expect(await source(page)).toBe("const saMORE = 1;");
         await seed(page, "const sMORE = 1;", 7);
+        hold = true; await pending(); await field(page).press("Enter");
+        const blockedDepth = (await snapshot(page)).history.undoDepth;
+        const sibling = field(page, "Secondary source");
+        await sibling.evaluate(node => node.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
+        await complete(); await expect(page.getByRole("option")).toHaveCount(0);
+        await sibling.evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { data: "", bubbles: true })));
+        await ready(page); expect(await source(page)).toBe("const saMORE = 1;");
+        expect((await snapshot(page)).history.undoDepth).toBe(blockedDepth); await expect(field(page)).toBeFocused();
+        await offer(page); await page.getByRole("option", { name: "sample", exact: true }).getByRole("button").click();
+        await button(page, "Replace completion").click(); await expect.poll(() => source(page)).toBe("const sample = 1;");
+        await seed(page, "const sMORE = 1;", 7);
         hold = true; await pending();
         const retired = await page.evaluateHandle(() => window.hostFixture.providerState()!.completionAt(0)!);
         await field(page).press("Tab"); await field(page, "Secondary source").focus(); await field(page).focus(); await complete();

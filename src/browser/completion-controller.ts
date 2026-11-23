@@ -210,15 +210,15 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
         const item = captured.visible[captured.choice];
         if (!item?.resolve || captured.pendingList || captured.resolution?.item === item || !current(captured) || !bindingCurrent(captured)) return;
         cancelResolution(captured); const resolution: NonNullable<Job["resolution"]> = { item, revision: captured.revision }; captured.resolution = resolution;
-        const valid = (batch = captured.batch) => {
-            if (job === captured && captured.resolution === resolution && !indentationCurrent(captured.indentation)) expire("Completion expired after indentation settings changed.");
-            return job === captured && captured.resolution === resolution && captured.visible[captured.choice] === item && captured.revision === resolution.revision && current(captured) && !!batch?.isBindingCurrent();
-        };
         publish("Resolving the selected completion.");
         void (async () => {
             resolution.call = completion.resolve(captured.batch!, item); const value = await resolution.call.result;
             // Resolution publishes a replacement batch; validate the view before adopting its identity.
-            if (!valid(value.batch) || !value.batch.isCurrent()) return;
+            if (job !== captured || captured.resolution !== resolution) return;
+            if (captured.visible[captured.choice] !== item || captured.revision !== resolution.revision || !current(captured) || !value.batch.isCurrent()) {
+                expire(indentationCurrent(captured.indentation) ? "Completion expired. Request fresh choices." : "Completion expired after indentation settings changed.");
+                return;
+            }
             captured.batch = value.batch; captured.choices = value.batch;
             const resolved = value.item, acceptance = captured.acceptance;
             if (!resolved) {

@@ -240,7 +240,9 @@ offer. Completion documentation is literal text.
 
 Use `item.accept(mode)` when the user chooses an item that may be resolving. A `true`
 return means the controller accepted the request. Typing, selection changes, blur, cancellation or lost permission
-clears queued acceptance. Typing an advertised commit character while the item is unresolved inserts
+clears queued acceptance. If the editor is busy or the host declines the capture when a resolve
+reply arrives, the list closes. The user can request completions again once the editor is ready.
+Typing an advertised commit character while the item is unresolved inserts
 the character normally and closes the list. Once ready, the item and its commit character form one
 transaction. If the provider also advertises the character as a completion trigger, automatic
 completion requests the next list at the resulting caret. Commit characters must be one UTF-16 unit.
