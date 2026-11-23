@@ -139,7 +139,9 @@
     }
     .st-comparison-padding { box-sizing: border-box; border-left: 3px dotted GrayText; }
 }
-.st-comparison-preview { display: grid; flex: none; max-height: min(8rem, 30%); overflow: auto; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .5rem; padding: .5rem; }
+.st-comparison-preview { display: grid; flex: none; box-sizing: border-box; height: min(4.5rem, 24%); align-content: start; overflow: auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .5rem; padding: .5rem; }
+.st-comparison-preview > span { grid-column: 1 / -1; }
 .st-comparison-preview[hidden] { display: none; }
 .st-comparison-preview pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 700px) { .st-comparison-panes, .st-comparison-preview { grid-template-columns: minmax(0, 1fr); } }

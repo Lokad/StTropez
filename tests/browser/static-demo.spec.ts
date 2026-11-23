@@ -52,7 +52,8 @@ test("resizing Changes keeps both editors and the selected change preview within
     await page.getByRole("button", { name: "Next change", exact: true }).click();
     const panel = page.locator("#panel-content");
     await expect(panel.locator(".st-comparison-preview")).toBeVisible();
-    for (const [width, height] of [[1920, 1080], [1280, 600], [680, 900]] as const) {
+    const panes = panel.locator(".st-viewport"), working = page.getByRole("textbox", { name: "Comparison working source" });
+    for (const [width, height] of [[1920, 1080], [1280, 360], [680, 900], [375, 600]] as const) {
         await page.setViewportSize({ width, height });
         await expect.poll(() => panel.evaluate(root => {
             const comparison = root.querySelector(".st-comparison")!;
@@ -64,13 +65,25 @@ test("resizing Changes keeps both editors and the selected change preview within
                 outerScroll: root.scrollHeight - root.clientHeight,
                 fillsHeight: Math.abs(box.top - right!.bottom - gap) < 1,
                 stacked: right!.top >= left!.bottom,
+                twoLinesFit: panes.every(pane => {
+                    const row = pane.querySelector(".st-viewport-row")?.getBoundingClientRect();
+                    return row && row.height > 0 && pane.clientHeight >= 2 * row.height;
+                }),
                 previewHit: preview.contains(document.elementFromPoint(box.left + box.width / 4, box.top + box.height / 2)),
                 panesHit: panes.map(pane => { const p = pane.getBoundingClientRect();
                     return pane.contains(document.elementFromPoint(p.left + p.width / 2, p.bottom - 2)); })
             };
         }), `Changes at ${width} × ${height}`).toEqual({
-            outerScroll: 0, fillsHeight: true, stacked: width < 700, previewHit: true, panesHit: [true, true]
+            outerScroll: 0, fillsHeight: true, stacked: width < 700, twoLinesFit: true, previewHit: true, panesHit: [true, true]
         });
+        const heights = () => panes.evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
+        const changed = await heights();
+        await working.press("Control+Home"); await working.press("ArrowDown"); await working.press("ArrowDown");
+        await expect(panel.locator(".st-comparison-preview span")).toBeVisible();
+        expect(await heights()).toEqual(changed);
+        await page.getByRole("button", { name: "Next change", exact: true }).click();
+        await expect(panel.locator(".st-comparison-preview pre").first()).toBeVisible();
+        expect(await heights()).toEqual(changed);
     }
 });
 

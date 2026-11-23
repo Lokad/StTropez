@@ -11,8 +11,10 @@ Pass the working document and its `ComparisonBaseline`. Give the container a hei
 editor stylesheet. [Page setup](getting-started.md#open-the-first-editor)
 
 The panes fill the space between the controls and the selected-change preview. At window widths
-of 700 CSS pixels or less they stack and share the available height. Each pane scrolls independently
-of the preview.
+of 700 CSS pixels or less they stack and share the available height. While the files differ,
+the preview has a fixed share of the panel, capped at 4.5 rem. Moving the caret between changed
+and unchanged lines keeps both panes the same height. Long excerpts scroll inside the preview.
+Identical files use the full space for the panes.
 
 ```ts
 import type { ComparisonBaseline, DocumentId, Workspace } from "sttropez";

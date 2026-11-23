@@ -34,8 +34,9 @@ export function mountComparisonControls(
     const referenceHeading = owner.createElement("h3"), workingHeading = owner.createElement("h3");
     referencePane.prepend(referenceHeading); workingPane.prepend(workingHeading);
     const preview = owner.createElement("div"), referencePreview = owner.createElement("pre"), workingPreview = owner.createElement("pre");
-    preview.className = "st-comparison-preview"; preview.setAttribute("aria-label", "Selected change with visible whitespace");
-    preview.append(referencePreview, workingPreview); comparison.element.prepend(controls); comparison.element.append(preview);
+    preview.className = "st-comparison-preview"; preview.setAttribute("aria-label", "Change preview");
+    const previewHint = owner.createElement("span"); previewHint.textContent = "Select a changed line to preview it.";
+    preview.append(referencePreview, workingPreview, previewHint); comparison.element.prepend(controls); comparison.element.append(preview);
     const setText = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text; };
     const visible = (value: string) => value.replaceAll(" ", "·").replaceAll("\t", "⇥").replaceAll("\r", "␍").replaceAll("\n", "↵\n");
     let rendered: TextComparisonSnapshot | undefined, hasCompletedResult = false;
@@ -71,7 +72,9 @@ export function mountComparisonControls(
         const detail = described?.lineEndingOnly ? " · line endings only" : described?.whitespaceOnly ? " · whitespace only" : "";
         const result = state.status === "ready" ? count ? (hunk ? `Change ${selected! + 1} of ${count}` : count === 1 ? "1 change" : `${count} changes`) + detail : "No changes" : state.failure ?? `Comparison ${state.status}`;
         setText(message, result + (layout.status === "failed" ? " · row alignment unavailable" : ""));
-        preview.hidden = !hunk;
+        preview.hidden = state.status !== "ready" || count === 0;
+        previewHint.hidden = !!hunk; referencePreview.hidden = workingPreview.hidden = !hunk;
+        if (old?.selectedHunk !== selected) { preview.scrollTop = 0; preview.scrollLeft = 0; }
         if (hunk && state.baseline && state.working) {
             const text = (side: "baseline" | "working") => {
                 const range = hunk[side], buffer = side === "baseline" ? state.baseline!.buffer : state.working!.buffer;

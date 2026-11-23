@@ -175,3 +175,15 @@ button.demo-source-note { pointer-events: auto; cursor: pointer; text-decoration
     main:not(.collapsed):not(.reviewing) { min-height: 7.5rem; grid-template-rows: minmax(2.5rem, 1fr) minmax(4.5rem, 1fr); }
     #panels { padding-block: 2px; }
 }
+@media (max-height: 650px) {
+    body:has(main.reviewing) :is(header, .intro, footer) { padding-block: 4px; }
+    body:has(main.reviewing) :is(.toolbar > button, .toolbar > label select, .toolbar-menu > summary, #panels button) { padding: 4px 7px; }
+    body:has(main.reviewing) #files button { padding-block: 5px; }
+    main.reviewing #panels { padding-block: 2px; }
+    .demo-review-labels { height: 24px; grid-template-rows: 1fr; }
+    .demo-review-hint { display: none; }
+    .st-comparison, .st-comparison-panes { gap: 4px; }
+    .st-comparison-controls { padding-block: 2px; gap: 4px; }
+    .st-comparison-controls button, .st-comparison-preview { padding-block: 3px; }
+    .st-comparison-preview { max-height: 3rem; }
+}
