@@ -54,7 +54,8 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     const overlay = mountAnchoredOverlay(editor, popup, { onFocusedAnchorHidden: editor.focus });
     scope.defer(overlay.dispose);
     let open = false;
-    const dismiss = () => { open = false; overlay.hide(); tools.cancel(); };
+    const hide = () => { open = false; overlay.hide(); };
+    const dismiss = () => { hide(); tools.cancel(); };
     const canApply = (preview: CodeActionPreview | null) =>
         !!preview?.canApply && (!preview.command || commands.canRunAction(editor));
     const anchor = () => {
@@ -101,6 +102,9 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     scope.defer(tools.subscribe(render));
     scope.defer(commands.state.subscribe(() => { if (tools.getSnapshot().preview?.command) render(); }));
     scope.defer(editor.view.subscribe(anchor));
+    scope.defer(workspace.onDocumentChange(file.resource.documentId, change => {
+        if (open && change.origin === "human") hide();
+    }));
     popup.addEventListener("pointerdown", event => { if (event.target === apply) event.preventDefault(); }, { signal: events.signal });
     choices.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });
     close.addEventListener("click", () => { dismiss(); editor.focus(); }, { signal: events.signal });

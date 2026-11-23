@@ -83,7 +83,7 @@ test("explicit lazy fix activation applies once after resolution and expires wit
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await page.getByRole("button", { name: /main\.ts:\d+:\d+ · TS2552:/ }).click(); await source.press("Control+."); await choice.click(); await expect.poll(() => resolutions).toBe(2);
     await source.press("Control+End"); await page.keyboard.insertText("\n// Keep later input"); release!();
-    await expect(popup.getByRole("button", { name: "Apply fix", exact: true })).toBeDisabled();
+    await expect(popup).toBeHidden(); await expect(source).toBeFocused();
     await expect(page.locator("#editor")).toContainText("calculateTotl(cart, 0.1)"); await expect(page.locator("#editor")).toContainText("// Keep later input");
 });
 

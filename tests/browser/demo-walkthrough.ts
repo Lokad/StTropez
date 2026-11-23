@@ -62,10 +62,12 @@ export async function runDemoActions(page: Page, url = "/") {
     await apply.hover(); await page.mouse.up(); await retiredApply.evaluate(confirm => confirm()); await retiredApply.dispose();
     await expect(apply).toBeEnabled();
     await expect(page.locator("#editor")).toContainText("import { exampleRate }");
-    await source.press("Control+End"); await page.keyboard.insertText("// Keep this later edit");
+    await source.press("Control+End");
     await expect(actions.getByRole("button", { name: "Apply fix", exact: true })).toBeDisabled();
     await expect(actions).toContainText("The code or selection changed");
-    await source.press("Enter"); await expect(actions).toBeHidden(); await expect(source).toBeFocused();
+    await page.keyboard.insertText("// Keep this later edit");
+    await expect(actions).toBeHidden(); await expect(source).toBeFocused();
+    await source.press("Enter");
     await source.pressSequentially("// Separate line");
     await expect(page.locator("#editor .st-viewport-row").filter({ hasText: "// Separate line" })).toHaveText("// Separate line");
     await source.press("Control+."); await choice.click();
