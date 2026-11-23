@@ -92,7 +92,13 @@ test("a retained diagnostic, swatch and point follow typing and history in a 100
                 offset: span && editor.viewport.hitTest(span.getBoundingClientRect().left + 1, span.getBoundingClientRect().top + 5)?.offset,
                 revision: workspace.document(id).revision, start };
         };
-        Object.assign(window, { inspectMarks: stamp, clearMarks: () => { layer.dispose(); editor.viewport.flush(); return layer.set(workspace.document(id).revision, []); } });
+        Object.assign(window, { inspectMarks: stamp, indentMany: () => {
+            const doc = workspace.document(id);
+            const edits = Array.from({ length: 20_000 }, (_, i) => {
+                const at = doc.buffer.offsetAt(i * 5); return { from: at, to: at, insert: "  " };
+            });
+            return workspace.edit({ documentId: id, expectedRevision: doc.revision, edits, origin: "human" }).applied;
+        }, clearMarks: () => { layer.dispose(); editor.viewport.flush(); return layer.set(workspace.document(id).revision, []); } });
         return { visits, changed, text, label: label.dataset.label, markup: !!label.querySelector("b"),
             width: parseFloat(getComputedStyle(host.querySelector(".missing-again")!, "::after").width), replaced: !mark.isConnected,
             color: getComputedStyle(swatch).backgroundColor };
@@ -109,6 +115,10 @@ test("a retained diagnostic, swatch and point follow typing and history in a 100
     await expect.poll(inspect).toMatchObject({ text: "paint red", word: "red", offset: start + 6, revision: 2 });
     await input.press("Control+y");
     await expect.poll(inspect).toMatchObject({ text: "// paint red", word: "red", offset: start + 9, revision: 3 });
+    expect(await page.evaluate(() => (window as unknown as { indentMany(): boolean }).indentMany())).toBe(true);
+    await input.press("Home"); await page.keyboard.insertText("!");
+    await expect.poll(inspect).toMatchObject({ text: expect.stringContaining("!"), word: "red", offset: start + 20_012, revision: 5 });
+    await expect(page.locator(".missing-again")).toHaveCount(1);
     expect(await page.evaluate(() => (window as unknown as { clearMarks(): boolean }).clearMarks())).toBe(false);
     await expect(page.locator(".swatch, .test-diagnostic, .missing-again")).toHaveCount(0);
 });

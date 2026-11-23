@@ -1,5 +1,5 @@
 import { partitionPoint } from "../core/bound-search.ts";
-import { composePositionMaps } from "../core/positions.ts";
+import { composePositionMaps, positionMapSize } from "../core/positions.ts";
 import type { PositionMapping } from "../core/positions.ts";
 import type { DocumentChange, DocumentSnapshot } from "../core/workspace.ts";
 import type { InlineDecoration, LineClass, LineDecorator, PresentedLine } from "./viewport.ts";
@@ -30,7 +30,7 @@ function sameRange(a: InlineDecoration, b: InlineDecoration): boolean {
     return aKeys.length === Object.keys(b.properties ?? {}).length && aKeys.every(key => a.properties?.[key] === b.properties?.[key]);
 }
 
-/** Sort once at publication. A keystroke advances the coordinate map without visiting the ranges. */
+/** Keep short edit maps; move the ranges themselves when a map would cost more. */
 class RangeIndex {
     private readonly ends: number[] = [];
     private readonly ranges: InlineDecoration[];
@@ -53,9 +53,20 @@ class RangeIndex {
         };
         index(0, this.ranges.length);
     }
-    advance(change: DocumentChange): void {
-        this.mapping = this.mapping ? composePositionMaps(this.mapping, change.mapping) : change.mapping;
+    advance(change: DocumentChange): RangeIndex | undefined {
+        const prior = this.mapping, next = change.mapping;
+        if (positionMapSize(next) + (prior ? positionMapSize(prior) : 0) > this.ranges.length) {
+            const ranges: InlineDecoration[] = [];
+            for (const r of this.ranges) {
+                const from = next.map(prior?.map(r.from, "after").offset ?? r.from, "after").offset;
+                const to = r.from === r.to ? from : next.map(prior?.map(r.to, "before").offset ?? r.to, "before").offset;
+                if (r.from === r.to || from < to) ranges.push({ ...r, from, to });
+            }
+            return ranges.length ? new RangeIndex(change.revision, next.newLength, ranges) : undefined;
+        }
+        this.mapping = prior ? composePositionMaps(prior, next) : next;
         this.revision = change.revision;
+        return this;
     }
     private query(from: number, to: number, matches: InlineDecoration[]): void {
         const map = this.mapping;
@@ -116,7 +127,11 @@ export function createDecorationLayers(current: () => DocumentSnapshot | undefin
         let mapped = false;
         for (const entry of entries) {
             const index = entry.ranges;
-            if (index?.revision === change.previousRevision) { index.advance(change); mapped = true; }
+            if (index?.revision === change.previousRevision) {
+                const next = index.advance(change);
+                if (next) entry.ranges = next; else delete entry.ranges;
+                mapped = true;
+            }
         }
         return mapped;
     }

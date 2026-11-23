@@ -207,6 +207,15 @@ export function positionChanges(mapping: PositionMapping): readonly Readonly<{ f
     return knownMapping(mapping) && mapping instanceof ChangePositionMap ? mapping[batchChanges]() : undefined;
 }
 
+/** Cost of retaining this map for another composition. Opaque maps have no known bound. */
+export function positionMapSize(mapping: PositionMapping): number {
+    if (mapping instanceof ComposedPositionMap) {
+        const { forward, reverse } = mapping[compiledGeometry]();
+        return Math.max(forward.points[0].length, forward.points[1].length, reverse.points[0].length, reverse.points[1].length);
+    }
+    return positionChanges(mapping)?.length ?? Infinity;
+}
+
 /** A known replacement between two immutable buffers needs only its lengths. */
 export function replacementMap(oldLength: number, span: Pick<Change, "from" | "to" | "insertedLength">): PositionMapping {
     return new ChangePositionMap(oldLength, span.from === span.to && !span.insertedLength ? [] : [span]);
