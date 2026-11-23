@@ -9,7 +9,7 @@ function documentColorActions(tools: DocumentColorsPanelTools, s: DocumentColors
     { label: "Disconnect color provider", invoke: tools.disconnect, disabled: !s.connected && !s.pending },
     { label: "Reconnect color provider", invoke: tools.reconnect, disabled: !s.disconnected && s.status !== "failed" }
 ]; }
-export const documentColorDescription = "Literal fixture: hex3/4/6/8 and legacy RGB/RGBA numeric or percentage values, including strings/comments. Wider CSS and language syntax are not parsed. Inspect a reference, edit the host value, preview all presentation edits and confirm explicitly. Hex choices appear only for byte-representable channels. F6 discovers/focuses the list.";
+export const documentColorDescription = "Click a swatch or press F6 to choose a color. Enter a value, preview its edits and choose Apply. This example recognizes hex and RGB/RGBA literals, including in strings and comments.";
 export const documentColorLabel = (color: ColorNote) => `Inspect ${color.label} at ${color.line}:${color.column}`;
 /** One snapshot supplies the displayed reference and the complete confirmation identity. */
 export function documentColorsPanelModel(tools: DocumentColorsPanelTools, s: DocumentColorsSnapshot) {

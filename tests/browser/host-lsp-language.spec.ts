@@ -77,6 +77,43 @@ async function linkCaptureScene(page: Page, text: string, editedTarget: boolean)
 }
 for (const host of ["plain", "react"] as const) test.describe(`${host} selected LSP features`, () => {
     test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); });
+    test("painted swatches open the clicked literal in its pane and refresh after typing", async ({ page }) => {
+        const raw = 'const a = "#abc";\r\nconst b = "#ff0000";';
+        await seed(page, raw, 2);
+        const source = field(page, "Secondary source"), marks = source.locator("..").locator(".host-inline-swatch");
+        await expect(marks).toHaveCount(2);
+        await expect(field(page)).toBeFocused();
+        const before = await snapshot(page);
+        await marks.nth(1).click();
+        const value = field(page, "Proposed color"), selected = page.getByLabel("Document color results", { exact: true }).getByRole("button");
+        await expect(value).toBeFocused();
+        await expect(value).toHaveValue("rgba(255, 0, 0, 1)");
+        await expect(selected.nth(1)).toHaveAttribute("aria-pressed", "true");
+        const opened = await snapshot(page);
+        expect(opened.bindings.colors.state.view).toBe("secondary");
+        expect(opened.bindings.views.map(v => v.selectionSet)).toEqual(before.bindings.views.map(v => v.selectionSet));
+        await value.fill("#123456"); await value.press("Enter"); await button(page, "Apply captured color").click();
+        await exact(page, raw.replace("#ff0000", "#123456")); await expect(source).toBeFocused();
+        await source.press("Control+z"); await exact(page, raw);
+        await source.press("Control+End"); await page.keyboard.insertText(' const c = "#00ff00";');
+        await expect(marks).toHaveCount(3); await expect(marks.nth(2)).toHaveCSS("background-color", "rgb(0, 255, 0)");
+        await expect(source).toBeFocused();
+        await disposeColorsAndLinks(page);
+    });
+    if (host === "plain") test("a late background color scan cannot repaint a newer revision or open its picker", async ({ page }) => {
+        const replies = await holdLspReplies(page, "textDocument/documentColor"); await page.reload();
+        const marks = field(page).locator("..").locator(".host-inline-swatch");
+        await seed(page, 'const a = "#abc";'); await expect(marks).toHaveCount(1);
+        replies.hold();
+        await field(page).press("Control+End"); await page.keyboard.insertText(' const b = "#ff0000";');
+        await expect.poll(replies.waiting).toBe(true);
+        await expect(marks).toHaveCount(1);
+        await field(page).press("Control+a"); await page.keyboard.insertText('const latest = "#00ff00";');
+        await expect(marks).toHaveCSS("background-color", "rgb(0, 255, 0)");
+        await replies.release();
+        await expect(marks).toHaveCount(1); await expect(marks).toHaveCSS("background-color", "rgb(0, 255, 0)");
+        await expect(field(page)).toBeFocused(); expect((await snapshot(page)).bindings.colors.state.view).toBeNull();
+    });
     for (const fault of ["malformed", "incomplete", "failure"] as const) test(`${fault} language replies clear partial presentation without changing source or history`, async ({ page }) => {
         test.setTimeout(60000);
         const { raw, before, links, colors, popup, apply, discoverColors, preview, signature } = await languageFailureScene(page);
@@ -276,7 +313,8 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await button(page, "Apply captured color").click(); await settledColorsAndLinks(page); await exact(page, raw);
         const unchanged = await snapshot(page); expect(unchanged.source.revision).toBe(before.source.revision); expect(unchanged.history).toEqual(before.history);
         expect(unchanged.bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "primary")!.selectionSet);
-        expect(unchanged.bindings.colors).toMatchObject({ unchanged: 1, applied: 0, decoratedViews: 0 });
+        expect(unchanged.bindings.colors).toMatchObject({ unchanged: 1, applied: 0 });
+        await expect(field(page).locator("..").locator(".host-inline-swatch")).toHaveCount(1);
         await button(page, "Discover document colors").click(); await settledColorsAndLinks(page);
         await proposed.fill("rgba(1, 2, 3, 0.5)"); await button(page, "Preview color presentations").click(); await expect(button(page, "Apply captured color")).toBeEnabled();
         await expect(page.getByLabel("Proposed color edits", { exact: true }).getByRole("listitem")).toHaveCount(2);
