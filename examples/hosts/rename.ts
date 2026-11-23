@@ -114,10 +114,15 @@ export class HostRenameTools {
     private hint(session: Session) { return navigationSymbol(this.host.workspace.document(session.editor.view.documentId).buffer, session.editor.view.getSnapshot().selection.head); }
     private prompt(session: Session) {
         this.cancel(); this.owner = session;
-        const hint = this.hint(session);
-        session.controller.setName(hint ?? "");
-        this.publish({ name: hint ?? "", message: "Enter a name, then preview its changes." });
-        this.nameField.element?.focus(); this.nameField.element?.select();
+        const name = this.hint(session) ?? "";
+        session.controller.setName(name);
+        this.publish({ name, message: "Enter a name, then preview its changes." });
+        const field = this.nameField.element;
+        if (field) {
+            // A controlled field may still display the previous name when F2 returns.
+            if (field.value !== name) field.value = name;
+            field.focus(); field.select();
+        }
     }
     readonly prepare = () => this.prepareIn(this.owner ?? this.active);
     private prepareIn(s: Session | undefined) {

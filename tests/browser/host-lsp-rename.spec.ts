@@ -28,6 +28,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP renam
         const ranges = [{ anchor: raw.indexOf("catalogue") + 4, head: raw.indexOf("catalogue") + 2 }, { anchor: raw.length, head: raw.length }];
         await page.evaluate(ranges => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, ranges); }, ranges); const before = await snapshot(page);
         await input(page).press("F2"); await expect(name(page)).toHaveValue("catalogue");
+        await expect(name(page)).toBeFocused(); await page.keyboard.type("omega"); await expect(name(page)).toHaveValue("omega");
         await expectPanelKeyReserved(name(page), "Escape"); await name(page).press("Escape"); await expect(input(page)).toBeFocused();
         await name(page).evaluate(node => { node.dataset.retained = "rename-name"; });
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(v => v.id === "primary")!.selectionSet);

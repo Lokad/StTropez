@@ -403,7 +403,8 @@ including while a link resolves. If you Tab away, the resolved link stays in the
 open it. If the destination pane is busy with a paste or fails to open, the panel shows the
 reason. Click the link again to retry. Shift+F4 restores the original document, selections and scroll position.
 Changing result pages during a press requires a fresh click to open a link on the new page.
-Press F2 on the symbol to rename. Enter and **Prepare rename preview** both use that pane,
+Press F2 on the symbol to rename. Its name is selected, so typing replaces it.
+Enter and **Prepare rename preview** both use that pane,
 even if you focus another pane before requesting the preview. Press Enter in the name field
 again to apply the reviewed edits.
 The F6 colour picker lists each provider result, including colors at the same source position.
