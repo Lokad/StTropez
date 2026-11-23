@@ -37,7 +37,7 @@ export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, file
     renamePopup.className = "demo-rename"; renamePopup.hidden = true;
     renamePopup.setAttribute("role", "dialog"); renamePopup.setAttribute("aria-label", "Rename symbol");
     document.body.append(popup);
-    document.getElementById("workspace")!.append(renamePopup);
+    (editor.element.closest("#workspace") ?? editor.element.ownerDocument.body).append(renamePopup);
     const locationsOverlay = mountAnchoredOverlay(editor, popup, { dismissOn: ["focus-leave"], onDismiss: () => cancelNavigation() });
     scope.defer(locationsOverlay.dispose);
     type Query = { message: string; offset: number; revision: number; page: NavigationPage | undefined };
