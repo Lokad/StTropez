@@ -114,6 +114,10 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     const offsetAt = (index: number) => matches.at(index).from;
     const endAt = (index: number) => matches.at(index).to;
     const indexAt = (offset: number) => matches.lowerBound(offset);
+    const matchesRange = (index: number, from: number, to: number) => {
+        const range = index < count ? matches.at(index) : undefined;
+        return range?.from === from && range.to === to;
+    };
     const emptyMatches: readonly SearchMatch[] = Object.freeze([]);
     const matchesIn = (from: number, to: number, capture = store.get()): readonly SearchMatch[] => {
         if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from) throw new RangeError("Invalid match range.");
@@ -180,6 +184,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             publish({ ...patch, status: "searching", retained: true, count, scanned: repair.start, current: null, wrappedTo: null, matchesVersion: store.get().matchesVersion + 1 });
         } else reset({ ...patch, status: query ? "searching" : "idle" });
         if (!query) return;
+        const initialSelection = retain ? undefined : editor.view.getSnapshot();
         let nextLiteral: ((units?: number) => SearchStep) | undefined;
         try {
             if (regularExpression && !backend) throw new Error("Regular-expression search is unavailable in this host.");
@@ -221,6 +226,13 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
                 scanned = result.scanned;
                 scanMaximum = Math.max(scanMaximum, dispatchMs, win.performance.now() - began);
                 if (result.done) {
+                    if (initialSelection && !pendingPreview && initialSelection.selectionSet === editor.view.getSnapshot().selectionSet) {
+                        const { anchor, head } = initialSelection.selection;
+                        if (anchor !== head) {
+                            const from = Math.min(anchor, head), index = indexAt(from);
+                            if (matchesRange(index, from, Math.max(anchor, head))) current = index;
+                        }
+                    }
                     if (!regularExpression) runner.cancel();
                     const finished = cursor; cursor = undefined; finished?.dispose();
                     if (!regularExpression) { literal = { document, index: matches, query, wholeWord, matchCase }; edges = undefined; pendingRepair = undefined; }
@@ -265,7 +277,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const selected = editor.view.getSnapshot().selection, low = Math.min(selected.anchor, selected.head), high = Math.max(selected.anchor, selected.head);
         if (!state.query) return undefined;
         const index = indexAt(low);
-        if (index < count && offsetAt(index) === low && endAt(index) === high && !(low === high && replacedHere())) return { from: low, to: high };
+        if (matchesRange(index, low, high) && !(low === high && replacedHere())) return { from: low, to: high };
         if (state.status !== "ready") return undefined;
         // A manually selected overlapping regex range is validated by the captured backend plan.
         if (state.regularExpression) return high > low && (index < count && offsetAt(index) < high && endAt(index) > low

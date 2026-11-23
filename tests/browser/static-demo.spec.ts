@@ -339,7 +339,7 @@ test("Find toggles regex on the existing query and replaces captured groups in o
     await expect(query).toHaveValue(firstLine); await expect(query).toBeFocused();
     await mode.click(); await query.press("Escape"); await input.press("Control+f");
     await expect(query).toHaveValue('import \\{ calculateTotal \\} from "\\./pricing";');
-    await expect(status).toHaveText("1 match"); await query.press("Escape");
+    await expect(status).toHaveText("1 of 1"); await query.press("Escape");
     await input.press("Control+Home"); await input.press("Control+f");
     await expect(query).toHaveValue('import \\{ calculateTotal \\} from "\\./pricing";');
 });
@@ -482,9 +482,12 @@ test("Find combines case and word boundaries and keeps the options across files"
     await word.click(); await expect(status).toHaveText("No matches");
     await caseButton.click(); await expect(status).toHaveText("3 matches");
     await regex.click(); await query.fill("car[t]"); await expect(status).toHaveText("1 of 3");
+    await query.press("Enter"); await query.press("Enter"); await expect(status).toHaveText("2 of 3");
     await page.locator("#files button").filter({ hasText: "pricing.ts" }).click();
     await expect(query).toHaveValue("car[t]"); await expect(status).toHaveText("No matches");
     await expect(word).toHaveAttribute("aria-pressed", "true"); await expect(regex).toHaveAttribute("aria-pressed", "true");
+    await page.locator('#files [data-file="main.ts"]').click(); await expect(status).toHaveText("2 of 3");
+    await page.locator('#files [data-file="pricing.ts"]').click(); await expect(status).toHaveText("No matches");
     await word.click(); await expect(status).toHaveText("2 matches");
     await caseButton.click(); await expect(status).toHaveText("No matches");
 });

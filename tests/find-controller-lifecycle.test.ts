@@ -53,11 +53,15 @@ test("changing whole-word mode cancels captured replacement and excludes selecte
     const find = findForView(workspace, workspace.tabs.capture(tab), editor);
     const drain = () => { for (let turns = 0; tasks.size; turns++) { assert.ok(turns < 100); const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); } };
     try {
+        view.setSelection(0, { anchor: original.length, head: original.lastIndexOf("cat") });
+        const selected = view.getSnapshot().selectionSet;
         find.setQuery("cat"); drain(); assert.equal(find.getSnapshot().count, 4);
+        assert.equal(find.getSnapshot().current, 3);
         const before = workspace.document(documentId), history = workspace.observeHistory(documentId).getSnapshot();
         find.replaceAll("changed"); assert.equal(find.getSnapshot().status, "replacing");
         find.setFlags({ wholeWord: true }); drain();
         assert.equal(find.getSnapshot().wholeWord, true); assert.equal(find.getSnapshot().count, 2);
+        assert.equal(find.getSnapshot().current, 1); assert.equal(view.getSnapshot().selectionSet, selected);
         assert.equal(workspace.document(documentId).revision, before.revision); assert.deepEqual(workspace.observeHistory(documentId).getSnapshot(), history); assert.equal(focused, 0);
         view.setSelection(before.revision, { anchor: 5, head: 8 });
         assert.equal(find.replaceCurrent("dog"), true); drain();

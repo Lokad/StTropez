@@ -357,6 +357,7 @@ try {
     await page.evaluate(() => window.consumer.find("restored"));
     await page.waitForFunction(() => window.consumer.findState().status === "ready");
     const find = await page.evaluate(() => window.consumer.findState()); assert.equal(find.count, 1); assert.equal(find.wholeWord, true);
+    assert.equal(find.current, 0, "The restored word selection is the current match.");
     await page.evaluate(() => { window.consumer.findOptions({ wholeWord: true, matchCase: false }); window.consumer.find("RESTORED"); });
     await page.waitForFunction(() => window.consumer.findState().status === "ready");
     const caseFind = await page.evaluate(() => window.consumer.findState()); assert.equal(caseFind.count, 1); assert.equal(caseFind.matchCase, false); assert.equal(caseFind.wholeWord, true);
