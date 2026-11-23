@@ -577,13 +577,16 @@ test("current-line presentation follows the primary caret through input, folding
         const defaults = viewport.settings().highlightCurrentLine, point = viewport.coordsAt(1), row = host.querySelector('.st-viewport-row[data-line="0"]')!, child = row.firstChild;
         const extent = [viewport.element.scrollWidth, viewport.element.scrollHeight]; viewport.configure({ highlightCurrentLine: true }); viewport.flush();
         const enabled = viewport.settings().highlightCurrentLine, background = host.querySelector<HTMLElement>(".st-current-line-background")!;
+        const number = host.querySelector(".st-line-numbers [data-current]")!, ordinary = host.querySelector(".st-line-numbers span:not([data-current])")!;
         viewport.configure({ highlightCurrentLine: true });
-        return { defaults, enabled, noOpPending: viewport.activity().pending, samePoint: JSON.stringify(point) === JSON.stringify(viewport.coordsAt(1)),
+        return { defaults, enabled, number: number.textContent, distinctNumber: getComputedStyle(number).color !== getComputedStyle(ordinary).color
+                && getComputedStyle(number).fontWeight !== getComputedStyle(ordinary).fontWeight,
+            noOpPending: viewport.activity().pending, samePoint: JSON.stringify(point) === JSON.stringify(viewport.coordsAt(1)),
             sameChild: row.firstChild === child, className: row.className, background: getComputedStyle(row).backgroundColor, color: getComputedStyle(child as HTMLElement).color,
             width: background.getBoundingClientRect().width, viewportWidth: viewport.element.clientWidth - viewport.getSnapshot().gutterWidth, extent,
             nextExtent: [viewport.element.scrollWidth, viewport.element.scrollHeight] };
     });
-    expect(initial).toMatchObject({ defaults: false, enabled: true, noOpPending: false, samePoint: true, sameChild: true,
+    expect(initial).toMatchObject({ defaults: false, enabled: true, number: "1", distinctNumber: true, noOpPending: false, samePoint: true, sameChild: true,
         className: "st-viewport-row host-row st-current-line", background: "rgb(30, 45, 65)", color: "rgb(180, 60, 160)" });
     expect(initial.extent).toEqual(initial.nextExtent); expect(initial.width).toBe(initial.viewportWidth);
     const source = page.getByRole("textbox", { name: "Line source", exact: true }), current = page.locator(".st-viewport-layer .st-current-line");
@@ -594,16 +597,20 @@ test("current-line presentation follows the primary caret through input, folding
         const f = window.presentationFixture, viewport = f.editor.viewport, doc = f.workspace.document(f.editor.view.documentId);
         f.editor.view.setSelections(doc.revision, [{ anchor: 0, head: 2 }, { anchor: 10, head: 10 }], 1); viewport.flush();
         const primary = f.host.querySelector(".st-viewport-layer .st-current-line")?.getAttribute("data-line");
+        const markedNumbers = () => [...f.host.querySelectorAll(".st-line-numbers [data-current]")].map(node => node.textContent);
+        const primaryNumbers = markedNumbers();
         f.editor.view.setSelections(doc.revision, [{ anchor: 0, head: 2 }, { anchor: 10, head: 10 }], 0); viewport.flush();
         const rangeHidden = !f.host.querySelector(".st-current-line-background"), selected = f.host.querySelector<HTMLElement>(".st-viewport-selected")!;
         const selectedColor = getComputedStyle(selected).backgroundColor;
+        const rangeNumbers = markedNumbers();
         f.editor.view.setSelection(doc.revision, { anchor: 6, head: 6 });
         f.editor.view.folding.setRanges(f.editor.view.folding.getSnapshot(), [{ id: "block", from: 0, to: doc.buffer.offsetAt(3), collapsed: true }]); viewport.flush();
         const header = f.host.querySelector(".st-viewport-layer .st-current-line")?.getAttribute("data-line"), head = f.editor.view.getSnapshot().selection.head;
         const rect = f.host.querySelector(".st-current-line-background")!.getBoundingClientRect(), row = f.host.querySelector('.st-viewport-row[data-line="0"]')!.getBoundingClientRect();
-        return { primary, rangeHidden, selectedColor, header, head, foldedTop: rect.top, rowTop: row.top };
+        return { primary, primaryNumbers, rangeHidden, rangeNumbers, selectedColor, header, headerNumbers: markedNumbers(), head, foldedTop: rect.top, rowTop: row.top };
     });
-    expect(projected).toMatchObject({ primary: "2", rangeHidden: true, selectedColor: "rgb(36, 73, 107)", header: "0", head: 6 });
+    expect(projected).toMatchObject({ primary: "2", primaryNumbers: ["3"], rangeHidden: true, rangeNumbers: [],
+        selectedColor: "rgb(36, 73, 107)", header: "0", headerNumbers: ["1"], head: 6 });
     expect(projected.foldedTop).toBe(projected.rowTop);
 
     await page.evaluate(async () => {

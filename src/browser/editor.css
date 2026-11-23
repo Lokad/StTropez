@@ -73,6 +73,7 @@
 .st-viewport-gutter { position: absolute; top: 0; left: 0; z-index: 1; contain: strict; overflow: hidden;
     user-select: none; cursor: default; color: var(--st-gutter-foreground, #90a0b5); background: var(--st-background, #131b27); }
 .st-line-numbers span { position: absolute; left: 0; right: 15px; text-align: right; }
+.st-line-numbers [data-current] { color: var(--st-foreground, #e1e7ef); font-weight: 600; }
 .st-fold-controls { position: absolute; inset: 0; pointer-events: none; }
 .st-fold-button { position: absolute; right: 0; width: 14px; padding: 0; border: 0; color: inherit; background: transparent; font-size: 11px; cursor: pointer; pointer-events: auto; }
 .st-fold-button:focus-visible { outline: 1px solid currentColor; outline-offset: 1px; }

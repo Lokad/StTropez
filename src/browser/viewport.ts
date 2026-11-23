@@ -789,6 +789,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
                 lineNumbers.set(item.line, number); numbers.append(number);
             }
             number.style.top = `${rowTop}px`; number.style.lineHeight = `${lineHeight}px`;
+            number.toggleAttribute("data-current", item.line === highlightedLine);
             const region = index.headerAt(item.line); if (!region) continue; visibleFolds.add(region.id);
             let button = foldButtons.get(region.id);
             if (!button) {
