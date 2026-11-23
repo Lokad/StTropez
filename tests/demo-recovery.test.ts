@@ -144,10 +144,10 @@ test("edits or composition during a delayed recovery claim prevent any restored 
     }
 });
 
-test("keeping dirty files before the timer replaces the offered draft in one guarded write", async t => {
+test("discarding an offer before the timer preserves dirty files in one guarded write", async t => {
     const store = new MemoryDraftStore(), f = fixture(store); t.after(() => f.recovery.dispose()); await ready(f.recovery);
     store.beforeRemove = async () => { throw new Error("Removing first would leave edits unprotected."); };
-    f.edit(); await f.recovery.keepCurrent();
+    f.edit(); await f.recovery.discardOffered();
     assert.equal(store.writes, 1); assert.equal(f.recovery.state.getSnapshot().present, false);
     assert.deepEqual((store.row!.value as { files: unknown }).files, { "a.ts": "newer original a.ts", "b.ts": "original b.ts" });
 });
@@ -163,7 +163,7 @@ test("two pages editing beside an offer retain each version without rewriting ea
     second.workspace.edit({ documentId: doc, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "second " }] });
     t.mock.timers.tick(300); await setImmediate();
     const latest = store.row;
-    await first.recovery.keepCurrent(); assert.equal(store.row, latest); // Its offer predates the second page's edit.
+    await first.recovery.discardOffered(); assert.equal(store.row, latest); // Its offer predates the second page's edit.
     await first.recovery.refresh(); t.mock.timers.tick(300); await setImmediate();
     assert.equal(store.row, latest); assert.equal(store.writes, 2);
     const reopened = fixture(store); t.after(() => reopened.recovery.dispose()); await ready(reopened.recovery);
@@ -178,8 +178,12 @@ test("stale restore and discard cannot replace or delete another page's newer dr
     const f = fixture(); t.after(() => f.recovery.dispose()); await ready(f.recovery);
     const newer = { token: "newer", value: { version: 1, sample: "sample", baseVersion: null, files: { "a.ts": "peer A", "b.ts": "peer B" } } };
     f.store.row = newer;
+    f.recovery.setOfferVisible(false);
+    assert.equal(f.recovery.state.getSnapshot().canReview, true); assert.equal(f.recovery.canRestore(), false);
+    assert.equal(f.store.row, newer); assert.equal(f.store.writes, 0);
+    f.recovery.setOfferVisible(true);
     await f.recovery.restore(); assert.equal(f.store.row, newer); assert.deepEqual(f.text(), ["original a.ts", "original b.ts"]);
-    await f.recovery.keepCurrent(); assert.equal(f.store.row, newer);
+    await f.recovery.discardOffered(); assert.equal(f.store.row, newer);
     await f.recovery.refresh(); assert.match(f.recovery.download()!, /peer A/);
     await f.recovery.restore(); assert.deepEqual(f.text(), ["peer A", "peer B"]);
 });

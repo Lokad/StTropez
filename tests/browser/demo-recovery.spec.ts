@@ -19,7 +19,7 @@ test("editing with an unanswered draft keeps both versions available after reloa
     await expect(restore).toBeEnabled(); await restore.click();
     await expect(page.locator("#editor")).toContainText("Later work");
     await expect(page.locator("#editor")).not.toContainText("Earlier work");
-    await page.getByRole("button", { name: "Keep current files", exact: true }).click();
+    await page.getByRole("button", { name: "Discard offered drafts", exact: true }).click();
     await expect(status).toHaveText("Recovery draft captured in this browser."); await expect(source).toBeFocused();
     await page.reload();
     await expect(restore).toBeEnabled(); await expect(version).toBeHidden(); await restore.click();
@@ -83,7 +83,7 @@ test("typing while a committed restore awaits completion preserves current text 
     await expect(page.getByRole("button", { name: "Restore draft", exact: true })).toBeEnabled();
     const download = page.waitForEvent("download"); await page.getByRole("button", { name: "Download draft", exact: true }).click();
     expect((await download).suggestedFilename()).toBe("pricing-recovery.json");
-    await page.getByRole("button", { name: "Keep current files", exact: true }).click();
+    await page.getByRole("button", { name: "Discard offered drafts", exact: true }).click();
     await expect(page.locator("#recovery-status")).toHaveText("Recovery draft captured in this browser.");
     await page.reload(); await page.getByRole("button", { name: "Restore draft", exact: true }).click();
     await expect(page.locator("#editor")).toContainText("// Typed while restoring");
@@ -105,7 +105,7 @@ test("stale draft discard preserves a newer stored copy even without peer notice
             tx.oncomplete = () => { db.close(); resolve(); }; tx.onabort = () => { db.close(); reject(tx.error); };
         };
     }));
-    await page.getByRole("button", { name: "Keep current files", exact: true }).click();
+    await page.getByRole("button", { name: "Discard offered drafts", exact: true }).click();
     await expect(page.locator("#recovery-retry")).toBeVisible();
     await page.getByRole("button", { name: "Check recovery", exact: true }).click();
     await page.getByRole("button", { name: "Restore draft", exact: true }).click();

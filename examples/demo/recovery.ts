@@ -6,16 +6,17 @@ import type { DraftStore, StoredDraft } from "../hosts/draft-store.ts";
 import type { DemoFile } from "./project.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
 
-type Draft = Readonly<{ version: 1; sample: string; baseVersion: string | null; files: Readonly<Record<string, string>> }>;
+type Draft = Readonly<{ version: 1; id?: string; sample: string; baseVersion: string | null; files: Readonly<Record<string, string>> }>;
 type Capture = readonly Readonly<{ file: DemoFile; document: DocumentSnapshot; metadata: ResourceMetadata; target: ResourceTarget; tab: TabTarget }>[];
 type Offer = Readonly<{ drafts: readonly Draft[]; selected: number; capture: Capture; working?: Draft; restoreInterrupted?: boolean }>;
 type RecoveryState = Readonly<{ status: "checking" | "idle" | "pending" | "writing" | "protected" | "offer" | "failed";
-    busy: boolean; present: boolean; versions: number; selected: number; message: string }>;
+    busy: boolean; present: boolean; canReview: boolean; versions: number; selected: number; message: string }>;
 type Inventory = Readonly<{ names: readonly string[]; unloaded: () => Readonly<Record<string, string>>; prepare: () => void }>;
 
 function decodeDraft(raw: unknown, sample: string, names: readonly string[]): Draft {
     const value = raw as Partial<Draft> | null;
-    if (!value || value.version !== 1 || value.sample !== sample || value.baseVersion !== null && typeof value.baseVersion !== "string"
+    if (!value || value.version !== 1 || value.sample !== sample || value.id !== undefined && typeof value.id !== "string"
+        || value.baseVersion !== null && typeof value.baseVersion !== "string"
         || !value.files || typeof value.files !== "object" || Array.isArray(value.files) || Object.keys(value.files).length !== names.length
         || names.some(name => !Object.hasOwn(value.files!, name) || typeof value.files![name] !== "string" || value.files![name]!.length > 8_000_000)) {
         throw new Error("The recovery draft cannot be read. It has been left untouched.");
@@ -35,17 +36,18 @@ function encode(drafts: readonly Draft[]) {
     return drafts.length === 1 ? drafts[0]! : { version: 2, drafts };
 }
 
+function matchesFile(item: Capture[number], draft: Draft): boolean {
+    const buffer = item.document.buffer, text = draft.files[item.file.name]!;
+    if (buffer.length !== text.length) return false;
+    let offset = 0;
+    for (const chunk of buffer.chunks()) {
+        if (!text.startsWith(chunk, offset)) return false;
+        offset += chunk.length;
+    }
+    return true;
+}
 function matches(capture: Capture, draft: Draft): boolean {
-    return capture.every(item => {
-        const buffer = item.document.buffer, text = draft.files[item.file.name]!;
-        if (buffer.length !== text.length) return false;
-        let offset = 0;
-        for (const chunk of buffer.chunks()) {
-            if (chunk !== text.slice(offset, offset + chunk.length)) return false;
-            offset += chunk.length;
-        }
-        return true;
-    });
+    return capture.every(item => matchesFile(item, draft));
 }
 
 /** Multi-file demo policy. Reuses the fixture's CAS store; no alternate document/history engine. */
@@ -58,11 +60,14 @@ export class DemoRecovery {
     private readonly baseVersion: () => string | null;
     private readonly inputIdle: () => boolean;
     private readonly store: DraftStore;
-    private readonly cell = new HostCell<RecoveryState>({ status: "checking", busy: false, present: false, versions: 0, selected: 0, message: "Checking recovery…" });
+    private readonly cell = new HostCell<RecoveryState>({ status: "checking", busy: false, present: false, canReview: false, versions: 0, selected: 0, message: "Checking recovery…" });
     readonly state: Observable<RecoveryState> = this.cell.observable;
     private token: string | null = null;
     private checkpointed: Capture | undefined;
     private offer: Offer | undefined;
+    private showOffer = true;
+    private readonly sessionKey: string;
+    private lastCheckpoint: string | null = null;
     private loaded = false;
     private disposed = false;
     private timer: ReturnType<typeof setTimeout> | undefined;
@@ -77,6 +82,8 @@ export class DemoRecovery {
         inputIdle: () => boolean, store = createBrowserDraftStore(window, { name: "sttropez-demo-recovery-v1", slot: sample }), inventory?: Inventory) {
         this.workspace = workspace; this.getFiles = typeof files === "function" ? files : () => files; this.inventory = inventory; this.sample = sample; this.baseVersion = baseVersion;
         this.inputIdle = inputIdle; this.store = store; this.observed = this.capture();
+        this.sessionKey = `sttropez-demo-checkpoint:${sample}`;
+        try { this.lastCheckpoint = window.sessionStorage.getItem(this.sessionKey); } catch { /* Review draft also works without session storage. */ }
         try {
             this.owners.defer(workspace.subscribe(() => this.filesChanged()));
             this.owners.defer(store.watch(() => { void this.refresh(); }));
@@ -103,18 +110,27 @@ export class DemoRecovery {
             && item.metadata.saveStatus !== "saving" && item.metadata.capabilities.edit.includes("human"));
     }
     private publish(status: RecoveryState["status"], message: string): void {
-        if (!this.disposed) this.cell.set({ status, busy: this.running !== undefined, present: this.offer !== undefined,
-            versions: this.offer?.drafts.length ?? 0, selected: this.offer?.selected ?? 0, message });
+        const canReview = !!this.offer && !this.showOffer;
+        if (!this.disposed) this.cell.set({ status, busy: this.running !== undefined, present: !!this.offer && this.showOffer, canReview,
+            versions: this.offer?.drafts.length ?? 0, selected: this.offer?.selected ?? 0,
+            message: canReview && status === "offer" ? "A recovery draft is available." : message });
+    }
+    private rememberCheckpoint(id: string): void {
+        this.lastCheckpoint = id;
+        try { window.sessionStorage.setItem(this.sessionKey, id); } catch { /* The draft itself lives in IndexedDB. */ }
     }
     private offerMessage(): string {
         const currentCopy = this.offer?.working && this.targetsCurrent(this.offer.capture);
         if (this.offer?.restoreInterrupted) return currentCopy
             ? "Your files changed while restoring. Your edits have a recovery copy and the offered draft is still available."
             : "Your files changed while restoring. Your edits are intact and the offered draft is still available.";
-        if (currentCopy) return "Your current edits have a recovery copy. Restore another draft, download it, or discard the offered versions with Keep current files.";
+        if (currentCopy) return "Your current edits have a recovery copy. You can also restore or download an earlier version.";
         if (this.offer && this.dirty()) return "Your files changed. Updating their recovery copy…";
-        if (this.offer && this.offer.drafts.length > 1) return "Choose a recovery version to restore or download. Keep current files discards the offered versions.";
-        return `This browser has an unsaved draft for ${this.files.map(file => file.name).join(", ")}. Restore it, download it, or keep your current files.`;
+        if (!this.offer || !this.showOffer) return "A recovery draft is available.";
+        if (this.offer.drafts.length > 1) return "Choose a recovery version to restore or download.";
+        const draft = this.offer.drafts[0]!;
+        const changed = this.offer.capture.filter(item => !matchesFile(item, draft)).map(item => item.file.name);
+        return changed.length ? `This browser has an unsaved draft for ${changed.join(", ")}.` : "A recovery draft is available.";
     }
     private cancelTimer(): void { if (this.timer !== undefined) clearTimeout(this.timer); this.timer = undefined; }
     private schedule(): void {
@@ -198,6 +214,7 @@ export class DemoRecovery {
                     return;
                 }
                 this.offer = { drafts: alternatives, selected: 0, capture, ...(working && { working }) }; this.token = envelope.token;
+                this.showOffer = alternatives.some(draft => draft.id === undefined || draft.id === this.lastCheckpoint);
                 if (working) this.checkpointed = capture;
                 this.publish("offer", this.offerMessage());
             } else { this.token = null; this.publish("idle", "Recovery is ready."); }
@@ -214,25 +231,26 @@ export class DemoRecovery {
         // An offered draft belongs to another page/session until explicitly claimed or discarded.
         if (this.loaded && (!this.offer || this.offer.working)) await this.checkpoint();
     }
-    private checkpoint(keepCurrent = false): Promise<void> {
+    private checkpoint(discardOffered = false): Promise<void> {
         if (this.disposed || !this.loaded) return Promise.resolve();
         const capture = this.capture(), dirty = this.dirty(), expected = this.token, baseVersion = this.baseVersion(), unloaded = { ...this.inventory?.unloaded() };
-        const offer = keepCurrent ? undefined : this.offer;
+        const offer = discardOffered ? undefined : this.offer;
         return this.run(async () => {
             this.publish("writing", "Updating recovery…");
-            const working: Draft | undefined = dirty ? { version: 1, sample: this.sample, baseVersion,
+            const token = crypto.randomUUID();
+            const working: Draft | undefined = dirty ? { version: 1, id: token, sample: this.sample, baseVersion,
                 files: { ...unloaded, ...Object.fromEntries(capture.map(item => [item.file.name, item.document.text()])) } } : undefined;
             const alternatives = offer?.drafts.filter(draft => !matches(capture, draft)) ?? [];
             const drafts = working ? [working, ...alternatives] : alternatives;
             if (!drafts.length) {
                 if (expected) await this.store.remove(expected);
                 if (!this.disposed) { this.token = null; this.offer = undefined; this.checkpointed = undefined;
-                    this.publish("idle", keepCurrent ? "Kept your current files." : "All changes are saved."); }
+                    this.publish("idle", discardOffered ? "Discarded the offered drafts." : "All changes are saved."); }
                 return;
             }
-            const token = crypto.randomUUID();
             await this.store.write({ token, value: encode(drafts) }, expected);
             if (this.disposed) return;
+            if (working) this.rememberCheckpoint(token);
             this.token = token; this.checkpointed = capture;
             if (offer && alternatives.length) {
                 const selected = Math.max(0, alternatives.indexOf(offer.drafts[offer.selected]!));
@@ -242,7 +260,7 @@ export class DemoRecovery {
         });
     }
     canRestore(): boolean {
-        return !this.running && !!this.offer && (!this.dirty() || !!this.offer.working) && this.targetsCurrent(this.offer.capture);
+        return !this.running && this.showOffer && !!this.offer && (!this.dirty() || !!this.offer.working) && this.targetsCurrent(this.offer.capture);
     }
     selectVersion(selected: number): void {
         if (!this.offer || this.running || !Number.isSafeInteger(selected) || !this.offer.drafts[selected]) return;
@@ -252,7 +270,7 @@ export class DemoRecovery {
     restore(): Promise<void> {
         if (!this.canRestore()) return Promise.resolve();
         const offer = this.offer!, token = crypto.randomUUID(), expected = this.token;
-        const draft = offer.drafts[offer.selected]!, remaining = offer.drafts.filter((_, index) => index !== offer.selected);
+        const draft = { ...offer.drafts[offer.selected]!, id: token }, remaining = offer.drafts.filter((_, index) => index !== offer.selected);
         if (offer.working) remaining.unshift(offer.working);
         return this.run(async () => {
             this.publish("offer", "Restoring the captured draft…");
@@ -260,6 +278,7 @@ export class DemoRecovery {
             await this.store.write({ token, value: encode([draft, ...remaining]) }, expected);
             if (this.disposed) return;
             this.token = token;
+            this.rememberCheckpoint(token);
             if (!this.targetsCurrent(offer.capture)) {
                 this.offer = { ...offer, restoreInterrupted: true };
                 this.publish("offer", this.offerMessage()); return;
@@ -273,8 +292,11 @@ export class DemoRecovery {
             else this.publish("protected", "Draft restored. Undo returns to your previous files; Save locally commits these changes.");
         });
     }
-    keepCurrent(): Promise<void> {
-        return this.offer ? this.checkpoint(true) : Promise.resolve();
+    setOfferVisible(visible: boolean): void {
+        if (this.offer && !this.running) { this.showOffer = visible; this.publish("offer", this.offerMessage()); }
+    }
+    discardOffered(): Promise<void> {
+        return this.offer && this.showOffer ? this.checkpoint(true) : Promise.resolve();
     }
     dispose(): Promise<void> {
         if (this.disposal) return this.disposal;

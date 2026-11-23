@@ -956,10 +956,21 @@ test("peer recovery reads only the changed sample while unrelated samples stay c
         await expect(page.locator("#recovery-offer")).toBeHidden();
         await expect(page.locator("#recovery-status")).toHaveText("Recovery is ready.");
         await page.locator("#sample").selectOption("pricing");
-        await expect(page.locator("#recovery-offer")).toBeVisible();
-        await peer.close();
-        await page.getByRole("button", { name: "Restore draft", exact: true }).click();
-        await expect(page.locator("#editor")).toContainText("// Peer recovery");
+        const offer = page.locator("#recovery-offer");
+        const review = page.getByRole("button", { name: "Review draft", exact: true });
+        await expect(review).toBeVisible(); await expect(offer).toBeHidden();
+        await review.click();
+        await expect(page.locator("#recovery-message")).toHaveText("This browser has an unsaved draft for main.ts.");
+        await page.getByRole("button", { name: "Keep current files", exact: true }).click();
+        await expect(review).toBeVisible(); await expect(offer).toBeHidden();
+        await source.press("Control+Home"); await peer.keyboard.insertText("// Latest from peer\n");
+        await expect.poll(() => page.evaluate(() => (window as unknown as { demoRecoveryProbe: Probe }).demoRecoveryProbe.reads.length)).toBeGreaterThan(1);
+        await page.reload(); await expect(review).toBeVisible(); await expect(offer).toBeHidden();
+        await expect(page.locator("#editor")).not.toContainText("// Peer recovery");
+        await peer.reload(); await expect(peer.locator("#recovery-restore")).toBeEnabled();
+        await peer.locator("#recovery-restore").click();
+        await expect(peer.locator("#editor")).toContainText("// Latest from peer");
+        await expect(peer.locator("#editor")).toContainText("// Peer recovery");
     } finally { if (!peer.isClosed()) await peer.close(); }
 });
 

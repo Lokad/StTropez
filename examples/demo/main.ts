@@ -239,9 +239,11 @@ function paintMetadata(): void {
     }
     versions.selectedIndex = recovery.selected;
     element("recovery-status").textContent = recovery.present ? "Recovery draft available" : recovery.message;
+    button("recovery-review").hidden = !recovery.canReview;
+    button("recovery-review").disabled = recovery.busy;
     element("recovery-retry").hidden = recovery.status !== "failed";
     button("recovery-restore").disabled = !project.recovery.canRestore();
-    button("recovery-keep").disabled = recovery.busy;
+    button("recovery-keep").disabled = button("recovery-discard").disabled = recovery.busy;
     for (const file of project.files) {
         let tab = element("files").querySelector<HTMLButtonElement>(`[data-file="${file.name}"]`);
         if (!tab) { tab = document.createElement("button"); tab.dataset.file = file.name; element("files").append(tab); }
@@ -715,7 +717,9 @@ onFileAction("recovery-restore", () => { void project?.recovery.restore(); });
 element("recovery-version").addEventListener("change", event => {
     project?.recovery.selectVersion((event.currentTarget as HTMLSelectElement).selectedIndex);
 }, { signal: listeners.signal });
-onFileAction("recovery-keep", () => { void project?.recovery.keepCurrent(); });
+onFileAction("recovery-keep", () => project?.recovery.setOfferVisible(false));
+onFileAction("recovery-discard", () => { void project?.recovery.discardOffered(); });
+on("recovery-review", () => { project?.recovery.setOfferVisible(true); if (project?.recovery.state.getSnapshot().present) button("recovery-keep").focus(); });
 on("recovery-retry", () => { void project?.recovery.refresh(); });
 function download(text: string, name: string): void {
     const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
