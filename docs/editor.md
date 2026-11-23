@@ -379,6 +379,9 @@ The view commands `select-all`, `select-line`, `select-next-occurrence`, `select
 cannot edit, is composing/disposed, or lacks the requested comment rule. Long plans yield, then
 commit once after validating the captured target; intermediate planning publishes no text.
 
+When a selection toggles off a block comment, a second caret inside either delimiter follows
+its removal. Selections elsewhere toggle independently in the same undo step.
+
 `editor.commands.list()` returns immutable entries with an ID, label and current enabled state.
 `commands.get(id, argument?)` looks up one entry and checks availability for that argument.
 An unknown ID returns `undefined`. `commands.run(id, argument?)` passes the same value to

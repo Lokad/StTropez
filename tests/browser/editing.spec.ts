@@ -651,6 +651,19 @@ test("comment chords and shifted slash act on the captured lines", async ({ page
     expect(await stroke("c")).toBe(false);
 });
 
+test("toggling a shared block comment places the next edit at the merged caret and undoes both", async ({ page }) => {
+    await page.evaluate(() => {
+        const f = window.editingFixture; f.configure({ language: { blockComment: { open: "/*", close: "*/" } } });
+        f.setText("a/**/b"); f.selections([{ anchor: 2, head: 2 }, { anchor: 3, head: 3 }]); f.focus("primary");
+    });
+    const input = page.locator("#primary textarea"), row = page.locator("#primary .st-viewport-row").first();
+    await input.press("Shift+Alt+a"); await expect(row).toHaveText("ab");
+    await page.keyboard.type("X"); await expect(row).toHaveText("aXb");
+    await input.press("Control+z"); await expect(row).toHaveText("ab");
+    await input.press("Control+z"); await expect(row).toHaveText("a/**/b");
+    expect(await page.evaluate(() => window.editingFixture.selectionSet().ranges.map(r => r.head))).toEqual([2, 3]);
+});
+
 test("Option Shift A toggles a block comment when the Apple layout produces an accented letter", async ({ page }) => {
     await page.addInitScript(() => Object.defineProperty(navigator, "platform", { value: "MacIntel" }));
     await page.reload(); await ready(page);

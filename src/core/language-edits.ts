@@ -120,6 +120,51 @@ function* publish(edits: TextEdit[], selectionSet: SelectionSet, state: MutableP
     return result;
 }
 
+function* blockComments(buffer: TextBuffer, selections: SelectionSet, pair: EditingPair,
+    read: (from: number, to: number) => string, state: MutablePlanning): Generator<void, SelectionEditPlan> {
+    const { open, close } = pair, edits: TextEdit[] = [];
+    const comments: { from: number; to: number }[] = [];
+    for (const range of selections.ranges) {
+        const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
+        const includes = to - from >= open.length + close.length && read(from, from + open.length) === open && read(to - close.length, to) === close;
+        const inside = !includes && from >= open.length && to + close.length <= buffer.length
+            && read(from - open.length, from) === open && read(to, to + close.length) === close;
+        if (includes || inside) {
+            const start = includes ? from : from - open.length, end = includes ? to : to + close.length;
+            if (start >= (comments.at(-1)?.to ?? 0)) {
+                comments.push({ from: start, to: end });
+                edits.push({ from: start, to: start + open.length, insert: "" }, { from: end - close.length, to: end, insert: "" });
+            }
+        }
+        state.workUnits++; if (checkpoint(state)) yield;
+    }
+    bulk(state, edits.length);
+    const removals = new PositionMap(buffer.length, edits), map = removals.createMapper();
+    const ranges: Selection[] = [];
+    let next = 0, inserted = 0;
+    for (const range of selections.ranges) {
+        const forward = range.anchor <= range.head, from = forward ? range.anchor : range.head, to = forward ? range.head : range.anchor;
+        while (next < comments.length && comments[next]!.to <= from) next++;
+        const comment = comments[next];
+        let low = map(from).offset + inserted, high = map(to).offset + inserted;
+        // Unwrap once. A neighboring caret inside the delimiter follows that deletion.
+        if (!comment || comment.from >= to) {
+            if (from === to) edits.push({ from, to, insert: open + close });
+            else edits.push({ from, to: from, insert: open }, { from: to, to, insert: close });
+            low += open.length; high += open.length; inserted += open.length + close.length;
+        }
+        ranges.push(forward ? { anchor: low, head: high } : { anchor: high, head: low });
+        state.workUnits++; if (checkpoint(state)) yield;
+    }
+    state.phase = "map";
+    if (comments.length && inserted) {
+        bulk(state, edits.length);
+        edits.sort((a, b) => a.from - b.from || a.to - b.to);
+    }
+    bulk(state, ranges.length);
+    return yield* publish(edits, createSelectionSet(removals.newLength + inserted, ranges, selections.primary), state);
+}
+
 function touchedLines(buffer: TextBuffer, range: Selection) {
     const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
     const last = buffer.lineAt(to);
@@ -362,6 +407,7 @@ function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCom
     if (command === "move-line-up" || command === "move-line-down" || command === "copy-line-up" || command === "copy-line-down")
         return yield* shiftLines(buffer, selections, command, read, state, folds);
     if (command === "indent") return yield* indent(buffer, selections, config, read, state);
+    if (command === "block-comment" && config.blockComment) return yield* blockComments(buffer, selections, config.blockComment, read, state);
     const commenting = command === "line-comment" || command === "add-line-comment" || command === "remove-line-comment";
     if (command === "outdent" || command === "indent-lines" || commenting) {
         if (commenting && !config.lineComment) return yield* publish(edits, selections, state);
@@ -418,20 +464,6 @@ function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCom
                 const pair = from === to && !atCloser && opening && (!next || /[\s)\]}"'`]/.test(next)) && allowed(opening, "open");
                 const insert = pair ? key + opening.close : key;
                 edits.push({ from, to, insert }); anchor = head = from + delta + key.length; delta += insert.length - (to - from);
-            }
-        } else if (command === "block-comment" && config.blockComment) {
-            const { open, close } = config.blockComment;
-            const includes = to - from >= open.length + close.length && read(from, from + open.length) === open && read(to - close.length, to) === close;
-            const inside = from >= open.length && to + close.length <= buffer.length && read(from - open.length, from) === open && read(to, to + close.length) === close;
-            if (includes || inside) {
-                const left = includes ? from : from - open.length, right = includes ? to - close.length : to;
-                edits.push({ from: left, to: left + open.length, insert: "" }, { from: right, to: right + close.length, insert: "" });
-                const low = left + delta, high = right - open.length + delta;
-                anchor = range.anchor <= range.head ? low : high; head = range.anchor <= range.head ? high : low; delta -= open.length + close.length;
-            } else {
-                if (from === to) edits.push({ from, to, insert: open + close });
-                else edits.push({ from, to: from, insert: open }, { from: to, to, insert: close });
-                anchor = range.anchor + delta + open.length; head = range.head + delta + open.length; delta += open.length + close.length;
             }
         } else if (command === "newline") {
             const indent = yield* enterIndent(buffer, from, to, config, unit, read, state);

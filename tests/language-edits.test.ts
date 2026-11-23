@@ -131,6 +131,10 @@ test("block comments and pair surrounds retain directed and adjacent selections 
     assert.equal(pair.text, '"ab""cd"'); assert.deepEqual(pair.ranges, [[3, 1], [5, 7]]);
     assert.equal(plan("/*ab*/", selection(6, 0), "block-comment").text, "ab");
     assert.deepEqual(plan("", selection(0), "block-comment").ranges, [[2, 2]]);
+    const touching = plan("a/**/b", [2, 3, 4, 6].map(head => ({ anchor: head, head })), "block-comment");
+    assert.equal(touching.text, "ab/**/"); assert.deepEqual(touching.ranges, [[1, 1], [4, 4]]);
+    const between = plan("/**/X/**/", [...selection(2), ...selection(7), ...selection(6, 3)], "block-comment");
+    assert.equal(between.text, "X"); assert.deepEqual(between.ranges, [[1, 0]]);
 });
 
 test("host pairing and Enter rules see exact buffers and can reject string/comment contexts", () => {
