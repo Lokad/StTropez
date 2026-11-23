@@ -394,7 +394,9 @@ Closing a pane outside the language project leaves a pending definition lookup a
 Opening another result in the same destination reuses its editor. If the host cannot open the
 pane, the panel shows the error. You can retry the same result. Return records successful visits.
 F12 can open a file in the same secondary pane that requested it. The new pane focuses the
-definition and selects its name. Return skips the replaced tab.
+definition and selects its name. The heading identifies the file. **Show original source**
+reopens the secondary pane’s original document with its selection and scroll position.
+**Return to navigation origin** skips the replaced tab.
 If a result list or review page changes while you hold Next or Previous, releasing the button
 leaves the new page in place. You can keep paging with the keyboard. Rename, code actions and
 provider workspace edits show up to 64 edits per page. Choosing a different code action starts

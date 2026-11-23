@@ -7,6 +7,11 @@ output { display: block; min-height: 22px; margin: 12px 0; }
 main { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 section { padding: 12px; border: 1px solid #8193a7; background: white; min-width: 0; }
 .editor-host { position: relative; height: 200px; margin: 12px 0; }
+.editor-host:has(> .host-file-heading) { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.host-file-heading { display: flex; align-items: center; gap: 8px; padding-bottom: 4px; }
+.host-file-heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.host-file-heading button { flex: none; }
+.host-file-heading + .st-editor { scroll-margin-block-start: 2.5rem; }
 .host-edit-feedback { display: none; }
 .editor-host:has(.st-editor[data-read-only]:focus-within) > .host-edit-feedback:not(:empty) {
     display: block; position: absolute; right: 16px; bottom: 8px; margin: 0; min-height: 0; padding: 4px 8px;

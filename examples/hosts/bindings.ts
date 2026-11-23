@@ -1,5 +1,5 @@
 import { registerCommandPalette } from "./command-palette.ts";
-import { onSourceFocus } from "./source-focus.ts";
+import { focusSource, onSourceFocus } from "./source-focus.ts";
 import { isSaveKey } from "../shared/host-shortcuts.ts";
 import { editRefusedEvent, inputConflictEvent, mountTextEditor, mountTextComparison } from "../../src/browser/index.ts";
 import type { EditRefusedDetail, TextEditor, TextEditorDiagnostics, TextComparison, ViewportDiagnostics, ViewRestoreOptions, ViewState } from "../../src/browser/index.ts";
@@ -281,7 +281,8 @@ export class ViewBindings {
         const editor = this.mounted.get("secondary")?.candidate;
         if (!editor?.tab) return;
         const host = editor.element.closest<HTMLDivElement>(".editor-host"), activity = editor.activity();
-        if (!host?.isConnected || activity.disposed || activity.composing || activity.pendingInput || activity.pendingCommand) return;
+        if (!host?.isConnected || activity.disposed || activity.composing || activity.pendingInput || activity.pendingCommand
+            || this.tablePaste.hasPendingInput(editor.view.documentId)) return;
         const { workspace, tab } = editor;
         if (!workspace.ownsDocumentView(editor.view, tab) || !workspace.observeDocument(documentId).getSnapshot()) return;
         if (editor.view.documentId === documentId) return editor;
@@ -319,6 +320,20 @@ export class ViewBindings {
                 }
                 if (candidate) {
                     this.attachTools(scope, id, tabId, candidate, presentation);
+                    const original = this.controller.source.documentId;
+                    if (id === "secondary" && documentId !== original) {
+                        const bar = host.ownerDocument.createElement("div"), title = host.ownerDocument.createElement("strong");
+                        const back = host.ownerDocument.createElement("button"), note = host.ownerDocument.createElement("span");
+                        bar.className = "host-file-heading"; title.textContent = workspace.document(documentId).title;
+                        back.type = "button"; back.textContent = "Show original source";
+                        bar.append(title, back, note); host.prepend(bar); scope.defer(() => bar.remove());
+                        back.addEventListener("click", () => {
+                            if (this.mounted.get(id)?.candidate !== candidate) return;
+                            const restored = this.presentNavigationDocument(original);
+                            if (restored) focusSource(restored);
+                            else note.textContent = "Finish the current edit to switch files.";
+                        }, { signal: listeners.signal });
+                    }
                     const feedback = host.ownerDocument.createElement("output");
                     feedback.className = "host-edit-feedback"; feedback.setAttribute("aria-label", ariaLabel + " edit feedback");
                     host.append(feedback); scope.defer(() => feedback.remove());
