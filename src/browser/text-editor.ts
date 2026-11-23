@@ -1283,10 +1283,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (event.target !== input && event.target instanceof win.Element && event.target.closest(".st-editor") === root)
             registry.keymap.handle(event);
     }, { signal: listeners.signal });
-    function pointerHit(event: MouseEvent) {
-        // A native scrollbar press targets the scroll container. Only its client area is text.
+    function pointerHit(event: MouseEvent, gutterInset = 0) {
+        // Pointer capture can retarget a gutter double-click to the root. Scrollbars also target the root.
         if (event.target === root) {
-            const bounds = clientBox(root, viewport.settings().minimap);
+            const bounds = clientBox(root, viewport.settings().minimap, gutterInset);
             if (event.clientX < bounds.left || event.clientX >= bounds.right
                 || event.clientY < bounds.top || event.clientY >= bounds.bottom) return undefined;
         }
@@ -1301,7 +1301,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         wordSelectionEvents++;
         if (event.button !== 0 || disposed || composing || input.disabled || !live()
             || (event.target as Element | null)?.closest(".st-viewport-gutter")) return;
-        const point = pointerHit(event); if (!point) return;
+        const point = pointerHit(event, viewport.getSnapshot().gutterWidth); if (!point) return;
         event.preventDefault(); if (!draggedWord) selectWord(point.offset, event.altKey);
         } finally { lastWordSelectionMs = win.performance.now() - began; maxWordSelectionTurnMs = Math.max(maxWordSelectionTurnMs, lastWordSelectionMs); }
     }, { signal: listeners.signal });

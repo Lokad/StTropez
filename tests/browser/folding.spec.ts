@@ -59,7 +59,7 @@ test("whole-line gestures select a collapsed block for deletion, including at EO
             f.setText(text); f.folds([{ id: "section", from, to, collapsed: true }]);
             f.select("primary", { anchor: from + 2, head: from + 2 });
         }, { text, from, to }); await ready(page);
-        if (gesture === "gutter") await page.locator("#primary .st-line-numbers span").filter({ hasText: /^2$/ }).click();
+        if (gesture === "gutter") await page.locator("#primary .st-line-numbers span").filter({ hasText: /^2$/ }).dblclick();
         else if (gesture === "triple-click") await page.locator('#primary .st-viewport-row[data-line="1"]').click({ clickCount: 3, position: { x: 12, y: 8 } });
         else await source.press("Control+l");
         await ready(page);

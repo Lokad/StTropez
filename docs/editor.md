@@ -200,7 +200,8 @@ from either editable view. [Shared history and save boundaries](workspace.md#tra
 
 ### Keyboard and pointer commands
 
-Click a line number to select the line and its line break. Drag across numbers to select several
+Click or double-click a line number to select the line and its line break. On a folded header,
+the selection includes the hidden lines. Drag across numbers to select several
 lines, or Shift+click a number to extend to that line. The editor keeps keyboard focus. The
 gutter scrolls with the wheel and stays in place horizontally. Both comparison panes use their
 own source line numbers. Alignment gaps have no number.
