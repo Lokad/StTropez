@@ -134,7 +134,7 @@ test(`plain LSP captures wait for movement, composition and table input before f
     page.on("websocket", socket => socket.on("framesent", frame => {
         const message = JSON.parse(frame.payload.toString()); if (methods.includes(message.method)) wire.push(message.method);
     }));
-    await page.goto("/hosts/plain/?editor=candidate&language=lsp");
+    await page.goto("/hosts/plain/?language=lsp");
     await expect(input(page)).toBeVisible(); await settled(page);
     await page.getByLabel("New identifier", { exact: true }).fill("inventory");
     const longSource = "lookup(" + " ".repeat(200000) + ") #abc";

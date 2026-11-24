@@ -7,7 +7,7 @@ import { flushSync } from "react-dom";
 import type { Root } from "react-dom/client";
 import type { Observable } from "../../src/index.ts";
 import { HostController } from "./controller.ts";
-import { hostEditor, ViewBindings } from "./bindings.ts";
+import { ViewBindings } from "./bindings.ts";
 import { actions } from "./actions.ts";
 import { inputRecoveryModel, operationStatusModel, saveConflictPanelModel } from "./operation-panels.ts";
 import { hostSceneModel } from "./scene-model.ts";
@@ -34,8 +34,6 @@ import { configurationFormModel, formSavePanelModel, formSaveKey } from "./confi
 import { transferFormModel, runPanelModel } from "./transfer-panel.ts";
 import "./style.css";
 
-import type { NativeEditorMount } from "./bindings.ts";
-
 function Destinations({ results }: { results: DestinationList }) {
     return <ul ref={results.bind} tabIndex={results.bind ? -1 : undefined} aria-label={results.label}>
         {results.items().map(item => <li key={item.key}><button disabled={results.disabled || item.available === false}
@@ -47,8 +45,8 @@ function LanguageField({ field }: { field: PanelTextField }) {
         value={field.value} onChange={event => field.change(event.currentTarget.value)} /></label>;
 }
 
-export function startReactHost(mountNative?: NativeEditorMount) {
-const controller = new HostController(), bindings = new ViewBindings(controller, mountNative ? hostEditor() : "candidate", mountNative);
+export function startReactHost() {
+const controller = new HostController(), bindings = new ViewBindings(controller);
 const draft = new HostDraftRecovery(controller, createBrowserDraftStore(window)); draft.attachNavigation(window);
 const counters = { form: 0, metadata: 0 };
 const formCommitted = () => { counters.form++; };
@@ -181,7 +179,7 @@ function SignatureTools() {
 }
 function TablePasteTools() {
     const tools = bindings.tablePaste, model = tablePastePanelModel(tools, useObserved(tools.state));
-    return <section className="host-language" aria-label={model.label}><label><input type="checkbox" checked={model.enabled.checked} disabled={model.enabled.disabled}
+    return <section className="host-language" aria-label={model.label}><label><input type="checkbox" checked={model.enabled.checked}
         onChange={event => model.enabled.change(event.currentTarget.checked)} />{model.enabled.label}</label>
         <output aria-label={model.status.label}>{model.status.text}</output>
         <progress aria-label={model.progress.label} hidden={model.progress.hidden} />

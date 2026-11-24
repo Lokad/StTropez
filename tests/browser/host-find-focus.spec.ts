@@ -24,7 +24,7 @@ for (const arm of ["stay", "form", "interrupt"] as const)
     test(`plain 50000 replace all ${arm} preserves focus intent and captured work`, async ({ page }) => {
 
         const original = Array(50000).fill("sample").join("\r\n"), changed = original.replaceAll("sample", "changed");
-        await page.goto(`/hosts/plain/?editor=candidate`); await expect(primary(page)).toBeVisible();
+        await page.goto(`/hosts/plain/`); await expect(primary(page)).toBeVisible();
         await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot();
             f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]);
         }, original); await ready(page);

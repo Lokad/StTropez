@@ -17,7 +17,6 @@ try {
             && !state.primary.viewport.pending && !state.secondary.viewport.pending; });
     await ready();
     assert.equal(await harness.page.locator("textarea.st-input-context").count(), 2);
-    assert.equal(await harness.page.locator("textarea.st-textarea-baseline").count(), 0, "Whole-value fallback satisfied the candidate measurement.");
     const cases = [];
     for (const corpus of corpusIds) for (const position of ["start", "middle", "end"]) {
         await harness.page.evaluate(corpus => window.editingFixture.load(corpus), corpus); await ready();

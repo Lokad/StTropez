@@ -23,7 +23,7 @@ async function point(page: Page, column = 1): Promise<{ x: number; y: number }> 
 }
 
 test("pointer hover uses the latest position when diagnostics divide a symbol", async ({ page }) => {
-    await page.goto("/hosts/plain/?editor=candidate&language=lsp"); await ready(page);
+    await page.goto("/hosts/plain/?language=lsp"); await ready(page);
     await page.evaluate(() => { const f = window.hostFixture, doc = f.snapshot().source; f.editSource(doc.revision, [{ from: 0, to: doc.length, insert: "TODOvalue = other;" }]); });
     const field = primary(page), warning = page.getByRole("button", { name: /Resolve this placeholder/ }).first();
     await field.focus(); await field.press("Control+Home"); await field.press("Control+Space"); await expect(warning).toBeVisible(); await field.press("Escape");
@@ -42,7 +42,7 @@ test("pointer hover uses the latest position when diagnostics divide a symbol", 
 });
 test(`plain keyboard hover keeps complete selections, safe text, input focus and shared history`, async ({ page }) => {
     const replies = await holdLspReplies(page, "textDocument/hover");
-    await page.goto(`/hosts/plain/?editor=candidate&language=lsp`);
+    await page.goto(`/hosts/plain/?language=lsp`);
     const original = "const café = 1;\r\n𐐀value = 2;";
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 2, head: 2 }, { anchor: 7, head: 7 }]); }, original);
     await primary(page).focus(); await ready(page); const before = await snapshot(page), selected = before.bindings.views.find(v => v.id === "primary")!.selectionSet;
@@ -101,7 +101,7 @@ test(`plain keyboard hover keeps complete selections, safe text, input focus and
     expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
 });
 test(`plain pointer hover preserves host focus and refuses stale replies across edits and remount`, async ({ page }) => {
-    test.setTimeout(90000); const replies = await holdLspReplies(page, "textDocument/hover"); await page.goto(`/hosts/plain/?editor=candidate&language=lsp`);
+    test.setTimeout(90000); const replies = await holdLspReplies(page, "textDocument/hover"); await page.goto(`/hosts/plain/?language=lsp`);
     await page.evaluate(() => { const f = window.hostFixture, text = "const sample = 1234567;\r\n".repeat(300); f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); f.setSourceReadOnly(true); });
     await primary(page).press("Control+Home"); await ready(page); const form = page.getByRole("textbox", { name: "Configuration path", exact: true }); await form.fill("keep-focus.csv");
     const at = await point(page); await page.mouse.move(at.x, at.y); await expect(tooltip(page)).toContainText("Declares a constant binding.");

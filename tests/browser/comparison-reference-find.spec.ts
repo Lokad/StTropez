@@ -26,7 +26,7 @@ async function setup(p: Page, host: string, raw: string): Promise<void> {
             }
         };
     });
-    await p.goto(`/hosts/${host}/?editor=candidate`);
+    await p.goto(`/hosts/${host}/`);
     await p.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, raw);
     for (const name of ["Open source review", "Capture review acceptance", "Finish review acceptance"]) { await button(p, name).click(); await waitForReview(p); }
 }

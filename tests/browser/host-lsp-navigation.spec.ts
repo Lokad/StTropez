@@ -18,7 +18,7 @@ async function seed(page: Page, text: string, offset: number) {
 }
 async function hover(page: Page) { await field(page).press("Control+k"); await field(page).press("Control+i"); }
 test.describe("plain LSP inspection/navigation", () => {
-    test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/plain/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); await waitForNavigation(page); });
+    test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/plain/?language=lsp`); await expect(field(page)).toBeVisible(); await waitForNavigation(page); });
     test("successive symbol lookups share unopened project files and release them on dismissal", async ({ page }) => {
         const opens: string[] = [], closes: string[] = [];
         let companionUri: string | undefined;
@@ -445,7 +445,7 @@ test.describe("plain LSP inspection/navigation", () => {
 });
 
 for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspection/navigation`, () => {
-    test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); await waitForNavigation(page); });
+    test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/${host}/?language=lsp`); await expect(field(page)).toBeVisible(); await waitForNavigation(page); });
     test("malformed navigation, changed authority and pending remount cannot publish stale targets", async ({ page, browserName, browserErrors }) => {
         const replies = await holdLspReplies(page, "textDocument/definition"); await page.reload();
         const text = "const target = 1;\r\ntarget"; await seed(page, text, text.length - 2); const before = await snapshot(page);

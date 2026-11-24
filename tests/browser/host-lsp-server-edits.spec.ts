@@ -21,7 +21,7 @@ async function dispose(page: Page) { await page.evaluate(() => window.hostFixtur
 test.describe(`plain LSP server edits`, () => {
     test.beforeEach(async ({ page }) => {
          await page.addInitScript(() => { const send = WebSocket.prototype.send; WebSocket.prototype.send = function(this: WebSocket, data) { if (typeof data === "string") { const value = JSON.parse(data); if (value.method === "initialize" && value.params.capabilities.workspace?.applyEdit) Reflect.set(window, "projectTestSocket", this); } send.call(this, data); }; });
-        await page.goto("/hosts/plain/?editor=candidate&language=lsp"); await expect(input(page)).toBeVisible(); await editors(page);
+        await page.goto("/hosts/plain/?language=lsp"); await expect(input(page)).toBeVisible(); await editors(page);
     });
     test("advertised commands and explicit server-edit decisions retain wire versions, complete history and one acknowledgement", async ({ page }) => {
         const sent: any[] = [], incoming: any[] = []; let opened = 0, closed = 0; page.on("websocket", socket => { opened++; socket.on("close", () => closed++); socket.on("framesent", frame => sent.push(JSON.parse(frame.payload.toString()))); socket.on("framereceived", frame => incoming.push(JSON.parse(frame.payload.toString()))); });

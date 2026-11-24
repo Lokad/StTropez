@@ -30,7 +30,6 @@ For a single feature or host workflow, open its route on the
 | Route | Purpose | Entry source |
 | --- | --- | --- |
 | `/` | TypeScript editing, language tools, JavaScript output, Problems, Changes and local save/recovery | [Demo](../examples/demo/main.ts) |
-| `/workspace/` | Native textarea baseline with workspace resources, transactions and deferred services | [Workspace fixture](../tests/fixtures/workspace/main.ts) |
 | `/editing/` | Bounded input, selections, commands and local highlighting | [Editing fixture](../examples/editing/main.ts) |
 | `/viewport/` | Read-only virtualized text and geometry | [Viewport fixture](../examples/viewport/main.ts) |
 | `/comparison/` | Working/reference comparison and hunk commands | [Comparison fixture](../examples/comparison/main.ts) |
@@ -40,10 +39,8 @@ For a single feature or host workflow, open its route on the
 | `/hosts/plain/` | Two source views, forms, review and deferred services | [Plain host](../examples/hosts/plain-main.ts) |
 | `/hosts/react/` | The same controller and workflows with React rendering | [React host](../examples/hosts/react-main.tsx) |
 
-Append `?editor=candidate` to either host URL to try `mountTextEditor`. The bare URL and
-`?editor=native` use the [textarea fixture](../fixtures/textarea-editor.ts) for the source. Comparison
-always uses the bounded editor. Installed examples use `mountTextEditor`. Both development hosts use
-`/lsp-fixture` for language services.
+Both hosts mount `mountTextEditor` for their source views and use it in comparison panes.
+Their development language service runs at `/lsp-fixture`.
 
 ## TypeScript demo
 
@@ -289,7 +286,7 @@ identity-token permissions.
 
 ## Host workflows
 
-Open either host with `?editor=candidate`. Try editing the same file in two panes, changing
+Open either host. Try editing the same file in two panes, changing
 configuration or reviewing a saved version. The hosts share a
 [controller](../examples/hosts/controller.ts). **Finish save**, **Finish run** and
 **Finish remote review** let you choose when the simulated service replies. Reload resets the service.

@@ -75,7 +75,7 @@ async function linkCaptureScene(page: Page, text: string, editedTarget: boolean)
     return { companion, editTarget, select, discover };
 }
 test.describe("plain selected LSP features", () => {
-    test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/plain/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); });
+    test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/plain/?language=lsp`); await expect(field(page)).toBeVisible(); });
     test("painted swatches open the clicked literal in its pane and refresh after typing", async ({ page }) => {
         const raw = 'const a = "#abc";\r\nconst b = "#f008";';
         await seed(page, raw, 2);
@@ -821,7 +821,7 @@ test.describe("plain selected LSP features", () => {
 });
 test("missing and withdrawn language capabilities fail explicitly without a worker fallback or a late color edit", async ({ page }) => {
     const replies = await holdLspReplies(page, "textDocument/colorPresentation");
-    await page.goto("/hosts/plain/?editor=candidate&language=lsp&lspSubset=dynamic");
+    await page.goto("/hosts/plain/?language=lsp&lspSubset=dynamic");
     const text = 'lookup("a", )\r\nconst color = "#abc";'; await seed(page, text, text.indexOf(")"));
     await field(page).press("Control+Shift+Space"); await expect.poll(async () => (await snapshot(page)).bindings.signature.presentation.status).toBe("failed");
     await button(page, "Discover module links").click(); await expect.poll(async () => (await snapshot(page)).bindings.links.state.status).toBe("failed");
@@ -838,7 +838,7 @@ test("missing and withdrawn language capabilities fail explicitly without a work
 });
 
 test.describe("react selected LSP features", () => {
-    test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/react/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); });
+    test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/react/?language=lsp`); await expect(field(page)).toBeVisible(); });
     test("signature, link resolution and a selected color presentation use bounded source controls", async ({ page }) => {
         const prefix = "const unchanged = 123;\r\n".repeat(300), tail = 'lookup("a", )\r\nimport "sample-utils";\r\nconst color = "#abc";', raw = prefix + tail;
         await seed(page, raw, prefix.length + tail.indexOf(")")); await field(page).press("Control+Shift+Space");

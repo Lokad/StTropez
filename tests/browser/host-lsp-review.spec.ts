@@ -15,7 +15,7 @@ async function offer(page: Page) { await field(page).press("Control+Space"); awa
 
 test.describe(`plain LSP review host`, () => {
     test.beforeEach(async ({ page }) => {
-         await page.goto("/hosts/plain/?editor=candidate&language=lsp"); await expect(field(page)).toBeVisible(); await ready(page);
+         await page.goto("/hosts/plain/?language=lsp"); await expect(field(page)).toBeVisible(); await ready(page);
     });
     test("rejected provider attachment retains review and retries without leaking scopes or leases", async ({ page }) => {
         const original = ("const sa = 1; // " + "x".repeat(1000) + "\r\n").repeat(3100);

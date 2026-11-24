@@ -11,15 +11,15 @@ async function waitForLoad(page: Page): Promise<void> {
 }
 async function exact(p: Page, text: string) { expect(await hostTextEquals(p, text)).toBe(true); }
 test.afterEach(async ({ page }, info) => { if (info.status !== info.expectedStatus && !page.isClosed()) await info.attach("load-failure-state", { contentType: "application/json", body: JSON.stringify(await snap(page), null, 2) }); });
-for (const editor of ["native", "candidate"]) test(`plain ${editor} repeated loads release clean documents and preserve reachable drafts`, async ({ page: p }) => {
-      await p.goto(`/hosts/plain/?editor=${editor}`); await expect(primary(p)).toBeVisible();
+test(`plain repeated loads release clean documents and preserve reachable drafts`, async ({ page: p }) => {
+      await p.goto(`/hosts/plain/`); await expect(primary(p)).toBeVisible();
     const original = '// @transfer {"destination":"target.csv","batchSize":"1000"}\r\n' + "row café😀\r\n".repeat(8);
     await p.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
     await primary(p).press("Control+End"); await primary(p).pressSequentially("X"); await command(p, "Save source"); await command(p, "Run captured inputs");
     await expect.poll(async () => (await snap(p)).pendingRuns.length).toBe(1); await expect.poll(async () => (await snap(p)).pendingSaves.length).toBe(1);
     await p.evaluate(() => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: 0, insert: "// later\r\n" }]); }); const text = "// later\r\n" + original + "X";
     const field = p.getByRole("textbox", { name: "Instruction destination", exact: true });
-    if (editor === "candidate") { await primary(p).press("Control+Home"); await primary(p).press("ArrowDown"); await command(p, "Anchor instruction at caret"); await expect(field).toBeVisible(); await field.evaluate(node => (node as HTMLTextAreaElement).setSelectionRange(1, 4, "backward")); }
+    await primary(p).press("Control+Home"); await primary(p).press("ArrowDown"); await command(p, "Anchor instruction at caret"); await expect(field).toBeVisible(); await field.evaluate(node => (node as HTMLTextAreaElement).setSelectionRange(1, 4, "backward"));
     await waitForLoad(p); const before = await snap(p), owned = ({ subscriptions: _subscriptions, ...rest }: typeof before.diagnostics) => rest;
     let steadySubscriptions: number | undefined;
     const restored = async () => {
@@ -34,7 +34,7 @@ for (const editor of ["native", "candidate"]) test(`plain ${editor} repeated loa
         await waitForLoad(p); await restored();
         const after = await snap(p); expect(after.pendingSaves).toEqual(before.pendingSaves); expect(after.pendingRuns).toEqual(before.pendingRuns); expect(after.history).toEqual(before.history);
         expect(selections(after)).toEqual(selections(before)); expect(after.source.revision).toBe(before.source.revision); expect(after.source.exports).toBe(before.source.exports);
-        if (editor === "candidate") { await expect(field).toHaveValue("target.csv"); expect(await field.evaluate(node => { const f = node as HTMLTextAreaElement; return [f.selectionStart, f.selectionEnd, f.selectionDirection]; })).toEqual([1, 4, "backward"]); expect(after.bindings.views.every(v => !v.metrics || v.metrics.viewport.rows < 100)).toBe(true); }
+        await expect(field).toHaveValue("target.csv"); expect(await field.evaluate(node => { const f = node as HTMLTextAreaElement; return [f.selectionStart, f.selectionEnd, f.selectionDirection]; })).toEqual([1, 4, "backward"]); expect(after.bindings.views.every(v => v.metrics.viewport.rows < 100)).toBe(true);
     }
     await exact(p, text); await command(p, "Begin delayed load"); await command(p, "Finish delayed load"); await expect(primary(p)).toBeVisible(); await primary(p).press("Control+End"); await primary(p).pressSequentially(" draft café😀"); await primary(p).press("Shift+Home"); await waitForLoad(p);
     const loaded = (await snap(p)).bindings.views.find(v => v.id === "primary")!;

@@ -8,7 +8,7 @@ async function waitForReview(page: Page): Promise<void> {
 }
 test(`plain review panes keep unchanged rows and click coordinates aligned after typing`, async ({ page }) => {
 
-    await page.goto(`/hosts/plain/?editor=candidate`); const line = "const sample = 123; // TODO", original = Array(60).fill(line).join("\r\n");
+    await page.goto(`/hosts/plain/`); const line = "const sample = 123; // TODO", original = Array(60).fill(line).join("\r\n");
     await page.evaluate(value => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: value }]); }, original);
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await waitForReview(page);
     const input = page.getByRole("textbox", { name: "Primary source", exact: true }); await input.press("Control+Home"); await waitForReview(page);
@@ -50,7 +50,7 @@ test(`plain review panes keep unchanged rows and click coordinates aligned after
 
 test(`plain bounded long-context reveal keeps the caret visible through clicking, typing and remount`, async ({ page }) => {
 
-    await page.goto(`/hosts/plain/?editor=candidate`);
+    await page.goto(`/hosts/plain/`);
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await waitForReview(page);
     const input = page.getByRole("textbox", { name: "Primary source", exact: true });
     // Match the reproduced editing session: focus precedes programmatic range setup.

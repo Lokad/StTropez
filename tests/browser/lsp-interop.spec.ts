@@ -32,7 +32,7 @@ test("a first-character import keeps multicaret snippet selection and atomic und
             server.send(message);
         });
     });
-    await page.goto("/hosts/plain/?editor=candidate&language=lsp"); await expect(field(page)).toBeVisible(); await ready(page);
+    await page.goto("/hosts/plain/?language=lsp"); await expect(field(page)).toBeVisible(); await ready(page);
     const initial = "saMORE\r\nsaMORE"; await seed(page, initial);
     await expect.poll(async () => (await provider(page)).connected).toBe(true);
     await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "interactive" }));
@@ -59,7 +59,7 @@ test("pending LSP diagnostics remain painted and navigable while server analysis
             socket.send(message);
         });
     });
-    await page.goto("/hosts/plain/?editor=candidate&language=lsp"); await expect(field(page)).toBeVisible(); await ready(page);
+    await page.goto("/hosts/plain/?language=lsp"); await expect(field(page)).toBeVisible(); await ready(page);
     const original = "const saMORE = 1; // TODO\r\n"; await seed(page, original); await offer(page); await button(page, "Cancel request").click();
     const diagnostic = page.getByLabel("Source diagnostics", { exact: true }).getByRole("button"), status = page.getByLabel("Diagnostic status", { exact: true });
     await expect(diagnostic).toHaveText("21: Resolve this placeholder.");
@@ -126,7 +126,7 @@ test("unsupported completion commands preserve usable choices without issuing a 
             server.send(message);
         });
     });
-    await page.goto("/hosts/plain/?editor=candidate&language=lsp"); await expect(field(page)).toBeVisible(); await ready(page);
+    await page.goto("/hosts/plain/?language=lsp"); await expect(field(page)).toBeVisible(); await ready(page);
     const original = "const saMORE = 1;"; await seed(page, original);
     await expect.poll(async () => (await provider(page)).connected).toBe(true); await offer(page);
     await expect(page.getByRole("option")).toHaveCount(1); await expect(page.getByRole("option", { name: "sampleWithCommand", exact: true })).toHaveCount(0);

@@ -35,7 +35,7 @@ async function fixture(page: Page, mode: "plain" | "react", template = body) {
             server.send(message);
         });
     });
-    await page.goto(`/hosts/${mode}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); await field(page).focus(); await ready(page);
+    await page.goto(`/hosts/${mode}/?language=lsp`); await expect(field(page)).toBeVisible(); await field(page).focus(); await ready(page);
     await expect.poll(async () => (await state(page)).bindings.language.sessions.find(session => session.id === "primary")!.provider.connected).toBe(true);
     await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "interactive" }));
     expect(capabilities).toMatchObject({ insertTextMode: 2, completionItem: { insertTextModeSupport: { valueSet: [1, 2] } } });

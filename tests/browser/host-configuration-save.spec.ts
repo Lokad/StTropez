@@ -14,7 +14,7 @@ async function exact(p: Page, text: string) { expect(await hostTextEquals(p, tex
 
 test(`plain configuration Save stays independent through typing, review, Run and remount`, async ({ page: p }, info) => {
 
-    await p.goto(`/hosts/plain/?editor=candidate`);
+    await p.goto(`/hosts/plain/`);
     const input = p.getByRole("textbox", { name: "Primary source", exact: true }), field = p.getByRole("textbox", { name: "Configuration path", exact: true });
     await expect(input).toBeVisible(); const original = "café😀\r\nrow two";
     await p.evaluate(value => { window.hostFixture.previewProposal(value); window.hostFixture.applyProposal(); }, original); await waitForReview(p);

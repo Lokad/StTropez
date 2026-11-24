@@ -13,8 +13,8 @@ test.beforeEach(async ({ page }) => {
         return modules.has(name) ? route.fulfill({ contentType: "text/javascript", body: modules.get(name)! }) : route.abort();
     });
     // Keep the real loopback document's network address space for its WebSocket.
-    await page.route("**/workspace-fixture.js", route => route.fulfill({ contentType: "text/javascript", body: "" }));
-    await page.goto("/workspace/");
+    await page.route("**/protocol-fixture.js", route => route.fulfill({ contentType: "text/javascript", body: "" }));
+    await page.goto("/protocol/");
     await page.setContent('<base href="/"><link rel="stylesheet" href="/app.css"><div id="mount" style="width:600px;height:240px"></div>');
 });
 

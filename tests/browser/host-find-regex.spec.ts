@@ -18,7 +18,7 @@ async function exact(page: Page, text: string, reference = false): Promise<void>
 }
 test(`plain regex worker captures Unicode replacements through comparison, save and remount`, async ({ page }) => {
     test.setTimeout(120000);
-    const workers: string[] = []; page.on("worker", worker => workers.push(worker.url())); await page.goto(`/hosts/plain/?editor=candidate`);
+    const workers: string[] = []; page.on("worker", worker => workers.push(worker.url())); await page.goto(`/hosts/plain/`);
     const body = "const unchanged = 123;\r\n".repeat(1), header = "foobar foo foo_ K k K_ 𐐀 𐐨\r\n", original = header + body + "end";
     const changedHeader = "[foobar:foobar:foobar:$] [foo:foo:foo:$] foo_ [K:K:K:$] [k:k:k:$] K_ [𐐀:𐐀:𐐀:$] [𐐨:𐐨:𐐨:$]\r\n", changed = changedHeader + body + "end";
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
@@ -71,7 +71,7 @@ test(`plain regex worker captures Unicode replacements through comparison, save 
     await expect.poll(() => page.workers().length).toBe(0);
 });
 test(`plain zero-width regex navigation and replacement preserve raw CRLF, overlaps and syntax recovery`, async ({ page }) => {
-     await page.goto(`/hosts/plain/?editor=candidate`); const original = "😀x\r\nlast";
+     await page.goto(`/hosts/plain/`); const original = "😀x\r\nlast";
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
     await source(page).press("Control+Home"); await ready(page);
     await source(page).press("Control+f"); const query = page.getByRole("textbox", { name: "Find source", exact: true }), replacement = page.getByRole("textbox", { name: "Replacement", exact: true });

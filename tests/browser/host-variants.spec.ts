@@ -8,7 +8,7 @@ const version = (page: Page, id: string) => page.getByRole("combobox", { name: "
 
 async function exact(page: Page, value: string, reference = false): Promise<void> { expect(await hostTextEquals(page, value, reference ? "reference" : "source")).toBe(true); }
 async function mount(page: Page, host: string, text: string): Promise<void> {
-     await page.goto(`/hosts/${host}/?editor=candidate`);
+     await page.goto(`/hosts/${host}/`);
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text);
     await click(page, "Open source review"); await ready(page); await click(page, "Capture review acceptance"); await click(page, "Finish review acceptance"); await ready(page);
 }

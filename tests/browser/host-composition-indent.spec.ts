@@ -38,7 +38,7 @@ for (const [host, lines, key, outcome] of [
 
         const original = Array(lines).fill("    const café = 1;").join("\r\n");
         const changed = key === "Tab" ? "    " + original.replaceAll("\r\n", "\r\n    ") : original.replace(/^ {4}/gm, "");
-        await page.goto(`/hosts/${host}/?editor=candidate`); await expect(primary(page)).toBeVisible();
+        await page.goto(`/hosts/${host}/`); await expect(primary(page)).toBeVisible();
         await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot();
             f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]);
         }, original); await ready(page);

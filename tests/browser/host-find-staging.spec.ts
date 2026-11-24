@@ -12,7 +12,7 @@ const selection = (s: State) => s.bindings.views.find(v => v.id === "primary")!.
 const source = (page: Page) => page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); });
 
 test("host commands use confirmed matches immediately while a local edit is awaiting find repair", async ({ page }) => {
-    await page.goto("/hosts/plain/?editor=candidate"); await ready(page);
+    await page.goto("/hosts/plain/"); await ready(page);
     await page.evaluate(() => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: "cat\n".repeat(2000) }]); });
     await ready(page); await primary(page).press("Control+Home"); await primary(page).press("Control+f");
     await page.getByRole("textbox", { name: "Find source", exact: true }).fill("cat");
@@ -35,7 +35,7 @@ test("host commands use confirmed matches immediately while a local edit is awai
 });
 
 test("a pending F3 in a shadow editor respects focus and fold changes", async ({ page }) => {
-    await page.goto("/hosts/plain/?editor=candidate"); await ready(page);
+    await page.goto("/hosts/plain/"); await ready(page);
     const prefix = "some line\n".repeat(20000);
     await primary(page).focus();
     await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot().source;
@@ -85,7 +85,7 @@ for (const action of ["Find next", "Find previous", "Replace current"] as const)
         // The save fixture trims trailing whitespace; internal CRLF and Unicode remain exact.
         const original = "const sample = 123;\r\n// café 😀\r\nconst sample = 456;", first = original.indexOf("sample"), second = original.lastIndexOf("sample");
         const composed = original.slice(0, first) + "東京" + original.slice(first + 6), replaced = original.slice(0, first) + "changed" + original.slice(first + 6);
-        await page.goto(`/hosts/plain/?editor=candidate`); await expect(primary(page)).toBeVisible();
+        await page.goto(`/hosts/plain/`); await expect(primary(page)).toBeVisible();
         await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
         await ready(page);
         for (const name of ["Save source", "Finish save", "Open source review", "Capture reference refresh", "Finish reference refresh"]) await button(page, name).click();

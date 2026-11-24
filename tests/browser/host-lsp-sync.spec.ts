@@ -71,7 +71,7 @@ async function canonicalSave(page: Page, text: string): Promise<void> {
 
 test.describe(`plain LSP synchronization host`, () => {
     test.beforeEach(async ({ page }) => {
-         await page.goto("/hosts/plain/?editor=candidate&language=lsp"); await expect(field(page)).toBeVisible(); await ready(page);
+         await page.goto("/hosts/plain/?language=lsp"); await expect(field(page)).toBeVisible(); await ready(page);
     });
     test("shared connection and exact canonical saves survive review, detach and reconnect", async ({ page }) => {
         const methods: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value.method); }));

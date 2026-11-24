@@ -22,7 +22,7 @@ async function clipboard(input: Locator, type: "copy" | "cut" | "paste", text = 
 test.describe(`plain integrated pilot commands`, () => {
     test.beforeEach(async ({ page }) => {
 
-        await page.goto(`/hosts/plain/?editor=candidate`); await expect(primary(page)).toBeVisible(); await ready(page);
+        await page.goto(`/hosts/plain/`); await expect(primary(page)).toBeVisible(); await ready(page);
     });
     test("the command palette filters the originating pane's commands and retires on remount", async ({ page }) => {
         const original = "one\ntwo\nthree";
@@ -207,35 +207,33 @@ test.describe(`plain integrated pilot commands`, () => {
     });
 });
 
-for (const editor of ["native", "candidate"] as const) {
-    test(`plain ${editor} keyboard re-entry preserves backward and collapsed model selections`, async ({ page }) => {
+test(`plain keyboard re-entry preserves backward and collapsed model selections`, async ({ page }) => {
 
-        await page.goto(`/hosts/plain/?editor=${editor}`); await expect(primary(page)).toBeVisible();
-        const original = "first\r\nsecond😀\r\nthird";
-        await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
-        await primary(page).focus();
-        await page.evaluate(length => { const f = window.hostFixture; if (!f.selectSource("primary", f.snapshot().source.revision, { anchor: length, head: 7 })) throw new Error("Selection setup failed."); }, original.length);
-        const selected = (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection;
-        const form = page.getByRole("textbox", { name: "Configuration path", exact: true });
-        await primary(page).press("Escape"); await primary(page).press("Tab"); await expect(form).toBeFocused();
-        await form.press("Control+s"); expect((await snapshot(page)).pendingSaves).toEqual([]);
-        await form.press("Shift+Tab"); await expect(primary(page)).toBeFocused();
-        expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toEqual(selected);
-        const captured = await snapshot(page);
-        await primary(page).press(editor === "native" ? "Meta+s" : "Control+s"); await expect(primary(page)).toBeFocused();
-        await expect.poll(async () => (await snapshot(page)).pendingSaves).toEqual([
-            { revision: captured.source.revision, length: original.length, expectedServerVersion: "v0" },
-        ]);
-        expect((await snapshot(page)).bindings.views.map(v => v.selection)).toEqual(captured.bindings.views.map(v => v.selection));
-        await primary(page).pressSequentially("!"); expect(await source(page)).toBe(original.slice(0, 7) + "!");
-        await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).pendingCommands).toBe(0);
-        expect(await source(page)).toBe(original.slice(0, 7) + "!");
-        await primary(page).press("Control+z"); expect(await source(page)).toBe(original); expect((await snapshot(page)).source.dirty).toBe(false);
-        await primary(page).press("Control+End"); const collapsed = (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection;
-        await primary(page).press("Escape"); await primary(page).press("Tab"); await expect(form).toBeFocused();
-        await form.press("Shift+Tab"); await expect(primary(page)).toBeFocused();
-        expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toEqual(collapsed);
-        await primary(page).pressSequentially("x"); expect(await source(page)).toBe(original + "x");
-        await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 });
-    });
-}
+    await page.goto(`/hosts/plain/`); await expect(primary(page)).toBeVisible();
+    const original = "first\r\nsecond😀\r\nthird";
+    await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
+    await primary(page).focus();
+    await page.evaluate(length => { const f = window.hostFixture; if (!f.selectSource("primary", f.snapshot().source.revision, { anchor: length, head: 7 })) throw new Error("Selection setup failed."); }, original.length);
+    const selected = (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection;
+    const form = page.getByRole("textbox", { name: "Configuration path", exact: true });
+    await primary(page).press("Escape"); await primary(page).press("Tab"); await expect(form).toBeFocused();
+    await form.press("Control+s"); expect((await snapshot(page)).pendingSaves).toEqual([]);
+    await form.press("Shift+Tab"); await expect(primary(page)).toBeFocused();
+    expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toEqual(selected);
+    const captured = await snapshot(page);
+    await primary(page).press("Control+s"); await expect(primary(page)).toBeFocused();
+    await expect.poll(async () => (await snapshot(page)).pendingSaves).toEqual([
+        { revision: captured.source.revision, length: original.length, expectedServerVersion: "v0" },
+    ]);
+    expect((await snapshot(page)).bindings.views.map(v => v.selection)).toEqual(captured.bindings.views.map(v => v.selection));
+    await primary(page).pressSequentially("!"); expect(await source(page)).toBe(original.slice(0, 7) + "!");
+    await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).pendingCommands).toBe(0);
+    expect(await source(page)).toBe(original.slice(0, 7) + "!");
+    await primary(page).press("Control+z"); expect(await source(page)).toBe(original); expect((await snapshot(page)).source.dirty).toBe(false);
+    await primary(page).press("Control+End"); const collapsed = (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection;
+    await primary(page).press("Escape"); await primary(page).press("Tab"); await expect(form).toBeFocused();
+    await form.press("Shift+Tab"); await expect(primary(page)).toBeFocused();
+    expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toEqual(collapsed);
+    await primary(page).pressSequentially("x"); expect(await source(page)).toBe(original + "x");
+    await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 });
+});

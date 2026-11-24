@@ -8,7 +8,7 @@ const secondary = (page: Page) => page.getByRole("textbox", { name: "Secondary s
 test.describe(`plain integrated find host`, () => {
     test.beforeEach(async ({ page }) => {
 
-        await page.goto(`/hosts/plain/?editor=candidate`); await expect(primary(page)).toBeVisible(); await ready(page);
+        await page.goto(`/hosts/plain/`); await expect(primary(page)).toBeVisible(); await ready(page);
     });
 
     test("whole-word find replaces only indexed words through comparison, save and remount", async ({ page }) => {

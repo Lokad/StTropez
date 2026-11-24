@@ -29,7 +29,7 @@ for (const [host, phase] of [["plain", "ordinary"], ["react", "commit"], ["plain
 
         // The save fixture trims trailing whitespace; internal CRLF and Unicode remain exact.
         const original = "const sample = 123;\r\n// TODO verify café 😀\r\nconst end = 1;", todo = original.indexOf("TODO");
-        await page.goto(`/hosts/${host}/?editor=candidate`); await expect(primary(page)).toBeVisible();
+        await page.goto(`/hosts/${host}/`); await expect(primary(page)).toBeVisible();
         await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
         await ready(page);
         for (const name of ["Save source", "Finish save", "Open source review", "Capture reference refresh", "Finish reference refresh"]) await button(page, name).click();

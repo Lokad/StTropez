@@ -19,7 +19,7 @@ test("failed host attachments unwind acquired owners and can mount and edit agai
         const path = "/host-attachment/";
         const { HostController } = await import(path + "controller.js") as typeof import("../../examples/hosts/controller.ts");
         const { ViewBindings } = await import(path + "bindings.js") as typeof import("../../examples/hosts/bindings.ts");
-        const controller = new HostController(), bindings = new ViewBindings(controller, "candidate"), host = document.querySelector<HTMLDivElement>("#host")!;
+        const controller = new HostController(), bindings = new ViewBindings(controller), host = document.querySelector<HTMLDivElement>("#host")!;
         const messages = (error: unknown): string[] => error instanceof AggregateError ? error.errors.flatMap(messages) : [String(error instanceof Error ? error.message : error)];
         const ownership = () => {
             const { resources, documents, tabs, views, leases, subscriptions } = controller.workspace.diagnostics();
@@ -94,7 +94,7 @@ test("language shortcuts follow their panel and editor through attachment failur
         const { HostController } = await import(path + "controller.js") as typeof import("../../examples/hosts/controller.ts");
         const { ViewBindings } = await import(path + "bindings.js") as typeof import("../../examples/hosts/bindings.ts");
         const { mountTextEditor } = await import(path + "editor.js") as typeof import("../../src/browser/index.ts");
-        const controller = new HostController(), bindings = new ViewBindings(controller, "candidate");
+        const controller = new HostController(), bindings = new ViewBindings(controller);
         const host = document.querySelector<HTMLDivElement>("#host")!, tab = controller.viewTab("primary");
         const results = [];
         try {

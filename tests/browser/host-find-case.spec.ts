@@ -8,7 +8,7 @@ const click = (page: Page, name: string) => page.getByRole("button", { name, exa
 async function exact(page: Page, value: string, reference = false): Promise<void> { expect(await hostTextEquals(page, value, reference ? "reference" : "source")).toBe(true); }
 test(`plain match-case find keeps Unicode ranges, shared undo, comparison and working Save/Run`, async ({ page }) => {
     test.setTimeout(120000);
-    await page.goto(`/hosts/plain/?editor=candidate`);
+    await page.goto(`/hosts/plain/`);
     const original = "K k K_ 𐐀 𐐨 i ı ss ß café\r\nunchanged\r\nK";
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
     await click(page, "Open source review"); await ready(page); await click(page, "Keep draft version");

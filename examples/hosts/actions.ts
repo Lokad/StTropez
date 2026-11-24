@@ -3,12 +3,10 @@ import type { ViewBindings } from "./bindings.ts";
 
 export function actions(controller: HostController, bindings: ViewBindings): readonly Readonly<{ label: string; invoke: () => void }>[] {
     return [
-        ...(bindings.editor === "candidate" ? [
-            { label: "Editor commands", invoke: bindings.openCommands },
-            { label: "Insert transfer instruction", invoke: bindings.insertInstruction },
-            { label: "Anchor instruction at caret", invoke: bindings.anchorInstruction },
-            { label: "Close anchored instruction", invoke: controller.instruction.clear },
-        ] : []),
+        { label: "Editor commands", invoke: bindings.openCommands },
+        { label: "Insert transfer instruction", invoke: bindings.insertInstruction },
+        { label: "Anchor instruction at caret", invoke: bindings.anchorInstruction },
+        { label: "Close anchored instruction", invoke: controller.instruction.clear },
         { label: "Preview proposal", invoke: controller.previewProposal }, { label: "Apply proposal", invoke: controller.applyProposal },
         { label: "Save source", invoke: controller.save },
         { label: "Finish save", invoke: controller.finishSave }, { label: "Fail save", invoke: controller.failSave },

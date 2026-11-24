@@ -32,7 +32,7 @@ async function caret(input: Locator, offset: number, secondary = false): Promise
 
 test(`plain inherited CSS zoom preserves carets, pointer ranges and navigation`, async ({ page }) => {
     test.setTimeout(90000);
-    await page.goto(`/hosts/plain/?editor=candidate`);
+    await page.goto(`/hosts/plain/`);
     const line = "0123456789abcdef Δ😀 xyz\r\n", text = line.repeat(80);
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text);
     await ready(page);
@@ -81,7 +81,7 @@ test(`plain inherited CSS zoom preserves carets, pointer ranges and navigation`,
 });
 
 test(`plain scroll boundary keeps the display caret on source while the native input stays bounded`, async ({ page }) => {
-     await page.goto(`/hosts/plain/?editor=candidate`);
+     await page.goto(`/hosts/plain/`);
     const line = "0123456789abcdef Δ😀 xyz\r\n", text = line.repeat(80), offset = line.length * 20 + 8, input = source(page);
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text);
     for (const zoom of [1, 1.5]) {

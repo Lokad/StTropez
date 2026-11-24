@@ -11,7 +11,7 @@ for (const mode of ["plain", "react"] as const) test(`${mode} boots without fixt
         } }] });
     const script = result.outputFiles.find(file => file.path.endsWith(".js"))!;
     await page.route(`**/host-${mode}.js`, route => route.fulfill({ contentType: "text/javascript", body: script.text }));
-    await page.goto(`/hosts/${mode}/?editor=candidate`);
+    await page.goto(`/hosts/${mode}/`);
     const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
     await expect(primary).toBeVisible(); expect(await page.evaluate(() => typeof window.hostFixture)).toBe("undefined");
     await primary.press("End"); await primary.pressSequentially(" kept"); await expect(primary).toHaveValue("start kept");

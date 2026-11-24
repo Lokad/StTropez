@@ -15,7 +15,7 @@ for (const [host, reply] of [["plain", "unchanged"], ["react", "canonical"]] as 
         const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
         const original = "alpha omega\r\n// café 😀" + (reply === "canonical" ? "  " : "");
         const canonical = original.trimEnd(), attempted = original.replace("omega", "ê"), nativeAttempt = attempted.replaceAll("\r\n", "\n");
-        await page.goto(`/hosts/${host}/?editor=candidate`);
+        await page.goto(`/hosts/${host}/`);
         await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
         for (const name of ["Open source review", "Capture review acceptance", "Finish review acceptance"]) await button(name).click();
         await waitForReview(page); await button("Save source").click();

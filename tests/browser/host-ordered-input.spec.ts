@@ -7,7 +7,7 @@ async function exact(page:Page,text:string):Promise<void>{expect(await page.eval
 
 test("queued Apple caret chords and native history keep their captured selection and command order", async ({ page }) => {
     await page.addInitScript(() => Object.defineProperty(navigator, "platform", { value: "MacIntel" }));
-    await page.goto("/hosts/plain/?editor=candidate");
+    await page.goto("/hosts/plain/");
     const prefix = "a".repeat(200001) + ";end\r\n", original = prefix + "last";
     await page.evaluate(text => { const f = window.hostFixture;
         f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]);
@@ -32,7 +32,7 @@ test("queued Apple caret chords and native history keep their captured selection
 });
 
 test(`plain Save and Run require settled typing and retain captured revisions`,async({page})=>{
-    test.setTimeout(120000);await page.goto(`/hosts/plain/?editor=candidate`);const original="a".repeat(200001)+";end",expected=original.slice(0,200001)+"typed;end";
+    test.setTimeout(120000);await page.goto(`/hosts/plain/`);const original="a".repeat(200001)+";end",expected=original.slice(0,200001)+"typed;end";
     await page.evaluate(original=>{const f=window.hostFixture;f.editSource(f.snapshot().source.revision,[{from:0,to:f.snapshot().source.length,insert:original}]);f.selectSourceSet("primary",f.snapshot().source.revision,[{anchor:0,head:0}]);},original);await ready(page);
     const input=page.getByRole("textbox",{name:"Primary source",exact:true});await input.focus();
     const blocked=await input.evaluate(node=>{const input=node as HTMLTextAreaElement;input.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",ctrlKey:true,bubbles:true,cancelable:true}));input.dispatchEvent(new InputEvent("beforeinput",{inputType:"insertText",data:"typed",bubbles:true,cancelable:true}));for(const name of ["Save source","Run captured inputs"])([...document.querySelectorAll("button")].find(button=>button.textContent===name) as HTMLButtonElement).click();const s=window.hostFixture.snapshot();return{saves:s.pendingSaves.length,runs:s.pendingRuns.length,modal:s.layout.modal};});

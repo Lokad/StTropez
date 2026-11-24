@@ -25,8 +25,8 @@ async function select(page: Page, from: number, to = from, id: "primary" | "seco
         return fixture.selectSource(id, fixture.snapshot().source.revision, { anchor: to, head: from });
     }, { from, to, id })).toBe(true); await waitForReview(page);
 }
-async function mount(page: Page, host: "plain" | "react", editor: "native" | "candidate", text: string): Promise<void> {
-    await page.goto(`/hosts/${host}/?editor=${editor}`);
+async function mount(page: Page, text: string): Promise<void> {
+    await page.goto(`/hosts/plain/`);
     await page.evaluate(text => { const fixture = window.hostFixture, state = fixture.snapshot();
         fixture.editSource(state.source.revision, [{ from: 0, to: state.source.length, insert: text }]);
     }, text);
@@ -94,7 +94,7 @@ test("three selected source lines paste one per caret with their trailing line b
     test.skip(browserName !== "chromium", unverifiedBackend);
     await isolatedClipboard(baseURL, info, async page => {
         const original = "x1\r\nx2\r\nx3\r\naaa\r\nbbb\r\nccc";
-        await mount(page, "plain", "candidate", original);
+        await mount(page, original);
         const source = primary(page);
         await source.press("Control+Home");
         for (let i = 0; i < 3; i++) await source.press("Shift+ArrowDown");
@@ -113,7 +113,7 @@ test("three selected source lines paste one per caret with their trailing line b
 test("Shift+Delete cuts a selection or caret line for the next Shift+Insert", async ({ browserName, baseURL }, info) => {
     test.skip(browserName !== "chromium" || process.platform === "darwin", "This shortcut uses the Windows or Linux headless clipboard.");
     await isolatedClipboard(baseURL, info, async page => {
-        await mount(page, "plain", "candidate", "cart: red\nlast");
+        await mount(page, "cart: red\nlast");
         const source = primary(page);
         await select(page, 0, 4); await source.press("Shift+Delete"); await exact(page, ": red\nlast");
         await source.press("Control+End"); await source.press("Shift+Insert"); await exact(page, ": red\nlastcart");
@@ -128,7 +128,7 @@ test("Shift+Delete cuts a selection or caret line for the next Shift+Insert", as
 test(`plain trusted HTML table paste converts the actual clipboard and keeps captured save and undo`, async ({ browserName, baseURL }, info) => {
     test.skip(browserName !== "chromium", unverifiedBackend);
     await isolatedClipboard(baseURL, info, async page => {
-        await mount(page, "plain", "candidate", "source");
+        await mount(page, "source");
         await page.getByRole("checkbox", { name: "Paste tables as CSV", exact: true }).check();
         await page.evaluate(() => {
             const wrapper = document.createElement("div"); wrapper.contentEditable = "true"; wrapper.id = "known-table-clipboard-source"; wrapper.tabIndex = 0;
@@ -148,81 +148,77 @@ test(`plain trusted HTML table paste converts the actual clipboard and keeps cap
         await dispose(page, info);
     });
 });
-for (const editor of ["native", "candidate"] as const) {
-    test(`plain ${editor} trusted clipboard preserves selections, captured save and shared history`, async ({ browserName, baseURL }, info) => {
-        test.skip(browserName !== "chromium", unverifiedBackend);
-        await isolatedClipboard(baseURL, info, async page => {
-            const original = normal;
-            const from = 6, to = original.indexOf("const end");
-            await mount(page, "plain", editor, original); await primary(page).focus(); await select(page, from, to); await select(page, 3, 3, "secondary");
-            const captured = await snapshot(page); expect(sourceSelection(captured, "primary")).toMatchObject({ anchor: to, head: from });
-            await copyToKnownControl(page, original.slice(from, to));
-            await primary(page).press("Control+x"); await waitForReview(page); const cut = original.slice(0, from) + original.slice(to), cutState = await snapshot(page);
-            await exact(page, cut); expect(cutState.source.revision).toBe(captured.source.revision + 1); expect(cutState.history.undoDepth).toBe(captured.history.undoDepth + 1);
-            expect(sourceSelection(cutState, "primary")).toMatchObject({ anchor: from, head: from });
-            expect(sourceSelection(cutState, "secondary")).toEqual(sourceSelection(captured, "secondary")); expect(cutState.pendingSaves).toEqual(captured.pendingSaves);
-            const peer = page.getByRole("textbox", { name: "Secondary source", exact: true });
-            await peer.focus(); await peer.press("Control+z"); await waitForReview(page); await exact(page, original);
-            await peer.press("Control+Shift+z"); await waitForReview(page); await exact(page, cut);
-            await primary(page).focus(); await select(page, from); await select(page, 3, 3, "secondary"); const beforePaste = await snapshot(page);
-            await primary(page).press("Control+v"); await waitForReview(page);
-            const events = await page.evaluate(() => window.hostKeyboardClipboardAudit.read()), paste = events.at(-1)!;
-            expect(events.map(event => event.type)).toEqual(["copy", "paste", "cut", "paste"]);
-            expect(paste).toMatchObject({ trusted: true, label: "Primary source", prevented: editor === "candidate" });
-            expect(normalized(paste.text)).toBe(normalized(original.slice(from, to)));
-            // Cutting the sole CRLF in the normal sample leaves a single line, whose default is LF.
-            const inserted = normalized(paste.text);
-            const pasted = cut.slice(0, from) + inserted + cut.slice(from), afterPaste = await snapshot(page);
-            await exact(page, pasted); expect(afterPaste.source.revision).toBe(beforePaste.source.revision + 1);
-            expect(afterPaste.history.undoDepth).toBe(cutState.history.undoDepth + 1);
-            expect(sourceSelection(afterPaste, "primary")).toMatchObject({ anchor: from + inserted.length, head: from + inserted.length });
-            expect(sourceSelection(afterPaste, "secondary")).toEqual(sourceSelection(beforePaste, "secondary")); expect(afterPaste.pendingSaves).toEqual(captured.pendingSaves);
-            if (editor === "candidate") { expect(afterPaste.source.exports).toBe(0); expect(afterPaste.bindings.views.every(view => view.metrics && view.metrics.inputUnits <= 2600)).toBe(true); }
-            await select(page, pasted.length); await primary(page).pressSequentially("q"); await waitForReview(page); await exact(page, pasted + "q");
-            expect((await snapshot(page)).pendingSaves).toEqual(captured.pendingSaves);
-            await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1"); await waitForReview(page);
-            await exact(page, pasted + "q"); expect((await snapshot(page)).source.dirty).toBe(true);
-            for (const [expected, clean] of [[pasted, pasted === original], [cut, false], [original, true]] as const) {
-                await primary(page).press("Control+z"); await waitForReview(page); await exact(page, expected); expect((await snapshot(page)).source.dirty).toBe(!clean);
-            }
-            for (const expected of [cut, pasted, pasted + "q"]) { await primary(page).press("Control+Shift+z"); await waitForReview(page); await exact(page, expected); }
-            await dispose(page, info);
-        });
+test(`plain trusted clipboard preserves selections, captured save and shared history`, async ({ browserName, baseURL }, info) => {
+    test.skip(browserName !== "chromium", unverifiedBackend);
+    await isolatedClipboard(baseURL, info, async page => {
+        const original = normal;
+        const from = 6, to = original.indexOf("const end");
+        await mount(page, original); await primary(page).focus(); await select(page, from, to); await select(page, 3, 3, "secondary");
+        const captured = await snapshot(page); expect(sourceSelection(captured, "primary")).toMatchObject({ anchor: to, head: from });
+        await copyToKnownControl(page, original.slice(from, to));
+        await primary(page).press("Control+x"); await waitForReview(page); const cut = original.slice(0, from) + original.slice(to), cutState = await snapshot(page);
+        await exact(page, cut); expect(cutState.source.revision).toBe(captured.source.revision + 1); expect(cutState.history.undoDepth).toBe(captured.history.undoDepth + 1);
+        expect(sourceSelection(cutState, "primary")).toMatchObject({ anchor: from, head: from });
+        expect(sourceSelection(cutState, "secondary")).toEqual(sourceSelection(captured, "secondary")); expect(cutState.pendingSaves).toEqual(captured.pendingSaves);
+        const peer = page.getByRole("textbox", { name: "Secondary source", exact: true });
+        await peer.focus(); await peer.press("Control+z"); await waitForReview(page); await exact(page, original);
+        await peer.press("Control+Shift+z"); await waitForReview(page); await exact(page, cut);
+        await primary(page).focus(); await select(page, from); await select(page, 3, 3, "secondary"); const beforePaste = await snapshot(page);
+        await primary(page).press("Control+v"); await waitForReview(page);
+        const events = await page.evaluate(() => window.hostKeyboardClipboardAudit.read()), paste = events.at(-1)!;
+        expect(events.map(event => event.type)).toEqual(["copy", "paste", "cut", "paste"]);
+        expect(paste).toMatchObject({ trusted: true, label: "Primary source", prevented: true });
+        expect(normalized(paste.text)).toBe(normalized(original.slice(from, to)));
+        // Cutting the sole CRLF in the normal sample leaves a single line, whose default is LF.
+        const inserted = normalized(paste.text);
+        const pasted = cut.slice(0, from) + inserted + cut.slice(from), afterPaste = await snapshot(page);
+        await exact(page, pasted); expect(afterPaste.source.revision).toBe(beforePaste.source.revision + 1);
+        expect(afterPaste.history.undoDepth).toBe(cutState.history.undoDepth + 1);
+        expect(sourceSelection(afterPaste, "primary")).toMatchObject({ anchor: from + inserted.length, head: from + inserted.length });
+        expect(sourceSelection(afterPaste, "secondary")).toEqual(sourceSelection(beforePaste, "secondary")); expect(afterPaste.pendingSaves).toEqual(captured.pendingSaves);
+        expect(afterPaste.source.exports).toBe(0); expect(afterPaste.bindings.views.every(view => view.metrics && view.metrics.inputUnits <= 2600)).toBe(true);
+        await select(page, pasted.length); await primary(page).pressSequentially("q"); await waitForReview(page); await exact(page, pasted + "q");
+        expect((await snapshot(page)).pendingSaves).toEqual(captured.pendingSaves);
+        await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1"); await waitForReview(page);
+        await exact(page, pasted + "q"); expect((await snapshot(page)).source.dirty).toBe(true);
+        for (const [expected, clean] of [[pasted, pasted === original], [cut, false], [original, true]] as const) {
+            await primary(page).press("Control+z"); await waitForReview(page); await exact(page, expected); expect((await snapshot(page)).source.dirty).toBe(!clean);
+        }
+        for (const expected of [cut, pasted, pasted + "q"]) { await primary(page).press("Control+Shift+z"); await waitForReview(page); await exact(page, expected); }
+        await dispose(page, info);
     });
-    test(`plain ${editor} trusted read-only clipboard preserves source and history until permission returns`, async ({ browserName, baseURL }, info) => {
-        test.skip(browserName !== "chromium", unverifiedBackend);
-        await isolatedClipboard(baseURL, info, async page => {
-            await mount(page, "plain", editor, normal);
-            // Exercise the read-only command before capturing the next save.
-            await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1"); await waitForReview(page);
-            await page.evaluate(() => window.hostFixture.setSourceReadOnly(true));
-            await expect(primary(page)).toHaveAttribute("readonly", ""); await primary(page).focus();
-            const from = 6, to = normal.indexOf("const end"); await select(page, from, to); await select(page, 3, 3, "secondary");
-            await copyToKnownControl(page, normal.slice(from, to)); const before = await snapshot(page);
-            for (const shortcut of ["Control+x", "Control+v"]) {
-                await primary(page).press(shortcut);
-                if (editor === "candidate") {
-                    const notice = page.getByLabel("Primary source edit feedback", { exact: true });
-                    await expect(notice, shortcut).toBeVisible();
-                    await primary(page).blur(); await expect(notice).toBeHidden(); await primary(page).focus();
-                }
-            }
-            await primary(page).pressSequentially("q"); await waitForReview(page);
-            const after = await snapshot(page); await exact(page, normal);
-            expect(after.source.revision).toBe(before.source.revision); expect(after.source.exports).toBe(before.source.exports);
-            expect(after.history).toEqual(before.history); expect(after.pendingSaves).toEqual(before.pendingSaves); expect(selections(after)).toEqual(selections(before));
-            await page.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await expect(primary(page)).not.toHaveAttribute("readonly", ""); await primary(page).focus(); await waitForReview(page);
-            expect(sourceSelection(await snapshot(page), "primary")).toEqual(sourceSelection(before, "primary"));
-            await button(page, "Save source").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
-            const pending = (await snapshot(page)).pendingSaves; await primary(page).focus();
-            await primary(page).pressSequentially("q"); await waitForReview(page); const expected = normal.slice(0, from) + "q" + normal.slice(to);
-            await exact(page, expected); const typed = await snapshot(page); expect(typed.source.revision).toBe(before.source.revision + 1);
-            expect(sourceSelection(typed, "primary")).toMatchObject({ anchor: from + 1, head: from + 1 }); expect(typed.pendingSaves).toEqual(pending);
-            await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v2"); await waitForReview(page);
-            await exact(page, expected); expect((await snapshot(page)).source.dirty).toBe(true);
-            await primary(page).press("Control+z"); await waitForReview(page); await exact(page, normal); expect((await snapshot(page)).source.dirty).toBe(false);
-            await primary(page).press("Control+Shift+z"); await waitForReview(page); await exact(page, expected); expect((await snapshot(page)).source.dirty).toBe(true);
-            await dispose(page, info);
-        });
+});
+test(`plain trusted read-only clipboard preserves source and history until permission returns`, async ({ browserName, baseURL }, info) => {
+    test.skip(browserName !== "chromium", unverifiedBackend);
+    await isolatedClipboard(baseURL, info, async page => {
+        await mount(page, normal);
+        // Exercise the read-only command before capturing the next save.
+        await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1"); await waitForReview(page);
+        await page.evaluate(() => window.hostFixture.setSourceReadOnly(true));
+        await expect(primary(page)).toHaveAttribute("readonly", ""); await primary(page).focus();
+        const from = 6, to = normal.indexOf("const end"); await select(page, from, to); await select(page, 3, 3, "secondary");
+        await copyToKnownControl(page, normal.slice(from, to)); const before = await snapshot(page);
+        for (const shortcut of ["Control+x", "Control+v"]) {
+            await primary(page).press(shortcut);
+            const notice = page.getByLabel("Primary source edit feedback", { exact: true });
+            await expect(notice, shortcut).toBeVisible();
+            await primary(page).blur(); await expect(notice).toBeHidden(); await primary(page).focus();
+        }
+        await primary(page).pressSequentially("q"); await waitForReview(page);
+        const after = await snapshot(page); await exact(page, normal);
+        expect(after.source.revision).toBe(before.source.revision); expect(after.source.exports).toBe(before.source.exports);
+        expect(after.history).toEqual(before.history); expect(after.pendingSaves).toEqual(before.pendingSaves); expect(selections(after)).toEqual(selections(before));
+        await page.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await expect(primary(page)).not.toHaveAttribute("readonly", ""); await primary(page).focus(); await waitForReview(page);
+        expect(sourceSelection(await snapshot(page), "primary")).toEqual(sourceSelection(before, "primary"));
+        await button(page, "Save source").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
+        const pending = (await snapshot(page)).pendingSaves; await primary(page).focus();
+        await primary(page).pressSequentially("q"); await waitForReview(page); const expected = normal.slice(0, from) + "q" + normal.slice(to);
+        await exact(page, expected); const typed = await snapshot(page); expect(typed.source.revision).toBe(before.source.revision + 1);
+        expect(sourceSelection(typed, "primary")).toMatchObject({ anchor: from + 1, head: from + 1 }); expect(typed.pendingSaves).toEqual(pending);
+        await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v2"); await waitForReview(page);
+        await exact(page, expected); expect((await snapshot(page)).source.dirty).toBe(true);
+        await primary(page).press("Control+z"); await waitForReview(page); await exact(page, normal); expect((await snapshot(page)).source.dirty).toBe(false);
+        await primary(page).press("Control+Shift+z"); await waitForReview(page); await exact(page, expected); expect((await snapshot(page)).source.dirty).toBe(true);
+        await dispose(page, info);
     });
-}
+});

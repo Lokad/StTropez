@@ -22,7 +22,7 @@ for (const feature of ["hover", "signature"] as const) {
             });
         });
         await page.setViewportSize({ width: 620, height: 460 });
-        await page.goto(`/hosts/plain/?editor=candidate&language=lsp`);
+        await page.goto(`/hosts/plain/?language=lsp`);
         const field = page.getByRole("textbox", { name: "Primary source", exact: true });
         await expect(field).toBeVisible();
         await page.evaluate(() => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: "lookup(value)" }]); });

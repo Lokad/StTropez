@@ -19,7 +19,7 @@ async function preview(page: Page, value = "inventory") { await name(page).fill(
 async function exact(page: Page, text: string) { expect(await hostTextEquals(page, text)).toBe(true); }
 async function dispose(page: Page) { await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.bindings.rename).toMatchObject({ sessions: 0, subscriptions: 0, disposed: true }); }
 test.describe(`plain LSP rename host`, () => {
-    test.beforeEach(async ({ page }) => {  await page.goto("/hosts/plain/?editor=candidate&language=lsp"); await expect(input(page)).toBeVisible(); await waitForRename(page); });
+    test.beforeEach(async ({ page }) => {  await page.goto("/hosts/plain/?language=lsp"); await expect(input(page)).toBeVisible(); await waitForRename(page); });
     test("new-name preview applies exact provider edits across captured resources with shared complete-set history", async ({ page }) => {
         const requests: { method: string; params: any }[] = [], responses: any[] = []; let opened = 0, closed = 0;
         page.on("websocket", socket => { opened++; socket.on("close", () => closed++); socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) requests.push(value); }); socket.on("framereceived", frame => { const value = JSON.parse(frame.payload.toString()); if (value.result?.documentChanges) responses.push(value.result); }); });

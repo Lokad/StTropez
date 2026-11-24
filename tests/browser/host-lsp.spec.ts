@@ -37,7 +37,7 @@ test("numeric typing and an erased prefix leave automatic completion closed", as
             if (hold) { hold = false; release = reply; } else reply();
         });
     });
-    await page.goto("/hosts/plain/?editor=candidate&language=lsp");
+    await page.goto("/hosts/plain/?language=lsp");
     const input = field(page);
     await seed(page, "", 0); await expect.poll(async () => (await provider(page)).connected).toBe(true);
     const settled = async () => {
@@ -65,7 +65,7 @@ test("numeric typing and an erased prefix leave automatic completion closed", as
 
 test.describe(`plain LSP editor host`, () => {
     test.beforeEach(async ({ page }) => {
-         await page.goto("/hosts/plain/?editor=candidate&language=lsp"); await expect(field(page)).toBeVisible(); await ready(page);
+         await page.goto("/hosts/plain/?language=lsp"); await expect(field(page)).toBeVisible(); await ready(page);
     });
     test("actual typing, insert/replace choices and additional edits share history across views", async ({ page }) => {
         const packets: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()) as { method?: string }; if (value.method) packets.push(value.method); }));

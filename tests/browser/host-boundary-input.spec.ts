@@ -11,7 +11,7 @@ async function exact(page: Page, text: string): Promise<void> { expect(await hos
 
 for (const journey of ["primary", "comparison", "resize and queued input"] as const)
 test(`plain ${journey} boundaries finish before immediate typing`, async ({ page }) => {
-    test.setTimeout(120000);  await page.goto(`/hosts/plain/?editor=candidate`);
+    test.setTimeout(120000);  await page.goto(`/hosts/plain/`);
     const bodyRows = 128, rowUnits = "const unchanged = 123;\r\n".length;
     const original = "first é😀\r\n" + "const unchanged = 123;\r\n".repeat(bodyRows) + "last\r", bodyStart = original.indexOf("\n") + 1;
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);

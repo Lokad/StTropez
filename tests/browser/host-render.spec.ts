@@ -9,7 +9,7 @@ async function waitForReview(page: Page): Promise<void> {
 
 test(`react review typing retains unchanged labels and controls while new reference versions still appear`, async ({ page }) => {
 
-    await page.goto(`/hosts/react/?editor=candidate`);
+    await page.goto(`/hosts/react/`);
     const input = page.getByRole("textbox", { name: "Primary source", exact: true }), original = "const sample = 1; // TODO\n" + "x".repeat(48_000);
     await expect(input).toBeVisible();
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await waitForReview(page);

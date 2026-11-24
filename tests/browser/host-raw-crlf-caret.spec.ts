@@ -5,7 +5,7 @@ const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot
 const painted = (input: Locator) => input.evaluate(node => !(node.parentElement!.querySelector(".st-input-caret") as HTMLElement).hidden);
 test(`plain raw CRLF caret remains painted and moves vertically in source and comparison`, async ({ page }, testInfo) => {
     test.setTimeout(120000);
-     await page.goto(`/hosts/plain/?editor=candidate`);
+     await page.goto(`/hosts/plain/`);
     await page.evaluate(() => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: "a\r\nb" }]); });
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await ready(page);
     for (const view of ["primary", "comparison"] as const) {

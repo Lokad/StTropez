@@ -91,18 +91,9 @@ Tests in `tests/integration/` start real servers and processes on temporary loop
 test closes its listeners, stops its processes and removes its files. Keep in-memory peers in
 the model suite. To run just the demo provider, use `node --test tests/integration/demo-provider.test.ts`.
 
-The plain host runs every action, server-edit, color-preview and link-discovery case, including
-large paging and wide-deletion previews. Both hosts cover navigation, rename, focus, remount,
-provider recovery, unmounted targets and captured Save/Run. Use the
-[host coverage helper](../tests/browser/host-cases.ts) to select permutations by metadata. Register
-cases where they are declared so failures point to the test. Save-failure setup reads the native
-projection-cache annotation before opening the host.
-
-React cases cover stable refs, Strict Mode, render isolation, error recovery and focus across
-multi-resource reviews. They also cover remounts during commands, lost acknowledgements, held server
-edits, changed color values and link attachments. Both hosts exercise completed color previews,
-read-only recovery and keyboard traversal (F6 for colors, F4 for links). Large navigation and rename
-workloads run on plain in each engine.
+Use the plain host for shared editing, language and review workflows. Use React for stable refs,
+Strict Mode, render isolation and root-error recovery. Keep separate cases for light- and shadow-DOM
+event paths when a focus or input transition depends on the event target.
 
 `expectUnmountedSourceHost` checks that views detached while the source-provider scope, recovery
 subscriptions and project-review observer survived. Declare extra service subscriptions in the
@@ -146,7 +137,6 @@ activity and bounded counters.
 
 | Hook | Fixture purpose |
 | --- | --- |
-| `window.sttropez` | Workspace setup/readiness, document/tab metadata and synthetic corpora |
 | `window.editingFixture` | Editor/view state, bounded input/viewport activity, explicit source ranges and disposal |
 | `window.comparisonFixture` | Reference/working captures, hunk ranges, tickets and view lifetime |
 | `window.hostFixture` | Plain/React resources, deferred service decisions, recovery metadata, view attachment and disposal |

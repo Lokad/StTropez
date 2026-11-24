@@ -68,7 +68,7 @@ async function dispose(page: Page) { await page.evaluate(() => window.hostFixtur
 test.describe(`plain LSP code actions`, () => {
     test.beforeEach(async ({ page }) => {
         await page.addInitScript(() => { const send = WebSocket.prototype.send; WebSocket.prototype.send = function(this: WebSocket, data) { if (typeof data === "string") { const value = JSON.parse(data); if (value.method === "initialize" && value.params.capabilities.textDocument?.codeAction) Reflect.set(window, "actionTestSocket", this); } send.call(this, data); }; });
-        await page.goto("/hosts/plain/?editor=candidate&language=lsp"); await expect(input(page)).toBeVisible(); await waitForActions(page); });
+        await page.goto("/hosts/plain/?language=lsp"); await expect(input(page)).toBeVisible(); await waitForActions(page); });
     test("action choices and lazy previews preserve captured diagnostic ranges, safe commands and complete-set history", async ({ page }) => {
         const replies = await holdLspReplies(page, "codeAction/resolve");
         const requests: { method: string; params: any }[] = []; let opened = 0, closed = 0;

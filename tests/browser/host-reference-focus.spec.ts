@@ -11,7 +11,7 @@ async function exact(page:Page,text:string):Promise<void>{expect(await page.eval
 const appendFirst=(text:string,insert:string)=>{const at=text.indexOf("\r\n");return text.slice(0,at)+insert+text.slice(at);};
 async function typeFirst(page:Page,text:string):Promise<void>{await input(page).press("Control+Home");await input(page).press("End");await input(page).pressSequentially(text);await waitForReview(page);}
 async function setup(page:Page,host:string,original:string):Promise<void>{
- await page.goto(`/hosts/${host}/?editor=candidate`);await expect(page.getByRole("textbox",{name:"Primary source",exact:true})).toBeVisible();
+ await page.goto(`/hosts/${host}/`);await expect(page.getByRole("textbox",{name:"Primary source",exact:true})).toBeVisible();
  await page.evaluate(text=>{const f=window.hostFixture,s=f.snapshot();f.editSource(s.source.revision,[{from:0,to:s.source.length,insert:text}]);f.selectSource("primary",f.snapshot().source.revision,{anchor:text.length-2,head:text.length-8});f.selectSource("secondary",f.snapshot().source.revision,{anchor:text.length-11,head:text.length-14});},original);
  await button(page,"Open source review").click();await waitForReview(page);await button(page,"Save source").click();await expect.poll(async()=>(await snapshot(page)).pendingSaves.length).toBe(1);await page.evaluate(()=>window.hostFixture.finishSave());await expect.poll(async()=>(await snapshot(page)).source.serverVersion).toBe("v1");await button(page,"Capture reference refresh").click();await button(page,"Finish reference refresh").click();await waitForReview(page);
 }

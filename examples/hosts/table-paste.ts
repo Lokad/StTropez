@@ -7,7 +7,7 @@ import { htmlTableTokens } from "./table-html.ts";
 type Session = { id: string; editor: TextEditor };
 type Job = { session: Session; insertion: CapturedInsertion; plain: string; html: string;
     formatter?: TableTextFormatter; timer?: number; started: number };
-export type TablePasteSnapshot = Readonly<{ available: boolean; enabled: boolean; status: "idle" | "converting" | "applied" | "cancelled" | "failed"; view: string | null;
+export type TablePasteSnapshot = Readonly<{ enabled: boolean; status: "idle" | "converting" | "applied" | "cancelled" | "failed"; view: string | null;
     work: number; outputUnits: number; rows: number; columns: number; message: string }>;
 
 /** Optional host policy. Clipboard bytes/targets are captured synchronously; only this lane commits. */
@@ -21,12 +21,12 @@ export class HostTablePaste {
     private elapsedMs = 0;
     readonly state;
     hasPendingInput(documentId: DocumentId): boolean { return this.job?.session.editor.view.documentId === documentId; }
-    constructor(available = true) {
-        this.cell = new HostCell<TablePasteSnapshot>({ available, enabled: false, status: "idle", view: null, work: 0, outputUnits: 0, rows: 0, columns: 0,
-            message: available ? "Literal paste is active." : "Table paste is available in the candidate editor." }); this.state = this.cell.observable;
+    constructor() {
+        this.cell = new HostCell<TablePasteSnapshot>({ enabled: false, status: "idle", view: null, work: 0, outputUnits: 0, rows: 0, columns: 0,
+            message: "Literal paste is active." }); this.state = this.cell.observable;
     }
     readonly setEnabled = (enabled: boolean): void => {
-        if (!this.cell.get().available || enabled === this.cell.get().enabled) return;
+        if (enabled === this.cell.get().enabled) return;
         this.cancel(); this.cell.set({ ...this.cell.get(), enabled, status: "idle", message: enabled ? "Paste a table to insert quoted CSV." : "Literal paste is active." });
     };
     private current(job: Job): boolean { return this.job === job && job.insertion.isCurrent(); }

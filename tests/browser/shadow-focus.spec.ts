@@ -13,7 +13,7 @@ type Fixture = { workspace: Workspace; source: TextResourceHandle; tab: TabId; e
 declare global { interface Window { shadowFocus: Fixture } }
 let modules: Map<string, string>, css: string;
 test.beforeAll(async () => {
-    const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/index.ts", protocol: "src/protocol/index.ts", baseline: "fixtures/textarea-editor.ts" },
+    const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/index.ts", protocol: "src/protocol/index.ts" },
         outdir: "artifacts/shadow-focus", bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
     modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text])); css = await readFile("src/browser/editor.css", "utf8");
 });
@@ -263,10 +263,8 @@ test("public input recovery reaches retained listeners inside a closed root befo
         const result = await page.evaluate(async () => {
             const path = "/shadow-focus/browser.js";
             const { inputConflictEvent } = await import(path) as typeof import("../../src/browser/index.ts");
-            const baselinePath = "/shadow-focus/baseline.js";
-            const { mountTextareaEditor } = await import(baselinePath) as typeof import("../../fixtures/textarea-editor.ts");
             const f = window.shadowFocus, host = f.editor.element.parentElement!, listeners = new AbortController();
-            const native = mountTextareaEditor(host, f.workspace, f.tab), received: { detail: InputConflictDetail; frozen: boolean; bubbles: boolean; composed: boolean }[] = [];
+            const received: { detail: InputConflictDetail; frozen: boolean; bubbles: boolean; composed: boolean }[] = [];
             const states: { focused: boolean; composing: boolean; disabled: boolean }[] = [];
             f.editor.subscribe(() => { const { focused, composing, disabled } = f.editor.getSnapshot(); states.push({ focused, composing, disabled }); });
             f.editor.focus();
@@ -274,25 +272,27 @@ test("public input recovery reaches retained listeners inside a closed root befo
             host.addEventListener(inputConflictEvent, () => inside++, { signal: listeners.signal });
             document.addEventListener(inputConflictEvent, () => outside++, { signal: listeners.signal });
             try {
-                for (const [root, node, dispose] of [[f.editor.element, f.editor.element.querySelector("textarea")!, f.editor.dispose],
-                    [native.element, native.element, native.dispose]] as const) {
-                    root.addEventListener(inputConflictEvent, event => { const detail = (event as CustomEvent<InputConflictDetail>).detail;
-                        received.push({ detail, frozen: Object.isFrozen(detail), bubbles: event.bubbles, composed: event.composed }); }, { signal: listeners.signal });
-                    node.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })); node.value = "uncommitted 東京";
-                    dispose();
-                }
+                f.editor.element.addEventListener(inputConflictEvent, event => {
+                    const detail = (event as CustomEvent<InputConflictDetail>).detail;
+                    received.push({ detail, frozen: Object.isFrozen(detail), bubbles: event.bubbles, composed: event.composed });
+                }, { signal: listeners.signal });
+                const node = f.editor.element.querySelector("textarea")!;
+                node.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+                node.value = "é";
+                f.editor.dispose();
                 return { name: inputConflictEvent, received, inside, outside, states, documentId: f.source.documentId, revision: f.workspace.document(f.source.documentId).revision };
-            } finally { native.dispose(); listeners.abort(); }
+            } finally { listeners.abort(); }
         });
         expect(result.states).toEqual([
             { focused: true, composing: false, disabled: false },
             { focused: true, composing: true, disabled: false },
             { focused: false, composing: false, disabled: true },
         ]);
-        expect(result.name).toBe("sttropez-conflict"); expect(result.inside).toBe(2); expect(result.outside).toBe(0);
+        expect(result.name).toBe("sttropez-conflict"); expect(result.inside).toBe(1); expect(result.outside).toBe(0);
         expect(result.revision).toBe(0); expect(await text(page)).toBe("sample sample\ns");
-        expect(result.received).toEqual([0, undefined].map(contextFrom => ({ frozen: true, bubbles: true, composed: false,
-            detail: { documentId: result.documentId, expectedRevision: 0, reason: "composition-detached", attemptedText: "uncommitted 東京", ...(contextFrom === undefined ? {} : { contextFrom }) } })));
+        expect(result.received).toEqual([{ frozen: true, bubbles: true, composed: false, detail: {
+            documentId: result.documentId, expectedRevision: 0, reason: "composition-detached", attemptedText: "é", contextFrom: 0,
+        } }]);
     } finally { await input.dispose(); await page.evaluate(() => window.shadowFocus.dispose()); }
     expect(await page.evaluate(() => window.shadowFocus.workspace.diagnostics())).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
 });

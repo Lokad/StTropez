@@ -18,7 +18,7 @@ async function scroll(p: Page, side: "baseline" | "working", row: number, left?:
     await waitForReview(p);
 }
 test(`plain linked review scroll preserves captured rows, selections, history, reference and lifecycle`, async ({ page: p }) => {
-    test.setTimeout(120000);  await p.goto(`/hosts/plain/?editor=candidate`);
+    test.setTimeout(120000);  await p.goto(`/hosts/plain/`);
     const rows = Array.from({ length: 900 }, (_, i) => `row ${i.toString().padStart(6, "0")}: café😀;ok;\r\n`); rows[9] = "long " + "x".repeat(1000) + "\r\n";
     const raw = rows.join(""), offset = (line: number) => rows.slice(0, line).join("").length;
     await p.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, raw);

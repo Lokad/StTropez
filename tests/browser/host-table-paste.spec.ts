@@ -17,7 +17,7 @@ async function paste(node: Locator, plain: string, html = "") {
     }, { plain, html });
 }
 async function setup(page: Page, host: string, text: string): Promise<void> {
-     await page.goto(`/hosts/${host}/?editor=candidate`);
+     await page.goto(`/hosts/${host}/`);
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text); await waitForPaste(page);
     await page.getByRole("checkbox", { name: "Paste tables as CSV", exact: true }).check();
     await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: 0 }]); });

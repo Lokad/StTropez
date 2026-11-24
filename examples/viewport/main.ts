@@ -1,9 +1,7 @@
-import { mountTextareaEditor } from "../../fixtures/textarea-editor.ts";
 import { Workspace } from "../../src/index.ts";
 import type { Selection, TextEdit } from "../../src/index.ts";
 import { mountTextViewport } from "../../src/browser/index.ts";
 import type { ViewState } from "../../src/browser/index.ts";
-import type { TextareaEditor } from "../../fixtures/textarea-editor.ts";
 import { corpus, corpusIds } from "../../fixtures/workloads.ts";
 import type { CorpusId } from "../../fixtures/workloads.ts";
 import { viewportSettled } from "../shared/readiness.ts";
@@ -15,7 +13,7 @@ const primaryTab = workspace.tabs.open({ kind: "text", documentId: source.docume
 const pane = (name: string) => document.getElementById(name)!;
 const views = { primary: mountTextViewport(pane("primary"), workspace, primaryTab, { ariaLabel: "Primary text viewport" }),
     secondary: mountTextViewport(pane("secondary"), workspace, secondaryTab, { ariaLabel: "Secondary text viewport" }) };
-let native: TextareaEditor | undefined, ticks = 0, timer: ReturnType<typeof setInterval> | undefined, disposed = false;
+let ticks = 0, timer: ReturnType<typeof setInterval> | undefined, disposed = false;
 const listeners = new AbortController();
 function edit(expectedRevision: number, edits: readonly TextEdit[]) {
     return workspace.edit({ documentId: source.documentId, expectedRevision, edits, origin: "host", history: { kind: "live" } });
@@ -24,10 +22,6 @@ function load(id: CorpusId) {
     if (!corpusIds.includes(id)) throw new RangeError("Unknown workload.");
     const current = workspace.document(source.documentId); edit(current.revision, [{ from: 0, to: current.buffer.length, insert: corpus(id) }]);
     Object.values(views).forEach(view => { view.view.setSelection(workspace.document(source.documentId).revision, { anchor: 0, head: 0 }); view.scrollTo({ top: 0, left: 0 }); });
-}
-function toggleNative() {
-    if (native) { native.dispose(); native = undefined; pane("native-host").hidden = true; }
-    else { pane("native-host").hidden = false; native = mountTextareaEditor(pane("native-host"), workspace, primaryTab, { ariaLabel: "Native text control" }); }
 }
 function background(active: boolean) {
     if (timer !== undefined) clearInterval(timer); timer = undefined;
@@ -40,7 +34,6 @@ on("end", () => views.primary.revealOffset(workspace.document(source.documentId)
 on("prepend", () => edit(workspace.document(source.documentId).revision, [{ from: 0, to: 0, insert: "new first line\n" }]));
 on("undo", () => workspace.undo({ documentId: source.documentId, expectedRevision: workspace.document(source.documentId).revision }));
 on("redo", () => workspace.redo({ documentId: source.documentId, expectedRevision: workspace.document(source.documentId).revision }));
-on("native", toggleNative);
 pane("workload").addEventListener("change", event => load((event.currentTarget as HTMLSelectElement).value as CorpusId), { signal: listeners.signal });
 const documentState = workspace.observeDocument(source.documentId);
 const status = () => {
@@ -66,10 +59,10 @@ const fixture = { ready: true, load, edit, background,
         const current = workspace.getSnapshot().documents.find(document => document.id === source.documentId);
         return { document: current ? { revision: current.revision, length: current.buffer.length, lines: current.buffer.lineCount,
             longest: current.buffer.longestLineLength, exports: current.buffer.readMetrics().textExports } : null,
-            primary: views.primary.getDiagnostics(), secondary: views.secondary.getDiagnostics(), diagnostics: workspace.diagnostics(), ticks, native: native !== undefined, disposed };
+            primary: views.primary.getDiagnostics(), secondary: views.secondary.getDiagnostics(), diagnostics: workspace.diagnostics(), ticks, disposed };
     },
     dispose: () => {
-        if (disposed) return; disposed = true; background(false); unsubscribe(); listeners.abort(); native?.dispose(); native = undefined;
+        if (disposed) return; disposed = true; background(false); unsubscribe(); listeners.abort();
         Object.values(views).forEach(view => view.dispose());
         for (const tab of workspace.tabs.getSnapshot()) workspace.tabs.close(tab.id);
         workspace.releaseResource(source.id, true); workspace.releaseResource(progress.id, true);

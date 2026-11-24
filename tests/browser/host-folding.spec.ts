@@ -7,7 +7,7 @@ const button = (page: Page, name: string) => page.getByRole("button", { name, ex
 
 async function exact(page: Page, text: string): Promise<void> { expect(await hostTextEquals(page, text)).toBe(true); }
 test(`plain folding preserves independent views, review, history, captured Save/Run and remount`, async ({ page }) => {
-    test.setTimeout(120000);  await page.goto(`/hosts/plain/?editor=candidate`);
+    test.setTimeout(120000);  await page.goto(`/hosts/plain/`);
     const original = "header\r\nneedle one\r\nneedle two\r\n" + "footer\r\nend", footer = original.indexOf("footer");
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
     await button(page, "Open source review").click(); await ready(page); const reference = (await snapshot(page)).bindings.comparison!.baseline!.version;
@@ -49,7 +49,7 @@ test(`plain folding preserves independent views, review, history, captured Save/
     await expect.poll(() => page.workers().length).toBe(0);
 });
 test(`plain disclosure rejects old DOM captures, expires hover and respects composition`, async ({ page }) => {
-     await page.goto(`/hosts/plain/?editor=candidate`); const text = "const alpha\r\nconst beta\r\nend";
+     await page.goto(`/hosts/plain/`); const text = "const alpha\r\nconst beta\r\nend";
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text);
     await input(page).focus(); await page.evaluate(to => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: to }]); }, text.indexOf("end"));
     await button(page, "Fold selected lines").click(); await ready(page); await input(page).press("ArrowRight"); await input(page).press("ArrowRight"); await ready(page);

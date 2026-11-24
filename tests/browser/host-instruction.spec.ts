@@ -12,7 +12,7 @@ async function waitForInstruction(page: Page, review = true): Promise<void> {
 async function exact(p: Page, text: string) { expect(await hostTextEquals(p, text)).toBe(true); }
 test.afterEach(async ({ page }, info) => { if (info.status !== info.expectedStatus && !page.isClosed()) await info.attach("instruction-failure-state", { contentType: "application/json", body: JSON.stringify(await snap(page), null, 2) }); });
 test(`plain anchored instruction preserves source, history, copy and virtualized ownership`, async ({ page: p }, info) => {
-      await p.goto(`/hosts/plain/?editor=candidate`); await expect(source(p)).toBeVisible();
+      await p.goto(`/hosts/plain/`); await expect(source(p)).toBeVisible();
     const prefix = "before\r\n".repeat(90), line = '  // @transfer { "destination":"a\\u0041.csv", "batchSize":"1000", "unknown":{"n":-0,"s":"😀,}"} }', tail = "\r\nafter".repeat(8), original = prefix + line + tail;
     await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
     await button(p, "Open source review").click(); await button(p, "Capture review acceptance").click(); await button(p, "Finish review acceptance").click(); await waitForInstruction(p);
@@ -20,7 +20,7 @@ test(`plain anchored instruction preserves source, history, copy and virtualized
     await source(p).press("ArrowRight"); await source(p).press("ArrowLeft"); await waitForInstruction(p); await button(p, "Anchor instruction at caret").click();
     const field = p.getByRole("textbox", { name: "Instruction destination", exact: true }), batch = p.getByRole("textbox", { name: "Instruction batch size", exact: true });
     await waitForInstruction(p); await expect.poll(async () => (await snap(p)).bindings.views.find(v => v.id === "primary")?.metrics?.viewport.height).toBe(320);
-    await expect(field).toBeVisible(); await waitForInstruction(p); const before = await snap(p); expect(before.bindings.views.every(v => !v.metrics || v.metrics.viewport.rows < 100)).toBe(true);
+    await expect(field).toBeVisible(); await waitForInstruction(p); const before = await snap(p); expect(before.bindings.views.every(v => v.metrics.viewport.rows < 100)).toBe(true);
     expect(await p.evaluate(() => { const field = document.querySelector('textarea[aria-label="Primary source"]')!, form = document.querySelector('[aria-label="Anchored transfer instruction"]')!; return !field.closest('.st-editor')!.contains(form) && form.closest('.editor-host')?.contains(field); })).toBe(true);
     await field.press("End"); await field.pressSequentially("X"); await waitForInstruction(p); const changed = original.replace('\\u0041.csv"', '\\u0041.csvX"'); await exact(p, changed);
     expect((await snap(p)).bindings.mounts).toBe(before.bindings.mounts); await field.press("Control+z"); await waitForInstruction(p); await exact(p, original); expect(sets(await snap(p))).toEqual(sets(before));
@@ -67,7 +67,7 @@ test(`plain anchored instruction preserves source, history, copy and virtualized
 });
 
 test(`plain anchored instruction stays with its source across primary document replacement`, async ({ page: p }) => {
-      await p.goto(`/hosts/plain/?editor=candidate`);
+      await p.goto(`/hosts/plain/`);
     const original = '// @transfer {"destination":"café😀.csv","batchSize":"1000"}\r\nsource tail';
     await expect(source(p)).toBeVisible(); await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
     await button(p, "Open source review").click(); await waitForInstruction(p); await source(p).press("Control+Home"); await button(p, "Anchor instruction at caret").click();

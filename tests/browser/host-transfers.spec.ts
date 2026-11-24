@@ -12,7 +12,7 @@ async function exact(p: Page, text: string) { expect(await hostTextEquals(p, tex
 async function draftAction(p: Page, name: string) { await button(p, name).click(); await expect(button(p, "Confirm draft action")).toBeEnabled(); await button(p, "Confirm draft action").click(); await waitForDraft(p); }
 
 test(`plain transfer settings and immutable Run/log inspection retain independent inputs`, async ({ page: p }, info) => {
-      await p.goto(`/hosts/plain/?editor=candidate`);
+      await p.goto(`/hosts/plain/`);
     const input = p.getByRole("textbox", { name: "Primary source", exact: true }), destination = p.getByRole("textbox", { name: "Transfer destination", exact: true }), batch = p.getByRole("textbox", { name: "Transfer batch size", exact: true }), path = p.getByRole("textbox", { name: "Configuration path", exact: true });
     await expect(input).toBeVisible(); await button(p, "Open source review").click(); const original = "café😀\r\nrow two";
     await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);

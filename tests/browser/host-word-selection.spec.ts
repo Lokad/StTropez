@@ -23,7 +23,7 @@ for(const entry of cases)test(`plain ${entry.name} doubleclick selects the sourc
   const native=await nativeReplacement(page,entry);
   await testInfo.attach("native replacement control",{body:JSON.stringify(native),contentType:"application/json"});
 
-  await page.goto(`/hosts/plain/?editor=candidate`);await expect(input(page)).toBeVisible();const original=Array(entry.count).fill(entry.before+entry.selected+entry.after).join("\r\n"),from=entry.before.length,to=from+entry.selected.length;
+  await page.goto(`/hosts/plain/`);await expect(input(page)).toBeVisible();const original=Array(entry.count).fill(entry.before+entry.selected+entry.after).join("\r\n"),from=entry.before.length,to=from+entry.selected.length;
   await page.evaluate(text=>{const f=window.hostFixture,s=f.snapshot();f.editSource(s.source.revision,[{from:0,to:s.source.length,insert:text}]);f.selectSource("secondary",f.snapshot().source.revision,{anchor:4,head:1});},original);
   await page.getByRole("button",{name:"Open source review",exact:true}).click();await waitForReview(page);await page.getByRole("button",{name:"Save source",exact:true}).click();await expect.poll(async()=>(await snapshot(page)).pendingSaves.length).toBe(1);await page.evaluate(()=>window.hostFixture.finishSave());await expect.poll(async()=>(await snapshot(page)).pendingCommands).toBe(0);
   await page.getByRole("button",{name:"Capture reference refresh",exact:true}).click();await page.getByRole("button",{name:"Finish reference refresh",exact:true}).click();await waitForReview(page);
@@ -37,7 +37,7 @@ for(const entry of cases)test(`plain ${entry.name} doubleclick selects the sourc
 });
 
 async function longWord(page:Page,host:string){
-  await page.goto(`/hosts/${host}/?editor=candidate`);await expect(input(page)).toBeVisible();const original="x".repeat(200000);
+  await page.goto(`/hosts/${host}/`);await expect(input(page)).toBeVisible();const original="x".repeat(200000);
   await page.evaluate(text=>{const f=window.hostFixture,s=f.snapshot();f.editSource(s.source.revision,[{from:0,to:s.source.length,insert:text}]);f.selectSource("secondary",f.snapshot().source.revision,{anchor:4,head:1});},original);await page.getByRole("button",{name:"Open source review",exact:true}).click();await waitForReview(page);
   await page.getByRole("button",{name:"Save source",exact:true}).click();await expect.poll(async()=>(await snapshot(page)).pendingSaves.length).toBe(1);await page.evaluate(()=>window.hostFixture.finishSave());await expect.poll(async()=>(await snapshot(page)).pendingCommands).toBe(0);await page.getByRole("button",{name:"Capture reference refresh",exact:true}).click();await page.getByRole("button",{name:"Finish reference refresh",exact:true}).click();await waitForReview(page);await input(page).press("Control+Home");await waitForReview(page);await root(page).scrollIntoViewIfNeeded();
   const point=await root(page).evaluate(element=>{const row=element.querySelector(".st-viewport-row");if(!row)throw new Error("Missing long source row.");const node=document.createTreeWalker(row,NodeFilter.SHOW_TEXT).nextNode();if(!node)throw new Error("Missing long source text.");const range=document.createRange();range.setStart(node,8);range.setEnd(node,9);const r=range.getBoundingClientRect();return{x:r.left+r.width*.25,y:r.top+r.height*.5};});return{original,point,before:await snapshot(page)};

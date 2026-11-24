@@ -11,7 +11,7 @@ test("links and definitions retry a failed presentation and keep the requesting 
     const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
     await page.route("**/navigation-target/*.js", route =>
         route.fulfill({ contentType: "text/javascript", body: modules.get(basename(route.request().url()))! }));
-    await page.route("**/workspace-fixture.js", route => route.fulfill({ contentType: "text/javascript", body: "" }));
+    await page.route("**/protocol-fixture.js", route => route.fulfill({ contentType: "text/javascript", body: "" }));
     await page.routeWebSocket("**/lsp-fixture", client => {
         const server = client.connectToServer();
         client.onMessage(message => {
@@ -26,7 +26,7 @@ test("links and definitions retry a failed presentation and keep the requesting 
                 range: { start: { line: 1, character: 5 }, end: { line: 1, character: 13 } } }] }));
         });
     });
-    await page.goto("/workspace/");
+    await page.goto("/protocol/");
     await page.setContent('<link rel="stylesheet" href="/app.css"><div id="source"></div><div id="destination"></div><div id="panel"></div><div id="links"></div>');
     const cleanup = await page.evaluateHandle(async path => {
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");

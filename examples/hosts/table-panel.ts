@@ -2,7 +2,7 @@ import type { HostTablePaste, TablePasteSnapshot } from "./table-paste.ts";
 
 export function tablePastePanelModel(tools: Pick<HostTablePaste, "setEnabled" | "cancel">, state: TablePasteSnapshot) {
     return {
-        label: "Table paste tools", enabled: { label: "Paste tables as CSV", checked: state.enabled, disabled: !state.available, change: tools.setEnabled },
+        label: "Table paste tools", enabled: { label: "Paste tables as CSV", checked: state.enabled, change: tools.setEnabled },
         status: { label: "Table paste status", text: state.message }, progress: { label: "Table conversion progress", hidden: state.status !== "converting" },
         cancel: { label: "Cancel table paste", disabled: state.status !== "converting", invoke: tools.cancel },
     } as const;
@@ -17,7 +17,7 @@ export function mountTablePastePanel(host: HTMLElement, tools: HostTablePaste): 
     output.setAttribute("aria-label", initial.status.label); cancel.textContent = initial.cancel.label;
     enabled.addEventListener("change", () => initial.enabled.change(enabled.checked), { signal: listeners.signal }); cancel.addEventListener("click", initial.cancel.invoke, { signal: listeners.signal });
     host.append(label, output, progress, cancel);
-    const render = () => { const model = tablePastePanelModel(tools, tools.state.getSnapshot()); enabled.checked = model.enabled.checked; enabled.disabled = model.enabled.disabled;
+    const render = () => { const model = tablePastePanelModel(tools, tools.state.getSnapshot()); enabled.checked = model.enabled.checked;
         if (output.textContent !== model.status.text) output.textContent = model.status.text;
         if (cancel.disabled !== model.cancel.disabled) cancel.disabled = model.cancel.disabled;
         if (progress.hidden !== model.progress.hidden) progress.hidden = model.progress.hidden; };

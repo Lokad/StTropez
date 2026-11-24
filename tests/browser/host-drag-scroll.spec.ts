@@ -17,7 +17,7 @@ async function frames(page: Page, count = 8): Promise<void> {
 }
 type Axis = "x" | "y";
 async function begin(page: Page, host: string, axis: Axis, sign: -1 | 1) {
-    await page.goto(`/hosts/${host}/?editor=candidate`); await expect(input(page)).toBeVisible();
+    await page.goto(`/hosts/${host}/`); await expect(input(page)).toBeVisible();
     const line = "const sample = '😀 é';", original = axis === "x" ? "x".repeat(48000) : Array(1000).fill(line).join("\r\n");
     await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); f.selectSource("secondary", f.snapshot().source.revision, { anchor: 4, head: 1 }); }, original);
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await waitForReview(page);
