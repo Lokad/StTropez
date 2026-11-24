@@ -2,11 +2,10 @@ import { emptyList } from "../core/empty-list.ts";
 import { documentHighlightMethod } from "../protocol/lsp-methods.ts";
 import { Store, type Observable } from "../core/observable.ts";
 import { codeWordConstituentPattern } from "../core/word-patterns.ts";
-import { createCooperativeRunner } from "./cooperative-runner.ts";
 import type { DocumentId } from "../core/workspace.ts";
-import { createLspHighlightClient } from "../protocol/lsp-highlights.ts";
+import { highlightClient } from "../protocol/lsp-highlights.ts";
 import type { LspDocumentHighlight } from "../protocol/lsp-highlights.ts";
-import type { LspWorkspace } from "../protocol/lsp-workspace.ts";
+import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 export type LspHighlightSnapshot = Readonly<{ status: "idle" | "pending" | "ready" | "unavailable" | "disposed";
@@ -19,86 +18,106 @@ export type LspHighlightController = Observable<LspHighlightSnapshot> & Readonly
 const identifier = new RegExp(`^(?:\\$|${codeWordConstituentPattern})+$`, "u");
 
 /** Advisory occurrences for one captured view. Never changes text, selection, focus or connection policy. */
-export function createLspHighlightController(editor: TextEditor,
-    options: Readonly<{ provider: LspWorkspace; delayMs?: number }>): LspHighlightController {
+export function mountOccurrences(editor: TextEditor, owner: LspDocumentOwner, delay = 150): LspHighlightController {
     const { workspace, tab: target, view } = editor, documentId = view.documentId, win = editor.element.ownerDocument.defaultView!;
-    const delay = options.delayMs ?? 150;
-    if (editor.signal.aborted || !workspace.ownsDocumentView(view, target)) throw new Error("Invalid highlight view.");
     if (!Number.isFinite(delay) || delay < 0) throw new RangeError("Invalid highlight delay.");
-    const client = createLspHighlightClient(options.provider), empty: readonly LspDocumentHighlight[] = emptyList;
+    const { provider } = owner;
+    const client = highlightClient(owner);
     const notifications = workspace.createNotificationScope(), cell = new Store<LspHighlightSnapshot>(Object.freeze({ status: "idle", documentId,
-        revision: workspace.document(documentId).revision, caret: null, items: empty }), notifications);
-    const events = new AbortController(), runner = createCooperativeRunner(win); let disposed = false, generation = 0;
+        revision: workspace.document(documentId).revision, caret: null, items: emptyList }), notifications);
+    let disposed = false, generation = 0, timer: number | undefined;
     let result: Awaited<ReturnType<typeof client.run>["result"]> | undefined;
     let occurrence: LspDocumentHighlight | undefined;
-    const available = () => !disposed && !editor.activity().disposed && workspace.ownsDocumentView(view, target);
-    const focused = () => editor.getSnapshot().focused;
+    const available = () => !disposed && !editor.signal.aborted && workspace.ownsDocumentView(view, target);
+    const watching = () => available() && editor.getSnapshot().focused && provider.getSnapshot().phase === "ready";
+    const intersect = (from: number, to: number) => result?.isCurrent() && watching()
+        ? result.intersect(from, to) : emptyList;
+    const layer = editor.decorations.addProvider({ name: "occurrences", order: 20, minimap: false, provide: line => {
+        if (result?.revision !== line.revision) return emptyList;
+        return result.intersect(line.from, line.to).map(({ from, to, kind }) => ({ from, to, className: "st-occurrence-" + kind }));
+    } });
     const busy = () => { const state = editor.activity(); return state.composing || state.pendingInput || state.pendingCommand || state.pendingWord || state.pendingGrapheme; };
     const publish = (status: LspHighlightSnapshot["status"], revision = cell.get().revision, caret: number | null = null) => {
-        notifications.publish(cell, Object.freeze({ status, documentId, revision, caret, items: result?.items ?? empty }));
+        const items = result?.items ?? emptyList;
+        if (items !== cell.get().items) layer.invalidate();
+        notifications.publish(cell, Object.freeze({ status, documentId, revision, caret, items }));
     };
     const cancel = () => {
-        generation++; runner.cancel();
-        result = undefined; occurrence = undefined; client.cancel();
+        generation++;
+        win.clearTimeout(timer);
+        result = undefined;
+        occurrence = undefined;
+        client.cancel();
     };
-    const later = (work: () => void, ms: number) => { runner.schedule(work, ms); };
-    const start = (token: number, deadline: number) => {
-        if (token !== generation || !available() || !focused() || options.provider.getSnapshot().phase !== "ready") return;
-        if (busy()) { if (win.performance.now() < deadline) later(() => start(token, deadline), 16); else publish("idle"); return; }
-        const document = workspace.document(documentId), selections = view.getSnapshot().selectionSet, caret = selections.ranges[selections.primary]!.head;
-        const current = () => token === generation && available() && focused() && !busy() && workspace.document(documentId).revision === document.revision
-            && workspace.document(documentId).buffer === document.buffer && view.getSnapshot().selectionSet === selections;
+    const later = (work: () => void, ms: number) => { timer = win.setTimeout(work, ms); };
+    const start = async (token: number, deadline: number) => {
+        if (token !== generation || !watching()) return;
+        if (busy()) {
+            if (win.performance.now() < deadline) later(() => start(token, deadline), 16);
+            else publish("idle");
+            return;
+        }
+        const document = workspace.document(documentId);
+        const selected = view.getSnapshot();
+        const caret = selected.selection.head;
+        const current = () => token === generation && watching() && !busy() && view.getSnapshot() === selected;
         try {
             if (!client.options(document).length) { publish("unavailable", document.revision, caret); return; }
-            const call = client.run({ document, offset: caret }); publish("pending", document.revision, caret);
-            void call.result.then(batch => {
-                if (!current() || !batch.isCurrent()) return;
-                result = batch;
-                if (selections.ranges.length === 1 && selections.ranges[0]!.anchor === caret && caret < document.buffer.length) {
-                    const [hit] = batch.intersect(caret, caret + 1);
-                    // A provider may also return overlapping regions or a whole block of code.
-                    // Only reuse an unambiguous word and bound the text read on a long line.
-                    if (hit && hit.to - hit.from <= 4096 && identifier.test(document.buffer.slice(hit.from, hit.to))
-                        && batch.intersect(hit.from, hit.to).length === 1) occurrence = hit;
-                }
-                publish("ready", document.revision, caret);
-            }, () => { if (current()) publish("unavailable", document.revision, caret); });
+            const call = client.run({ document, offset: caret });
+            publish("pending", document.revision, caret);
+            const batch = await call.result;
+            if (!current() || !batch.isCurrent()) return;
+            result = batch;
+            if (selected.selectionSet.ranges.length === 1 && selected.selection.anchor === caret && caret < document.buffer.length) {
+                const [hit] = batch.intersect(caret, caret + 1);
+                // Moving inside one unambiguous word preserves the displayed occurrences.
+                if (hit && hit.to - hit.from <= 4096 && identifier.test(document.buffer.slice(hit.from, hit.to))
+                    && batch.intersect(hit.from, hit.to).length === 1) occurrence = hit;
+            }
+            publish("ready", document.revision, caret);
         } catch { if (current()) publish("unavailable", document.revision, caret); }
     };
     const refresh = () => {
-        if (disposed) return; cancel(); publish("idle");
-        if (available() && focused() && options.provider.getSnapshot().phase === "ready") {
-            const token = generation; later(() => start(token, win.performance.now() + 5000), delay);
+        if (disposed) return;
+        cancel();
+        publish("idle");
+        if (watching()) {
+            const token = generation;
+            later(() => start(token, win.performance.now() + 5000), delay);
         }
     };
     const viewChanged = () => {
         const { selection, selectionSet } = view.getSnapshot();
         if (occurrence && selectionSet.ranges.length === 1 && selection.anchor === selection.head
             && occurrence.from <= selection.head && selection.head < occurrence.to
-            && available() && focused() && !busy() && result?.isCurrent()) {
+            && watching() && !busy() && result?.isCurrent()) {
             if (cell.get().caret !== selection.head) publish("ready", result.revision, selection.head);
             return;
         }
         refresh();
     };
-    let provider = options.provider.getSnapshot();
+    let connection = provider.getSnapshot();
     const stops = [workspace.observeDocument(documentId).subscribe(refresh), view.subscribe(viewChanged),
-        options.provider.subscribe(() => {
-            const next = options.provider.getSnapshot();
-            const changed = next.phase !== provider.phase || next.epoch !== provider.epoch
-                || next.registrationVersion(documentHighlightMethod) !== provider.registrationVersion(documentHighlightMethod);
-            provider = next; if (changed) refresh();
+        provider.subscribe(() => {
+            const next = provider.getSnapshot();
+            const changed = next.phase !== connection.phase || next.epoch !== connection.epoch
+                || next.registrationVersion(documentHighlightMethod) !== connection.registrationVersion(documentHighlightMethod);
+            connection = next;
+            if (changed) refresh();
         })];
     if (target) stops.push(workspace.tabs.subscribe(() => { if (!available()) refresh(); }));
     stops.push(editor.subscribe(refresh));
     const dispose = () => {
         if (disposed) return;
-        notifications.assertWritable(); disposed = true; cancel(); events.abort();
-        stops.forEach(stop => stop()); client.dispose(); publish("disposed");
+        notifications.assertWritable();
+        disposed = true;
+        cancel();
+        layer.dispose();
+        stops.forEach(stop => stop());
+        client.dispose();
+        publish("disposed");
+        cell.clearSnapshotListeners();
     };
-    editor.signal.addEventListener("abort", dispose, { once: true, signal: events.signal });
     refresh();
-    return Object.freeze({ ...cell.observable, refresh: () => { notifications.assertWritable(); refresh(); },
-        intersect: (from: number, to: number): readonly LspDocumentHighlight[] => result?.isCurrent() && available() && focused() ? result.intersect(from, to) : empty,
-        dispose });
+    return Object.freeze({ ...cell.observable, refresh: () => { notifications.assertWritable(); refresh(); }, intersect, dispose });
 }

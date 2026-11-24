@@ -306,8 +306,8 @@ export async function runDemoHighlights(page: Page, url = "/", distinctWrites = 
     const replace = async (text: string) => { await source.press("Control+a"); await page.keyboard.insertText(text); };
     await replace("let value = 1;\nvalue = value + 1;\n");
     await source.press("Control+Home"); await source.press("Control+ArrowRight"); await source.press("ArrowRight");
-    const writes = page.locator("#editor .demo-occurrence-write"), reads = page.locator("#editor .demo-occurrence-read");
-    const occurrences = page.locator("#editor .demo-occurrence-write, #editor .demo-occurrence-read");
+    const writes = page.locator("#editor .st-occurrence-write"), reads = page.locator("#editor .st-occurrence-read");
+    const occurrences = page.locator("#editor .st-occurrence-write, #editor .st-occurrence-read");
     await expect(occurrences).toHaveText(["value", "value", "value"], { timeout: 30000 });
     // The pinned Node server reports all these spans as reads; the compiler-backed static
     // provider distinguishes writes. Preserve provider semantics instead of inventing kinds.
@@ -315,7 +315,7 @@ export async function runDemoHighlights(page: Page, url = "/", distinctWrites = 
     const continuity = await page.locator("#editor").evaluateHandle(root => {
         let minimum = 3;
         const observer = new MutationObserver(() => {
-            minimum = Math.min(minimum, root.querySelectorAll(".demo-occurrence-read, .demo-occurrence-write").length);
+            minimum = Math.min(minimum, root.querySelectorAll(".st-occurrence-read, .st-occurrence-write").length);
         });
         observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
         return () => { observer.disconnect(); return minimum; };

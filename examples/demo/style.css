@@ -143,9 +143,6 @@ footer { display: flex; gap: 20px; align-items: center; min-height: 38px; paddin
 button.demo-source-note { pointer-events: auto; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .host-output-note { margin: 0; padding: 24px; color: #aebed3; font-size: 13px; line-height: 1.6; }
 .st-viewport { --st-search-match: #a66e2b66; --st-search-border: #e3c270; }
-.demo-occurrence-text { background: #8a8a8a33; }
-.demo-occurrence-read { background: #649ed638; }
-.demo-occurrence-write { background: #649ed638; outline: 1px solid #649ed6; outline-offset: -1px; }
 #editor { --st-diagnostic-color: #ed9a9a; }
 .demo-problems { display: flex; flex-direction: column; padding: 12px; gap: 8px; }
 .demo-problem { border: 1px solid #41414a; border-radius: 5px; padding: 8px; }

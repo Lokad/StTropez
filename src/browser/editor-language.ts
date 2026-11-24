@@ -8,12 +8,14 @@ import { mountDocumentColors, type DocumentColorController, type DocumentColorCo
 import { mountDocumentLinks, type DocumentLinkController, type DocumentLinkControllerOptions } from "./document-link-controller.ts";
 import type { TextEditor } from "./text-editor.ts";
 import { mountSignature, type SignatureController, type SignatureControllerOptions } from "./signature-controller.ts";
+import { mountOccurrences, type LspHighlightController } from "./lsp-highlights.ts";
 
 type Options = {
     completion?: CompletionControllerOptions;
     diagnostics?: DiagnosticControllerOptions;
     hover?: HoverControllerOptions;
     signature?: SignatureControllerOptions;
+    occurrences?: Readonly<{ delayMs?: number }>;
     colors?: DocumentColorControllerOptions;
     links?: DocumentLinkControllerOptions;
 };
@@ -22,6 +24,7 @@ type Features = {
     diagnostics: DiagnosticController;
     hover: HoverController;
     signature: SignatureController;
+    occurrences: LspHighlightController;
     colors: DocumentColorController;
     links: DocumentLinkController;
 };
@@ -47,6 +50,7 @@ export function attachEditorLanguage<O extends Options>(editor: TextEditor, prov
         }
         if (options.completion) features.completion = mountCompletion(editor, provider, options.completion, owner);
         if (options.signature) features.signature = mountSignature(editor, owner, options.signature);
+        if (options.occurrences) features.occurrences = mountOccurrences(editor, owner, options.occurrences.delayMs);
         if (options.colors) features.colors = mountDocumentColors(editor, provider, options.colors, owner);
         if (options.links) features.links = mountDocumentLinks(editor, provider, options.links, owner);
         editor.signal.addEventListener("abort", dispose, { once: true });

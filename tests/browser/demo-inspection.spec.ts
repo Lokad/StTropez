@@ -42,7 +42,7 @@ test("real type inspection works from Code, keyboard and pointer without changin
     await page.mouse.move(2, 2); await expect(hover(page)).toBeHidden();
     // Blur clears occurrence decorations and schedules paint. Exercise a pointer arriving in
     // that same task, before the next frame, rather than relying on engine timing to hit it.
-    await source.focus(); await expect(page.locator("#editor .demo-occurrence-read")).toHaveCount(2);
+    await source.focus(); await expect(page.locator("#editor .st-occurrence-read")).toHaveCount(2);
     await page.evaluate(point => {
         document.getElementById("walkthrough-toggle")!.focus();
         document.querySelector("#editor .st-editor")!.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: point.x, clientY: point.y }));

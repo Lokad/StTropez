@@ -6,7 +6,7 @@ files and decides which edits to apply. [Connect a provider](language-server.md)
 
 ## Use
 
-Use `attachEditorLanguage` when completion, diagnostics, hover, signature help, links or colors share an editor. Give each
+Use `attachEditorLanguage` to enable completion, diagnostics, hover, signature help, occurrences, links or colors. Give each
 feature you want an options object. They share one provider scope and document binding. Hover
 uses the diagnostics painted in that view unless you supply another source.
 
@@ -42,7 +42,7 @@ Use `features` to restrict methods,
 | Code actions | `createCodeActionController`, `createLspActionClient` | `textDocument/codeAction` |
 | Document links | `createDocumentLinkController`, `createLspLinkClient` | `textDocument/documentLink` |
 | Document colors | `createDocumentColorController`, `createLspColorClient` | `textDocument/documentColor` and `textDocument/colorPresentation` |
-| Occurrences | `createLspHighlightClient`; browser `createLspHighlightController` | `textDocument/documentHighlight` |
+| Occurrences | `attachEditorLanguage` with `occurrences`, `createLspHighlightClient` | `textDocument/documentHighlight` |
 | Folding | [Folding client and discovery controller](folding.md#language-server-discovery) | `textDocument/foldingRange` |
 
 Import the headless client and its type from `sttropez/protocol`, for example
@@ -776,14 +776,14 @@ whose result includes `items`, `isCurrent` and indexed `intersect(from, to)`. Th
 means text. It retains all results within input limits, including overlapping ranges. Visible-row
 queries skip unrelated intervals and omit zero-width markers without changing the stored items.
 
-Attach `createLspHighlightController(editor, { provider, delayMs? })` to request
-occurrences when the caret settles and queued input or composition finishes. A single caret can move
+Enable `occurrences: {}` to paint occurrences in the focused pane once the caret settles and
+queued input or composition finishes. Use `delayMs` to set the debounce. A single caret can move
 inside the same highlighted identifier (up to 4,096 UTF-16 units) without clearing its highlights or
 starting another request. The range end is exclusive. An overlapping range, a selection or a move
 outside the identifier starts a fresh lookup. Edits, focus loss and provider changes clear the result.
-Subscribe to invalidate your decorations, then
-call `intersect` for each visible line and style by occurrence kind. Highlighting preserves text and
-selection. Connect or retry the provider yourself. `dispose` releases the client and listeners.
+Style the marks with `.st-occurrence-text`, `.st-occurrence-read` and `.st-occurrence-write`.
+Use `occurrences.intersect(from, to)` to read the same ranges. Each pane owns its caret and
+requests. The host owns the provider connection.
 
 ### Folding
 

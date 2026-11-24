@@ -70,6 +70,9 @@
 .st-color-swatch { width: .8em; height: .8em; margin-inline-end: .2em; background: var(--st-swatch-color); outline: 1px solid currentColor; }
 .st-interactive-swatches .st-viewport-row .st-color-swatch[data-ornament] { pointer-events: auto; cursor: pointer; }
 .st-viewport-row [data-ornament="afterLine"]::after { content: attr(data-label); margin-left: .75em; }
+.st-occurrence-text { background: var(--st-occurrence-text, #8a8a8a33); }
+.st-occurrence-read, .st-occurrence-write { background: var(--st-occurrence-read, #649ed638); }
+.st-occurrence-write { outline: 1px solid var(--st-occurrence-border, #649ed6); outline-offset: -1px; }
 .st-viewport-row .st-search-match { background: var(--st-search-match, #5c4719); outline: 1px solid var(--st-search-border, #a88c40); outline-offset: -1px; }
 .st-viewport-row .st-search-match:not([data-ornament]) { position: relative; }
 /* Give a matched glyph with no advance a visible edge without inserting space in the text. */

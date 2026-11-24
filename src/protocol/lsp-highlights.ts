@@ -2,7 +2,7 @@ import { emptyList } from "../core/empty-list.ts";
 import { isOffsetRange } from "../core/bounds.ts";
 import { documentHighlightMethod } from "./lsp-methods.ts";
 import { ProtocolDecodeError, staleRequest } from "./wire.ts";
-import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspPositionRequest } from "./lsp-client.ts";
+import { createLspClient, lspFeatureHandle, type LspDocumentOwner, type LspFeatureClient, type LspPositionRequest } from "./lsp-client.ts";
 import { lspRangeOffsets } from "./lsp-features.ts";
 import type { LspDocumentCapture } from "./lsp-session.ts";
 import type { LspWorkspace } from "./lsp-workspace.ts";
@@ -43,7 +43,9 @@ export function decodeLspDocumentHighlights(value: unknown, capture: LspDocument
 export type LspHighlightClient = LspFeatureClient<"textDocument/documentHighlight", LspPositionRequest,
     LspDocumentHighlights & Readonly<{ revision: number; isCurrent: () => boolean }>>;
 
-export function createLspHighlightClient(provider: LspWorkspace): LspHighlightClient {
+export const createLspHighlightClient: (provider: LspWorkspace) => LspHighlightClient = highlightClient;
+
+export function highlightClient(provider: LspWorkspace | LspDocumentOwner): LspHighlightClient {
     const client = createLspClient(provider, documentHighlightMethod);
     return Object.freeze({ ...lspFeatureHandle(client),
         run: (request: LspPositionRequest) => {

@@ -58,7 +58,7 @@ export async function selectInsideString(page: Page, url: string) {
     await viewport.evaluate((el, value) => el.style.setProperty("--st-selection", value), color);
     const y = box.y + box.height / 2, x = box.x + box.width * 4 / 9;
     await page.mouse.click(x, y);
-    const occurrence = viewport.locator(".demo-token-string.demo-occurrence-write");
+    const occurrence = viewport.locator(".demo-token-string.st-occurrence-write");
     await expect(occurrence.first()).toBeVisible();
     const selected = occurrence.and(viewport.locator(".st-viewport-selected"));
     await source.press("Shift+ArrowRight"); await source.press("Shift+ArrowRight");
@@ -67,7 +67,7 @@ export async function selectInsideString(page: Page, url: string) {
     await page.mouse.move(box.x + box.width / 9, y); await page.mouse.down();
     await page.mouse.move(box.x + box.width * 5 / 9, y, { steps: 6 }); await page.mouse.up();
     await expect(selected).toHaveText("pale"); await expect(selected).toHaveCSS("background-color", color);
-    await expect(viewport.locator(".demo-occurrence-write:not(.st-viewport-selected)").first()).not.toHaveCSS("background-color", color);
+    await expect(viewport.locator(".st-occurrence-write:not(.st-viewport-selected)").first()).not.toHaveCSS("background-color", color);
 }
 
 export async function hoverString(page: Page, url: string) {

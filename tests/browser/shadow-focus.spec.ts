@@ -26,7 +26,7 @@ async function mount(page: Page, language: boolean) {
     await page.goto("/protocol/");
     await page.evaluate(async ({ css, language }) => {
         const path = "/shadow-focus/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
-        const { BrowserLspWorkspace, mountTextEditor, createCompletionController, createLspHighlightController, openWebSocketTransport } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const { BrowserLspWorkspace, mountTextEditor, attachEditorLanguage, openWebSocketTransport } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const { RpcError } = await import(path + "protocol.js") as typeof import("../../src/protocol/index.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "focus", resource: "source", variant: "text" }, "Source", { value: "sample sample\ns" }, undefined,
             { language: { uri: "focus:source", languageId: "generic" } });
@@ -40,15 +40,16 @@ async function mount(page: Page, language: boolean) {
         // The protocol reports that late reply; keep it distinct from unexpected diagnostics.
         const report = (error: unknown) => { if (error instanceof RpcError && error.code === -32800) cancellations.push(error.message); else errors.push(String(error)); };
         const f: Fixture = { workspace, source, tab, editor, errors, cancellations, dispose: async () => {
-            f.highlights?.dispose(); f.completion?.dispose(); f.provider?.dispose(); editor.dispose(); workspace.tabs.close(tab);
+            editor.dispose(); f.provider?.dispose(); workspace.tabs.close(tab);
             await Promise.resolve(); workspace.releaseResource(source.id, true); outer.remove(); outside.remove();
         } }; window.shadowFocus = f;
         if (language) {
             const endpoint = new URL("/lsp-fixture", location.href); endpoint.protocol = "ws:";
             f.provider = new BrowserLspWorkspace(workspace, {
                 connect: signal => openWebSocketTransport(endpoint.href, { signal }), onError: report });
-            f.completion = createCompletionController(editor, f.provider, { onError: report });
-            f.highlights = createLspHighlightController(editor, { provider: f.provider, delayMs: 0 });
+            const language = attachEditorLanguage(editor, f.provider, { completion: { onError: report }, occurrences: { delayMs: 0 } });
+            f.completion = language.completion;
+            f.highlights = language.occurrences;
         }
     }, { css, language });
     return page.evaluateHandle(() => window.shadowFocus.editor.element.querySelector("textarea")!);

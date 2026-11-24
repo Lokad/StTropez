@@ -36,7 +36,6 @@ export type { CodeActionController, CodeActionControllerOptions, CodeActionSnaps
 export type { DiagnosticController, DiagnosticControllerOptions, DiagnosticSnapshot, EditorDiagnostic } from "./diagnostic-controller.ts";
 export { createCompletionController } from "./completion-controller.ts";
 export { attachEditorLanguage } from "./editor-language.ts";
-export { createLspHighlightController } from "./lsp-highlights.ts";
 export { mountDocumentation } from "./documentation.ts";
 export type { DocumentationOptions, DocumentationView } from "./documentation.ts";
 export type { DocumentationContent, DocumentationPart } from "../core/documentation.ts";

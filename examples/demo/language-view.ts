@@ -1,5 +1,5 @@
-import { attachEditorLanguage, createLspHighlightController, mountAnchoredOverlay } from "../../src/browser/index.ts";
-import type { TextEditor, CompletionController, CompletionSnippet, LspHighlightController, NavigationOrigin } from "../../src/browser/index.ts";
+import { attachEditorLanguage, mountAnchoredOverlay } from "../../src/browser/index.ts";
+import type { TextEditor, CompletionController, CompletionSnippet, NavigationOrigin } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import type { DemoFile, DemoProject } from "./project.ts";
 import type { DemoLanguage } from "./language.ts";
@@ -38,7 +38,6 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
         let inspection: ReturnType<typeof mountDemoInspection> | undefined;
         let symbols: ReturnType<typeof mountDemoSymbols> | undefined;
         let actions: ReturnType<typeof mountDemoActions> | undefined;
-        let highlights: LspHighlightController | undefined;
         const commands = mountLanguageCommands(scope, editor, feedback, (command, menu) => {
             switch (command) {
                 case "complete":
@@ -85,6 +84,7 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
             try {
                 const closeProjectPopups = () => { symbols?.dismiss(); actions?.dismiss(); };
                 const tools = attachEditorLanguage(editor, provider, {
+                    occurrences: {},
                     completion: { autoConnect: false, filterManualCompletions: true, canCapture: valid,
                         getPageSize: () => completionPageSize(choices) },
                     signature: { canCapture: valid, beforeRequest: () => {
@@ -99,20 +99,6 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
                 });
                 controller = tools.completion;
                 scope.defer(tools.dispose);
-                highlights = createLspHighlightController(editor, { provider });
-                scope.defer(() => highlights!.dispose());
-                const occurrences = editor.decorations.add({ name: "occurrences", order: 20, minimap: false });
-                scope.defer(occurrences.dispose);
-                let painted = highlights.getSnapshot().items;
-                scope.defer(highlights.subscribe(() => {
-                    const state = highlights!.getSnapshot();
-                    if (painted === state.items) return;
-                    painted = state.items;
-                    if (valid() && state.items.length) occurrences.set(state.revision, state.items.map(item => ({
-                        from: item.from, to: item.to, className: `demo-occurrence-${item.kind}`
-                    })));
-                    else occurrences.clear();
-                }));
                 inspection = mountDemoInspection(scope, editor, tools, valid, () => !!controller?.getSnapshot().choices.length || !!symbols?.isOpen() || !!actions?.isOpen(),
                     () => controller?.cancel(), closeProjectPopups,
                     state => {

@@ -1,7 +1,8 @@
 import { editorState } from "./helpers/editor-state.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createLspHighlightController } from "../src/browser/lsp-highlights.ts";
+import { attachEditorLanguage } from "../src/browser/index.ts";
+import { createDecorationLayers } from "../src/browser/decoration-layers.ts";
 import type { TextEditor } from "../src/browser/text-editor.ts";
 import { clientFixture, settled } from "./helpers/lsp-client.ts";
 import { latch } from "./helpers/latch.ts";
@@ -15,13 +16,15 @@ test("occurrences coalesce refreshes and bound busy retries from the actual debo
         const owner = { defaultView: { performance: { now: () => time },
             setTimeout: (run: () => void, delay: number) => { tasks.set(++serial, { run, delay }); return serial; },
             clearTimeout: (id: number) => { tasks.delete(id); } } };
-        const editor = { signal: new AbortController().signal, workspace: f.workspace, tab: f.workspace.tabs.capture(tab), view, ...editorState({ focused: true }), element: Object.assign(new EventTarget(), { ownerDocument: owner }),
+        const layers = createDecorationLayers(f.document, () => {}, () => true);
+        const editor = { decorations: layers.handle, signal: new AbortController().signal, workspace: f.workspace, tab: f.workspace.tabs.capture(tab), view, ...editorState({ focused: true }), element: Object.assign(new EventTarget(), { ownerDocument: owner }),
             activity: () => ({ disposed: false, composing: false, pendingCommand: busy }) } as unknown as TextEditor;
         const fire = (delay: number, elapsed = delay) => {
             assert.equal(tasks.size, 1); const [id, task] = tasks.entries().next().value!;
             assert.equal(task.delay, delay); assert.ok(elapsed >= delay); tasks.delete(id); time += elapsed; task.run();
         };
-        const controller = createLspHighlightController(editor, { provider: f.provider, ...(delay === undefined ? {} : { delayMs: delay }) });
+        const language = attachEditorLanguage(editor, f.provider, { occurrences: delay === undefined ? {} : { delayMs: delay } });
+        const controller = language.occurrences;
         let stopReady = () => {};
         try {
             controller.refresh(); controller.refresh(); assert.equal(tasks.size, 1);
@@ -51,7 +54,7 @@ test("occurrences coalesce refreshes and bound busy retries from the actual debo
             f.edit(); reply.resolve([{ range: { start: { line: 0, character: 6 }, end: { line: 0, character: 10 } } }]);
             await settled(); assert.equal(controller.getSnapshot().items.length, 0);
             controller.refresh(); assert.equal(tasks.size, 1);
-        } finally { stopReady(); controller.dispose(); view.dispose(); f.workspace.tabs.close(tab); await f.provider.flush(); }
+        } finally { stopReady(); language.dispose(); layers.dispose(); view.dispose(); f.workspace.tabs.close(tab); await f.provider.flush(); }
         assert.equal(tasks.size, 0); assert.equal(f.workspace.diagnostics().leases, 0);
     }
 });
