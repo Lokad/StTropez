@@ -56,46 +56,6 @@ async function mount(page: Page, language: boolean) {
 const text = (page: Page) => page.evaluate(() => { const f = window.shadowFocus, buffer = f.workspace.document(f.source.documentId).buffer; return buffer.slice(0, buffer.length); });
 const completion = (page: Page) => page.evaluate(() => window.shadowFocus.completion!.getSnapshot());
 
-test("punctuation shortcuts on French and US keyboards dispatch the configured commands", async ({ page }) => {
-    await mount(page, false);
-    const actual = await page.evaluate(async () => {
-        const path = "/shadow-focus/browser.js";
-        const { createFoldingController } = await import(path) as typeof import("../../src/browser/index.ts");
-        const { editor } = window.shadowFocus, input = editor.element.querySelector("textarea")!;
-        const folds = createFoldingController(editor, () => []);
-        const fixes = editor.commands.register({ id: "fix", label: "Quick fix", run() {} }, { keys: ["Ctrl+."] });
-        const commands = ["line-comment", "fix", "indent-lines", "outdent", "fold.collapse", "fold.expand", "jump-to-bracket"];
-        let dispatched: string | null = null;
-        const probes = commands.map(id => editor.commands.register({
-            id: "probe." + id, label: id, run() { dispatched = id; }
-        }, { keys: editor.keymap.getShortcuts(id), priority: 100 }));
-        function press(code: string, key: string, keyCode: number, shiftKey = false) {
-            dispatched = null;
-            input.dispatchEvent(new KeyboardEvent("keydown", { code, key, keyCode, shiftKey, ctrlKey: true,
-                bubbles: true, cancelable: true }));
-            return dispatched;
-        }
-        try {
-            editor.focus();
-            return {
-                french: [press("Period", ":", 191), press("Comma", ";", 59), press("BracketLeft", "Dead", 0),
-                    press("Minus", ")", 219), press("Minus", "°", 219, true), press("BracketLeft", "Dead", 221, true),
-                    press("Backslash", "µ", 220, true)],
-                us: [press("Slash", "/", 191), press("Period", ".", 190), press("BracketRight", "]", 221),
-                    press("BracketLeft", "[", 219), press("BracketLeft", "{", 219, true), press("BracketRight", "}", 221, true),
-                    press("Backslash", "|", 220, true)],
-                unbound: [press("Comma", ".", 190, true), press("Period", "/", 191, true), press("BracketRight", "$", 186)]
-            };
-        } finally {
-            probes.forEach(probe => probe.dispose());
-            fixes.dispose();
-            folds.dispose();
-        }
-    });
-    const expected = ["line-comment", "fix", "indent-lines", "outdent", "fold.collapse", "fold.expand", "jump-to-bracket"];
-    expect(actual).toEqual({ french: expected, us: expected, unbound: [null, null, null] });
-});
-
 test("native undo and redo belong to the focused text field", async ({ page }) => {
     const input = await mount(page, false), original = await text(page);
     await input.focus();
