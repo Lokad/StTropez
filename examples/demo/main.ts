@@ -44,7 +44,9 @@ const foldMenu = mountDemoFoldMenu(codeMenu, () => comparison?.activePane() ?? e
 const renderCodeMenu = mountCodeMenuCommands(codeMenu, () => activePane, () => editor, listeners.signal);
 let output: ReturnType<typeof mountDemoOutput> | undefined;
 let setReviewCollapsed: ReturnType<typeof reviewLayout> | undefined;
-let panel: "javascript" | "problems" | "changes" = "javascript", disposed = false, opening = 0;
+type DemoPanel = "javascript" | "problems" | "changes";
+let panel: DemoPanel = "javascript", disposed = false, opening = 0;
+let pendingPanel: DemoPanel | undefined;
 let metadataFrame: number | undefined;
 let stopWorkspace: (() => void) | undefined, stopRecovery: (() => void) | undefined, stopFind: (() => void) | undefined;
 let stopLanguage: (() => void) | undefined, languageView: ReturnType<typeof mountDemoLanguage> | undefined;
@@ -405,6 +407,7 @@ function loadProject(id: SampleId): Promise<DemoProject> {
 }
 async function openSample(id: SampleId): Promise<void> {
     if (editor?.getSnapshot().composing) { selectSample(project!.sample.id); return; }
+    pendingPanel = undefined;
     const generation = ++opening; selectSample(id);
     if (id === "host") {
         // Keep the current editor and sample picker usable while the shared stylesheet loads.
@@ -448,8 +451,11 @@ async function openSample(id: SampleId): Promise<void> {
     mountFile(next.files.find(file => file.name === activeFiles.get(id)) ?? next.files[0]!);
     for (const control of document.querySelectorAll<HTMLButtonElement>("#compare:disabled, [data-panel]:disabled")) control.disabled = false;
 }
-function setPanel(next: typeof panel): void {
+function setPanel(next: DemoPanel): void {
+    pendingPanel = undefined;
     if (!active || editor?.getSnapshot().composing) return;
+    // Remounting this file would dispose Find before its replacement commits.
+    if (find?.getSnapshot().status === "replacing") { pendingPanel = next; return; }
     const samePanel = panel === next; panel = next;
     const wasCollapsed = element("workspace").classList.contains("collapsed");
     element("workspace").classList.remove("collapsed"); element("panel-collapse").textContent = "Hide";
@@ -499,6 +505,7 @@ function bindPaneCommands(target: TextEditor): void {
     target.keymap.bind("Escape", "find.close", { shared: true, repeat: false });
 }
 function releaseFind(): void {
+    pendingPanel = undefined;
     stopFind?.(); stopFind = undefined; find?.dispose(); find = undefined;
 }
 function setActivePane(target: TextEditor, repeat = false): void {
@@ -518,6 +525,10 @@ function setActivePane(target: TextEditor, repeat = false): void {
     const replace = button("replace-current"), all = button("replace-all");
     const render = () => {
         const snapshot = current.getSnapshot();
+        const requested = pendingPanel;
+        if (requested && snapshot.status !== "replacing") queueMicrotask(() => {
+            if (current === find && pendingPanel === requested) setPanel(requested);
+        });
         const searching = snapshot.status === "searching", ready = snapshot.status === "ready", matches = snapshot.count > 0;
         const message = findStatus(snapshot);
         status.textContent = message;
@@ -679,6 +690,7 @@ on("language-retry", () => {
 });
 on("panel-collapse", () => {
     if (editor?.getSnapshot().composing) return;
+    pendingPanel = undefined;
     const collapsed = element("workspace").classList.toggle("collapsed"); element("panel-collapse").textContent = collapsed ? "Show" : "Hide";
     if (setReviewCollapsed) setReviewCollapsed(collapsed).focus();
     else if (collapsed && editor && output && activePane === output.editor) editor.focus();

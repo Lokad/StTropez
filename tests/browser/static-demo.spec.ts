@@ -544,23 +544,23 @@ test("the Find toolbar follows generated output and both Changes panes", async (
     await workingInput.press("Shift+F3"); await expect.poll(offset).toBe(first); await expect(query).toBeHidden();
 });
 
-async function holdRegexMatches(page: Page) {
+async function holdRegexReply(page: Page, operation: "regex-matches" | "regex-edits" = "regex-matches") {
     type Probe = { pending: (() => void)[]; holding: boolean };
     type ProbeWindow = typeof window & { regexProbe: Probe };
-    await page.addInitScript(() => {
+    await page.addInitScript(operation => {
         const probe: Probe = { pending: [], holding: true };
         Object.assign(window, { regexProbe: probe });
         window.Worker = class extends Worker {
             constructor(url: string | URL, options?: WorkerOptions) {
                 super(url, options);
                 if (new URL(url, document.baseURI).pathname.endsWith("/regex-worker.js")) this.addEventListener("message", event => {
-                    if (!probe.holding || JSON.parse(event.data).operation !== "regex-matches") return;
+                    if (!probe.holding || JSON.parse(event.data).operation !== operation) return;
                     event.stopImmediatePropagation();
                     probe.pending.push(() => this.dispatchEvent(new MessageEvent("message", { data: event.data })));
                 }, { capture: true });
             }
         };
-    });
+    }, operation);
     return {
         waiting: () => page.evaluate(() => (window as ProbeWindow).regexProbe.pending.length),
         setHolding: (hold: boolean) => page.evaluate(hold => { (window as ProbeWindow).regexProbe.holding = hold; }, hold),
@@ -572,9 +572,35 @@ async function holdRegexMatches(page: Page) {
     };
 }
 
+test("opening Changes during Replace all reviews the committed edit and a file switch drops the pending request", async ({ page, baseURL }) => {
+    const gate = await holdRegexReply(page, "regex-edits");
+    await page.goto(baseURL!);
+    const source = page.locator("#editor").getByRole("textbox");
+    await source.press("Control+h"); await page.locator("#find-regex").click();
+    await page.locator("#find-query").fill("calculateTotal");
+    await page.locator("#replacement").fill("reviewTotal");
+    const replace = page.locator("#replace-all"), compare = page.locator("#compare"), review = page.locator(".st-comparison");
+    await replace.click(); await expect.poll(gate.waiting).toBe(1);
+    await expect(page.locator("#find-status")).toHaveText("Replacing…");
+    await page.locator('[data-panel="problems"]').click(); await compare.click(); await gate.release();
+    const panes = review.locator(".st-comparison-panes > section");
+    await expect(panes.last().locator('.st-viewport-row[data-line="0"]')).toContainText("reviewTotal");
+    await expect(panes.first().locator('.st-viewport-row[data-line="0"]')).toContainText("calculateTotal");
+    await panes.last().getByRole("textbox").press("Control+z");
+    await expect(review.locator(".st-comparison-controls output")).toHaveText("No changes");
+
+    await gate.setHolding(true); await replace.click(); await expect.poll(gate.waiting).toBe(1);
+    await page.locator('[data-panel="javascript"]').click();
+    await page.locator('#files [data-file="pricing.ts"]').click(); await gate.release();
+    await expect(page.locator('[data-panel="changes"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(review.locator(".st-comparison-controls output")).toHaveText("No changes");
+    await page.locator('#files [data-file="main.ts"]').click();
+    await expect(review.locator(".st-comparison-controls output")).toHaveText("No changes");
+});
+
 for (const interrupt of ["folding", "a focus round trip in a shadow root"] as const) {
     test(`${interrupt} while F3 waits for regex results requires a fresh F3`, async ({ page, baseURL }) => {
-        const gate = await holdRegexMatches(page);
+        const gate = await holdRegexReply(page);
         await page.goto(baseURL!); await page.getByRole("button", { name: "pricing.ts", exact: true }).click();
         const source = page.getByRole("textbox", { name: "pricing.ts", exact: true }), fold = page.locator("#editor .st-fold-button").first();
         await expect(fold).toBeVisible({ timeout: 30000 });
@@ -604,7 +630,7 @@ for (const interrupt of ["folding", "a focus round trip in a shadow root"] as co
 }
 
 test("a pending regex search allows large-file scrolling and typing and expires on file change", async ({ page, baseURL }) => {
-    const gate = await holdRegexMatches(page);
+    const gate = await holdRegexReply(page);
     await page.goto(baseURL!); await page.locator("#sample").selectOption("large");
     const source = page.getByRole("textbox", { name: "large.ts", exact: true }), viewport = page.locator("#editor .st-viewport");
     await source.press("Control+f"); await page.locator("#find-regex").click();

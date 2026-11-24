@@ -67,8 +67,10 @@ works in generated JavaScript and both Changes panes.
 
 In Shopping cart, open **Find** and enter `quantity:\s*(\d+)`. Choose **Use regular expression**
 (`.*`) to highlight both quantities in `main.ts`. Enter and Shift+Enter navigate the matches.
-Under **Replace…**, use `quantity: $1 + 1` and choose **Replace all**. Open Changes to see both
-edits. One undo restores both quantities. **Match case** and **Match whole word** work with
+Under **Replace…**, use `quantity: $1 + 1` and choose **Replace all**, then **Changes**. The panel
+waits for the replacement and shows both edits. One Undo restores both quantities. Switching files
+while “Replacing…” is visible cancels the pending edit and panel switch.
+**Match case** and **Match whole word** work with
 literal text and regular expressions. Clicking a navigation arrow keeps the active Find field
 ready for typing. Clicking **Replace** returns focus to the replacement field. The query and
 search options follow the active file while Find is open.
