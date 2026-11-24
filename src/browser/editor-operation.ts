@@ -1,7 +1,7 @@
 import type { DocumentSnapshot, EditRequest } from "../core/workspace.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import { stale } from "../core/outcome.ts";
-import { captureViewRequest } from "./captured-view.ts";
+import { captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 type OperationCall<T> = PromiseLike<T> | Readonly<{ result: PromiseLike<T>; cancel: () => void }>;
@@ -36,12 +36,7 @@ export async function runEditorOperation<T>(editor: TextEditor, options: EditorO
     work: (op: EditorOperation) => T | PromiseLike<T>): Promise<EditorOperationOutcome<T>> {
     const { write = false, signal } = options;
     if (signal?.aborted || editor.signal.aborted) return stale;
-    const available = () => {
-        const state = editor.activity();
-        const access = editor.getSnapshot();
-        return editor.element.isConnected && !access.disabled && (!write || access.readOnlyReason === null)
-            && !state.disposed && !state.composing && !state.pendingInput && !state.pendingCommand;
-    };
+    const available = () => editorReadyForRequest(editor) && (!write || editor.getSnapshot().readOnlyReason === null);
     const capture = captureViewRequest(editor.workspace, editor.tab, editor.view, { available, ...(write ? { editOrigin: "human" } : {}) });
     if (!capture) return stale;
     const lifetime = new AbortController(), guards: (() => boolean)[] = [];

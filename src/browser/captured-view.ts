@@ -8,6 +8,14 @@ export function editorReadyForRequest(editor: TextEditor, activity = editor.acti
         && !activity.composing && !activity.pendingInput && !activity.pendingCommand;
 }
 
+/** Changes to the text, selections, fold projection or mounted tab can retire a view request. */
+export function observeViewSource(workspace: Workspace, view: DocumentView, target: TabTarget | undefined, changed: () => void) {
+    const stops = [workspace.observeDocument(view.documentId).subscribe(changed), view.subscribe(changed),
+        view.folding.subscribe(changed)];
+    if (target) stops.push(workspace.tabs.subscribe(changed));
+    return stops;
+}
+
 export type CapturedViewOptions = Readonly<{
     /** Omit for a read request. Editing also requires this origin and no edit lock. */
     editOrigin?: EditOrigin;
@@ -58,9 +66,7 @@ export function captureViewRequest<T extends TabTarget | undefined>(workspace: W
         return active;
     };
     const changed = () => { isCurrent(); };
-    stops.push(workspace.observeDocument(document.id).subscribe(changed), view.subscribe(changed), view.folding.subscribe(changed),
-        resource.metadata.subscribe(changed));
-    if (capturedTarget) stops.push(workspace.tabs.subscribe(changed));
+    stops.push(...observeViewSource(workspace, view, capturedTarget, changed), resource.metadata.subscribe(changed));
     if (!isCurrent()) return;
     return Object.freeze({ target: capturedTarget, view, document, selectionSet, folding, signal: abort.signal, isCurrent,
         cancel: () => cancel(), commit: operation => {

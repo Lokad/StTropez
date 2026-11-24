@@ -1,10 +1,11 @@
 import { Store } from "../core/observable.ts";
-import { editorReadyForRequest } from "./captured-view.ts";
+import { captureViewRequest, editorReadyForRequest, observeViewSource, type CapturedViewRequest } from "./captured-view.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DocumentationContent } from "../core/documentation.ts";
 import type { FoldIndex } from "../core/folding.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import { createLspHoverClient } from "../protocol/index.ts";
+import { isStaleRequest } from "../protocol/wire.ts";
 import type { LspHoverResult, LspDiagnostic, LspPrepare, LspWorkspace } from "../protocol/index.ts";
 import type { OverlayPosition } from "./anchored-overlay.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -28,14 +29,14 @@ export type HoverController = Observable<HoverSnapshot> & Readonly<{
 
 const idle: HoverSnapshot = Object.freeze({ status: "idle", message: "", revision: null, range: null, text: "" });
 type Inspection = { revision: number; selection: SelectionSet; folds: FoldIndex; offset: number; source: HoverDiagnostics;
-    stops: (() => void)[]; timer?: number; pending: boolean; symbol?: LspHoverResult; failure?: string };
+    stops: (() => void)[]; timer?: number; capture?: CapturedViewRequest<TextEditor["tab"]>; symbol?: LspHoverResult; failure?: string };
 
 /** A mounted view owns the range, provider reply and diagnostic messages displayed together. */
 export function createHoverController(editor: TextEditor, provider: LspWorkspace, options: HoverControllerOptions = {}): HoverController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
     if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Hover requires a live document view.");
     const notifications = workspace.createNotificationScope(options.onError), cell = new Store(idle, notifications);
-    const client = createLspHoverClient(provider), calls = editor.latestOperation();
+    const client = createLspHoverClient(provider);
     let inspection: Inspection | undefined, disposed = false;
     let providerScope: ReturnType<LspWorkspace["createScope"]> | undefined, defaultSource: HoverDiagnostics | undefined;
     const counts = { posted: 0, received: 0, stale: 0, invalid: 0, failed: 0, cancelled: 0 };
@@ -53,10 +54,25 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
             providerScope = scope; return defaultSource;
         } catch (error) { scope.dispose(); throw error; }
     }
+    function finish(current: Inspection): void {
+        const capture = current.capture;
+        if (!capture) return;
+        win.clearTimeout(current.timer);
+        delete current.capture;
+        capture.cancel();
+        if (inspection === current) {
+            // The displayed card still follows the view after its read lease is released.
+            current.stops.push(...observeViewSource(workspace, view, tab, () => {
+                if (!valid(current)) queueMicrotask(() => expire(current));
+            }));
+        }
+    }
     function release(): void {
         const previous = inspection; inspection = undefined;
         if (!previous) return;
-        win.clearTimeout(previous.timer); for (const stop of previous.stops) stop(); calls.cancel(); client.cancel();
+        finish(previous);
+        for (const stop of previous.stops) stop();
+        client.cancel();
     }
     function available(): boolean {
         return !disposed && editorReadyForRequest(editor) && workspace.ownsDocumentView(view, tab)
@@ -87,7 +103,7 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
             range ??= { from: item.from, to: item.to };
         }
         // An unbounded symbol reply only describes the requested offset.
-        if (current.pending || current.symbol && !current.symbol.range) range = null;
+        if (current.capture || current.symbol && !current.symbol.range) range = null;
         else if (range) range = Object.freeze({ from: Math.max(left, range.from), to: Math.min(right, range.to) });
         if (messages.length && diagnostics.diagnosticsPending) messages.push("Awaiting recheck.");
         const symbol = current.symbol;
@@ -96,7 +112,7 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
             const content: DocumentationContent = Object.freeze([...messages.map(value => Object.freeze({ kind: "plaintext" as const, value })), ...(symbol?.content ?? [])]);
             publish({ status: "ready", message: "", revision, range, text, content }); return;
         }
-        if (current.pending) publish({ ...idle, status: "pending", revision, message: "Reading symbol information." });
+        if (current.capture) publish({ ...idle, status: "pending", revision, message: "Reading symbol information." });
         else if (current.failure) publish({ ...idle, status: "failed", message: current.failure });
         else { release(); publish({ ...idle, status: "empty", message: "No information at this position." }); }
     }
@@ -120,27 +136,38 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
         }
         release();
         try {
-            const current: Inspection = { revision: doc.revision, selection: selected.selectionSet, folds: view.folding.getSnapshot().index,
-                offset, source: diagnosticSource(), pending: true, stops: [] }; inspection = current;
-            const changed = () => { if (!valid(current)) queueMicrotask(() => expire(current)); };
-            current.stops.push(current.source.subscribe(() => queueMicrotask(() => render(current))), view.subscribe(changed),
-                view.folding.subscribe(changed), workspace.observeDocument(doc.id).subscribe(changed));
-            if (tab) current.stops.push(workspace.tabs.subscribe(changed));
+            const source = diagnosticSource();
+            const capture = captureViewRequest(workspace, tab, view, { available });
+            if (!capture) {
+                publish({ ...idle, status: "expired", message: "The inspected source changed." });
+                return false;
+            }
+            const current: Inspection = { revision: capture.document.revision, selection: capture.selectionSet,
+                folds: capture.folding.index, offset, source, capture, stops: [] };
+            inspection = current;
+            capture.signal.addEventListener("abort", () => { if (current.capture) expire(current); }, { once: true });
+            current.stops.push(source.subscribe(() => queueMicrotask(() => render(current))));
             counts.posted++;
-            const result = calls.run({}, operation => operation.step(client.run({ document: operation.document, offset, prepare: options.prepareRequest })));
+            const result = client.run({ document: capture.document, offset, prepare: options.prepareRequest }).result;
             current.timer = win.setTimeout(() => {
-                if (inspection !== current || !current.pending) return;
-                current.pending = false; current.failure = "Symbol information timed out."; counts.failed++; calls.cancel(); render(current);
+                if (!current.capture) return;
+                finish(current);
+                client.cancel();
+                counts.failed++;
+                current.failure = "Symbol information timed out.";
+                render(current);
             }, 5000);
-            void result.then(outcome => {
-                if (inspection !== current || !current.pending) return;
-                if (outcome.status === "stale") { expire(current); return; }
-                current.pending = false; win.clearTimeout(current.timer); counts.received++;
-                if (outcome.value) current.symbol = outcome.value;
+            void result.then(symbol => {
+                if (!current.capture) return;
+                if (!capture.isCurrent() || symbol?.isCurrent() === false) { expire(current); return; }
+                finish(current);
+                counts.received++;
+                if (symbol) current.symbol = symbol;
                 render(current);
             }, error => {
-                if (inspection !== current || !current.pending) return;
-                current.pending = false; win.clearTimeout(current.timer);
+                if (!current.capture) return;
+                if (isStaleRequest(error) || !capture.isCurrent()) { expire(current); return; }
+                finish(current);
                 if (error instanceof TypeError || error instanceof RangeError) counts.invalid++; else counts.failed++;
                 current.failure = error instanceof Error ? error.message : "Symbol information failed."; render(current);
             });
@@ -149,7 +176,7 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
     }
     const cancel = () => {
         notifications.assertWritable(); if (disposed) return;
-        if (inspection?.pending) counts.cancelled++;
+        if (inspection?.capture) counts.cancelled++;
         release(); publish(idle);
     };
     const stopClient = client.subscribe(() => {
@@ -159,7 +186,7 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
     const intent = editor.onEditIntent(kind => { if (kind === "compositionstart") cancel(); });
     function dispose(): void {
         if (disposed) return;
-        notifications.assertWritable(); disposed = true; release(); stopClient(); calls.dispose(); client.dispose(); providerScope?.dispose();
+        notifications.assertWritable(); disposed = true; release(); stopClient(); client.dispose(); providerScope?.dispose();
         intent.dispose(); editor.signal.removeEventListener("abort", dispose);
         publish({ ...idle, status: "disposed" });
         cell.clearSnapshotListeners();
@@ -168,5 +195,5 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
     return Object.freeze({ request, cancel, dispose, getSnapshot: cell.observable.getSnapshot, subscribe(listener: () => void) {
         notifications.assertWritable(); if (disposed) throw new Error("Hover controller is disposed.");
         return cell.observable.subscribe(listener);
-    }, getDiagnostics: () => Object.freeze({ ...counts, connected: client.getSnapshot().phase === "ready", pending: !!inspection?.pending, disposed }) });
+    }, getDiagnostics: () => Object.freeze({ ...counts, connected: client.getSnapshot().phase === "ready", pending: !!inspection?.capture, disposed }) });
 }

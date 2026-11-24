@@ -4,7 +4,6 @@ import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { createHoverController } from "../src/browser/index.ts";
 import type { TextEditor } from "../src/browser/index.ts";
-import { createOperationLane, runEditorOperation } from "../src/browser/editor-operation.ts";
 import { latch } from "./helpers/latch.ts";
 import { clientFixture, settled } from "./helpers/lsp-client.ts";
 
@@ -14,9 +13,8 @@ async function fixture(t: TestContext, text: string) {
     const tab = workspace.tabs.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId);
     const timers = new Map<number, () => void>(); let serial = 0;
     const owner = { defaultView: { setTimeout: (work: () => void) => { timers.set(++serial, work); return serial; }, clearTimeout: (id: number) => timers.delete(id) } };
-    const operation: TextEditor["operation"] = (options, work) => runEditorOperation(editor, options, work);
-    const editor = { workspace, tab: workspace.tabs.capture(tab), view, signal: new AbortController().signal, operation,
-        latestOperation: () => createOperationLane(editor), element: { ownerDocument: owner, isConnected: true }, ...editorState(),
+    const editor = { workspace, tab: workspace.tabs.capture(tab), view, signal: new AbortController().signal,
+        element: { ownerDocument: owner, isConnected: true }, ...editorState(),
         activity: () => ({ composing: false, disposed: false }), focus: () => { throw new Error("Hover moved focus."); } } as unknown as TextEditor;
     const scope = provider.createScope(); scope.attachDocument(documentId); await provider.connect(); await settled();
     const hover = createHoverController(editor, provider), leases = workspace.diagnostics().leases;
@@ -31,7 +29,7 @@ async function fixture(t: TestContext, text: string) {
         assert.equal(timers.size, 0); assert.equal(workspace.diagnostics().leases, 0);
         assert.equal(provider.snapshot().scopes, 0);
     };
-    return { ...f, hover, request, hold, view, tab, leases, finish };
+    return { ...f, hover, request, hold, view, tab, timers, leases, finish };
 }
 test("hover releases the read lease after a reply with no range and expires on disconnect", async t => {
     const f = await fixture(t, "const value"), before = f.document();
@@ -61,6 +59,25 @@ test("deferred hover invalidation preserves a newer request after editing and re
         f.workspace.tabs.replace(f.tab, { kind: "panel", resourceId: f.source.id, panelType: "configuration" }); await settled();
         assert.equal(f.hover.getSnapshot().status, "expired"); assert.equal(f.request(8), false);
         assert.equal(f.sent("$/cancelRequest").length, 3); tab.reply({ contents: "old tab" }); await settled();
+    } finally { await f.finish(); }
+});
+
+test("a hover deadline releases its capture and cancels the held provider request", async t => {
+    const f = await fixture(t, "const value");
+    try {
+        const held = f.hold();
+        assert.ok(f.request(2));
+        await held.entered;
+        const [timeout] = f.timers.values();
+        assert.ok(timeout);
+        timeout();
+        assert.equal(f.hover.getSnapshot().status, "failed");
+        assert.equal(f.workspace.diagnostics().leases, f.leases);
+        assert.equal(f.hover.getDiagnostics().pending, false);
+        assert.equal(f.sent("$/cancelRequest").length, 1);
+        held.reply({ contents: "Too late" });
+        await settled();
+        assert.equal(f.hover.getSnapshot().status, "failed");
     } finally { await f.finish(); }
 });
 test("folding cancels a held hover and reveals the range on selection", async t => {
