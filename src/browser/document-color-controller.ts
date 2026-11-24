@@ -8,12 +8,14 @@ import { mapReplacementSelections } from "../core/selections.ts";
 import { decodeLspColor } from "../protocol/lsp-features.ts";
 import type { LspColor, LspColorPresentation, LspDocumentColor } from "../protocol/lsp-features.ts";
 import { describeLspEdit, type LspWorkspaceEditNote } from "../protocol/lsp-workspace-edit.ts";
-import { createLspColorClient, type LspColorClient } from "../protocol/lsp-language.ts";
+import { colorClient, type LspColorClient } from "../protocol/lsp-language.ts";
+import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
 import { requireLanguageView, captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainDocuments } from "./retained-documents.ts";
+import { writableDocument } from "./edit-project.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 export type DocumentColorChoice = LspDocumentColor & Readonly<{
@@ -46,7 +48,11 @@ const empty = Object.freeze([]);
 const idle: DocumentColorSnapshot = Object.freeze({ status: "idle", colors: empty, presentations: empty, review: null, message: "", changed: false });
 
 /** Review one provider color presentation and apply all its edits as one undo command. */
-export function createDocumentColorController(editor: TextEditor, provider: LspWorkspace, options: DocumentColorControllerOptions = {}): DocumentColorController {
+export const createDocumentColorController: (editor: TextEditor, provider: LspWorkspace,
+    options?: DocumentColorControllerOptions) => DocumentColorController = mountDocumentColors;
+
+export function mountDocumentColors(editor: TextEditor, provider: LspWorkspace, options: DocumentColorControllerOptions = {},
+    shared?: LspDocumentOwner): DocumentColorController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
     requireLanguageView(editor);
     const scope = workspace.createNotificationScope(), state = new Store(idle, scope), events = new AbortController();
@@ -55,10 +61,7 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
         return !events.signal.aborted && editorReadyForRequest(editor) && (options.canCapture?.() ?? true);
     }
     const capture = () => captureViewRequest(workspace, tab, view, { available });
-    function writable() {
-        const metadata = workspace.resourceForDocument(view.documentId).metadata.getSnapshot();
-        return editor.getSnapshot().readOnlyReason === null && metadata.editLock === null && metadata.capabilities.edit.includes("human") && metadata.capabilities.edit.includes("host");
-    }
+    const writable = () => writableDocument(editor, view.documentId);
     function publish(status: DocumentColorSnapshot["status"], patch: Partial<Omit<DocumentColorSnapshot, "status">> = {}) {
         scope.publish(state, Object.freeze({ ...idle, status, ...patch }));
     }
@@ -203,7 +206,7 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
                 publish("expired");
                 return refused("unavailable-view");
             }
-            const client = createLspColorClient(provider);
+            const client = colorClient(shared ?? provider);
             const j: Job = { source, client, invalid: false,
                 documents: retainDocuments(workspace, available, () => expire(j)) };
             pending = job = j;

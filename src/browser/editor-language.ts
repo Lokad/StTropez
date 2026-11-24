@@ -4,10 +4,21 @@ import type { LspWorkspace } from "../protocol/lsp-workspace.ts";
 import { mountCompletion, type CompletionController, type CompletionControllerOptions } from "./completion-controller.ts";
 import { mountDiagnostic, type DiagnosticController, type DiagnosticControllerOptions } from "./diagnostic-controller.ts";
 import { mountHover, type HoverController, type HoverControllerOptions } from "./hover-controller.ts";
+import { mountDocumentColors, type DocumentColorController, type DocumentColorControllerOptions } from "./document-color-controller.ts";
 import type { TextEditor } from "./text-editor.ts";
 
-type Options = { completion?: CompletionControllerOptions; diagnostics?: DiagnosticControllerOptions; hover?: HoverControllerOptions };
-type Features = { completion: CompletionController; diagnostics: DiagnosticController; hover: HoverController };
+type Options = {
+    completion?: CompletionControllerOptions;
+    diagnostics?: DiagnosticControllerOptions;
+    hover?: HoverControllerOptions;
+    colors?: DocumentColorControllerOptions;
+};
+type Features = {
+    completion: CompletionController;
+    diagnostics: DiagnosticController;
+    hover: HoverController;
+    colors: DocumentColorController;
+};
 type Attachment<O extends Options> = Readonly<{ [K in keyof O]: K extends keyof Features ? Features[K] : never }>
     & Readonly<{ dispose: () => void }>;
 
@@ -17,9 +28,7 @@ export function attachEditorLanguage<O extends Options>(editor: TextEditor, prov
     const owner = retainLspDocument(provider, editor.view.documentId);
     const features: Partial<Features> = {};
     function dispose() {
-        features.hover?.dispose();
-        features.completion?.dispose();
-        features.diagnostics?.dispose();
+        for (const feature of Object.values(features).reverse()) feature.dispose();
         owner.dispose();
         editor.signal.removeEventListener("abort", dispose);
     }
@@ -31,6 +40,7 @@ export function attachEditorLanguage<O extends Options>(editor: TextEditor, prov
             features.hover = mountHover(editor, provider, hover, owner);
         }
         if (options.completion) features.completion = mountCompletion(editor, provider, options.completion, owner);
+        if (options.colors) features.colors = mountDocumentColors(editor, provider, options.colors, owner);
         editor.signal.addEventListener("abort", dispose, { once: true });
         return Object.freeze({ ...features, dispose }) as Attachment<O>;
     } catch (error) {

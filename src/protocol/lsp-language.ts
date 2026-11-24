@@ -6,6 +6,7 @@ import { decodeLspColor, decodeLspColorPresentations, decodeLspDocumentColors, d
 import type { LspColorPresentation, LspSignatureHelp, LspColor, LspDocumentColor, LspDocumentLink, LspSignature } from "./lsp-features.ts";
 import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
 import type { LspConnectContext } from "./lsp-session.ts";
+import type { LspDocumentOwner } from "./lsp-client.ts";
 
 export type LspSignatureContext = Readonly<{ triggerKind: 1 | 2 | 3; triggerCharacter?: string; isRetrigger: boolean; activeSignatureHelp?: JsonValue }>;
 export type LspSignatureRequest = LspPositionRequest & Readonly<{ context?: LspSignatureContext }>;
@@ -73,7 +74,9 @@ export function createLspLinkClient(provider: LspWorkspace): LspLinkClient {
             } });
         }) });
 }
-export function createLspColorClient(provider: LspWorkspace): LspColorClient {
+export const createLspColorClient: (provider: LspWorkspace) => LspColorClient = colorClient;
+
+export function colorClient(provider: LspWorkspace | LspDocumentOwner): LspColorClient {
     const lane = createLspClient(provider, documentColorMethod, colorPresentationMethod);
     return Object.freeze({ ...lspFeatureHandle(lane),
         run: (request: LspDocumentRequest) => lane.request(request, documentColorMethod, () => ({}), result => {

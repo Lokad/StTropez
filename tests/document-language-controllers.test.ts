@@ -279,7 +279,9 @@ for (const [cause, interrupt] of Object.entries(colorChanges)) {
 
 test("color choices belong to the presentation request that returned them", { timeout: 5000 }, async t => {
     const f = await fixture(t);
-    const colors = createDocumentColorController(f.editor, f.provider);
+    const language = attachEditorLanguage(f.editor, f.provider, { colors: {}, hover: {} });
+    const { colors } = language;
+    const attached = f.provider.snapshot();
     const red = { red: 1, green: 0, blue: 0, alpha: 1 };
     f.peer.onRequest("textDocument/documentColor", () => [{ range, color: red }]);
     const list = await colors.request();
@@ -288,6 +290,8 @@ test("color choices belong to the presentation request that returned them", { ti
     f.peer.onRequest("textDocument/colorPresentation", () => [{ label: "first" }]);
     const first = await item.preview(red);
     assert.equal(first.status, "done");
+    assert.equal(f.provider.snapshot().scopes, attached.scopes);
+    assert.equal(f.provider.snapshot().documentParticipants, attached.documentParticipants);
     const held = holdReply(f, "textDocument/colorPresentation", [{ label: "late" }]);
     const superseded = item.preview(red);
     await held.received;
@@ -312,6 +316,7 @@ test("color choices belong to the presentation request that returned them", { ti
     assert.equal(f.document().buffer.slice(0, 3), "red");
     assert.ok(f.workspace.undo({ documentId: before.id, expectedRevision: f.document().revision }).applied);
     assert.equal(f.document().buffer.text(), before.buffer.text());
+    language.dispose();
 });
 
 const linkChanges = {

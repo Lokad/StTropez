@@ -6,7 +6,7 @@ files and decides which edits to apply. [Connect a provider](language-server.md)
 
 ## Use
 
-Use `attachEditorLanguage` when completion, diagnostics and hover share an editor. Give each
+Use `attachEditorLanguage` when completion, diagnostics, hover or document colors share an editor. Give each
 feature you want an options object. They share one provider scope and document binding. Hover
 uses the diagnostics painted in that view unless you supply another source.
 
