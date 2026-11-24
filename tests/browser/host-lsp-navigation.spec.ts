@@ -134,10 +134,12 @@ test.describe("plain LSP inspection/navigation", () => {
     });
     test("F12 and modifier clicks follow whole module paths and respect later input", async ({ page }) => {
         const replies = await holdLspReplies(page, "documentLink/resolve");
+        let routedScans = 0;
         const methods: string[] = [];
         page.on("websocket", ws => ws.on("framesent", frame => {
-            const method = JSON.parse(frame.payload.toString()).method;
+            const { method, params } = JSON.parse(frame.payload.toString());
             if (typeof method === "string") methods.push(method);
+            if (method === "textDocument/documentLink" && params?._fixture?.aliases) routedScans++;
         }));
         await page.reload();
         const text = 'import "sample-utils";\r\nimport "missing-utils";\r\ncatalogue;';
@@ -154,11 +156,12 @@ test.describe("plain LSP inspection/navigation", () => {
                 await page.mouse.click(at.x, at.y);
             } finally { await page.keyboard.up("Control"); }
         };
-        // The first click discovers the link. A later resolve cannot steal focus back from a field.
+        await expect(editor.locator(".st-document-link")).toHaveText(["sample-utils", "missing-utils"]);
+        // The first click captures the aliases for this route. A later resolve cannot steal focus back from a field.
         replies.hold(); await clickPath(0, "sample-utils"); await expect.poll(replies.waiting).toBe(true);
         const path = field(page, "Configuration path"); await path.focus(); await replies.release();
         await expect(path).toBeFocused(); expect((await snapshot(page)).bindings.links.opened).toBe(0);
-        await expect(editor.locator(".host-module-link")).toHaveText(["sample-utils", "missing-utils"]);
+        await expect(editor.locator(".st-document-link")).toHaveText(["sample-utils", "missing-utils"]);
         await source.focus(); await select(page, text.indexOf("-")); await source.press("F12");
         await expect(field(page, "Secondary source")).toBeFocused();
         await button(page, "Return to link origin").click(); await expect(source).toBeFocused();
@@ -168,7 +171,7 @@ test.describe("plain LSP inspection/navigation", () => {
         expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection.head).toBe(text.indexOf("-"));
         await clickPath(1, "missing-utils"); await expect(status).toContainText("No destination for missing-utils");
         await expect(status).toBeInViewport(); await expect(source).toBeFocused();
-        expect(methods.filter(method => method === "textDocument/documentLink")).toHaveLength(1);
+        expect(routedScans).toBe(1);
         expect(methods).not.toContain("textDocument/definition");
         expect((await snapshot(page)).bindings.links.opened).toBe(2);
         // A source edit retires the choice while resolution is in flight.
@@ -176,7 +179,7 @@ test.describe("plain LSP inspection/navigation", () => {
         await expect(page.getByLabel("Module link results", { exact: true }).getByRole("button")).toHaveCount(2);
         replies.hold(); await clickPath(0, "sample-utils"); await expect.poll(replies.waiting).toBe(true);
         await source.press("Control+End"); await page.keyboard.type("!"); await replies.release();
-        await expect(source).toBeFocused(); await expect(editor.locator(".host-module-link")).toHaveCount(0);
+        await expect(source).toBeFocused(); await expect(editor.locator(".st-document-link")).toHaveText(["sample-utils", "missing-utils"]);
         await expect(editor.locator('.st-viewport-row[data-line="2"]')).toHaveText("catalogue;!");
         expect((await snapshot(page)).bindings.links.opened).toBe(2);
     });

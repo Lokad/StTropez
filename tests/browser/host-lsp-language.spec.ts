@@ -159,6 +159,8 @@ test.describe("plain selected LSP features", () => {
         expect(await page.evaluate(() => window.hostFixture.providerState())).toMatchObject({ connected: false, pending: false, choices: [] });
         const swatches = field(page).locator("..").locator(".st-color-swatch");
         await expect(swatches).toHaveCount(0);
+        const paintedLinks = field(page).locator("..").locator(".st-document-link");
+        await expect(paintedLinks).toHaveCount(0);
         await expect(popup).toBeHidden(); await settledColorsAndLinks(page);
         await expect(apply).toBeDisabled(); await expect(links.locator("li")).toHaveCount(0);
         expect((await snapshot(page)).bindings.links.state.connected).toBe(false); expect((await snapshot(page)).bindings.colors.state.choices).toHaveLength(0);
@@ -169,6 +171,7 @@ test.describe("plain selected LSP features", () => {
         await button(page, "Reconnect signature provider").click();
         await expect(completionStatus).toContainText("provider connected");
         await expect(swatches.first()).toBeVisible();
+        await expect(paintedLinks).toHaveText("sample-utils");
         await page.evaluate(at => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: at, head: at }]); }, raw.indexOf(")"));
         await signature(); await expect(popup).toBeVisible(); await button(page, "Discover module links").click(); await settledColorsAndLinks(page); await expect(links.getByRole("button")).toHaveCount(1);
         await discoverColors(); await preview(); await expect(apply).toBeEnabled(); await exact(page, raw + "H");

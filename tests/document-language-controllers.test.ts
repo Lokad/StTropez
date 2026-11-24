@@ -386,6 +386,53 @@ test("a second pane takes over a shared color scan when the first pane closes", 
     assert.equal(f.provider.snapshot().scopes, initial);
 });
 
+test("a painted link resolves on its clicked pane after the scanning pane closes", { timeout: 5000 }, async t => {
+    const f = await fixture(t);
+    const lazy = { range, data: { token: "original" } };
+    const method = "textDocument/documentLink";
+    const scan = holdReply(f, method, [lazy]);
+    const painted = latch<void>();
+    const sibling = f.workspace.createDocumentView(f.source.documentId);
+    const a = createDecorationLayers(f.document, () => {}, () => true);
+    const b = createDecorationLayers(f.document, () => painted.resolve(), () => true);
+    const initial = f.provider.snapshot().scopes;
+    const first = attachEditorLanguage({ ...f.editor, decorations: a.handle }, f.provider, { links: { paint: true } });
+    const second = attachEditorLanguage({ ...f.editor, view: sibling, decorations: b.handle }, f.provider, { links: { paint: true } });
+    try {
+        await scan.received;
+        f.select();
+        scan.send();
+        await painted.promise;
+        const choice = second.links.linkAt(1)!;
+        assert.equal(choice, second.links.linkAt(2));
+        const held = holdReply(f, "documentLink/resolve", { ...lazy, target: "generic:accepted" });
+        const visits: string[] = [];
+        const open = choice.open(uri => visits.push(uri));
+        await held.received;
+        first.dispose();
+        held.send();
+        assert.deepEqual(await open, { status: "done", value: "generic:accepted" });
+        assert.equal(f.sent(method).length, 1);
+        assert.equal(f.provider.snapshot().scopes, initial + 1);
+        const replaced = holdReply(f, "documentLink/resolve", { ...lazy, target: "generic:late" });
+        const late = choice.open(uri => visits.push(uri));
+        await replaced.received;
+        f.edit();
+        replaced.send();
+        assert.deepEqual(await late, { status: "stale" });
+        assert.deepEqual(await choice.open(uri => visits.push(uri)), { status: "stale" });
+        assert.deepEqual(visits, ["generic:accepted"]);
+    } finally {
+        scan.send();
+        first.dispose();
+        second.dispose();
+        a.dispose();
+        b.dispose();
+        sibling.dispose();
+    }
+    assert.equal(f.provider.snapshot().scopes, initial);
+});
+
 const linkChanges = {
     ...sourceChanges,
     "target edit": (f: Fixture) => {

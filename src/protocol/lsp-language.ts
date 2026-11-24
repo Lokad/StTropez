@@ -1,5 +1,5 @@
 import { colorPresentationMethod, documentColorMethod, documentLinkMethod, signatureHelpMethod } from "./lsp-methods.ts";
-import { wireLimits, jsonSnapshot } from "./wire.ts";
+import { wireLimits, jsonSnapshot, staleRequest } from "./wire.ts";
 import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspDocumentRequest, type LspPositionRequest } from "./lsp-client.ts";
 import type { JsonValue } from "./wire.ts";
 import { decodeLspColor, decodeLspColorPresentations, decodeLspDocumentColors, decodeLspDocumentLinks, decodeLspResolvedDocumentLink, decodeLspSignatureHelp } from "./lsp-features.ts";
@@ -61,18 +61,28 @@ export function createLspSignatureClient(provider: LspWorkspace): LspSignatureCl
             }));
         } });
 }
-export function createLspLinkClient(provider: LspWorkspace): LspLinkClient {
+export const createLspLinkClient: (provider: LspWorkspace) => LspLinkClient = linkClient;
+
+export function linkClient(provider: LspWorkspace | LspDocumentOwner,
+    watched?: { item: LspDocumentLink; isCurrent(): boolean }): LspLinkClient {
     const lane = createLspClient(provider, documentLinkMethod);
     return Object.freeze({ ...lspFeatureHandle(lane),
-        run: ({ document, prepare }: LspDocumentRequest) => lane.request({ document, prepare }, documentLinkMethod, () => ({}), result => {
+        run: (request: LspDocumentRequest) => lane.request(request, documentLinkMethod, () => {
+            if (!watched) return {};
+            if (!watched.isCurrent()) throw staleRequest("The painted document link changed.");
+            return watched.item.resolve as Record<string, JsonValue>;
+        }, result => {
             const { capture, isCurrent } = result;
-            const items = result.decode(() => decodeLspDocumentLinks(result.response, capture, lane.options(document, documentLinkMethod).some(option => option.resolveProvider === true)));
+            const items = result.decode(() => watched
+                ? Object.freeze([decodeLspResolvedDocumentLink(result.response, watched.item, capture)])
+                : decodeLspDocumentLinks(result.response, capture,
+                    lane.options(request.document, documentLinkMethod).some(option => option.resolveProvider === true)));
             return Object.freeze({ items, isCurrent, resolve: async (item: LspDocumentLink, prepareResolve?: LspPrepare) => {
                 if (!items.includes(item) || !item.resolve) throw new TypeError("Choose a captured resolvable document link.");
                 const value = await result.follow(documentLinkMethod, "documentLink/resolve", item.resolve, prepareResolve);
                 return result.decode(() => decodeLspResolvedDocumentLink(value, item, capture));
             } });
-        }) });
+        }, watched ? "documentLink/resolve" : undefined) });
 }
 export const createLspColorClient: (provider: LspWorkspace) => LspColorClient = colorClient;
 

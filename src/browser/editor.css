@@ -59,6 +59,7 @@
 .st-diagnostic-hint { --st-diagnostic-color: var(--st-diagnostic-hint-color, #9caabb); }
 .st-viewport-row :is(.st-diagnostic-information, .st-diagnostic-hint) { text-decoration-style: dotted; }
 .st-viewport-row .st-diagnostic.st-deprecated { text-decoration-line: underline line-through; text-decoration-style: solid; }
+.st-viewport-row .st-document-link { text-decoration: underline; text-underline-offset: 2px; }
 .st-viewport-row .st-definition-link { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; color: var(--st-definition-link-color, currentColor); }
 .st-viewport-row .st-diagnostic[data-ornament="point"]::after {
     width: .6em; height: .35em; bottom: -.15em; border: 0;

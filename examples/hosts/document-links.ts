@@ -11,7 +11,7 @@ import type { DocumentLinkChoice, DocumentLinkController, DocumentLinkSnapshot, 
 import type { LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import { linkLimits } from "../../fixtures/language/links.ts";
 import type { LinksInput, ModuleLink } from "../../fixtures/language/links.ts";
-import { domainLimits, importedModule, validDomainModule } from "../../fixtures/language/domain.ts";
+import { validDomainModule } from "../../fixtures/language/domain.ts";
 import { HostCell } from "../shared/observable.ts";
 
 type LinkFault = NonNullable<LinksInput["fault"]>;
@@ -78,8 +78,17 @@ export class HostDocumentLinks {
         this.publish({ ...initial, status: "expired", message: expiredMessage });
     }
     readonly cancel = () => { this.release(); this.publish({ ...initial, message: "Module links dismissed." }); };
-    readonly disconnect = () => { this.disconnected = true; this.cancel(); };
-    readonly reconnect = () => { this.disconnected = false; this.cancel(); this.host.reconnect?.(); };
+    readonly disconnect = () => {
+        this.disconnected = true;
+        this.cancel();
+        for (const s of this.sessions.keys()) s.controller.setPaint(false);
+    };
+    readonly reconnect = () => {
+        this.disconnected = false;
+        this.cancel();
+        for (const s of this.sessions.keys()) s.controller.setPaint(true);
+        this.host.reconnect?.();
+    };
     private listEditor() {
         const route = this.route;
         return route && this.sessions.has(route.origin) ? route.origin.editor : this.visit?.destination;
@@ -88,6 +97,7 @@ export class HostDocumentLinks {
     attach(id: string, _tab: TabId, editor: TextEditor) {
         if (this.disposed) throw new Error("Link panel is disposed.");
         const controller = createDocumentLinkController(editor, this.options.provider, {
+            paint: !this.disconnected,
             documents: () => [...(this.route?.documents.values() ?? [])], canCapture: this.host.canCapture,
             prepareRequest: () => {
                 const aliases = [...this.aliases].map(([module, id]) => ({ module, uri: this.host.workspace.document(id).language!.uri }));
@@ -96,13 +106,8 @@ export class HostDocumentLinks {
         });
         const session = { id, editor, controller };
         return attachPanelSession(this.sessions, session, (signal, register) => {
-            const marks = editor.decorations.add({ name: "module links", order: 100, minimap: false });
-            signal.addEventListener("abort", marks.dispose, { once: true });
             const stop = controller.subscribe(() => {
-                const route = this.route, state = controller.getSnapshot();
-                if (route?.origin === session && state.status === "ready")
-                    marks.set(route.source.revision, state.links.map(({ from, to }) => ({ from, to, className: "host-module-link" })));
-                else if (state.status !== "resolving") marks.clear();
+                const route = this.route;
                 if (route?.origin === session) this.render(route);
             });
             signal.addEventListener("abort", stop, { once: true });
@@ -207,19 +212,11 @@ export class HostDocumentLinks {
         if (!origin) return;
         const source = this.host.workspace.document(editor.view.documentId), previous = this.route;
         const current = previous?.origin === origin && origin.controller.getSnapshot().status === "ready";
-        let link: LinkRange | DocumentLinkChoice | undefined;
-        if (current) link = origin.controller.linkAt(offset);
-        else {
-            // Before discovery the sample recognises its provider's bounded import grammar.
-            // Only the provider's reply can supply the destination.
-            const line = source.buffer.line(source.buffer.lineAt(offset));
-            if (line.to - line.from > domainLimits.prefixUnits) return;
-            const raw = line.text, bom = line.from === 0 && raw.startsWith("\ufeff") ? 1 : 0;
-            const module = importedModule(raw.slice(bom)), from = line.from + bom + 8;
-            if (module && from <= offset && offset < from + module.length) link = { from, to: from + module.length };
-        }
+        const link = origin.controller.linkAt(offset);
         if (!link) return;
-        const selected = link, module = source.buffer.slice(link.from, Math.min(link.to, link.from + 128));
+        // A fresh route must supply the host's current aliases before resolving the URI.
+        const selected = current ? link : { from: link.from, to: link.to };
+        const module = source.buffer.slice(link.from, Math.min(link.to, link.from + 128));
         const alias = this.aliases.get(module);
         return { from: link.from, to: link.to, open: () => {
             if (!this.sessions.has(origin) || this.disconnected || this.aliases.get(module) !== alias || this.route !== previous

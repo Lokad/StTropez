@@ -59,4 +59,3 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .host-command-palette label { display: grid; gap: .3rem; }
 .host-command-palette select { width: 100%; margin: .6rem 0; font: inherit; }
 .host-command-palette div { display: flex; justify-content: end; gap: .5rem; }
-.host-module-link { text-decoration: underline dotted; text-underline-offset: .2em; }

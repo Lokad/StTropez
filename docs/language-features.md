@@ -6,7 +6,7 @@ files and decides which edits to apply. [Connect a provider](language-server.md)
 
 ## Use
 
-Use `attachEditorLanguage` when completion, diagnostics, hover or document colors share an editor. Give each
+Use `attachEditorLanguage` when completion, diagnostics, hover, links or colors share an editor. Give each
 feature you want an options object. They share one provider scope and document binding. Hover
 uses the diagnostics painted in that view unless you supply another source.
 
@@ -693,10 +693,14 @@ after commit, report the uncertain delivery and leave the edit in history.
 document. Include any project documents whose revision or edit permissions affect your URI mapping.
 `await links.request()` returns `done` with the list published to `getSnapshot().links`,
 `stale` if the request expires, `refused` for an unavailable view, or `failed` with the error.
-Each link carries its range, literal tooltip,
-optional target and an `open` action. `linkAt(offset)` returns the first current provider choice
-whose range contains the offset, including its start and excluding its end. It returns `undefined`
-while discovery or resolution is pending. A button and the editor can open the same choice.
+Each choice carries its range, tooltip, optional target and an `open` action.
+
+Use `attachEditorLanguage(editor, provider, { links: { paint: true } })` to underline links
+as the document changes. Panes showing the same document share a scan and refresh after reconnect. Use `setPaint(false)`
+to hide the marks, or `setPaint(true)` to resume. `linkAt(offset)` returns the first matching
+choice in the current explicit result, then checks the painted ranges. Both use UTF-16
+offsets and exclude the end of the range. Pass a choice's `open(visit)` action to your menu
+or modifier-click handler. A lazy link resolves on the clicked pane even if a sibling closes.
 
 ```ts
 import type { DocumentLinkChoice } from "sttropez/browser";
@@ -717,7 +721,7 @@ or `unavailable-view`. A provider or presentation error returns `failed` with th
 The host decides which URIs to open, where to show them and how to return. If the user clicks elsewhere during resolution, keep focus there. Read the updated
 link from the snapshot for a fresh click.
 
-Caret movement cancels a pending lookup. After discovery, the list survives caret movement.
+Caret movement cancels an explicit lookup or pending navigation. The automatic scan and completed list survive caret movement.
 An edit or authority change in a captured document, a new request, cancellation or editor
 disposal invalidates its actions. An expired action returns `stale`. The protocol client
 `createLspLinkClient` exposes the list and its `resolve` operation. `decodeLspDocumentLinks`

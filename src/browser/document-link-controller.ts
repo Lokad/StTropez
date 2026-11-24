@@ -1,10 +1,13 @@
+import { emptyList } from "../core/empty-list.ts";
 import { documentLinkMethod } from "../protocol/lsp-methods.ts";
 import { languageReview } from "./language-review.ts";
 import type { Observable } from "../core/observable.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
 import type { LspDocumentLink } from "../protocol/lsp-features.ts";
-import { createLspLinkClient, type LspLinkClient } from "../protocol/lsp-language.ts";
+import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
+import { documentRangeWatch } from "./document-range-watch.ts";
+import { linkClient, type LspLinkClient } from "../protocol/lsp-language.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
@@ -20,33 +23,43 @@ export type DocumentLinkSnapshot = Readonly<{
     links: readonly DocumentLinkChoice[]; message: string;
 }>;
 export type DocumentLinkControllerOptions = Readonly<{
+    paint?: boolean;
     documents?: () => readonly DocumentSnapshot[]; canCapture?: (id: DocumentId) => boolean;
     prepareRequest?: () => LspPrepare | undefined;
 }>;
 export type DocumentLinkController = Observable<DocumentLinkSnapshot> & Readonly<{
     request: () => Promise<Outcome<readonly DocumentLinkChoice[]>>; cancel: () => void; dispose: () => void;
+    setPaint: (enabled: boolean) => void;
     linkAt: (offset: number) => DocumentLinkChoice | undefined;
 }>;
+type Watched = { item: LspDocumentLink; isCurrent(): boolean };
 type Job = {
+    watched?: Watched | undefined;
     client: LspLinkClient; project: ReturnType<typeof retainDocuments>; source?: CapturedViewRequest<TextEditor["tab"]>;
     reply?: Awaited<ReturnType<LspLinkClient["run"]>["result"]>; connection?: ReturnType<LspWorkspace["getSnapshot"]>;
     invalid: boolean; timer?: number; failure?: ReturnType<typeof failed>;
 };
-const empty: readonly DocumentLinkChoice[] = Object.freeze([]);
-const idle: DocumentLinkSnapshot = Object.freeze({ status: "idle", links: empty, message: "" });
+const idle: DocumentLinkSnapshot = Object.freeze({ status: "idle", links: emptyList, message: "" });
+
+const watchLinks = documentRangeWatch<LspDocumentLink>(documentLinkMethod, linkClient,
+    ({ from, to }) => ({ from, to, className: "st-document-link" }), { name: "document links", order: 30 });
 
 /** Discover links for one editor. Only a current user action hands an opaque target to the host. */
-export function createDocumentLinkController(editor: TextEditor, provider: LspWorkspace, options: DocumentLinkControllerOptions = {}): DocumentLinkController {
+export const createDocumentLinkController: (editor: TextEditor, provider: LspWorkspace,
+    options?: DocumentLinkControllerOptions) => DocumentLinkController = mountDocumentLinks;
+
+export function mountDocumentLinks(editor: TextEditor, provider: LspWorkspace, options: DocumentLinkControllerOptions = {},
+    shared?: LspDocumentOwner): DocumentLinkController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
     const { scope, state, signal, active, available, capture, release, expire, mount } =
         languageReview<Job, DocumentLinkSnapshot>(editor, "Document link", idle, options.canCapture,
             status => publish(status));
-    function publish(status: DocumentLinkSnapshot["status"], links = empty, message = "") {
+    function publish(status: DocumentLinkSnapshot["status"], links: readonly DocumentLinkChoice[] = emptyList, message = "") {
         scope.publish(state, Object.freeze({ status, links, message }));
     }
     function captureCurrent(j: Job) {
         if (active.job !== j || j.invalid || !workspace.ownsDocumentView(view, tab) || !available(view.documentId)
-            || j.source && !j.source.isCurrent()) return false;
+            || j.watched && !j.watched.isCurrent() || j.source && !j.source.isCurrent()) return false;
         if (options.canCapture) for (const id of j.project.documents.keys()) if (!options.canCapture(id)) return false;
         return true;
     }
@@ -71,7 +84,7 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
             j.failure = failure;
             release();
         }
-        publish("failed", empty, error instanceof Error ? error.message : "Document link request failed.");
+        publish("failed", emptyList, error instanceof Error ? error.message : "Document link request failed.");
         return failure;
     }
     function bindCapture(j: Job, source: NonNullable<Job["source"]>) {
@@ -83,34 +96,71 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
         win.clearTimeout(j.timer);
         const source = j.source; delete j.source; source?.cancel();
     }
-    function choice(item: LspDocumentLink, index: number): DocumentLinkChoice {
-        // A retained row only knows its identity and slot. It cannot open a later row at that slot.
+    function start(watched?: Watched) {
+        release();
+        const source = capture();
+        if (!source) return;
+        try {
+            const client = linkClient(shared ?? provider, watched);
+            const j: Job = { client, watched, invalid: false,
+                project: retainDocuments(workspace, available, () => expire(j)) };
+            active.job = j;
+            bindCapture(j, source);
+            j.project.include(source.document);
+            for (const doc of options.documents?.() ?? []) j.project.include(doc);
+            return j;
+        } catch (error) {
+            source.cancel();
+            release();
+            throw error;
+        }
+    }
+    function choice(item: LspDocumentLink, index: number, watched?: Watched): DocumentLinkChoice {
         const result: DocumentLinkChoice = Object.freeze({ from: item.from, to: item.to, target: item.target,
             tooltip: item.tooltip, canResolve: item.target === null && !!item.resolve,
-            open: present => open(result, index, present) });
+            open: present => open(result, index, present, watched) });
         return result;
     }
-    async function open(selected: DocumentLinkChoice, index: number, present: (uri: string) => void): Promise<Outcome<string>> {
+    async function open(selected: DocumentLinkChoice, index: number, present: (uri: string) => void,
+        watched?: Watched): Promise<Outcome<string>> {
         scope.assertWritable();
-        const j = active.job, before = state.get();
-        if (!j?.reply || before.links[index] !== selected) return stale;
+        const beforeJob = active.job;
+        let j: Job | undefined;
+        const before = state.get();
         let target = selected.target;
         try {
+            if (watched) {
+                if (!watched.isCurrent()) return stale;
+                if (beforeJob?.watched === watched && before.status === "resolving") return refused("resolving");
+                j = start(watched);
+                if (!j) return refused("unavailable-view");
+                j.connection = provider.getSnapshot();
+            } else {
+                j = beforeJob;
+                if (!j?.reply || before.links[index] !== selected) return stale;
+                if (before.status === "resolving") return refused("resolving");
+            }
             if (!current(j)) { expire(j); return stale; }
-            if (before.status === "resolving") return refused("resolving");
             if (target === null && selected.canResolve) {
-                const source = capture();
+                const source = j.source ?? capture();
                 if (!source) return refused("unavailable-view");
-                bindCapture(j, source);
-                publish("resolving", before.links);
-                const resolved = await j.reply.resolve(j.reply.items[index]!);
+                if (!j.source) bindCapture(j, source);
+                publish("resolving", watched ? emptyList : before.links);
+                const resolved = watched ? (await j.client.run({ document: source.document }).result).items[0]!
+                    : await j.reply!.resolve(j.reply!.items[index]!);
                 if (!current(j)) { expire(j); return stale; }
                 finishCapture(j);
-                const links = before.links.slice();
-                links[index] = choice(resolved, index);
-                publish("ready", Object.freeze(links));
-                if (!current(j)) return stale;
+                if (!watched) {
+                    const links = before.links.slice();
+                    links[index] = choice(resolved, index);
+                    publish("ready", Object.freeze(links));
+                    if (!current(j)) return stale;
+                }
                 target = resolved.target;
+            }
+            if (watched) {
+                release();
+                publish("idle");
             }
         } catch (error) { return fail(j, error); }
         if (target === null) return refused("no-target");
@@ -120,43 +170,67 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
     async function request(): Promise<Outcome<readonly DocumentLinkChoice[]>> {
         scope.assertWritable();
         if (signal.aborted) return stale;
-        release();
-        let pending: Job | undefined, source: Job["source"];
+        let pending: Job | undefined;
         try {
-            source = capture();
-            if (!source) {
+            const j = pending = start();
+            if (!j) {
                 publish("expired");
                 return refused("unavailable-view");
             }
-            const client = createLspLinkClient(provider);
-            const j: Job = { client, project: retainDocuments(workspace, available, () => expire(j)), invalid: false };
-            active.job = pending = j;
-            bindCapture(j, source);
-            j.project.include(source.document);
-            for (const doc of options.documents?.() ?? []) j.project.include(doc);
             publish("pending");
-            j.reply = await client.run({ document: source.document, prepare: options.prepareRequest?.() }).result;
+            j.reply = await j.client.run({ document: j.source!.document, prepare: options.prepareRequest?.() }).result;
             if (!current(j)) { expire(j); return stale; }
             j.connection = provider.getSnapshot();
             finishCapture(j);
-            const links = Object.freeze(j.reply.items.map(choice));
+            const links = Object.freeze(j.reply.items.map((item, index) => choice(item, index)));
             publish("ready", links);
             return done(links);
         } catch (error) {
-            if (!pending) source?.cancel();
             return fail(pending, error);
         }
     }
     const stop = provider.subscribe(() => {
         const j = active.job;
         // A malformed resolve reply invalidates the protocol result before its rejection reaches open().
-        if (j?.reply && !j.reply.isCurrent() && (!j.source || providerChanged(j))) expire(j);
+        if (!j) return;
+        if (j.watched ? providerChanged(j) : j.reply && !j.reply.isCurrent() && (!j.source || providerChanged(j))) expire(j);
     });
-    const controls = mount(stop);
-    function linkAt(offset: number) {
-        const snapshot = state.get();
-        if (!Number.isSafeInteger(offset) || !active.job || snapshot.status !== "ready" || !current(active.job)) return;
-        return snapshot.links.find(link => link.from <= offset && offset < link.to);
+    let paint: ReturnType<typeof watchLinks> | undefined;
+    let choices = new WeakMap<LspDocumentLink, DocumentLinkChoice>();
+    const controls = mount(() => {
+        stop();
+        paint?.dispose();
+        paint = undefined;
+    });
+    function setPaint(enabled: boolean) {
+        scope.assertWritable();
+        if (signal.aborted || enabled === !!paint) return;
+        if (enabled) paint = watchLinks(editor, provider, shared ?? provider);
+        else {
+            if (active.job?.watched) expire(active.job);
+            paint?.dispose();
+            paint = undefined;
+            choices = new WeakMap();
+        }
     }
-    return Object.freeze({ ...controls, request, linkAt });
+    try { setPaint(!!options.paint); } catch (error) { controls.dispose(); throw error; }
+    function linkAt(offset: number) {
+        if (!Number.isSafeInteger(offset)) return;
+        const snapshot = state.get();
+        if (active.job?.reply && snapshot.status === "ready" && current(active.job)) {
+            const choice = snapshot.links.find(link => link.from <= offset && offset < link.to);
+            if (choice) return choice;
+        }
+        const mounted = paint;
+        const item = mounted?.at(offset);
+        if (mounted && item) {
+            let found = choices.get(item);
+            if (!found) {
+                found = choice(item, 0, { item, isCurrent: () => paint === mounted && mounted.at(offset) === item });
+                choices.set(item, found);
+            }
+            return found;
+        }
+    }
+    return Object.freeze({ ...controls, request, linkAt, setPaint });
 }

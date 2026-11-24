@@ -5,6 +5,7 @@ import { mountCompletion, type CompletionController, type CompletionControllerOp
 import { mountDiagnostic, type DiagnosticController, type DiagnosticControllerOptions } from "./diagnostic-controller.ts";
 import { mountHover, type HoverController, type HoverControllerOptions } from "./hover-controller.ts";
 import { mountDocumentColors, type DocumentColorController, type DocumentColorControllerOptions } from "./document-color-controller.ts";
+import { mountDocumentLinks, type DocumentLinkController, type DocumentLinkControllerOptions } from "./document-link-controller.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 type Options = {
@@ -12,12 +13,14 @@ type Options = {
     diagnostics?: DiagnosticControllerOptions;
     hover?: HoverControllerOptions;
     colors?: DocumentColorControllerOptions;
+    links?: DocumentLinkControllerOptions;
 };
 type Features = {
     completion: CompletionController;
     diagnostics: DiagnosticController;
     hover: HoverController;
     colors: DocumentColorController;
+    links: DocumentLinkController;
 };
 type Attachment<O extends Options> = Readonly<{ [K in keyof O]: K extends keyof Features ? Features[K] : never }>
     & Readonly<{ dispose: () => void }>;
@@ -41,6 +44,7 @@ export function attachEditorLanguage<O extends Options>(editor: TextEditor, prov
         }
         if (options.completion) features.completion = mountCompletion(editor, provider, options.completion, owner);
         if (options.colors) features.colors = mountDocumentColors(editor, provider, options.colors, owner);
+        if (options.links) features.links = mountDocumentLinks(editor, provider, options.links, owner);
         editor.signal.addEventListener("abort", dispose, { once: true });
         return Object.freeze({ ...features, dispose }) as Attachment<O>;
     } catch (error) {
