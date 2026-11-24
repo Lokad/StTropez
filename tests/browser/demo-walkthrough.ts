@@ -609,7 +609,7 @@ export async function runDemoEditingRules(page: Page, url = "/") {
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "/", ctrlKey: true, bubbles: true, cancelable: true }));
         document.querySelector<HTMLButtonElement>("#save")!.click();
     });
-    await expect(page.locator("#status")).toHaveText("An edit is still in progress. Save again when it finishes.");
+    await expect(page.locator("#status")).toHaveText("Save skipped while an edit was pending. Save again to keep your changes.");
     await source.press("Control+Home"); await expect(page.locator("#cursor")).toHaveText("Ln 1, Col 1");
     await expect.poll(async () => (await source.inputValue()).startsWith("// pending")).toBe(true);
     await page.getByRole("button", { name: "Save locally", exact: true }).click();
@@ -883,7 +883,7 @@ export async function runDemoWalkthrough(page: Page, url = "/") {
     await pricing.press("Control+z"); await expect(page.locator("#files")).not.toContainText("●");
     await expect(page.locator("#editor")).not.toContainText("// Recover this helper");
     await pricing.press("Control+y"); await pricing.press("Control+s"); await expect(page.locator("#status")).toContainText("Saved in this browser");
-    await expect(page.locator("#recovery-status")).toHaveText("All changes are saved.");
+    await expect(page.locator("#recovery-status")).toHaveText("No local recovery draft.");
     await page.reload(); await expect(page.locator("#editor")).toContainText("// Recover this cart");
     await expect(page.locator("#editor")).toContainText("basketTotal(cart, 0.2)"); await expect(page.locator("#recovery-offer")).toBeHidden();
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
@@ -922,7 +922,16 @@ export async function runDemoConflict(page: Page, url = "/") {
         await main.press("Control+s");
         await expect(page.locator("#status")).toContainText("Saved in this browser");
         const peerMain = peer.getByRole("textbox", { name: "main.ts", exact: true });
-        await peerMain.press("Control+Home"); await peerMain.pressSequentially("// Peer local work\n");
+        await peerMain.press("Control+Home");
+        await peer.keyboard.insertText("// Peer local work\n");
+        await expect(peer.locator("#recovery-status")).toContainText("captured");
+        await peerMain.press("Control+s");
+        await expect(peer.locator("#save-conflict")).toBeVisible();
+        await peerMain.press("Control+z");
+        await expect(peer.locator("#files")).not.toContainText("●");
+        await expect(peer.locator("#recovery-status")).toHaveText("No local recovery draft.");
+        await expect(peer.locator("#save-conflict")).toBeVisible();
+        await peerMain.press("Control+y");
         await peer.locator('[data-file="pricing.ts"]').click(); await peer.getByRole("textbox", { name: "pricing.ts", exact: true }).press("Control+Home");
         await peer.getByRole("textbox", { name: "pricing.ts", exact: true }).pressSequentially("// Peer helper work\n");
         await peer.locator('[data-file="main.ts"]').click();
@@ -930,7 +939,6 @@ export async function runDemoConflict(page: Page, url = "/") {
         await peerMain.press("Control+Home");
         const row = peer.locator("#editor .st-viewport-row").filter({ hasText: 'import type { CartItem }' });
         const point = await paintedCharacter(row, "import", 2);
-        await peerMain.press("Control+s");
         await expect(peer.locator("#save-conflict")).toBeVisible(); await expect(peer.locator("#editor")).toContainText("// Peer local work");
         await peer.mouse.click(point.x, point.y); await expect(peerMain).toBeFocused(); await expect(peer.locator("#cursor")).toContainText("Ln 3,");
         const review = peer.getByRole("button", { name: "Review saved copy", exact: true });

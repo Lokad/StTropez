@@ -200,7 +200,11 @@ export class DemoProject {
     }
     async save(changed: () => void, reviewed = false): Promise<void> {
         if (this.disposed || this.saving) return;
-        if (!this.inputIdle()) { this.notice = { text: "An edit is still in progress. Save again when it finishes.", keepOnEdit: true }; changed(); return; }
+        if (!this.inputIdle()) {
+            this.message = "Save skipped while an edit was pending. Save again to keep your changes.";
+            changed();
+            return;
+        }
         if (reviewed && !this.canSaveReviewed()) return;
         const expected = reviewed ? this.conflict!.token : this.token;
         const tickets: { file: DemoFile; ticket: SaveTicket<string>; buffer: TextBuffer }[] = [];

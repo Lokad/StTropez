@@ -129,7 +129,7 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
         document.querySelector<HTMLButtonElement>("#save")!.click();
         node.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
     });
-    await expect(page.locator("#status")).toContainText("An edit is still in progress");
+    await expect(page.locator("#status")).toContainText("Save skipped while an edit was pending");
     await expect(page.locator("#host-status")).toContainText("cancelled"); await source.press("?"); await expect(source).toHaveValue(original + "?");
     await source.press("Control+z"); await expect(source).toHaveValue(original);
     await page.locator("#code-menu summary").click(); await page.locator("#host-insert-table").click();

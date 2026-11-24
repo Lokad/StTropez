@@ -47,7 +47,7 @@ test("demo captures both files and explicitly restores a draft after real reload
     await expect(page.locator("#files")).not.toContainText("●");
     await helper.press("Control+y"); await helper.press("Control+s");
     await expect(page.locator("#status")).toContainText("Saved in this browser");
-    await expect(page.locator("#recovery-status")).toHaveText("All changes are saved.");
+    await expect(page.locator("#recovery-status")).toHaveText("No local recovery draft.");
     await page.reload();
     await expect(page.locator("#editor")).toContainText("// Recover my cart");
     await expect(page.locator("#recovery-offer")).toBeHidden();

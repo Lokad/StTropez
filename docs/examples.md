@@ -254,7 +254,7 @@ your edits alongside the offered draft. After reload, choose a version to restor
 On reload, the tab offers its last checkpoint. In a different tab, **Review draft** opens the offer.
 **Keep current files** dismisses it in this tab. You can reopen it or restore one version and keep the others.
 **Discard offered drafts** removes the offered versions and checkpoints any unsaved current files in the same write.
-Reopening clears drafts identical to saved data.
+Reopening clears drafts identical to saved data. Clearing a local draft leaves a conflict with another page open for review.
 If another page has saved the sample, choose **Review saved copy**. **Save my reviewed version**
 writes your working files. **Use reviewed saved files** takes the other page’s version across the
 sample. If any text changes, one Undo restores it. A later local edit or peer save requires a fresh review.

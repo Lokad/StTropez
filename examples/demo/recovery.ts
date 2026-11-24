@@ -176,7 +176,7 @@ export class DemoRecovery {
             if (envelope?.token === this.token && !this.offer) {
                 if (envelope && !this.dirty() && this.targetsCurrent(capture)) {
                     await this.store.remove(envelope.token);
-                    if (!this.disposed) { this.token = null; this.checkpointed = undefined; this.publish("idle", "All changes are saved."); }
+                    if (!this.disposed) { this.token = null; this.checkpointed = undefined; this.publish("idle", "No local recovery draft."); }
                     return;
                 }
                 this.publish(this.token ? "protected" : "idle", this.token ? "Recovery draft captured in this browser." : "Recovery is ready.");
@@ -209,7 +209,7 @@ export class DemoRecovery {
                         this.publish("protected", "Recovery draft captured in this browser.");
                     } else {
                         await this.store.remove(envelope.token);
-                        if (!this.disposed) { this.token = null; this.publish("idle", "All changes are saved."); }
+                        if (!this.disposed) { this.token = null; this.publish("idle", "No local recovery draft."); }
                     }
                     return;
                 }
@@ -245,7 +245,7 @@ export class DemoRecovery {
             if (!drafts.length) {
                 if (expected) await this.store.remove(expected);
                 if (!this.disposed) { this.token = null; this.offer = undefined; this.checkpointed = undefined;
-                    this.publish("idle", discardOffered ? "Discarded the offered drafts." : "All changes are saved."); }
+                    this.publish("idle", discardOffered ? "Discarded the offered drafts." : "No local recovery draft."); }
                 return;
             }
             await this.store.write({ token, value: encode(drafts) }, expected);

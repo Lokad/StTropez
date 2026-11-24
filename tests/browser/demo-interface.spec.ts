@@ -605,8 +605,9 @@ test("Save during Replace all keeps the saved copy until the edit is ready and S
     await page.locator("#replacement").fill("new"); await page.locator("#replace-all").click();
     await expect.poll(gate.waiting).toBe(1);
     await page.getByRole("button", { name: "Save locally", exact: true }).click();
-    await expect(page.locator("#status")).toHaveText("An edit is still in progress. Save again when it finishes.");
+    await expect(page.locator("#status")).toHaveText("Save skipped while an edit was pending. Save again to keep your changes.");
     await gate.release(); await expect(source).toHaveValue("// new\n// new");
+    await expect(page.locator("#status")).toHaveText("Unsaved changes.");
 
     const peer = await context.newPage();
     try {
@@ -1113,7 +1114,7 @@ test("reset names its sample and recovery follows the stored draft across sample
     await expect(page.locator("#status")).toContainText("Sample restored.");
     await source.press("Control+z"); await expect(page.locator("#status")).toHaveText("Unsaved changes.");
     await source.press("Control+y"); await expect(page.locator("#status")).toHaveText("Files match the original sample.");
-    await expect(page.locator("#recovery-status")).toHaveText("All changes are saved.");
+    await expect(page.locator("#recovery-status")).toHaveText("No local recovery draft.");
     await page.reload(); await page.locator("#sample").selectOption("large");
     await expect(page.locator("#recovery-status")).toHaveText("Recovery is ready.");
     await expect(page.locator("#recovery-offer")).toBeHidden();
