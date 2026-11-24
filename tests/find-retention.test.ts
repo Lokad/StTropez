@@ -188,7 +188,9 @@ test("refining a query follows the last Find selection at the same start", () =>
     const query = (value: string) => f.find.setQuery(value, { preview: true });
     const range = () => [f.view.getSnapshot().selection.anchor, f.view.getSnapshot().selection.head];
     try {
-        f.select(11); query("quan"); f.drain(); f.find.next();
+        f.select(0); query("quan"); f.drain();
+        assert.equal(f.find.getSnapshot().current, 0);
+        f.find.next();
         assert.deepEqual(range(), [12, 16]);
         query("quant"); query("quanti"); query("quantity"); f.drain();
         assert.deepEqual(range(), [12, 20]); assert.equal(f.find.getSnapshot().current, 0);
@@ -210,6 +212,11 @@ test("refining a query follows the last Find selection at the same start", () =>
 test("deferred Find follows the latest direction until the selection, query or visible folds change", () => {
     const f = fixture("cat\ndog\ncat");
     try {
+        f.find.setQuery("cat", { preview: true });
+        assert.equal(f.find.next(1, { whenReady: true }), true);
+        f.drain();
+        assert.equal(f.view.getSnapshot().selection.anchor, 0);
+        assert.equal(f.view.getSnapshot().selection.head, 3);
         f.find.setQuery("cat");
         assert.equal(f.find.next(1, { whenReady: true }), true);
         assert.equal(f.find.next(-1, { whenReady: true }), true);

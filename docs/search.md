@@ -73,8 +73,8 @@ are offscreen, it reveals the next one.
 Preview preserves the source selection. Once you navigate to a match, appending or removing
 characters at the end of the query adjusts that selection if the new match starts at the same offset.
 Call `acceptPreview()` when closing a Find panel to select the displayed match. It returns
-`false` if there is no completed preview for the current selection. Forward navigation also
-selects the preview. Losing focus, scrolling, starting a new query
+`false` if there is no completed preview for the current selection. Next and Previous advance
+from the highlighted preview. Losing focus, scrolling, starting a new query
 or changing the selection, document or visible folds abandons a pending preview. After explicit navigation,
 `wrappedTo` reports `"start"`, `"end"` or `null`. The `current` index starts at zero.
 Without a preview, Find reports the match containing the caret or exactly covering the selection.

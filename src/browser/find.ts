@@ -313,11 +313,11 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const state = store.get();
         if (state.status !== "ready" && !(state.status === "searching" && state.retained) || !count) return;
         const selection = viewSnapshot(), selected = selection.selection, bound = direction === 1 ? Math.max(selected.anchor, selected.head) : Math.min(selected.anchor, selected.head);
-        let low = indexAt(bound);
-        if (previewed?.selection === selection.selectionSet) low = previewed.index;
-        else if (direction === 1 && low < count && offsetAt(low) === bound && endAt(low) === bound
-            && (navigatedMatch?.index === low && navigatedMatch.selectionSet === selection.selectionSet || replacedHere())) low++;
-        const raw = direction === 1 ? low : low - 1;
+        let raw = indexAt(bound);
+        if (previewed?.selection === selection.selectionSet) raw = previewed.index + direction;
+        else if (direction === -1) raw--;
+        else if (raw < count && endAt(raw) === bound
+            && (navigatedMatch?.index === raw && navigatedMatch.selectionSet === selection.selectionSet || replacedHere())) raw++;
         if (state.status !== "ready" && (raw < 0 || raw >= count)) return;
         if (state.status !== "ready") {
             if (pendingRepair?.hasRetainedSuffix && raw >= pendingRepair.prefixCount) {
@@ -383,7 +383,17 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const pending = pendingNext;
         pendingNext = undefined;
         if (pending && valid() && pending.selection === currentSelection()
-            && pending.origin === captureFocus() && !pending.origin?.matches(":disabled")) next(pending.direction);
+            && pending.origin === captureFocus() && !pending.origin?.matches(":disabled")) {
+            // A command queued before the first result arrives can accept that first visible match.
+            if (pending.direction === 1 && acceptPreview()) return;
+            next(pending.direction);
+        }
+    }
+    function acceptPreview(): boolean {
+        scope.assertWritable();
+        if (!previewed || !valid() || editor.activity().composing || store.get().status !== "ready"
+            || previewed.selection !== currentSelection()) return false;
+        return selectMatch(previewed.index, true);
     }
     const next: FindController["next"] = (direction = 1, options) => {
         scope.assertWritable();
@@ -571,12 +581,6 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             restart(state.query, wholeWord, matchCase, regularExpression);
             if (refresh) capturePreview();
         },
-        acceptPreview: () => {
-            scope.assertWritable();
-            if (!previewed || !valid() || editor.activity().composing || store.get().status !== "ready"
-                || previewed.selection !== currentSelection()) return false;
-            return selectMatch(previewed.index, true);
-        },
-        next, replaceCurrent, replaceAll, cancel: () => { scope.assertWritable(); if (!disposed) { stop(); reset({ status: "cancelled", reason: "cancelled", message: "Search cancelled." }); } },
+        acceptPreview, next, replaceCurrent, replaceAll, cancel: () => { scope.assertWritable(); if (!disposed) { stop(); reset({ status: "cancelled", reason: "cancelled", message: "Search cancelled." }); } },
         dispose });
 }

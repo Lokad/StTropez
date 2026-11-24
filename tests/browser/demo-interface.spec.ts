@@ -396,8 +396,8 @@ test("clicking Replace keeps the next keystroke in the Find bar", async ({ page,
     await page.locator("#find-next").click(); await expect(query).toBeFocused();
     await page.locator("#replace-toggle").click(); await expect(replacement).toBeFocused();
     await page.keyboard.type("qty"); await page.locator("#replace-current").click();
-    await expect(status).toContainText("1 of 3"); await expect(replacement).toBeFocused();
-    await page.keyboard.press("F3"); await expect(status).toHaveText("2 of 3");
+    await expect(status).toContainText("2 of 3"); await expect(replacement).toBeFocused();
+    await page.keyboard.press("F3"); await expect(status).toHaveText("3 of 3");
     await page.locator("#find-previous").click(); await expect(replacement).toBeFocused();
     await page.keyboard.type("X"); await expect(replacement).toHaveValue("qtyX");
     await page.keyboard.press("Escape"); await expect(query).toBeHidden(); await expect(source).toBeFocused();
@@ -512,7 +512,7 @@ test("Find combines case and word boundaries and keeps the options across files"
     await word.click(); await expect(status).toHaveText("No matches");
     await caseButton.click(); await expect(status).toHaveText("3 matches");
     await regex.click(); await query.fill("car[t]"); await expect(status).toHaveText("1 of 3");
-    await query.press("Enter"); await query.press("Enter"); await expect(status).toHaveText("2 of 3");
+    await query.press("Enter"); await expect(status).toHaveText("2 of 3");
     await page.locator("#files button").filter({ hasText: "pricing.ts" }).click();
     await expect(query).toHaveValue("car[t]"); await expect(status).toHaveText("No matches");
     await expect(word).toHaveAttribute("aria-pressed", "true"); await expect(regex).toHaveAttribute("aria-pressed", "true");
