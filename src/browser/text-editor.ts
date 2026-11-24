@@ -1141,6 +1141,18 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         else { cancelWord(); conflict("pending-native-input-target", undefined, native.capture.revision, 0, event.data ?? native.data ?? input.value); }
         refresh(); inputQueue.schedule(); return true;
     }
+    // Some browsers send native undo to the last edited textarea while a host field has focus.
+    function guardNativeHistory(event: Event): void {
+        const type = (event as InputEvent).inputType;
+        if ((type === "historyUndo" || type === "historyRedo") && !isFocused(input)) {
+            if (event.cancelable) event.preventDefault();
+            event.stopImmediatePropagation();
+            if (event.type === "input") refresh();
+        }
+    }
+    for (const type of ["beforeinput", "input"]) {
+        input.addEventListener(type, guardNativeHistory, { capture: true, signal: listeners.signal });
+    }
     function beforeInput(event: InputEvent): void {
         hostInsertion?.cancel();
         pendingDeletion = undefined; insertion = undefined;

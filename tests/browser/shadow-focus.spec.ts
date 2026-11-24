@@ -20,10 +20,11 @@ test.beforeAll(async () => {
 async function mount(page: Page, language: boolean) {
     await page.route("**/shadow-focus/**", route => {
         const name = new URL(route.request().url()).pathname.split("/").at(-1)!;
+        if (!name) return route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Editor focus</title>" });
         return route.fulfill({ contentType: "text/javascript", body: modules.get(name)! });
     });
     // Keep a real local response as the document origin for native WebSocket policy.
-    await page.goto("/viewport/");
+    await page.goto("/shadow-focus/");
     await page.evaluate(async ({ css, language }) => {
         const path = "/shadow-focus/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { BrowserLspWorkspace, mountTextEditor, createCompletionController, createLspHighlightController, openWebSocketTransport } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
@@ -55,6 +56,41 @@ async function mount(page: Page, language: boolean) {
 }
 const text = (page: Page) => page.evaluate(() => { const f = window.shadowFocus, buffer = f.workspace.document(f.source.documentId).buffer; return buffer.slice(0, buffer.length); });
 const completion = (page: Page) => page.evaluate(() => window.shadowFocus.completion!.getSnapshot());
+
+test("native undo and redo belong to the focused text field", async ({ page }) => {
+    const input = await mount(page, false), original = await text(page);
+    await input.focus();
+    await page.keyboard.type("X");
+    const edited = await text(page);
+    expect(edited).not.toBe(original);
+    const field = page.getByRole("textbox", { name: "Search the document" });
+    await page.evaluate(() => {
+        const search = document.createElement("input");
+        search.setAttribute("aria-label", "Search the document");
+        document.body.append(search);
+    });
+    await field.fill("query");
+    await field.press("Control+z");
+    await expect(field).toHaveValue("");
+    await field.press("Control+z");
+    // Engines can deliver native history events to the last edited textarea after focus moves.
+    const dispatchHistory = (inputType: string) => input.evaluate((node, inputType) => {
+        for (const type of ["beforeinput", "input"]) {
+            node.dispatchEvent(new InputEvent(type, { inputType, bubbles: true, cancelable: type === "beforeinput" }));
+        }
+    }, inputType);
+    await dispatchHistory("historyUndo");
+    expect(await text(page)).toBe(edited);
+    await input.focus();
+    await page.keyboard.press("Control+z");
+    expect(await text(page)).toBe(original);
+    await field.focus();
+    await dispatchHistory("historyRedo");
+    expect(await text(page)).toBe(original);
+    await input.focus();
+    await page.keyboard.press("Control+Shift+z");
+    expect(await text(page)).toBe(edited);
+});
 
 test("a link controller on a later pane requests links on the already open connection", async ({ page }) => {
     await mount(page, true);
