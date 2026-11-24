@@ -275,7 +275,14 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     let commandGeometry: ReturnType<typeof rowGeometry> | undefined;
     type CommandRow = { item: Row; element: HTMLDivElement; geometry?: ReturnType<typeof rowGeometry> };
     let preparedRows: Readonly<{ revision: number; selectionSet: SelectionSet; element: HTMLDivElement; rows: Map<number, CommandRow> }> | undefined;
-    const clearPreparedRows = () => { if (preparedRows) { preparedRows.element.remove(); preparedRows.element.replaceChildren(); preparedRows.rows.clear(); preparedRows = undefined; } };
+    const clearPreparedRows = () => {
+        if (!preparedRows) return;
+        commandMeasure.remove();
+        preparedRows.element.remove();
+        preparedRows.element.replaceChildren();
+        preparedRows.rows.clear();
+        preparedRows = undefined;
+    };
     let anchor: Readonly<{ revision: number; offset: number; topRemainder: number; leftRemainder: number; aligned?: true }> | undefined;
     let reveal: Readonly<{ revision: number; foldGeneration: number; offset: number; end?: number; align?: RevealAlignment }> & Required<RevealOptions> | undefined;
     let horizontalAnchor: ViewState["horizontalAnchor"];
@@ -559,11 +566,10 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         for (const entry of batchRows.values()) { const key = entry.element.className + "\0" + entry.element.innerHTML;
             keys.set(entry, key); counts.set(key, (counts.get(key) ?? 0) + 1); }
         for (const [line, entry] of batchRows) if (counts.get(keys.get(entry)!)! > 1) { entry.element.remove(); batchRows.delete(line); }
-        if (!batchRows.size) return () => {};
         // All writes precede native geometry reads. Keep the bounded batch across yielding turns;
-        // the command owns its release, while document changes and destruction release eagerly.
+        // the batch also owns the single-row probe when every offscreen row repeats.
         const batch = { revision: document.revision, selectionSet, element, rows: batchRows }; preparedRows = batch;
-        root.append(element);
+        if (batchRows.size) root.append(element);
         return () => { if (preparedRows === batch) clearPreparedRows(); };
     }
     function withRow<T>(line: number, scrollLeft: number, offset: number | undefined, work: (row: MeasuredRow) => T): T | undefined {
@@ -583,11 +589,13 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const changed = paintRow(commandRow, item, document, selectionSet, currentLine(document, selectionSet, renderedIndex));
         commandRow.style.height = `${lineHeight}px`;
         commandRow.style.lineHeight = comparisonRows ? `${lineHeight}px` : "";
-        root.append(commandMeasure);
+        if (!commandMeasure.parentNode) root.append(commandMeasure);
         try {
             if (changed || !commandGeometry) commandGeometry = rowGeometry(commandRow, 0, document.revision, lineHeight * rectangle.zoom);
             return work(measuredRow({ item, element: commandRow, geometry: commandGeometry }, document.revision, rectangle));
-        } finally { commandMeasure.remove(); }
+        } finally {
+            if (!preparedRows) commandMeasure.remove();
+        }
     }
     function render(scheduled: boolean): void {
         frame = undefined; if (disposed) return;
@@ -1127,7 +1135,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             rulers.clear(); clearCurrentLine(); settings = defaultSettings;
             minimap?.dispose(); minimap = undefined;
             observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); rowSources.clear(); rowSourceRevision = null; paddingRows.clear(); comparisonRows = undefined; renderedAlignmentId = null; geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
-            painted = undefined; commandGeometry = undefined; commandRow.replaceChildren(); commandMeasure.remove(); clearPreparedRows();
+            painted = undefined; commandGeometry = undefined; commandRow.replaceChildren(); clearPreparedRows();
             renderedIndex = emptyIndex; renderedFoldGeneration = -1; lineNumbers.clear(); numbers.replaceChildren(); foldButtons.clear(); foldLayer.replaceChildren();
             renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0;
             layer.replaceChildren(); root.replaceChildren(); root.remove();

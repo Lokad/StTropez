@@ -361,6 +361,33 @@ test("horizontal arrows move offscreen carets by grapheme without measuring thei
     await measurement.dispose();
 });
 
+test("typing during vertical multicaret navigation edits the destination rows", async ({ page }) => {
+    const count = 160;
+    await setup(page, Array(count + 1).fill("abcd").join("\n"));
+    await page.evaluate(count => {
+        const carets = Array.from({ length: count }, (_, i) => ({ anchor: 5 * i + 2, head: 5 * i + 2 }));
+        window.editingFixture.selections(carets, count / 2);
+    }, count);
+    await ready(page);
+    const pending = await page.locator("#primary textarea").evaluate(input => {
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+        const navigating = window.editingFixture.snapshot().primary.pendingCommand;
+        input.dispatchEvent(new InputEvent("beforeinput", {
+            inputType: "insertText", data: "!", bubbles: true, cancelable: true
+        }));
+        return navigating;
+    });
+    expect(pending).toBeTruthy();
+    await ready(page);
+    const expected = "abcd" + "\nab!cd".repeat(count);
+    const result = await page.evaluate(() => {
+        const fixture = window.editingFixture;
+        return { text: fixture.range(0, fixture.snapshot().document!.length), primary: fixture.selectionSet().primary };
+    });
+    expect(result).toEqual({ text: expected, primary: count / 2 });
+    await expect(page.locator("#primary .st-viewport-command-measure")).toHaveCount(0);
+});
+
 test("nearest caret reveal leaves an already visible row and horizontal position stable", async ({ page }) => {
     await setup(page, Array.from({ length: 60 }, () => "0123456789abcdef").join("\n"), 17 * 20 + 4);
     const before = (await snapshot(page)).primary.viewport;
