@@ -202,6 +202,24 @@ function renderMetadata(): void {
     // maps and lose provisional colors when several edits arrive before one frame.
     presentation.update(project.workspace.document(active.resource.documentId), hostLanguage());
 }
+function paintRecovery(project: DemoProject): void {
+    const recovery = project.recovery.state.getSnapshot();
+    element("recovery-offer").hidden = !recovery.present;
+    element("recovery-message").textContent = recovery.message;
+    const versions = element("recovery-version") as HTMLSelectElement;
+    versions.hidden = recovery.versions < 2; versions.disabled = recovery.busy;
+    if (versions.options.length !== recovery.versions) {
+        versions.replaceChildren(...Array.from({ length: recovery.versions }, (_, index) =>
+            new Option(index === 0 ? "Most recent draft" : index === 1 ? "Previous draft" : `${index} drafts earlier`, String(index))));
+    }
+    versions.selectedIndex = recovery.selected;
+    element("recovery-status").textContent = recovery.present ? "Recovery draft available" : recovery.message;
+    button("recovery-review").hidden = !recovery.canReview;
+    button("recovery-review").disabled = recovery.busy;
+    element("recovery-retry").hidden = recovery.status !== "failed";
+    button("recovery-restore").disabled = !project.recovery.canRestore();
+    button("recovery-keep").disabled = button("recovery-discard").disabled = recovery.busy;
+}
 function paintMetadata(): void {
     if (!project || !active || disposed) return;
     renderCodeMenu();
@@ -220,22 +238,7 @@ function paintMetadata(): void {
     button("conflict-save").disabled = button("conflict-take").disabled = !project.canSaveReviewed() || find?.getSnapshot().status === "replacing";
     button("conflict-review").disabled = project.saving;
     if (reviewLabel) reviewLabel.textContent = project.isReviewingConflict() ? "Other page's saved copy" : "Saved copy";
-    const recovery = project.recovery.state.getSnapshot();
-    element("recovery-offer").hidden = !recovery.present;
-    element("recovery-message").textContent = recovery.message;
-    const versions = element("recovery-version") as HTMLSelectElement;
-    versions.hidden = recovery.versions < 2; versions.disabled = recovery.busy;
-    if (versions.options.length !== recovery.versions) {
-        versions.replaceChildren(...Array.from({ length: recovery.versions }, (_, index) =>
-            new Option(index === 0 ? "Most recent draft" : index === 1 ? "Previous draft" : `${index} drafts earlier`, String(index))));
-    }
-    versions.selectedIndex = recovery.selected;
-    element("recovery-status").textContent = recovery.present ? "Recovery draft available" : recovery.message;
-    button("recovery-review").hidden = !recovery.canReview;
-    button("recovery-review").disabled = recovery.busy;
-    element("recovery-retry").hidden = recovery.status !== "failed";
-    button("recovery-restore").disabled = !project.recovery.canRestore();
-    button("recovery-keep").disabled = button("recovery-discard").disabled = recovery.busy;
+    paintRecovery(project);
     for (const file of project.files) {
         let tab = element("files").querySelector<HTMLButtonElement>(`[data-file="${file.name}"]`);
         if (!tab) { tab = document.createElement("button"); tab.dataset.file = file.name; element("files").append(tab); }
@@ -768,7 +771,20 @@ element("recovery-version").addEventListener("change", event => {
 }, { signal: listeners.signal });
 onFileAction("recovery-keep", () => project?.recovery.setOfferVisible(false));
 onFileAction("recovery-discard", () => { void project?.recovery.discardOffered(); });
-on("recovery-review", () => { project?.recovery.setOfferVisible(true); if (project?.recovery.state.getSnapshot().present) button("recovery-keep").focus(); });
+on("recovery-review", () => {
+    if (!project) return;
+    project.recovery.setOfferVisible(true);
+    if (project.recovery.state.getSnapshot().present) {
+        paintRecovery(project);
+        button("recovery-keep").focus();
+    }
+});
+element("recovery-offer").addEventListener("keydown", event => {
+    if (event.key !== "Escape" || event.defaultPrevented || event.isComposing || button("recovery-keep").disabled) return;
+    event.preventDefault();
+    event.stopPropagation();
+    button("recovery-keep").click();
+}, { signal: listeners.signal });
 on("recovery-retry", () => { void project?.recovery.refresh(); });
 function download(text: string, name: string): void {
     const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));

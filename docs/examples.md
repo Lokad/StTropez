@@ -252,7 +252,8 @@ Recovery and conflict actions appear below the editor. **Reset sample** restores
 text in one undoable edit. You can keep typing while a recovery offer is open. The demo checkpoints
 your edits alongside the offered draft. After reload, choose a version to restore or download.
 On reload, the tab offers its last checkpoint. In a different tab, **Review draft** opens the offer.
-**Keep current files** dismisses it in this tab. You can reopen it or restore one version and keep the others.
+**Review draft** puts the keyboard on **Keep current files**. Press Escape inside the offer to return to the editor.
+You can reopen the offer or restore one version and keep the others.
 **Discard offered drafts** removes the offered versions and checkpoints any unsaved current files in the same write.
 Reopening clears drafts identical to saved data. Clearing a local draft leaves a conflict with another page open for review.
 If another page has saved the sample, choose **Review saved copy**. **Save my reviewed version**

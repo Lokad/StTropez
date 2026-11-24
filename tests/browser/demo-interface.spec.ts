@@ -1074,14 +1074,28 @@ test("peer recovery reads only the changed sample while unrelated samples stay c
         await expect(page.locator("#recovery-message")).toHaveText("This browser has an unsaved draft for main.ts.");
         await page.getByRole("button", { name: "Keep current files", exact: true }).click();
         await expect(review).toBeVisible(); await expect(offer).toBeHidden();
+        const priorReads = await page.evaluate(() => (window as unknown as { demoRecoveryProbe: Probe }).demoRecoveryProbe.reads.length);
         await source.press("Control+Home"); await peer.keyboard.insertText("// Latest from peer\n");
-        await expect.poll(() => page.evaluate(() => (window as unknown as { demoRecoveryProbe: Probe }).demoRecoveryProbe.reads.length)).toBeGreaterThan(1);
+        await expect.poll(() => page.evaluate(() => (window as unknown as { demoRecoveryProbe: Probe }).demoRecoveryProbe.reads.length)).toBeGreaterThan(priorReads);
         await page.reload(); await expect(review).toBeVisible(); await expect(offer).toBeHidden();
         await expect(page.locator("#editor")).not.toContainText("// Peer recovery");
         await peer.reload(); await expect(peer.locator("#recovery-restore")).toBeEnabled();
         await peer.locator("#recovery-restore").click();
         await expect(peer.locator("#editor")).toContainText("// Latest from peer");
         await expect(peer.locator("#editor")).toContainText("// Peer recovery");
+        await review.click();
+        await expect(page.getByRole("button", { name: "Keep current files", exact: true })).toBeFocused();
+        await page.keyboard.press("Tab");
+        await expect(page.getByRole("button", { name: "Discard offered drafts", exact: true })).toBeFocused();
+        await page.keyboard.press("Escape");
+        await expect(review).toBeVisible(); await expect(offer).toBeHidden();
+        const local = page.getByRole("textbox", { name: "main.ts", exact: true });
+        await expect(local).toBeFocused();
+        const before = await local.inputValue();
+        await page.keyboard.type("x");
+        await expect(local).not.toHaveValue(before);
+        await page.keyboard.press("Control+z");
+        await expect(local).toHaveValue(before);
     } finally { if (!peer.isClosed()) await peer.close(); }
 });
 
