@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import {
-    createCodeActionController, createDocumentColorController, createDocumentLinkController, createRenameController,
+    createCodeActionController, createDiagnosticController, createDocumentColorController,
+    createDocumentLinkController, createRenameController,
     type TextEditor,
 } from "../src/browser/index.ts";
+import { createDecorationLayers } from "../src/browser/decoration-layers.ts";
 import { editorState } from "./helpers/editor-state.ts";
 import { latch, waitForState } from "./helpers/latch.ts";
 import { clientFixture, settled } from "./helpers/lsp-client.ts";
@@ -14,7 +16,7 @@ async function fixture(t: TestContext) {
     const f = clientFixture(t);
     const { workspace, provider } = f;
     const scope = provider.createScope();
-    scope.attachDocument(f.source.documentId);
+    const binding = scope.attachDocument(f.source.documentId);
     const tab = workspace.tabs.open({ kind: "text", documentId: f.source.documentId }, "source");
     const view = workspace.createDocumentView(f.source.documentId);
     const lifetime = new AbortController();
@@ -34,6 +36,10 @@ async function fixture(t: TestContext) {
     return {
         ...f, editor,
         flush: () => scope.request("test/barrier").result,
+        synchronizedVersion: async () => {
+            await scope.flush([binding]);
+            return scope.synchronized(binding)!.version;
+        },
         select: () => view.setSelection(f.document().revision, { anchor: 1, head: 1 }),
         replace: () => {
             lifetime.abort();
@@ -173,3 +179,55 @@ for (const [cause, interrupt] of Object.entries(linkChanges)) {
         assert.equal(links.linkAt(1), undefined);
     });
 }
+
+test("a diagnostic tracks its text through an edit and a fresh push replaces the selectable range", async t => {
+    const f = await fixture(t);
+    const layers = createDecorationLayers(f.document, () => {}, () => !f.editor.signal.aborted);
+    const reveals: Parameters<TextEditor["reveal"]>[] = [];
+    const editor: TextEditor = {
+        ...f.editor,
+        decorations: layers.handle,
+        reveal: (range, options) => {
+            reveals.push([range, options]);
+            return "from" in range ? range : null;
+        },
+    };
+    const controller = createDiagnosticController(editor, f.provider);
+    t.after(() => { controller.dispose(); layers.dispose(); });
+    const marks = () => {
+        const doc = f.document();
+        const line = { documentId: doc.id, revision: doc.revision, line: 0, lineStart: 0,
+            from: 0, to: doc.buffer.length, text: doc.text() };
+        return layers.present(line).map(({ from, to, className }) => ({ from, to, className }));
+    };
+    async function publish(message: string, from: number, to: number) {
+        f.peer.sendNotification("textDocument/publishDiagnostics", {
+            uri: "generic:source", version: await f.synchronizedVersion(),
+            diagnostics: [{ message, range: { start: { line: 0, character: from }, end: { line: 0, character: to } } }],
+        });
+        await f.flush();
+    }
+    await publish("Check beta", 6, 10);
+    const original = controller.getSnapshot().diagnostics[0]!;
+    assert.deepEqual(marks(), [{ from: 6, to: 10, className: "st-diagnostic" }]);
+    assert.ok(f.edit().applied);
+    await f.flush();
+    const pending = controller.getSnapshot();
+    assert.ok(pending.diagnosticsPending);
+    assert.equal(original.select(), false);
+    assert.deepEqual(marks(), [{ from: 13, to: 17, className: "st-diagnostic" }]);
+    const mapped = pending.diagnostics[0]!;
+    assert.ok(mapped.select());
+    await publish("Check alpha", 7, 12);
+    const fresh = controller.getSnapshot();
+    assert.equal(fresh.diagnosticsPending, false);
+    assert.equal(mapped.select(), false);
+    assert.equal(fresh.diagnostics[0]!.message, "Check alpha");
+    assert.ok(fresh.diagnostics[0]!.select());
+    const options = { expectedRevision: f.document().revision, select: true, focus: true };
+    assert.deepEqual(reveals, [[{ from: 13, to: 17 }, options], [{ from: 7, to: 12 }, options]]);
+    assert.deepEqual(marks(), [{ from: 7, to: 12, className: "st-diagnostic" }]);
+    f.replace();
+    assert.equal(fresh.diagnostics[0]!.select(), false);
+    assert.deepEqual(marks(), []);
+});

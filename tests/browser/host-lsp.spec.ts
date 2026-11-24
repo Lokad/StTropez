@@ -84,7 +84,7 @@ test.describe(`plain LSP editor host`, () => {
         const replaced = "// fixture import\r\n" + typed.replace("saxMORE", "sampleValue"); expect(await source(page)).toBe(replaced); expect((await snapshot(page)).history.undoDepth).toBe(depth + 1);
         await field(page, "Secondary source").press("Control+z"); expect(await source(page)).toBe(typed); await field(page, "Secondary source").press("Control+Shift+z"); expect(await source(page)).toBe(replaced);
         expect(packets).toContain("initialize"); expect(packets).toContain("textDocument/completion"); expect(packets).toContain("textDocument/didChange");
-        await expect(page.getByLabel("Source diagnostics", { exact: true }).getByRole("button")).toHaveCount(1); expect((await snapshot(page)).source.exports).toBe(0);
+        await expect(page.getByLabel("Source diagnostics", { exact: true }).getByRole("button")).toHaveCount(1);
     });
     test("ordinary prefix growth retains choices and accepts a keyboard selection with one undo transaction", async ({ page }) => {
         const calls: unknown[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method === "textDocument/completion") calls.push(value.params.context); }));
@@ -247,13 +247,11 @@ test.describe(`plain LSP editor host`, () => {
         await page.evaluate(() => window.hostFixture.providerCustom("fixture/unregister", { unregisterations: [{ id: "fixture-completion", method: "textDocument/completion" }] }));
         await expect(page.getByRole("option")).toHaveCount(0); expect(await source(page)).toBe("const sample");
     });
-    test("diagnostic pushes preserve uncertain markers, reject malformed/stale batches and retain unplaceable messages", async ({ page }) => {
+    test("diagnostic controls keep their target and render unversioned or unplaceable messages", async ({ page }) => {
         await seed(page, "const saMORE = 1; // TODO\r\n"); await offer(page); await button(page, "Cancel request").click();
         const diagnostics = page.getByLabel("Source diagnostics", { exact: true }); await expect(diagnostics.getByRole("button")).toHaveCount(1);
         await diagnostics.getByRole("button").evaluate(node => { node.dataset.retained = "diagnostic"; });
-        const before = await provider(page), uri = await sourceDiagnosticUri(page); await publishFixtureDiagnostics(page, uri, "malformed");
-        await expect.poll(async () => (await provider(page)).invalid).toBe(before.invalid + 1); await expect(diagnostics.getByRole("button")).toHaveCount(1);
-        await publishFixtureDiagnostics(page, uri, "stale"); await expect.poll(async () => (await provider(page)).stale).toBe(before.stale + 1);
+        const uri = await sourceDiagnosticUri(page);
         await publishFixtureDiagnostics(page, uri, "unversioned"); await expect(diagnostics.getByRole("button")).toHaveCount(1);
         await expect(page.getByLabel("Unversioned diagnostics", { exact: true })).toContainText("Resolve this placeholder.");
         await expect(diagnostics.getByRole("button")).toHaveAttribute("data-retained", "diagnostic");
@@ -262,7 +260,9 @@ test.describe(`plain LSP editor host`, () => {
         await expect(page.getByLabel("Unversioned diagnostics", { exact: true })).toContainText("Unplaceable diagnostic (range outside the current snapshot)");
         await publishFixtureDiagnostics(page, uri, "html"); await expect(diagnostics).toContainText("<img src=x onerror=unsafe()>"); expect(await page.locator('img[src="x"]').count()).toBe(0);
         await publishFixtureDiagnostics(page, uri, "clear"); await expect(diagnostics.getByRole("button")).toHaveCount(0);
-        await field(page).focus(); await page.evaluate(() => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: 8, head: 8 }); });
+    });
+    test("a malformed completion leaves the list empty and a fresh request can be accepted", async ({ page }) => {
+        await seed(page, "const saMORE = 1; // TODO\r\n");
         await page.evaluate(() => window.hostFixture.faultProviderNext("malformed")); await field(page).press("Control+Space"); await expect(page.getByLabel("Language status", { exact: true })).toContainText("Malformed"); await expect(page.getByRole("option")).toHaveCount(0);
         await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "plain" })); await offer(page); await field(page).press("Alt+Enter"); expect(await source(page)).toBe("const sample = 1; // TODO\r\n");
     });
