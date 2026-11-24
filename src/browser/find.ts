@@ -53,8 +53,9 @@ export type FindController = Observable<FindSnapshot> & Readonly<{
 type FindPatch = Partial<Omit<FindSnapshot, "reason" | "message">> &
     (Pick<FindSnapshot, "reason" | "message"> | { reason?: never; message?: never });
 function isAsync<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
-    return value !== null && (typeof value === "object" || typeof value === "function") && typeof (value as PromiseLike<T>).then === "function";
+    return typeof (value as PromiseLike<T> | null)?.then === "function";
 }
+const hasResults = (state: FindSnapshot) => state.status === "ready" || state.status === "searching" && state.retained;
 
 /** Host-rendered find UI; scanning/planning yield, while replacement uses one captured transaction. */
 export function createFindController(editor: TextEditor, options: FindControllerOptions = {}): FindController {
@@ -91,7 +92,6 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     let literal: { document: DocumentSnapshot; index: FindIndex; query: string; wholeWord: boolean; matchCase: boolean } | undefined;
     let edges: { prefix: number; suffix: number } | undefined;
     const literalBackend = createLiteralFindBackend(() => matches, literalBudget.units, literalBudget.matches);
-    const backendFor = (regularExpression: boolean) => regularExpression ? backend : literalBackend;
     const disposeBackends = () => { literalBackend.dispose(); backend?.dispose(); };
     let scanMaximum = 0, replaceTransactionMs = 0;
     const sameOwner = (a: DocumentSnapshot, b: DocumentSnapshot) => a.id === b.id && a.resourceId === b.resourceId && a.key === b.key;
@@ -128,10 +128,9 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     };
     function selectionIndex(): number | null {
         const { anchor, head } = viewSnapshot().selection;
-        const from = Math.min(anchor, head), index = indexAt(from);
+        const from = Math.min(anchor, head), index = matches.firstIntersecting(from);
         if (anchor !== head) return matchesRange(index, from, Math.max(anchor, head)) ? index : null;
-        if (index < count && offsetAt(index) === head) return index;
-        return index > 0 && head < endAt(index - 1) ? index - 1 : null;
+        return index < count && offsetAt(index) <= head ? index : null;
     }
     const emptyMatches: readonly SearchMatch[] = emptyList;
     const matchesIn = (from: number, to: number, capture = store.get()): readonly SearchMatch[] => {
@@ -278,7 +277,8 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
                     if (result && token === generation && valid()) present(result);
                 } else {
                     const result = cursor!.next(), dispatchMs = win.performance.now() - started;
-                    if (isAsync(result)) void Promise.resolve(result).then(value => { try { receive(value, true, dispatchMs); } catch (error) { failed(error, token); } }, error => failed(error, token));
+                    if (isAsync(result)) void Promise.resolve(result)
+                        .then(value => receive(value, true, dispatchMs)).catch(error => failed(error, token));
                     else receive(result, false, 0);
                 }
             } catch (error) { failed(error, token); }
@@ -293,7 +293,8 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const selected = viewSnapshot(); return selected.selectionSet === replacedZero.selectionSet && selected.selection.anchor === replacedZero.head && selected.selection.head === replacedZero.head;
     };
     const currentRange = (): SearchMatch | undefined => {
-        const state = store.get(); if (!valid() || state.status !== "ready" && !(state.status === "searching" && state.retained) || state.revision !== readDocument().revision) return undefined;
+        const state = store.get();
+        if (!valid() || !hasResults(state) || state.revision !== readDocument().revision) return;
         const selected = viewSnapshot().selection, low = Math.min(selected.anchor, selected.head), high = Math.max(selected.anchor, selected.head);
         if (!state.query) return undefined;
         const index = indexAt(low);
@@ -313,7 +314,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     };
     function nextMatch(direction: 1 | -1): { index: number; wrappedTo: FindSnapshot["wrappedTo"] } | undefined {
         const state = store.get();
-        if (state.status !== "ready" && !(state.status === "searching" && state.retained) || !count) return;
+        if (!hasResults(state) || !count) return;
         const selection = viewSnapshot(), selected = selection.selection, bound = direction === 1 ? Math.max(selected.anchor, selected.head) : Math.min(selected.anchor, selected.head);
         let raw = indexAt(bound);
         if (previewed?.selection === selection.selectionSet) raw = previewed.index + direction;
@@ -350,7 +351,9 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         if (preview.followSelected && !pendingNext && offsetAt(preferred) === start) {
             cancelPreview(); selectMatch(preferred, true); return;
         }
-        const visible = viewport && visibleFindMatch(viewport, matches, preferred), index = visible ?? preferred;
+        const fold = projection.collapsedCount ? projection.hiddenBy(readDocument().buffer.lineAt(offsetAt(preferred))) : undefined;
+        const visible = viewport && visibleFindMatch(viewport, matches, preferred, fold?.lineFrom);
+        const index = visible ?? preferred;
         // Flushing painted fragments can notify a host, which may replace the search or the view.
         if (pendingPreview !== preview) return;
         cancelPreview();
@@ -418,7 +421,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         return true;
     }
     function planReplacement(state: FindSnapshot, replacement: string, range?: SearchMatch, focusEditor = false): boolean {
-        const selectedBackend = backendFor(state.regularExpression), immediate = !!range && !state.regularExpression;
+        const selectedBackend = state.regularExpression ? backend : literalBackend, immediate = !!range && !state.regularExpression;
         if (!selectedBackend || !valid() || state.revision !== readDocument().revision) return false;
         if (!replacementAllowed()) return false;
         advanceAfterReplace = undefined;
@@ -470,7 +473,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const step = () => {
             if (!current()) return;
             try { const result = planCursor!.next();
-                if (isAsync(result)) void Promise.resolve(result).then(value => { try { receive(value); } catch (error) { failed(error, token, true); } }, error => failed(error, token, true));
+                if (isAsync(result)) void Promise.resolve(result).then(receive).catch(error => failed(error, token, true));
                 else receive(result);
             } catch (error) { failed(error, token, true); }
         };

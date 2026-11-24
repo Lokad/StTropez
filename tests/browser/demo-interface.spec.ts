@@ -403,6 +403,39 @@ test("clicking Replace keeps the next keystroke in the Find bar", async ({ page,
     await page.keyboard.press("Escape"); await expect(query).toBeHidden(); await expect(source).toBeFocused();
 });
 
+test("Find previews a folded match when its header is on screen", async ({ page, baseURL }) => {
+    await page.goto(browserDemo(baseURL!));
+    await page.locator("#sample").selectOption("shipping");
+    const source = page.getByRole("textbox", { name: "shipping.ts", exact: true });
+    const viewport = page.locator("#editor .st-viewport").first();
+    const query = page.locator("#find-query"), status = page.locator("#find-status");
+    const collapse = viewport.getByRole("button", { name: "Collapse lines 11–15" });
+    await expect(collapse).toBeVisible({ timeout: 30000 });
+    await collapse.click();
+    await source.press("Control+Home");
+    await source.press("Control+f");
+    await query.fill("days");
+    await expect(status).toHaveText("1 of 9");
+    await expect(viewport.locator('[data-line="11"] .st-search-match')).toBeInViewport();
+    await expect(page.locator("#cursor")).toHaveText("Ln 1, Col 1");
+    await expect(query).toBeFocused();
+    await query.press("Enter");
+    await expect(status).toHaveText("2 of 9");
+    await expect(page.locator("#cursor")).toHaveText("Ln 22, Col 13");
+
+    await query.press("Escape");
+    await source.press("Control+Home");
+    await collapse.click();
+    await source.press("Control+f");
+    await query.fill("");
+    await viewport.evaluate(root => { root.scrollTop = 24 * parseFloat(getComputedStyle(root).lineHeight); });
+    await expect(viewport.locator('[data-line="35"]')).toBeInViewport();
+    await query.fill("days");
+    await expect(status).toHaveText(/[2-9] of 9/);
+    await viewport.evaluate(root => { root.scrollTop = 0; });
+    await expect(viewport.getByRole("button", { name: "Expand lines 11–15" })).toBeInViewport();
+});
+
 test("clearing Find returns to the caret and Escape keeps typing at the previewed match", async ({ page, baseURL }) => {
     await page.goto(browserDemo(baseURL!));
     await page.locator("#sample").selectOption("shipping");

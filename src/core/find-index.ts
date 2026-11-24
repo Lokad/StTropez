@@ -55,11 +55,15 @@ export class FindIndex {
             from += size;
         }
     }
+    /** First match starting at or after the offset, including an earlier match that crosses it. */
+    firstIntersecting(offset: number): number {
+        const index = this.lowerBound(offset);
+        return index > 0 && this.at(index - 1).to > offset ? index - 1 : index;
+    }
     /** Immutable matches intersecting [from, to). An empty interval returns only a point match there. */
     matchesIn(from: number, to: number): readonly SearchMatch[] {
         if (!isOffsetRange(from, to)) throw new RangeError("Invalid match range.");
-        let first = this.lowerBound(from);
-        if (first > 0 && this.at(first - 1).to > from) first--;
+        let first = this.firstIntersecting(from);
         const result: SearchMatch[] = [];
         for (let p = this.pageAt(first); p < this.pages.length; p++) {
             const page = this.pages[p]!;

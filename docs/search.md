@@ -68,7 +68,8 @@ has a short mark at its offset. A matched character with no visible width has a 
 Next and Previous leave a visible match in place. An offscreen match scrolls into view and a
 match inside a fold opens that fold.
 Preview prefers highlights inside the viewport, starting at the selection and wrapping in document
-order. If only part of a highlight is visible, preview brings the match into view. If all matches
+order. When the next match is inside a fold whose header is on screen, preview opens that fold.
+If only part of a highlight is visible, preview brings the match into view. If all matches
 are offscreen, it reveals the next one.
 Preview preserves the source selection. Once you navigate to a match, appending or removing
 characters at the end of the query adjusts that selection if the new match starts at the same offset.
