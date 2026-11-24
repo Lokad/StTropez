@@ -225,9 +225,12 @@ test("block comments and pair surrounds retain directed and adjacent selections 
     const pair = plan("abcd", selected, { character: '"' });
     assert.equal(pair.text, '"ab""cd"'); assert.deepEqual(pair.ranges, [[3, 1], [5, 7]]);
     assert.equal(plan("/*ab*/", selection(6, 0), "block-comment").text, "ab");
-    assert.deepEqual(plan("", selection(0), "block-comment").ranges, [[2, 2]]);
+    const empty = plan("", selection(0), "block-comment");
+    assert.equal(empty.text, "/*  */");
+    assert.deepEqual(empty.ranges, [[3, 3]]);
+    assert.equal(plan(empty.text, empty.value.selectionSet.ranges, "block-comment").text, "");
     const touching = plan("a/**/b", [2, 3, 4, 6].map(head => ({ anchor: head, head })), "block-comment");
-    assert.equal(touching.text, "ab/**/"); assert.deepEqual(touching.ranges, [[1, 1], [4, 4]]);
+    assert.equal(touching.text, "ab/*  */"); assert.deepEqual(touching.ranges, [[1, 1], [5, 5]]);
     const between = plan("/**/X/**/", [...selection(2), ...selection(7), ...selection(6, 3)], "block-comment");
     assert.equal(between.text, "X"); assert.deepEqual(between.ranges, [[1, 0]]);
     const source = 'const marker = "/*";\n/*  one\r\n two  */';
@@ -235,7 +238,7 @@ test("block comments and pair surrounds retain directed and adjacent selections 
     const inferred = plan(source, selection(inside), "block-comment", { ...configuration, allowPair: ({ from }) => from === real });
     assert.equal(inferred.text, 'const marker = "/*";\n one\r\n two ');
     assert.deepEqual(inferred.ranges, [[inside - 3, inside - 3]]);
-    assert.equal(plan("/* a */ x /* b */", selection(8), "block-comment").text, "/* a */ /**/x /* b */");
+    assert.equal(plan("/* a */ x /* b */", selection(8), "block-comment").text, "/* a */ /*  */x /* b */");
     const padded = plan(" x ", selection(3, 0), "block-comment");
     assert.equal(padded.text, "/*  x  */");
     assert.deepEqual(plan(padded.text, padded.value.selectionSet.ranges, "block-comment").ranges, [[3, 0]]);

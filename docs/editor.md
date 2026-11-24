@@ -405,8 +405,8 @@ least-indented selected line. If a tab spans that column, markers move left to t
 column available on every line. Blank lines in a block keep their whitespace. Separate selections act independently
 unless they touch the same line.
 
-Toggle block comment wraps selected text with one space inside each delimiter. An empty caret
-in code inserts an empty pair. A caret or selection inside a complete comment removes its
+Toggle block comment wraps selected text with one space inside each delimiter. With an empty
+selection, the caret lands between the two spaces. A caret or selection inside a complete comment removes its
 delimiters and up to one padding space at each end. Carets in the same comment remove it once.
 The editor matches the configured delimiters as text. A host can reject an inferred opener in a
 string or other context through `allowPair`. Explicitly selected wrappers toggle directly.

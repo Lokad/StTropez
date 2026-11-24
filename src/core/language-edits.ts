@@ -193,6 +193,7 @@ function* blockComments(buffer: TextBuffer, selections: SelectionSet, pair: Edit
     bulk(state, edits.length);
     const removals = new PositionMap(buffer.length, edits), map = removals.createMapper();
     const ranges: Selection[] = [];
+    const opening = open + " ", closing = " " + close;
     let next = 0, inserted = 0;
     for (const range of selections.ranges) {
         const forward = range.anchor <= range.head, from = forward ? range.anchor : range.head, to = forward ? range.head : range.anchor;
@@ -201,11 +202,11 @@ function* blockComments(buffer: TextBuffer, selections: SelectionSet, pair: Edit
         let low = map(from).offset + inserted, high = map(to).offset + inserted;
         // Unwrap once. A neighboring caret inside the delimiter follows that deletion.
         if (!comment || comment.from >= to) {
-            const padding = from === to ? "" : " ";
-            if (from === to) edits.push({ from, to, insert: open + close });
-            else edits.push({ from, to: from, insert: open + padding }, { from: to, to, insert: padding + close });
-            low += open.length + padding.length; high += open.length + padding.length;
-            inserted += open.length + close.length + 2 * padding.length;
+            if (from === to) edits.push({ from, to, insert: opening + closing });
+            else edits.push({ from, to: from, insert: opening }, { from: to, to, insert: closing });
+            low += opening.length;
+            high += opening.length;
+            inserted += opening.length + closing.length;
         }
         ranges.push(forward ? { anchor: low, head: high } : { anchor: high, head: low });
         state.workUnits++; if (checkpoint(state)) yield;
