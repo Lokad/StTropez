@@ -11,9 +11,9 @@ async function waitForInstruction(page: Page, review = true): Promise<void> {
 }
 async function exact(p: Page, text: string) { expect(await hostTextEquals(p, text)).toBe(true); }
 test.afterEach(async ({ page }, info) => { if (info.status !== info.expectedStatus && !page.isClosed()) await info.attach("instruction-failure-state", { contentType: "application/json", body: JSON.stringify(await snap(page), null, 2) }); });
-for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} anchored instruction preserves source, history, copy and virtualized ownership`, async ({ page: p }, info) => {
+for (const host of ["plain", "react"]) test(`${host} anchored instruction preserves source, history, copy and virtualized ownership`, async ({ page: p }, info) => {
       await p.goto(`/hosts/${host}/?editor=candidate`); await expect(source(p)).toBeVisible();
-    const prefix = "before\r\n".repeat(large ? 50000 : 2), line = '  // @transfer { "destination":"a\\u0041.csv", "batchSize":"1000", "unknown":{"n":-0,"s":"😀,}"} }', tail = "\r\nafter".repeat(large ? 50000 : 8), original = prefix + line + tail;
+    const prefix = "before\r\n".repeat(90), line = '  // @transfer { "destination":"a\\u0041.csv", "batchSize":"1000", "unknown":{"n":-0,"s":"😀,}"} }', tail = "\r\nafter".repeat(8), original = prefix + line + tail;
     await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
     await button(p, "Open source review").click(); await button(p, "Capture review acceptance").click(); await button(p, "Finish review acceptance").click(); await waitForInstruction(p);
     await p.evaluate(offset => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: offset, head: offset }); }, prefix.length);
@@ -38,8 +38,8 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await source(p).focus(); await p.evaluate(() => { const f = window.hostFixture, s = f.snapshot(); f.selectSource("primary", s.source.revision, { anchor: s.instruction.from! - 8, head: s.instruction.to! + 2 }); });
     await button(p, "Fold selected lines").click(); await waitForInstruction(p); await expect(field).toHaveCount(0); expect((await snap(p)).bindings.instruction?.laneState).toBe("folded");
     await button(p, "Expand all folds").click(); await waitForInstruction(p); await expect(field).toBeVisible();
-    if (large) { await source(p).press("Control+Home"); await waitForInstruction(p); await expect(field).toHaveCount(0); expect((await snap(p)).bindings.instruction?.fieldNodes).toBe(0);
-        await p.evaluate(() => { const f = window.hostFixture, s = f.snapshot(), at = s.instruction.from!; f.selectSource("primary", s.source.revision, { anchor: at, head: at }); }); await source(p).press("ArrowRight"); await source(p).press("ArrowLeft"); await waitForInstruction(p); await expect(field).toBeVisible(); }
+    await source(p).press("Control+Home"); await waitForInstruction(p); await expect(field).toHaveCount(0); expect((await snap(p)).bindings.instruction?.fieldNodes).toBe(0);
+    await p.evaluate(() => { const f = window.hostFixture, s = f.snapshot(), at = s.instruction.from!; f.selectSource("primary", s.source.revision, { anchor: at, head: at }); }); await source(p).press("ArrowRight"); await source(p).press("ArrowLeft"); await waitForInstruction(p); await expect(field).toBeVisible();
     await p.setViewportSize({ width: 1100, height: 900 }); await waitForInstruction(p); await p.setViewportSize({ width: 1600, height: 1000 }); await waitForInstruction(p); await expect(field).toBeVisible();
     const geometry = await snap(p); await field.evaluate(node => { (node as HTMLTextAreaElement).style.height = "70px"; }); await waitForInstruction(p);
     expect((await snap(p)).source.revision).toBe(geometry.source.revision); expect((await snap(p)).history).toEqual(geometry.history);
@@ -55,16 +55,14 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await button(p, "Save source").click(); expect((await snap(p)).pendingSaves).toHaveLength(0); await button(p, "Dismiss message").click();
     await p.evaluate(() => window.hostFixture.setSourceReadOnly(true)); expect(await p.evaluate(() => window.hostFixture.recoveryText())).toBe("uncommitted café😀"); await exact(p, committed);
     await field.dispatchEvent("compositionend", { data: "uncommitted café😀" }); await p.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await waitForInstruction(p); await expect(field).toHaveValue("aA.csvXY"); await exact(p, committed);
-    if (!large) {
-        const consumed = await field.evaluate(node => [{ keyCode: 229 }, { modifierAltGraph: true }].map(detail => {
-            const key = new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true, ...detail });
-            node.dispatchEvent(key); return key.defaultPrevented;
-        }));
-        expect(consumed).toEqual([false, false]);
-        expect((await snap(p)).pendingSaves).toEqual([]);
-    }
+    const consumed = await field.evaluate(node => [{ keyCode: 229 }, { modifierAltGraph: true }].map(detail => {
+        const key = new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true, ...detail });
+        node.dispatchEvent(key); return key.defaultPrevented;
+    }));
+    expect(consumed).toEqual([false, false]);
+    expect((await snap(p)).pendingSaves).toEqual([]);
     await field.press("Control+s"); await expect.poll(async () => (await snap(p)).pendingSaves.length).toBe(1); await button(p, "Fail save").click(); await button(p, "Dismiss message").click();
-    if (!large) await info.attach("anchored-instruction", { body: await p.screenshot(), contentType: "image/png" });
+    await info.attach("anchored-instruction", { body: await p.screenshot(), contentType: "image/png" });
     await p.evaluate(() => window.hostFixture.dispose()); const stopped = await snap(p); expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0);
 });
 

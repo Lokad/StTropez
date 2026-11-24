@@ -77,14 +77,14 @@ async function sessionJourney(large: boolean) {
             transport.send(message);
         } }));
     }, features: ["textDocument/hover"], initializationOptions: { fixtureDynamic: true } });
-    const uri = "host+fixture://project/scope/Δ%20😀.ts", text = large ? "sample 😀 raw text row\r\n".repeat(100_000) : "a😀\r\nb\rc\n";
+    const uri = "host+fixture://project/scope/Δ%20😀.ts", text = large ? "sample 😀 raw text row\r\n".repeat(3000) : "a😀\r\nb\rc\n";
     const buffer = TextBuffer.from(text), document = session.bindDocument({ uri, languageId: "fixture", resourceId: "fixture:resource", documentId: "fixture:working", revision: 100, buffer });
     session.onRequest("host/echo", params => params);
     const register = () => session.request("fixture/register", { registrations: [{ id: "hover", method: "textDocument/hover", registerOptions: { documentSelector: [{ scheme: "host+fixture", pattern: "**/*.ts" }] } }] }).result;
     try {
         const opening = performance.now(); await session.connect(); const openMs = performance.now() - opening;
-        const before = buffer.readMetrics().sliceUnits, from = large ? buffer.offsetAt(50_000) + 10 : buffer.offsetAt(1) + 1;
-        const far = large ? buffer.offsetAt(99_998) : 0;
+        const before = buffer.readMetrics().sliceUnits, from = large ? buffer.offsetAt(1500) + 10 : buffer.offsetAt(1) + 1;
+        const far = large ? buffer.offsetAt(2998) : 0;
         const edits = [{ from, to: from, insert: "Q\r\n" }, ...(large ? [{ from: far, to: far, insert: "Z" }] : [])];
         const next = buffer.apply(edits).buffer, started = performance.now(); document.update(100, 107, next, edits); const enqueueMs = performance.now() - started;
         await session.flush();

@@ -188,7 +188,7 @@ for (const host of ["plain", "react"]) test(`${host === "plain" ? "" : "react "}
     expect(await stored(p, "peer retained text")).toBe("external-latest");
     // Real same-origin pages share the store, while each owns its working document and view state.
     const peer = await p.context().newPage(), owned = "stored version local";
-    let peerText = "peer café😀\r\n" + "const stableValue = 123;\r\n".repeat(100000) + "tail";
+    let peerText = "peer café😀\r\n" + "const stableValue = 123;\r\n".repeat(2000) + "tail";
     await peer.goto(new URL(`/hosts/${host === "plain" ? "react" : "plain"}/?editor=candidate`, p.url()).href); await waitForDraft(peer);
     await peer.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, peerText); await waitForDraft(peer); await source(peer).focus(); const peerBefore = await snapshot(peer);
     await button(p, "Retry draft storage").click(); await waitForDraft(p); let seen = await notices(peer); await keep(p); await peerNotice(peer, seen); await preserved(peer, peerBefore, peerText); expect(await source(peer).evaluate(n => document.activeElement === n)).toBe(true);

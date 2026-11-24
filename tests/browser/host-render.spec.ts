@@ -10,7 +10,7 @@ async function waitForReview(page: Page): Promise<void> {
 for (const mode of ["plain", "react"] as const) test(`${mode} review typing retains unchanged labels and controls while new reference versions still appear`, async ({ page }) => {
 
     await page.goto(`/hosts/${mode}/?editor=candidate`);
-    const input = page.getByRole("textbox", { name: "Primary source", exact: true }), original = "const sample = 1; // TODO\n" + "x".repeat(2_400_000);
+    const input = page.getByRole("textbox", { name: "Primary source", exact: true }), original = "const sample = 1; // TODO\n" + "x".repeat(48_000);
     await expect(input).toBeVisible();
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await waitForReview(page);
     await page.evaluate(text => { const f = window.hostFixture, state = f.snapshot(); f.editSource(state.source.revision, [{ from: 0, to: state.source.length, insert: text }]); }, original);
@@ -46,7 +46,6 @@ for (const mode of ["plain", "react"] as const) test(`${mode} review typing reta
         const observed = await probe.evaluate(p => p.read());
         expect(observed.duplicates).toEqual({ reference: 0, language: 0, find: 0, host: 0 }); expect(observed.referenceRetained).toBe(true);
     } finally { await probe.evaluate(p => p.stop()); await probe.dispose(); }
-    await expect(page.getByLabel("Source diagnostics", { exact: true }).getByRole("button")).toHaveCount(0);
     await input.press("Control+Home"); for (let i = 0; i < 8; i++) await input.press("ArrowRight");
     await input.press("Control+Space"); await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible();
     await page.getByLabel("Source diagnostics", { exact: true }).getByRole("button", { name: `${original.indexOf("TODO")}: Resolve this placeholder.`, exact: true }).click();

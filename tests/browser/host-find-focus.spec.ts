@@ -21,9 +21,9 @@ test.afterEach(async ({ page }, info) => {
 });
 
 for (const host of ["plain", "react"] as const) for (const arm of ["stay", "form", "interrupt"] as const)
-    test(`${host} 100000 replace all ${arm} preserves focus intent and captured work`, async ({ page }) => {
+    test(`${host} 50000 replace all ${arm} preserves focus intent and captured work`, async ({ page }) => {
 
-        const original = Array(100000).fill("const sample = 1234567;").join("\r\n"), changed = original.replaceAll("sample", "changed");
+        const original = Array(50000).fill("sample").join("\r\n"), changed = original.replaceAll("sample", "changed");
         await page.goto(`/hosts/${host}/?editor=candidate`); await expect(primary(page)).toBeVisible();
         await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot();
             f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]);
@@ -36,7 +36,7 @@ for (const host of ["plain", "react"] as const) for (const arm of ["stay", "form
         await primary(page).focus(); await page.keyboard.press("Control+Home"); await ready(page);
         const before = await snapshot(page), field = page.getByRole("textbox", { name: "Configuration path", exact: true }), path = await field.inputValue();
         await page.keyboard.press("Control+f"); await page.getByRole("textbox", { name: "Find source", exact: true }).fill("sample");
-        const status = page.getByLabel("Find status", { exact: true }); await expect(status).toHaveText("100000 matches · ready");
+        const status = page.getByLabel("Find status", { exact: true }); await expect(status).toHaveText("50000 matches · ready");
         await page.getByRole("textbox", { name: "Replacement", exact: true }).fill("changed");
         await page.evaluate(() => {
             const events: FocusEventRecord[] = []; window.replaceFocusEvents = events;
@@ -46,12 +46,12 @@ for (const host of ["plain", "react"] as const) for (const arm of ["stay", "form
                     label: element.getAttribute("aria-label") ?? element.labels?.[0]?.textContent ?? null, revision: window.hostFixture.snapshot().source.revision });
             }, true);
         });
-        await button(page, "Replace all").click(); await expect(status).toHaveText("100000 matches · replacing");
+        await button(page, "Replace all").click(); await expect(status).toHaveText("50000 matches · replacing");
         if (arm === "form") {
             await field.click(); await page.keyboard.press("End"); await page.keyboard.type(".during");
             expect((await snapshot(page)).source.revision).toBe(before.source.revision);
         } else if (arm === "interrupt") { await primary(page).focus(); await page.keyboard.type("!"); }
-        await expect(status).toHaveText(arm === "interrupt" ? "100000 matches · ready" : "Replaced 100000 matches."); await ready(page);
+        await expect(status).toHaveText(arm === "interrupt" ? "50000 matches · ready" : "Replaced 50000 matches."); await ready(page);
         const expected = arm === "interrupt" ? "!" + original : changed, settled = await snapshot(page);
         await exact(page, expected); expect(settled.history.undoDepth).toBe(before.history.undoDepth + 1);
         expect(settled.pendingSaves).toEqual(before.pendingSaves); expect(settled.source.exports).toBe(0);

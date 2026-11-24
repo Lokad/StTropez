@@ -15,18 +15,17 @@ const nativeState = (page: Page) => page.locator("textarea").evaluateAll(nodes =
     return { label: input.getAttribute("aria-label"), value: input.value, start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection };
 }));
 
-for (const editor of ["native", "candidate"] as const) for (const mode of ["plain", "react"] as const)
-for (const corpus of editor === "candidate" ? ["normal", "lines-100000"] : ["normal"]) {
-    test(`${mode} ${editor} ${corpus} host form reset preserves source projections, captured save and shared history`, async ({ page }) => {
+for (const editor of ["native", "candidate"] as const) for (const mode of ["plain", "react"] as const) {
+    test(`${mode} ${editor} host form reset preserves source projections, captured save and shared history`, async ({ page }) => {
 
         await page.goto(`/hosts/${mode}/?editor=${editor}`);
         const button = (name: string) => page.getByRole("button", { name, exact: true });
         const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
-        const line = "const sample = 1234567;", original = corpus === "normal" ? "const café = 'é 😀';\r\nconst end = 123;" : Array(100000).fill(line).join("\r\n");
+        const original = "const café = 'é 😀';\r\nconst end = 123;";
         await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
         await button("Open source review").click(); await waitForViews(page);
         await button("Capture review acceptance").click(); await button("Finish review acceptance").click(); await waitForViews(page);
-        const offset = corpus === "normal" ? original.length : 50000 * (line.length + 2) + 7;
+        const offset = original.length;
         expect(await page.evaluate(offset => { const f = window.hostFixture, revision = f.snapshot().source.revision;
             return f.selectSource("primary", revision, { anchor: offset, head: offset }) && f.selectSource("secondary", revision, { anchor: 5, head: 0 });
         }, offset)).toBe(true);

@@ -99,7 +99,7 @@ test("disposing a session during a held WebSocket handshake releases pending own
         finally { for (const connection of peer.clients) connection.terminate(); peer.close(); for (const socket of sockets) socket.destroy(); await closePackageServer(server); }
     }
 });
-for (const large of [false, true]) test(`LSP session synchronizes ${large ? "100k-line" : "mixed-newline"} documents and owns registration/reconnect`, async ({ page }, testInfo) => {
+for (const large of [false, true]) test(`LSP session synchronizes ${large ? "sparse-edit" : "mixed-newline"} documents and owns registration/reconnect`, async ({ page }, testInfo) => {
     const state = await page.evaluate(large => window.protocolFixture.sessionJourney(large), large);
     expect(state.remote).toEqual({ uri: state.uri, version: 2, length: state.length, text: state.expectedSample, syncFailures: [] });
     expect(state.boundedReads.exports).toBe(0); expect(state.boundedReads.before).toBeLessThan(128); expect(state.boundedReads.after).toBeLessThan(128);

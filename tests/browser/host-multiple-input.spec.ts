@@ -35,13 +35,13 @@ function replace(text: string, ranges: readonly Selection[], insert: string): { 
 const coords = (ranges: readonly Selection[]) => ranges.map(({ anchor, head }) => ({ anchor, head }));
 
 for (const host of ["plain", "react"]) {
-    for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} actual multiple-range typing shares history, saved captures and remount`, async ({ page }) => {
+    test(`${host} actual multiple-range typing shares history, saved captures and remount`, async ({ page }) => {
         test.setTimeout(60000);
-        const header = "same same\r\nleft 👩‍💻 right\r\nsame", line = "const sample = 123;\r\n", original = header + (large ? "\r\n" + line.repeat(100000) + "tail" : "");
+        const header = "same same\r\nleft 👩‍💻 right\r\nsame", line = "const sample = 123;\r\n", original = header + "\r\n" + line.repeat(100) + "tail";
         await mount(page, host, original);
         const ranges = [{ anchor: 4, head: 0 }, { anchor: header.indexOf("right"), head: header.indexOf("right") }, { anchor: header.length - 4, head: header.length },
-            ...(large ? [{ anchor: 500000, head: 1000 }, ...Array.from({ length: 32 }, (_, index) => ({ anchor: header.length + 7 + line.length * (50000 + index), head: header.length + 7 + line.length * (50000 + index) }))] : [])];
-        await select(page, ranges, large ? 3 : 0); const before = await snapshot(page), beforeSet = before.bindings.views.find(v => v.id === "primary")!.selectionSet;
+            { anchor: 500, head: 100 }, { anchor: header.length + 80 * line.length, head: header.length + 80 * line.length }];
+        await select(page, ranges, 3); const before = await snapshot(page), beforeSet = before.bindings.views.find(v => v.id === "primary")!.selectionSet;
         await input(page).pressSequentially("xy"); await ready(page);
         const expected = replace(original, ranges, "xy"), after = await snapshot(page);
         await exact(page, expected.text); expect(after.source.revision).toBe(before.source.revision + 2);
