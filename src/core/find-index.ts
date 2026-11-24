@@ -1,3 +1,4 @@
+import { isIndex, isOffsetRange } from "./bounds.ts";
 import type { SearchMatch } from "./search.ts";
 import { partitionPoint } from "./bound-search.ts";
 
@@ -16,7 +17,7 @@ export class FindIndex {
         return partitionPoint(this.pages.length, at => this.pages[at]!.end <= index);
     }
     at(index: number): SearchMatch {
-        if (!Number.isSafeInteger(index) || index < 0 || index >= this.length) throw new RangeError("Invalid match index.");
+        if (!isIndex(index, this.length)) throw new RangeError("Invalid match index.");
         const page = this.pages[this.pageAt(index)]!, at = (page.begin + index - (page.end - page.size)) * 2;
         return { from: page.values[at]! + page.shift, to: page.values[at + 1]! + page.shift };
     }
@@ -41,7 +42,7 @@ export class FindIndex {
         this.tail!.push(match.from, match.to); page.size++; page.end++; this.length++;
     }
     appendRange(source: FindIndex, from = 0, to = source.count, shift = 0): void {
-        if (source === this || !Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > source.count) throw new RangeError("Invalid match slice.");
+        if (source === this || !isOffsetRange(from, to, source.count)) throw new RangeError("Invalid match slice.");
         source.tail = undefined;
         for (let i = source.pageAt(from); from < to; i++) {
             const page = source.pages[i]!, local = from - (page.end - page.size), size = Math.min(page.size - local, to - from);
@@ -56,7 +57,7 @@ export class FindIndex {
     }
     /** Immutable matches intersecting [from, to). An empty interval returns only a point match there. */
     matchesIn(from: number, to: number): readonly SearchMatch[] {
-        if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from) throw new RangeError("Invalid match range.");
+        if (!isOffsetRange(from, to)) throw new RangeError("Invalid match range.");
         let first = this.lowerBound(from);
         if (first > 0 && this.at(first - 1).to > from) first--;
         const result: SearchMatch[] = [];

@@ -1,6 +1,7 @@
 import { regexMatches, regexRanges, regexReplacement } from "../core/regex-search.ts";
 import { splitsSurrogatePair } from "../core/utf16.ts";
-import { regexErrorLimit, regexIdentity, regexInteger, regexOptions, regexProtocolVersion, regexQuery, regexSourceLimit } from "./regex.ts";
+import { isNonNegativeInteger } from "../core/bounds.ts";
+import { regexErrorLimit, regexIdentity, regexOptions, regexProtocolVersion, regexQuery, regexSourceLimit } from "./regex.ts";
 import type { RegexReply, RegexRequest, RegexResult } from "./regex.ts";
 
 function run(request: RegexRequest, text: string): RegexResult {
@@ -40,7 +41,7 @@ export class RegexSession {
         try {
             if (value.version !== version) throw new RangeError("Unsupported regex worker protocol version.");
             const request = value as unknown as RegexRequest;
-            if (!regexInteger(request.source) || !request.source || !regexQuery(request) || !regexOptions(request, request.length))
+            if (!isNonNegativeInteger(request.source) || !request.source || !regexQuery(request) || !regexOptions(request, request.length))
                 throw new RangeError("Unsupported regex capture.");
             if (request.text !== undefined) {
                 if (request.source !== id || typeof request.text !== "string" || request.text.length !== request.length)

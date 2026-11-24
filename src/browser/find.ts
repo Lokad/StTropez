@@ -1,3 +1,4 @@
+import { isOffsetRange } from "../core/bounds.ts";
 import { LiteralSearch } from "../core/search.ts";
 import type { TextEditor } from "./text-editor.ts";
 import type { DocumentSnapshot, DocumentView, EditResult, TabTarget, Workspace } from "../core/workspace.ts";
@@ -133,7 +134,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     }
     const emptyMatches: readonly SearchMatch[] = Object.freeze([]);
     const matchesIn = (from: number, to: number, capture = store.get()): readonly SearchMatch[] => {
-        if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from) throw new RangeError("Invalid match range.");
+        if (!isOffsetRange(from, to)) throw new RangeError("Invalid match range.");
         const state = store.get();
         if (!valid() || capture.revision !== state.revision || capture.matchesVersion !== state.matchesVersion
             || readDocument().revision !== state.revision) return emptyMatches;
@@ -237,7 +238,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
                 if (result.matches.length > 8192
                     || !Number.isSafeInteger(result.scanned) || result.scanned < scanned || result.scanned > document.buffer.length) throw new Error("Invalid search result.");
                 for (const match of repair ? [] : result.matches) {
-                    if (!Number.isSafeInteger(match.from) || !Number.isSafeInteger(match.to) || match.from < 0 || match.to < match.from || match.to > document.buffer.length
+                    if (!isOffsetRange(match.from, match.to, document.buffer.length)
                         || count > 0 && (match.from < endAt(count - 1) || match.from === offsetAt(count - 1) && match.to === endAt(count - 1))) throw new Error("Invalid search range.");
                     matches.append(match); count++;
                 }

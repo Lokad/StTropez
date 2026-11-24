@@ -1,3 +1,4 @@
+import { isNonNegativeInteger, isOffsetRange } from "../core/bounds.ts";
 import { partitionPoint } from "../core/bound-search.ts";
 import { composePositionMaps, positionMapSize } from "../core/positions.ts";
 import type { PositionMapping } from "../core/positions.ts";
@@ -41,7 +42,7 @@ class RangeIndex {
         this.revision = revision;
         this.ranges = ranges.map(range => {
             const { from, to } = range;
-            if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > length)
+            if (!isOffsetRange(from, to, length))
                 throw new RangeError("Decoration lies outside its document revision.");
             return Object.freeze({ ...range, from, to, ...(range.properties && { properties: Object.freeze({ ...range.properties }) }) });
         }).sort((a, b) => a.from - b.from);
@@ -170,7 +171,7 @@ export function createDecorationLayers(current: () => DocumentSnapshot | undefin
             return Object.freeze({
                 invalidate(fromLine = 0, toLine?: number) {
                     if (disposed || !entries.includes(entry)) return;
-                    if (!Number.isSafeInteger(fromLine) || fromLine < 0 || (toLine !== undefined && (!Number.isSafeInteger(toLine) || toLine < fromLine)))
+                    if (!isNonNegativeInteger(fromLine) || (toLine !== undefined && (!Number.isSafeInteger(toLine) || toLine < fromLine)))
                         throw new RangeError("Invalid decoration line interval.");
                     invalidate(row => fromLine <= row.line && (toLine === undefined || row.line < toLine), entry.minimap);
                 },

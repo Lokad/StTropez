@@ -1,3 +1,4 @@
+import { isPositiveInteger } from "./bounds.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 
 export type EditingPair = Readonly<{ open: string; close: string }>;
@@ -17,7 +18,7 @@ const defaultPairs: readonly EditingPair[] = [{ open: "(", close: ")" }, { open:
 
 export function resolveLanguageConfiguration(value: LanguageConfiguration = {}): ResolvedLanguageConfiguration {
     const tabSize = value.tabSize ?? 4;
-    if (!Number.isSafeInteger(tabSize) || tabSize < 1 || tabSize > 256) throw new RangeError("tabSize must be an integer from 1 to 256.");
+    if (!isPositiveInteger(tabSize) || tabSize > 256) throw new RangeError("tabSize must be an integer from 1 to 256.");
     const pair = (value: EditingPair, single: boolean): EditingPair => {
         if (!value.open || !value.close || /[\r\n]/.test(value.open + value.close) || single && (value.open.length !== 1 || value.close.length !== 1)) throw new RangeError("Invalid editing delimiter.");
         return Object.freeze({ open: value.open, close: value.close });

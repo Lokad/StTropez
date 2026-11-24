@@ -1,3 +1,4 @@
+import { isIndex, isPositiveInteger } from "../core/bounds.ts";
 import { completionMethod } from "../protocol/lsp-methods.ts";
 import { retainLspDocument, type LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { completionClient } from "../protocol/lsp-completion.ts";
@@ -320,7 +321,7 @@ export function mountCompletion(editor: TextEditor, provider: LspWorkspace, opti
         captured.acceptance = Object.freeze({ id: captured.id, item, mode }); resolveSelected(captured); publish("Accepting the selected completion after resolution."); return true;
     };
     const chooseCompletion = (index: number, completionId?: number): boolean => {
-        if (!job?.choices || completionId !== undefined && completionId !== job.id || !Number.isSafeInteger(index) || index < 0 || index >= job.visible.length || !current(job)) return false;
+        if (!job?.choices || completionId !== undefined && completionId !== job.id || !isIndex(index, job.visible.length) || !current(job)) return false;
         job.acceptance = undefined; cancelResolution(job); job.choice = index; if (job.pendingList) { job.requestGeneration++; job.call?.cancel(); job.pendingList = false; } publish("LSP completion selected."); resolveSelected(job); return true;
     };
     const cancel = () => { cancelAuto(); if (job) counters.cancelled++; release();
@@ -518,7 +519,7 @@ export function mountCompletion(editor: TextEditor, provider: LspWorkspace, opti
         const count = job.visible.length;
         if (!page) return chooseCompletion((job.choice + direction + count) % count, job.id);
         const rows = options.getPageSize?.() ?? 10;
-        if (!Number.isSafeInteger(rows) || rows <= 0) return false;
+        if (!isPositiveInteger(rows)) return false;
         const next = Math.max(0, Math.min(count - 1, job.choice + direction * rows));
         return next === job.choice || chooseCompletion(next, job.id);
     }

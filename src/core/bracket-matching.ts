@@ -1,3 +1,4 @@
+import { isOffset, isPositiveInteger } from "./bounds.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
 import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
 import { resolveLanguageConfiguration } from "./language-configuration.ts";
@@ -15,7 +16,7 @@ type Roles = { open?: EditingPair; close: Set<EditingPair> };
 /** Shared validation for core cursors and browser configuration, before either mutates owned state. */
 export function bracketMatchLimits(options: BracketMatchOptions = {}): Required<BracketMatchOptions> {
     const maxWorkUnits = options.maxWorkUnits ?? 100_000, maxDepth = options.maxDepth ?? 1024;
-    if (![maxWorkUnits, maxDepth].every(value => Number.isSafeInteger(value) && value > 0)) throw new RangeError("Invalid bracket limits.");
+    if (![maxWorkUnits, maxDepth].every(isPositiveInteger)) throw new RangeError("Invalid bracket limits.");
     return Object.freeze({ maxWorkUnits, maxDepth });
 }
 
@@ -59,7 +60,7 @@ function bracketCursor(configuration: ResolvedLanguageConfiguration, buffer: Tex
     options: BracketMatchOptions, mode?: "enclosing" | { closer: string }) {
     const typedCloser = typeof mode === "object" ? mode.closer : undefined;
     const tokens = bracketTokens(configuration);
-    if (!Number.isSafeInteger(caret) || caret < 0 || caret > buffer.length) throw new RangeError("Invalid bracket caret.");
+    if (!isOffset(caret, buffer.length)) throw new RangeError("Invalid bracket caret.");
     const { maxWorkUnits: maxWork, maxDepth } = bracketMatchLimits(options);
     const allow = configuration.allowPair;
     let work = 0, scanned = 0, reads = 0, calls = 0, at: number | null = null, direction: -1 | 1 | null = null;

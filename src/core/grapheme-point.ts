@@ -1,10 +1,11 @@
+import { isOffset } from "./bounds.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 
 export type GraphemePoint = Readonly<{ offset: number; floor: number; ceil: number; preceding: number | null; following: number | null }>;
 
 /** An exact answer at one offset, or no answer. Never constructs an index from clipped context. */
 export function localAsciiGraphemePoint(buffer: TextBuffer, offset: number): GraphemePoint | undefined {
-    if (!Number.isSafeInteger(offset) || offset < 0 || offset > buffer.length) throw new RangeError("Invalid grapheme offset.");
+    if (!isOffset(offset, buffer.length)) throw new RangeError("Invalid grapheme offset.");
     const from = Math.max(0, offset - 2), text = buffer.slice(from, Math.min(buffer.length, offset + 2));
     // ASCII has only Other/Control/CR/LF properties. CR x LF is its sole non-break
     // pair (GB3/4/5/999). Two units per side prove the point and adjacent boundaries;

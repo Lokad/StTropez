@@ -1,3 +1,4 @@
+import { isNonNegativeInteger } from "./bounds.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import type { PositionMapping } from "./positions.ts";
 import { composePositionMapList, composePositionMaps } from "./positions.ts";
@@ -74,7 +75,7 @@ export class TextHistory {
     constructor(options: HistoryOptions = {}) {
         this.limits = { groups: options.maxGroups ?? Number.MAX_SAFE_INTEGER, changes: options.maxChanges ?? Number.MAX_SAFE_INTEGER,
             units: options.maxChangedUnits ?? 8_388_608, selections: options.maxSelectionRanges ?? 1_000_000 };
-        if (Object.values(this.limits).some(value => !Number.isSafeInteger(value) || value < 0)) throw new RangeError("History limits must be nonnegative safe integers.");
+        if (Object.values(this.limits).some(value => !isNonNegativeInteger(value))) throw new RangeError("History limits must be nonnegative safe integers.");
     }
     snapshot(id: string): HistorySnapshot {
         const doc = this.documents.get(id), undoDepth = doc ? doc.cursor - doc.start : 0;

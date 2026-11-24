@@ -1,3 +1,4 @@
+import { isNonNegativeInteger } from "../core/bounds.ts";
 export type JsonValue = null | boolean | number | string | readonly JsonValue[] | Readonly<{ [key: string]: JsonValue }>;
 
 export class RpcError extends Error {
@@ -29,7 +30,7 @@ export const wireLimits = Object.freeze({ timeoutMs: 15000, pendingRequests: 64,
     linkDataUnits: 8192, colorPresentations: 64, editPreviewSize: 64, previewLabelUnits: 128, previewContextUnits: 128,
     documentIdentityUnits: 4096 });
 export const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
-export const isLspUint = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 0x7fffffff;
+export const isLspUint = (value: unknown): value is number => isNonNegativeInteger(value) && value <= 0x7fffffff;
 export const isLspInteger = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= -0x80000000 && value <= 0x7fffffff;
 export const isLspIdentityPart = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= wireLimits.documentIdentityUnits;
 export const isLspUri = (value: unknown): value is string => isLspIdentityPart(value) && /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value);

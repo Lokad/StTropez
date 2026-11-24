@@ -1,3 +1,4 @@
+import { isIndex, isOffsetRange } from "./bounds.ts";
 import type { DiffHunk } from "./diff.ts";
 import { FoldIndex } from "./folding.ts";
 import type { FoldRegion } from "./folding.ts";
@@ -37,7 +38,7 @@ class ComparisonRowIndex {
     hiddenBy(line: number): FoldRegion | undefined { return this.#folds.hiddenBy(line); }
     headerAt(line: number): FoldRegion | undefined { return this.#folds.headerAt(line); }
     #run(row: number): Run {
-        if (!Number.isSafeInteger(row) || row < 0 || row >= this.visibleLineCount) throw new RangeError("Invalid aligned row.");
+        if (!isIndex(row, this.visibleLineCount)) throw new RangeError("Invalid aligned row.");
         const low = partitionPoint(this.#runs.length, index => this.#runs[index]!.row <= row);
         return this.#runs[low - 1]!;
     }
@@ -71,7 +72,7 @@ export type ComparisonRows = Readonly<{ baseline: ComparisonRowIndex; working: C
 function bounds(a: TextBuffer, b: TextBuffer, h: DiffHunk): Span {
     if (!Object.isFrozen(h) || !Object.isFrozen(h.baseline) || !Object.isFrozen(h.working)) throw new Error("Comparison hunks must be immutable captures.");
     for (const [buffer, range] of [[a, h.baseline], [b, h.working]] as const)
-        if (!Number.isSafeInteger(range.from) || !Number.isSafeInteger(range.to) || range.from < 0 || range.from > range.to || range.to > buffer.length) throw new RangeError("Invalid comparison hunk.");
+        if (!isOffsetRange(range.from, range.to, buffer.length)) throw new RangeError("Invalid comparison hunk.");
     if (h.baseline.from === h.baseline.to && h.working.from === h.working.to) throw new RangeError("Empty comparison hunk.");
     const ae = a.lineAt(h.baseline.to), be = b.lineAt(h.working.to);
     // Scalar trimming can leave either end inside a row. Include that row on BOTH sides:

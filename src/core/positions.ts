@@ -1,3 +1,4 @@
+import { isOffset } from "./bounds.ts";
 import { validateTextEdits } from "./changes.ts";
 import type { TextEdit } from "./changes.ts";
 import { batchGeometry, composeGeometry, geometryChanges, geometryInvalidates, geometryPieces, pieceAt, pieceOffset } from "./position-geometry.ts";
@@ -24,7 +25,7 @@ const batchChanges = Symbol("batch text changes");
 type UnchangedEdges = Readonly<{ prefix: number; suffix: number }>;
 
 function position(length: number, offset: number): void {
-    if (!Number.isSafeInteger(offset) || offset < 0 || offset > length) throw new RangeError("Position is outside the original document.");
+    if (!isOffset(offset, length)) throw new RangeError("Position is outside the original document.");
 }
 function validateRange(length: number, from: number, to: number): void {
     position(length, from); position(length, to);

@@ -1,3 +1,4 @@
+import { isNonNegativeInteger } from "../core/bounds.ts";
 import { wireLimits, ProtocolDecodeError, isRecord, isLspUint, isLspInteger, staleRequest, isCapturedJson, jsonEqual, decodeJson } from "./wire.ts";
 import { validateTextEdits } from "../core/changes.ts";
 import { positionChanges } from "../core/positions.ts";
@@ -305,7 +306,7 @@ export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture
     const indentation = { tabSize: options.indentation?.tabSize ?? 4, insertSpaces: options.indentation?.insertSpaces ?? true,
         maxUnits: capture.maxDocumentUnits ?? Number.MAX_SAFE_INTEGER };
     validateInsertionIndentation(indentation);
-    if (!Number.isSafeInteger(indentation.maxUnits) || indentation.maxUnits < 0) throw new RangeError("Invalid completion document limit.");
+    if (!isNonNegativeInteger(indentation.maxUnits)) throw new RangeError("Invalid completion document limit.");
     const insertions = new Map<1 | 2, LspCompletion["insertion"]>();
     const items = values.map((item: unknown): LspCompletion | undefined => {
         if (!isRecord(item) || ![1, 2].includes((item.insertTextFormat ?? defaults.insertTextFormat ?? 1) as number)) invalid();

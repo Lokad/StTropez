@@ -1,3 +1,4 @@
+import { isNonNegativeInteger, isPositiveInteger } from "../core/bounds.ts";
 import { mountInputCaret } from "./input-caret.ts";
 import { autoClosedPairs } from "./auto-closed-pairs.ts";
 import { automaticIndentation } from "./automatic-indentation.ts";
@@ -336,7 +337,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const { align = "nearest", select = false, focus: takeFocus = false, expectedRevision } = options;
         validateRevealAlignment(align);
         if (typeof select !== "boolean" || typeof takeFocus !== "boolean") throw new TypeError("Invalid reveal flags.");
-        if (expectedRevision !== undefined && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0))
+        if (expectedRevision !== undefined && (!isNonNegativeInteger(expectedRevision)))
             throw new RangeError("Invalid reveal revision.");
         if (disposed || input.disabled || !live() || resource.getSnapshot().state !== "ready") return null;
         const state = activity();
@@ -963,7 +964,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                     try {
                         const line = await prompt({ currentLine: buffer.lineAt(capture.selection.head) + 1, lineCount: buffer.lineCount, signal: request.abort.signal });
                         if (request !== lineRequest || !validCommand(capture) || !root.isConnected || !workspace.ownsDocumentView(view)) return;
-                        if (line === undefined || !Number.isSafeInteger(line) || line < 1 || line > buffer.lineCount) return;
+                        if (line === undefined || !isPositiveInteger(line) || line > buffer.lineCount) return;
                         lineRequest = undefined;
                         reveal({ line: line - 1, column: 0 }, { align: "center-if-outside", select: true, focus: true, expectedRevision: capture.revision });
                     } catch (error) {

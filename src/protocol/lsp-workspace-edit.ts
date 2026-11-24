@@ -1,3 +1,4 @@
+import { isNonNegativeInteger } from "../core/bounds.ts";
 import { wireLimits, staleRequest } from "./wire.ts";
 import type { DocumentId, DocumentSnapshot, DocumentView, EditOrigin, EditRequest, Workspace } from "../core/workspace.ts";
 import type { EditKind } from "../core/history.ts";
@@ -75,7 +76,7 @@ export function describeLspEdit(source: Pick<LspDocumentSnapshot, "buffer" | "re
  * Previewing does not establish currentness or grant edit authority.
  */
 export function previewLspWorkspaceEdit(edit: LspWorkspaceEdit, title: (documentId: string) => string, page = 0): LspWorkspaceEditPreview {
-    if (!Number.isSafeInteger(page) || page < 0 || !Number.isSafeInteger((page + 1) * wireLimits.editPreviewSize)) throw new RangeError("Invalid LSP edit preview page.");
+    if (!isNonNegativeInteger(page) || !Number.isSafeInteger((page + 1) * wireLimits.editPreviewSize)) throw new RangeError("Invalid LSP edit preview page.");
     const first = page * wireLimits.editPreviewSize, last = first + wireLimits.editPreviewSize, notes: LspWorkspaceEditNote[] = [];
     let count = 0;
     for (const change of edit.documents) {

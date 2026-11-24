@@ -1,8 +1,9 @@
+import { isPositiveInteger } from "../core/bounds.ts";
 const empty: readonly number[] = Object.freeze([]);
 
 /** A ruler after N measured columns; normalization owns the caller's array. */
 export function resolveColumnRulers(columns: readonly number[] = empty): readonly number[] {
-    if (columns.length > 128 || Array.from(columns).some(column => !Number.isSafeInteger(column) || column < 1)) {
+    if (columns.length > 128 || Array.from(columns).some(column => !isPositiveInteger(column))) {
         throw new RangeError("Column rulers require at most 128 positive safe-integer columns.");
     }
     return columns.length ? Object.freeze([...new Set(columns)].sort((a, b) => a - b)) : empty;

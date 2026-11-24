@@ -1,3 +1,4 @@
+import { isOffsetRange, isPositiveInteger } from "./bounds.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import type { FoldRange, FoldRegion } from "./folding.ts";
 import { prepareFoldRanges } from "./folding.ts";
@@ -31,7 +32,7 @@ export function discoverIndentationFolds(buffer: TextBuffer, options: Indentatio
 }
 function* discover(buffer: TextBuffer, options: IndentationFoldingOptions, work: Work): Generator<void, readonly DiscoveredFold[]> {
     const tabSize = options.tabSize ?? 4, markers: { start: string; end: string; group: string }[] = [];
-    if (!Number.isSafeInteger(tabSize) || tabSize < 1 || tabSize > 256) throw new RangeError("Invalid folding tab size.");
+    if (!isPositiveInteger(tabSize) || tabSize > 256) throw new RangeError("Invalid folding tab size.");
     let prefixUnits = 1;
     for (const value of options.markers ?? []) {
         const marker = { ...value }; work.workUnits++;
@@ -111,7 +112,7 @@ function* discover(buffer: TextBuffer, options: IndentationFoldingOptions, work:
  * Existing view anchors have already followed edits; matching their header/group preserves choice. */
 export function reconcileFoldRanges(buffer: TextBuffer, discovered: readonly DiscoveredFold[], previous: readonly FoldRegion[]): readonly FoldRange[] {
     const sorted = discovered.map(value => {
-        if (!Number.isSafeInteger(value.from) || !Number.isSafeInteger(value.to) || value.from < 0 || value.to > buffer.length || value.to <= value.from
+        if (!isOffsetRange(value.from, value.to, buffer.length) || value.from === value.to
             || value.group !== undefined && !value.group) throw new RangeError("Invalid discovered fold range.");
         return { ...value, ...(discoveredRows.get(buffer)?.get(value) ?? { lineFrom: buffer.lineAt(value.from), lineTo: buffer.lineAt(value.to - 1) + 1 }) };
     }).sort((a, b) => a.lineFrom - b.lineFrom || b.lineTo - a.lineTo);

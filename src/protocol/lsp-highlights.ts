@@ -1,3 +1,4 @@
+import { isOffsetRange } from "../core/bounds.ts";
 import { documentHighlightMethod } from "./lsp-methods.ts";
 import { ProtocolDecodeError, staleRequest } from "./wire.ts";
 import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspPositionRequest } from "./lsp-client.ts";
@@ -27,7 +28,7 @@ export function decodeLspDocumentHighlights(value: unknown, capture: LspDocument
     for (let i = 0; i < items.length; i++) end[size + i] = items[i]!.to;
     for (let node = size - 1; node > 0; node--) end[node] = Math.max(end[node * 2]!, end[node * 2 + 1]!);
     return Object.freeze({ items, intersect: (from: number, to: number): readonly LspDocumentHighlight[] => {
-        if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || from > to || to > capture.document.buffer.length) throw new RangeError("Invalid highlight query.");
+        if (!isOffsetRange(from, to, capture.document.buffer.length)) throw new RangeError("Invalid highlight query.");
         if (from === to || !items.length) return empty;
         const result: LspDocumentHighlight[] = [];
         const visit = (node: number, first: number, last: number): void => {

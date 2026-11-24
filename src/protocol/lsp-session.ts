@@ -1,3 +1,4 @@
+import { isNonNegativeInteger, isPositiveInteger } from "../core/bounds.ts";
 import { applyEditMethod, codeActionMethod, colorPresentationMethod, completionMethod,
     definitionMethod, didChangeMethod, didCloseMethod, didOpenMethod, documentColorMethod,
     documentHighlightMethod, documentLinkMethod, executeCommandMethod, foldingRangeMethod,
@@ -70,7 +71,7 @@ type SyncWaiter = { resolve: () => void; reject: (error: Error) => void; ready: 
 type Registration = { value: LspRegistration; selector: LspSelector };
 type RequestHandler = (params: unknown, context: LspRequestContext) => unknown | Promise<unknown>;
 type NotificationHandler = (params: unknown, epoch: number) => void | Promise<void>;
-const integer = (value: number) => Number.isSafeInteger(value) && value >= 0;
+
 const empty = Object.freeze({});
 function commandOptions(value: unknown): readonly string[] {
     if (!isRecord(value) || !Array.isArray(value.commands) || value.commands.length > wireLimits.commandsPerRegistration || value.commands.some(command => typeof command !== "string" || !command || command.length > 256)) throw new ProtocolDecodeError("Invalid or excessive LSP command options.");
@@ -130,7 +131,7 @@ export class LspSession {
         this.initializeBase = jsonSnapshot({ processId: null, rootUri: options.rootUri ?? null,
             ...(options.clientInfo ? { clientInfo: options.clientInfo } : {}), initializationOptions: options.initializationOptions ?? null }) as Readonly<Record<string, JsonValue>>;
         this.maxDocuments = options.maxDocuments ?? 100; this.maxDocumentUnits = options.maxDocumentUnits ?? defaultDocumentUnits; this.maxTotalUnits = options.maxTotalUnits ?? 16 * 1024 * 1024;
-        if (![this.maxDocuments, this.maxDocumentUnits, this.maxTotalUnits].every(value => integer(value) && value > 0)) throw new RangeError("Invalid LSP document limits.");
+        if (![this.maxDocuments, this.maxDocumentUnits, this.maxTotalUnits].every(isPositiveInteger)) throw new RangeError("Invalid LSP document limits.");
         this.scope = new NotificationScope(error => this.report(error));
         this.store = new Store(this.snapshot("disconnected", null), this.scope);
         this.getSnapshot = this.store.observable.getSnapshot;
@@ -371,16 +372,16 @@ export class LspSession {
     }
     private entry(handle: LspDocument): Entry { const entry = this.handles.get(handle); if (!entry || this.documents.get(entry.snapshot.uri) !== entry) throw stale(); return entry; }
     private size(length: number, previous: number): void {
-        if (!integer(length) || length > this.maxDocumentUnits || this.totalUnits - previous + length > this.maxTotalUnits) throw new RangeError("LSP document size limit exceeded.");
+        if (!isNonNegativeInteger(length) || length > this.maxDocumentUnits || this.totalUnits - previous + length > this.maxTotalUnits) throw new RangeError("LSP document size limit exceeded.");
     }
     bindDocument(snapshot: LspDocumentSnapshot): LspDocument {
         this.writable(); const { uri, languageId, resourceId, documentId, revision, buffer } = snapshot;
-        if (!isLspUri(uri) || ![languageId, resourceId, documentId].every(isLspIdentityPart) || !integer(revision)) throw new TypeError("Invalid LSP document identity.");
+        if (!isLspUri(uri) || ![languageId, resourceId, documentId].every(isLspIdentityPart) || !isNonNegativeInteger(revision)) throw new TypeError("Invalid LSP document identity.");
         if (this.documents.has(uri) || this.documents.size >= this.maxDocuments) throw new Error("LSP URI is already bound or document limit exceeded."); this.size(buffer.length, 0);
         const entry: Entry = { snapshot: Object.freeze({ uri, languageId, resourceId, documentId, revision, buffer }), handle: undefined! };
         const handle: LspDocument = Object.freeze({ getSnapshot: () => entry.snapshot,
             update: (expectedRevision, nextRevision, nextBuffer, edits) => {
-                this.writable(); this.entry(handle); if (entry.snapshot.revision !== expectedRevision || !integer(nextRevision) || nextRevision <= expectedRevision) throw stale(); this.size(nextBuffer.length, entry.snapshot.buffer.length);
+                this.writable(); this.entry(handle); if (entry.snapshot.revision !== expectedRevision || !isNonNegativeInteger(nextRevision) || nextRevision <= expectedRevision) throw stale(); this.size(nextBuffer.length, entry.snapshot.buffer.length);
                 if (edits) entry.change = { before: entry.snapshot.buffer, edits: edits.map(({ from, to, insert }) => ({ from, to, insert })) };
                 else delete entry.change;
                 this.totalUnits += nextBuffer.length - entry.snapshot.buffer.length; entry.snapshot = Object.freeze({ ...entry.snapshot, revision: nextRevision, buffer: nextBuffer }); delete entry.failure; this.kick(uri);

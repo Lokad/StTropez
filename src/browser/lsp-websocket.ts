@@ -1,3 +1,4 @@
+import { isPositiveInteger } from "../core/bounds.ts";
 import type { RpcTransport } from "../protocol/json-rpc.ts";
 
 export type WebSocketTransportOptions = Readonly<{ protocols?: string | readonly string[]; signal?: AbortSignal;
@@ -8,7 +9,7 @@ export type WebSocketTransportOptions = Readonly<{ protocols?: string | readonly
 /** Host-owned, text-message JSON-RPC framing. No socket or connection is created by importing this module. */
 export function openWebSocketTransport(url: string, options: WebSocketTransportOptions = {}): Promise<RpcTransport> {
     const timeout = options.openTimeoutMs ?? 15000, maxMessage = options.maxMessageUnits ?? 4 * 1024 * 1024, maxBuffered = options.maxBufferedBytes ?? 16 * 1024 * 1024;
-    if (![timeout, maxMessage, maxBuffered].every(n => Number.isSafeInteger(n) && n > 0)) return Promise.reject(new RangeError("Invalid WebSocket limits."));
+    if (![timeout, maxMessage, maxBuffered].every(isPositiveInteger)) return Promise.reject(new RangeError("Invalid WebSocket limits."));
     const preProtocolMessage = options.preProtocolMessage;
     if (preProtocolMessage !== undefined) {
         if (typeof preProtocolMessage !== "string") return Promise.reject(new TypeError("Pre-protocol message must be text."));

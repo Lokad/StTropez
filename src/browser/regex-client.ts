@@ -3,7 +3,8 @@ import type { TextEdit } from "../core/changes.ts";
 import type { DocumentId } from "../core/workspace.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import { splitsSurrogatePair } from "../core/utf16.ts";
-import { readRegexResult, regexIdentity, regexInteger, regexOptions, regexProtocolVersion, regexQuery, regexSourceLimit } from "../protocol/regex.ts";
+import { isNonNegativeInteger } from "../core/bounds.ts";
+import { readRegexResult, regexIdentity, regexOptions, regexProtocolVersion, regexQuery, regexSourceLimit } from "../protocol/regex.ts";
 import type { RegexOptions, RegexRequest, RegexResult } from "../protocol/regex.ts";
 
 type Capture = Readonly<{ documentId: DocumentId; revision: number; buffer: TextBuffer }>;
@@ -55,7 +56,7 @@ export function createRegexClient(host: Readonly<{ clock: Pick<Window, "setTimeo
         const length = capture.buffer.length;
         const query = { length, pattern, matchCase, wholeWord: options.wholeWord ?? false };
         const maxOutput = options.maxOutputUnits ?? regexSourceLimit;
-        if (!documentId || typeof documentId !== "string" || !regexInteger(revision) || !regexQuery(query) || !regexOptions(options, length))
+        if (!documentId || typeof documentId !== "string" || !isNonNegativeInteger(revision) || !regexQuery(query) || !regexOptions(options, length))
             throw new RangeError("Unsupported regex capture.");
         const replacement = options.replacement;
         const range = options.range && { from: options.range.from, to: options.range.to };

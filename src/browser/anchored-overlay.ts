@@ -1,3 +1,4 @@
+import { isOffsetRange } from "../core/bounds.ts";
 import type { Affinity } from "../core/positions.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import { rowTextRanges } from "./text-geometry.ts";
@@ -170,7 +171,7 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
     function show(next: OverlayAnchor): void {
         if (disposed) return;
         const from = "offset" in next ? next.offset : next.from, to = "offset" in next ? next.offset : next.to;
-        if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from) throw new RangeError("Invalid overlay anchor.");
+        if (!isOffsetRange(from, to)) throw new RangeError("Invalid overlay anchor.");
         anchor = Object.freeze({ ...next });
         if (!events) {
             peers.add(placement);

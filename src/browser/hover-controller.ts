@@ -1,3 +1,4 @@
+import { isOffset } from "../core/bounds.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
 import { requireLanguageView, captureViewRequest, editorReadyForRequest, observeViewSource, type CapturedViewRequest } from "./captured-view.ts";
@@ -128,7 +129,7 @@ export function mountHover(editor: TextEditor, provider: LspWorkspace, options: 
         if (!available()) return false;
         const selected = view.getSnapshot(), offset = anchor?.offset ?? selected.selection.head;
         const doc = workspace.observeDocument(view.documentId).getSnapshot();
-        if (!doc || (anchor && anchor.revision !== doc.revision) || !Number.isSafeInteger(offset) || offset < 0 || offset > doc.buffer.length
+        if (!doc || (anchor && anchor.revision !== doc.revision) || !isOffset(offset, doc.buffer.length)
             || view.folding.getSnapshot().index.hiddenBy(doc.buffer.lineAt(offset))) return false;
         if (mode === "reuse" && inspection && valid(inspection)) {
             if (inspection.offset === offset) return true;

@@ -1,3 +1,4 @@
+import { isNonNegativeInteger } from "./bounds.ts";
 import { createWorkspaceOperations } from "./workspace-operations.ts";
 import type { WorkspaceOperations } from "./workspace-operations.ts";
 import { createWorkspaceTabs } from "./workspace-tabs.ts";
@@ -756,7 +757,7 @@ export class Workspace {
         if (!record || initial?.state !== "ready" || !initial.metadata.capabilities.save || record.editLease) throw new Error("Resource is not ready or cannot be saved.");
         const reviewedVersion = review?.expectedServerVersion;
         if (review !== undefined) {
-            if (!Number.isSafeInteger(review.expectedRevision) || review.expectedRevision < 0) throw new TypeError("Reviewed save requires a revision and server version.");
+            if (!isNonNegativeInteger(review.expectedRevision)) throw new TypeError("Reviewed save requires a revision and server version.");
             if (!review.target || this.resolveResource(review.target) !== handle) throw new Error("Reviewed save belongs to another resource or workspace.");
             if (initial.revision !== review.expectedRevision || record.saveReservations !== 0) throw new Error("Reviewed save has changed or another save is pending.");
         }

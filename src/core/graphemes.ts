@@ -1,3 +1,4 @@
+import { isOffsetRange, isPositiveInteger } from "./bounds.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { graphemeProperties, unicodeGraphemeVersion } from "./grapheme-data.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
@@ -15,7 +16,7 @@ export class GraphemeLimitError extends Error {
     constructor(limit: "operations" | "clusters") { super(`Grapheme segmentation exceeded its ${limit} limit.`); this.name = "GraphemeLimitError"; this.limit = limit; }
 }
 let publish: (source: GraphemeSource, from: number, to: number, blocks: readonly (readonly number[])[], count: number) => GraphemeIndex;
-const range = (length: number, from: number, to: number) => { if (![from, to].every(Number.isSafeInteger) || from < 0 || from > to || to > length) throw new RangeError("Invalid grapheme range."); };
+const range = (length: number, from: number, to: number) => { if (!isOffsetRange(from, to, length)) throw new RangeError("Invalid grapheme range."); };
 
 /** Immutable extended-grapheme boundaries. Coordinates are absolute UTF-16 offsets. */
 export class GraphemeIndex {
@@ -83,7 +84,7 @@ function drive(iterator: Generator<void, GraphemeIndex | null> | null, c: Counte
 function create(source: GraphemeSource, length: number, options: GraphemeOptions): GraphemeCursor {
     const from = options.from ?? 0, to = options.to ?? length; range(length, from, to);
     const maxOperations = options.maxOperations ?? Math.max(1_000_000, (to - from) * 16), maxClusters = options.maxClusters ?? Math.max(1_000_000, to - from);
-    if (![maxOperations, maxClusters].every(v => Number.isSafeInteger(v) && v > 0)) throw new RangeError("Invalid grapheme limits.");
+    if (![maxOperations, maxClusters].every(isPositiveInteger)) throw new RangeError("Invalid grapheme limits.");
     const c: Counters = { phase: "scan", scanned: 0, reads: 0, points: 0, boundaries: 0, clusters: 0, work: 0, yielded: 0 }; return drive(segment(source, from, to, maxOperations, maxClusters, c), c);
 }
 export function createGraphemeCursor(source: TextBuffer | string, options: GraphemeOptions = {}): GraphemeCursor { return create(typeof source === "string" ? Object.freeze({ kind: "string", text: source }) : Object.freeze({ kind: "buffer", buffer: source }), source.length, options); }

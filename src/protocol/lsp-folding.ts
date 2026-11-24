@@ -1,3 +1,4 @@
+import { isNonNegativeInteger } from "../core/bounds.ts";
 import { foldingRangeMethod } from "./lsp-methods.ts";
 import { ProtocolDecodeError, staleRequest } from "./wire.ts";
 import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspDocumentRequest } from "./lsp-client.ts";
@@ -11,9 +12,9 @@ export function decodeLspFoldingRanges(value: unknown, capture: LspDocumentCaptu
     if (value === null) return Object.freeze([]);
     if (!Array.isArray(value)) throw new ProtocolDecodeError("Expected LSP folding ranges.");
     const buffer = capture.document.buffer, index = capture.index, result: DiscoveredFold[] = [];
-    const integer = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+
     for (const item of value) {
-        if (!item || typeof item !== "object" || !integer(item.startLine) || !integer(item.endLine)
+        if (!item || typeof item !== "object" || !isNonNegativeInteger(item.startLine) || !isNonNegativeInteger(item.endLine)
             || item.kind !== undefined && typeof item.kind !== "string") throw new ProtocolDecodeError("Malformed LSP folding range.");
         if (item.startLine >= item.endLine || item.endLine >= index.lineCount) continue;
         const from = index.offsetAt({ line: item.startLine, character: 0 }), to = index.offsetAt({ line: item.endLine + 1, character: 0 });

@@ -1,3 +1,4 @@
+import { isNonNegativeInteger, isOffsetRange, isPositiveInteger } from "../core/bounds.ts";
 import type { SearchMatch } from "../core/search.ts";
 
 /** Private structured-clone messages shared by the worker and its owning browser client. */
@@ -16,20 +17,19 @@ export type RegexReply = Identity & Readonly<{ version: number }> &
     (RegexResult | Readonly<{ operation: "regex-error"; message: string }>);
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
-export const regexInteger = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 export const regexIdentity = (value: unknown): value is Record<string, unknown> & Identity =>
-    record(value) && regexInteger(value.id) && value.id > 0 && regexInteger(value.revision);
+    record(value) && isPositiveInteger(value.id) && isNonNegativeInteger(value.revision);
 export function regexQuery(value: RegexQuery): boolean {
-    return regexInteger(value.length) && value.length <= regexSourceLimit
+    return isNonNegativeInteger(value.length) && value.length <= regexSourceLimit
         && typeof value.pattern === "string" && value.pattern.length <= 4096 && typeof value.matchCase === "boolean"
         && (value.wholeWord === undefined || typeof value.wholeWord === "boolean");
 }
 export function regexOptions(value: RegexOptions, length: number): boolean {
     const range = value.range;
     return (value.replacement === undefined || typeof value.replacement === "string" && value.replacement.length <= 32768)
-        && (value.maxOutputUnits === undefined || regexInteger(value.maxOutputUnits) && value.maxOutputUnits <= regexSourceLimit)
+        && (value.maxOutputUnits === undefined || isNonNegativeInteger(value.maxOutputUnits) && value.maxOutputUnits <= regexSourceLimit)
         && (range === undefined || value.replacement !== undefined && record(range)
-            && regexInteger(range.from) && regexInteger(range.to) && range.to >= range.from && range.to <= length);
+            && isOffsetRange(range.from, range.to, length));
 }
 
 /** Match offsets are pairs. Each edit adds the exclusive end of its text in the joined insertions. */

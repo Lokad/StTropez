@@ -1,3 +1,4 @@
+import { isIndex, isNonNegativeInteger, isOffset } from "./bounds.ts";
 import type { TextEdit } from "./changes.ts";
 import type { Affinity, PositionMapping } from "./positions.ts";
 import { unchangedPositionEdges } from "./positions.ts";
@@ -11,7 +12,7 @@ export type SelectionEditPlan = Readonly<{ edits: readonly TextEdit[]; selection
 const normalizedSets = new WeakMap<readonly Selection[], SelectionSet>();
 
 function normalizeSelection(length: number, value: Selection): Readonly<Required<Selection>> {
-    if (![value.anchor, value.head].every(offset => Number.isSafeInteger(offset) && offset >= 0 && offset <= length)) throw new RangeError("Selection is outside the document.");
+    if (![value.anchor, value.head].every(offset => isOffset(offset, length))) throw new RangeError("Selection is outside the document.");
     const anchorAffinity = value.anchorAffinity ?? (value.anchor <= value.head ? "after" : "before");
     const headAffinity = value.headAffinity ?? (value.anchor === value.head ? anchorAffinity : value.anchor < value.head ? "before" : "after");
 
@@ -20,8 +21,8 @@ function normalizeSelection(length: number, value: Selection): Readonly<Required
 
 /** Sort and merge overlaps/occupied carets. Adjacent nonempty ranges remain independent. */
 export function createSelectionSet(length: number, ranges: readonly Selection[], primary = 0): SelectionSet {
-    if (!Number.isSafeInteger(length) || length < 0) throw new RangeError("Invalid document length.");
-    if (!ranges.length || !Number.isSafeInteger(primary) || primary < 0 || primary >= ranges.length) throw new RangeError("A selection set needs ranges and a valid primary index.");
+    if (!isNonNegativeInteger(length)) throw new RangeError("Invalid document length.");
+    if (!ranges.length || !isIndex(primary, ranges.length)) throw new RangeError("A selection set needs ranges and a valid primary index.");
     const known = normalizedSets.get(ranges);
     if (known?.primary === primary) {
         const last = ranges.at(-1)!;

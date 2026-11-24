@@ -1,3 +1,4 @@
+import { isIndex, isNonNegativeInteger, isOffsetRange, isPositiveInteger } from "./bounds.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { unchangedPositionEdges } from "./positions.ts";
 import type { PositionMapping } from "./positions.ts";
@@ -35,9 +36,9 @@ export function prepareFoldRanges(buffer: TextBuffer, ranges: readonly FoldRange
     let entries = resolved.get(buffer); if (!entries) { entries = new WeakMap(); resolved.set(buffer, entries); }
     entries.set(ranges, retain(regions));
 }
-const integer = (value: number) => Number.isSafeInteger(value) && value >= 0;
+
 function region(buffer: TextBuffer, id: string, from: number, to: number, collapsed: boolean, group?: string): FoldRegion | undefined {
-    if (!integer(from) || !integer(to) || from >= to || to > buffer.length) return;
+    if (!isOffsetRange(from, to, buffer.length) || from === to) return;
     const lineFrom = buffer.lineAt(from), lineTo = buffer.lineAt(to - 1) + 1;
     return lineFrom + 1 < lineTo ? Object.freeze({ id, from, to, lineFrom, lineTo, collapsed, ...(group === undefined ? {} : { group }) }) : undefined;
 }
@@ -229,7 +230,7 @@ export class FoldIndex {
     declare readonly collapsedCount: number;
     declare readonly regions: readonly FoldRegion[];
     constructor(lineCount: number, regions: readonly FoldRegion[]) {
-        if (!Number.isSafeInteger(lineCount) || lineCount < 1) throw new RangeError("Invalid fold line count.");
+        if (!isPositiveInteger(lineCount)) throw new RangeError("Invalid fold line count.");
         const metadata = owned.get(regions);
         if (metadata && metadata.maxLineTo > lineCount) throw new RangeError("Invalid fold row interval.");
         const values = metadata ? regions : Object.freeze(regions.map(r => Object.freeze({ ...r })));
@@ -238,8 +239,8 @@ export class FoldIndex {
         const hidden: Hidden[] = []; let removed = 0, prior = -1; const stack: FoldRegion[] = [], ids = new Set<string>();
         for (const r of values) {
             if (!metadata) {
-                if (!r.id.length || r.id.length > 256 || ids.has(r.id) || !integer(r.from) || !integer(r.to) || r.from >= r.to
-                    || !integer(r.lineFrom) || !integer(r.lineTo) || r.lineFrom <= prior || r.lineTo > lineCount || r.lineTo <= r.lineFrom + 1) throw new RangeError("Invalid fold row interval.");
+                if (!r.id.length || r.id.length > 256 || ids.has(r.id) || !isNonNegativeInteger(r.from) || !isNonNegativeInteger(r.to) || r.from >= r.to
+                    || !isNonNegativeInteger(r.lineFrom) || !isNonNegativeInteger(r.lineTo) || r.lineFrom <= prior || r.lineTo > lineCount || r.lineTo <= r.lineFrom + 1) throw new RangeError("Invalid fold row interval.");
                 if (r.group !== undefined && !r.group) throw new TypeError("Expected a nonempty fold group.");
                 ids.add(r.id); prior = r.lineFrom;
                 if (!appendNestedFold(stack, r)) throw new RangeError("Crossing fold rows.");
@@ -252,7 +253,7 @@ export class FoldIndex {
         indexed.set(values, this);
     }
     hiddenBy(line: number): FoldRegion | undefined {
-        if (!integer(line) || line >= this.lineCount) throw new RangeError("Invalid source line.");
+        if (!isIndex(line, this.lineCount)) throw new RangeError("Invalid source line.");
         const layout = this.layout, h = hiddenAt(layout, line);
         return h && line < h.to + layout.lines ? projectedRegion(layout, h.owner) : undefined;
     }
@@ -262,18 +263,18 @@ export class FoldIndex {
         for (const h of layout.hidden) yield projectedRegion(layout, h.owner);
     }
     rowAt(line: number): number {
-        if (!integer(line) || line >= this.lineCount) throw new RangeError("Invalid source line.");
+        if (!isIndex(line, this.lineCount)) throw new RangeError("Invalid source line.");
         const layout = this.layout, h = hiddenAt(layout, line);
         return !h ? line : line < h.to + layout.lines ? h.from + layout.lines - h.before - 1 : line - h.before - (h.to - h.from);
     }
     lineAt(row: number): number {
-        if (!integer(row) || row >= this.visibleLineCount) throw new RangeError("Invalid visible row.");
+        if (!isIndex(row, this.visibleLineCount)) throw new RangeError("Invalid visible row.");
         const layout = this.layout;
         const low = partitionPoint(layout.hidden.length, i => { const h = layout.hidden[i]!; return h.from - h.before + layout.lines <= row; });
         const h = layout.hidden[low - 1]; return row + (h ? h.before + h.to - h.from : 0);
     }
     headerAt(line: number): FoldRegion | undefined {
-        if (!integer(line) || line >= this.lineCount) throw new RangeError("Invalid source line.");
+        if (!isIndex(line, this.lineCount)) throw new RangeError("Invalid source line.");
         const layout = this.layout, local = line - layout.lines;
         const low = partitionPoint(layout.regions.length, i => layout.regions[i]!.lineFrom < local);
         const r = layout.regions[low]; return r?.lineFrom === local ? projectedRegion(layout, r) : undefined;
@@ -298,7 +299,7 @@ export function revealIndexSelection(buffer: TextBuffer, index: FoldIndex, selec
     return endpoints.size ? indexFor(buffer.lineCount, revealEndpoints(index.regions, endpoints)) : index;
 }
 export function revealIndexRange(buffer: TextBuffer, index: FoldIndex, from: number, to = from): FoldIndex {
-    if (!integer(from) || !integer(to) || to < from || to > buffer.length) throw new RangeError("Invalid fold reveal range.");
+    if (!isOffsetRange(from, to, buffer.length)) throw new RangeError("Invalid fold reveal range.");
     if (!index.collapsedCount) return index;
     const first = buffer.lineAt(from), last = buffer.lineAt(to > from ? to - 1 : to);
     if (!index.hiddenBy(first) && index.rowAt(last) - index.rowAt(first) === last - first) return index;

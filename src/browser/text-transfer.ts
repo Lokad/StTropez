@@ -1,3 +1,4 @@
+import { isOffset } from "../core/bounds.ts";
 import { createSelectionSet, planSelectionEdits } from "../core/selections.ts";
 import { PositionMap } from "../core/positions.ts";
 import type { DocumentId, DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
@@ -37,7 +38,7 @@ export function isCurrentTextTransfer(source: TextTransferCapture): boolean {
 export function applyTextDrop(request: TextDropRequest): TextDropResult {
     const { workspace, tab, view, expectedRevision, offset, source } = request, target = resolve(workspace, tab, view);
     if (!target || target.document.revision !== expectedRevision) return Object.freeze({ applied: false, reason: "stale-drop-target" });
-    if (!Number.isSafeInteger(offset) || offset < 0 || offset > target.document.buffer.length) return Object.freeze({ applied: false, reason: "invalid-drop-offset" });
+    if (!isOffset(offset, target.document.buffer.length)) return Object.freeze({ applied: false, reason: "invalid-drop-offset" });
     if (source && !isCurrentTextTransfer(source)) return Object.freeze({ applied: false, reason: "stale-drag-source" });
     const text = source?.text ?? request.text;
     if (typeof text !== "string") return Object.freeze({ applied: false, reason: "missing-drop-text" });

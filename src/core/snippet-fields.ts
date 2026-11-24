@@ -1,3 +1,4 @@
+import { isOffset } from "./bounds.ts";
 import type { Affinity } from "./positions.ts";
 import type { TextEdit } from "./changes.ts";
 import type { InsertionIndentation } from "./insertion-text.ts";
@@ -35,7 +36,7 @@ export function snippetFieldMapper(source: string, tabSize: number): (target: st
     const lineAt = (offset: number) => partitionPoint(sourceLines.length, index => sourceLines[index]!.from <= offset) - 1;
     return {
         map: (offset, affinity = "after") => {
-            if (!Number.isSafeInteger(offset) || offset < 0 || offset > source.length) throw new RangeError("Snippet position leaves its field.");
+            if (!isOffset(offset, source.length)) throw new RangeError("Snippet position leaves its field.");
             if (!offset) return 0; if (offset === source.length) return target.length;
             const index = lineAt(offset), a = sourceLines[index]!, b = right[index]!;
             if (offset > a.to) return affinity === "before" ? b.to : b.end;
