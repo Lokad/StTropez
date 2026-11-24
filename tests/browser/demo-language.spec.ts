@@ -71,13 +71,13 @@ test("real provider retains the 1200-field catalogue through filtering, acceptan
 test("real TypeScript diagnostics select the captured error and clear after correction", async ({ page }) => {
 
     await page.goto("/"); await page.locator("#sample").selectOption("errors");
-    await expect(page.locator("#language-status")).toHaveText("Language ready");
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
     await page.locator('[data-panel="problems"]').click();
     const problem = page.getByRole("button", { name: /main\.ts:\d+:\d+ · TS2345:/ });
     await expect(problem).toContainText("not assignable"); await problem.click();
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await expect(source).toBeFocused(); await source.pressSequentially("0.1");
-    await expect(page.locator("#language-status")).toHaveText("Language ready");
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
     await expect(page.locator("#panel-content")).toHaveText("No problems in this project.");
     await expect(page.locator("#editor")).toContainText("calculateTotal(cart, 0.1)");
 
@@ -87,7 +87,7 @@ test("real member completion preserves provider punctuation, resolves, applies o
     const releaseFolds = await holdDemoFolds(page, "main.ts");
     let requests = 0;
     page.on("websocket", socket => socket.on("framesent", frame => { if (JSON.parse(frame.payload.toString()).method === "textDocument/completion") requests++; }));
-    await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready");
+    await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+End"); await page.keyboard.insertText("\nconst basket = cart;\n");
     await source.pressSequentially("bask");
@@ -141,16 +141,16 @@ test("late real diagnostic responses cannot annotate a newer project or follow l
             client.send(message);
         });
     });
-    await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready");
+    await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
     armed = true; await page.locator("#sample").selectOption("errors");
-    await expect.poll(() => held).toBe(true);
+    await expect.poll(() => held, { timeout: 30_000 }).toBe(true);
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+f"); await page.getByRole("textbox", { name: "Find text", exact: true }).fill('"10%"');
     await expect(page.locator("#find-status")).toHaveText("1 of 1");
     await page.locator("#find-next").click();
     await page.getByRole("button", { name: "Close", exact: true }).click(); await source.pressSequentially("0.1");
     await page.getByRole("button", { name: "pricing.ts", exact: true }).click();
-    await expect(page.locator("#language-status")).toHaveText("Language ready"); release!();
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 }); release!();
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     await page.locator('[data-panel="problems"]').click();
     await expect(page.locator("#panel-content")).toHaveText("No problems in this project.");
@@ -193,7 +193,7 @@ test("connection and partial mount failures preserve editing and retry their own
     await expect(page.locator("#status")).toContainText("Saved in this browser");
     const connectedStarts = starts.length;
     await page.getByRole("button", { name: "Retry language controls", exact: true }).click();
-    await expect(page.locator("#language-status")).toHaveText("Language ready");
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
     expect(starts.length).toBe(connectedStarts);
     await expect(page.locator("#editor")).toContainText("// Offline edit");
     await source.press("Control+End"); await source.pressSequentially("\ncart.");

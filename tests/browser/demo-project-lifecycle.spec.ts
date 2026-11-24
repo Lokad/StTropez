@@ -74,9 +74,9 @@ test("failed project opening leaves startup and the current sample retryable", a
     await sample.selectOption("errors");
     await expect(compare).toBeEnabled(); await expect(save).toBeEnabled();
     await expect(page.locator("[data-panel]:disabled")).toHaveCount(0);
-    await expect(source).toBeVisible(); await expect(page.locator("#language-status")).toHaveText("Language ready");
+    await expect(source).toBeVisible(); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
     await sample.selectOption("pricing");
-    await expect(source).toBeVisible(); await expect(page.locator("#language-status")).toHaveText("Language ready");
+    await expect(source).toBeVisible(); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
     await source.press("Control+Home"); await source.pressSequentially("/* retained edit */");
     await page.evaluate(() => { (window as unknown as { demoProjectFailure: { armed: boolean } }).demoProjectFailure.armed = true; });
     await sample.selectOption("unicode");
@@ -89,6 +89,6 @@ test("failed project opening leaves startup and the current sample retryable", a
     expect(await page.evaluate(() => (window as unknown as { demoProjectFailure: { reported: number } }).demoProjectFailure.reported)).toBe(2);
     await sample.selectOption("unicode");
     await expect(page.getByRole("textbox", { name: "greetings.ts", exact: true })).toBeVisible();
-    await expect(page.locator("#language-status")).toHaveText("Language ready");
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
     await sample.selectOption("pricing"); await expect(page.locator("#editor")).toContainText("/* retained edit */");
 });

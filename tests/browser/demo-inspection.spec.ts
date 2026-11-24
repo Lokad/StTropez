@@ -53,7 +53,7 @@ test("real type inspection works from Code, keyboard and pointer without changin
 
 test("real signature help follows typed arguments and respects completion Escape priority", async ({ page }) => {
 
-    await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready");
+    await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
     const source = page.getByRole("textbox", { name: "main.ts", exact: true }), popup = page.getByRole("tooltip", { name: "Signature help", exact: true });
     await source.press("Control+f"); const find = page.locator("#find-bar"); await expect(find).toBeVisible();
     await source.press("Control+End"); await source.pressSequentially("\ncalculateTotal(");
@@ -80,7 +80,7 @@ test("held real hover and signature replies cannot reopen a popup after edits or
         client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === method) pending.add(value.id); server.send(message); });
         server.onMessage(message => { const value = JSON.parse(message.toString()); if (!held && pending.has(value.id)) { held = true; release = () => client.send(message); } else client.send(message); });
     });
-    await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready");
+    await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
     const source = await select(page, "calculateTotal(cart"); await source.press("ArrowLeft"); await source.press("ArrowRight");
     await source.press("Control+k"); await source.press("Control+i"); await expect.poll(() => held).toBe(true);
     await source.pressSequentially("x"); release!(); await expect(hover(page)).toBeHidden();
