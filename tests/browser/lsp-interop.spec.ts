@@ -11,6 +11,56 @@ async function seed(page: Page, text: string) {
     await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, text);
     await field(page).focus(); await page.evaluate(() => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: 8, head: 8 }); }); await ready(page);
 }
+
+test("manual completion uses a selected prefix in either direction and honors provider edit ranges", async ({ page }) => {
+    let explicit = false;
+    const requests: number[] = [];
+    await page.routeWebSocket("**/lsp-fixture", client => {
+        const server = client.connectToServer();
+        server.onMessage(message => client.send(message));
+        client.onMessage(message => {
+            const request = JSON.parse(message.toString());
+            if (request.method === "completionItem/resolve") {
+                client.send(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: request.params }));
+                return;
+            }
+            if (request.method !== "textDocument/completion") return server.send(message);
+            requests.push(request.params.position.character);
+            const range = { start: { line: 0, character: 6 }, end: { line: 0, character: 13 } };
+            const item = explicit ? { label: "sample", textEdit: { range, newText: "sample" } } : { label: "sample" };
+            client.send(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: [item] }));
+        });
+    });
+    await page.goto("/hosts/plain/?language=lsp");
+    await expect(field(page)).toBeVisible();
+    await ready(page);
+    const original = "const xsaMORE = 1;";
+    await seed(page, original);
+    await expect.poll(async () => (await provider(page)).connected).toBe(true);
+    const input = field(page);
+    for (const backward of [false, true]) {
+        explicit = backward;
+        const selection = backward ? { anchor: 9, head: 7 } : { anchor: 7, head: 9 };
+        await page.evaluate(selection => {
+            const f = window.hostFixture;
+            f.selectSource("primary", f.snapshot().source.revision, selection);
+        }, selection);
+        const selected = () => input.evaluate(el => {
+            const field = el as HTMLTextAreaElement;
+            return [field.selectionStart, field.selectionEnd, field.selectionDirection];
+        });
+        await input.press("Control+Space");
+        await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible();
+        const expected = [7, 9, backward ? "backward" : "forward"];
+        expect(await selected()).toEqual(expected);
+        await input.press(backward ? "Enter" : "Tab");
+        await expect.poll(() => source(page)).toBe(backward ? "const sample = 1;" : "const xsampleMORE = 1;");
+        await input.press("Control+z");
+        await expect.poll(() => source(page)).toBe(original);
+        expect(await selected()).toEqual(expected);
+    }
+    expect(requests).toEqual([9, 9]);
+});
 async function offer(page: Page) { await field(page).press("Control+Space"); await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible(); }
 
 test("a first-character import keeps multicaret snippet selection and atomic undo", async ({ page }) => {

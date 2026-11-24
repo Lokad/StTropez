@@ -18,7 +18,7 @@ import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 
 type Job = { id: number; revision: number; buffer: TextBuffer; caret: number; selections: SelectionSet; indentation: ReturnType<TextEditor["settings"]>["language"]; authority: ResourceMetadata; folds: number; foldIndex: FoldIndex; lease: ResourceLease;
-    call?: LspCall<LspCompletionBatch>; batch?: LspCompletionBatch; choices?: LspCompletions; visible: readonly LspCompletion[]; choice: number; cancelled: boolean; pendingList: boolean; requestGeneration: number;
+    call?: LspCall<LspCompletionBatch>; batch?: LspCompletionBatch; choices?: LspCompletions; visible: readonly LspCompletion[]; choice: number; pendingList: boolean; requestGeneration: number;
     acceptance?: Readonly<{ id: number; item: LspCompletion; mode: "insert" | "replace" }> | undefined;
     resolution?: { item: LspCompletion; revision: number; call?: LspCall<LspCompletionResolution> } | undefined };
 type AutomaticInput = { target: DocumentViewSnapshot; text: string; word: boolean; backspace: boolean };
@@ -40,7 +40,7 @@ export type CompletionControllerOptions = Readonly<{ autoConnect?: boolean; auto
 export type CompletionController = Observable<CompletionSnapshot> & Readonly<{ request: () => void; cancel: () => void; connect: () => void;
     customRequest: (method: string, params: JsonValue) => Promise<JsonValue>; dispose: () => void;
     getDiagnostics: () => Readonly<{ posted: number; received: number; applied: number; stale: number; cancelled: number; invalid: number; failed: number; resolved: number;
-        completionBeforeInputEvents: number; lastCompletionBeforeInputMs: number; completionCommands: number; lastCompletionCommandMs: number;
+        lastCompletionBeforeInputMs: number; lastCompletionCommandMs: number;
         connected: boolean; pending: boolean; offer: boolean; transport: "lsp3.17"; protocol: ReturnType<LspWorkspace["snapshot"]>["protocol"] }> }>;
 const word = new RegExp(`^(?:${codeWordConstituentPattern})$`, "u");
 // A word prefix can end in digits. A run of decimal digits on its own has no name to complete.
@@ -63,7 +63,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     try { binding = scope.attachDocument(documentId); completion = createLspCompletionClient(provider); }
     catch (error) { scope.dispose(); throw error; }
     const counters = { posted: 0, applied: 0, stale: 0, cancelled: 0, invalid: 0, failed: 0, resolved: 0,
-        completionBeforeInputEvents: 0, lastCompletionBeforeInputMs: 0, completionCommands: 0, lastCompletionCommandMs: 0 };
+        lastCompletionBeforeInputMs: 0, lastCompletionCommandMs: 0 };
     let job: Job | undefined, disposed = false, connecting: Promise<void> | undefined, inputIntent: AutomaticInput | undefined, prefixEdit: PrefixEdit | undefined, autoFrame: number | undefined, autoTurns = 0, applying = false;
     type SnippetSession = { stops: readonly SnippetStop[]; active: number; revision: number; authority: ResourceMetadata;
         indentation: Job["indentation"]; maxUnits: number; primaryGroup: number };
@@ -72,7 +72,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     let publishedSession: SnippetSession | undefined, field: CompletionSnippet | null = null;
     const owner = editor.element.ownerDocument, clock = owner.defaultView!;
     const emptyMessages: readonly string[] = Object.freeze([]);
-    let labelItems: readonly LspCompletion[] | undefined, labelGeneration: number | undefined, labels = emptyMessages;
+    let labelItems: readonly LspCompletion[] | undefined, labels = emptyMessages;
     const notifications = workspace.createNotificationScope(error => options.onError?.(error)), observers = new Set<() => void>();
     let providerPhase = scope.getSnapshot().phase;
     const cell = new Store<CompletionSnapshot>(Object.freeze({ message: connectionMessage(providerPhase), connected: providerPhase === "ready", pending: false, offerText: null, anchor: null, choices: Object.freeze([]), choiceIndex: 0, completionAt: () => undefined, completionIncomplete: false, completionDetail: "", resolving: false, snippet: null, omittedCompletions: Object.freeze([]) }), notifications);
@@ -85,7 +85,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     const authority = resource.metadata.getSnapshot;
     const authorityCurrent = (before: ResourceMetadata) => sameEditAuthority(before, authority());
     const indentationCurrent = (before: Job["indentation"]) => { const after = editor.settings().language; return before.tabSize === after.tabSize && before.insertSpaces === after.insertSpaces; };
-    const current = (captured: Job) => job === captured && !captured.cancelled && available() && idle() && indentationCurrent(captured.indentation) && workspace.document(documentId).revision === captured.revision && workspace.document(documentId).buffer === captured.buffer
+    const current = (captured: Job) => job === captured && available() && idle() && indentationCurrent(captured.indentation) && workspace.document(documentId).revision === captured.revision && workspace.document(documentId).buffer === captured.buffer
         && editor.view.getSnapshot().selectionSet === captured.selections && captured.foldIndex.sameProjection(editor.view.folding.getSnapshot().index) && authorityCurrent(captured.authority) && captured.lease.active();
     const bindingCurrent = (captured: Job) => captured.batch?.isBindingCurrent() ?? false;
     const primaryOccurrence = (captured: SnippetSession, stop: SnippetStop) => Math.max(0, stop.ranges.findIndex(range => (range.group ?? 0) === captured.primaryGroup));
@@ -108,7 +108,10 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     }
     const publish = (message: string) => {
         const visible = job?.visible, generation = job?.id;
-        if (visible !== labelItems || generation !== labelGeneration) { labelItems = visible; labelGeneration = generation; labels = visible ? Object.freeze(visible.map(item => item.label)) : emptyMessages; }
+        if (visible !== labelItems) {
+            labelItems = visible;
+            labels = visible ? Object.freeze(visible.map(item => item.label)) : emptyMessages;
+        }
         if (publishedSession !== snippet) {
             const captured = publishedSession = snippet;
             if (captured) {
@@ -133,7 +136,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
         snippet: field,
         omittedCompletions: job?.choices?.omitted ?? Object.freeze([]) })); };
     const release = (retain = false) => {
-        const old = job; job = undefined; if (!old) return; old.cancelled = true; old.call?.cancel(); old.resolution?.call?.cancel(); old.resolution = undefined;
+        const old = job; job = undefined; if (!old) return; old.call?.cancel(); old.resolution?.call?.cancel(); old.resolution = undefined;
         if (!retain) completion.cancel();
         // Workspace observers run during commit delivery; retention cleanup must follow that delivery.
         void Promise.resolve().then(() => old.lease.release());
@@ -173,14 +176,19 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
         cancelAuto();
         if (!available() || !idle()) { publish("Finish pending typing, navigation or composition before completion."); return; }
         const selections = editor.view.getSnapshot().selectionSet, selected = selections.ranges[selections.primary]!;
-        if (!snippet && selections.ranges.some(range => range.anchor !== range.head)) { publish("Place collapsed carets before requesting completion."); return; }
+        const document = workspace.document(documentId);
+        if (!snippet && selections.ranges.some(range => range.anchor !== range.head && (selections.ranges.length > 1
+            || document.buffer.lineAt(range.anchor) !== document.buffer.lineAt(range.head)))) {
+            publish("Use one selection on a single line, or place carets where you want suggestions.");
+            return;
+        }
         const caret = Math.max(selected.anchor, selected.head);
         const field = snippet?.stops[snippet.active]!.ranges.find(range => range.from <= Math.min(selected.anchor, selected.head) && caret <= range.to);
         if (!connecting && scope.getSnapshot().phase !== "ready") { publish("Reconnect the LSP provider before requesting completion."); return; }
         const previous = invocation.automatic && job?.choices && current(job) && bindingCurrent(job) ? job : undefined, provisional = previous?.choices, provisionalVisible = previous?.visible;
-        release(!!previous); const document = workspace.document(documentId);
+        release(!!previous);
         const captured: Job = { id: workspace.allocateIdentity(), revision: document.revision, buffer: document.buffer, caret, selections, indentation: editor.settings().language, authority: authority(), folds: editor.view.folding.getSnapshot().generation, foldIndex: editor.view.folding.getSnapshot().index,
-            lease: workspace.acquire(resource.id), choice: previous?.choice ?? 0, cancelled: false, pendingList: true, requestGeneration: 0, visible: provisionalVisible ?? Object.freeze([]), ...(provisional ? { choices: provisional } : {}), ...(previous?.batch ? { batch: previous.batch } : {}) };
+            lease: workspace.acquire(resource.id), choice: previous?.choice ?? 0, pendingList: true, requestGeneration: 0, visible: provisionalVisible ?? Object.freeze([]), ...(provisional ? { choices: provisional } : {}), ...(previous?.batch ? { batch: previous.batch } : {}) };
         job = captured; counters.posted++; publish("LSP completion pending.");
         void (async () => {
             if (connecting) await connecting; if (captured.requestGeneration !== 0) return; if (!current(captured)) throw staleRequest("Completion capture changed.");
@@ -188,7 +196,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
                 document, offset: caret,
                 context: invocation.kind === 2 ? { triggerKind: 2, triggerCharacter: invocation.character! } : { triggerKind: invocation.kind },
                 fallback: () => {
-                    if (field && selected.anchor !== selected.head) return { from: Math.min(selected.anchor, selected.head), to: caret, replaceTo: caret };
+                    if (selected.anchor !== selected.head) return { from: Math.min(selected.anchor, selected.head), to: caret, replaceTo: caret };
                     const fallback = wordRange(document.buffer, caret);
                     return field ? { from: Math.max(field.from, fallback.from), to: caret, replaceTo: Math.min(field.to, fallback.replaceTo) } : fallback;
                 }, indentation: captured.indentation,
@@ -203,7 +211,12 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
             if (!current(captured) || !choices.isCurrent()) throw staleRequest("Completion capture changed.");
             captured.batch = choices; captured.choices = choices;
             captured.pendingList = false; filter(captured, invocation.automatic === true || options.filterManualCompletions === true);
-            if (!captured.visible.length) { const omitted = choices.omitted.length; release(); publish(omitted ? `${omitted} unsupported completion choices omitted.` : "No LSP completions for this caret."); return; }
+            if (!captured.visible.length) {
+                const omitted = choices.omitted.length;
+                release();
+                publish(omitted ? `${omitted} unsupported completion choices omitted.` : "No suggestions here. Try a different prefix.");
+                return;
+            }
             publish("LSP completion ready.");
             resolveSelected(captured);
         })().catch(error => {
@@ -259,7 +272,10 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
                 if (!snippetCurrent(parent)) throw new RangeError("Snippet field expired.");
                 fieldPlan = planFieldCompletion(completion, mode, character, captured.selections, parent.stops, parent.active);
                 plan = { ...fieldPlan, snippet: null };
-            } else plan = lspCompletionPlan(completion, mode, character, captured.selections);
+            } else {
+                const multiple = captured.selections.ranges.length > 1 ? captured.selections : undefined;
+                plan = lspCompletionPlan(completion, mode, character, multiple);
+            }
         }
         catch (error) { if (!(error instanceof RangeError || error instanceof TypeError)) throw error;
             counters.invalid++; release(); publish("Completion cannot apply to all captured carets; no text changed."); return false; }
@@ -456,7 +472,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     }, { signal: listeners.signal });
     input.addEventListener("compositionstart", () => { cancelAuto(); expire("Finish composition before completion."); }, { signal: listeners.signal });
     input.addEventListener("beforeinput", event => { const started = clock.performance.now();
-        try { beforeInput(event); } finally { counters.completionBeforeInputEvents++; counters.lastCompletionBeforeInputMs = clock.performance.now() - started; }
+        try { beforeInput(event); } finally { counters.lastCompletionBeforeInputMs = clock.performance.now() - started; }
     }, { capture: true, signal: listeners.signal });
     editor.element.addEventListener(typedTextEvent, acceptedText, { signal: listeners.signal });
     input.addEventListener("compositionend", () => {
@@ -475,7 +491,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
         registrations.push(editor.commands.register({ id, label, enabled, run() {
             notifications.assertWritable();
             const started = clock.performance.now();
-            try { return run(); } finally { counters.completionCommands++; counters.lastCompletionCommandMs = clock.performance.now() - started; }
+            try { return run(); } finally { counters.lastCompletionCommandMs = clock.performance.now() - started; }
         } }, { keys, priority }));
     }
     function navigate(direction: -1 | 1, page: boolean) {

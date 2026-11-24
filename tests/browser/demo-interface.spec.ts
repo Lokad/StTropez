@@ -984,7 +984,7 @@ test("language commands pressed during startup follow the original caret and rep
     await source.press("Escape"); await source.press("Control+Home"); await source.press("Control+Shift+Space");
     await expect(message).toHaveText("No signature at this position.");
     await source.press("End"); await page.keyboard.insertText(" // comment");
-    await source.press("Control+Space"); await expect(message).toContainText(/no.*completions/i);
+    await source.press("Control+Space"); await expect(message).toHaveText("No suggestions here. Try a different prefix.");
     await source.press("ArrowLeft"); await expect(message).toBeHidden();
 
     await open();

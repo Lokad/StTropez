@@ -77,7 +77,7 @@ page. Repeat the check on the browsers and devices you support.
 | Headless command planning | Elapsed time and calling-thread CPU from planner creation to the complete edit plan. Applying edits, input handling and rendering fall outside this measurement. |
 | Input-handler duration | Time inside one adapter listener. It includes model updates, synchronous subscribers and browser work triggered there. Native work before the listener, other listeners and later service or render work fall outside it. |
 | Editor handler samples | `lastBeforeInputMs`, `lastInputMs` and `lastKeydownMs` each time one listener. Check its event counter to tell whether a sample is new. |
-| Completion samples | `lastCompletionBeforeInputMs` times the completion input listener. `lastCompletionCommandMs` times a registered command, including synchronous publication. `completionCommands` counts those calls. Provider replies and later paint fall outside both clocks. |
+| Completion samples | `lastCompletionBeforeInputMs` times the completion input listener. `lastCompletionCommandMs` times a registered command, including synchronous publication. Provider replies and later paint fall outside both clocks. |
 | Command callback duration | `maxQueuedInputTurnMs` and `maxDragScrollStepMs` time the longest synchronous queued-input and drag-scroll callbacks on this mount. |
 | Navigation work | `navigationWorkMs` and `maxNavigationTurnMs` count initialization and scheduled navigation callbacks, including synchronous flushes. Nested work counts once. Later caret and render frames fall outside the measurement. |
 | Navigation preparation | `navigationPreparationMs` times the initial viewport and primary-caret geometry setup within navigation work. |

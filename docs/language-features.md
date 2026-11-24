@@ -191,8 +191,10 @@ The controller registers `completion.request`, `completion.dismiss`, `completion
 `completion.replace` on the owning editor at shortcut priority 30. Snippet choice commands
 (`snippet.choice-previous` and `snippet.choice-next`) also use 30. Placeholder navigation
 (`snippet.previous` and `snippet.next`) uses 40 so Tab advances an active snippet first.
-Automatic completion follows one caret or the linked carets in a snippet field. Press Ctrl/Cmd+Space
-to request suggestions at collapsed carets or on a selected snippet field.
+Automatic completion follows one caret or the linked carets in a snippet field. Ctrl/Cmd+Space also
+works with a single-line selection or multiple collapsed carets. For a selection, the request uses
+its higher offset in either direction. Accepting uses the provider's edit range when supplied and
+otherwise replaces the selected text. Undo restores the original selection.
 Typing decimal digits alone keeps automatic completion closed. Digits in an identifier can
 request suggestions, and a provider's advertised trigger character always takes precedence.
 Up and Down select one choice. PageUp and PageDown move a page and stop at the first or last choice.
