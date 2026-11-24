@@ -204,9 +204,8 @@ Local editing stays available. Reconnecting from another feature updates complet
 `lastCompletionBeforeInputMs` for the input listener and `lastCompletionCommandMs` for the most
 recent registered completion or snippet command. Both clocks stop on return.
 
-Completion and diagnostics share one binding and lease but have separate scopes. `prepareCompletion`
-receives the completion scope after synchronization. Cancellation skips pending preparation or
-discards a late result. Dispose the attachment, editor and provider separately.
+`prepareCompletion` receives request-scoped access after the document synchronizes. Cancelling
+completion leaves diagnostic updates active. Dispose the attachment, editor and provider separately.
 
 Automatic completion uses the text the editor accepted, including committed composition and advertised trigger characters. It waits for input to settle at the resulting revision and selection. Moving the caret cancels that request, even if you move back before the next frame.
 The controller registers `completion.request`, `completion.dismiss`, `completion.previous`,
