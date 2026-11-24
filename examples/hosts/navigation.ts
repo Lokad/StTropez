@@ -205,7 +205,8 @@ export class HostNavigationTools {
             if (!editor || (!replacedOrigin && job.origin.controller.getSnapshot().result !== result) || !this.host.canCapture(document)) {
                 this.publish({ message: "The captured destination cannot be presented in an available candidate pane." }); return false;
             }
-            if (!editor.reveal(at, { expectedRevision: at.document.revision, select: true })) return false;
+            const target = job.kind === "definition" ? { from: at.from, to: at.from } : at;
+            if (!editor.reveal(target, { expectedRevision: at.document.revision, select: true })) return false;
             focusSource(editor); return true;
         } finally {
             this.presenting = false;

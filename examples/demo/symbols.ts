@@ -38,7 +38,8 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
     (editor.element.closest("#workspace") ?? editor.element.ownerDocument.body).append(renamePopup);
     const locationsOverlay = mountAnchoredOverlay(editor, popup, { dismissOn: ["focus-leave"], onDismiss: () => cancelNavigation() });
     scope.defer(locationsOverlay.dispose);
-    type Query = { message: string; offset: number; revision: number; origin: NavigationOrigin; page: NavigationPage | undefined };
+    type Query = { kind: "definition" | "references"; message: string; offset: number; revision: number;
+        origin: NavigationOrigin; page: NavigationPage | undefined };
     let query: Query | undefined;
     const idle = () => { const s = editor.activity(); return !disposed && valid() && !s.composing && !s.pendingInput && !s.pendingCommand; };
     const navigation = createNavigationController(editor, provider, { canCapture: idle, resultLifetime: "view", documents: () => project.files.map(file => workspace.document(file.resource.documentId)),
@@ -56,7 +57,9 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
     };
     const choose = (captured: Query, choice: NavigationChoice) => query === captured && choice.open(at => {
         const file = project.files.find(file => file.resource.documentId === at.document.documentId); if (!file) return;
-        cancelNavigation(); open({ documentId: file.resource.documentId, revision: at.document.revision, from: at.from, to: at.to }, captured.origin);
+        cancelNavigation();
+        open({ documentId: file.resource.documentId, revision: at.document.revision,
+            from: at.from, to: captured.kind === "definition" ? at.from : at.to }, captured.origin);
     });
     const showNavigation = (captured: Query, message: string) => {
         captured.message = message;
@@ -85,13 +88,15 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
         popup.replaceChildren(note, pages, rows, close); locationsOverlay.show({ revision: captured.revision, offset: captured.offset }); markChoice(captured);
         if (focused) editor.focus();
     };
-    function request(kind: "definition" | "references", pointed?: number) {
+    function request(kind: Query["kind"], pointed?: number) {
         if (!idle()) return; dismissOther(); closeRename(false); cancelNavigation(); editor.focus();
         const caret = editor.view.getSnapshot().selection;
-        if (pointed === undefined) editor.viewport.revealOffset(caret.head, { affinity: caret.headAffinity ?? "after" });
+        if (pointed === undefined) editor.viewport.revealOffset(caret.head, {
+            affinity: caret.headAffinity ?? "after", vertical: "center-if-outside", horizontal: "nearest",
+        });
         const origin = project.navigation.capture(editor, pointed); if (!origin) return;
         void pendingNavigation.run({}, op => {
-            const captured: Query = { page: undefined, message: "", offset: pointed ?? caret.head, revision: op.document.revision, origin };
+            const captured: Query = { kind, page: undefined, message: "", offset: pointed ?? caret.head, revision: op.document.revision, origin };
             query = captured; showNavigation(captured, kind === "definition" ? "Finding definition…" : "Finding references…");
             const reply = navigation.request(kind, captured.offset).catch((error: unknown) =>
                 error instanceof Error ? `Cannot open this location: ${error.message}` : "This location is unavailable in the sample.");
@@ -130,7 +135,9 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
         if (!idle()) return false;
         dismissOther(); cancelNavigation(); closeRename(false);
         const caret = editor.view.getSnapshot().selection;
-        editor.viewport.revealOffset(caret.head, { affinity: caret.headAffinity ?? "after" });
+        editor.viewport.revealOffset(caret.head, {
+            affinity: caret.headAffinity ?? "after", vertical: "center-if-outside", horizontal: "nearest",
+        });
         const source = captureViewRequest(workspace, target, editor.view, { available: idle }); if (!source) return false;
         renameSource = source;
         source.signal.addEventListener("abort", () => {

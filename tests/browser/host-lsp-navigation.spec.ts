@@ -100,7 +100,7 @@ test.describe("plain LSP inspection/navigation", () => {
         await expect(results(page)).toHaveText(["Navigation companion:1:7 · declaration"]);
         await results(page).first().evaluate(node => { node.dataset.retained = "navigation-row"; });
         await results(page).first().click(); await waitForNavigation(page); await expect(field(page, "Secondary source")).toBeFocused(); expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")!.documentId).toBe(companion);
-        await expect(field(page, "Secondary source").locator("..").locator(".st-viewport-selected").first()).toBeInViewport();
+        await expect(field(page, "Secondary source").locator("..").locator('.st-viewport-row[data-line="0"]')).toBeInViewport();
         const mounted = (await snapshot(page)).bindings.mounts;
         await results(page).first().click(); await expect(field(page, "Secondary source")).toBeFocused();
         expect((await snapshot(page)).bindings.mounts).toBe(mounted);
@@ -231,7 +231,7 @@ test.describe("plain LSP inspection/navigation", () => {
         await button(page, "Return to navigation origin").click();
         await expect(source).toBeFocused();
     });
-    test("F12 from the secondary pane selects the definition when that pane opens the file", async ({ page }) => {
+    test("F12 from the secondary pane places the caret before the definition when that pane opens the file", async ({ page }) => {
         await seed(page, "// preceding line\n".repeat(100) + "catalogue;", 0);
         await button(page, "Add navigation companion").click();
         const secondary = field(page, "Secondary source");
@@ -247,11 +247,11 @@ test.describe("plain LSP inspection/navigation", () => {
         const after = await snapshot(page);
         const pane = page.getByRole("region", { name: "Right host pane", exact: true });
         await expect(pane.getByText("Navigation companion", { exact: true })).toBeInViewport();
-        expect(after.bindings.views.find(view => view.id === "secondary")?.selection).toMatchObject({ anchor: 6, head: 15 });
+        expect(after.bindings.views.find(view => view.id === "secondary")?.selection).toMatchObject({ anchor: 6, head: 6 });
         await expect(results(page)).toHaveCount(0);
         await expect(button(page, "Return to navigation origin")).toBeDisabled();
         await secondary.press("ArrowLeft");
-        expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")?.selection).toMatchObject({ anchor: 6, head: 6 });
+        expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")?.selection).toMatchObject({ anchor: 5, head: 5 });
         expect(after.source.id).toBe(before.source.id); expect(after.history).toEqual(before.history);
         await pane.getByRole("button", { name: "Show original source", exact: true }).click();
         await expect(secondary).toBeFocused();
@@ -426,7 +426,9 @@ test.describe("plain LSP inspection/navigation", () => {
         const text = "const unrelated = 123;\r\n".repeat(18_976) + "const target = 1;\r\n" + "target;\r\n".repeat(1023);
         await seed(page, text, text.lastIndexOf("target") + 2); const before = await snapshot(page);
         await hover(page); await expect(page.getByRole("tooltip")).toContainText("target"); await field(page).press("Escape"); await field(page).press("F12"); await waitForNavigation(page); await expect(results(page)).toHaveCount(1);
-        const selected = (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection; expect(selected).toMatchObject({ anchor: text.lastIndexOf("const target") + 6, head: text.lastIndexOf("const target") + 12 });
+        const start = text.lastIndexOf("const target") + 6;
+        expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection)
+            .toMatchObject({ anchor: start, head: start });
         await button(page, "Find references").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(64);
         const second = await results(page).nth(1).elementHandle(); expect(second).toBeTruthy();
         await expect(button(page, "Previous navigation results")).toBeDisabled();

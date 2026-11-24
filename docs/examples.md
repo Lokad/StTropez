@@ -110,7 +110,7 @@ returns to the original caret.
 | Completion | Type an identifier or member prefix, press Ctrl+Space or choose **Show completions**. Arrows select a result. Enter, Tab or a click accepts it. Escape closes the list. |
 | Type inspection | Hover over a symbol, or use **Inspect type** / Ctrl+K, Ctrl+I at the caret. Select tooltip text to copy it or follow a help link. After selecting text from the editor's tooltip, typing resumes at the editor selections. A plain click returns focus to the previous control. Escape closes the tooltip. Keyboard inspection also closes when focus leaves both the editor and the tooltip. |
 | Signature help | Type a provider trigger or use **Show signature help** / Ctrl+Shift+Space. Moving between arguments updates the active parameter. The overload controls choose another signature. |
-| Definition and references | F12 / Shift+F12 request locations. Results show the file, line, column and source excerpt. Arrows select a row, PageUp/PageDown move through result pages and Enter opens the selection. **Back to previous location** restores the source selection and view. With one caret, Back from a Ctrl/Cmd+click returns to the clicked character. Alt+Left also returns on Windows and Linux. Option+Left moves by word on Apple platforms. |
+| Definition and references | F12 puts the caret at the start of the definition. Shift+F12 lists references with file, line, column and source excerpt. Arrows select a row, PageUp/PageDown change pages and Enter selects that reference in the editor. **Back to previous location** restores the source selection and view. With one caret, Back from a Ctrl/Cmd+click returns to the clicked character. Alt+Left also returns on Windows and Linux. Option+Left moves by word on Apple platforms. |
 | Rename | Press F2 and type the new name. Enter previews the edits as soon as the provider confirms the target. A quoted property can be renamed. An ordinary string or a keyword beside a declaration returns focus to the source. Changing the name requires a fresh preview. Apply creates one undo step across the changed files. |
 | Quick fix | Press Ctrl+. in the source or choose **Check quick fixes** on a problem. Scrolling the caret offscreen hides the preview until it returns. Editing the source dismisses the popup. Clicking an edit-only quick fix applies it directly if it touches only the current file, uses at most four edits and totals at most 256 replaced or inserted UTF-16 units. Broader changes require confirmation. Switching previews while holding Apply requires a fresh click, even when switching back to the original choice. Enter applies a ready fix. With no applicable fix, Enter inserts a newline. |
 | Problems | Each diagnostic shows its file, line and column. Choose it to open the range, or expand its related locations. Use Next and Previous to page through long lists. Help links open on click and must match the demo’s HTTPS TypeScript-documentation policy. |
@@ -408,15 +408,14 @@ module discovery is pending, press F4 at the new location to refresh the links.
 Shift+F12 focuses the first reference. F12 jumps to a single definition or focuses the
 first of several. Use Up and Down to choose a result, Enter to open it, and Escape to
 return to the source. Leaving the editor during a lookup keeps focus where you put it.
-For declarations loaded by a host URI resolver, it uses the returned document's text and
-revision to label the result and select its range.
+For declarations loaded by a host URI resolver, the result uses the text and revision of the returned document.
 Closing a pane outside the language project leaves a pending definition lookup active.
 Opening another result in the same destination reuses its editor. If the host cannot open the
 pane, the panel shows the error. You can retry the same result. Alt+Left retraces successful
 definition, reference and module visits to open views, restoring selections and scroll.
 On Apple keyboards, use **Return to navigation origin** to keep Option+Left available for word movement.
-F12 can open a file in the same secondary pane that requested it. The new pane focuses the
-definition and selects its name. The heading identifies the file. **Show original source**
+F12 can open a file in the same secondary pane that requested it. The caret moves to the
+start of the definition. The heading identifies the file. **Show original source**
 reopens the secondary pane’s original document with its selection and scroll position.
 **Return to navigation origin** skips the replaced tab.
 If a result list or review page changes while you hold Next or Previous, releasing the button

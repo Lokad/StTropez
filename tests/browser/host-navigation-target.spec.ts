@@ -90,7 +90,9 @@ test("links and definitions retry a failed presentation and keep the requesting 
     await row.click();
     const target = page.getByRole("textbox", { name: "Declaration" });
     await expect(target).toBeFocused(); await expect(target).toHaveAttribute("readonly", "");
-    expect(await target.evaluate(node => { const field = node as HTMLTextAreaElement; return field.value.slice(field.selectionStart, field.selectionEnd); })).toBe("Currency");
+    const start = (await target.inputValue()).indexOf("Currency");
+    expect(await target.evaluate((field: HTMLTextAreaElement) => [field.selectionStart, field.selectionEnd]))
+        .toEqual([start, start]);
     await page.getByRole("button", { name: "Return to navigation origin" }).click();
     await expect(page.getByRole("textbox", { name: "Main", exact: true })).toBeFocused();
     expect(await cleanup.evaluate(dispose => dispose())).toBe(true);

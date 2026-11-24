@@ -19,7 +19,9 @@ test("real definition and reference navigation open the captured file and range 
     const releaseFolds = await holdDemoFolds(page, "pricing.ts");
     await openDemo(page); const source = await symbol(page); await source.press("F12");
     const pricing = page.getByRole("textbox", { name: "pricing.ts", exact: true }); await expect(pricing).toBeFocused();
-    expect(await pricing.evaluate(node => { const input = node as HTMLTextAreaElement; return input.value.slice(input.selectionStart, input.selectionEnd); })).toBe("calculateTotal");
+    const definition = (await pricing.inputValue()).indexOf("function calculateTotal") + "function ".length;
+    expect(await pricing.evaluate((field: HTMLTextAreaElement) => [field.selectionStart, field.selectionEnd]))
+        .toEqual([definition, definition]);
     await page.locator("#code-menu summary").click(); await page.getByRole("button", { name: "Find references", exact: true }).click();
     const locations = page.getByRole("region", { name: "Symbol locations", exact: true });
     await expect(locations.getByRole("button", { name: /^main.ts ·/ }).first()).toBeVisible();
@@ -114,6 +116,47 @@ test("a delayed definition leaves output focus, Back history and the next typing
     await pricing.press("Control+Home"); await pricing.pressSequentially("// Keep my current helper\n"); release!();
     await expect(pricing).toBeFocused(); await expect(page.locator("#editor")).toContainText("// Keep my current helper");
     await expect(page.locator(".demo-symbols")).toBeHidden();
+});
+
+test("symbol commands keep an already visible declaration on the same screen row", async ({ page }) => {
+    await openDemo(page);
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    const text = Array.from({ length: 120 }, (_, i) => `const symbol${i} = ${i};`).join("\n");
+    await source.press("Control+a");
+    await page.keyboard.insertText(text);
+    await source.press("Control+f");
+    await page.locator("#find-query").fill("symbol80");
+    await expect(page.locator("#find-status")).toHaveText("1 of 1");
+    await page.locator("#find-next").click();
+    await page.locator("#find-close").click();
+    await source.press("ArrowLeft");
+    await source.press("ArrowRight");
+    const row = page.locator('#editor .st-viewport-row[data-line="80"]');
+    const viewport = page.locator("#editor .st-viewport").first();
+    await row.evaluate(node => {
+        const scroller = node.closest(".st-viewport")!;
+        const box = node.getBoundingClientRect();
+        scroller.scrollTop += box.top - scroller.getBoundingClientRect().top - 2 * box.height;
+    });
+    const scroll = () => viewport.evaluate(el => el.scrollTop);
+    const top = await scroll();
+    for (const key of ["F2", "Shift+F12", "F12"]) {
+        await source.press(key);
+        if (key === "F2") {
+            await expect(page.getByLabel("New name")).toHaveValue("symbol80");
+            await page.getByLabel("New name").press("Escape");
+        } else if (key === "Shift+F12") {
+            const locations = page.getByRole("region", { name: "Symbol locations" });
+            await expect(locations.getByRole("button", { name: /^main.ts ·/ }).first()).toBeVisible();
+            await source.press("Escape");
+        } else {
+            await expect(page.locator("#cursor")).toHaveText("Ln 81, Col 7");
+        }
+        await expect(source).toBeFocused();
+        expect(await scroll(), key).toBe(top);
+    }
+    await page.keyboard.type("x");
+    await expect(row).toHaveText("const xsymbol80 = 80;");
 });
 
 test("rename preparation distinguishes declarations, string values and quoted property names", async ({ page }) => {
