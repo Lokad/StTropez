@@ -1049,6 +1049,9 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     await locations.locator('[data-location="0"]').press("ArrowUp"); await expect(locations).toContainText("1153–1201 of 1201");
     await expect(locations.locator('[data-location="1200"] code')).toHaveText("const use1199 = sharedValue;");
     const backPage = locations.getByRole("button", { name: "Previous locations" });
+    const forwardPage = locations.getByRole("button", { name: "Next locations" });
+    const [backBox, forwardBox] = await Promise.all([backPage.boundingBox(), forwardPage.boundingBox()]);
+    expect(Math.abs(backBox!.y - forwardBox!.y)).toBeLessThan(1);
     await expect.poll(() => backPage.evaluate(button => {
         const box = button.getBoundingClientRect();
         return button.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));

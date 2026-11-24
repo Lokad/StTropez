@@ -74,7 +74,11 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
             button.addEventListener("click", () => choose(captured, location)); buttons.push(button);
         }
         const pages = document.createElement("div"), previous = document.createElement("button"), next = document.createElement("button"), count = document.createElement("span");
-        previous.textContent = "Previous locations"; next.textContent = "Next locations";
+        pages.className = "demo-location-pages";
+        previous.textContent = "Previous";
+        previous.setAttribute("aria-label", "Previous locations");
+        next.textContent = "Next";
+        next.setAttribute("aria-label", "Next locations");
         previous.disabled = !page?.previousPage; next.disabled = !page?.nextPage; pages.hidden = previous.disabled && next.disabled;
         if (page) count.textContent = `${page.first + 1}–${page.first + page.locations.length} of ${page.count}`;
         const movePage = (action: "previousPage" | "nextPage") => {
