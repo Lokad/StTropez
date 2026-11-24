@@ -10,7 +10,7 @@ import * as protocol from "../../src/protocol/index.ts";
 export { protocol };
 export const settled = async () => { await setImmediate(); await setImmediate(); };
 export function clientFixture(t: TestContext, connect?: () => Promise<void>, resolveTarget?: LspTargetResolver,
-    options?: Partial<Pick<LspWorkspaceOptions, "now" | "schedule" | "maxScopes">>) {
+    options?: Partial<Pick<LspWorkspaceOptions, "now" | "schedule" | "maxScopes" | "applyEdit">>) {
     const workspace = new Workspace();
     const source = workspace.createTextResource({ scope: "public-client", resource: "source", variant: "working" }, "Source", { value: "alpha beta" }, undefined,
         { language: { uri: "generic:source", languageId: "generic" } });

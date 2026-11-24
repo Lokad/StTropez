@@ -302,8 +302,8 @@ The provider retains the resource and checks its identity after loading. See [ta
 
 The client advertises `workspace/executeCommand` by default. Set `applyEdit: true` to accept incoming edits.
 A session advertising incoming edits requires a `workspace/applyEdit` handler before connecting;
-the workspace owner supplies routing for feature scopes. `createLspCommandRunner(scope)` installs
-the scoped decision handler. Supply captured project snapshots, `isCurrent`, optional preparation
+the workspace owner routes each edit to the command that reserved the connection.
+Use `createLspCommandRunner(scope)` with captured project snapshots, `isCurrent`, optional preparation
 and an explicit asynchronous review callback. Use `run` for advertised commands or `runAuthorized`
 with a host-approved exact invocation route. Advertisement alone does not authorize execution.
 
@@ -317,7 +317,9 @@ active server command receives incoming edit requests. The runner refuses unsoli
 requests. Host command handlers use their captured `applyEdit` callback under the same checks. Before
 each approval, recheck the request, target identities and revisions, and host permissions.
 
-`scope.requestCommand` also reserves this session-wide lane. For a host-defined status command
+`scope.requestCommand` also reserves this session-wide lane. To handle edits on a raw command,
+call `scope.reserveCommand(handler)`, send through its `requestCommand`, and `release()` it in
+a `finally` block. For a host-defined status command
 whose server contract guarantees it never sends `workspace/applyEdit`, a host can poll with
 `scope.request("workspace/executeCommand", { command, arguments: [] })`. The host validates the
 command and reply. If the poll times out, the edit lane keeps its current state.

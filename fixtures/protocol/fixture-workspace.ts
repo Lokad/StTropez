@@ -48,12 +48,19 @@ export class FixtureLspWorkspace extends BrowserLspWorkspace {
 
     override createScope(): LspWorkspaceScope {
         const scope = super.createScope();
-        return this.wrap(scope, (take, clear) => ({
-            [beginReadRequest]: (interrupted, documents) => this.wrap(scope[beginReadRequest](interrupted, documents)),
-            requestCommand: (command, args, timeout, authorization) => this.sendCommand(command, take(commandKey(command)),
-                () => scope.requestCommand(command, args, timeout, authorization)),
-            cancel: () => { clear(); scope.cancel(); },
-        }));
+        return this.wrap(scope, (take, clear) => {
+            const wrapCommand = (send: LspWorkspaceScope["requestCommand"]): typeof send => (command, ...args) =>
+                this.sendCommand(command, take(commandKey(command)), () => send(command, ...args));
+            return {
+                [beginReadRequest]: (interrupted, documents) => this.wrap(scope[beginReadRequest](interrupted, documents)),
+                requestCommand: wrapCommand(scope.requestCommand),
+                reserveCommand: applyEdit => {
+                    const reservation = scope.reserveCommand(applyEdit);
+                    return { ...reservation, requestCommand: wrapCommand(reservation.requestCommand) };
+                },
+                cancel: () => { clear(); scope.cancel(); },
+            };
+        });
     }
 
     private wrap<T extends LspReadRequest>(scope: T,

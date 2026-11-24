@@ -42,7 +42,9 @@ export type LspWorkspaceScope = ScopeAccess & Observable<LspWorkspaceSnapshot> &
     /** Binding/connection authority independent of this scope's request generation; no new retention. */
     captureBinding: (document: LspDocument, method?: LspFeature) => LspBindingCapture | undefined;
     observeDiagnostics: (document: LspDocument) => Observable<LspDiagnosticState>;
-    reserveCommand: () => Readonly<{ isCurrent: () => boolean; release: () => void }>;
+    reserveCommand: (applyEdit?: Handler) => Readonly<{
+        requestCommand: LspSession["requestCommand"]; isCurrent: () => boolean; release: () => void;
+    }>;
     resolveTarget: ResolveRetainedTarget;
     /** Route deferred host callback failures through the provider's existing onError policy. */
     reportError: (error: unknown) => void;
@@ -65,8 +67,9 @@ export type LspWorkspaceOptions = LspSessionOptions & Readonly<{
 
 type Handler = Parameters<LspSession["onRequest"]>[1];
 type DocumentEntry = { id: DocumentId; language: DocumentLanguage; binding: LspDocument; lease: ResourceLease; active: boolean; queued: boolean; stop: () => void; users: Set<() => void>; diagnostics: Store<LspDiagnosticState> };
-type Scope = { active: boolean; generation: number; close: () => void; applyEdit: Handler | undefined; interruptions: Set<() => void> };
-type CommandIntent = { scope: Scope; epoch: number; generation: number; registrationGeneration: number; sent: boolean; cancelled: boolean; listeners: Set<() => void> };
+type Scope = { active: boolean; generation: number; close: () => void; interruptions: Set<() => void> };
+type CommandIntent = { scope: Scope; epoch: number; generation: number; registrationGeneration: number; sent: boolean;
+    cancelled: boolean; listeners: Set<() => void>; applyEdit: Handler | undefined };
 const stale = () => staleRequest("Captured provider participation changed.");
 const cancelled = () => cancelledRequest("Provider feature scope was cancelled.");
 export function sameDocument(live: DocumentSnapshot | undefined, snapshot: DocumentSnapshot): boolean {
@@ -189,12 +192,12 @@ export class LspWorkspace {
         }) : undefined;
         this.stopApply = options.applyEdit ? this.session.onRequest(applyEditMethod, (value, context) => {
             const owner = this.command;
-            if (!owner || !owner.sent || !this.commandCurrent(owner) || owner.epoch !== context.epoch || !owner.scope.applyEdit) return { applied: false, failureReason: "No available captured command review intent." };
+            if (!owner?.sent || !owner.applyEdit || !this.commandCurrent(owner) || owner.epoch !== context.epoch) return { applied: false, failureReason: "No available captured command review intent." };
             const isCurrent = () => context.isCurrent() && this.commandCurrent(owner);
             const captured: LspRequestContext = Object.freeze({ id: context.id, epoch: context.epoch, get cancelled() { return context.cancelled || !isCurrent(); }, isCurrent,
                 onCancel: listener => { let done = false; const notify = () => { if (!done) { done = true; void Promise.resolve().then(listener).catch(error => this.report(error)); } }; const stop = context.onCancel(notify);
                     owner.listeners.add(notify); if (!isCurrent()) notify(); return () => { done = true; stop(); owner.listeners.delete(notify); }; } });
-            return owner.scope.applyEdit(value, captured);
+            return owner.applyEdit(value, captured);
         }) : undefined;
     }
     private report(error: unknown): void { try { this.options.onError?.(error instanceof Error ? error : new Error(String(error))); } catch { /* Reporting cannot prevent cleanup. */ } }
@@ -366,7 +369,7 @@ export class LspWorkspace {
 
     createScope(): LspWorkspaceScope {
         this.writable(); if (this.scopes.size >= (this.options.maxScopes ?? wireLimits.scopes)) throw new RangeError("Provider scope limit exceeded.");
-        const scope: Scope = { active: true, generation: 0, close: () => {}, applyEdit: undefined, interruptions: new Set() }, documents = new Map<string, LspDocument>();
+        const scope: Scope = { active: true, generation: 0, close: () => {}, interruptions: new Set() }, documents = new Map<string, LspDocument>();
         const handles = new Map<LspDocument, DocumentEntry>(), pending = new Set<{ cancel: () => void }>(), stops = new Set<() => void>();
         const documentCalls = new Map<LspDocument, Set<{ cancel: () => void }>>();
         let closedState: LspWorkspaceSnapshot | undefined;
@@ -407,15 +410,32 @@ export class LspWorkspace {
         const cancel = () => { if (!scope.active) return; scope.generation++; if (this.command?.scope === scope) this.endCommand(this.command, this.command.sent); for (const notify of [...scope.interruptions]) notify(); for (const call of [...pending]) call.cancel(); };
         scope.close = () => {
             if (!scope.active) return; cancel(); scope.active = false; closedState = Object.freeze({ ...this.getSnapshot(), phase: "disposed", commandAvailable: false });
-            for (const stop of [...stops]) stop(); for (const document of [...documents.values()]) document.dispose(); this.scopes.delete(scope); scope.applyEdit = undefined;
+            for (const stop of [...stops]) stop(); for (const document of [...documents.values()]) document.dispose(); this.scopes.delete(scope);
         };
         this.scopes.add(scope);
         const state: Observable<LspWorkspaceSnapshot> = Object.freeze({ getSnapshot: () => closedState ?? this.getSnapshot(), subscribe: listener => { writable(); return listen(this.subscribe(listener)); } });
-        const reserve = (): CommandIntent => {
+        const reserve = (applyEdit?: Handler): CommandIntent => {
             writable(); const state = this.session.getSnapshot();
             if (state.phase !== "ready" || this.command || this.quarantinedEpoch === state.epoch) throw staleRequest("Provider command lane requires an available captured intent or fresh connection.");
-            const intent: CommandIntent = { scope, epoch: state.epoch, generation: scope.generation, registrationGeneration: state.registrationVersion(executeCommandMethod), sent: false, cancelled: false, listeners: new Set() };
+            const intent: CommandIntent = { scope, epoch: state.epoch, generation: scope.generation, registrationGeneration: state.registrationVersion(executeCommandMethod), sent: false, cancelled: false, listeners: new Set(), applyEdit };
             this.command = intent; this.store.set(this.snapshotState(), this.changed); this.queueDelivery(); return intent;
+        };
+        const sendCommand = (intent: CommandIntent, ...args: Parameters<LspSession["requestCommand"]>) => {
+            if (intent.sent || !this.commandCurrent(intent)) throw staleRequest("Command reservation expired.");
+            intent.sent = true;
+            let waiting = true;
+            try {
+                const raw = this.session.requestCommand(...args);
+                const call = track({ ...raw, cancel: () => { if (waiting) this.endCommand(intent, true); raw.cancel(); } });
+                const result = call.result.catch(error => {
+                    if (error instanceof RpcError && error.code === rpcCodes.timeout) this.endCommand(intent, true);
+                    throw error;
+                }).finally(() => { waiting = false; this.endCommand(intent, false, false); });
+                return Object.freeze({ ...call, result, isCurrent: () => current(intent.generation) && !intent.cancelled && raw.isCurrent() });
+            } catch (error) {
+                this.endCommand(intent, false);
+                throw error;
+            }
         };
         const scopedHandler = (handler: Handler): Handler => (value, context) => new Promise((resolve, reject) => {
             const generation = scope.generation, listeners = new Set<() => void>(); let done = false, stopRemote = () => {};
@@ -439,7 +459,9 @@ export class LspWorkspace {
                 writable(); const generation = scope.generation;
                 return this.loadTarget(uri, context, () => current(generation));
             },
-            reserveCommand: () => { const intent = reserve(); return Object.freeze({ isCurrent: () => this.commandCurrent(intent),
+            reserveCommand: applyEdit => { const intent = reserve(applyEdit); return Object.freeze({
+                requestCommand: (...args: Parameters<LspSession["requestCommand"]>) => sendCommand(intent, ...args),
+                isCurrent: () => this.commandCurrent(intent),
                 release: () => { if (this.command === intent) this.endCommand(intent, intent.sent); } }); },
             attachDocument: attach,
             isDocumentCurrent: (document, snapshot) => {
@@ -522,22 +544,12 @@ export class LspWorkspace {
             request: (method: string, params?: JsonValue): RpcCall<JsonValue> => { writable(); return track(this.session.request(method, params)); },
             notify: (method, params) => { writable(); this.session.notify(method, params); },
             onRequest: (method, handler) => {
-                writable(); if (method !== applyEditMethod) return listen(this.session.onRequest(method, scopedHandler(handler)));
-                if (!this.options.applyEdit || scope.applyEdit) throw new TypeError("Duplicate or unadvertised edit handler."); scope.applyEdit = handler;
-                return listen(() => { if (scope.applyEdit === handler) scope.applyEdit = undefined; });
+                writable();
+                if (method === applyEditMethod) throw new TypeError("Reserve the command to handle workspace edits.");
+                return listen(this.session.onRequest(method, scopedHandler(handler)));
             },
             onNotification: (method, handler) => { writable(); return listen(this.session.onNotification(method, (value, epoch) => { if (scope.active) return handler(value, epoch); })); },
-            requestCommand: (command: string, args: readonly JsonValue[] = [], timeoutMs?: number, authorization?: Parameters<LspSession["requestCommand"]>[3]) => {
-                writable(); const reserved = this.command;
-                if (reserved && (reserved.scope !== scope || reserved.sent || !this.commandCurrent(reserved))) throw staleRequest("Provider command lane is unavailable.");
-                const intent = reserved ?? reserve(); intent.sent = true; let waiting = true;
-                try {
-                    const raw = this.session.requestCommand(command, args, timeoutMs, authorization), call = track({ ...raw, cancel: () => { if (waiting) this.endCommand(intent, true); raw.cancel(); } });
-                    const result = call.result.then(value => { waiting = false; return value; }, error => { waiting = false; if (error instanceof RpcError && error.code === rpcCodes.timeout) this.endCommand(intent, true); throw error; })
-                        .finally(() => this.endCommand(intent, false, false));
-                    return Object.freeze({ ...call, result, isCurrent: () => scope.active && scope.generation === intent.generation && !intent.cancelled && raw.isCurrent() });
-                } catch (error) { this.endCommand(intent, false); throw error; }
-            },
+            requestCommand: (...args: Parameters<LspSession["requestCommand"]>) => sendCommand(reserve(), ...args),
             snapshotOwnership: () => this.session.snapshotOwnership(),
         });
         return api;

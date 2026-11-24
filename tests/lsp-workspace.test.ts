@@ -410,17 +410,18 @@ test("one reconnect reopens latest shared snapshots once and invalidates old cap
 
 test("command review is exclusive and cancellation quarantines uncorrelated edits without disconnecting readers", async t => {
     const f = fixture(t), a = f.provider.createScope(), b = f.provider.createScope(), entered = latch<void>(), cancelled = latch<void>(), decision = latch<{ applied: boolean }>();
-    const doc = a.attachDocument(f.source.documentId); b.attachDocument(f.source.documentId); let context: LspRequestContext | undefined, wrongOwner = 0;
-    a.onRequest("workspace/applyEdit", async (_value, captured) => { context = captured; const stop = captured.onCancel(() => cancelled.resolve()); entered.resolve(); try { return await decision.promise; } finally { stop(); } });
-    b.onRequest("workspace/applyEdit", () => { wrongOwner++; return { applied: true }; }); await a.ensureConnected();
+    const doc = a.attachDocument(f.source.documentId); b.attachDocument(f.source.documentId); let context: LspRequestContext | undefined;
+    await a.ensureConnected();
+    const reservation = a.reserveCommand(async (_value, captured) => { context = captured; const stop = captured.onCancel(() => cancelled.resolve()); entered.resolve(); try { return await decision.promise; } finally { stop(); } });
+    assert.throws(() => a.requestCommand("test.edit"), RpcError);
     const peer = f.peers[0]!; peer.rpc.onRequest("workspace/executeCommand", async () => peer.rpc.sendRequest("workspace/applyEdit", { edit: { changes: {} } }));
-    const call = a.requestCommand("test.edit"), rejected = assert.rejects(call.result, error => error instanceof RpcError && error.code === -32800); await entered.promise;
+    const call = reservation.requestCommand("test.edit"), rejected = assert.rejects(call.result, error => error instanceof RpcError && error.code === -32800); await entered.promise;
     assert.ok(context!.isCurrent()); assert.throws(() => b.requestCommand("test.edit"), RpcError);
     assert.deepEqual(await b.requestDocument("textDocument/definition", b.attachDocument(f.source.documentId), index => ({ position: index.at(0) })).result, []);
     call.cancel(); await rejected; await cancelled.promise; assert.equal(context!.isCurrent(), false); decision.resolve({ applied: false }); await settled();
     assert.equal(f.provider.snapshot().commandQuarantined, true); assert.equal(f.provider.getSnapshot().commandRequiresReconnect, true); assert.equal(f.provider.getSnapshot().commandAvailable, false); assert.throws(() => b.requestCommand("test.edit"), RpcError);
     assert.deepEqual(await peer.rpc.sendRequest("workspace/applyEdit", { edit: { changes: {} } }), { applied: false, failureReason: "No available captured command review intent." });
-    assert.equal(wrongOwner, 0); assert.equal(f.provider.getSnapshot().phase, "ready"); assert.equal(f.provider.snapshot().terminated, 0);
+    assert.equal(f.provider.getSnapshot().phase, "ready"); assert.equal(f.provider.snapshot().terminated, 0);
     assert.ok(b.synchronized(b.attachDocument(f.source.documentId))!.isCurrent()); assert.equal(doc.getSnapshot().buffer.length, "a😀\r\nsource".length);
     await f.provider.reconnect(); assert.equal(f.provider.snapshot().commandQuarantined, false); assert.equal(f.provider.getSnapshot().commandAvailable, true);
     f.peers[1]!.rpc.onRequest("workspace/executeCommand", () => "done"); const next = b.requestCommand("test.edit"); assert.equal(await next.result, "done"); assert.equal(next.isCurrent(), true);
@@ -521,7 +522,7 @@ test("feature requests require explicit reconnect after transport loss", async t
 
 test("command reservation blocks competing preparation before sync and preserves reads during recovery", async t => {
     const f = fixture(t), a = f.provider.createScope(), b = f.provider.createScope(), doc = a.attachDocument(f.source.documentId); b.attachDocument(f.source.documentId); await a.ensureConnected();
-    const first = createLspCommandRunner(a), second = createLspCommandRunner(b), entered = latch<void>(), answer = latch<string>(); let prepared = 0;
+    const first = createLspCommandRunner(a), second = createLspCommandRunner(a), entered = latch<void>(), answer = latch<string>(); let prepared = 0;
     t.after(() => { first.dispose(); second.dispose(); });
     const scope = (insert: string) => ({ snapshots: () => [f.workspace.document(f.source.documentId)], isCurrent: () => true,
         prepare: () => { prepared++; f.edit(f.source.documentId, insert); }, review: async () => ({ applied: false }) });

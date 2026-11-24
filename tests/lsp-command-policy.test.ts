@@ -17,7 +17,8 @@ const run = async (client: ReturnType<typeof createLspActionClient>, f: ReturnTy
 };
 
 test("the direct runner snapshots command identity and arguments before host preparation", async t => {
-    const f = clientFixture(t), scope = f.provider.createScope(), runner = protocol.createLspCommandRunner(scope);
+    const f = clientFixture(t, undefined, undefined, { applyEdit: false });
+    const scope = f.provider.createScope(), runner = protocol.createLspCommandRunner(scope);
     t.after(() => { runner.dispose(); scope.dispose(); }); await scope.ensureConnected();
     const invocation = { title: "captured", command: "host.allowed", arguments: [{ token: 1 }] };
     await runner.runAuthorized(invocation, { ...scopeFor(f), prepare: () => { invocation.command = "other"; invocation.arguments[0]!.token = 2; } }, { kind: "server" });

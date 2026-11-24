@@ -1,4 +1,4 @@
-import { applyEditMethod, executeCommandMethod } from "./lsp-methods.ts";
+import { executeCommandMethod } from "./lsp-methods.ts";
 import { cancelledRequest, staleRequest, wireLimits, jsonSnapshot } from "./wire.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
 import type { JsonValue } from "./wire.ts";
@@ -70,21 +70,23 @@ export function createLspCommandRunner(session: LspWorkspaceScope, notify: () =>
         } catch (error) { return no(error instanceof Error ? error.message : "Invalid workspace edit request."); }
         finally { targets?.dispose(); incoming = false; changed(); }
     };
-    const stopState = session.subscribe(changed), stopApply = session.onRequest(applyEditMethod, (value, context) =>
-        apply(active?.route.kind === "server" ? active : undefined, value, context));
+    const stopState = session.subscribe(changed);
     const run = async (invocation: LspCommand, scope: LspCommandScope, route: LspCommandRoute, allowEdits: boolean): Promise<LspCommandReceipt> => {
         if (disposed || active || !scope.isCurrent() || !(route.isCurrent?.() ?? true)) throw staleRequest("Captured command is unavailable or changed.");
         const argumentsValue = jsonSnapshot(invocation.arguments);
         if (!Array.isArray(argumentsValue) || JSON.stringify(argumentsValue).length > wireLimits.commandArgumentUnits) throw new RangeError("LSP command arguments exceed their limit.");
-        const captured = Object.freeze({ ...invocation, arguments: argumentsValue as readonly JsonValue[] }), reservation = session.reserveCommand();
-        const state = session.getSnapshot(), op: Active = { scope, route, allowEdits, epoch: state.epoch, generation: state.registrationVersion(executeCommandMethod) }; active = op;
+        const captured = Object.freeze({ ...invocation, arguments: argumentsValue as readonly JsonValue[] });
+        const state = session.getSnapshot();
+        const op: Active = { scope, route, allowEdits, epoch: state.epoch, generation: state.registrationVersion(executeCommandMethod) };
+        const reservation = session.reserveCommand(route.kind === "server" ? (value, context) => apply(op, value, context) : undefined);
+        active = op;
         let stopCancel = () => {};
         try {
             scope.prepare?.(); await sync(scope);
             if (!current(op) || !scope.isCurrent() || !reservation.isCurrent()) throw staleRequest("Captured command intent changed.");
             let value: JsonValue;
             if (route.kind === "server") {
-                op.call = session.requestCommand(captured.command, captured.arguments, 120000, { command: captured.command, arguments: captured.arguments,
+                op.call = reservation.requestCommand(captured.command, captured.arguments, 120000, { command: captured.command, arguments: captured.arguments,
                     isCurrent: route.isCurrent ?? (() => true) });
                 value = await op.call.result;
             } else {
@@ -112,5 +114,5 @@ export function createLspCommandRunner(session: LspWorkspaceScope, notify: () =>
         },
         runAuthorized: (invocation: LspCommand, scope: LspCommandScope, route: LspCommandRoute) => run(invocation, scope, Object.freeze({ ...route }), true),
         snapshot: () => Object.freeze({ received, refused }),
-        dispose: () => { if (disposed) return; disposed = true; stopState(); stopApply(); active?.call?.cancel(); changed(); invalidations.clear(); } });
+        dispose: () => { if (disposed) return; disposed = true; stopState(); active?.call?.cancel(); changed(); invalidations.clear(); } });
 }
