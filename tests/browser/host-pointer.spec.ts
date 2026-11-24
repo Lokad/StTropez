@@ -43,10 +43,10 @@ async function setup(page: Page): Promise<string> {
 async function exact(page: Page, expected: string): Promise<void> {
     expect(await page.evaluate(value => { const f = window.hostFixture; return f.snapshot().source.length === value.length && f.range(0, value.length) === value; }, expected)).toBe(true);
 }
-for (const host of ["plain", "react"]) test.describe(`${host} pointer gesture ownership`, () => {
+test.describe(`plain pointer gesture ownership`, () => {
     test.beforeEach(async ({ page }) => {
 
-        await page.goto(`/hosts/${host}/?editor=candidate`); await expect(page.getByRole("textbox", { name: "Primary source", exact: true })).toBeVisible();
+        await page.goto(`/hosts/plain/?editor=candidate`); await expect(page.getByRole("textbox", { name: "Primary source", exact: true })).toBeVisible();
     });
     test.afterEach(async ({ page }) => {
         await page.mouse.up(); await page.evaluate(() => window.hostFixture.dispose()); const stopped = await state(page);

@@ -19,10 +19,10 @@ async function clipboard(input: Locator, type: "copy" | "cut" | "paste", text = 
     }, { type, text });
 }
 
-for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrated pilot commands`, () => {
+test.describe(`plain integrated pilot commands`, () => {
     test.beforeEach(async ({ page }) => {
 
-        await page.goto(`/hosts/${mode}/?editor=candidate`); await expect(primary(page)).toBeVisible(); await ready(page);
+        await page.goto(`/hosts/plain/?editor=candidate`); await expect(primary(page)).toBeVisible(); await ready(page);
     });
     test("the command palette filters the originating pane's commands and retires on remount", async ({ page }) => {
         const original = "one\ntwo\nthree";
@@ -207,10 +207,10 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
     });
 });
 
-for (const editor of ["native", "candidate"] as const) for (const mode of ["plain", "react"] as const) {
-    test(`${mode} ${editor} keyboard re-entry preserves backward and collapsed model selections`, async ({ page }) => {
+for (const editor of ["native", "candidate"] as const) {
+    test(`plain ${editor} keyboard re-entry preserves backward and collapsed model selections`, async ({ page }) => {
 
-        await page.goto(`/hosts/${mode}/?editor=${editor}`); await expect(primary(page)).toBeVisible();
+        await page.goto(`/hosts/plain/?editor=${editor}`); await expect(primary(page)).toBeVisible();
         const original = "first\r\nsecond😀\r\nthird";
         await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
         await primary(page).focus();

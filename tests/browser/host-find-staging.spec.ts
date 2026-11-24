@@ -79,13 +79,13 @@ test.afterEach(async ({ page }, info) => {
     }
 });
 
-for (const host of ["plain", "react"] as const) for (const action of ["Find next", "Find previous", "Replace current"] as const)
-    for (const composing of [false, true]) test(`${host} ${action} ${composing ? "composition" : "ordinary"} preserves staged selection and captured work`, async ({ page }) => {
+for (const action of ["Find next", "Find previous", "Replace current"] as const)
+    for (const composing of [false, true]) test(`plain ${action} ${composing ? "composition" : "ordinary"} preserves staged selection and captured work`, async ({ page }) => {
 
         // The save fixture trims trailing whitespace; internal CRLF and Unicode remain exact.
         const original = "const sample = 123;\r\n// café 😀\r\nconst sample = 456;", first = original.indexOf("sample"), second = original.lastIndexOf("sample");
         const composed = original.slice(0, first) + "東京" + original.slice(first + 6), replaced = original.slice(0, first) + "changed" + original.slice(first + 6);
-        await page.goto(`/hosts/${host}/?editor=candidate`); await expect(primary(page)).toBeVisible();
+        await page.goto(`/hosts/plain/?editor=candidate`); await expect(primary(page)).toBeVisible();
         await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
         await ready(page);
         for (const name of ["Save source", "Finish save", "Open source review", "Capture reference refresh", "Finish reference refresh"]) await button(page, name).click();

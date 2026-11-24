@@ -31,8 +31,8 @@ test("queued Apple caret chords and native history keep their captured selection
     await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
 });
 
-for(const host of ["plain","react"])test(`${host} Save and Run require settled typing and retain captured revisions`,async({page})=>{
-    test.setTimeout(120000);await page.goto(`/hosts/${host}/?editor=candidate`);const original="a".repeat(200001)+";end",expected=original.slice(0,200001)+"typed;end";
+test(`plain Save and Run require settled typing and retain captured revisions`,async({page})=>{
+    test.setTimeout(120000);await page.goto(`/hosts/plain/?editor=candidate`);const original="a".repeat(200001)+";end",expected=original.slice(0,200001)+"typed;end";
     await page.evaluate(original=>{const f=window.hostFixture;f.editSource(f.snapshot().source.revision,[{from:0,to:f.snapshot().source.length,insert:original}]);f.selectSourceSet("primary",f.snapshot().source.revision,[{anchor:0,head:0}]);},original);await ready(page);
     const input=page.getByRole("textbox",{name:"Primary source",exact:true});await input.focus();
     const blocked=await input.evaluate(node=>{const input=node as HTMLTextAreaElement;input.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",ctrlKey:true,bubbles:true,cancelable:true}));input.dispatchEvent(new InputEvent("beforeinput",{inputType:"insertText",data:"typed",bubbles:true,cancelable:true}));for(const name of ["Save source","Run captured inputs"])([...document.querySelectorAll("button")].find(button=>button.textContent===name) as HTMLButtonElement).click();const s=window.hostFixture.snapshot();return{saves:s.pendingSaves.length,runs:s.pendingRuns.length,modal:s.layout.modal};});

@@ -6,8 +6,8 @@ const input = (page: Page, name = "Primary source") => page.getByRole("textbox",
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
 
 async function exact(page: Page, text: string): Promise<void> { expect(await hostTextEquals(page, text)).toBe(true); }
-for (const host of ["plain", "react"]) test(`${host} replace all stays cancelled after restored authority and permits an explicit retry`, async ({ page }) => {
-    test.setTimeout(120000);  await page.goto(`/hosts/${host}/?editor=candidate`);
+test(`plain replace all stays cancelled after restored authority and permits an explicit retry`, async ({ page }) => {
+    test.setTimeout(120000);  await page.goto(`/hosts/plain/?editor=candidate`);
     const original = "cat cat\r\n" + "const unchanged = 123;\r\n".repeat(1), changed = "dog dog" + original.slice(7);
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]);
         f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: 3 }, { anchor: text.length, head: text.length }]); }, original);

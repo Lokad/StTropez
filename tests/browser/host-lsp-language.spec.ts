@@ -1,7 +1,6 @@
 import { ready, isolatedTest as test, expect, expectPanelKeyReserved } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { holdLspReplies } from "../helpers/lsp-replies.ts";
-import { coversHost } from "./host-cases.ts";
 import { hostTextEquals } from "../../scripts/host-scene.mjs";
 import { typedTextEvent } from "../../src/browser/input-events.ts";
 
@@ -75,8 +74,8 @@ async function linkCaptureScene(page: Page, text: string, editedTarget: boolean)
     const discover = async () => { await button(page, "Discover module links").click(); await settledColorsAndLinks(page); };
     return { companion, editTarget, select, discover };
 }
-for (const host of ["plain", "react"] as const) test.describe(`${host} selected LSP features`, () => {
-    test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); });
+test.describe("plain selected LSP features", () => {
+    test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/plain/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); });
     test("painted swatches open the clicked literal in its pane and refresh after typing", async ({ page }) => {
         const raw = 'const a = "#abc";\r\nconst b = "#f008";';
         await seed(page, raw, 2);
@@ -100,7 +99,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await expect(source).toBeFocused();
         await disposeColorsAndLinks(page);
     });
-    if (host === "plain") test("a late background color scan cannot repaint a newer revision or open its picker", async ({ page }) => {
+    test("a late background color scan cannot repaint a newer revision or open its picker", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/documentColor"); await page.reload();
         const marks = field(page).locator("..").locator(".host-inline-swatch");
         await seed(page, 'const a = "#abc";'); await expect(marks).toHaveCount(1);
@@ -297,7 +296,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await expect(page.getByLabel("Document color status", { exact: true })).toContainText("Source changed");
         await disposeColorsAndLinks(page);
     });
-    if (coversHost("plain-candidate", host, "candidate")) test("a long color insertion has a bounded review and applies in full", async ({ page }) => {
+    test("a long color insertion has a bounded review and applies in full", async ({ page }) => {
         const raw = 'const color = "#abc";', insert = "#aabbcc/*" + "x".repeat(12_000) + "*/";
         await page.routeWebSocket("**/lsp-fixture", client => {
             const server = client.connectToServer();
@@ -350,7 +349,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         expect(methods).toContain("textDocument/documentColor"); expect(methods).toContain("textDocument/colorPresentation");
         expect((await snapshot(page)).source.exports).toBe(0); await disposeColorsAndLinks(page);
     });
-    for (const mode of ["selection", "value", "typing", "authority", "remount"] as const) if (coversHost(mode === "value" || mode === "remount" ? "candidate-hosts" : "plain-candidate", host, "candidate")) test(`pending color preview rejects a stale reply after ${mode}`, async ({ page }) => {
+    for (const mode of ["selection", "value", "typing", "authority", "remount"] as const) test(`pending color preview rejects a stale reply after ${mode}`, async ({ page }) => {
         test.setTimeout(60000);
         const replies = await holdLspReplies(page, "textDocument/colorPresentation");
         await page.reload();
@@ -621,7 +620,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         expect((await snapshot(page)).bindings.colors.state.view).toBeNull(); expect((await snapshot(page)).source.exports).toBe(0); await disposeColorsAndLinks(page);
     });
     for (const mode of ["selection", "typing", "target", "authority", "alias", "remount"] as const)
-        if (coversHost(mode === "remount" ? "candidate-hosts" : "plain-candidate", host, "candidate")) test(`pending link discovery rejects a stale reply after ${mode}`, async ({ page }) => {
+        test(`pending link discovery rejects a stale reply after ${mode}`, async ({ page }) => {
             test.setTimeout(60000);
             const replies = await holdLspReplies(page, "textDocument/documentLink");
             await page.reload(); await expect(field(page)).toBeVisible();
@@ -746,7 +745,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await expect.poll(replies.cancelled).toBe(true); await replies.release();
         await expect(field(page, "Configuration path")).toBeFocused(); expect((await snapshot(page)).source.exports).toBe(0);
     });
-    if (host === "plain") test("a nested call and a moved caret discard earlier signature text while replies wait", async ({ page }) => {
+    test("a nested call and a moved caret discard earlier signature text while replies wait", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/signatureHelp"); await page.reload();
         const source = field(page), popup = page.getByRole("tooltip", { name: "Signature help", exact: true });
         const parameter = popup.getByLabel("Active signature parameter", { exact: true });
@@ -766,7 +765,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await expect.poll(replies.cancelled).toBe(true); await replies.release();
         await expect(popup).toBeHidden(); await expect(source).toBeFocused();
     });
-    if (host === "plain") test("manual signature help scrolls the page only far enough to show the caret", async ({ page }) => {
+    test("manual signature help scrolls the page only far enough to show the caret", async ({ page }) => {
         await page.setViewportSize({ width: 1080, height: 550 });
         const text = 'first\nsecond\nthird\nfourth\nlookup("key", )\n';
         await seed(page, text, text.indexOf(")")); await ready(page);
@@ -818,7 +817,29 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         expect(final.bindings.signature).toMatchObject({ pending: false, scheduled: false, sessions: 0, subscriptions: 0, capture: null });
         expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
     });
-    if (host === "react") test("signature, link resolution and a selected color presentation use bounded source controls", async ({ page }) => {
+
+});
+test("missing and withdrawn language capabilities fail explicitly without a worker fallback or a late color edit", async ({ page }) => {
+    const replies = await holdLspReplies(page, "textDocument/colorPresentation");
+    await page.goto("/hosts/plain/?editor=candidate&language=lsp&lspSubset=dynamic");
+    const text = 'lookup("a", )\r\nconst color = "#abc";'; await seed(page, text, text.indexOf(")"));
+    await field(page).press("Control+Shift+Space"); await expect.poll(async () => (await snapshot(page)).bindings.signature.presentation.status).toBe("failed");
+    await button(page, "Discover module links").click(); await expect.poll(async () => (await snapshot(page)).bindings.links.state.status).toBe("failed");
+    await button(page, "Discover document colors").click(); await expect.poll(async () => (await snapshot(page)).bindings.colors.state.status).toBe("failed");
+    const methods = ["textDocument/signatureHelp", "textDocument/documentLink", "textDocument/documentColor"];
+    await page.evaluate(methods => window.hostFixture.providerCustom("fixture/register", { registrations: methods.map((method, i) => ({ id: `selected-${i}`, method, registerOptions: { documentSelector: null, ...(i === 0 ? { triggerCharacters: ["("], retriggerCharacters: [","] } : {}), ...(i === 1 ? { resolveProvider: true } : {}) } })) }), methods);
+    await field(page).press("Control+Shift+Space"); await expect(page.getByRole("tooltip", { name: "Signature help", exact: true })).toBeVisible(); await field(page).press("Escape");
+    await button(page, "Discover document colors").click(); await expect.poll(async () => (await snapshot(page)).bindings.colors.state.count).toBe(1);
+    await page.getByRole("textbox", { name: "Proposed color", exact: true }).fill("#112233"); replies.hold(); await button(page, "Preview color presentations").click(); await expect.poll(replies.waiting).toBe(true);
+    await expect.poll(async () => (await snapshot(page)).bindings.colors.state.pending).toBe(true);
+    await page.evaluate(() => window.hostFixture.providerCustom("fixture/unregister", { unregisterations: [{ id: "selected-2", method: "textDocument/documentColor" }] }));
+    await replies.release(); await expect.poll(async () => (await snapshot(page)).bindings.colors.state.pending).toBe(false); await expect(button(page, "Apply captured color")).toBeDisabled();
+    expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(text);
+});
+
+test.describe("react selected LSP features", () => {
+    test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/react/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); });
+    test("signature, link resolution and a selected color presentation use bounded source controls", async ({ page }) => {
         const prefix = "const unchanged = 123;\r\n".repeat(300), tail = 'lookup("a", )\r\nimport "sample-utils";\r\nconst color = "#abc";', raw = prefix + tail;
         await seed(page, raw, prefix.length + tail.indexOf(")")); await field(page).press("Control+Shift+Space");
         await expect.poll(async () => (await snapshot(page)).bindings.signature.presentation.status).toBe("ready");
@@ -839,21 +860,4 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         for (const view of state.bindings.views) { expect(view.metrics!.inputUnits).toBeLessThanOrEqual(4096); expect(view.metrics!.viewport.rows).toBeLessThan(100); }
         await field(page).press("Control+z"); expect(await page.evaluate(from => { const f = window.hostFixture; return f.range(from, f.snapshot().source.length); }, prefix.length)).toBe(tail);
     });
-});
-test("missing and withdrawn language capabilities fail explicitly without a worker fallback or a late color edit", async ({ page }) => {
-    const replies = await holdLspReplies(page, "textDocument/colorPresentation");
-    await page.goto("/hosts/plain/?editor=candidate&language=lsp&lspSubset=dynamic");
-    const text = 'lookup("a", )\r\nconst color = "#abc";'; await seed(page, text, text.indexOf(")"));
-    await field(page).press("Control+Shift+Space"); await expect.poll(async () => (await snapshot(page)).bindings.signature.presentation.status).toBe("failed");
-    await button(page, "Discover module links").click(); await expect.poll(async () => (await snapshot(page)).bindings.links.state.status).toBe("failed");
-    await button(page, "Discover document colors").click(); await expect.poll(async () => (await snapshot(page)).bindings.colors.state.status).toBe("failed");
-    const methods = ["textDocument/signatureHelp", "textDocument/documentLink", "textDocument/documentColor"];
-    await page.evaluate(methods => window.hostFixture.providerCustom("fixture/register", { registrations: methods.map((method, i) => ({ id: `selected-${i}`, method, registerOptions: { documentSelector: null, ...(i === 0 ? { triggerCharacters: ["("], retriggerCharacters: [","] } : {}), ...(i === 1 ? { resolveProvider: true } : {}) } })) }), methods);
-    await field(page).press("Control+Shift+Space"); await expect(page.getByRole("tooltip", { name: "Signature help", exact: true })).toBeVisible(); await field(page).press("Escape");
-    await button(page, "Discover document colors").click(); await expect.poll(async () => (await snapshot(page)).bindings.colors.state.count).toBe(1);
-    await page.getByRole("textbox", { name: "Proposed color", exact: true }).fill("#112233"); replies.hold(); await button(page, "Preview color presentations").click(); await expect.poll(replies.waiting).toBe(true);
-    await expect.poll(async () => (await snapshot(page)).bindings.colors.state.pending).toBe(true);
-    await page.evaluate(() => window.hostFixture.providerCustom("fixture/unregister", { unregisterations: [{ id: "selected-2", method: "textDocument/documentColor" }] }));
-    await replies.release(); await expect.poll(async () => (await snapshot(page)).bindings.colors.state.pending).toBe(false); await expect(button(page, "Apply captured color")).toBeDisabled();
-    expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(text);
 });

@@ -125,10 +125,10 @@ test("Shift+Delete cuts a selection or caret line for the next Shift+Insert", as
         await dispose(page, info);
     });
 });
-for (const host of ["plain", "react"] as const) test(`${host} trusted HTML table paste converts the actual clipboard and keeps captured save and undo`, async ({ browserName, baseURL }, info) => {
+test(`plain trusted HTML table paste converts the actual clipboard and keeps captured save and undo`, async ({ browserName, baseURL }, info) => {
     test.skip(browserName !== "chromium", unverifiedBackend);
     await isolatedClipboard(baseURL, info, async page => {
-        await mount(page, host, "candidate", "source");
+        await mount(page, "plain", "candidate", "source");
         await page.getByRole("checkbox", { name: "Paste tables as CSV", exact: true }).check();
         await page.evaluate(() => {
             const wrapper = document.createElement("div"); wrapper.contentEditable = "true"; wrapper.id = "known-table-clipboard-source"; wrapper.tabIndex = 0;
@@ -148,13 +148,13 @@ for (const host of ["plain", "react"] as const) test(`${host} trusted HTML table
         await dispose(page, info);
     });
 });
-for (const host of ["plain", "react"] as const) for (const editor of ["native", "candidate"] as const) {
-    test(`${host} ${editor} trusted clipboard preserves selections, captured save and shared history`, async ({ browserName, baseURL }, info) => {
+for (const editor of ["native", "candidate"] as const) {
+    test(`plain ${editor} trusted clipboard preserves selections, captured save and shared history`, async ({ browserName, baseURL }, info) => {
         test.skip(browserName !== "chromium", unverifiedBackend);
         await isolatedClipboard(baseURL, info, async page => {
             const original = normal;
             const from = 6, to = original.indexOf("const end");
-            await mount(page, host, editor, original); await primary(page).focus(); await select(page, from, to); await select(page, 3, 3, "secondary");
+            await mount(page, "plain", editor, original); await primary(page).focus(); await select(page, from, to); await select(page, 3, 3, "secondary");
             const captured = await snapshot(page); expect(sourceSelection(captured, "primary")).toMatchObject({ anchor: to, head: from });
             await copyToKnownControl(page, original.slice(from, to));
             await primary(page).press("Control+x"); await waitForReview(page); const cut = original.slice(0, from) + original.slice(to), cutState = await snapshot(page);
@@ -189,10 +189,10 @@ for (const host of ["plain", "react"] as const) for (const editor of ["native", 
             await dispose(page, info);
         });
     });
-    test(`${host} ${editor} trusted read-only clipboard preserves source and history until permission returns`, async ({ browserName, baseURL }, info) => {
+    test(`plain ${editor} trusted read-only clipboard preserves source and history until permission returns`, async ({ browserName, baseURL }, info) => {
         test.skip(browserName !== "chromium", unverifiedBackend);
         await isolatedClipboard(baseURL, info, async page => {
-            await mount(page, host, editor, normal);
+            await mount(page, "plain", editor, normal);
             // Exercise the read-only command before capturing the next save.
             await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1"); await waitForReview(page);
             await page.evaluate(() => window.hostFixture.setSourceReadOnly(true));

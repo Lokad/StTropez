@@ -1,7 +1,6 @@
 import { moveEditorIntoShadow } from "../helpers/shadow-editor.ts";
 import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
-import { coversHost } from "./host-cases.ts";
 import { holdLspReplies } from "../helpers/lsp-replies.ts";
 import { paintedCharacter } from "../helpers/painted-character.ts";
 
@@ -18,9 +17,9 @@ async function seed(page: Page, text: string, offset: number) {
     await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, text); await field(page).focus(); await select(page, offset); await waitForNavigation(page);
 }
 async function hover(page: Page) { await field(page).press("Control+k"); await field(page).press("Control+i"); }
-for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspection/navigation`, () => {
-    test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); await waitForNavigation(page); });
-    if (host === "plain") test("successive symbol lookups share unopened project files and release them on dismissal", async ({ page }) => {
+test.describe("plain LSP inspection/navigation", () => {
+    test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/plain/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); await waitForNavigation(page); });
+    test("successive symbol lookups share unopened project files and release them on dismissal", async ({ page }) => {
         const opens: string[] = [], closes: string[] = [];
         let companionUri: string | undefined;
         page.on("websocket", socket => socket.on("framesent", frame => {
@@ -54,7 +53,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await expect.poll(closed).toBe(2); await expect(results(page)).toHaveCount(0);
         expect(await page.evaluate(() => window.hostFixture.releaseNavigationCompanion())).toBe(true);
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("standard hover content and absent ranges preserve selections, safe text and focus", async ({ page }) => {
+    test("standard hover content and absent ranges preserve selections, safe text and focus", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/hover"); await page.reload();
         const packets: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const data = JSON.parse(frame.payload.toString()); if (data.method) packets.push(data.method); }));
         await seed(page, "const café = 1;\r\n𐐀value = 2;", 2); await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 2, head: 2 }, { anchor: 8, head: 8 }]); }); await waitForNavigation(page);
@@ -72,7 +71,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await expect(page.getByRole("tooltip")).toBeHidden(); await expect(field(page, "Configuration path")).toBeFocused();
         expect((await snapshot(page)).history).toEqual(before.history); expect((await snapshot(page)).source.exports).toBe(0); expect(packets).toContain("textDocument/hover");
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("definition links and references open captured unmounted targets and return complete selections", async ({ page }) => {
+    test("definition links and references open captured unmounted targets and return complete selections", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/definition"); await page.reload();
         const methods: { method: string; params?: { position?: unknown; context?: { includeDeclaration?: boolean } } }[] = []; let linkedResponses = 0;
         page.on("websocket", socket => { socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value); });
@@ -134,7 +133,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await field(page).focus(); await select(page, text.indexOf(";") + 1); await button(page, "Find definition").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(0);
         expect(methods.filter(message => message.method === "textDocument/definition").length).toBe(definitions + 1);
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("F12 and modifier clicks follow whole module paths and respect later input", async ({ page }) => {
+    test("F12 and modifier clicks follow whole module paths and respect later input", async ({ page }) => {
         const replies = await holdLspReplies(page, "documentLink/resolve");
         const methods: string[] = [];
         page.on("websocket", ws => ws.on("framesent", frame => {
@@ -182,7 +181,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await expect(editor.locator('.st-viewport-row[data-line="2"]')).toHaveText("catalogue;!");
         expect((await snapshot(page)).bindings.links.opened).toBe(2);
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("a pending F4 keeps its results and leaves focus with a newer F12", async ({ page }) => {
+    test("a pending F4 keeps its results and leaves focus with a newer F12", async ({ page }) => {
         const links = await holdLspReplies(page, "textDocument/documentLink");
         await page.reload();
         const text = 'catalogue;\r\nimport "sample-utils";\r\n';
@@ -206,7 +205,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await button(page, "Return to link origin").click();
         await expect(source).toBeFocused();
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("a pending F12 leaves its definition available after a newer F4 fails", async ({ page }) => {
+    test("a pending F12 leaves its definition available after a newer F4 fails", async ({ page }) => {
         const definitions = await holdLspReplies(page, "textDocument/definition");
         await page.reload();
         await seed(page, 'catalogue;\r\nimport "sample-utils";\r\n', 3);
@@ -232,7 +231,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await button(page, "Return to navigation origin").click();
         await expect(source).toBeFocused();
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("F12 from the secondary pane selects the definition when that pane opens the file", async ({ page }) => {
+    test("F12 from the secondary pane selects the definition when that pane opens the file", async ({ page }) => {
         await seed(page, "// preceding line\n".repeat(100) + "catalogue;", 0);
         await button(page, "Add navigation companion").click();
         const secondary = field(page, "Secondary source");
@@ -263,7 +262,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
             documentId: originalView.documentId, viewId: originalView.viewId, selectionSet: originalView.selectionSet,
         });
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("closing the review preserves primary references and retires the review's own request", async ({ page }) => {
+    test("closing the review preserves primary references and retires the review's own request", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/references");
         await page.reload();
         const text = "const target = 1;\ntarget;";
@@ -301,7 +300,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await expect(results(page)).toHaveCount(0);
         expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toEqual(selected);
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("replacing references during a press needs a fresh click to advance the page", async ({ page }) => {
+    test("replacing references during a press needs a fresh click to advance the page", async ({ page }) => {
         const longLine = "target; // " + "padding ".repeat(10000);
         await seed(page, "const target = 1;\n" + "target;\n".repeat(63) + longLine + "\n" + "target;\n".repeat(66) + 'import "sample-utils";', 8);
         const find = button(page, "Find references"), next = button(page, "Next navigation results");
@@ -348,7 +347,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await button(page, "Show module links").click(); await button(page, "Show symbol results").click();
         await expect(first).toBeFocused();
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("Return retraces two symbol jumps with their selections, scroll and focus", async ({ page }) => {
+    test("Return retraces two symbol jumps with their selections, scroll and focus", async ({ page }) => {
         const text = "catalogue;\n" + "// padding\n".repeat(120) + "catalogue;\n";
         const tail = text.lastIndexOf("catalogue"), primary = field(page), secondary = field(page, "Secondary source");
         const back = button(page, "Return to navigation origin");
@@ -378,7 +377,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         expect(restored.metrics!.viewport.scrollTop).toBeCloseTo(origin.metrics!.viewport.scrollTop, 2);
         await expect(back).toBeDisabled();
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("Back retraces a module visit and a symbol visit in order", async ({ page }) => {
+    test("Back retraces a module visit and a symbol visit in order", async ({ page }) => {
         const text = 'import "sample-utils";\nconst sample = 1;\nsample;';
         const symbol = text.lastIndexOf("sample") + 2, path = text.indexOf("-");
         await seed(page, text, symbol);
@@ -407,7 +406,47 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await back.click();
         expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: symbol, head: symbol });
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("malformed navigation, changed authority and pending remount cannot publish stale targets", async ({ page, browserName, browserErrors }) => {
+
+    test("review navigation and hover preserve the immutable baseline and working Save/Run identity", async ({ page }) => {
+        const text = "catalogue;\r\nconst working = 1;"; await seed(page, text, 3); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await waitForNavigation(page);
+        const working = field(page, "Comparison working source"); await working.focus(); await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: 3, head: 3 }, { anchor: 23, head: 23 }]); });
+        const before = await snapshot(page), baseline = await page.evaluate(() => { const f = window.hostFixture; return f.referenceRange(0, f.snapshot().bindings.comparison!.baseline!.length); });
+        await working.press("F12"); await waitForNavigation(page); await expect(field(page, "Secondary source")).toBeFocused(); await button(page, "Return to navigation origin").click(); await waitForNavigation(page); await expect(working).toBeFocused();
+        expect((await snapshot(page)).bindings.comparison!.selectionSet).toEqual(before.bindings.comparison!.selectionSet); await working.press("Control+k"); await working.press("Control+i"); await expect(page.getByRole("tooltip")).toContainText("catalogue");
+        await field(page, "Comparison baseline source").focus(); await expect(page.getByRole("tooltip")).toBeHidden(); await expect(field(page, "Comparison baseline source")).toHaveAttribute("readonly", "");
+        const requested = (await snapshot(page)).bindings.navigation.requested; await field(page, "Comparison baseline source").press("F12"); expect((await snapshot(page)).bindings.navigation.requested).toBe(requested);
+        expect(await page.evaluate(length => window.hostFixture.referenceRange(0, length), baseline!.length)).toBe(baseline); expect((await snapshot(page)).history).toEqual(before.history);
+        await field(page, "Secondary source").focus(); await button(page, "Run captured inputs").click(); await expect.poll(async () => (await snapshot(page)).pendingRuns.length).toBe(1);
+        expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(before.source.id); expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(text); await page.evaluate(() => window.hostFixture.finishRun());
+        await button(page, "Save source").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1); await working.press("Control+End"); await working.pressSequentially(" later"); await page.evaluate(() => window.hostFixture.finishSave()); await waitForNavigation(page);
+        expect((await snapshot(page)).source.dirty).toBe(true); expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(text + " later");
+        await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
+    });
+    test("large-document hover and reference pages expose every target without changing source or history", async ({ page }) => {
+        const text = "const unrelated = 123;\r\n".repeat(18_976) + "const target = 1;\r\n" + "target;\r\n".repeat(1023);
+        await seed(page, text, text.lastIndexOf("target") + 2); const before = await snapshot(page);
+        await hover(page); await expect(page.getByRole("tooltip")).toContainText("target"); await field(page).press("Escape"); await field(page).press("F12"); await waitForNavigation(page); await expect(results(page)).toHaveCount(1);
+        const selected = (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection; expect(selected).toMatchObject({ anchor: text.lastIndexOf("const target") + 6, head: text.lastIndexOf("const target") + 12 });
+        await button(page, "Find references").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(64);
+        const second = await results(page).nth(1).elementHandle(); expect(second).toBeTruthy();
+        await expect(button(page, "Previous navigation results")).toBeDisabled();
+        for (let index = 1; index < 16; index++) { await button(page, "Next navigation results").click(); await expect(results(page)).toHaveCount(64); }
+        await expect(button(page, "Next navigation results")).toBeDisabled();
+        await second!.evaluate(node => (node as HTMLButtonElement).click()); await second!.dispose(); await waitForNavigation(page);
+        const secondOffset = text.indexOf("target;", text.indexOf("const target"));
+        expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: secondOffset, head: secondOffset + 6 });
+        await results(page).last().click(); await waitForNavigation(page);
+        expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: text.lastIndexOf("target"), head: text.lastIndexOf("target") + 6 });
+        await button(page, "Previous navigation results").click(); await expect(results(page)).toHaveCount(64);
+        await expect(button(page, "Next navigation results")).toBeEnabled();
+        expect((await snapshot(page)).history).toEqual(before.history); expect((await snapshot(page)).source.revision).toBe(before.source.revision);
+        expect((await snapshot(page)).source.exports).toBe(0); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.metrics!.inputUnits).toBeLessThanOrEqual(4096);
+    });
+});
+
+for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspection/navigation`, () => {
+    test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); await waitForNavigation(page); });
+    test("malformed navigation, changed authority and pending remount cannot publish stale targets", async ({ page, browserName, browserErrors }) => {
         const replies = await holdLspReplies(page, "textDocument/definition"); await page.reload();
         const text = "const target = 1;\r\ntarget"; await seed(page, text, text.length - 2); const before = await snapshot(page);
         await page.evaluate(() => window.hostFixture.faultNavigationNext("malformed")); await field(page).press("F12"); await expect(page.getByLabel("Locations status", { exact: true })).toContainText("unavailable"); await expect(results(page)).toHaveCount(0); await expect(field(page)).toBeFocused();
@@ -441,40 +480,5 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await button(page, "Reconnect navigation provider").click();
         expect((await snapshot(page)).source.revision).toBeGreaterThan(before.source.revision); await page.evaluate(() => window.hostFixture.dispose()); const final = await snapshot(page);
         expect(final.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(final.hostSubscriptions).toBe(0);
-    });
-    if (coversHost("candidate-hosts", host, "candidate")) test("review navigation and hover preserve the immutable baseline and working Save/Run identity", async ({ page }) => {
-        const text = "catalogue;\r\nconst working = 1;"; await seed(page, text, 3); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await waitForNavigation(page);
-        const working = field(page, "Comparison working source"); await working.focus(); await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: 3, head: 3 }, { anchor: 23, head: 23 }]); });
-        const before = await snapshot(page), baseline = await page.evaluate(() => { const f = window.hostFixture; return f.referenceRange(0, f.snapshot().bindings.comparison!.baseline!.length); });
-        await working.press("F12"); await waitForNavigation(page); await expect(field(page, "Secondary source")).toBeFocused(); await button(page, "Return to navigation origin").click(); await waitForNavigation(page); await expect(working).toBeFocused();
-        expect((await snapshot(page)).bindings.comparison!.selectionSet).toEqual(before.bindings.comparison!.selectionSet); await working.press("Control+k"); await working.press("Control+i"); await expect(page.getByRole("tooltip")).toContainText("catalogue");
-        await field(page, "Comparison baseline source").focus(); await expect(page.getByRole("tooltip")).toBeHidden(); await expect(field(page, "Comparison baseline source")).toHaveAttribute("readonly", "");
-        const requested = (await snapshot(page)).bindings.navigation.requested; await field(page, "Comparison baseline source").press("F12"); expect((await snapshot(page)).bindings.navigation.requested).toBe(requested);
-        expect(await page.evaluate(length => window.hostFixture.referenceRange(0, length), baseline!.length)).toBe(baseline); expect((await snapshot(page)).history).toEqual(before.history);
-        await field(page, "Secondary source").focus(); await button(page, "Run captured inputs").click(); await expect.poll(async () => (await snapshot(page)).pendingRuns.length).toBe(1);
-        expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(before.source.id); expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(text); await page.evaluate(() => window.hostFixture.finishRun());
-        await button(page, "Save source").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1); await working.press("Control+End"); await working.pressSequentially(" later"); await page.evaluate(() => window.hostFixture.finishSave()); await waitForNavigation(page);
-        expect((await snapshot(page)).source.dirty).toBe(true); expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(text + " later");
-        await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
-    });
-    if (coversHost("plain-candidate", host, "candidate")) test("large-document hover and reference pages expose every target without changing source or history", async ({ page }) => {
-        const text = "const unrelated = 123;\r\n".repeat(18_976) + "const target = 1;\r\n" + "target;\r\n".repeat(1023);
-        await seed(page, text, text.lastIndexOf("target") + 2); const before = await snapshot(page);
-        await hover(page); await expect(page.getByRole("tooltip")).toContainText("target"); await field(page).press("Escape"); await field(page).press("F12"); await waitForNavigation(page); await expect(results(page)).toHaveCount(1);
-        const selected = (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection; expect(selected).toMatchObject({ anchor: text.lastIndexOf("const target") + 6, head: text.lastIndexOf("const target") + 12 });
-        await button(page, "Find references").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(64);
-        const second = await results(page).nth(1).elementHandle(); expect(second).toBeTruthy();
-        await expect(button(page, "Previous navigation results")).toBeDisabled();
-        for (let index = 1; index < 16; index++) { await button(page, "Next navigation results").click(); await expect(results(page)).toHaveCount(64); }
-        await expect(button(page, "Next navigation results")).toBeDisabled();
-        await second!.evaluate(node => (node as HTMLButtonElement).click()); await second!.dispose(); await waitForNavigation(page);
-        const secondOffset = text.indexOf("target;", text.indexOf("const target"));
-        expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: secondOffset, head: secondOffset + 6 });
-        await results(page).last().click(); await waitForNavigation(page);
-        expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: text.lastIndexOf("target"), head: text.lastIndexOf("target") + 6 });
-        await button(page, "Previous navigation results").click(); await expect(results(page)).toHaveCount(64);
-        await expect(button(page, "Next navigation results")).toBeEnabled();
-        expect((await snapshot(page)).history).toEqual(before.history); expect((await snapshot(page)).source.revision).toBe(before.source.revision);
-        expect((await snapshot(page)).source.exports).toBe(0); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.metrics!.inputUnits).toBeLessThanOrEqual(4096);
     });
 });

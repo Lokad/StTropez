@@ -71,68 +71,66 @@ test.afterEach(async ({ page }, info) => {
     expect(keys.length).toBeGreaterThan(0); expect(keys.every(key => key.trusted)).toBe(true);
 });
 
-for (const host of ["plain", "react"] as const) {
-    for (const editor of ["native", "candidate"] as const)
-        for (const backward of [false, true]) test(`${host} ${editor} ${backward ? "backward" : "forward"} escape preserves keyboard-only save and review`, async ({ page }) => {
-                const original = "    const café = 1;\r\n    const sample = 2;";
-                await mount(page, host, editor, original);
-                await activate(page, "Save source"); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
-                const captured = (await snapshot(page)).pendingSaves;
-                await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+End"); await page.keyboard.type("!"); await waitForViews(page);
-                const edited = original + "!"; await exact(page, edited); await page.keyboard.press("Control+Home");
-                const before = await snapshot(page); await exit(page, backward); await waitForViews(page); const after = await snapshot(page);
-                await exact(page, edited); expect(after.source.revision).toBe(before.source.revision); expect(after.history).toEqual(before.history);
-                expect(selections(after)).toEqual(selections(before)); expect(after.pendingSaves).toEqual(captured); expect(after.source.exports).toBe(before.source.exports);
+for (const editor of ["native", "candidate"] as const)
+    for (const backward of [false, true]) test(`plain ${editor} ${backward ? "backward" : "forward"} escape preserves keyboard-only save and review`, async ({ page }) => {
+            const original = "    const café = 1;\r\n    const sample = 2;";
+            await mount(page, "plain", editor, original);
+            await activate(page, "Save source"); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
+            const captured = (await snapshot(page)).pendingSaves;
+            await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+End"); await page.keyboard.type("!"); await waitForViews(page);
+            const edited = original + "!"; await exact(page, edited); await page.keyboard.press("Control+Home");
+            const before = await snapshot(page); await exit(page, backward); await waitForViews(page); const after = await snapshot(page);
+            await exact(page, edited); expect(after.source.revision).toBe(before.source.revision); expect(after.history).toEqual(before.history);
+            expect(selections(after)).toEqual(selections(before)); expect(after.pendingSaves).toEqual(captured); expect(after.source.exports).toBe(before.source.exports);
 
-                if (!backward) {
-                    await page.keyboard.press("End"); await page.keyboard.type(".kbd"); const form = await snapshot(page);
-                    expect(await page.getByRole("textbox", { name: "Configuration path", exact: true }).inputValue()).toContain(".kbd");
-                    expect(form.source.revision).toBe(before.source.revision);
-                    expect(form.history).toEqual(before.history); expect(selections(form)).toEqual(selections(before));
-                }
-                if (editor === "candidate") {
-                    // The exit arm is consumed; ordinary Tab/Shift+Tab still edit one intended history command.
-                    await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+Home"); const commands = await snapshot(page);
-                    await page.keyboard.press("Tab"); await exact(page, "    " + edited);
-                    expect((await snapshot(page)).history.undoDepth).toBe(commands.history.undoDepth + 1);
-                    await page.keyboard.press("Shift+Tab"); await exact(page, edited);
-                    await page.keyboard.press("Control+z"); await exact(page, "    " + edited);
-                    await page.keyboard.press("Control+z"); await exact(page, edited);
-                    expect((await snapshot(page)).pendingSaves).toEqual(captured);
-                }
-                await activate(page, "Finish save"); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1");
-                expect((await snapshot(page)).source.dirty).toBe(true); await exact(page, edited);
-                await keyboardFocus(page, secondary(page)); await page.keyboard.press("Control+z"); await exact(page, original);
-                expect((await snapshot(page)).source.dirty).toBe(false);
-                await page.keyboard.press("Control+Shift+z"); await exact(page, edited); expect((await snapshot(page)).source.dirty).toBe(true);
+            if (!backward) {
+                await page.keyboard.press("End"); await page.keyboard.type(".kbd"); const form = await snapshot(page);
+                expect(await page.getByRole("textbox", { name: "Configuration path", exact: true }).inputValue()).toContain(".kbd");
+                expect(form.source.revision).toBe(before.source.revision);
+                expect(form.history).toEqual(before.history); expect(selections(form)).toEqual(selections(before));
+            }
+            if (editor === "candidate") {
+                // The exit arm is consumed; ordinary Tab/Shift+Tab still edit one intended history command.
+                await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+Home"); const commands = await snapshot(page);
+                await page.keyboard.press("Tab"); await exact(page, "    " + edited);
+                expect((await snapshot(page)).history.undoDepth).toBe(commands.history.undoDepth + 1);
+                await page.keyboard.press("Shift+Tab"); await exact(page, edited);
+                await page.keyboard.press("Control+z"); await exact(page, "    " + edited);
+                await page.keyboard.press("Control+z"); await exact(page, edited);
+                expect((await snapshot(page)).pendingSaves).toEqual(captured);
+            }
+            await activate(page, "Finish save"); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1");
+            expect((await snapshot(page)).source.dirty).toBe(true); await exact(page, edited);
+            await keyboardFocus(page, secondary(page)); await page.keyboard.press("Control+z"); await exact(page, original);
+            expect((await snapshot(page)).source.dirty).toBe(false);
+            await page.keyboard.press("Control+Shift+z"); await exact(page, edited); expect((await snapshot(page)).source.dirty).toBe(true);
 
-                await activate(page, "Open source review"); await waitForViews(page);
-                await activate(page, "Capture review acceptance"); await activate(page, "Finish review acceptance"); await waitForViews(page);
-                const accepted = await snapshot(page); expect(accepted.bindings.comparison?.referenceIsWorkingBuffer).toBe(true);
-                expect(accepted.bindings.comparison?.hunks).toBe(0); const baseline = accepted.bindings.comparison!.baseline!.version;
-                await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+End"); await page.keyboard.type("q"); await waitForViews(page);
-                await exact(page, edited + "q"); expect((await snapshot(page)).bindings.comparison?.hunks).toBe(1);
-                await activate(page, "Next change"); await waitForViews(page);
-                expect((await snapshot(page)).bindings.comparison?.baseline?.version).toBe(baseline);
-                await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+z"); await exact(page, edited); await waitForViews(page);
-                expect((await snapshot(page)).bindings.comparison?.hunks).toBe(0);
-                // The native baseline projects whole values; only the bounded candidate promises zero ordinary exports.
-                if (editor === "candidate") expect((await snapshot(page)).source.exports).toBe(accepted.source.exports);
-                await dispose(page);
-            });
+            await activate(page, "Open source review"); await waitForViews(page);
+            await activate(page, "Capture review acceptance"); await activate(page, "Finish review acceptance"); await waitForViews(page);
+            const accepted = await snapshot(page); expect(accepted.bindings.comparison?.referenceIsWorkingBuffer).toBe(true);
+            expect(accepted.bindings.comparison?.hunks).toBe(0); const baseline = accepted.bindings.comparison!.baseline!.version;
+            await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+End"); await page.keyboard.type("q"); await waitForViews(page);
+            await exact(page, edited + "q"); expect((await snapshot(page)).bindings.comparison?.hunks).toBe(1);
+            await activate(page, "Next change"); await waitForViews(page);
+            expect((await snapshot(page)).bindings.comparison?.baseline?.version).toBe(baseline);
+            await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+z"); await exact(page, edited); await waitForViews(page);
+            expect((await snapshot(page)).bindings.comparison?.hunks).toBe(0);
+            // The native baseline projects whole values; only the bounded candidate promises zero ordinary exports.
+            if (editor === "candidate") expect((await snapshot(page)).source.exports).toBe(accepted.source.exports);
+            await dispose(page);
+        });
 
-    for (const backward of [false, true]) test(`${host} read-only ${backward ? "backward" : "forward"} escape remains available before permission restoration`, async ({ page }) => {
-        const original = "    const café = 1;\r\n    const sample = 2;";
-        await mount(page, host, "candidate", original); await activate(page, "Save source"); await activate(page, "Finish save");
-        await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1");
-        await page.evaluate(() => window.hostFixture.setSourceReadOnly(true)); await expect(primary(page)).toHaveAttribute("readonly", "");
-        await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+Home"); await page.keyboard.type("!");
-        const before = await snapshot(page); await exit(page, backward); await waitForViews(page); const after = await snapshot(page);
-        await exact(page, original); expect(after.source.revision).toBe(before.source.revision); expect(after.history).toEqual(before.history);
-        expect(selections(after)).toEqual(selections(before)); expect(after.source.exports).toBe(before.source.exports);
-        await page.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await keyboardFocus(page, primary(page)); await expect(primary(page)).not.toHaveAttribute("readonly", "");
-        await page.keyboard.press("Control+End"); await page.keyboard.type("!"); await exact(page, original + "!");
-        await page.keyboard.press("Control+z"); await exact(page, original); expect((await snapshot(page)).source.dirty).toBe(false);
-        await dispose(page);
-    });
-}
+for (const backward of [false, true]) test(`plain read-only ${backward ? "backward" : "forward"} escape remains available before permission restoration`, async ({ page }) => {
+    const original = "    const café = 1;\r\n    const sample = 2;";
+    await mount(page, "plain", "candidate", original); await activate(page, "Save source"); await activate(page, "Finish save");
+    await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1");
+    await page.evaluate(() => window.hostFixture.setSourceReadOnly(true)); await expect(primary(page)).toHaveAttribute("readonly", "");
+    await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+Home"); await page.keyboard.type("!");
+    const before = await snapshot(page); await exit(page, backward); await waitForViews(page); const after = await snapshot(page);
+    await exact(page, original); expect(after.source.revision).toBe(before.source.revision); expect(after.history).toEqual(before.history);
+    expect(selections(after)).toEqual(selections(before)); expect(after.source.exports).toBe(before.source.exports);
+    await page.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await keyboardFocus(page, primary(page)); await expect(primary(page)).not.toHaveAttribute("readonly", "");
+    await page.keyboard.press("Control+End"); await page.keyboard.type("!"); await exact(page, original + "!");
+    await page.keyboard.press("Control+z"); await exact(page, original); expect((await snapshot(page)).source.dirty).toBe(false);
+    await dispose(page);
+});

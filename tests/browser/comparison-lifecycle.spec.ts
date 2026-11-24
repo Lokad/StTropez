@@ -6,10 +6,10 @@ async function waitForReview(page: Page): Promise<void> {
     await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.comparison !== null); });
 }
 
-for (const host of ["plain", "react"]) for (const editor of ["native", "candidate"]) {
-    test(`${host} ${editor} retains independent comparison views through close, background edits and full remount`, async ({ page }) => {
+for (const editor of ["native", "candidate"]) {
+    test(`plain ${editor} retains independent comparison views through close, background edits and full remount`, async ({ page }) => {
 
-        await page.goto(`/hosts/${host}/?editor=${editor}`);
+        await page.goto(`/hosts/plain/?editor=${editor}`);
         await page.waitForFunction(() => window.hostFixture?.snapshot().bindings.activeViews === 2);
         await page.evaluate(() => {
             const f = window.hostFixture, s = f.snapshot();

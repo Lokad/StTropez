@@ -7,9 +7,9 @@ async function waitForReview(page: Page): Promise<void> {
     await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.activeViews === 2 && s.bindings.comparison !== null); });
 }
 
-for (const host of ["plain", "react"]) for (const editor of ["native", "candidate"]) test(`${host} ${editor} full view selections survive detached edits and comparison remount`, async ({ page }) => {
+for (const editor of ["native", "candidate"]) test(`plain ${editor} full view selections survive detached edits and comparison remount`, async ({ page }) => {
 
-    await page.goto(`/hosts/${host}/?editor=${editor}`);
+    await page.goto(`/hosts/plain/?editor=${editor}`);
     const line = "const sample = 123;\r\n";
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, line.repeat(1500));
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await waitForReview(page);

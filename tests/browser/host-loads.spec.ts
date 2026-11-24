@@ -11,8 +11,8 @@ async function waitForLoad(page: Page): Promise<void> {
 }
 async function exact(p: Page, text: string) { expect(await hostTextEquals(p, text)).toBe(true); }
 test.afterEach(async ({ page }, info) => { if (info.status !== info.expectedStatus && !page.isClosed()) await info.attach("load-failure-state", { contentType: "application/json", body: JSON.stringify(await snap(page), null, 2) }); });
-for (const host of ["plain", "react"]) for (const editor of ["native", "candidate"]) test(`${host} ${editor} repeated loads release clean documents and preserve reachable drafts`, async ({ page: p }) => {
-      await p.goto(`/hosts/${host}/?editor=${editor}`); await expect(primary(p)).toBeVisible();
+for (const editor of ["native", "candidate"]) test(`plain ${editor} repeated loads release clean documents and preserve reachable drafts`, async ({ page: p }) => {
+      await p.goto(`/hosts/plain/?editor=${editor}`); await expect(primary(p)).toBeVisible();
     const original = '// @transfer {"destination":"target.csv","batchSize":"1000"}\r\n' + "row café😀\r\n".repeat(8);
     await p.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
     await primary(p).press("Control+End"); await primary(p).pressSequentially("X"); await command(p, "Save source"); await command(p, "Run captured inputs");

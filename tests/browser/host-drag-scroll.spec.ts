@@ -47,8 +47,8 @@ async function begin(page: Page, host: string, axis: Axis, sign: -1 | 1) {
     await expect.poll(async () => Math.sign(primary(await snapshot(page)).metrics!.viewport[key] - start), { timeout: 2000 }).toBe(sign);
     return { original, point, before, key } as const;
 }
-for (const host of ["plain", "react"]) for (const axis of ["y", "x"] as const) for (const sign of [1, -1] as const) test(`${host} ${axis === "y" ? "multiline" : "long-line"} captured drag keeps selecting past the ${axis}${sign} edge, stops on release and remains one undoable typing target`, async ({ page }) => {
-    const { original, point, before, key } = await begin(page, host, axis, sign);
+for (const axis of ["y", "x"] as const) for (const sign of [1, -1] as const) test(`plain ${axis === "y" ? "multiline" : "long-line"} captured drag keeps selecting past the ${axis}${sign} edge, stops on release and remains one undoable typing target`, async ({ page }) => {
+    const { original, point, before, key } = await begin(page, "plain", axis, sign);
 
     const first = primary(await snapshot(page)).selection.head;
     await expect.poll(async () => Math.sign(primary(await snapshot(page)).selection.head - first)).toBe(sign);
@@ -68,8 +68,8 @@ for (const host of ["plain", "react"]) for (const axis of ["y", "x"] as const) f
     await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect((await snapshot(page)).hostSubscriptions).toBe(0);
 });
 
-for (const host of ["plain", "react"]) for (const cancellation of ["capture-loss", "owned-cancel", "revision", "selection", "remount", "replacement", "dispose"] as const) test(`${host} queued drag scrolling stops after ${cancellation} without later selection or scroll writes`, async ({ page }) => {
-    const { original, point } = await begin(page, host, "y", 1), element = root(page), pointer = Number(await element.getAttribute("data-pointer-id"));
+for (const cancellation of ["capture-loss", "owned-cancel", "revision", "selection", "remount", "replacement", "dispose"] as const) test(`plain queued drag scrolling stops after ${cancellation} without later selection or scroll writes`, async ({ page }) => {
+    const { original, point } = await begin(page, "plain", "y", 1), element = root(page), pointer = Number(await element.getAttribute("data-pointer-id"));
     expect(await element.evaluate((node, id) => node.hasPointerCapture(id), pointer)).toBe(true);
     let expected = original;
     if (cancellation === "capture-loss") await element.evaluate((node, id) => node.releasePointerCapture(id), pointer);

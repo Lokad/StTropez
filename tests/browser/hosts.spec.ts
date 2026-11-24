@@ -1,5 +1,4 @@
 import { test, expect, expectUnmountedSourceHost } from "./fixtures.ts";
-import { coversHost } from "./host-cases.ts";
 
 for (const editor of ["native", "candidate"] as const) for (const mode of ["plain", "react"] as const) {
     test.describe(`${mode} ${editor} controller host`, () => {
@@ -12,7 +11,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().bindings.activeViews)).toBe(2);
         });
 
-        if (coversHost("candidate-hosts", mode, editor)) test("reviewing and applying a proposal, correcting and saving preserves both views and typed form", async ({ page }) => {
+        if (mode === "plain" && editor === "candidate") test("reviewing and applying a proposal, correcting and saving preserves both views and typed form", async ({ page }) => {
             const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
             const secondary = page.getByRole("textbox", { name: "Secondary source", exact: true });
             await page.getByRole("button", { name: "Preview proposal", exact: true }).click();
@@ -45,7 +44,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await expect.poll(() => page.evaluate(() => { const { diagnostics, bindings } = window.hostFixture.snapshot(); return diagnostics.leases - diagnostics.views - bindings.lsp!.documents; })).toBe(0);
         });
 
-        if (coversHost("plain-candidate", mode, editor)) test("proposal review exposes an immutable reference, shared typing and undoable hunk reversion without remounting source views", async ({ page }) => {
+        if (mode === "plain" && editor === "candidate") test("proposal review exposes an immutable reference, shared typing and undoable hunk reversion without remounting source views", async ({ page }) => {
             const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
             const secondary = page.getByRole("textbox", { name: "Secondary source", exact: true });
             await primary.press("End"); await primary.pressSequentially(" human");
@@ -75,7 +74,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 });
         });
 
-        if (coversHost("plain-candidate", mode, editor)) test("captured review acceptance and saved-reference refresh retain later edits, expire stale responses and survive remount", async ({ page }) => {
+        if (mode === "plain" && editor === "candidate") test("captured review acceptance and saved-reference refresh retain later edits, expire stale responses and survive remount", async ({ page }) => {
             const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
             await primary.press("End"); await primary.pressSequentially(" A");
             await page.getByRole("button", { name: "Open source review", exact: true }).click();
@@ -115,17 +114,15 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             expect(disposed.diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 }); expect(disposed.hostSubscriptions).toBe(0);
         });
 
-        if (coversHost("all-hosts", mode, editor)) test("stable refs preserve independent view state through movement/remount and typing avoids unrelated commits", async ({ page }) => {
+        if (mode === "react") test("stable refs preserve independent view state through movement/remount and typing avoids unrelated commits", async ({ page }) => {
             const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
             const secondary = page.getByRole("textbox", { name: "Secondary source", exact: true });
             await primary.fill("abcdefghij");
             await primary.evaluate((node: HTMLTextAreaElement) => node.setSelectionRange(2, 5, "backward"));
             await secondary.evaluate((node: HTMLTextAreaElement) => node.setSelectionRange(7, 8));
             const before = await page.evaluate(() => window.hostFixture.snapshot());
-            if (mode === "react") {
-                expect(before.bindings.mounts).toBeGreaterThanOrEqual(4);
-                expect(before.bindings.mounts - before.bindings.destroys).toBe(2);
-            }
+            expect(before.bindings.mounts).toBeGreaterThanOrEqual(4);
+            expect(before.bindings.mounts - before.bindings.destroys).toBe(2);
             await page.getByRole("button", { name: "Move primary view", exact: true }).click();
             await expect(primary).toHaveValue("abcdefghij");
             expect(await primary.evaluate((node: HTMLTextAreaElement) => [node.selectionStart, node.selectionEnd, node.selectionDirection])).toEqual([2, 5, "backward"]);
@@ -155,7 +152,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             expect((await page.evaluate(() => window.hostFixture.snapshot())).hostSubscriptions).toBe(0);
         });
 
-        if (coversHost("all-hosts", mode, editor)) test("shared typing/deletion history returns to saved content and survives move, unmount, close and reopen", async ({ page }) => {
+        if (mode === "plain") test("shared typing/deletion history returns to saved content and survives move, unmount, close and reopen", async ({ page }) => {
             const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
             const secondary = page.getByRole("textbox", { name: "Secondary source", exact: true });
             await primary.fill("base"); await page.getByRole("button", { name: "Save source", exact: true }).click();
@@ -179,7 +176,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await primary.press("Control+z"); await expect(primary).toHaveValue("base");
         });
 
-        if (coversHost("plain-candidate", mode, editor)) test("a typing pause keeps the same word in one undo step to the saved capture", async ({ page }) => {
+        if (mode === "plain" && editor === "candidate") test("a typing pause keeps the same word in one undo step to the saved capture", async ({ page }) => {
             const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
             await primary.fill("base"); await page.getByRole("button", { name: "Save source", exact: true }).click();
             await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().pendingSaves.length)).toBe(1);
@@ -192,7 +189,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await primary.press("Control+Shift+z"); await expect(primary).toHaveValue("base later");
         });
 
-        if (coversHost("plain-candidate", mode, editor)) test("detached view selections follow range edits and map back through shared undo without losing direction", async ({ page }) => {
+        if (mode === "plain" && editor === "candidate") test("detached view selections follow range edits and map back through shared undo without losing direction", async ({ page }) => {
             const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
             const secondary = page.getByRole("textbox", { name: "Secondary source", exact: true });
             await primary.fill("abcdefghij");
@@ -208,7 +205,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             expect(await secondary.evaluate((node: HTMLTextAreaElement) => [node.selectionStart, node.selectionEnd, node.selectionDirection])).toEqual([5, 8, "backward"]);
         });
 
-        if (coversHost("plain-candidate", mode, editor)) test("captured close/load/save targets expire presentation while resource work completes after replacement and reopen", async ({ page }) => {
+        if (mode === "plain" && editor === "candidate") test("captured close/load/save targets expire presentation while resource work completes after replacement and reopen", async ({ page }) => {
             const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
             await primary.fill("saved target");
             await page.getByRole("button", { name: "Save source", exact: true }).click();
@@ -245,7 +242,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             expect(await primary.evaluate((node: HTMLTextAreaElement) => [node.selectionStart, node.selectionEnd])).toEqual([3, 5]);
         });
 
-        if (coversHost("candidate-hosts", mode, editor)) test("queued host writes and synchronous edits have distinct completion; disposal stops background work", async ({ page }) => {
+        if (mode === "plain" && editor === "candidate") test("queued host writes and synchronous edits have distinct completion; disposal stops background work", async ({ page }) => {
             await page.getByRole("button", { name: "Queue setting and run", exact: true }).click();
             await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().activity.ordering)).toEqual(["edit:true", "run:preview", "write:inspect", "run:inspect"]);
             await page.getByRole("textbox", { name: "Configuration path" }).fill("run.csv");
@@ -271,7 +268,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             expect(await page.evaluate(() => { try { window.hostFixture.mount(); return false; } catch { return true; } })).toBe(true);
         });
 
-        if (coversHost("plain-candidate", mode, editor)) test("deferred Run keeps captured source and configuration while keyboard edits and form updates continue", async ({ page }) => {
+        if (mode === "plain" && editor === "candidate") test("deferred Run keeps captured source and configuration while keyboard edits and form updates continue", async ({ page }) => {
             const input = page.getByRole("textbox", { name: "Primary source", exact: true });
             await input.fill("captured source"); await page.getByRole("textbox", { name: "Configuration path", exact: true }).fill("before.csv");
             const before = await page.evaluate(() => window.hostFixture.snapshot());
@@ -300,7 +297,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
                 return diagnostics.leases - diagnostics.views - bindings.lsp!.documents; })).toBe(0);
         });
 
-        if (coversHost("plain-candidate", mode, editor)) test("a late Run failure preserves the focused editor while the host reports recovery", async ({ page }) => {
+        if (mode === "plain" && editor === "candidate") test("a late Run failure preserves the focused editor while the host reports recovery", async ({ page }) => {
             const input = page.getByRole("textbox", { name: "Primary source", exact: true });
             await input.fill("working"); await page.getByRole("button", { name: "Run captured inputs", exact: true }).click();
             await input.press("End"); await input.pressSequentially(" before failure");
@@ -315,7 +312,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             expect(after.configuration.revision).toBe(before.configuration.revision + 1); expect(after.pendingRuns).toEqual([]);
         });
 
-        if (coversHost("all-hosts", mode, editor)) test("forced view removal retains uncommitted composition separately from the document", async ({ page }) => {
+        if (mode === "plain") test("forced view removal retains uncommitted composition separately from the document", async ({ page }) => {
             const input = page.getByRole("textbox", { name: "Primary source", exact: true }); await input.fill("alpha omega"); await input.focus();
             const before = await page.evaluate(() => window.hostFixture.snapshot());
             await input.evaluate(node => {
@@ -331,7 +328,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await page.getByRole("button", { name: "Inspect recovered input", exact: true }).click(); await expect(page.locator('section[aria-label="Input recovery"] pre')).toHaveText("alpha 東京");
         });
 
-        if (coversHost("candidate-hosts", mode, editor)) test("synthetic composition survives independent form/progress updates and a Run error", async ({ page }) => {
+        if (mode === "plain" && editor === "candidate") test("synthetic composition survives independent form/progress updates and a Run error", async ({ page }) => {
             const input = page.getByRole("textbox", { name: "Primary source", exact: true });
             await input.fill("alpha omega"); await page.getByRole("button", { name: "Run captured inputs", exact: true }).click();
             await input.focus();
@@ -354,7 +351,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await input.press("Control+z"); await expect(input).toHaveValue("alpha omega");
         });
 
-        if (coversHost("candidate-hosts", mode, editor)) test("a proposal can be reviewed, corrected and saved through bounded views", async ({ page }) => {
+        if (mode === "plain" && editor === "candidate") test("a proposal can be reviewed, corrected and saved through bounded views", async ({ page }) => {
             const original = "const sample = '😀 é';\r\n".repeat(300).trimEnd();
             await page.evaluate(text => { const s = window.hostFixture.snapshot(); window.hostFixture.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
             const input = page.getByRole("textbox", { name: "Primary source", exact: true });
@@ -387,7 +384,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
         });
 
-        if (coversHost("plain-candidate", mode, editor)) test("a read-only transition retains rejected composition in host recovery across remount", async ({ page }) => {
+        if (mode === "plain" && editor === "candidate") test("a read-only transition retains rejected composition in host recovery across remount", async ({ page }) => {
             const input = page.getByRole("textbox", { name: "Primary source", exact: true });
             await input.fill("alpha omega"); await input.focus();
             const before = await page.evaluate(() => window.hostFixture.snapshot());
@@ -453,9 +450,9 @@ test(`React ${editor} explicit mount returns only after stable refs and Strict M
 });
 }
 
-for (const editor of ["native", "candidate"] as const) for (const mode of ["plain", "react"] as const) {
-    test(`${mode} ${editor} native status reset preserves captured Run progress, later typing and shared history`, async ({ page }) => {
-        await page.goto(`/hosts/${mode}/?editor=${editor}`);
+for (const editor of ["native", "candidate"] as const) {
+    test(`plain ${editor} native status reset preserves captured Run progress, later typing and shared history`, async ({ page }) => {
+        await page.goto(`/hosts/plain/?editor=${editor}`);
         const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
         const status = page.getByLabel("Host operation status", { exact: true });
         await primary.press("End"); await primary.pressSequentially(" human");

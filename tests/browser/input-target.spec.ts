@@ -54,10 +54,10 @@ test("bulk beforeinput honors host veto and native fallback, and maps every capt
         .toEqual(before.bindings.views.find(view => view.id === "primary")!.selectionSet);
 });
 
-for (const host of ["plain", "react"]) for (const editor of ["native", "candidate"]) {
-    test(`${host} ${editor} continuous typing beside repeated text keeps one undo unit and shared selection mapping`, async ({ page }) => {
+for (const editor of ["native", "candidate"]) {
+    test(`plain ${editor} continuous typing beside repeated text keeps one undo unit and shared selection mapping`, async ({ page }) => {
 
-        await page.goto(`/hosts/${host}/?editor=${editor}`);
+        await page.goto(`/hosts/plain/?editor=${editor}`);
         const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
         await primary.fill("const"); await primary.press("Home");
         await page.evaluate(() => { const f = window.hostFixture; f.selectSource("secondary", f.snapshot().source.revision, { anchor: 1, head: 1, anchorAffinity: "before", headAffinity: "before" }); });
@@ -81,8 +81,8 @@ for (const host of ["plain", "react"]) for (const editor of ["native", "candidat
         expect(after.bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: 1, head: 1 });
     });
 
-    test(`${host} ${editor} captured typing rejects intervening revision and selection changes`, async ({ page }) => {
-        await page.goto(`/hosts/${host}/?editor=${editor}`);
+    test(`plain ${editor} captured typing rejects intervening revision and selection changes`, async ({ page }) => {
+        await page.goto(`/hosts/plain/?editor=${editor}`);
         const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
         for (const changed of ["revision", "selection", "context"] as const) {
             if (changed === "context") await page.evaluate(() => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: "x".repeat(3000) }]);

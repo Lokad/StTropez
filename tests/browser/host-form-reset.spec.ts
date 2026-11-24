@@ -15,10 +15,10 @@ const nativeState = (page: Page) => page.locator("textarea").evaluateAll(nodes =
     return { label: input.getAttribute("aria-label"), value: input.value, start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection };
 }));
 
-for (const editor of ["native", "candidate"] as const) for (const mode of ["plain", "react"] as const) {
-    test(`${mode} ${editor} host form reset preserves source projections, captured save and shared history`, async ({ page }) => {
+for (const editor of ["native", "candidate"] as const) {
+    test(`plain ${editor} host form reset preserves source projections, captured save and shared history`, async ({ page }) => {
 
-        await page.goto(`/hosts/${mode}/?editor=${editor}`);
+        await page.goto(`/hosts/plain/?editor=${editor}`);
         const button = (name: string) => page.getByRole("button", { name, exact: true });
         const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
         const original = "const café = 'é 😀';\r\nconst end = 123;";

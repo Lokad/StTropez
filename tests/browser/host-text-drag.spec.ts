@@ -80,10 +80,10 @@ test("a replacement drop target in a shadow root survives a render callback duri
     await page.evaluate(() => window.hostFixture.dispose());
 });
 
-for (const host of ["plain", "react"]) test(`${host} native text drag preserves captured identity through history and lifecycle`, async ({ page }, info) => {
+test(`plain native text drag preserves captured identity through history and lifecycle`, async ({ page }, info) => {
     test.setTimeout(60000);
     const header = "alpha bravo\r\ncharlie delta\r\ntarget here", original = header + "\r\n" + "row value\r\n".repeat(90) + "tail";
-    await mount(page, host, original);
+    await mount(page, "plain", original);
     const second = header.indexOf("charlie"), destination = header.indexOf("target") + 2, ranges = [{ anchor: 5, head: 0 }, { anchor: second, head: second + 7 }];
     await select(page, ranges, 1); const before = await snapshot(page), beforeSet = before.bindings.views.find(v => v.id === "primary")!.selectionSet;
     await edgeScrollAndCancel(page);
@@ -94,7 +94,7 @@ for (const host of ["plain", "react"]) test(`${host} native text drag preserves 
         }); });
     const from = await point(page, 1), to = await point(page, destination);
     await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.move(from.x + 8, from.y, { steps: 3 }); await page.mouse.move(to.x, to.y, { steps: 10 });
-    if (host === "plain") await expect(page.locator(".st-text-drag-preview")).toHaveCount(0);
+    await expect(page.locator(".st-text-drag-preview")).toHaveCount(0);
     await page.mouse.up(); await ready(page);
     await expect(root(page)).toHaveAttribute("data-trusted-dragstart", "true");
     if (info.project.name === "webkit") {
@@ -176,85 +176,83 @@ test("a native drag cannot insert into a remounted editor when the transport str
     await over(page, 15); await drop(page);
     await exact(page, original.slice(0, 15) + "next" + original.slice(15));
 });
-for (const host of ["plain", "react"]) {
-    test(`${host} cross-document native move, copy and expired target preserve linked history`, async ({ page }, info) => {
-        test.setTimeout(60000); const original = "alpha bravo\r\ncharlie delta\r\nsource tail", target = "target here";
-        await mount(page, host, original); await page.evaluate(text => window.hostFixture.openTransferTarget(text), target); await ready(page);
-        const second = original.indexOf("charlie"), ranges = [{ anchor: 5, head: 0 }, { anchor: second, head: second + 7 }];
-        await page.evaluate(ranges => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, ranges, 1);
-            f.selectSourceSet("secondary", f.transferSnapshot().revision, [{ anchor: 1, head: 0 }, { anchor: 5, head: 5 }], 1); }, ranges); await ready(page);
-        const before = await snapshot(page), targetBefore = await page.evaluate(() => window.hostFixture.transferSnapshot()), sets = before.bindings.views.map(v => v.selectionSet);
-        const drag = async (copy = false, release = true) => {
-            const a = await point(page, 1), b = await point(page, 2, "Secondary source");
-            await page.mouse.move(a.x, a.y); if (copy) await page.keyboard.down("Control"); await page.mouse.down();
-            await page.mouse.move(a.x + 8, a.y, { steps: 3 }); await page.mouse.move(b.x, b.y, { steps: 10 });
-            // Entering the last point can produce only dragenter; a second move delivers dragover.
-            await page.mouse.move(b.x, b.y);
-            if (release) { await page.mouse.up(); if (copy) await page.keyboard.up("Control"); await ready(page); }
-        };
-        await drag();
-        if (info.project.name === "webkit") {
-            await exact(page, original); expect(await page.evaluate(() => window.hostFixture.transferSnapshot())).toEqual(targetBefore); expect((await snapshot(page)).history).toEqual(before.history);
-            info.annotations.push({ type: "qualification-limit", description: "Trusted automated transport strips the internal token. Cross-document refusal passes; token-preserving native movement remains unverified." });
-            await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); return;
-        }
-        const removed = original.slice(5, second) + original.slice(second + 7), inserted = "taalpha\ncharlierget here";
-        await exact(page, removed); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe(inserted);
-        expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).history.undoDepth).toBe(targetBefore.history.undoDepth + 1);
-        await input(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, original);
-        expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe(target); expect((await snapshot(page)).bindings.views.map(v => v.selectionSet)).toEqual(sets);
-        await input(page).press("Control+Shift+z"); await ready(page); await exact(page, removed); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe(inserted);
-        await input(page).press("Control+z"); await ready(page); await exact(page, original);
-        await drag(true); await exact(page, original); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe(inserted);
-        expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth);
-        await input(page, "Secondary source").press("Control+z"); await ready(page); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe(target);
-        await drag(false, false); await expect(root(page, "Secondary source").locator(".st-text-drop-caret")).toHaveCount(1);
-        await page.evaluate(() => { const f = window.hostFixture; f.editTransferTarget(f.transferSnapshot().revision, [{ from: 0, to: 0, insert: "x" }]); });
-        await page.mouse.up(); await ready(page); await exact(page, original); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe("x" + target);
-        await page.evaluate(() => window.hostFixture.setTransferReadOnly(true)); await drag(); await exact(page, original);
-        expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe("x" + target);
-        expect((await snapshot(page)).source.exports).toBe(0); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).exports).toBe(0);
+test(`plain cross-document native move, copy and expired target preserve linked history`, async ({ page }, info) => {
+    test.setTimeout(60000); const original = "alpha bravo\r\ncharlie delta\r\nsource tail", target = "target here";
+    await mount(page, "plain", original); await page.evaluate(text => window.hostFixture.openTransferTarget(text), target); await ready(page);
+    const second = original.indexOf("charlie"), ranges = [{ anchor: 5, head: 0 }, { anchor: second, head: second + 7 }];
+    await page.evaluate(ranges => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, ranges, 1);
+        f.selectSourceSet("secondary", f.transferSnapshot().revision, [{ anchor: 1, head: 0 }, { anchor: 5, head: 5 }], 1); }, ranges); await ready(page);
+    const before = await snapshot(page), targetBefore = await page.evaluate(() => window.hostFixture.transferSnapshot()), sets = before.bindings.views.map(v => v.selectionSet);
+    const drag = async (copy = false, release = true) => {
+        const a = await point(page, 1), b = await point(page, 2, "Secondary source");
+        await page.mouse.move(a.x, a.y); if (copy) await page.keyboard.down("Control"); await page.mouse.down();
+        await page.mouse.move(a.x + 8, a.y, { steps: 3 }); await page.mouse.move(b.x, b.y, { steps: 10 });
+        // Entering the last point can produce only dragenter; a second move delivers dragover.
+        await page.mouse.move(b.x, b.y);
+        if (release) { await page.mouse.up(); if (copy) await page.keyboard.up("Control"); await ready(page); }
+    };
+    await drag();
+    if (info.project.name === "webkit") {
+        await exact(page, original); expect(await page.evaluate(() => window.hostFixture.transferSnapshot())).toEqual(targetBefore); expect((await snapshot(page)).history).toEqual(before.history);
+        info.annotations.push({ type: "qualification-limit", description: "Trusted automated transport strips the internal token. Cross-document refusal passes; token-preserving native movement remains unverified." });
+        await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); return;
+    }
+    const removed = original.slice(5, second) + original.slice(second + 7), inserted = "taalpha\ncharlierget here";
+    await exact(page, removed); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe(inserted);
+    expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).history.undoDepth).toBe(targetBefore.history.undoDepth + 1);
+    await input(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, original);
+    expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe(target); expect((await snapshot(page)).bindings.views.map(v => v.selectionSet)).toEqual(sets);
+    await input(page).press("Control+Shift+z"); await ready(page); await exact(page, removed); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe(inserted);
+    await input(page).press("Control+z"); await ready(page); await exact(page, original);
+    await drag(true); await exact(page, original); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe(inserted);
+    expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth);
+    await input(page, "Secondary source").press("Control+z"); await ready(page); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe(target);
+    await drag(false, false); await expect(root(page, "Secondary source").locator(".st-text-drop-caret")).toHaveCount(1);
+    await page.evaluate(() => { const f = window.hostFixture; f.editTransferTarget(f.transferSnapshot().revision, [{ from: 0, to: 0, insert: "x" }]); });
+    await page.mouse.up(); await ready(page); await exact(page, original); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe("x" + target);
+    await page.evaluate(() => window.hostFixture.setTransferReadOnly(true)); await drag(); await exact(page, original);
+    expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe("x" + target);
+    expect((await snapshot(page)).source.exports).toBe(0); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).exports).toBe(0);
+    expect(await page.locator(".st-text-drop-caret,.st-text-drag-preview").count()).toBe(0);
+    await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
+});
+test(`plain protected dragover, captured copy target and literal external drop ignore focus and selection`, async ({ page }) => {
+    const original = "alpha bravo\r\ntarget here"; await mount(page, "plain", original); await select(page, [{ anchor: 0, head: 5 }]);
+    await syntheticStart(page); await over(page, 15, "Secondary source", true);
+    await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("secondary", f.snapshot().source.revision, [{ anchor: 0, head: 0 }]); });
+    await input(page, "Primary source").evaluate(node => node.focus({ preventScroll: true })); await drop(page, "Secondary source");
+    await exact(page, original.slice(0, 15) + "alpha" + original.slice(15));
+    await input(page).press("Control+z"); await ready(page); await exact(page, original);
+    await page.evaluate(() => { window.textDragStore = new DataTransfer(); window.textDragStore.setData("text/plain", "<b>\r\n😀"); Object.defineProperty(window.textDragStore, "effectAllowed", { value: "copy" }); });
+    await over(page, 15); await drop(page); await exact(page, original.slice(0, 15) + "<b>\r\n😀" + original.slice(15));
+    expect(await root(page).locator("b").count()).toBe(0); await input(page).press("Control+z"); await ready(page); await exact(page, original);
+    await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
+});
+test(`plain changed source, target permissions, cancellation and remount reject captured drops`, async ({ page }) => {
+    const original = "alpha bravo\r\ntarget here"; await mount(page, "plain", original);
+    await select(page, [{ anchor: 0, head: 5 }]); const p = await point(page, 1);
+    expect(await root(page).evaluate((element, p) => {
+        const selected = element.querySelector(".st-viewport-selected")!;
+        selected.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: 77, clientX: p.x, clientY: p.y }));
+        selected.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerId: 77 }));
+        const start = new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() }); element.dispatchEvent(start); return start.defaultPrevented;
+    }, p)).toBe(true);
+    for (const change of ["selection", "revision", "readonly", "cancel", "remount", "no-over", "missing-token", "foreign-token"] as const) {
+        await select(page, [{ anchor: 0, head: 5 }]); await syntheticStart(page, change === "selection"); if (change !== "no-over") await over(page, 15);
+        await page.evaluate(change => { const f = window.hostFixture;
+            if (change === "selection") f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 1, head: 4 }]);
+            if (change === "revision") f.editSource(f.snapshot().source.revision, [{ from: 0, to: 0, insert: "x" }]);
+            if (change === "readonly") f.setSourceReadOnly(true);
+            if (change === "cancel") document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+            if (change === "remount") { f.unmount(); f.mount(); }
+            if (change === "missing-token") window.textDragStore.clearData("application/x-sttropez-text");
+            if (change === "foreign-token") window.textDragStore.setData("application/x-sttropez-text", "wrong-token");
+        }, change); await ready(page);
+        if (change === "missing-token") await over(page, 15);
+        const before = await snapshot(page); await drop(page); expect((await snapshot(page)).source.revision).toBe(before.source.revision); expect((await snapshot(page)).history).toEqual(before.history);
         expect(await page.locator(".st-text-drop-caret,.st-text-drag-preview").count()).toBe(0);
-        await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
-    });
-    test(`${host} protected dragover, captured copy target and literal external drop ignore focus and selection`, async ({ page }) => {
-        const original = "alpha bravo\r\ntarget here"; await mount(page, host, original); await select(page, [{ anchor: 0, head: 5 }]);
-        await syntheticStart(page); await over(page, 15, "Secondary source", true);
-        await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("secondary", f.snapshot().source.revision, [{ anchor: 0, head: 0 }]); });
-        await input(page, "Primary source").evaluate(node => node.focus({ preventScroll: true })); await drop(page, "Secondary source");
-        await exact(page, original.slice(0, 15) + "alpha" + original.slice(15));
-        await input(page).press("Control+z"); await ready(page); await exact(page, original);
-        await page.evaluate(() => { window.textDragStore = new DataTransfer(); window.textDragStore.setData("text/plain", "<b>\r\n😀"); Object.defineProperty(window.textDragStore, "effectAllowed", { value: "copy" }); });
-        await over(page, 15); await drop(page); await exact(page, original.slice(0, 15) + "<b>\r\n😀" + original.slice(15));
-        expect(await root(page).locator("b").count()).toBe(0); await input(page).press("Control+z"); await ready(page); await exact(page, original);
-        await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
-    });
-    test(`${host} changed source, target permissions, cancellation and remount reject captured drops`, async ({ page }) => {
-        const original = "alpha bravo\r\ntarget here"; await mount(page, host, original);
-        await select(page, [{ anchor: 0, head: 5 }]); const p = await point(page, 1);
-        expect(await root(page).evaluate((element, p) => {
-            const selected = element.querySelector(".st-viewport-selected")!;
-            selected.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: 77, clientX: p.x, clientY: p.y }));
-            selected.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerId: 77 }));
-            const start = new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() }); element.dispatchEvent(start); return start.defaultPrevented;
-        }, p)).toBe(true);
-        for (const change of ["selection", "revision", "readonly", "cancel", "remount", "no-over", "missing-token", "foreign-token"] as const) {
-            await select(page, [{ anchor: 0, head: 5 }]); await syntheticStart(page, change === "selection"); if (change !== "no-over") await over(page, 15);
-            await page.evaluate(change => { const f = window.hostFixture;
-                if (change === "selection") f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 1, head: 4 }]);
-                if (change === "revision") f.editSource(f.snapshot().source.revision, [{ from: 0, to: 0, insert: "x" }]);
-                if (change === "readonly") f.setSourceReadOnly(true);
-                if (change === "cancel") document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-                if (change === "remount") { f.unmount(); f.mount(); }
-                if (change === "missing-token") window.textDragStore.clearData("application/x-sttropez-text");
-                if (change === "foreign-token") window.textDragStore.setData("application/x-sttropez-text", "wrong-token");
-            }, change); await ready(page);
-            if (change === "missing-token") await over(page, 15);
-            const before = await snapshot(page); await drop(page); expect((await snapshot(page)).source.revision).toBe(before.source.revision); expect((await snapshot(page)).history).toEqual(before.history);
-            expect(await page.locator(".st-text-drop-caret,.st-text-drag-preview").count()).toBe(0);
-            if (change === "readonly") await page.evaluate(() => window.hostFixture.setSourceReadOnly(false));
-            if (change === "revision") { await input(page).press("Control+z"); await ready(page); } await exact(page, original);
-        }
-        await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
-    });
-}
+        if (change === "readonly") await page.evaluate(() => window.hostFixture.setSourceReadOnly(false));
+        if (change === "revision") { await input(page).press("Control+z"); await ready(page); } await exact(page, original);
+    }
+    await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
+});

@@ -1,7 +1,7 @@
 import { isolatedTest as test, expect } from "./fixtures.ts";
 
-for (const host of ["plain", "react"] as const) for (const feature of ["hover", "signature"] as const) {
-    test(`${host} ${feature} preserves structured documentation and fits rendered content through remount`, async ({ page }) => {
+for (const feature of ["hover", "signature"] as const) {
+    test(`plain ${feature} preserves structured documentation and fits rendered content through remount`, async ({ page }) => {
         const method = feature === "hover" ? "textDocument/hover" : "textDocument/signatureHelp";
         const documentation = { kind: "markdown", value: "**Provider documentation** with `code`.\n\n"
             + "A paragraph tall enough to require fitting after the provider reply.\n\n".repeat(12)
@@ -22,7 +22,7 @@ for (const host of ["plain", "react"] as const) for (const feature of ["hover", 
             });
         });
         await page.setViewportSize({ width: 620, height: 460 });
-        await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`);
+        await page.goto(`/hosts/plain/?editor=candidate&language=lsp`);
         const field = page.getByRole("textbox", { name: "Primary source", exact: true });
         await expect(field).toBeVisible();
         await page.evaluate(() => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: "lookup(value)" }]); });

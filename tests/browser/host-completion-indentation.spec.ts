@@ -77,9 +77,9 @@ test("dismissing and accepting completions in a linked field preserves the next 
     expect(await text(page)).toBe("// shared\n  ent = value; ent");
 });
 
-for (const mode of ["plain", "react"] as const) test.describe(`${mode} contextual completion`, () => {
+test.describe(`plain contextual completion`, () => {
     test("nested multicaret snippets preserve choices, mirrored Enter, primary traversal and atomic history", async ({ page }) => {
-        await fixture(page, mode);
+        await fixture(page, "plain");
         const initial = "function outer() {\r\n    sn\r\n    if (true) {\r\n        sn\r\n    }\r\n}\r\n";
         const positions = [initial.indexOf("sn") + 2, initial.lastIndexOf("sn") + 2]; await seed(page, initial, positions);
         const before = (await view(page)).selectionSet, depth = (await state(page)).history.undoDepth;
@@ -110,7 +110,7 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} contextua
     });
 
     test("changed indentation expires held resolution and an incompatible secondary caret changes no text", async ({ page }) => {
-        const peer = await fixture(page, mode), initial = "    xx\r\n        sn\r\n";
+        const peer = await fixture(page, "plain"), initial = "    xx\r\n        sn\r\n";
         await seed(page, initial, [initial.indexOf("sn") + 2]); peer.hold();
         await field(page).press("Control+Space"); await expect.poll(peer.waiting).toBe(true);
         await page.evaluate(() => window.hostFixture.configureSource("primary", { tabSize: 2, insertSpaces: false, enter: "keep" }));

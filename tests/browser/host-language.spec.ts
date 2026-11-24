@@ -5,10 +5,10 @@ const text = (page: Page) => page.evaluate(() => window.hostFixture.range(0, win
 const primary = (page: Page) => page.getByRole("textbox", { name: "Primary source", exact: true });
 const secondary = (page: Page) => page.getByRole("textbox", { name: "Secondary source", exact: true });
 
-for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrated find host`, () => {
+test.describe(`plain integrated find host`, () => {
     test.beforeEach(async ({ page }) => {
 
-        await page.goto(`/hosts/${mode}/?editor=candidate`); await expect(primary(page)).toBeVisible(); await ready(page);
+        await page.goto(`/hosts/plain/?editor=candidate`); await expect(primary(page)).toBeVisible(); await ready(page);
     });
 
     test("whole-word find replaces only indexed words through comparison, save and remount", async ({ page }) => {

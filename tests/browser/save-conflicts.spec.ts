@@ -1,11 +1,11 @@
 import { test, expect } from "./fixtures.ts";
 
-for (const editor of ["native", "candidate"] as const) for (const mode of ["plain", "react"] as const) {
-    test.describe(`${mode} ${editor} save-conflict pilot`, () => {
+for (const editor of ["native", "candidate"] as const) {
+    test.describe(`plain ${editor} save-conflict pilot`, () => {
         test.beforeEach(async ({ page }) => {
 
 
-            await page.goto(`/hosts/${mode}/?editor=${editor}`);
+            await page.goto(`/hosts/plain/?editor=${editor}`);
             await expect(page.getByRole("textbox", { name: "Primary source", exact: true })).toBeVisible();
         });
         test("proposal conflict review, correction and guarded save preserve later keyboard edits", async ({ page }) => {

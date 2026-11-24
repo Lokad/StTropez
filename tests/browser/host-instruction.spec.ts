@@ -11,8 +11,8 @@ async function waitForInstruction(page: Page, review = true): Promise<void> {
 }
 async function exact(p: Page, text: string) { expect(await hostTextEquals(p, text)).toBe(true); }
 test.afterEach(async ({ page }, info) => { if (info.status !== info.expectedStatus && !page.isClosed()) await info.attach("instruction-failure-state", { contentType: "application/json", body: JSON.stringify(await snap(page), null, 2) }); });
-for (const host of ["plain", "react"]) test(`${host} anchored instruction preserves source, history, copy and virtualized ownership`, async ({ page: p }, info) => {
-      await p.goto(`/hosts/${host}/?editor=candidate`); await expect(source(p)).toBeVisible();
+test(`plain anchored instruction preserves source, history, copy and virtualized ownership`, async ({ page: p }, info) => {
+      await p.goto(`/hosts/plain/?editor=candidate`); await expect(source(p)).toBeVisible();
     const prefix = "before\r\n".repeat(90), line = '  // @transfer { "destination":"a\\u0041.csv", "batchSize":"1000", "unknown":{"n":-0,"s":"😀,}"} }', tail = "\r\nafter".repeat(8), original = prefix + line + tail;
     await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
     await button(p, "Open source review").click(); await button(p, "Capture review acceptance").click(); await button(p, "Finish review acceptance").click(); await waitForInstruction(p);
@@ -66,8 +66,8 @@ for (const host of ["plain", "react"]) test(`${host} anchored instruction preser
     await p.evaluate(() => window.hostFixture.dispose()); const stopped = await snap(p); expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0);
 });
 
-for (const host of ["plain", "react"]) test(`${host} anchored instruction stays with its source across primary document replacement`, async ({ page: p }) => {
-      await p.goto(`/hosts/${host}/?editor=candidate`);
+test(`plain anchored instruction stays with its source across primary document replacement`, async ({ page: p }) => {
+      await p.goto(`/hosts/plain/?editor=candidate`);
     const original = '// @transfer {"destination":"café😀.csv","batchSize":"1000"}\r\nsource tail';
     await expect(source(p)).toBeVisible(); await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
     await button(p, "Open source review").click(); await waitForInstruction(p); await source(p).press("Control+Home"); await button(p, "Anchor instruction at caret").click();

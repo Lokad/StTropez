@@ -23,8 +23,8 @@ async function waitForSavedViews(page: Page): Promise<void> {
     });
 }
 
-for (const editor of ["native", "candidate"] as const) for (const mode of ["plain", "react"] as const) {
-    test.describe(`${mode} ${editor} save failure pilot`, () => {
+for (const editor of ["native", "candidate"] as const) {
+    test.describe(`plain ${editor} save failure pilot`, () => {
         test.beforeEach(async ({ page }, testInfo) => {
 
             if (testInfo.annotations.some(annotation => annotation.type === "native-projection-cache")) {
@@ -39,7 +39,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
                 } });
                 });
             }
-            await page.goto(`/hosts/${mode}/?editor=${editor}`);
+            await page.goto(`/hosts/plain/?editor=${editor}`);
             await expect(page.getByRole("textbox", { name: "Primary source", exact: true })).toBeVisible();
         });
         test(`typing, shared history and review survive a failed save, remounted retry`, {

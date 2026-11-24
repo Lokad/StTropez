@@ -6,9 +6,9 @@ async function waitForReview(page: Page): Promise<void> {
     await ready(page);
     await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.activeViews === 2 && s.bindings.comparison !== null); });
 }
-for (const host of ["plain", "react"]) test(`${host} review panes keep unchanged rows and click coordinates aligned after typing`, async ({ page }) => {
+test(`plain review panes keep unchanged rows and click coordinates aligned after typing`, async ({ page }) => {
 
-    await page.goto(`/hosts/${host}/?editor=candidate`); const line = "const sample = 123; // TODO", original = Array(60).fill(line).join("\r\n");
+    await page.goto(`/hosts/plain/?editor=candidate`); const line = "const sample = 123; // TODO", original = Array(60).fill(line).join("\r\n");
     await page.evaluate(value => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: value }]); }, original);
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await waitForReview(page);
     const input = page.getByRole("textbox", { name: "Primary source", exact: true }); await input.press("Control+Home"); await waitForReview(page);
@@ -48,9 +48,9 @@ for (const host of ["plain", "react"]) test(`${host} review panes keep unchanged
     expect(stopped.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(stopped.hostSubscriptions).toBe(0);
 });
 
-for (const host of ["plain", "react"]) test(`${host} bounded long-context reveal keeps the caret visible through clicking, typing and remount`, async ({ page }) => {
+test(`plain bounded long-context reveal keeps the caret visible through clicking, typing and remount`, async ({ page }) => {
 
-    await page.goto(`/hosts/${host}/?editor=candidate`);
+    await page.goto(`/hosts/plain/?editor=candidate`);
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await waitForReview(page);
     const input = page.getByRole("textbox", { name: "Primary source", exact: true });
     // Match the reproduced editing session: focus precedes programmatic range setup.

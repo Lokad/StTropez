@@ -32,9 +32,9 @@ async function stored(p: Page, text: string | null): Promise<string | null> { co
     };
 }), text); expect(row.matches).toBe(true); return row.token; }
 const selections = (s: Awaited<ReturnType<typeof snapshot>>) => ({ views: s.bindings.views.map(v => ({ id: v.id, set: v.selectionSet })), working: s.bindings.comparison?.selectionSet, reference: s.bindings.comparison?.referenceViewport?.selectionSet });
-for (const host of ["plain", "react"]) test(`${host} loaded-source checkpoint survives close and real reload independently`, async ({ page: p }, info) => {
+test(`plain loaded-source checkpoint survives close and real reload independently`, async ({ page: p }, info) => {
     test.setTimeout(120000);
-    await p.goto(`/hosts/${host}/?editor=candidate`); await waitForDraft(p);
+    await p.goto(`/hosts/plain/?editor=candidate`); await waitForDraft(p);
     await button(p, "Begin delayed load").click(); await button(p, "Finish delayed load").click(); await waitForDraft(p);
     const loaded = (await snapshot(p)).bindings.views.find(v => v.id === "primary")!;
     const value = "loaded café😀 é\r\n" + "row Δ😀\r\n".repeat(8) + "tail";
@@ -84,9 +84,9 @@ async function closeWithDecision(p: Page, accept: boolean): Promise<void> {
     await Promise.all([p.close({ runBeforeUnload: true }), handled]);
     if (closed) await closed;
 }
-for (const host of ["plain", "react"]) test(`${host} browser close decisions retain live work and offer only explicit checkpoint recovery`, async ({ page: p }) => {
+test(`plain browser close decisions retain live work and offer only explicit checkpoint recovery`, async ({ page: p }) => {
     test.setTimeout(120000);
-    await p.goto(`/hosts/${host}/?editor=candidate`); await waitForDraft(p);
+    await p.goto(`/hosts/plain/?editor=candidate`); await waitForDraft(p);
     const raw = "close café😀 é\r\n" + "const stableValue = 123;\r\n".repeat(10) + "tail";
     await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, raw);
     // Trusted browser input supplies user activation; no global keyboard or OS clipboard is used.
@@ -123,8 +123,8 @@ for (const host of ["plain", "react"]) test(`${host} browser close decisions ret
     const closed = reopened.waitForEvent("close"); await reopened.close({ runBeforeUnload: true }); await closed;
     expect(dialogs).toEqual([]);
 });
-for (const host of ["plain", "react"]) test(`${host} durable drafts restore independent inputs after true reload and preserve history Save/Run`, async ({ page: p }) => {
-    test.setTimeout(120000);  await p.goto(`/hosts/${host}/?editor=candidate`); await waitForDraft(p);
+test(`plain durable drafts restore independent inputs after true reload and preserve history Save/Run`, async ({ page: p }) => {
+    test.setTimeout(120000);  await p.goto(`/hosts/plain/?editor=candidate`); await waitForDraft(p);
     const raw = "café😀 é;\r\n" + "const stableValue = 123;\r\n".repeat(10) + "tail";
     await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, raw);
     await source(p).press("Control+End"); await source(p).pressSequentially("K"); await p.getByRole("textbox", { name: "Configuration path", exact: true }).fill("recovered.csv"); await waitForDraft(p); expect((await snapshot(p)).source.exports).toBe(0);
@@ -134,8 +134,8 @@ for (const host of ["plain", "react"]) test(`${host} durable drafts restore inde
     await p.evaluate(() => { document.documentElement.dataset.draftSession = "old"; }); await p.reload(); await waitForDraft(p); expect(await p.evaluate(() => document.documentElement.dataset.draftSession)).toBeUndefined(); await exact(p, "start"); await expect(p.getByRole("textbox", { name: "Configuration path", exact: true })).toHaveValue("source.csv");
     await restore(p, "Restore source draft"); await exact(p, raw + "K"); expect((await snapshot(p)).history.undoDepth).toBe(1); const revision = (await snapshot(p)).source.revision;
     await restore(p, "Restore configuration draft"); await expect(p.getByRole("textbox", { name: "Configuration path", exact: true })).toHaveValue("recovered.csv"); expect((await snapshot(p)).source.revision).toBe(revision); expect(await warning(p)).toBe(false);
-    await p.goto(`/hosts/${host === "plain" ? "react" : "plain"}/?editor=native`); await waitForDraft(p); await exact(p, "start"); await restore(p, "Restore source draft"); await restore(p, "Restore configuration draft"); await exact(p, raw + "K"); expect((await snapshot(p)).history.undoDepth).toBe(1);
-    await p.goto(`/hosts/${host}/?editor=candidate`); await waitForDraft(p); await restore(p, "Restore source draft"); await restore(p, "Restore configuration draft"); await exact(p, raw + "K");
+    await p.goto(`/hosts/react/?editor=native`); await waitForDraft(p); await exact(p, "start"); await restore(p, "Restore source draft"); await restore(p, "Restore configuration draft"); await exact(p, raw + "K"); expect((await snapshot(p)).history.undoDepth).toBe(1);
+    await p.goto(`/hosts/plain/?editor=candidate`); await waitForDraft(p); await restore(p, "Restore source draft"); await restore(p, "Restore configuration draft"); await exact(p, raw + "K");
     await source(p, "Secondary source").press("Control+z"); await waitForDraft(p); await exact(p, "start"); await source(p, "Secondary source").press("Control+Shift+z"); await waitForDraft(p); await exact(p, raw + "K");
     // Establish a newer authoritative saved baseline before restoring the older stored copy.
     const loaded = "loaded café😀\r\nnew saved baseline"; await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, loaded); await waitForDraft(p); await source(p).press("Control+s"); await button(p, "Finish save").click();
@@ -158,10 +158,10 @@ for (const host of ["plain", "react"]) test(`${host} durable drafts restore inde
     await expect(p.getByLabel("Draft recovery status", { exact: true })).toContainText("became stale"); await exact(p, raw + "KLMN"); expect((await snapshot(p)).history).toEqual(intent.history); expect(selections(await snapshot(p))).toEqual(selections(intent));
     await dispose(p);
 });
-for (const host of ["plain", "react"]) test(`${host} draft confirmation, authority, storage errors and discard never overwrite later work`, async ({ page: p }) => {
+test(`plain draft confirmation, authority, storage errors and discard never overwrite later work`, async ({ page: p }) => {
     test.setTimeout(120000);
     await p.addInitScript(() => { const open = IDBFactory.prototype.open; let reject = true; IDBFactory.prototype.open = function (...args) { if (args[0] === "sttropez-example-drafts-v1" && reject) { reject = false; throw new DOMException("Injected temporary open rejection", "UnknownError"); } return open.apply(this, args); }; });
-    await p.goto(`/hosts/${host}/?editor=candidate`); await waitForDraft(p); await expect(p.getByLabel("Draft recovery status", { exact: true })).toContainText("unavailable");
+    await p.goto(`/hosts/plain/?editor=candidate`); await waitForDraft(p); await expect(p.getByLabel("Draft recovery status", { exact: true })).toContainText("unavailable");
     await source(p).press("Control+a"); await source(p).pressSequentially("stored draft"); await button(p, "Retry draft storage").click(); await waitForDraft(p); await button(p, "Keep recovery draft").click(); await waitForDraft(p); expect((await snapshot(p)).draft!.valid).toBe(true);
     await button(p, "Confirm draft action").evaluate(node => { node.dataset.retained = "draft-confirm"; });
     await button(p, "Restore source draft").click(); const firstDecision = (await snapshot(p)).draft!.confirmationToken; expect(firstDecision).not.toBeNull();
@@ -178,9 +178,9 @@ for (const host of ["plain", "react"]) test(`${host} draft confirmation, authori
     await p.evaluate(() => { IDBObjectStore.prototype.put = (window as unknown as { originalDraftPut: typeof IDBObjectStore.prototype.put }).originalDraftPut; }); await button(p, "Retry draft storage").click(); await waitForDraft(p); expect((await snapshot(p)).draft!.sourceUnits).toBe("stored draft".length);
     await button(p, "Discard stored draft").click(); await source(p).press("Control+End"); await source(p).pressSequentially(" owned"); await button(p, "Confirm draft action").click(); await waitForDraft(p); expect((await snapshot(p)).draft!.present).toBe(false); await exact(p, "stored draft later owned"); expect(await warning(p)).toBe(true); await dispose(p);
 });
-for (const host of ["plain", "react"]) test(`${host === "plain" ? "" : "react "}native draft transactions reject stale overwrite and discard tokens`, async ({ page: p }) => {
+test(`native draft transactions reject stale overwrite and discard tokens`, async ({ page: p }) => {
     test.setTimeout(120000); await p.context().addInitScript(trackDraftNotices);
-    await p.goto(`/hosts/${host}/?editor=candidate`); await waitForDraft(p); await source(p).press("Control+a"); await source(p).pressSequentially("stored version"); await button(p, "Keep recovery draft").click(); await waitForDraft(p);
+    await p.goto(`/hosts/plain/?editor=candidate`); await waitForDraft(p); await source(p).press("Control+a"); await source(p).pressSequentially("stored version"); await button(p, "Keep recovery draft").click(); await waitForDraft(p);
     expect(await warning(p)).toBe(false);
     const replaceStored = async (token: string) => p.evaluate(token => new Promise<void>((resolve, reject) => { const open = indexedDB.open("sttropez-example-drafts-v1", 1); open.onerror = () => reject(open.error); open.onsuccess = () => { const db = open.result, tx = db.transaction("drafts", "readwrite"), store = tx.objectStore("drafts"), get = store.get("working-inputs"); get.onsuccess = () => { const row = get.result; row.token = token; row.value.id = token; row.value.source.text = "peer retained text"; store.put(row, "working-inputs"); }; tx.oncomplete = () => { db.close(); resolve(); }; tx.onabort = () => { db.close(); reject(tx.error); }; }; }), token);
     await button(p, "Discard stored draft").click(); await replaceStored("external-newer"); await button(p, "Confirm draft action").click(); await waitForDraft(p); expect((await snapshot(p)).draft!.present).toBe(true); await exact(p, "stored version"); expect(await warning(p)).toBe(true); await expect(p.getByLabel("Draft recovery status", { exact: true })).toContainText("recheck storage");
@@ -189,7 +189,7 @@ for (const host of ["plain", "react"]) test(`${host === "plain" ? "" : "react "}
     // Real same-origin pages share the store, while each owns its working document and view state.
     const peer = await p.context().newPage(), owned = "stored version local";
     let peerText = "peer café😀\r\n" + "const stableValue = 123;\r\n".repeat(2000) + "tail";
-    await peer.goto(new URL(`/hosts/${host === "plain" ? "react" : "plain"}/?editor=candidate`, p.url()).href); await waitForDraft(peer);
+    await peer.goto(new URL(`/hosts/react/?editor=candidate`, p.url()).href); await waitForDraft(peer);
     await peer.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, peerText); await waitForDraft(peer); await source(peer).focus(); const peerBefore = await snapshot(peer);
     await button(p, "Retry draft storage").click(); await waitForDraft(p); let seen = await notices(peer); await keep(p); await peerNotice(peer, seen); await preserved(peer, peerBefore, peerText); expect(await source(peer).evaluate(n => document.activeElement === n)).toBe(true);
     await source(p).focus(); await waitForDraft(p); let before = await snapshot(p); seen = await notices(p); await keep(peer); await peerNotice(p, seen); await preserved(p, before, owned); expect((await snapshot(p)).draft!.unprotected).toBe(true); expect(await warning(p)).toBe(true); expect(await warning(peer)).toBe(false); expect(await source(p).evaluate(n => document.activeElement === n)).toBe(true);

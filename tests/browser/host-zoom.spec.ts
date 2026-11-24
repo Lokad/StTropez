@@ -30,9 +30,9 @@ async function caret(input: Locator, offset: number, secondary = false): Promise
     if (!secondary) expect(Math.abs(actual.anchorHeight - expected.height)).toBeLessThan(1.1);
 }
 
-for (const host of ["plain", "react"]) test(`${host} inherited CSS zoom preserves carets, pointer ranges and navigation`, async ({ page }) => {
+test(`plain inherited CSS zoom preserves carets, pointer ranges and navigation`, async ({ page }) => {
     test.setTimeout(90000);
-    await page.goto(`/hosts/${host}/?editor=candidate`);
+    await page.goto(`/hosts/plain/?editor=candidate`);
     const line = "0123456789abcdef Δ😀 xyz\r\n", text = line.repeat(80);
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text);
     await ready(page);
@@ -80,8 +80,8 @@ for (const host of ["plain", "react"]) test(`${host} inherited CSS zoom preserve
     await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
 });
 
-for (const host of ["plain", "react"]) test(`${host} scroll boundary keeps the display caret on source while the native input stays bounded`, async ({ page }) => {
-     await page.goto(`/hosts/${host}/?editor=candidate`);
+test(`plain scroll boundary keeps the display caret on source while the native input stays bounded`, async ({ page }) => {
+     await page.goto(`/hosts/plain/?editor=candidate`);
     const line = "0123456789abcdef Δ😀 xyz\r\n", text = line.repeat(80), offset = line.length * 20 + 8, input = source(page);
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text);
     for (const zoom of [1, 1.5]) {

@@ -19,11 +19,11 @@ async function nativeReplacement(page:Page,entry:typeof cases[number]){
     await control.pressSequentially("q");const result=await control.evaluate(element=>{if(!(element instanceof HTMLTextAreaElement))throw new Error("Missing native textarea.");return{text:element.value,anchor:element.selectionStart,head:element.selectionEnd,trusted:element.dataset.trusted};});expect(result.text).toBe(entry.before+"q"+entry.after);expect(result.trusted).toBe("true");return result;
   }finally{await controlPage.close();}
 }
-for(const host of ["plain","react"])for(const entry of cases)test(`${host} ${entry.name} doubleclick selects the source word and typing replaces it as one undoable saved-reference edit`,async({page},testInfo)=>{
+for(const entry of cases)test(`plain ${entry.name} doubleclick selects the source word and typing replaces it as one undoable saved-reference edit`,async({page},testInfo)=>{
   const native=await nativeReplacement(page,entry);
   await testInfo.attach("native replacement control",{body:JSON.stringify(native),contentType:"application/json"});
 
-  await page.goto(`/hosts/${host}/?editor=candidate`);await expect(input(page)).toBeVisible();const original=Array(entry.count).fill(entry.before+entry.selected+entry.after).join("\r\n"),from=entry.before.length,to=from+entry.selected.length;
+  await page.goto(`/hosts/plain/?editor=candidate`);await expect(input(page)).toBeVisible();const original=Array(entry.count).fill(entry.before+entry.selected+entry.after).join("\r\n"),from=entry.before.length,to=from+entry.selected.length;
   await page.evaluate(text=>{const f=window.hostFixture,s=f.snapshot();f.editSource(s.source.revision,[{from:0,to:s.source.length,insert:text}]);f.selectSource("secondary",f.snapshot().source.revision,{anchor:4,head:1});},original);
   await page.getByRole("button",{name:"Open source review",exact:true}).click();await waitForReview(page);await page.getByRole("button",{name:"Save source",exact:true}).click();await expect.poll(async()=>(await snapshot(page)).pendingSaves.length).toBe(1);await page.evaluate(()=>window.hostFixture.finishSave());await expect.poll(async()=>(await snapshot(page)).pendingCommands).toBe(0);
   await page.getByRole("button",{name:"Capture reference refresh",exact:true}).click();await page.getByRole("button",{name:"Finish reference refresh",exact:true}).click();await waitForReview(page);

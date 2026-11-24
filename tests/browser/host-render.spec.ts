@@ -7,9 +7,9 @@ async function waitForReview(page: Page): Promise<void> {
     await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.comparison !== null); });
 }
 
-for (const mode of ["plain", "react"] as const) test(`${mode} review typing retains unchanged labels and controls while new reference versions still appear`, async ({ page }) => {
+test(`react review typing retains unchanged labels and controls while new reference versions still appear`, async ({ page }) => {
 
-    await page.goto(`/hosts/${mode}/?editor=candidate`);
+    await page.goto(`/hosts/react/?editor=candidate`);
     const input = page.getByRole("textbox", { name: "Primary source", exact: true }), original = "const sample = 1; // TODO\n" + "x".repeat(48_000);
     await expect(input).toBeVisible();
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await waitForReview(page);

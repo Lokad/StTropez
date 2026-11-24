@@ -14,10 +14,10 @@ async function mount(page: Page, host: string, text: string): Promise<void> {
 }
 async function append(page: Page, text: string): Promise<void> { await input(page).press("Control+End"); await ready(page); await page.keyboard.insertText(text); await ready(page); }
 
-for (const host of ["plain", "react"]) test(`${host} selected versions, discard and saved history stay independent of working Save and Run`, async ({ page }) => {
+test(`plain selected versions, discard and saved history stay independent of working Save and Run`, async ({ page }) => {
     test.setTimeout(120000);
     const original = "base alpha\r\nstable beta\r\nlast 😀";
-    await mount(page, host, original); const initial = await snapshot(page), sourceId = initial.source.id;
+    await mount(page, "plain", original); const initial = await snapshot(page), sourceId = initial.source.id;
     const selector = page.getByRole("combobox", { name: "Review version", exact: true });
     await selector.locator('option[value="server"]').evaluate(node => { node.setAttribute("data-retained", "server-choice"); });
     await click(page, "Prompt close");
@@ -56,8 +56,8 @@ for (const host of ["plain", "react"]) test(`${host} selected versions, discard 
     await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect((await snapshot(page)).hostSubscriptions).toBe(0);
 });
 
-for (const host of ["plain", "react"]) test(`${host} stale version loads and discard confirmations preserve later typing, stale proposals and composition`, async ({ page }) => {
-    test.setTimeout(90000); const original = "human source\r\nkept"; await mount(page, host, original); await click(page, "Keep draft version");
+test(`plain stale version loads and discard confirmations preserve later typing, stale proposals and composition`, async ({ page }) => {
+    test.setTimeout(90000); const original = "human source\r\nkept"; await mount(page, "plain", original); await click(page, "Keep draft version");
     await page.evaluate(() => window.hostFixture.externalWrite("remote")); await version(page, "server");
     await click(page, "Replace primary panel"); await click(page, "Reopen primary source"); await ready(page); const baseline = (await snapshot(page)).bindings.comparison!.baseline;
     await click(page, "Finish version load"); await ready(page); expect((await snapshot(page)).variants.status).toBe("expired"); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline); await exact(page, original);

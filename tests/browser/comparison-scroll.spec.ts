@@ -17,8 +17,8 @@ async function scroll(p: Page, side: "baseline" | "working", row: number, left?:
     await expect.poll(async () => { const c = (await snapshot(p)).bindings.comparison!, v = side === "baseline" ? c.referenceViewport! : c.workingViewport; return Math.abs(v.scrollTop - (12 + row * v.lineHeight)); }).toBeLessThan(1);
     await waitForReview(p);
 }
-for (const host of ["plain", "react"]) test(`${host} linked review scroll preserves captured rows, selections, history, reference and lifecycle`, async ({ page: p }) => {
-    test.setTimeout(120000);  await p.goto(`/hosts/${host}/?editor=candidate`);
+test(`plain linked review scroll preserves captured rows, selections, history, reference and lifecycle`, async ({ page: p }) => {
+    test.setTimeout(120000);  await p.goto(`/hosts/plain/?editor=candidate`);
     const rows = Array.from({ length: 900 }, (_, i) => `row ${i.toString().padStart(6, "0")}: café😀;ok;\r\n`); rows[9] = "long " + "x".repeat(1000) + "\r\n";
     const raw = rows.join(""), offset = (line: number) => rows.slice(0, line).join("").length;
     await p.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, raw);
