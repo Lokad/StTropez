@@ -176,14 +176,14 @@ test("Undo groups a leading space with its word and keeps a run of spaces separa
     await page.keyboard.press("Control+Shift+z"); await page.keyboard.press("End"); await page.keyboard.type("d");
     await page.keyboard.press("Control+z"); await expect(row).toHaveJSProperty("textContent", "abc");
     await page.evaluate(() => {
-        const f = window.editingFixture; f.setText("w".repeat(100_000)); f.selections([{ anchor: 0, head: 0 }]);
+        const f = window.editingFixture; f.setText("w".repeat(200_000)); f.selections([{ anchor: 0, head: 0 }]);
         const input = document.querySelector("#primary textarea")!;
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true, bubbles: true, cancelable: true }));
         if (!f.snapshot().primary.pendingWord) throw new Error("Expected pending navigation.");
         for (const data of "abc def") input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data, bubbles: true, cancelable: true }));
     });
     await ready(page); await page.keyboard.press("Control+z"); await ready(page);
-    expect(await page.evaluate(() => { const f = window.editingFixture; return f.range(100_000, f.snapshot().document!.length); })).toBe("abc");
+    expect(await page.evaluate(() => { const f = window.editingFixture; return f.range(200_000, f.snapshot().document!.length); })).toBe("abc");
 });
 
 test("trusted replacement input preserves UTF-16 selection across a surrogate pair", async ({ page }) => {
@@ -643,9 +643,9 @@ test("comment chords and shifted slash act on the captured lines", async ({ page
     await input.press("Control+Shift+z"); await expect(rows).toHaveText(["  alpha", "// beta"]);
     await page.evaluate(() => window.editingFixture.selections([{ anchor: 3, head: 5 }]));
     await input.press("Control+]"); await expect(rows.first()).toHaveJSProperty("textContent", "    alpha");
-    expect(await stroke("Dead", false, "BracketLeft")).toBe(true);
+    expect(await stroke(")", false, "Minus")).toBe(true);
     await expect(rows.first()).toHaveJSProperty("textContent", "  alpha");
-    expect(await stroke("$", false, "BracketRight")).toBe(true);
+    expect(await stroke("Dead", false, "BracketLeft")).toBe(true);
     await expect(rows.first()).toHaveJSProperty("textContent", "    alpha");
     await input.press("Control+["); await expect(rows.first()).toHaveJSProperty("textContent", "  alpha");
     expect(await stroke("/", true)).toBe(true); await expect(rows.first()).toHaveJSProperty("textContent", "  // alpha");

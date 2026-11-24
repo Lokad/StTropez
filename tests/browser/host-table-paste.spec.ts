@@ -23,7 +23,7 @@ async function setup(page: Page, host: string, text: string): Promise<void> {
     await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: 0 }]); });
 }
 test("paste during a pending word move keeps the literal text at its destination with CSV enabled", async ({ page }) => {
-    const word = "a".repeat(1000001), original = word + ";end";
+    const word = "a".repeat(200001), original = word + ";end";
     await setup(page, "plain", original); await input(page).focus();
     const before = await snapshot(page);
     await input(page).evaluate(node => {

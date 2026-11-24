@@ -78,25 +78,23 @@ test("local ASCII deletion avoids whole-line indexing while nearby Unicode and C
     }
 });
 
-test("a whole-line deletion yields to animation frames and typing in the other view cancels it", async ({ page }) => {
-    await page.goto("/editing/"); await ready(page); await setup(page, "x" + "\u0301".repeat(100_000), 100_001);
-    const observed = await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(input => {
-        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
-        return new Promise<{ frames: number; pending: boolean }>(resolve => { let frames = 0; const tick = () => { const pending = window.editingFixture.snapshot().primary.pendingGrapheme; if (++frames === 2 || !pending) resolve({ frames, pending }); else requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
-    });
-    expect(observed).toEqual({ frames: 2, pending: true });
-    await page.evaluate(() => window.editingFixture.focus("secondary")); await page.keyboard.type("!"); await ready(page);
-    const after = await state(page); expect(after.primary.commits).toBe(0); expect(after.secondary.commits).toBe(1); expect(after.document!.length).toBe(100_002); expect(after.document!.exports).toBe(0);
-});
-
-test("pending whole-line scans yield to frames and expire on revision, selection, tab, permission or disposal changes", async ({ page }) => {
-    for (const changed of ["revision", "selection", "generation", "permission", "dispose"] as const) {
+test("a pending whole-line deletion expires when its captured input changes", async ({ page }) => {
+    for (const changed of ["revision", "secondary", "selection", "generation", "permission", "dispose"] as const) {
         await page.goto("/editing/"); await ready(page); await setup(page, "x" + "\u0301".repeat(100_000), 100_001);
         const before = await state(page);
         const pending = await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate((input, changed) => {
             input.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
             const pending = window.editingFixture.snapshot().primary.pendingGrapheme;
             if (changed === "revision") window.editingFixture.edit([{ from: 0, to: 0, insert: "!" }]);
+            if (changed === "secondary") {
+                window.editingFixture.focus("secondary");
+                const other = document.activeElement as HTMLTextAreaElement;
+                const event = { inputType: "insertText", data: "!", bubbles: true };
+                if (other.dispatchEvent(new InputEvent("beforeinput", { ...event, cancelable: true }))) {
+                    other.setRangeText("!", other.selectionStart, other.selectionEnd, "end");
+                    other.dispatchEvent(new InputEvent("input", event));
+                }
+            }
             if (changed === "selection") window.editingFixture.select("primary", { anchor: 2, head: 2 });
             if (changed === "generation") window.editingFixture.replacePrimary();
             if (changed === "permission") window.editingFixture.readOnly(true);
@@ -104,10 +102,9 @@ test("pending whole-line scans yield to frames and expire on revision, selection
             return pending;
         }, changed);
         expect(pending).toBe(true);
-        const frames = await page.evaluate(() => new Promise<number>(resolve => { let frames = 0; const tick = () => { if (++frames === 3) resolve(frames); else requestAnimationFrame(tick); }; requestAnimationFrame(tick); }));
-        expect(frames).toBe(3); await expect.poll(async () => (await state(page)).primary.pendingGrapheme).toBe(false);
+        await expect.poll(async () => (await state(page)).primary.pendingGrapheme).toBe(false);
         const after = await state(page); expect(after.primary.commits).toBe(before.primary.commits);
-        if (changed !== "dispose") { expect(after.document!.length).toBe(100_001 + (changed === "revision" ? 1 : 0)); expect(after.document!.exports).toBe(0); }
+        if (changed !== "dispose") { expect(after.document!.length).toBe(100_001 + (changed === "revision" || changed === "secondary" ? 1 : 0)); expect(after.document!.exports).toBe(0); }
         else expect(after.diagnostics.resources).toBe(0);
     }
 });

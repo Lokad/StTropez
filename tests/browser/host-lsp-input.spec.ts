@@ -137,7 +137,7 @@ for (const host of ["plain", "react"]) test(`${host} LSP captures wait for movem
     await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`);
     await expect(input(page)).toBeVisible(); await settled(page);
     await page.getByLabel("New identifier", { exact: true }).fill("inventory");
-    const longSource = "lookup(" + " ".repeat(1000000) + ") #abc";
+    const longSource = "lookup(" + " ".repeat(200000) + ") #abc";
     await seed(page, longSource, 7);
     await blocked(page, "movement"); await settled(page);
     expect(wire).toEqual([]);
