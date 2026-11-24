@@ -259,7 +259,6 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
                 return token === generation && valid();
             };
             const present = (result: SearchStep) => {
-                // Transfer acknowledgements can advance diagnostics without changing visible progress.
                 const state = store.get();
                 if (result.done || count !== state.count || result.scanned !== state.scanned)
                     publish({ count, ...(current !== undefined && { current }), matchesVersion: state.matchesVersion + (count !== state.count ? 1 : 0), scanned: result.scanned, status: result.done ? "ready" : "searching", retained: !!repair && !result.done });

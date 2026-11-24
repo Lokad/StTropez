@@ -575,7 +575,7 @@ async function holdRegexReply(page: Page, operation: "regex-matches" | "regex-ed
             constructor(url: string | URL, options?: WorkerOptions) {
                 super(url, options);
                 if (new URL(url, document.baseURI).pathname.endsWith("/regex-worker.js")) this.addEventListener("message", event => {
-                    if (!probe.holding || JSON.parse(event.data).operation !== operation) return;
+                    if (!probe.holding || event.data?.operation !== operation) return;
                     event.stopImmediatePropagation();
                     probe.pending.push(() => this.dispatchEvent(new MessageEvent("message", { data: event.data })));
                 }, { capture: true });

@@ -180,7 +180,7 @@ In the browser, a literal advance stops at 4,096 units or 1,024 matches. A task 
 at most 32 advances, checking its 4 ms target after each advance and index update. The first repair
 advance stops at 64 matches to look for a reusable suffix. Repeated patterns can force a full suffix
 scan. Missing revision history forces a fresh search. `maxScanStepMs` times one match/index step.
-Setup, publication and paint take additional time. Regex search processes one worker reply at a time.
+Setup, publication and paint take additional time. Regex search reads the worker's result in local steps.
 
 Case-insensitive literal matching uses Unicode simple folding over code points. It does not
 expand `ß` to `ss`, normalize combining sequences or apply locale-specific casing. Whole-word
@@ -241,15 +241,15 @@ that occurrence. Undo restores all selections.
 
 | Limit or setting | Contract |
 | --- | --- |
-| Source transfer | Up to 512,000 UTF-16 units, in acknowledged chunks of 32,768 |
+| Source | Up to 512,000 UTF-16 units. The first query for a revision sends its text. |
 | Pattern | At most 4,096 UTF-16 units |
-| Matches | Each match starts at a distinct UTF-16 offset, including a possible empty match at EOF. A response page holds up to 512 ranges. |
+| Matches | Each match starts at a distinct UTF-16 offset, including a possible empty match at EOF. The browser processes up to 8,192 ranges per step. |
 | Replacement template | At most 32,768 UTF-16 units |
 | Replacement output | `maxOutputUnits` caps total inserted UTF-16 units (default and maximum 512,000). The resulting document must also fit in 512,000 units. |
-| Replacement transfer | At most 512 small edits per page; large insertions use 32,768-unit fragments |
+| Replacement plan | The browser reads up to 1,024 edits per step and commits the complete plan in one transaction. |
 | `regularExpressionDelayMs` | Controller query delay: default 80; finite value from 0 through 1,000 |
 | `timeoutMs` | Backend exchange timeout: default 5,000; positive finite value |
-| Worker protocol | Client and worker require matching protocol versions before source transfer |
+| Worker protocol | Each query has one request and one reply. Serve the client and worker from the same package version. |
 
 The worker reuses source for the same document, revision and immutable buffer. A new revision
 requires another full transfer. Cancelling an active exchange terminates the worker and drops its
@@ -257,8 +257,8 @@ cache. Cancelling before the first message preserves an idle cache. A timeout te
 native matching.
 
 The client ignores replies to old requests and checks current replies for size, range order and
-output limits. A malformed reply, exceeded limit or worker failure discards the entire plan. Final
-fragment assembly and the transaction run synchronously.
+output limits. The reply transfers the range offsets and, for a replacement, the insertion text.
+A malformed reply, exceeded limit or worker failure discards the entire plan.
 
 ## Host responsibilities
 

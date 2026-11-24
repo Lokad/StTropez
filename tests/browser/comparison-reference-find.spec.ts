@@ -19,7 +19,7 @@ async function setup(p: Page, host: string, raw: string): Promise<void> {
                 const regex = String(url).endsWith("/regex-worker.js"), name = regex ? `reference-find-${++sequence}` : options?.name;
                 super(url, { ...options, ...(name === undefined ? {} : { name }) });
                 if (regex) this.addEventListener("message", e => {
-                    if (window.holdReferenceMatches && typeof e.data === "string" && JSON.parse(e.data).operation === "regex-matches") {
+                    if (window.holdReferenceMatches && e.data?.operation === "regex-matches") {
                         e.stopImmediatePropagation(); window.heldReferenceMatches!.push({ worker: this, name: name!, data: e.data });
                     }
                 }, { capture: true });
