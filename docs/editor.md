@@ -295,10 +295,10 @@ places the caret at the pointer, or keeps the selections when you click inside o
 scrollbar or clicking its track keeps the selection. Typing brings the edited line back into view,
 even during a track-click animation.
 
-A column drag measures both horizontal positions on each line. Short lines stop at their ends.
+A column drag selects lines that reach its nearer horizontal edge. If every line falls short,
+it places a caret at the end of each one.
 Dragging straight down creates carets. Folded bodies and comparison padding contribute no ranges.
-If you release in padding, the rectangle ends on the last source line crossed. The line at
-the moving corner has the primary range. Typing replaces all ranges
+If you release in padding, the rectangle ends on the last source line crossed. The last participating line in the drag direction has the primary range. Typing replaces all ranges
 in one undo step. Read-only panes allow the same selection gesture.
 
 `--st-selection` paints above token and occurrence backgrounds. A selection drag ends

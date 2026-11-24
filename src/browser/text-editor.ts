@@ -186,7 +186,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     let visualMoves = 0;
     let group: Readonly<{ type: string; revision: number; selectionSet: SelectionSet; tail: ReturnType<typeof typingRun> | "spaces" | undefined; key: string }> | undefined;
     type ColumnDrag = { kind: "column"; middle: boolean; originRow: number; anchorColumn: number;
-        projection?: { layout: string; column: number; direction: -1 | 1; count: number; ranges: Selection[] } };
+        projection?: { layout: string; column: number; direction: -1 | 1; count: number; ranges: (Selection & { reaches: boolean })[] } };
     type DragUnit = ColumnDrag | (({ kind: "line"; range: Selection } | { kind: "word"; origin: number; range?: Selection }) & { lastHit?: number });
     let drag: Readonly<{ pointer: number; anchor: number; anchorAffinity: Affinity; revision: number; x: number; y: number; selectionSet: SelectionSet; baseRanges: readonly Selection[]; padding: boolean; unit?: DragUnit }> | undefined;
     let dragCaretRecorded = false;
@@ -1491,7 +1491,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             completeCaptured(capture, () => {
                 // A long drag can finish after pointerup. It still has one caret-history entry.
                 skipCaretHistory = dragCaretRecorded;
-                try { view.setSelections(capture.revision, ranges.slice(0, count), count - 1); }
+                const crossed = ranges.slice(0, count), reached = crossed.filter(range => range.reaches);
+                const selected = reached.length ? reached : crossed;
+                try { view.setSelections(capture.revision, selected, selected.length - 1); }
                 finally { skipCaretHistory = false; }
                 if (drag?.unit === unit) drag = { ...drag, selectionSet: view.getSnapshot().selectionSet };
                 refresh(); return true;

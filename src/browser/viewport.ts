@@ -1,6 +1,7 @@
 import { clientBox, cssZoom, minimapWidth } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
 import { Store, type Observable } from "../core/observable.ts";
+import { lineContentEnd } from "../core/newlines.ts";
 import { captureTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentSnapshot, DocumentView, TabId, Workspace } from "../core/workspace.ts";
 import type { Selection } from "../core/history.ts";
@@ -57,7 +58,7 @@ type ViewportNavigation = Readonly<{
     collapseVisual: (from: number, to: number, direction: -1 | 1) => CaretRectangle | undefined;
     columnAt: (offset: number, affinity?: Affinity) => number | undefined;
     caretAtColumn: (line: number, column: number) => Readonly<Pick<CaretRectangle, "offset" | "affinity" | "revision">> | undefined;
-    selectionAtColumns: (line: number, anchor: number, head: number) => Selection | undefined;
+    selectionAtColumns: (line: number, anchor: number, head: number) => (Selection & { reaches: boolean }) | undefined;
     prepareNavigationRows: (lines: readonly number[]) => () => void;
 }>;
 export type TextViewport = Observable<ViewportSnapshot> & Readonly<{ element: HTMLDivElement; view: DocumentView; decorations: DecorationLayers;
@@ -1168,7 +1169,14 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             const start = row.nearest(anchor);
             const sameFragment = row.complete || columnScroll(anchor) === columnScroll(head);
             const end = anchor === head ? start : sameFragment ? row.nearest(head) : withColumnRow(line, head, other => other.nearest(head));
-            return end && { anchor: start.offset, anchorAffinity: start.affinity, head: end.offset, headAffinity: end.affinity };
+            if (!end) return;
+            let reaches = true;
+            if (start.offset === end.offset && start.offset === lineContentEnd(workspace.document(documentId).buffer, line)) {
+                const bounds = clientBox(root, false, gutterWidth);
+                const endColumn = left + (start.left - bounds.left) / bounds.zoom;
+                reaches = Math.min(anchor, head) <= endColumn + columnWidth / 2;
+            }
+            return { anchor: start.offset, anchorAffinity: start.affinity, head: end.offset, headAffinity: end.affinity, reaches };
         }),
         visualRowAt: line => renderedIndex.rowAt(line),
         columnDragLine: (localY, originLine) => {

@@ -257,34 +257,43 @@ test("Shift-clicking on either side of a double-clicked word keeps the whole wor
 test("column drags edit visible rows together and keep the active corner", async ({ page }) => {
     const original = "012345\r\nx\r\nhidden\r\n012345";
     const last = original.lastIndexOf("012345");
-    await page.goto("/editing/");
+    await page.goto("/comparison/");
     await page.evaluate(({ original, last }) => {
-        const f = window.editingFixture; f.setText(original);
-        f.folds([{ id: "body", from: 8, to: last, collapsed: true }]); f.focus("primary");
-    }, { original, last }); await ready(page);
-
+        const f = window.comparisonFixture;
+        f.setText(original);
+        const { view } = f.review.panes.working;
+        view.folding.setRanges(view.folding.getSnapshot(), [{ id: "body", from: 8, to: last, collapsed: true }]);
+        f.focus();
+    }, { original, last });
+    await ready(page);
     const state = () => page.evaluate(() => {
-        const { ranges, primary } = window.editingFixture.selectionSet();
+        const { ranges, primary } = window.comparisonFixture.review.panes.working.view.getSnapshot().selectionSet;
         return { ranges: ranges.map(r => [r.anchor, r.head]), primary };
     });
-    const text = () => page.evaluate(() => { const f = window.editingFixture; return f.range(0, f.snapshot().document!.length); });
-    const top = await textPoint(page, 2), bottom = await textPoint(page, last + 5);
+    const text = () => page.evaluate(() => {
+        const f = window.comparisonFixture;
+        return f.range(0, f.snapshot().working.length);
+    });
+    const [top, bottom] = await page.evaluate(last => [2, last + 5].map(at => {
+        const p = window.comparisonFixture.review.panes.working.viewport.coordsAt(at)!;
+        return { x: p.left + 1, y: p.top + p.height / 2 };
+    }) as [{ x: number; y: number }, { x: number; y: number }], last);
     await page.keyboard.down("Shift"); await page.keyboard.down("Alt");
     await page.mouse.move(bottom.x, bottom.y); await page.mouse.down();
     await page.mouse.move(top.x, top.y, { steps: 5 }); await page.mouse.up();
     await page.keyboard.up("Alt"); await page.keyboard.up("Shift");
-    const backwards = { ranges: [[5, 2], [9, 9], [last + 5, last + 2]], primary: 0 };
+    const backwards = { ranges: [[5, 2], [last + 5, last + 2]], primary: 0 };
     expect(await state()).toEqual(backwards);
-    await page.keyboard.type("Q"); expect(await text()).toBe("01Q5\r\nxQ\r\nhidden\r\n01Q5");
+    await page.keyboard.type("Q"); expect(await text()).toBe("01Q5\r\nx\r\nhidden\r\n01Q5");
     await page.keyboard.press("Control+z"); expect(await text()).toBe(original); expect(await state()).toEqual(backwards);
 
-    await page.evaluate(() => window.editingFixture.readOnly(true));
+    await page.evaluate(() => window.comparisonFixture.readOnly(true));
     await page.mouse.move(top.x, top.y); await page.mouse.down({ button: "middle" });
     await page.mouse.move(top.x, bottom.y, { steps: 5 }); await page.mouse.up({ button: "middle" });
-    expect(await state()).toEqual({ ranges: [[2, 2], [9, 9], [last + 2, last + 2]], primary: 2 });
+    expect(await state()).toEqual({ ranges: [[2, 2], [last + 2, last + 2]], primary: 1 });
     await page.keyboard.type("!"); expect(await text()).toBe(original);
-    await page.evaluate(() => window.editingFixture.readOnly(false));
-    await page.keyboard.type("!"); expect(await text()).toBe("01!2345\r\nx!\r\nhidden\r\n01!2345");
+    await page.evaluate(() => window.comparisonFixture.readOnly(false));
+    await page.keyboard.type("!"); expect(await text()).toBe("01!2345\r\nx\r\nhidden\r\n01!2345");
 });
 
 test("a scrolled column drag replaces graphemes on every crossed row and undoes in one step", async ({ page }) => {
