@@ -75,11 +75,12 @@ Paste multiple lines into either field, or press Ctrl/Cmd+Enter to replace the s
 with a line break. Enter in the replacement field replaces the current match. Holding Enter
 in either field performs its action once.
 In regex replacements, `\n` starts a new line and `\\` inserts one backslash.
-Opening Find picks up a selection of up to 4,096 UTF-16 units and escapes it in regex mode.
+Opening Find uses the selected text or the word at the caret and escapes it in regex mode.
 Select different text in the editor and press Ctrl/Cmd+F again to search for it.
 Literal Find accepts selected text with LF or CRLF endings. Regex mode keeps each ending exact
-and can also seed a query from a bare carriage return. An empty or oversized selection keeps
-the previous query. Typing a query previews a match while focus stays in Find. Enter selects it.
+and can also seed a query from a bare carriage return. Find keeps the previous query when there
+is no word or selection, or the query exceeds 4,096 UTF-16 units. Typing a query previews a match
+while focus stays in Find. Enter selects it.
 Escape selects a completed preview and returns to the editor. The counter shows
 the active match and total, including when you reopen Find on a selected match or change flags.
 It reports when navigation wraps. With no matches or a failed search,

@@ -354,7 +354,7 @@ test("Find toggles regex on the existing query and replaces captured groups in o
     await mode.click(); await query.press("Escape"); await input.press("Control+f");
     await expect(query).toHaveValue('import \\{ calculateTotal \\} from "\\./pricing";');
     await expect(status).toHaveText("1 of 1"); await query.press("Escape");
-    await input.press("Control+Home"); await input.press("Control+f");
+    await input.press("End"); await input.press("Control+f");
     await expect(query).toHaveValue('import \\{ calculateTotal \\} from "\\./pricing";');
 });
 
@@ -490,7 +490,14 @@ test("Find combines case and word boundaries and keeps the options across files"
     const query = page.getByRole("textbox", { name: "Find text" }), status = page.locator("#find-status");
     const caseButton = page.getByRole("button", { name: "Match case", exact: true });
     const word = page.getByRole("button", { name: "Match whole word" }), regex = page.getByRole("button", { name: "Use regular expression" });
-    await page.getByRole("textbox", { name: "main.ts", exact: true }).press("Control+f");
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    await source.press("Control+Home"); await source.press("ArrowRight"); await source.press("Control+f");
+    await expect(query).toHaveValue("import");
+    await expect(status).toHaveText("1 of 2");
+    await query.fill("quantity"); await expect(status).toHaveText("1 of 4");
+    await query.press("Enter"); await source.press("Control+Home"); await expect(status).toHaveText("4 matches");
+    await page.locator("#editor .st-search-match").last().dblclick(); await expect(status).toHaveText("4 of 4");
+    await source.press("Control+Home");
     await query.fill("Cart"); await expect(status).toHaveText("1 of 5");
     await caseButton.press("Space"); await expect(query).toBeFocused(); await expect(status).toHaveText("1 of 2");
     await word.click(); await expect(status).toHaveText("No matches");

@@ -77,8 +77,9 @@ Call `acceptPreview()` when closing a Find panel to select the displayed match. 
 selects the preview. Losing focus, scrolling, starting a new query
 or changing the selection, document or visible folds abandons a pending preview. After explicit navigation,
 `wrappedTo` reports `"start"`, `"end"` or `null`. The `current` index starts at zero.
-Without a preview, a query or flag change reports the index of an existing nonempty selection
-if it exactly matches a result when the search finishes. The selection and scroll position stay put.
+Without a preview, Find reports the match containing the caret or exactly covering the selection.
+Moving elsewhere clears the index. Moving the selection also clears the wrap notice.
+These updates preserve the selection and scroll position.
 A match inside a line ending appears at the end of the row and keeps its original UTF-16 offsets.
 `matchesIn(from, to, capture?)` returns frozen, unclipped UTF-16 ranges intersecting `[from, to)`.
 Point matches count at `from` and are excluded at `to`. An empty interval returns a point match at

@@ -198,7 +198,11 @@ test("refining a query follows the last Find selection at the same start", () =>
         assert.deepEqual(range(), [22, 26]); assert.equal(f.find.getSnapshot().current, 0);
         assert.equal(f.find.acceptPreview(), true); assert.deepEqual(range(), [0, 10]);
         query("quan"); f.select(12, 16); f.drain();
-        assert.deepEqual(range(), [12, 16]); assert.equal(f.find.getSnapshot().current, null);
+        assert.deepEqual(range(), [12, 16]); assert.equal(f.find.getSnapshot().current, 1);
+        assert.equal(f.find.acceptPreview(), false);
+        f.select(13); assert.equal(f.find.getSnapshot().current, 1);
+        f.select(11); assert.equal(f.find.getSnapshot().current, null);
+        f.select(12, 16);
         query("quantity"); f.drain(); assert.deepEqual(range(), [12, 16]);
     } finally { f.dispose(); }
 });

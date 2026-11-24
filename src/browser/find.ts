@@ -64,7 +64,10 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     if (!Number.isFinite(regexDelay) || regexDelay < 0 || regexDelay > 1000) throw new RangeError("Invalid regular-expression query delay.");
     if (editor.activity().disposed || !workspace.ownsDocumentView(editor.view, target)) throw new Error("Find requires the captured document view.");
     const documentId = editor.view.documentId, resource = workspace.resourceForDocument(documentId), lease = workspace.acquire(resource.id), owner = editor.element.ownerDocument, win = owner.defaultView!;
-    const scope = workspace.createNotificationScope(), initial = workspace.document(documentId);
+    const viewSnapshot = () => editor.view.getSnapshot();
+    const currentSelection = () => viewSnapshot().selectionSet;
+    const readDocument = () => workspace.document(documentId);
+    const scope = workspace.createNotificationScope(), initial = readDocument();
     const store = new Store<FindSnapshot>(Object.freeze({ query: "", wholeWord: false, matchCase: true, regularExpression: false, revision: initial.revision, status: "idle", count: 0, scanned: 0, length: initial.buffer.length,
         retained: false, current: null, wrappedTo: null, matchesVersion: 0, reason: null, message: "" }), scope);
     const runner = createCooperativeRunner(win);
@@ -94,7 +97,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         scope.publish(store, next);
         if (next.matchesVersion !== previous.matchesVersion || next.revision !== previous.revision) layer?.invalidate();
         else if (layer && next.current !== previous.current && valid()) {
-            const buffer = workspace.document(documentId).buffer;
+            const buffer = readDocument().buffer;
             for (const ordinal of [previous.current, next.current]) if (ordinal !== null && ordinal < matches.count) {
                 const range = matches.at(ordinal); layer.invalidate(buffer.lineAt(range.from), buffer.lineAt(range.to) + 1);
             }
@@ -118,19 +121,26 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const range = index < count ? matches.at(index) : undefined;
         return range?.from === from && range.to === to;
     };
+    function selectionIndex(): number | null {
+        const { anchor, head } = viewSnapshot().selection;
+        const from = Math.min(anchor, head), index = indexAt(from);
+        if (anchor !== head) return matchesRange(index, from, Math.max(anchor, head)) ? index : null;
+        if (index < count && offsetAt(index) === head) return index;
+        return index > 0 && head < endAt(index - 1) ? index - 1 : null;
+    }
     const emptyMatches: readonly SearchMatch[] = Object.freeze([]);
     const matchesIn = (from: number, to: number, capture = store.get()): readonly SearchMatch[] => {
         if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from) throw new RangeError("Invalid match range.");
         const state = store.get();
         if (!valid() || capture.revision !== state.revision || capture.matchesVersion !== state.matchesVersion
-            || workspace.document(documentId).revision !== state.revision) return emptyMatches;
+            || readDocument().revision !== state.revision) return emptyMatches;
         if (to > state.length) throw new RangeError("Match range exceeds document length.");
         return matches.matchesIn(from, to);
     };
     const layer = options.highlightMatches === false ? undefined : editor.decorations?.addProvider({ name: "find matches", order: 60, minimap: false, provide: line => {
         const state = store.get();
         if (!state.count || state.revision !== line.revision) return [];
-        const buffer = workspace.document(documentId).buffer;
+        const buffer = readDocument().buffer;
         const next = line.line + 1 < buffer.lineCount ? buffer.offsetAt(line.line + 1) : line.to;
         // CR and LF share a painted edge. Include their raw positions only at the real end of this line.
         const ending = next > line.to && next - line.to <= 2 && /^\r?\n$/.test(buffer.slice(line.to, next));
@@ -146,7 +156,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         stop(); publish({ status: "ready", reason: "editing-unavailable", message: "Replacement cancelled because editing became unavailable." });
     }); };
     const capture = (query: string, wholeWord: boolean, matchCase: boolean): FindQueryCapture => {
-        const document = workspace.document(documentId); return Object.freeze({ documentId, revision: document.revision, buffer: document.buffer, query, wholeWord, matchCase });
+        const document = readDocument(); return Object.freeze({ documentId, revision: document.revision, buffer: document.buffer, query, wholeWord, matchCase });
     };
     const failed = (error: unknown, token: number, planning = false, reason: FindReason = planning ? "replacement-failed" : "search-failed") => {
         if (token !== generation || disposed) return;
@@ -154,10 +164,13 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         if (planning) publish({ status: "ready", reason, message });
         else reset({ status: "failed", reason, message });
     };
+    const expire = () => {
+        disposeBackends(); reset({ status: "expired", reason: "view-unavailable", message: "View is unavailable." });
+    };
     function restart(query: string, wholeWord = store.get().wholeWord, matchCase = store.get().matchCase, regularExpression = store.get().regularExpression, retain = false): void {
         stop();
-        if (!valid()) { disposeBackends(); reset({ status: "expired", reason: "view-unavailable", message: "View is unavailable." }); return; }
-        const document = workspace.document(documentId), token = generation;
+        if (!valid()) { expire(); return; }
+        const document = readDocument(), token = generation;
         scanMaximum = 0;
         let repair: LiteralFindRepair | undefined;
         if (retain && literal && !regularExpression && literal.query === query && literal.wholeWord === wholeWord && literal.matchCase === matchCase
@@ -184,7 +197,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             publish({ ...patch, status: "searching", retained: true, count, scanned: repair.start, current: null, wrappedTo: null, matchesVersion: store.get().matchesVersion + 1 });
         } else reset({ ...patch, status: query ? "searching" : "idle" });
         if (!query) return;
-        const initialSelection = retain ? undefined : editor.view.getSnapshot();
+        const initialSelection = currentSelection();
         let nextLiteral: ((units?: number) => SearchStep) | undefined;
         try {
             if (regularExpression && !backend) throw new Error("Regular-expression search is unavailable in this host.");
@@ -204,12 +217,12 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             if (token !== generation || !valid()) { if (token === generation) restart(query); return; }
             advanced = true;
             const started = win.performance.now(); let scanned = store.get().scanned;
-            let current: number | undefined;
+            let current: number | null | undefined;
             // Start the next literal timer's wait during this bounded slice, rather than after it.
             if (!regularExpression && !beforePaint) later(step);
             const accept = (result: SearchStep, began: number, dispatchMs: number): boolean => {
                 if (token !== generation) return false;
-                if (!valid() || workspace.document(documentId).revision !== document.revision) { restart(query); return false; }
+                if (!valid() || readDocument().revision !== document.revision) { restart(query); return false; }
                 if (result.matches.length > 8192
                     || !Number.isSafeInteger(result.scanned) || result.scanned < scanned || result.scanned > document.buffer.length) throw new Error("Invalid search result.");
                 for (const match of repair ? [] : result.matches) {
@@ -226,13 +239,8 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
                 scanned = result.scanned;
                 scanMaximum = Math.max(scanMaximum, dispatchMs, win.performance.now() - began);
                 if (result.done) {
-                    if (initialSelection && !pendingPreview && initialSelection.selectionSet === editor.view.getSnapshot().selectionSet) {
-                        const { anchor, head } = initialSelection.selection;
-                        if (anchor !== head) {
-                            const from = Math.min(anchor, head), index = indexAt(from);
-                            if (matchesRange(index, from, Math.max(anchor, head))) current = index;
-                        }
-                    }
+                    const moved = initialSelection !== currentSelection();
+                    if (!pendingPreview && (!retain || moved)) current = selectionIndex();
                     if (!regularExpression) runner.cancel();
                     const finished = cursor; cursor = undefined; finished?.dispose();
                     if (!regularExpression) { literal = { document, index: matches, query, wholeWord, matchCase }; edges = undefined; pendingRepair = undefined; }
@@ -270,11 +278,11 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     }
     const replacedHere = () => {
         if (!replacedZero || replacedZero.revision !== store.get().revision) return false;
-        const selected = editor.view.getSnapshot(); return selected.selectionSet === replacedZero.selectionSet && selected.selection.anchor === replacedZero.head && selected.selection.head === replacedZero.head;
+        const selected = viewSnapshot(); return selected.selectionSet === replacedZero.selectionSet && selected.selection.anchor === replacedZero.head && selected.selection.head === replacedZero.head;
     };
     const currentRange = (): SearchMatch | undefined => {
-        const state = store.get(); if (!valid() || state.status !== "ready" && !(state.status === "searching" && state.retained) || state.revision !== workspace.document(documentId).revision) return undefined;
-        const selected = editor.view.getSnapshot().selection, low = Math.min(selected.anchor, selected.head), high = Math.max(selected.anchor, selected.head);
+        const state = store.get(); if (!valid() || state.status !== "ready" && !(state.status === "searching" && state.retained) || state.revision !== readDocument().revision) return undefined;
+        const selected = viewSnapshot().selection, low = Math.min(selected.anchor, selected.head), high = Math.max(selected.anchor, selected.head);
         if (!state.query) return undefined;
         const index = indexAt(low);
         if (matchesRange(index, low, high) && !(low === high && replacedHere())) return { from: low, to: high };
@@ -283,7 +291,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         if (state.regularExpression) return high > low && (index < count && offsetAt(index) < high && endAt(index) > low
             || index > 0 && endAt(index - 1) > low) ? { from: low, to: high } : undefined;
         if (state.wholeWord) return undefined;
-        const buffer = workspace.document(documentId).buffer;
+        const buffer = readDocument().buffer;
         if (state.matchCase && !state.query.includes("\n")) return high - low === state.query.length && buffer.slice(low, high) === state.query ? { from: low, to: high } : undefined;
         // Recheck a manually selected overlap using the same newline and case rules as the index.
         if (high - low < Math.ceil(state.query.length / 2) || high - low > state.query.length * 2) return undefined;
@@ -294,7 +302,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     function nextMatch(direction: 1 | -1): { index: number; wrappedTo: FindSnapshot["wrappedTo"] } | undefined {
         const state = store.get();
         if (state.status !== "ready" && !(state.status === "searching" && state.retained) || !count) return;
-        const selection = editor.view.getSnapshot(), selected = selection.selection, bound = direction === 1 ? Math.max(selected.anchor, selected.head) : Math.min(selected.anchor, selected.head);
+        const selection = viewSnapshot(), selected = selection.selection, bound = direction === 1 ? Math.max(selected.anchor, selected.head) : Math.min(selected.anchor, selected.head);
         let low = indexAt(bound);
         if (previewed?.selection === selection.selectionSet) low = previewed.index;
         else if (direction === 1 && low < count && offsetAt(low) === bound && endAt(low) === bound
@@ -310,16 +318,20 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     }
     function selectMatch(index: number, clearNotice: boolean, wrappedTo: FindSnapshot["wrappedTo"] = null): boolean {
         const { from, to } = matches.at(index);
-        if (!editor.view.setSelection(store.get().revision, { anchor: from, head: to })) return false;
-        previewed = undefined;
-        navigatedMatch = { index, selectionSet: editor.view.getSnapshot().selectionSet }; replacedZero = undefined;
-        publish(clearNotice ? { current: index, wrappedTo, reason: null, message: "" } : { current: index, wrappedTo });
+        const selected = scope.batch(() => {
+            if (!editor.view.setSelection(store.get().revision, { anchor: from, head: to })) return false;
+            previewed = undefined;
+            navigatedMatch = { index, selectionSet: currentSelection() }; replacedZero = undefined;
+            publish({ current: index, wrappedTo, ...(clearNotice && { reason: null, message: "" }) });
+            return true;
+        });
+        if (!selected) return false;
         editor.viewport.revealRange(from, to); return true;
     }
     function finishPreview(): void {
         const preview = pendingPreview;
         if (!preview) return;
-        const current = () => valid() && preview.scrollUnchanged() && !editor.activity().composing && editor.view.getSnapshot().selectionSet === preview.selection;
+        const current = () => valid() && preview.scrollUnchanged() && !editor.activity().composing && currentSelection() === preview.selection;
         if (!count || !current()) { cancelPreview(); return; }
         const selected = preview.selection.ranges[preview.selection.primary]!;
         const start = Math.min(selected.anchor, selected.head), preferred = indexAt(start) % count;
@@ -341,7 +353,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const root = viewport?.element, top = root?.scrollTop, left = root?.scrollLeft;
         const scrollUnchanged = () => root?.scrollTop === top && root?.scrollLeft === left;
         captureFocus();
-        const selection = editor.view.getSnapshot().selectionSet;
+        const selection = currentSelection();
         pendingPreview = { selection, followSelected: previousSelection === selection, scrollUnchanged, listeners };
         owner.addEventListener("focusout", cancelPreview, events);
         if (root) {
@@ -353,14 +365,14 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     function finishAdvance(): void {
         const selection = advanceAfterReplace;
         advanceAfterReplace = undefined;
-        if (!selection || !valid() || selection !== editor.view.getSnapshot().selectionSet || editor.activity().composing) return;
+        if (!selection || !valid() || selection !== currentSelection() || editor.activity().composing) return;
         const next = nextMatch(1);
         if (next) selectMatch(next.index, false);
     }
     function finishNext(): void {
         const pending = pendingNext;
         pendingNext = undefined;
-        if (pending && valid() && pending.selection === editor.view.getSnapshot().selectionSet
+        if (pending && valid() && pending.selection === currentSelection()
             && (!pending.origin || pending.origin.matches(":focus:not(:disabled)"))) next(pending.direction);
     }
     const next: FindController["next"] = (direction = 1, options) => {
@@ -370,7 +382,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         if (editor.activity().composing) { publish({ reason: "composition-active", message: "Finish composition before navigating." }); return false; }
         const match = nextMatch(direction);
         if (!match && options?.whenReady && store.get().status === "searching") {
-            pendingNext = { direction, selection: editor.view.getSnapshot().selectionSet, origin: captureFocus() };
+            pendingNext = { direction, selection: currentSelection(), origin: captureFocus() };
             return true;
         }
         cancelPreview();
@@ -378,14 +390,18 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         advanceAfterReplace = undefined;
         return selectMatch(match.index, true, match.wrappedTo);
     };
-    function planReplacement(state: FindSnapshot, replacement: string, range?: SearchMatch, focusEditor = false): boolean {
-        const selectedBackend = backendFor(state.regularExpression), immediate = !!range && !state.regularExpression;
-        if (!selectedBackend || !valid() || state.revision !== workspace.document(documentId).revision) return false;
+    function replacementAllowed(): boolean {
         if (!canEdit()) { publish({ reason: "editing-unavailable", message: "read-only" }); return false; }
         if (editor.activity().composing) { publish({ reason: "composition-active", message: "Finish composition before replacing." }); return false; }
+        return true;
+    }
+    function planReplacement(state: FindSnapshot, replacement: string, range?: SearchMatch, focusEditor = false): boolean {
+        const selectedBackend = backendFor(state.regularExpression), immediate = !!range && !state.regularExpression;
+        if (!selectedBackend || !valid() || state.revision !== readDocument().revision) return false;
+        if (!replacementAllowed()) return false;
         advanceAfterReplace = undefined;
         const request = capture(state.query, state.wholeWord, state.matchCase), positions = matches, total = range ? 1 : count;
-        const selectionSet = editor.view.getSnapshot().selectionSet, acceptPlan = createFindReplacementPlan(positions, total, range);
+        const selectionSet = currentSelection(), acceptPlan = createFindReplacementPlan(positions, total, range);
         // A synchronous literal replacement must leave an in-progress repair alive on a no-op.
         // Yielding plans cancel scans and retain authority until their captured commit.
         if (!immediate) stop();
@@ -397,7 +413,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         catch (error) { failed(error, token, true); return false; }
         const current = () => {
             if (token !== generation) return false;
-            if (!valid() || workspace.document(documentId).revision !== state.revision || editor.view.getSnapshot().selectionSet !== selectionSet) { restart(state.query); return false; }
+            if (!valid() || readDocument().revision !== state.revision || currentSelection() !== selectionSet) { restart(state.query); return false; }
             const reason = !canEdit() ? "editing-unavailable" : editor.activity().composing ? "composition-active" : null;
             if (reason) { stop(); publish({ status: "ready", reason, message: "Replacement cancelled because editing became unavailable." }); return false; }
             return true;
@@ -415,14 +431,14 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             if (!valid()) return;
             replaceTransactionMs = win.performance.now() - started;
             if (!applied.applied) { publish({ status: "ready", reason: applied.reason, message: applied.reason }); return; }
-            if (!immediate && workspace.document(documentId).revision === state.revision) publish({ status: "ready" });
+            if (!immediate && readDocument().revision === state.revision) publish({ status: "ready" });
             if (range && range.from === range.to && store.get().query === state.query && store.get().regularExpression && valid()) {
-                replacedZero = { revision: workspace.document(documentId).revision, head: head!, selectionSet: editor.view.getSnapshot().selectionSet };
+                replacedZero = { revision: readDocument().revision, head: head!, selectionSet: currentSelection() };
             }
             publish({ reason: "replaced", message: `Replaced ${total} ${total === 1 ? "match" : "matches"}.` });
             if (valid() && focusGeneration === focusToken) {
                 if (head !== undefined) {
-                    advanceAfterReplace = editor.view.getSnapshot().selectionSet;
+                    advanceAfterReplace = currentSelection();
                     if (store.get().status === "ready") finishAdvance();
                     else editor.viewport.revealRange(head, head);
                 }
@@ -442,9 +458,8 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     const replaceCurrent = (replacement: string): boolean => {
         scope.assertWritable();
         if (!valid()) return false;
-        if (!canEdit()) { publish({ reason: "editing-unavailable", message: "read-only" }); return false; }
-        if (editor.activity().composing) { publish({ reason: "composition-active", message: "Finish composition before replacing." }); return false; }
-        if (previewed?.selection === editor.view.getSnapshot().selectionSet && !selectMatch(previewed.index, true)) return false;
+        if (!replacementAllowed()) return false;
+        if (previewed?.selection === currentSelection() && !selectMatch(previewed.index, true)) return false;
         const match = currentRange();
         return match ? planReplacement(store.get(), replacement, match) : next(1);
     };
@@ -492,14 +507,25 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         }
         projection = next;
     });
-    const subscriptions = [() => owner.removeEventListener("focusin", focusChanged), () => window?.removeEventListener("blur", focusChanged),
+    let lastSelection = currentSelection();
+    const stopSelection = editor.view.subscribe(() => {
+        const view = viewSnapshot(), state = store.get();
+        if (view.selectionSet === lastSelection) return;
+        lastSelection = view.selectionSet;
+        if (navigatedMatch?.selectionSet === lastSelection) return;
+        cancelPreview(); previewed = undefined;
+        if (state.status !== "ready" || state.revision !== view.revision) return;
+        const current = selectionIndex();
+        if (current !== state.current || state.wrappedTo) publish({ current, wrappedTo: null });
+    });
+    const subscriptions = [stopSelection, () => owner.removeEventListener("focusin", focusChanged), () => window?.removeEventListener("blur", focusChanged),
         () => focusOrigin?.removeEventListener("blur", originBlurred), editIntent.dispose, stopFolds, workspace.observeDocument(documentId).subscribe(() => {
         const current = workspace.observeDocument(documentId).getSnapshot();
         if (current && sameOwner(observed, current) && current.revision === observed.revision && current.buffer === observed.buffer) return;
-        if (store.get().status === "cancelled" && valid()) { observed = workspace.document(documentId); publish({ revision: observed.revision, length: observed.buffer.length }); }
+        if (store.get().status === "cancelled" && valid()) { observed = readDocument(); publish({ revision: observed.revision, length: observed.buffer.length }); }
         else { const state = store.get(); restart(state.query, state.wholeWord, state.matchCase, state.regularExpression, true); }
     })];
-    if (target) subscriptions.push(workspace.tabs.subscribe(() => { if (!valid()) { stop(); disposeBackends(); reset({ status: "expired", reason: "view-unavailable", message: "View is unavailable." }); } }));
+    if (target) subscriptions.push(workspace.tabs.subscribe(() => { if (!valid()) { stop(); expire(); } }));
     const dispose = () => {
         if (disposed) return;
         scope.assertWritable();
@@ -524,14 +550,14 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             const state = store.get(), wholeWord = flags.wholeWord ?? state.wholeWord, matchCase = flags.matchCase ?? state.matchCase, regularExpression = flags.regularExpression ?? state.regularExpression;
             if (disposed || wholeWord === state.wholeWord && matchCase === state.matchCase && regularExpression === state.regularExpression) return;
             const preview = pendingPreview ?? previewed;
-            const refresh = preview && preview.selection === editor.view.getSnapshot().selectionSet;
+            const refresh = preview && preview.selection === currentSelection();
             restart(state.query, wholeWord, matchCase, regularExpression);
             if (refresh) capturePreview();
         },
         acceptPreview: () => {
             scope.assertWritable();
             if (!previewed || !valid() || editor.activity().composing || store.get().status !== "ready"
-                || previewed.selection !== editor.view.getSnapshot().selectionSet) return false;
+                || previewed.selection !== currentSelection()) return false;
             return selectMatch(previewed.index, true);
         },
         next, replaceCurrent, replaceAll, cancel: () => { scope.assertWritable(); if (!disposed) { stop(); reset({ status: "cancelled", reason: "cancelled", message: "Search cancelled." }); } },
