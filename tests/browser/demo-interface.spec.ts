@@ -858,6 +858,11 @@ test("view controls survive file switches and saved-reference replacement in bot
     await expect(source.locator(".st-column-ruler").first()).toBeVisible();
     await expect(source.locator(".st-minimap-marker")).toBeVisible();
     await expect(page.locator(".demo-output .st-minimap-marker")).toBeVisible();
+    const outputNumber = page.locator(".demo-output .st-line-numbers [data-current]");
+    await expect(outputNumber).toHaveText("1");
+    await page.locator("#view-current-line").uncheck();
+    await expect(outputNumber).toHaveCount(0);
+    await page.locator("#view-current-line").check();
     await expect(source).toHaveCSS("font-variant-ligatures", "normal");
     await expect.poll(() => source.evaluate(element => element.scrollHeight)).toBeGreaterThan(initialHeight);
     expect(await mounted!.evaluate(element => element.isConnected)).toBe(true);

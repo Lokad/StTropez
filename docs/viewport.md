@@ -97,7 +97,7 @@ An unchanged viewport setting schedules no paint. Configuration returns `false` 
 | --- | --- |
 | `columnRulers` | Guides at measured monospace cells from the left text origin |
 | `gutter` | Shows line numbers and fold controls. Turning it off gives their width back to the text. |
-| `highlightCurrentLine` | Highlights the primary caret’s row and emphasizes its line number, including on a folded header |
+| `highlightCurrentLine` | Emphasizes the line number at the head of each selection or caret. A head inside a fold marks its header. |
 | `fontLigatures` | Native common and contextual font ligatures. Changes invalidate font and caret measurements. |
 | `minimap` | A document overview with a draggable visible-region marker |
 | `scrollBeyondLastLine` | Space to scroll the last visible row to the top text padding |

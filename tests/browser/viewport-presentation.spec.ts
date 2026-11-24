@@ -737,7 +737,7 @@ test("current-line presentation follows the primary caret through input, folding
         const primary = f.host.querySelector(".st-viewport-layer .st-current-line")?.getAttribute("data-line");
         const markedNumbers = () => [...f.host.querySelectorAll(".st-line-numbers [data-current]")].map(node => node.textContent);
         const primaryNumbers = markedNumbers();
-        f.editor.view.setSelections(doc.revision, [{ anchor: 0, head: 2 }, { anchor: 10, head: 10 }], 0); viewport.flush();
+        f.editor.view.setSelections(doc.revision, [{ anchor: 6, head: 0 }, { anchor: 10, head: 10 }], 0); viewport.flush();
         const rangeHidden = !f.host.querySelector(".st-current-line-background"), selected = f.host.querySelector<HTMLElement>(".st-viewport-selected")!;
         const selectedColor = getComputedStyle(selected).backgroundColor;
         const rangeNumbers = markedNumbers();
@@ -747,7 +747,7 @@ test("current-line presentation follows the primary caret through input, folding
         const rect = f.host.querySelector(".st-current-line-background")!.getBoundingClientRect(), row = f.host.querySelector('.st-viewport-row[data-line="0"]')!.getBoundingClientRect();
         return { primary, primaryNumbers, rangeHidden, rangeNumbers, selectedColor, header, headerNumbers: markedNumbers(), head, foldedTop: rect.top, rowTop: row.top };
     });
-    expect(projected).toMatchObject({ primary: "2", primaryNumbers: ["3"], rangeHidden: true, rangeNumbers: [],
+    expect(projected).toMatchObject({ primary: "2", primaryNumbers: ["1", "3"], rangeHidden: true, rangeNumbers: ["1", "3"],
         selectedColor: "rgb(36, 73, 107)", header: "0", headerNumbers: ["1"], head: 6 });
     expect(projected.foldedTop).toBe(projected.rowTop);
 

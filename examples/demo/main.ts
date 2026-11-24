@@ -93,7 +93,7 @@ function renderOutput(): void {
         if (output) output.update(text);
         else {
             host.replaceChildren();
-            output = mountDemoOutput(host, text, { minimap: field("view-minimap").checked, fontLigatures: field("view-ligatures").checked });
+            output = mountDemoOutput(host, text, presentationSettings());
             bindPaneCommands(output.editor);
         }
     } else if (!output) {
@@ -691,7 +691,7 @@ field("character-warnings").addEventListener("change", () => {
 for (const id of ["view-rulers", "view-current-line", "view-ligatures", "view-trailing-space", "view-minimap"]) field(id).addEventListener("change", () => {
     const settings = presentationSettings();
     editor?.configure(settings); comparison?.panes.reference.configure(settings);
-    output?.editor.configure({ minimap: settings.minimap, fontLigatures: settings.fontLigatures });
+    output?.editor.configure(settings);
 }, { signal: listeners.signal });
 indentation.addEventListener("change", () => {
     editor?.configure({ language: editingConfiguration() });

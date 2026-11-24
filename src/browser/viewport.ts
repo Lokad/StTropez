@@ -597,6 +597,19 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             if (!preparedRows) commandMeasure.remove();
         }
     }
+    // Measure the contents: a full-row background can be wider than its source text.
+    function measureRowWidths(elements: Iterable<HTMLElement>, zoom: number): void {
+        const extent = owner.createRange();
+        let widest = measuredWidth;
+        for (const element of elements) {
+            if (element.dataset.complete !== "true") continue;
+            extent.selectNodeContents(element);
+            widest = Math.max(widest, extent.getBoundingClientRect().width / zoom);
+        }
+        if (widest <= measuredWidth + .01) return;
+        measuredWidth = widest;
+        if (widest + padding * 2 > x.extent + .01) schedule();
+    }
     function render(scheduled: boolean): void {
         frame = undefined; if (disposed) return;
         const started = win.performance.now();
@@ -678,7 +691,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             }
         }
         const requested = reveal; if (!deferAnchor || requested) anchor = undefined; reveal = undefined;
-        x = scrollAxis(Math.max(document.buffer.longestLineLength * columnWidth, measuredWidth) + padding * 2, width);
+        const documentWidth = () => Math.max(document.buffer.longestLineLength * columnWidth, measuredWidth) + padding * 2;
+        x = scrollAxis(documentWidth(), width);
         // A lone visible row is already at the top. Do not inflate it to rounded clientHeight:
         // fractional fitting viewports would acquire mutually triggering classic scrollbars.
         const trailingSpace = settings.scrollBeyondLastLine && index.visibleLineCount > 1 ? Math.max(0, height - lineHeight - padding * 2) : 0;
@@ -709,21 +723,17 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             && key.every((value, index) => value === painted!.key[index])
             && Math.abs(root.scrollTop - y.toPhysical(top)) <= 1 && Math.abs(root.scrollLeft - x.toPhysical(left)) <= 1) {
             if (dirtyRows.size) {
-                const highlighted = currentLine(document, selectionSet, index), extent = owner.createRange();
+                const highlighted = currentLine(document, selectionSet, index);
                 const changed: HTMLDivElement[] = [];
                 for (const item of visibleItems) if (dirtyRows.has(item.line)) {
                     const element = rows.get(item.line)!;
                     if (paintRow(element, item, document, selectionSet, highlighted, index)) {
                         geometries.delete(item.line);
-                        if (item.complete) changed.push(element);
+                        changed.push(element);
                     }
                 }
                 dirtyRows.clear();
-                for (const element of changed) {
-                    extent.selectNodeContents(element);
-                    measuredWidth = Math.max(measuredWidth, extent.getBoundingClientRect().width / zoom);
-                }
-                if (measuredWidth + padding * 2 > x.extent + .01) schedule();
+                measureRowWidths(changed, zoom);
                 renders++; lastRenderMs = win.performance.now() - started;
             }
             // Consuming scheduled work still releases caret/alignment/linked-scroll listeners.
@@ -797,15 +807,24 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         root.removeAttribute("aria-disabled"); root.dataset.revision = String(document.revision);
         renderedRevision = document.revision; rowSourceRevision = document.revision; renderedSelection = selected; renderedSelectionSet = selectionSet; previous = document; renderedIndex = index; renderedFoldGeneration = folds.generation; renderedAlignmentId = comparisonRows?.id ?? null; renders++;
         const visibleFolds = new Set<string>(), orderedButtons: HTMLButtonElement[] = [];
+        let nextHead = -1;
+        let headRow = -1;
         for (const item of settings.gutter ? next : []) {
-            const rowTop = padding + index.rowAt(item.line) * lineHeight - top;
+            const visualRow = index.rowAt(item.line);
+            const rowTop = padding + visualRow * lineHeight - top;
+            if (settings.highlightCurrentLine && nextHead < item.start) {
+                const ranges = selectionSet.ranges;
+                const at = partitionPoint(ranges.length, i => ranges[i]!.head < item.start);
+                nextHead = ranges[at]?.head ?? Infinity;
+                headRow = at < ranges.length ? index.rowAt(document.buffer.lineAt(nextHead)) : -1;
+            }
             let number = lineNumbers.get(item.line);
             if (!number) {
                 number = owner.createElement("span"); number.textContent = String(item.line + 1);
                 lineNumbers.set(item.line, number); numbers.append(number);
             }
             number.style.top = `${rowTop}px`; number.style.lineHeight = `${lineHeight}px`;
-            number.toggleAttribute("data-current", item.line === highlightedLine);
+            number.toggleAttribute("data-current", headRow === visualRow);
             const region = index.headerAt(item.line); if (!region) continue; visibleFolds.add(region.id);
             let button = foldButtons.get(region.id);
             if (!button) {
@@ -833,14 +852,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         }
         orderedButtons.forEach((button, index) => { if (foldLayer.children.item(index) !== button) foldLayer.insertBefore(button, foldLayer.children.item(index)); });
         gutter.hidden = !settings.gutter;
-        // A bounded batch of native shaping measurements follows the row writes. Extent corrections
-        // are scheduled for the next frame, without alternating reads and writes for each row.
-        // Full-row backgrounds can have a minimum width unrelated to their source text.
-        const extentRange = owner.createRange();
-        const measured = Math.max(0, ...[...rows.values()].filter(element => element.dataset.complete === "true").map(element => {
-            extentRange.selectNodeContents(element); return extentRange.getBoundingClientRect().width / zoom;
-        }));
-        if (measured > measuredWidth + .01) { measuredWidth = measured; if (measuredWidth + padding * 2 > x.extent + .01) schedule(); }
+        measureRowWidths(rows.values(), zoom);
         const requestedRow = requested?.revision === document.revision ? rows.get(document.buffer.lineAt(requested.offset)) : undefined;
         const rangeLeft = requested && horizontalEnd !== undefined ? measuredRangeLeft(requested.offset, horizontalEnd) : undefined;
         if (requestedRow?.dataset.complete === "false") {
@@ -873,7 +885,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             if (caret) {
                 const actual = (caret.left - rectangle.left) / rectangle.zoom + left;
                 const desired = rangeLeft ?? (requested.horizontal === "nearest" ? expose(actual, 1, left, width) : Math.max(0, actual - width / 2));
-                const maximum = Math.max(0, Math.max(document.buffer.longestLineLength * columnWidth, measuredWidth) + padding * 2 - width);
+                const maximum = Math.max(0, documentWidth() - width);
                 if (Math.abs(Math.min(maximum, desired) - left) > 1) { left = Math.min(maximum, desired); schedule(); }
             }
         }

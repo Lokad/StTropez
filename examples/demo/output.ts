@@ -1,9 +1,9 @@
 import { Workspace } from "../../src/index.ts";
-import { mountTextEditor } from "../../src/browser/index.ts";
+import { mountTextEditor, type EditorSettings } from "../../src/browser/index.ts";
 import { linePrompt } from "../shared/line-prompt.ts";
 
 /** Compiler output has its own selection, scroll position and read-only document. */
-export function mountDemoOutput(host: HTMLElement, text: string, settings: Readonly<{ minimap: boolean; fontLigatures: boolean }>) {
+export function mountDemoOutput(host: HTMLElement, text: string, settings: EditorSettings) {
     const workspace = new Workspace();
     const resource = workspace.createTextResource({ scope: "demo-output", resource: "javascript", variant: "generated" }, "JavaScript output",
         { value: text }, { edit: [], save: false });
