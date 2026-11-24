@@ -1,9 +1,10 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import type { DocumentSnapshot, Observable } from "../src/index.ts";
+import type { DocumentSnapshot } from "../src/index.ts";
 import { createCodeActionController, type TextEditor } from "../src/browser/index.ts";
 import { createLspCommandRunner } from "../src/protocol/index.ts";
 import { HostProjectTools, type ProjectActionEditPolicy } from "../examples/hosts/project.ts";
+import { waitForState } from "./helpers/latch.ts";
 import { editorState } from "./helpers/editor-state.ts";
 import { clientFixture, settled } from "./helpers/lsp-client.ts";
 
@@ -71,18 +72,6 @@ test("a command acknowledges a batch with a newly resolved companion and undoes 
 });
 
 const registration = { id: "review", method: "workspace/executeCommand", registerOptions: { commands: ["fixture.review"] } };
-function waitFor<T>(state: Observable<T>, ready: (snapshot: T) => boolean): Promise<void> {
-    return new Promise(resolve => {
-        const check = () => {
-            if (ready(state.getSnapshot())) {
-                stop();
-                resolve();
-            }
-        };
-        const stop = state.subscribe(check);
-        check();
-    });
-}
 type CommandFixture = ReturnType<typeof fixture>;
 const interruptions = {
     selection: (f: CommandFixture) => f.view.setSelection(f.document().revision, { anchor: 3, head: 3 }),
@@ -126,11 +115,11 @@ for (const [cause, interrupt] of Object.entries(interruptions)) {
             return null;
         });
         actions.request();
-        await waitFor(actions, state => state.status !== "pending");
+        await waitForState(actions, state => state.status !== "pending");
         const preview = actions.getSnapshot().preview;
         assert.ok(preview?.canApply, actions.getSnapshot().message);
         assert.equal(preview.confirm().status, "executing");
-        await waitFor(f.host.state, state => state.review !== null || !state.pending);
+        await waitForState(f.host.state, state => state.review !== null || !state.pending);
         const review = f.host.state.getSnapshot().review;
         assert.ok(review?.canApply, f.host.state.getSnapshot().message);
         const committed = f.document();

@@ -5,7 +5,7 @@ import {
     type TextEditor,
 } from "../src/browser/index.ts";
 import { editorState } from "./helpers/editor-state.ts";
-import { latch } from "./helpers/latch.ts";
+import { latch, waitForState } from "./helpers/latch.ts";
 import { clientFixture, settled } from "./helpers/lsp-client.ts";
 
 const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 4 } };
@@ -29,9 +29,11 @@ async function fixture(t: TestContext) {
         workspace.tabs.close(tab);
         scope.dispose();
     });
+    f.peer.onRequest("test/barrier", () => null);
     await provider.connect();
     return {
         ...f, editor,
+        flush: () => scope.request("test/barrier").result,
         select: () => view.setSelection(f.document().revision, { anchor: 1, head: 1 }),
         replace: () => {
             lifetime.abort();
@@ -42,6 +44,17 @@ async function fixture(t: TestContext) {
 }
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
+function holdReply(f: Fixture, method: string, reply: unknown) {
+    const received = latch<void>();
+    const release = latch<void>();
+    f.peer.onRequest(method, async () => {
+        received.resolve();
+        await release.promise;
+        return reply;
+    });
+    return { received: received.promise, send: () => release.resolve() };
+}
+
 const sourceChanges = {
     selection: (f: Fixture) => f.select(),
     typing: (f: Fixture) => f.edit(),
@@ -49,21 +62,19 @@ const sourceChanges = {
 };
 
 for (const [cause, interrupt] of Object.entries(sourceChanges)) {
-    test(`a delayed code action cannot edit its former source after ${cause}`, async t => {
+    test(`a delayed code action cannot edit its former source after ${cause}`, { timeout: 5000 }, async t => {
         const f = await fixture(t);
         const actions = createCodeActionController(f.editor, f.provider);
         const lazy = { title: "Replace word", data: { id: 1 } };
         const resolved = { ...lazy, edit: { changes: { "generic:source": [{ range, newText: "late" }] } } };
-        const held = latch<typeof resolved>();
         f.peer.onRequest("textDocument/codeAction", () => [lazy]);
-        f.peer.onRequest("codeAction/resolve", () => held.promise);
+        const held = holdReply(f, "codeAction/resolve", resolved);
         actions.request();
-        await settled();
+        await waitForState(actions, snapshot => snapshot.status !== "pending");
         const choice = actions.getSnapshot().choices[0];
         assert.ok(choice?.needsResolve);
         choice.select(() => true);
-        await settled();
-        assert.equal(f.sent("codeAction/resolve").length, 1);
+        await held.received;
         interrupt(f);
         if (cause === "typing") {
             const { id, revision } = f.document();
@@ -72,27 +83,25 @@ for (const [cause, interrupt] of Object.entries(sourceChanges)) {
         await settled();
         const source = f.document();
         assert.equal(f.sent("$/cancelRequest").length, 1);
-        held.resolve(resolved);
-        await settled();
+        held.send();
+        await f.flush();
         assert.equal(actions.getSnapshot().preview, null);
         assert.equal(f.document(), source);
     });
 
-    test(`a delayed rename cannot offer an edit after ${cause}`, async t => {
+    test(`a delayed rename cannot offer an edit after ${cause}`, { timeout: 5000 }, async t => {
         const f = await fixture(t);
         const rename = createRenameController(f.editor, f.provider);
         const edit = { changes: { "generic:source": [{ range, newText: "replacement" }] } };
-        const held = latch<typeof edit>();
-        f.peer.onRequest("textDocument/rename", () => held.promise);
+        const held = holdReply(f, "textDocument/rename", edit);
         rename.request("replacement");
-        await settled();
-        assert.equal(f.sent("textDocument/rename").length, 1);
+        await held.received;
         interrupt(f);
         await settled();
         assert.equal(f.sent("$/cancelRequest").length, 1);
         const source = f.document();
-        held.resolve(edit);
-        await settled();
+        held.send();
+        await f.flush();
         assert.equal(rename.getSnapshot().preview, null);
         assert.equal(f.document(), source);
     });
@@ -103,7 +112,7 @@ const colorChanges = {
     "edit authority": (f: Fixture) => f.workspace.acquireEditLease(f.source.id, "test", "host").release(),
 };
 for (const [cause, interrupt] of Object.entries(colorChanges)) {
-    test(`a delayed color presentation loses its edit target after ${cause}`, async t => {
+    test(`a delayed color presentation loses its edit target after ${cause}`, { timeout: 5000 }, async t => {
         const f = await fixture(t);
         const colors = createDocumentColorController(f.editor, f.provider);
         const red = { red: 1, green: 0, blue: 0, alpha: 1 };
@@ -117,19 +126,17 @@ for (const [cause, interrupt] of Object.entries(colorChanges)) {
         const oldReview = colors.getSnapshot().review;
         assert.ok(oldReview?.canApply);
 
-        const held = latch<typeof presentation>();
-        f.peer.onRequest("textDocument/colorPresentation", () => held.promise);
+        const held = holdReply(f, "textDocument/colorPresentation", presentation);
         const pending = reference.preview(red);
-        await settled();
-        assert.equal(f.sent("textDocument/colorPresentation").length, 2);
+        await held.received;
         interrupt(f);
         await settled();
         const source = f.document();
         const other = f.workspace.document(f.other.documentId);
         assert.equal(f.sent("$/cancelRequest").length, 1);
-        held.resolve(presentation);
+        held.send();
         await pending;
-        await settled();
+        await f.flush();
         assert.equal(colors.getSnapshot().review, null);
         assert.deepEqual(oldReview.apply(), { applied: false, reason: "expired" });
         assert.equal(f.document(), source);
@@ -147,23 +154,21 @@ const linkChanges = {
     "target edit authority": (f: Fixture) => f.workspace.acquireEditLease(f.other.id, "test", "host").release(),
 };
 for (const [cause, interrupt] of Object.entries(linkChanges)) {
-    test(`a delayed link reply leaves no destination after ${cause}`, async t => {
+    test(`a delayed link reply leaves no destination after ${cause}`, { timeout: 5000 }, async t => {
         const f = await fixture(t);
         const links = createDocumentLinkController(f.editor, f.provider, {
             documents: () => [f.workspace.document(f.other.documentId)],
         });
         const answer = [{ range, target: "generic:other" }];
-        const held = latch<typeof answer>();
-        f.peer.onRequest("textDocument/documentLink", () => held.promise);
+        const held = holdReply(f, "textDocument/documentLink", answer);
         const pending = links.request();
-        await settled();
-        assert.equal(f.sent("textDocument/documentLink").length, 1);
+        await held.received;
         interrupt(f);
         await settled();
         assert.equal(f.sent("$/cancelRequest").length, 1);
-        held.resolve(answer);
+        held.send();
         await pending;
-        await settled();
+        await f.flush();
         assert.deepEqual(links.getSnapshot().links, []);
         assert.equal(links.linkAt(1), undefined);
     });
