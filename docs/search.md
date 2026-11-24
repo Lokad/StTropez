@@ -57,7 +57,7 @@ notice.
 | `setFlags(flags)` | Patches supplied flags and restarts when a value changes. Refreshes an active preview at the same selection. |
 | `next(direction?)` | Selects a match in the captured view; direction is `1` by default or `-1` |
 | `next(direction, { whenReady: true })` | Accepts one navigation request while the search finishes. The latest direction wins. Changing the query, revision, focus, selection or visible folds cancels the request. |
-| `replaceCurrent(text)` | Replaces the selected match, or the next match if none is selected, then selects the following match |
+| `replaceCurrent(text)` | Replaces the selected or previewed match and selects the following one. With neither, it selects and reveals the next match on the first press |
 | `replaceAll(text, options?)` | Plans a replacement from a completed index and commits one history command |
 | `cancel()` | Clears the index; later typing does not resume the cancelled search |
 | `dispose()` | Releases work, subscriptions, focus tracking, backend and resource lease |

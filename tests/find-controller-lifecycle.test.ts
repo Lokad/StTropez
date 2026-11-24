@@ -64,6 +64,9 @@ test("changing whole-word mode cancels captured replacement and excludes selecte
         assert.equal(find.getSnapshot().current, 1); assert.equal(view.getSnapshot().selectionSet, selected);
         assert.equal(workspace.document(documentId).revision, before.revision); assert.deepEqual(workspace.observeHistory(documentId).getSnapshot(), history); assert.equal(focused, 0);
         view.setSelection(before.revision, { anchor: 5, head: 8 });
+        assert.equal(find.replaceCurrent("dog"), true);
+        assert.equal(workspace.document(documentId), before);
+        assert.equal(view.getSnapshot().selection.anchor, original.lastIndexOf("cat"));
         assert.equal(find.replaceCurrent("dog"), true); drain();
         assert.equal(workspace.document(documentId).revision, before.revision + 1);
         assert.equal(view.getSnapshot().selection.anchor, 0);

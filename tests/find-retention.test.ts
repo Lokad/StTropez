@@ -119,6 +119,28 @@ function fixture(text: string, clock: Pick<Performance, "now"> = performance) {
     return { workspace, documentId, view, find, document, tasks, step, drain, edit, select, dispose };
 }
 
+test("Replace reveals an unseen match first and Undo restores a previewed match as the selection", () => {
+    const f = fixture("before\na cat\nafter");
+    try {
+        const original = f.document();
+        f.find.setQuery("cat"); f.drain();
+        assert.ok(f.find.replaceCurrent("dog"));
+        assert.equal(f.document(), original);
+        assert.equal(f.view.getSnapshot().selection.anchor, 9);
+        assert.equal(f.view.getSnapshot().selection.head, 12);
+        assert.ok(f.find.replaceCurrent("dog")); f.drain();
+        assert.equal(f.document().text(), "before\na dog\nafter");
+
+        f.select(0);
+        f.find.setQuery("dog", { preview: true }); f.drain();
+        assert.equal(f.view.getSnapshot().selection.head, 0);
+        assert.ok(f.find.replaceCurrent("mouse")); f.drain();
+        assert.ok(f.workspace.undo({ documentId: f.documentId, expectedRevision: f.document().revision }).applied);
+        const { anchor, head } = f.view.getSnapshot().selection;
+        assert.equal(f.document().buffer.slice(anchor, head), "dog");
+    } finally { f.dispose(); }
+});
+
 test("multiline Find repairs mixed endings and replaces a manually selected overlap in its original coordinates", () => {
     const f = fixture("a\r\na\r\na\r\na");
     try {
@@ -204,7 +226,7 @@ test("deferred Find follows the latest direction until the selection, query or v
             f.drain(); assert.equal(f.find.getSnapshot().current, null); assert.equal(f.view.getSnapshot().selection.head, 0);
         }
         assert.equal(f.find.next(), true); assert.equal(f.view.getSnapshot().selection.head, 7);
-        f.select(0); f.find.setQuery("cat"); f.drain();
+        f.select(0, 3); f.find.setQuery("cat"); f.drain();
         assert.equal(f.find.replaceCurrent("kitten"), true);
         folds.setCollapsed(folds.getSnapshot(), ["block"], true);
         f.drain(); assert.equal(f.view.getSnapshot().selection.head, 6, "a fold keeps the caret after the replacement");

@@ -444,10 +444,9 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         if (!valid()) return false;
         if (!canEdit()) { publish({ reason: "editing-unavailable", message: "read-only" }); return false; }
         if (editor.activity().composing) { publish({ reason: "composition-active", message: "Finish composition before replacing." }); return false; }
-        const match = previewed?.selection === editor.view.getSnapshot().selectionSet ? matches.at(previewed.index) : currentRange();
-        if (match) return planReplacement(store.get(), replacement, match);
-        const next = nextMatch(1);
-        return !!next && planReplacement(store.get(), replacement, matches.at(next.index));
+        if (previewed?.selection === editor.view.getSnapshot().selectionSet && !selectMatch(previewed.index, true)) return false;
+        const match = currentRange();
+        return match ? planReplacement(store.get(), replacement, match) : next(1);
     };
     const replaceAll: FindController["replaceAll"] = (replacement, options) => {
         scope.assertWritable();
