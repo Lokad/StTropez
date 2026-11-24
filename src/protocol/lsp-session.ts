@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { isNonNegativeInteger, isPositiveInteger } from "../core/bounds.ts";
 import { applyEditMethod, codeActionMethod, colorPresentationMethod, completionMethod,
     definitionMethod, didChangeMethod, didCloseMethod, didOpenMethod, documentColorMethod,
@@ -103,7 +104,7 @@ export class LspSession {
     private readonly notificationStops = new Map<string, () => void>();
     private readonly initializeBase: Readonly<Record<string, JsonValue>>;
     private features = new Set<LspFeature>();
-    private clientFeatures: readonly LspClientFeature[] = Object.freeze([]);
+    private clientFeatures: readonly LspClientFeature[] = emptyList;
     private readonly maxDocuments: number;
     private readonly maxDocumentUnits: number;
     private readonly maxTotalUnits: number;
@@ -332,7 +333,7 @@ export class LspSession {
     }
     /** Static and matching dynamic options only; selectors and session readiness use the request policy. */
     featureOptions(method: LspDocumentFeature, document: LspDocument): readonly Readonly<Record<string, JsonValue>>[] {
-        if (!this.canRequest(method, document)) return Object.freeze([]);
+        if (!this.canRequest(method, document)) return emptyList;
         return this.optionsFor(method, this.entry(document));
     }
     /** Read capabilities without binding, synchronizing or reserving a document. */
@@ -340,9 +341,9 @@ export class LspSession {
         const { uri, languageId } = document;
         if (!isLspUri(uri) || !isLspIdentityPart(languageId)) throw new TypeError("Invalid LSP document identity.");
         const bound = this.documents.get(uri), same = bound?.snapshot.languageId === languageId;
-        if (same && this.failed(bound)) return Object.freeze([]);
+        if (same && this.failed(bound)) return emptyList;
         const entry: SelectorEntry = same ? bound : { snapshot: Object.freeze({ uri, languageId }) };
-        return this.supports(method, entry) ? this.optionsFor(method, entry) : Object.freeze([]);
+        return this.supports(method, entry) ? this.optionsFor(method, entry) : emptyList;
     }
     private optionsFor(method: LspDocumentFeature, entry: SelectorEntry): readonly Readonly<Record<string, JsonValue>>[] {
         const capability = this.capabilities[providers[method]], values: Readonly<Record<string, JsonValue>>[] = [];
@@ -356,7 +357,7 @@ export class LspSession {
         for (const item of registrations.values()) if (item.value.method === executeCommandMethod) for (const name of commandOptions(item.value.registerOptions)) values.add(name);
         return Object.freeze([...values]);
     }
-    commandNames(): readonly string[] { return this.store.get().phase === "ready" && this.features.has(executeCommandMethod) ? this.collectCommands() : Object.freeze([]); }
+    commandNames(): readonly string[] { return this.store.get().phase === "ready" && this.features.has(executeCommandMethod) ? this.collectCommands() : emptyList; }
     /** Explicit caller policy/confirmation is required; commands are never replayed across a session. */
     requestCommand(command: string, args: readonly JsonValue[] = [], timeoutMs = this.options.rpc?.timeoutMs ?? wireLimits.timeoutMs, authorization?: LspCommandAuthorization): LspCommandCall<JsonValue> {
         this.writable();
@@ -567,7 +568,7 @@ export class LspSession {
         this.epoch++; this.release(this.cancelOpening); this.cancelOpening = undefined; this.connectWork = undefined;
         this.release(this.scheduled); this.scheduled = undefined; for (const pause of this.pauses) { this.release(pause.stop); pause.reject(failure); } this.pauses.clear();
         const rpc = this.rpc; this.rpc = undefined; this.release(() => rpc?.dispose(failure)); this.pumping = false; this.dirty.clear(); this.settle(failure); this.documentCalls.clear();
-        this.features.clear(); this.clientFeatures = Object.freeze([]);
+        this.features.clear(); this.clientFeatures = emptyList;
         this.remote.clear(); this.registrations.clear(); this.staticSelectors.clear(); this.requestStops.clear(); this.notificationStops.clear(); this.capabilities = empty; this.sync = { openClose: false, change: false };
         this.methodVersions = new Map();
         this.syncGeneration = ++this.generation;

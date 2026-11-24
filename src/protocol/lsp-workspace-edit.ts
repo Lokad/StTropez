@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { isNonNegativeInteger } from "../core/bounds.ts";
 import { wireLimits, staleRequest } from "./wire.ts";
 import type { DocumentId, DocumentSnapshot, DocumentView, EditOrigin, EditRequest, Workspace } from "../core/workspace.ts";
@@ -43,7 +44,7 @@ export function applyLspWorkspaceEdit(workspace: Workspace, edit: LspWorkspaceEd
             ...(options.source === undefined ? {} : { source: options.source }), history: { kind: options.historyKind ?? "replace" },
             ...(options.view?.documentId === document.id ? { view: options.view } : {}) });
     }
-    if (!requests.length) return Object.freeze([]);
+    if (!requests.length) return emptyList;
     // The core validates every range, revision, permission, lock and view before publishing.
     const result = workspace.editDocuments(requests);
     if (!result.applied) throw new Error(result.reason);

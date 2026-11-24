@@ -1,12 +1,12 @@
+import { emptyList } from "../core/empty-list.ts";
 import { isPositiveInteger } from "../core/bounds.ts";
-const empty: readonly number[] = Object.freeze([]);
 
 /** A ruler after N measured columns; normalization owns the caller's array. */
-export function resolveColumnRulers(columns: readonly number[] = empty): readonly number[] {
+export function resolveColumnRulers(columns: readonly number[] = emptyList): readonly number[] {
     if (columns.length > 128 || Array.from(columns).some(column => !isPositiveInteger(column))) {
         throw new RangeError("Column rulers require at most 128 positive safe-integer columns.");
     }
-    return columns.length ? Object.freeze([...new Set(columns)].sort((a, b) => a - b)) : empty;
+    return columns.length ? Object.freeze([...new Set(columns)].sort((a, b) => a - b)) : emptyList;
 }
 
 /** Paint-only child of the viewport's existing clipped layer. Owns no measurement or listeners. */

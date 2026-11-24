@@ -1,3 +1,4 @@
+import { emptyList } from "./empty-list.ts";
 import { TextBuffer } from "./text-buffer.ts";
 import { TextDiff } from "./diff.ts";
 import type { DiffHunk, DiffProgress } from "./diff.ts";
@@ -36,7 +37,6 @@ export type ComparisonController = Observable<ComparisonSnapshot> & Readonly<{
     beginRefresh: () => ComparisonTicket; beginAcceptance: () => ComparisonTicket; beginReversion: () => ComparisonReversion;
     dispose: () => void;
 }>;
-const empty: readonly DiffHunk[] = Object.freeze([]);
 function baseline(value: ComparisonBaseline, epoch: number): ComparisonBaseline & Readonly<{ epoch: number }> {
     return Object.freeze({ buffer: value.buffer, version: value.version, epoch });
 }
@@ -63,7 +63,7 @@ export function compareText(workspace: Workspace, identity: DocumentId | TabId, 
     const referenceLease = referenceDocument && workspace.acquire(referenceDocument.getSnapshot()!.resourceId);
     const scope = workspace.createNotificationScope(options.onListenerError);
     const state = new Store<ComparisonSnapshot>(Object.freeze({ status: "running", generation: 0, baseline: initialBaseline,
-        working: document, hunks: empty, progress: null, failure: null }), scope);
+        working: document, hunks: emptyList, progress: null, failure: null }), scope);
     let job: TextDiff | undefined = new TextDiff(initialBaseline.buffer, document.buffer), disposed = false;
     let refreshGeneration = 0, acceptanceGeneration = 0, reversionGeneration = 0;
     let reversionPolicy = resource.metadata.getSnapshot(), reversionPolicyGeneration = 0;
@@ -74,12 +74,12 @@ export function compareText(workspace: Workspace, identity: DocumentId | TabId, 
     const canAccept = () => live() && resource.metadata.getSnapshot().capabilities.edit.includes("human") && resource.metadata.getSnapshot().editLock === null;
     function expire(): void {
         job?.dispose(); job = undefined;
-        publish({ status: "expired", generation: state.get().generation + 1, baseline: null, working: null, hunks: empty, progress: null, failure: null });
+        publish({ status: "expired", generation: state.get().generation + 1, baseline: null, working: null, hunks: emptyList, progress: null, failure: null });
     }
     function restart(reference: ComparisonBaseline & Readonly<{ epoch: number }>, working: DocumentSnapshot): void {
         const previous = state.get(), change = working.change;
         const hunks = previous.baseline === reference && previous.working && change?.previousRevision === previous.working.revision
-            ? mapComparisonHunks(reference.buffer, previous.working.buffer, working.buffer, change.mapping, previous.hunks) : empty;
+            ? mapComparisonHunks(reference.buffer, previous.working.buffer, working.buffer, change.mapping, previous.hunks) : emptyList;
         job?.dispose(); job = new TextDiff(reference.buffer, working.buffer);
         publish({ status: "running", generation: previous.generation + 1, baseline: reference, working, hunks, progress: null, failure: null });
     }
@@ -164,7 +164,7 @@ export function compareText(workspace: Workspace, identity: DocumentId | TabId, 
                 publish({ ...previous, status: progress.status === "ready" ? "ready" : "running", progress, hunks: progress.status === "ready" ? progress.hunks : previous.hunks });
             } catch (error) {
                 job?.dispose(); job = undefined;
-                publish({ ...state.get(), status: "failed", failure: error instanceof Error ? error.message : "Comparison failed.", hunks: empty });
+                publish({ ...state.get(), status: "failed", failure: error instanceof Error ? error.message : "Comparison failed.", hunks: emptyList });
             }
         }
         return state.get();
@@ -185,6 +185,6 @@ export function compareText(workspace: Workspace, identity: DocumentId | TabId, 
         for (const finish of [...pending]) finish();
         disposed = true; stopDocument(); stopMetadata(); stopTab?.(); stopReference?.(); referenceLease?.release(); job?.dispose(); job = undefined;
         if (!options.view) view.dispose();
-        publish({ status: "disposed", generation: state.get().generation + 1, baseline: null, working: null, hunks: empty, progress: null, failure: null });
+        publish({ status: "disposed", generation: state.get().generation + 1, baseline: null, working: null, hunks: emptyList, progress: null, failure: null });
     } });
 }

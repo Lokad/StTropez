@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { isIndex, isPositiveInteger } from "../core/bounds.ts";
 import { completionMethod } from "../protocol/lsp-methods.ts";
 import { retainLspDocument, type LspDocumentOwner } from "../protocol/lsp-client.ts";
@@ -95,11 +96,11 @@ export function mountCompletion(editor: TextEditor, provider: LspWorkspace, opti
     let fieldMarkers: DecorationLayer | undefined;
     let publishedSession: SnippetSession | undefined, field: CompletionSnippet | null = null;
     const owner = editor.element.ownerDocument, clock = owner.defaultView!;
-    const emptyMessages: readonly string[] = Object.freeze([]);
+    const emptyMessages: readonly string[] = emptyList;
     let labelItems: readonly LspCompletion[] | undefined, labels = emptyMessages;
     const notifications = workspace.createNotificationScope(error => options.onError?.(error));
     let providerPhase = scope.getSnapshot().phase;
-    const cell = new Store<CompletionSnapshot>(Object.freeze({ message: connectionMessage(providerPhase), connected: providerPhase === "ready", pending: false, offerText: null, anchor: null, choices: Object.freeze([]), choiceIndex: 0, completionAt: () => undefined, completionIncomplete: false, completionDetail: "", resolving: false, snippet: null, omittedCompletions: Object.freeze([]) }), notifications);
+    const cell = new Store<CompletionSnapshot>(Object.freeze({ message: connectionMessage(providerPhase), connected: providerPhase === "ready", pending: false, offerText: null, anchor: null, choices: emptyList, choiceIndex: 0, completionAt: () => undefined, completionIncomplete: false, completionDetail: "", resolving: false, snippet: null, omittedCompletions: emptyList }), notifications);
     const available = () => !disposed && editor.element.isConnected && !editor.signal.aborted && workspace.ownsDocumentView(view, target);
     const idle = () => { const m = editor.activity(); return !m.composing && !m.pendingInput && !m.pendingCommand && !m.pendingWord && !m.pendingGrapheme && !m.disposed && !editor.getSnapshot().disabled && (options.canCapture?.() ?? true); };
     const authority = resource.metadata.getSnapshot;
@@ -154,7 +155,7 @@ export function mountCompletion(editor: TextEditor, provider: LspWorkspace, opti
         offerText: selected?.label ?? null, choices: labels, choiceIndex: job?.choice ?? 0, completionAt: (index: number) => completionAt(generation, index),
         completionIncomplete: job?.choices?.incomplete ?? false, completionDetail: selected ? [selected.detail, selected.documentation].filter(Boolean).join("\n") : "", resolving: !!job?.resolution,
         snippet: field,
-        omittedCompletions: job?.choices?.omitted ?? Object.freeze([]) })); };
+        omittedCompletions: job?.choices?.omitted ?? emptyList })); };
     const release = (retain = false) => {
         const old = job; job = undefined; if (!old) return; old.call?.cancel(); old.resolution?.call?.cancel(); old.resolution = undefined;
         if (!retain) completion.cancel();
@@ -208,7 +209,7 @@ export function mountCompletion(editor: TextEditor, provider: LspWorkspace, opti
         const previous = invocation.automatic && job?.choices && current(job) && bindingCurrent(job) ? job : undefined, provisional = previous?.choices, provisionalVisible = previous?.visible;
         release(!!previous);
         const captured: Job = { id: workspace.allocateIdentity(), revision: document.revision, buffer: document.buffer, caret, selections, indentation: editor.settings().language, authority: authority(), folds: editor.view.folding.getSnapshot().generation, foldIndex: editor.view.folding.getSnapshot().index,
-            lease: workspace.acquire(resource.id), choice: previous?.choice ?? 0, pendingList: true, requestGeneration: 0, visible: provisionalVisible ?? Object.freeze([]), ...(provisional ? { choices: provisional } : {}), ...(previous?.batch ? { batch: previous.batch } : {}) };
+            lease: workspace.acquire(resource.id), choice: previous?.choice ?? 0, pendingList: true, requestGeneration: 0, visible: provisionalVisible ?? emptyList, ...(provisional ? { choices: provisional } : {}), ...(previous?.batch ? { batch: previous.batch } : {}) };
         job = captured; counters.posted++; publish("LSP completion pending.");
         void (async () => {
             if (connecting) await connecting; if (captured.requestGeneration !== 0) return; if (!current(captured)) throw staleRequest("Completion capture changed.");

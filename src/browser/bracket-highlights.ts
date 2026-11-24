@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { BracketMatcher, createBracketNavigationCursor } from "../core/bracket-matching.ts";
 import type { BracketMatchCursor, BracketMatchOptions, BracketMatchProgress, BracketMatchResult } from "../core/bracket-matching.ts";
 import type { ResolvedLanguageConfiguration } from "../core/language-edits.ts";
@@ -14,7 +15,6 @@ export type BracketHighlightSnapshot = Readonly<{ status: "disabled" | "idle" | 
     workUnits: number; readUnits: number; callbackCalls: number }>;
 export type BracketHighlights = Observable<BracketHighlightSnapshot> & Readonly<{
     refresh: () => void }>;
-const empty: readonly InlineDecoration[] = Object.freeze([]);
 
 /** Internal view owner. The editor supplies its existing activity/configuration without a second editor state. */
 export function mountBracketHighlights(workspace: Workspace, target: TabTarget | undefined, view: DocumentView, viewport: TextViewport, input: HTMLTextAreaElement,
@@ -27,7 +27,7 @@ export function mountBracketHighlights(workspace: Workspace, target: TabTarget |
     let events: AbortController | undefined;
     const stops: (() => void)[] = [];
     type Job = { cursor: BracketMatchCursor; current: () => boolean; revision: number; caret: number; running: boolean };
-    let job: Job | undefined, current: (() => boolean) | undefined, decorations = empty;
+    let job: Job | undefined, current: (() => boolean) | undefined, decorations: readonly InlineDecoration[] = emptyList;
     const layer = viewport.decorations.add({ name: "matching brackets", order: 100, minimap: false });
     const focused = () => isFocused(input);
     const available = () => !disposed && !!limits && !input.disabled && workspace.ownsDocumentView(view, target) && focused();
@@ -39,7 +39,7 @@ export function mountBracketHighlights(workspace: Workspace, target: TabTarget |
     const publish = (status: BracketHighlightSnapshot["status"], revision = cell.get().revision, caret: number | null = null, progress?: BracketMatchProgress) => {
         const result = progress?.result ?? null;
         const next = result?.kind === "matched" ? [result.at!, result.match!].sort((a, b) => a - b)
-            .map(from => Object.freeze({ from, to: from + 1, className: "st-matching-bracket" })) : empty;
+            .map(from => Object.freeze({ from, to: from + 1, className: "st-matching-bracket" })) : emptyList;
         if (next.length !== decorations.length || next.some((range, index) => range.from !== decorations[index]!.from)) {
             decorations = Object.freeze(next);
             if (decorations.length) layer.set(revision, decorations); else layer.clear();

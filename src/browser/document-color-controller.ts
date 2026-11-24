@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { colorPresentationMethod } from "../protocol/lsp-methods.ts";
 import { languageReview } from "./language-review.ts";
 import { reviewApplied, reviewFailed, reviewRefused, type ReviewEditResult } from "./review-edit.ts";
@@ -46,8 +47,7 @@ type TimedRequest = { timeout?: ReturnType<typeof failed> };
 type Preview = TimedRequest & { capture: Capture; reference: DocumentColorChoice; proposed: LspColor; result?: readonly LspColorPresentation[] };
 type Job = TimedRequest & { client: LspColorClient; project: ReturnType<typeof retainDocuments>; source: Capture; invalid: boolean; timer?: number;
     reply?: Awaited<ReturnType<LspColorClient["run"]>["result"]>; registration?: number; preview?: Preview };
-const empty = Object.freeze([]);
-const idle: DocumentColorSnapshot = Object.freeze({ status: "idle", colors: empty, presentations: empty, review: null, message: "", changed: false });
+const idle: DocumentColorSnapshot = Object.freeze({ status: "idle", colors: emptyList, presentations: emptyList, review: null, message: "", changed: false });
 
 /** Review one provider color presentation and apply all its edits as one undo command. */
 export const createDocumentColorController: (editor: TextEditor, provider: LspWorkspace,

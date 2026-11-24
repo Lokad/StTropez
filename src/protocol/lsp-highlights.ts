@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { isOffsetRange } from "../core/bounds.ts";
 import { documentHighlightMethod } from "./lsp-methods.ts";
 import { ProtocolDecodeError, staleRequest } from "./wire.ts";
@@ -9,7 +10,6 @@ import type { LspWorkspace } from "./lsp-workspace.ts";
 export type LspDocumentHighlight = Readonly<{ from: number; to: number; kind: "text" | "read" | "write" }>;
 export type LspDocumentHighlights = Readonly<{ items: readonly LspDocumentHighlight[];
     intersect: (from: number, to: number) => readonly LspDocumentHighlight[] }>;
-const empty: readonly LspDocumentHighlight[] = Object.freeze([]);
 
 /** Complete response validation and an immutable interval index, including overlapping ranges. */
 export function decodeLspDocumentHighlights(value: unknown, capture: LspDocumentCapture): LspDocumentHighlights {
@@ -29,14 +29,14 @@ export function decodeLspDocumentHighlights(value: unknown, capture: LspDocument
     for (let node = size - 1; node > 0; node--) end[node] = Math.max(end[node * 2]!, end[node * 2 + 1]!);
     return Object.freeze({ items, intersect: (from: number, to: number): readonly LspDocumentHighlight[] => {
         if (!isOffsetRange(from, to, capture.document.buffer.length)) throw new RangeError("Invalid highlight query.");
-        if (from === to || !items.length) return empty;
+        if (from === to || !items.length) return emptyList;
         const result: LspDocumentHighlight[] = [];
         const visit = (node: number, first: number, last: number): void => {
             if (first >= items.length || end[node]! <= from || items[first]!.from >= to) return;
             if (last - first === 1) { if (items[first]!.from < items[first]!.to) result.push(items[first]!); return; }
             const middle = (first + last) / 2; visit(node * 2, first, middle); visit(node * 2 + 1, middle, last);
         };
-        visit(1, 0, size); return result.length ? Object.freeze(result) : empty;
+        visit(1, 0, size); return result.length ? Object.freeze(result) : emptyList;
     } });
 }
 

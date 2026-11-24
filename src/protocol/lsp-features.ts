@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { isNonNegativeInteger } from "../core/bounds.ts";
 import { wireLimits, ProtocolDecodeError, isRecord, isLspUint, isLspInteger, staleRequest, isCapturedJson, jsonEqual, decodeJson } from "./wire.ts";
 import { validateTextEdits } from "../core/changes.ts";
@@ -63,7 +64,7 @@ function documentationContent(value: unknown, budget?: { units: number }, maximu
     return Object.freeze(body ? [Object.freeze({ kind: isRecord(value) && value.kind === "markdown" ? "markdown" as const : "plaintext" as const, value: body })] : []);
 }
 function commitCharacters(value: unknown, budget?: { units: number }): readonly string[] {
-    if (value === undefined) return Object.freeze([]); if (!Array.isArray(value)) invalid();
+    if (value === undefined) return emptyList; if (!Array.isArray(value)) invalid();
     // LSP specifies length=1; superfluous characters are ignored.
     return Object.freeze([...new Set(value.map(value => text(value, undefined, budget)).filter(value => value.length === 1))]);
 }
@@ -525,7 +526,7 @@ export function decodeLspSignatureHelp(value: unknown, capture: LspDocumentCaptu
     return Object.freeze({ signatures: Object.freeze(signatures), activeSignature: active < signatures.length ? active : 0, wire });
 }
 export function decodeLspDocumentLinks(value: unknown, capture: LspDocumentCapture, resolve = false): readonly LspDocumentLink[] {
-    current(capture); if (value === null) return Object.freeze([]);
+    current(capture); if (value === null) return emptyList;
     if (!Array.isArray(value) || value.length > 1024) invalid(); const budget = { units: 65536 }, opaque = { units: 65536 };
     const links = value.map((item: unknown): LspDocumentLink => {
         if (!isRecord(item)) invalid(); const range = lspRangeOffsets(capture.index, item.range), target = item.target === undefined ? null : text(item.target, 4096, budget);

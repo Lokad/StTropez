@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { Store, type Observable } from "../core/observable.ts";
 import { lineContentEnd } from "../core/newlines.ts";
 import { reconcileFoldRanges } from "../core/fold-discovery.ts";
@@ -29,7 +30,7 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
     if (!Number.isFinite(delay) || delay < 0) throw new RangeError("Invalid fold discovery delay.");
     const notifications = workspace.createNotificationScope();
     const cell = new Store<FoldingStatus>(Object.freeze({ status: "pending", revision: workspace.document(view.documentId).revision,
-        regions: 0, collapsed: 0, groups: Object.freeze([]), message: "Discovering folds…" }), notifications);
+        regions: 0, collapsed: 0, groups: emptyList, message: "Discovering folds…" }), notifications);
     const listeners = new AbortController(), runner = createCooperativeRunner(win); let disposed = false, generation = 0;
     let job: { generation: number; document: DocumentSnapshot; abort: AbortController; pumping?: boolean; cursor?: FoldDiscoveryCursor } | undefined;
     const available = () => !disposed && !editor.activity().disposed && workspace.ownsDocumentView(view, target);

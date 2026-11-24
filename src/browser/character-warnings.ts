@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { CharacterWarnings } from "../core/character-warnings.ts";
 import { graphemeBoundaries } from "../core/graphemes.ts";
 import type { CharacterWarningBatch, CharacterWarningLimits } from "../core/character-warnings.ts";
@@ -9,7 +10,6 @@ export type CharacterWarningHighlights = Readonly<{
     /** Bounded source query. Retain the capture and check isCurrent before acting on its ranges. */
     query: (from: number, to: number, limits?: CharacterWarningLimits) => CharacterWarningCapture | null;
 }>;
-const empty: readonly InlineDecoration[] = Object.freeze([]);
 
 /** Internal view owner: no document scans, subscriptions or asynchronous work. */
 export function mountCharacterWarnings(workspace: Workspace, target: TabTarget | undefined, view: DocumentView, viewport: TextViewport, initial?: CharacterWarnings) {
@@ -28,7 +28,7 @@ export function mountCharacterWarnings(workspace: Workspace, target: TabTarget |
     });
     const layer = viewport.decorations.addProvider({ name: "character warnings", order: 110, minimap: false,
         provide: (line: PresentedLine): readonly InlineDecoration[] => {
-            if (!classifier || disposed || line.documentId !== documentId) return empty;
+            if (!classifier || disposed || line.documentId !== documentId) return emptyList;
             const before = rows.get(line.line);
             if (before?.from === line.from && before.text === line.text) return before.decorations;
             // PresentedLine is already a bounded, complete-code-point viewport fragment.
@@ -44,7 +44,7 @@ export function mountCharacterWarnings(workspace: Workspace, target: TabTarget |
                     if (marked.at(-1)?.from !== from) marked.push(Object.freeze({ from, to, className: "st-character-warning" }));
                 }
             }
-            const decorations = marked.length ? Object.freeze(marked) : empty;
+            const decorations = marked.length ? Object.freeze(marked) : emptyList;
             if (rows.size >= 128 && !rows.has(line.line)) rows.delete(rows.keys().next().value!);
             rows.set(line.line, { from: line.from, text: line.text, decorations }); return decorations;
         }

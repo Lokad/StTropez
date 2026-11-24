@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
@@ -50,7 +51,7 @@ type Job = {
     failure?: Outcome<never>;
     resolving?: { index: number; applyWhen: ((action: LspCodeAction) => boolean) | undefined };
 };
-const empty: CodeActionSnapshot = Object.freeze({ status: "idle", message: "", choices: Object.freeze([]), choice: null, preview: null, changes: Object.freeze([]) });
+const empty: CodeActionSnapshot = Object.freeze({ status: "idle", message: "", choices: emptyList, choice: null, preview: null, changes: emptyList });
 export type CodeActionController = Observable<CodeActionSnapshot> & Readonly<{
     request: () => Promise<Outcome<readonly CodeActionChoice[]>>; cancel: () => void; dispose: () => void;
 }>;
@@ -172,7 +173,7 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
                 if (cell.get().preview !== preview || !j || !current(j)) return;
                 const edit = j.selection?.edit;
                 return edit ? previewLspWorkspaceEdit(edit, id => j.project.documents.get(id as DocumentId)!.title, page)
-                    : Object.freeze({ page, count: 0, notes: Object.freeze([]) });
+                    : Object.freeze({ page, count: 0, notes: emptyList });
             },
             confirm: () => confirm(preview) });
         return preview;

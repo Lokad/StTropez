@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { isPositiveInteger } from "../core/bounds.ts";
 import { applyEditMethod, didChangeMethod, executeCommandMethod } from "./lsp-methods.ts";
 import { wireLimits, isLspUri, isLspIdentityPart, ProtocolDecodeError, rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError } from "./wire.ts";
@@ -238,11 +239,11 @@ export class LspWorkspace {
     }
     /** Read the current host mapping/capabilities without acquiring document participation. */
     queryFeatureOptions(method: LspDocumentFeature, document: DocumentSnapshot): readonly Readonly<Record<string, JsonValue>>[] {
-        if (this.disposed) return Object.freeze([]);
+        if (this.disposed) return emptyList;
         const current = this.workspace.observeDocument(document.id).getSnapshot();
         if (!sameDocument(current, document)) throw stale();
         const info = document.language;
-        return info ? this.session.queryFeatureOptions(method, info) : Object.freeze([]);
+        return info ? this.session.queryFeatureOptions(method, info) : emptyList;
     }
     private document(id: DocumentId): DocumentEntry {
         this.writable(); const current = this.workspace.document(id), info = current.language;
@@ -508,8 +509,8 @@ export class LspWorkspace {
                 for (const document of captured ?? []) unwrap(document); },
             synchronized: capture,
             canRequest: (method, document) => scope.active && this.bindingCurrent(handles.get(document)) && this.session.canRequest(method, unwrap(document)),
-            featureOptions: (method, document) => scope.active && this.bindingCurrent(handles.get(document)) ? this.session.featureOptions(method, unwrap(document)) : Object.freeze([]),
-            commandNames: () => scope.active ? this.session.commandNames() : Object.freeze([]),
+            featureOptions: (method, document) => scope.active && this.bindingCurrent(handles.get(document)) ? this.session.featureOptions(method, unwrap(document)) : emptyList,
+            commandNames: () => scope.active ? this.session.commandNames() : emptyList,
             requestDocument: (method: Parameters<LspSession["requestDocument"]>[0], document: LspDocument, params: Parameters<LspSession["requestDocument"]>[2]) => {
                 writable(); const generation = scope.generation, entry = handles.get(document); if (!entry) throw stale(); this.synchronize(entry);
                 const raw = this.session.requestDocument(method, unwrap(document), (index, snapshot, captured) =>

@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { isOffsetRange } from "../core/bounds.ts";
 import { LiteralSearch } from "../core/search.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -132,7 +133,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         if (index < count && offsetAt(index) === head) return index;
         return index > 0 && head < endAt(index - 1) ? index - 1 : null;
     }
-    const emptyMatches: readonly SearchMatch[] = Object.freeze([]);
+    const emptyMatches: readonly SearchMatch[] = emptyList;
     const matchesIn = (from: number, to: number, capture = store.get()): readonly SearchMatch[] => {
         if (!isOffsetRange(from, to)) throw new RangeError("Invalid match range.");
         const state = store.get();

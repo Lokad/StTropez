@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { isLspUint } from "./wire.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import { BufferChangeCursor } from "../core/buffer-change.ts";
@@ -100,7 +101,7 @@ async function wireChanges(before: LspLineIndex, after: TextBuffer, planned: rea
 }
 /** Build the wire delta from its actual sent base without rebuilding an already prepared index. */
 export async function lspTextChanges(before: LspLineIndex, after: TextBuffer, cooperate: LspCooperate, hint?: LspChangeHint): Promise<readonly LspTextChange[]> {
-    if (after === before.buffer) return Object.freeze([]);
+    if (after === before.buffer) return emptyList;
     return wireChanges(before, after, await spans(before.buffer, after, cooperate, hint), cooperate);
 }
 
@@ -142,7 +143,7 @@ export class LspLineIndex {
     /** Proven batch ranges or shared-edge fallback, expanded to preserve newline/CR classification. */
     async change(after: TextBuffer, cooperate: LspCooperate, hint?: LspChangeHint): Promise<Readonly<{ index: LspLineIndex; changes: readonly LspTextChange[] }>> {
         if (!isLspUint(after.length)) throw new RangeError("Document exceeds LSP position limits.");
-        if (after === this.buffer) return Object.freeze({ index: this, changes: Object.freeze([]) });
+        if (after === this.buffer) return Object.freeze({ index: this, changes: emptyList });
         const planned = await spans(this.buffer, after, cooperate, hint), regions = []; let length = this.bare.length;
         for (const span of planned) {
             const start = lowerBound(this.bare, span.from), stop = lowerBound(this.bare, span.to), added = await scan(after, span.insertFrom, span.insertTo, cooperate);

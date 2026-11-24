@@ -1,3 +1,4 @@
+import { emptyList } from "./empty-list.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
 import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
@@ -229,7 +230,7 @@ export class TextDiff {
     private readonly driver: KernelCursor<DiffProgress>;
     constructor(baseline: TextBuffer, working: TextBuffer) {
         const stats: Stats = { work: 0, yielded: 0, readUnits: 0, lineEdits: 0 };
-        const empty: readonly DiffHunk[] = Object.freeze([]);
+        const empty: readonly DiffHunk[] = emptyList;
         this.driver = kernelCursor(compare(baseline, working, stats), () => stats.work,
             (status, result, failure): DiffProgress => Object.freeze({ status, work: stats.work, readUnits: stats.readUnits,
                 lineEdits: stats.lineEdits, hunks: result ?? empty, failure }), "Comparison");

@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { isNonNegativeInteger, isOffsetRange } from "../core/bounds.ts";
 import { partitionPoint } from "../core/bound-search.ts";
 import { composePositionMaps, positionMapSize } from "../core/positions.ts";
@@ -22,7 +23,6 @@ type Entry = { order: number; minimap: boolean; provide?: LineDecorator; lineCla
 type Fragment = Readonly<{ line: number; start: number; from: number; to: number; endsLine: boolean }>;
 type Dirty = (row: Fragment) => boolean;
 const all = () => true;
-const empty: readonly InlineDecoration[] = Object.freeze([]);
 
 function sameRange(a: InlineDecoration, b: InlineDecoration): boolean {
     if (a.from !== b.from || a.to !== b.to || a.className !== b.className || a.before !== b.before || a.afterLine !== b.afterLine) return false;
@@ -193,7 +193,7 @@ export function createDecorationLayers(current: () => DocumentSnapshot | undefin
             const provided = entry.provide?.(line);
             if (provided?.length) { result ??= []; for (const range of provided) result.push(range); }
         }
-        return result ?? empty;
+        return result ?? emptyList;
     }
     function lineClasses(line: PresentedLine, overview = false): string {
         let result = "";

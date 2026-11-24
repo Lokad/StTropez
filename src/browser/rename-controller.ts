@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { languageReview } from "./language-review.ts";
 import { changedTextEdits } from "../core/changes.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
@@ -33,7 +34,7 @@ export type RenameController = Observable<RenameSnapshot> & Readonly<{
 }>;
 type Job = { source: CapturedViewRequest<TextEditor["tab"]>; project: ReturnType<typeof retainEditProject>;
     client: LspRenameClient; invalid: boolean; timer?: number; edit?: LspWorkspaceEdit; review?: LspWorkspaceEdit };
-const idle: RenameSnapshot = Object.freeze({ name: "", status: "idle", message: "", preview: null, changes: Object.freeze([]) });
+const idle: RenameSnapshot = Object.freeze({ name: "", status: "idle", message: "", preview: null, changes: emptyList });
 
 /** Review and confirm one provider rename from the captured caret and project. */
 export function createRenameController(editor: TextEditor, provider: LspWorkspace, options: RenameControllerOptions = {}): RenameController {

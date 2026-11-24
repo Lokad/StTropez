@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { ProtocolDecodeError, isRecord, staleRequest, jsonEqual, decodeJson } from "./wire.ts";
 import type { JsonValue } from "./wire.ts";
 import { decodeLspDiagnostics, decodeLspWorkspaceEdit, lspWorkspaceEditUris } from "./lsp-features.ts";
@@ -17,7 +18,7 @@ export function lspCodeActionUris(value: unknown): readonly string[] {
 }
 /** A complete action list is validated before any choice is published or made applicable. */
 export function decodeLspCodeActions(value: unknown, origin: LspDocumentCapture, resolve: (uri: string) => LspEditTarget | undefined, canResolve = false): LspCodeActions {
-    current(origin); if (value === null) return Object.freeze([]); if (!Array.isArray(value)) invalid();
+    current(origin); if (value === null) return emptyList; if (!Array.isArray(value)) invalid();
     const text = (value: unknown): string => { if (typeof value !== "string" || !value) invalid(); return value; };
     const actions = value.map((item: unknown): LspCodeAction => {
         if (!isRecord(item)) invalid(); const title = text(item.title);

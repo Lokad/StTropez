@@ -1,3 +1,4 @@
+import { emptyList } from "./empty-list.ts";
 import { Store } from "./observable.ts";
 import type { NotificationScope, Observable } from "./observable.ts";
 import type { CloseIntent, CloseOperation, PaneId, ResourceId, Surface, TabId, TabSnapshot, TabTarget, Workspace } from "./workspace.ts";
@@ -21,7 +22,7 @@ export function surfaceResource(workspace: Workspace, surface: Surface): Resourc
 /** A workspace allocates its tab inventory only when a host asks for it. */
 export function createWorkspaceTabs(workspace: Workspace, scope: NotificationScope, lifetime: symbol,
     publish: (changed: Set<Store<unknown>>) => void, release: (resourceId: ResourceId) => void) {
-    let visible: readonly TabSnapshot[] = Object.freeze([]), serial = 0;
+    let visible: readonly TabSnapshot[] = emptyList, serial = 0;
     const all = new Store(visible, scope), index = new Map<TabId, TabSnapshot>();
     function requireTab(id: TabId): TabSnapshot {
         const tab = index.get(id);

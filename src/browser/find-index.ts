@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { LiteralSearch } from "../core/search.ts";
 import type { SearchMatch, SearchStep } from "../core/search.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
@@ -52,7 +53,7 @@ export class LiteralFindRepair {
         return !this.done && this.suffixIndex < this.old.count;
     }
     next(maxUnits = 4096, maxMatches = 64): SearchStep {
-        if (this.done) return Object.freeze({ done: true, scanned: this.length, readUnits: 0, matches: Object.freeze([]) });
+        if (this.done) return Object.freeze({ done: true, scanned: this.length, readUnits: 0, matches: emptyList });
         const result = this.search.next(maxUnits, maxMatches), accepted: SearchMatch[] = [];
         for (const match of result.matches) {
             this.building.append(match); accepted.push(match);

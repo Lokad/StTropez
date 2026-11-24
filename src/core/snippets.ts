@@ -1,3 +1,4 @@
+import { emptyList } from "./empty-list.ts";
 import { isNonNegativeInteger } from "./bounds.ts";
 import { applyTextEdits, validateTextEdits } from "./changes.ts";
 import type { TextEdit } from "./changes.ts";
@@ -38,7 +39,7 @@ export function parseSnippet(source: string, maxExpandedUnits = Number.MAX_SAFE_
             const start = at; while (/[0-9]/.test(source[at] ?? "")) at++;
             if (at === start) fail("Snippet variables are not supported.");
             const index = Number(source.slice(start, at)); if (!Number.isSafeInteger(index)) fail("Invalid snippet stop number.");
-            let text: string | undefined, choices: readonly string[] = Object.freeze([]);
+            let text: string | undefined, choices: readonly string[] = emptyList;
             if (braced) {
                 const delimiter = source[at++];
                 if (delimiter === ":" || delimiter === "|") {
@@ -75,7 +76,7 @@ export function parseSnippet(source: string, maxExpandedUnits = Number.MAX_SAFE_
         }
         if (!groups.has(0)) groups.set(0, [Object.freeze({ from: offset, to: offset, order: parts.length })]);
         const stops = [...groups].sort(([a], [b]) => a === 0 ? 1 : b === 0 ? -1 : a - b)
-            .map(([index, ranges]) => Object.freeze({ index, choices: definitions.get(index)?.choices ?? Object.freeze([]), ranges: Object.freeze(ranges) }));
+            .map(([index, ranges]) => Object.freeze({ index, choices: definitions.get(index)?.choices ?? emptyList, ranges: Object.freeze(ranges) }));
         return Object.freeze({ snippet: Object.freeze({ text: output.join(""), stops: Object.freeze(stops) }) });
     } catch (error) { if (error instanceof UnsupportedSnippet) return Object.freeze({ reason: error.message }); throw error; }
 }

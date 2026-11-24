@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { documentHighlightMethod } from "../protocol/lsp-methods.ts";
 import { Store, type Observable } from "../core/observable.ts";
 import { codeWordConstituentPattern } from "../core/word-patterns.ts";
@@ -24,7 +25,7 @@ export function createLspHighlightController(editor: TextEditor,
     const delay = options.delayMs ?? 150;
     if (editor.signal.aborted || !workspace.ownsDocumentView(view, target)) throw new Error("Invalid highlight view.");
     if (!Number.isFinite(delay) || delay < 0) throw new RangeError("Invalid highlight delay.");
-    const client = createLspHighlightClient(options.provider), empty: readonly LspDocumentHighlight[] = Object.freeze([]);
+    const client = createLspHighlightClient(options.provider), empty: readonly LspDocumentHighlight[] = emptyList;
     const notifications = workspace.createNotificationScope(), cell = new Store<LspHighlightSnapshot>(Object.freeze({ status: "idle", documentId,
         revision: workspace.document(documentId).revision, caret: null, items: empty }), notifications);
     const events = new AbortController(), runner = createCooperativeRunner(win); let disposed = false, generation = 0;

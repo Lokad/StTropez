@@ -1,3 +1,4 @@
+import { emptyList } from "../core/empty-list.ts";
 import { requireLanguageView } from "./captured-view.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { controllerObservable } from "./controller-observable.ts";
@@ -34,8 +35,8 @@ export type DiagnosticController = Observable<DiagnosticSnapshot> & Readonly<{
     getDiagnostics: () => Readonly<{ received: number; stale: number; invalid: number }>;
 }>;
 
-const empty: DiagnosticSnapshot = Object.freeze({ diagnostics: Object.freeze([]), diagnosticRevision: -1,
-    diagnosticsPending: false, unversionedDiagnostics: Object.freeze([]) });
+const empty: DiagnosticSnapshot = Object.freeze({ diagnostics: emptyList, diagnosticRevision: -1,
+    diagnosticsPending: false, unversionedDiagnostics: emptyList });
 
 /** Displays pushed diagnostics for one view, including positions mapped while analysis is pending. */
 export const createDiagnosticController: (editor: TextEditor, provider: LspWorkspace,
