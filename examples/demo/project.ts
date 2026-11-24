@@ -47,9 +47,16 @@ export class DemoProject {
     private reviewedRevisions: ReadonlyMap<DemoFile, number> | undefined;
     private includeOpenedFileInSave: ((file: DemoFile) => void) | undefined;
     saving = false;
-    private notice: { text: string; keepOnEdit?: true } | undefined = { text: "Changes are kept in this page until you save locally." };
+    private notice: { text?: string; keepOnEdit?: true; editRefusal?: string } = {
+        text: "Changes are kept in this page until you save locally."
+    };
+    setEditRefusal(text?: string): void {
+        if (text === undefined) delete this.notice.editRefusal;
+        else this.notice.editRefusal = text;
+    }
     get message(): string {
-        if (this.notice) return this.notice.text;
+        if (this.notice.editRefusal !== undefined) return this.notice.editRefusal;
+        if (this.notice.text !== undefined) return this.notice.text;
         if (this.reviewedRevisions && !this.saving && !this.canSaveReviewed()) return "The files changed after review. Review the saved copy again.";
         return this.dirty() ? "Unsaved changes." : this.token ? "Saved in this browser." : "Files match the original sample.";
     }
@@ -95,7 +102,8 @@ export class DemoProject {
             owners.defer(() => { this.workspace.tabs.close(tab); });
             const view = this.workspace.createDocumentView(resource.documentId); owners.defer(() => view.dispose());
             owners.defer(this.workspace.onDocumentChange(resource.documentId, () => {
-                if (!this.notice?.keepOnEdit) this.notice = undefined;
+                if (this.notice.keepOnEdit) this.setEditRefusal();
+                else this.notice = {};
             }));
             file = Object.freeze({ name, resource, tab, view, readOnly });
             this.baselines.set(name, { buffer: this.workspace.document(resource.documentId).buffer, version: this.token ?? "sample" });
@@ -239,7 +247,7 @@ export class DemoProject {
             }
             await this.recovery.settleSavedDraft();
             if (this.disposed) return;
-            this.notice = this.dirty() ? { text: "Saved in this browser. Later edits remain unsaved." } : undefined;
+            this.notice = this.dirty() ? { text: "Saved in this browser. Later edits remain unsaved." } : {};
         } catch (error) {
             // The store checks the captured token in one read/write transaction across every file.
             const remote = writing ? await this.store.read().catch(() => null) : null;

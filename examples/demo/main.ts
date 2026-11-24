@@ -350,14 +350,6 @@ function mountFile(file: DemoFile, focus = false): void {
     folding = mountDemoFolding(project, editor, () => editingConfiguration().tabSize!);
     stopFolding = foldMenu.bind(editor, folding, comparison ? "Your changes" : "Source");
     viewListeners = new AbortController();
-    surface.addEventListener(editRefusedEvent, event => {
-        if (!project) return;
-        const { reason } = (event as CustomEvent<EditRefusedDetail>).detail;
-        project.message = reason === "edit-locked" ? "This file is locked for editing."
-            : event.target === comparison?.panes.reference.element ? "The saved copy is read-only. Edit your working copy."
-            : file.name + " is read-only.";
-        element("status").textContent = project.message;
-    }, { signal: viewListeners.signal });
     viewListeners.signal.addEventListener("abort", editor.subscribe(scheduleMetadata), { once: true });
     bindPaneCommands(editor);
     if (comparison) bindPaneCommands(comparison.panes.reference);
@@ -483,6 +475,16 @@ function setPanel(next: DemoPanel): void {
     mountFile(active, true);
 }
 function bindPaneCommands(target: TextEditor): void {
+    target.element.addEventListener(editRefusedEvent, event => {
+        if (!project || !active || target !== activePane) return;
+        const { reason } = (event as CustomEvent<EditRefusedDetail>).detail;
+        const message = reason === "edit-locked" ? "This file is locked for editing."
+            : target === output?.editor ? "Generated JavaScript is read-only. Edit the TypeScript source."
+            : target === comparison?.panes.reference ? "The saved copy is read-only. Edit your working copy."
+            : active.name + " is read-only.";
+        project.setEditRefusal(message);
+        element("status").textContent = message;
+    }, { signal: target.signal });
     const apple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
     // Option+Left moves by word on Apple keyboards. The menu can restore a location there.
     target.commands.register({ id: "demo.back", label: "Back to previous location",
@@ -525,7 +527,11 @@ function releaseFind(): void {
 }
 function setActivePane(target: TextEditor, repeat = false): void {
     if (activePane === target && find) return;
-    if (activePane !== target) { activePane = target; scheduleMetadata(); }
+    if (activePane !== target) {
+        project?.setEditRefusal();
+        activePane = target;
+        scheduleMetadata();
+    }
     releaseFind();
     const visible = !findBar.hidden;
     if (!visible && !repeat) return;
@@ -649,11 +655,6 @@ for (const panel of [findBar, element("save-conflict")]) {
         }
     }, { capture: true, signal: listeners.signal });
 }
-element("panel-content").addEventListener(editRefusedEvent, () => {
-    if (!project || panel !== "javascript") return;
-    project.message = "Generated JavaScript is read-only. Edit the TypeScript source.";
-    element("status").textContent = project.message;
-}, { signal: listeners.signal });
 on("find-toggle", () => { activePane?.commands.run("find.open"); });
 on("find-close", () => { activePane?.commands.run("find.close"); });
 for (const toggle of element("find-options").querySelectorAll("button")) {
