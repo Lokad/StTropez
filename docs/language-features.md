@@ -518,43 +518,38 @@ Dispose the history with its host.
 
 ### Rename and workspace edits
 
-For an editor with a rename form, mount `const language = attachEditorLanguage(editor, provider, { rename: { documents } })`.
-Call `language.rename.setName(value)` as the form changes. Await `language.rename.request(name)` to preview that name at the
-primary caret, or omit the argument to preview the current name.
+Enable `rename` on the editor attachment. Supply a `documents` callback for other open files
+that the provider can rename. `await language.rename.request(name)` applies the edit at the
+captured caret. On success, `value` lists the changed documents. Undo from any one of those
+documents restores the whole rename.
 
-The request resolves to an `Outcome<RenamePreview>` from `sttropez/browser`. For `done`,
-`value` is the preview. A cancelled or superseded request resolves to `stale`, including when
-the source view or a captured document changes. A `refused` request gives the reason
-`empty-name` or `unavailable-view`. A `failed` request carries the provider or local error
-in `error`. Confirm the preview to apply its edits.
-
-A ready snapshot contains a `preview` for the captured name and selection. Its `count` and
-`readPage(index)` omit replacements whose text already equals the captured range. Each page
-holds up to 64 edits. Confirmation checks the original provider targets. Give each preview its own Apply button and keep
-that button while paging. A pointer press started on an older preview then cannot confirm a
-replacement on release.
+Pass `{ review: true }` to inspect the edit first. The preview's `count` and `readPage(index)`
+omit replacements that already match the captured text. Pages hold up to 64 edits. Keep the
+same Apply button while paging. Bind it to that preview's `apply` so a late click can only act
+on the edit the user saw. Call `rename.cancel()` when the user changes the proposed name or
+dismisses a pending request.
 
 ```ts
-import type { RenamePreview, ReviewEditResult } from "sttropez/browser";
+import type { RenameController } from "sttropez/browser";
 
-export function renameButton(preview: RenamePreview, report: (result: ReviewEditResult) => void) {
+export async function renameButton(rename: RenameController, name: string) {
+    const result = await rename.request(name, { review: true });
+    if (result.status !== "done") return;
+    const preview = result.value;
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = "Apply rename";
+    button.textContent = `Apply ${preview.count} edits`;
     button.disabled = !preview.canApply;
-    button.onclick = () => report(preview.confirm());
+    button.onclick = () => preview.apply();
     return button;
 }
 ```
 
-A successful `confirm()` returns `{ applied: true }` and applies the reviewed pages as one undo
-step. The snapshot lists the changed files. On refusal, read `reason`:
-
-- `expired` means the name, capture or request changed, or the editor was disposed. The old
-  preview's `readPage()` returns `undefined`.
-- `not-writable` means a target in this preview is read-only or locked.
-- `no-changes` means the provider supplied no edits or every replacement already matched its source text.
-- `failed` includes a `message` describing the apply error.
+Direct rename and a preview's synchronous `apply()` check every original target. Both return
+`done` with the changed files, `stale` for an expired capture, or `failed` with the error.
+A `refused` result gives the reason `not-writable` for a locked or read-only target and
+`no-changes` for an empty or text-identical edit. A request can also refuse `empty-name` or
+`unavailable-view`. Once a preview expires, `readPage()` returns `undefined`.
 
 Call `createLspRenameClient(provider).run({ document, project, offset, newName }).result` for a
 workspace edit plan. A null reply gives an empty plan. The server checks language naming rules. Your

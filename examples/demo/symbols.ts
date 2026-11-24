@@ -203,7 +203,7 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
         const state = rename.state.getSnapshot();
         refreshPrompt();
         if (name.value !== state.name) name.value = state.name;
-        apply = renderPanelButton(apply, { label: "Apply rename", reviewKey: state.reviewKey, disabled: !state.canApply, invoke: state.preview?.confirm ?? null });
+        apply = renderPanelButton(apply, { label: "Apply rename", reviewKey: state.reviewKey, disabled: !state.canApply, invoke: state.preview?.apply ?? null });
         if (displayed !== state.locations) {
             displayed = state.locations; targets.start = (displayed[0]?.ordinal ?? 0) + 1;
             targets.replaceChildren(...displayed.map(at => {

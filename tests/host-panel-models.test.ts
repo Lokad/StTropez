@@ -146,10 +146,10 @@ test("link rows retain their own action through repaging and resolution", () => 
 
 test("rename presentation retains its preview name, confirmation action and changed resource", () => {
     const applied: (number | null)[] = [], opened: DocumentId[] = [], firstId = "first" as DocumentId, secondId = "second" as DocumentId;
-    const tools: Parameters<typeof renamePanelModel>[0] = { prepare: noop, apply: target => { target?.confirm(); }, cancel: noop,
+    const tools: Parameters<typeof renamePanelModel>[0] = { prepare: noop, apply: target => { target?.apply(); }, cancel: noop,
         disconnect: noop, reconnect: noop, bindName: noop, setName: noop, openChanged: id => { opened.push(id); } };
     let formatted = 0;
-    const preview = (id: number, name: string) => ({ name, count: 1, canApply: true, readPage: () => undefined, confirm: () => { applied.push(id); return { applied: true } as const; } });
+    const preview = (id: number, name: string) => ({ name, count: 1, canApply: true, readPage: () => undefined, apply: () => { applied.push(id); return { status: "done", value: [] } as const; } });
     const locations = (after: string) => Object.freeze([Object.freeze({ ordinal: 0, document: firstId, resource: "source", title: "First", revision: 1,
         from: 0, to: 6, line: 0, column: 0, before: "symbol", after, get context() { formatted++; return "symbol"; } })]);
     const state: HostRenameSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, pending: false, status: "ready", message: "Captured rename",

@@ -103,7 +103,7 @@ test.describe(`plain LSP rename host`, () => {
         await preview(page, "catalogue"); await expect(button(page, "Apply captured rename")).toBeDisabled();
         await expect(targets(page)).toHaveCount(1); await expect(targets(page)).toContainText(["// fixture rename"]);
         await expect(page.getByLabel("Rename status", { exact: true })).toContainText("read-only or locked");
-        expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.rename.state.preview!.confirm())).toEqual({ applied: false, reason: "not-writable" });
+        expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.rename.state.preview!.apply())).toEqual({ status: "refused", reason: "not-writable" });
         // A programmatic click must not bypass the captured permission policy either.
         await button(page, "Apply captured rename").dispatchEvent("click"); await name(page).press("Enter"); await waitForRename(page); await exact(page, raw);
         expect((await snapshot(page)).bindings.rename.state.status).toBe("ready"); expect((await snapshot(page)).history).toEqual(before.history);
@@ -113,7 +113,7 @@ test.describe(`plain LSP rename host`, () => {
         const retired = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.rename.state.preview!);
         await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
         await select(page, raw.indexOf("catalogue") + 2); await preview(page); await expect(button(page, "Apply captured rename")).toBeEnabled();
-        expect(await retired.evaluate(p => [p.confirm(), p.readPage() === undefined])).toEqual([{ applied: false, reason: "expired" }, true]); await retired.dispose();
+        expect(await retired.evaluate(p => [p.apply(), p.readPage() === undefined])).toEqual([{ status: "stale" }, true]); await retired.dispose();
         await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
         await name(page).fill("inventory");
         replies.hold();
@@ -128,7 +128,7 @@ test.describe(`plain LSP rename host`, () => {
         await select(page, raw.indexOf("catalogue") + 2); await preview(page); await page.evaluate(() => window.hostFixture.faultIdleRename()); await waitForRename(page); await expect(button(page, "Apply captured rename")).toBeDisabled();
         await button(page, "Reconnect rename provider").click(); await select(page, raw.indexOf("catalogue") + 2); await preview(page); await button(page, "Disconnect rename provider").click(); await input(page).press("Control+End"); await input(page).pressSequentially("local"); await waitForRename(page); await exact(page, raw + "local"); await button(page, "Reconnect rename provider").click(); await select(page, raw.indexOf("catalogue") + 2); await preview(page); await expect(button(page, "Apply captured rename")).toBeEnabled();
         const count = requests; await select(page, raw.indexOf(";") + 1); await preview(page); expect(requests).toBe(count + 1); expect(lastPosition).toEqual({ line: 1, character: "const catalogue = 1;".length }); expect((await snapshot(page)).bindings.rename.state.count).toBe(0);
-        expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.rename.state.preview!.confirm())).toEqual({ applied: false, reason: "no-changes" });
+        expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.rename.state.preview!.apply())).toEqual({ status: "refused", reason: "no-changes" });
         await select(page, raw.indexOf("catalogue") + 2); await preview(page, "catalogue");
         await expect(targets(page)).toHaveCount(1); await button(page, "Apply captured rename").press("Space");
         await exact(page, marker + raw + "local"); await page.keyboard.press("Control+z");

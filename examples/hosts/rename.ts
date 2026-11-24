@@ -59,7 +59,7 @@ export class HostRenameTools {
             const current = this.owner?.controller.getSnapshot();
             if (current?.preview === preview && this.cell.get().locations === locations) this.render(current, next);
         }) : null;
-        this.publish({ name: state.name, status: state.status, message: state.message, preview, reviewKey, paging, pending: state.status === "pending",
+        this.publish({ status: state.status, message: state.message, preview, reviewKey, paging, pending: state.status === "pending",
             canApply: preview?.canApply ?? false, count: preview?.count ?? 0, page, locations, ...(state.status === "applied" ? { changes: state.changes } : {}) });
     }
     readonly cancel = () => {
@@ -70,7 +70,9 @@ export class HostRenameTools {
     readonly reconnect = () => { this.disconnected = false; this.cancel(); this.host.reconnect?.(); };
     setName(value: string) {
         const name = value.slice(0, 256);
-        if (this.owner) this.owner.controller.setName(name); else this.publish({ name });
+        if (name === this.cell.get().name) return;
+        this.owner?.controller.cancel();
+        this.publish({ name });
     }
     readonly bindName = this.nameField.bind;
     attach(id: string, _tab: TabId, editor: TextEditor): () => void {
@@ -118,7 +120,6 @@ export class HostRenameTools {
     private hint(session: Session) { return navigationSymbol(this.host.workspace.document(session.editor.view.documentId).buffer, session.editor.view.getSnapshot().selection.head); }
     private prompt(session: Session, name = this.hint(session) ?? "") {
         this.cancel(); this.owner = session;
-        session.controller.setName(name);
         this.publish({ name, message: "Enter a name, then preview its changes." });
         const field = this.nameField.element;
         if (field) {
@@ -132,7 +133,7 @@ export class HostRenameTools {
         const owner = this.owner;
         if (!owner || !preview || owner.controller.getSnapshot().preview !== preview) return;
         const doc = owner.editor.element.ownerDocument, focused = doc.activeElement;
-        if (preview.confirm().applied && this.owner === owner && isMountedEditor(this.host.workspace, owner.editor)
+        if (preview.apply().status === "done" && this.owner === owner && isMountedEditor(this.host.workspace, owner.editor)
             && doc.hasFocus() && (doc.activeElement === focused || doc.activeElement === doc.body)) focusSourceCaret(owner.editor);
     }
     private prepareIn(s: Session | undefined) {
@@ -141,7 +142,7 @@ export class HostRenameTools {
         if (!name || /[\u0000-\u001f\u007f]/.test(name)) { this.prompt(s); return; }
         if (this.owner !== s) this.cancel();
         this.owner = s;
-        void s.controller.request(name);
+        void s.controller.request(name, { review: true });
     }
     openChanged(document: DocumentId) {
         const s = this.cell.get();

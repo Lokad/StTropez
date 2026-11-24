@@ -95,7 +95,7 @@ for (const [cause, interrupt] of Object.entries(sourceChanges)) {
         assert.equal(f.document(), source);
     });
 
-    test(`a delayed rename cannot offer an edit after ${cause}`, { timeout: 5000 }, async t => {
+    test(`a delayed direct rename cannot edit after ${cause}`, { timeout: 5000 }, async t => {
         const f = await fixture(t);
         const rename = attachEditorLanguage(f.editor, f.provider, { rename: {} }).rename;
         const edit = { changes: { "generic:source": [{ range, newText: "replacement" }] } };
@@ -164,7 +164,7 @@ test("a rename request returns its preview, refusal or provider error", async t 
     const previous = rename.request("earlier");
     await held.received;
     f.peer.onRequest("textDocument/rename", () => ({ changes: { "generic:source": [{ range, newText: "next" }] } }));
-    const latest = rename.request("next");
+    const latest = rename.request("next", { review: true });
     assert.deepEqual(await previous, { status: "stale" });
     held.send();
     const done = await latest;
@@ -172,8 +172,34 @@ test("a rename request returns its preview, refusal or provider error", async t 
     assert.equal(done.value, rename.getSnapshot().preview);
     assert.equal(done.value.count, 1);
     assert.equal(f.document(), before);
-    assert.deepEqual(done.value.confirm(), { applied: true });
+    assert.deepEqual(done.value.apply(), { status: "done", value: [{ document: before.id, title: before.title }] });
     assert.equal(f.document().buffer.slice(0, 4), "next");
+});
+
+test("direct rename applies its whole project in one undo step or refuses it", async t => {
+    const f = await fixture(t);
+    const other = () => f.workspace.document(f.other.documentId);
+    const { rename } = attachEditorLanguage(f.editor, f.provider, { rename: { documents: () => [other()] } });
+    let previews = 0;
+    rename.subscribe(() => { if (rename.getSnapshot().preview) previews++; });
+    const before = [f.document(), other()];
+    const replacement = { range, newText: "next" };
+    f.peer.onRequest("textDocument/rename", () => ({
+        changes: { "generic:source": [replacement], "generic:other": [replacement] }
+    }));
+    f.workspace.setCapabilities(f.other.id, { edit: ["host"], save: true });
+    assert.deepEqual(await rename.request("next"), { status: "refused", reason: "not-writable" });
+    assert.deepEqual([f.document().buffer, other().buffer], before.map(doc => doc.buffer));
+    f.workspace.setCapabilities(f.other.id, { edit: ["host", "human"], save: true });
+    const result = await rename.request("next");
+    assert.equal(result.status, "done");
+    assert.deepEqual(result.value, before.map(({ id, title }) => ({ document: id, title })));
+    assert.equal(result.value, rename.getSnapshot().changes);
+    assert.deepEqual([f.document(), other()].map(doc => doc.buffer.slice(0, 4)), ["next", "next"]);
+    assert.deepEqual(await rename.request("next"), { status: "refused", reason: "no-changes" });
+    assert.equal(previews, 0);
+    assert.ok(f.workspace.undo({ documentId: other().id, expectedRevision: other().revision }).applied);
+    assert.deepEqual([f.document(), other()].map(doc => doc.buffer.text()), before.map(doc => doc.buffer.text()));
 });
 
 for (const method of ["textDocument/codeAction", "textDocument/rename", "textDocument/documentColor", "textDocument/colorPresentation"] as const) {
@@ -195,9 +221,9 @@ for (const method of ["textDocument/codeAction", "textDocument/rename", "textDoc
             : attachEditorLanguage(f.editor, f.provider, { colors: {
                 prepareRequest: kind => (kind === "discovery") === (method === "textDocument/documentColor") ? prepare : undefined,
             } }).colors;
-        if ("setName" in controller) controller.setName("next");
         const run = async () => {
-            if (method !== "textDocument/colorPresentation" || !("dismissPreview" in controller)) return controller.request();
+            if (!("dismissPreview" in controller)) return controller.request("next");
+            if (method === "textDocument/documentColor") return controller.request();
             const color = { red: 1, green: 0, blue: 0, alpha: 1 };
             f.peer.onRequest("textDocument/documentColor", () => [{ range, color }]);
             const items = await controller.request();

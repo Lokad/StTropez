@@ -2,8 +2,7 @@ import { emptyList } from "../core/empty-list.ts";
 import { languageReview } from "./language-review.ts";
 import { changedTextEdits } from "../core/changes.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
-import { reviewApplied, reviewFailed, reviewRefused, type ReviewEditResult } from "./review-edit.ts";
-import type { Observable } from "../core/observable.ts";
+import type { ChangedDocument } from "./language-command.ts";
 import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
 import { renameClient, type LspRenameClient } from "../protocol/lsp-rename.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
@@ -16,44 +15,76 @@ import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainEditProject, writableEdit } from "./edit-project.ts";
 import type { TextEditor } from "./text-editor.ts";
 
+type Changes = readonly ChangedDocument[];
+
 export type RenamePreview = Readonly<{
     name: string; count: number; canApply: boolean;
-    readPage: (page?: number) => LspWorkspaceEditPreview | undefined; confirm: () => ReviewEditResult;
+    readPage: (page?: number) => LspWorkspaceEditPreview | undefined;
+    apply: () => Outcome<Changes>;
 }>;
 export type RenameSnapshot = Readonly<{
-    name: string; status: "idle" | "pending" | "ready" | "expired" | "failed" | "applied" | "disposed";
-    message: string; preview: RenamePreview | null; changes: readonly Readonly<{ document: DocumentId; title: string }>[];
+    status: "idle" | "pending" | "ready" | "expired" | "failed" | "applied" | "disposed";
+    message: string; preview: RenamePreview | null; changes: Changes;
 }>;
 export type RenameControllerOptions = Readonly<{
     documents?: () => readonly DocumentSnapshot[]; canCapture?: (id: DocumentId) => boolean; prepareRequest?: () => LspPrepare | undefined;
 }>;
-export type RenameController = Observable<RenameSnapshot> & Readonly<{
-    setName: (name: string) => void;
-    request: (name?: string) => Promise<Outcome<RenamePreview>>;
-    cancel: () => void;
-    dispose: () => void;
-}>;
+export type RenameController = ReturnType<typeof mountRename>;
 type Job = { source: CapturedViewRequest<TextEditor["tab"]>; project: ReturnType<typeof retainEditProject>;
     client: LspRenameClient; invalid: boolean; timer?: number; edit?: LspWorkspaceEdit; review?: LspWorkspaceEdit };
-const idle: RenameSnapshot = Object.freeze({ name: "", status: "idle", message: "", preview: null, changes: emptyList });
+const idle: RenameSnapshot = Object.freeze({ status: "idle", message: "", preview: null, changes: emptyList });
 
-/** Review and confirm one provider rename from the captured caret and project. */
-export function mountRename(editor: TextEditor, owner: LspDocumentOwner, options: RenameControllerOptions): RenameController {
+/** Apply or review a rename at the captured caret across its project. */
+export function mountRename(editor: TextEditor, owner: LspDocumentOwner, options: RenameControllerOptions) {
     const { workspace, view } = editor, win = editor.element.ownerDocument.defaultView!;
     const { scope, state: cell, signal, active, available, capture, release, expire, mount } =
         languageReview<Job, RenameSnapshot>(editor, "Rename", idle, options.canCapture,
             status => publish({ status, ...(status === "expired" && { message: "The captured source or target changed." }) }));
-    const publish = (patch: Partial<RenameSnapshot>) => scope.publish(cell, Object.freeze({ ...idle, name: cell.get().name, ...patch }));
+    const publish = (patch: Partial<RenameSnapshot>) => scope.publish(cell, Object.freeze({ ...idle, ...patch }));
     function current(j: Job) {
         if (active.job !== j || j.invalid || !j.source.isCurrent() || j.edit && !j.edit.isCurrent()) return false;
         if (options.canCapture) for (const id of j.project.documents.keys()) if (!options.canCapture(id)) return false;
         return true;
     }
-    function reportFailure(name: string, error: unknown): string {
-        const message = error instanceof Error ? error.message : "Rename failed.";
+    function reportFailure(error: unknown) {
         release();
-        publish({ name, status: "failed", message });
-        return message;
+        publish({ status: "failed", message: error instanceof Error ? error.message : "Rename failed." });
+        return failed(error);
+    }
+    function refusalMessage(count: number) {
+        return count ? "A rename target is read-only or locked." : "No edits for this name.";
+    }
+    function apply(j: Job, count: number, canApply = true): Outcome<Changes> {
+        try {
+            const edit = j.edit;
+            if (!edit || !current(j)) {
+                expire(j);
+                return stale;
+            }
+            if (!canApply || !count || !writableEdit(editor, edit)) {
+                if (!cell.get().preview) {
+                    release();
+                    publish({ message: refusalMessage(count) });
+                }
+                return refused(count ? "not-writable" : "no-changes");
+            }
+            let changes: Changes = emptyList;
+            if (!j.source.commit(() => {
+                const changed = applyLspWorkspaceEdit(workspace, edit, {
+                    origin: "host", requiredOrigins: ["human"], source: "rename", historyKind: "refactor", view
+                });
+                changes = Object.freeze(changed.map(doc => Object.freeze({ document: doc.id, title: doc.title })));
+                return true;
+            })) {
+                expire(j);
+                return stale;
+            }
+            release();
+            publish({ status: "applied", message: `Applied ${count} edits across ${changes.length} files.`, changes });
+            return done(changes);
+        } catch (error) {
+            return active.job === j ? reportFailure(error) : stale;
+        }
     }
     function makePreview(name: string, count: number, canApply: boolean): RenamePreview {
         // A retained button keeps the identity of its preview, never the project's old buffers.
@@ -61,35 +92,18 @@ export function mountRename(editor: TextEditor, owner: LspDocumentOwner, options
             const j = active.job;
             if (cell.get().preview !== preview || !j?.review || !current(j)) return;
             return previewLspWorkspaceEdit(j.review, id => j.project.documents.get(id as DocumentId)!.title, page);
-        }, confirm() {
-            scope.assertWritable(); const j = active.job, edit = j?.edit;
-            if (cell.get().preview !== preview || !j || !edit || !current(j)) return reviewRefused("expired");
-            if (!count) return reviewRefused("no-changes");
-            if (!canApply || !writableEdit(editor, edit)) return reviewRefused("not-writable");
-            try {
-                let changed: readonly DocumentSnapshot[] = [];
-                if (!j.source.commit(() => {
-                    changed = applyLspWorkspaceEdit(workspace, edit, { origin: "host", requiredOrigins: ["human"], source: "rename", historyKind: "refactor", view });
-                    return true;
-                })) { expire(j); return reviewRefused("expired"); }
-                release(); publish({ status: "applied", message: `Applied ${count} edits across ${changed.length} files.`,
-                    changes: Object.freeze(changed.map(doc => Object.freeze({ document: doc.id, title: doc.title }))) });
-                return reviewApplied;
-            } catch (error) {
-                return active.job === j ? reviewFailed(reportFailure(name, error)) : reviewRefused("expired");
-            }
+        }, apply() {
+            scope.assertWritable();
+            const j = active.job;
+            return j && cell.get().preview === preview ? apply(j, count, canApply) : stale;
         } });
         return preview;
     }
-    function setName(name: string) {
-        scope.assertWritable(); if (signal.aborted || name === cell.get().name) return;
-        release(); publish({ name });
-    }
-    async function prepare(name: string): Promise<Outcome<RenamePreview>> {
+    async function prepare(name: string, review: boolean): Promise<Outcome<RenamePreview | Changes>> {
         if (signal.aborted) return stale;
         release();
         if (!name.length) {
-            publish({ name, message: "Enter a new name." });
+            publish({ message: "Enter a new name." });
             return refused("empty-name");
         }
         let source: Job["source"] | undefined;
@@ -98,7 +112,7 @@ export function mountRename(editor: TextEditor, owner: LspDocumentOwner, options
         try {
             source = capture();
             if (!source) {
-                publish({ name, status: "expired", message: "Finish pending input before requesting a rename." });
+                publish({ status: "expired", message: "Finish pending input before requesting a rename." });
                 return refused("unavailable-view");
             }
             const client = renameClient(owner);
@@ -112,7 +126,7 @@ export function mountRename(editor: TextEditor, owner: LspDocumentOwner, options
                 client.cancel();
             }, 30000);
             const offset = source.selectionSet.ranges[source.selectionSet.primary]!.head;
-            publish({ name, status: "pending", message: "Preparing rename preview…" });
+            publish({ status: "pending", message: "Requesting rename…" });
             const edit = await client.run({ document: source.document, project: [...j.project.documents.values()],
                 offset, newName: name, prepare: options.prepareRequest?.() }).result;
             j.edit = edit;
@@ -124,12 +138,13 @@ export function mountRename(editor: TextEditor, owner: LspDocumentOwner, options
             j.project.includeEdit(edit);
             // Review changed text. Confirmation still checks every original target.
             const documents = edit.documents.map(({ target, edits }) => ({ target, edits: changedTextEdits(target.document.buffer, edits) }));
-            j.review = { ...edit, documents };
             const count = documents.reduce((n, change) => n + change.edits.length, 0);
+            if (!review) return apply(j, count);
+            j.review = { ...edit, documents };
             const canApply = count > 0 && writableEdit(editor, edit);
             const preview = makePreview(name, count, canApply);
-            publish({ name, status: "ready", preview,
-                message: !count ? "No edits for this name." : !canApply ? "A rename target is read-only or locked."
+            publish({ status: "ready", preview,
+                message: !canApply ? refusalMessage(count)
                     : `Review ${count} ${count === 1 ? "change" : "changes"}.` });
             return done(preview);
         } catch (cause) {
@@ -144,15 +159,17 @@ export function mountRename(editor: TextEditor, owner: LspDocumentOwner, options
                 } catch (captureError) { error = captureError; }
             }
             if (!pending) source?.cancel();
-            reportFailure(name, error);
-            return failed(error);
+            return reportFailure(error);
         }
     }
-    function request(name = cell.get().name) {
+    function request(name: string, options: Readonly<{ review: true }>): Promise<Outcome<RenamePreview>>;
+    function request(name: string, options?: Readonly<{ review?: false }>): Promise<Outcome<Changes>>;
+    function request(name: string, options: Readonly<{ review?: boolean }>): Promise<Outcome<RenamePreview | Changes>>;
+    function request(name: string, options?: Readonly<{ review?: boolean }>) {
         scope.assertWritable();
-        return prepare(name);
+        return prepare(name, options?.review === true);
     }
     const stop = owner.provider.subscribe(() => { const j = active.job; if (j?.edit && !j.edit.isCurrent()) expire(j); });
     const controls = mount(stop);
-    return Object.freeze({ ...controls, request, setName });
+    return Object.freeze({ ...controls, request });
 }
