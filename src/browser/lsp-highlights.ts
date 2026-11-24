@@ -1,5 +1,5 @@
 import { Store, type Observable } from "../core/observable.ts";
-import { codeWordConstituentPattern } from "../core/words.ts";
+import { codeWordConstituentPattern } from "../core/word-patterns.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 import type { DocumentId } from "../core/workspace.ts";
 import { createLspHighlightClient } from "../protocol/lsp-highlights.ts";

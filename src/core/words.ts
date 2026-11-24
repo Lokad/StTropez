@@ -1,3 +1,4 @@
+import { basePattern, extendPattern } from "./word-patterns.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { lineContentEnd } from "./newlines.ts";
 import { readUtf16Window } from "./utf16.ts";
@@ -9,9 +10,6 @@ export type WordOptions = Readonly<{ skipWhitespace?: boolean; from?: number; to
 type Kind = "word" | "space" | "symbol" | "extend";
 type Unit = Readonly<{ from: number; to: number; kind: Kind; control: boolean }>;
 type Counters = { work: number; yielded: number; reads: number };
-const extendPattern = "[\\p{M}\\u200c\\u200d]", basePattern = "[\\p{L}\\p{N}\\p{Pc}]";
-/** One code point in the editor's code-word policy, for host-owned Unicode expressions. */
-export const codeWordConstituentPattern = `(?:${basePattern}|${extendPattern})`;
 const extendExpression = new RegExp(`^${extendPattern}$`, "u"), baseExpression = new RegExp(`^${basePattern}$`, "u");
 export const isCodeWordBase = (text: string): boolean => baseExpression.test(text);
 const kind = (text: string): Kind => extendExpression.test(text) ? "extend" : /^\p{White_Space}$/u.test(text) ? "space" : isCodeWordBase(text) ? "word" : "symbol";

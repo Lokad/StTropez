@@ -1,6 +1,6 @@
 import { ProtocolDecodeError, rpcCodes, staleRequest } from "../protocol/wire.ts";
 import { dispatchTypedText, typedTextEvent, type TypedTextDetail } from "./input-events.ts";
-import { codeWordConstituentPattern } from "../core/words.ts";
+import { codeWordConstituentPattern } from "../core/word-patterns.ts";
 import type { DocumentViewSnapshot, ResourceLease, ResourceMetadata } from "../core/workspace.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import { planSnippetEdit, planSnippetChoice, snippetChoiceText } from "../core/snippets.ts";

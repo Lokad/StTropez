@@ -1,4 +1,4 @@
-import { codeWordConstituentPattern } from "./words.ts";
+import { codeWordConstituentPattern } from "./word-patterns.ts";
 import { splitsSurrogatePair } from "./utf16.ts";
 import type { SearchMatch } from "./search.ts";
 /** Pure matching kernel for a dedicated worker, never a main-thread cooperative cursor.
