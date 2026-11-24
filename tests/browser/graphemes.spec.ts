@@ -49,22 +49,30 @@ test("editing deletes whole long, emoji, Indic and CRLF clusters and restores th
 
 test("regional-indicator parity uses the whole line and repeated movement reuses its immutable index", async ({ page }) => {
     await page.goto("/editing/"); await ready(page);
-    const text = "🇦".repeat(3001); await setup(page, text, 6002);
-    await page.keyboard.press("ArrowLeft"); await ready(page); expect((await state(page)).primary.selection.head).toBe(6000);
-    expect((await state(page)).primary.graphemeScanSteps).toBeGreaterThan(0);
-    await page.keyboard.press("ArrowLeft"); await ready(page); expect((await state(page)).primary.selection.head).toBe(5996);
-    expect((await state(page)).primary.graphemeScanSteps).toBe(0);
-    await page.keyboard.press("Delete"); await ready(page); expect((await state(page)).document!.length).toBe(5998);
+    const text = "🇦".repeat(30_001);
+    await setup(page, text, text.length);
+    await page.keyboard.press("ArrowLeft");
+    await ready(page);
+    expect((await state(page)).primary.selection.head).toBe(text.length - 2);
+    // The second move can publish its selection before the command returns.
+    expect(await page.evaluate(() => {
+        window.editingFixture.command("move-left");
+        return window.editingFixture.snapshot().primary.selection.head;
+    })).toBe(text.length - 6);
+    await page.keyboard.press("Delete"); await ready(page); expect((await state(page)).document!.length).toBe(text.length - 4);
 });
 
 test("local ASCII deletion avoids whole-line indexing while nearby Unicode and CRLF retain exact clusters", async ({ page }) => {
     await page.goto("/editing/"); await ready(page);
     const text = "\u0600" + "x".repeat(240_000), offset = 120_000;
     await setup(page, text, offset); const before = await state(page);
-    await page.keyboard.press("Delete"); await ready(page);
+    expect(await page.evaluate(() => {
+        window.editingFixture.command("delete-forward");
+        return window.editingFixture.snapshot().document!.length;
+    })).toBe(text.length - 1);
+    await ready(page);
     const after = await state(page);
     expect(after.document).toMatchObject({ length: text.length - 1, revision: before.document!.revision + 1 });
-    expect(after.primary.graphemeScanSteps).toBe(0);
     expect(after.primary.selection).toMatchObject({ anchor: offset, head: offset });
     expect(await page.evaluate(() => window.editingFixture.range(119_998, 120_002))).toBe("xxxx");
     await page.keyboard.press("ControlOrMeta+z"); await ready(page);
@@ -73,10 +81,6 @@ test("local ASCII deletion avoids whole-line indexing while nearby Unicode and C
         const original = "x".repeat(5000) + cluster + "b";
         await setup(page, original, 5000 + cluster.length);
         await page.keyboard.press("Backspace"); await ready(page);
-        const removed = await state(page);
-        // The adapter resets this metric at the start of each deletion command.
-        if (cluster === "\r\n") expect(removed.primary.graphemeScanSteps).toBe(0);
-        else expect(removed.primary.graphemeScanSteps).toBeGreaterThan(0);
         expect(await page.evaluate(n => window.editingFixture.range(0, n), 5001)).toBe("x".repeat(5000) + "b");
         await page.keyboard.press("ControlOrMeta+z"); await ready(page);
         expect(await page.evaluate(n => window.editingFixture.range(0, n), original.length)).toBe(original);

@@ -78,11 +78,9 @@ page. Repeat the check on the browsers and devices you support.
 | Input-handler duration | Time inside one adapter listener. It includes model updates, synchronous subscribers and browser work triggered there. Native work before the listener, other listeners and later service or render work fall outside it. |
 | Editor handler samples | `lastBeforeInputMs`, `lastInputMs` and `lastKeydownMs` each time one listener. Check its event counter to tell whether a sample is new. |
 | Completion samples | `lastCompletionBeforeInputMs` times the completion input listener. `lastCompletionCommandMs` times a registered command, including synchronous publication. `completionCommands` counts those calls. Provider replies and later paint fall outside both clocks. |
-| Command callback duration | `maxQueuedInputTurnMs`, `maxWordSelectionTurnMs` and `maxDragScrollStepMs` are per-mount maxima for whole synchronous callbacks, including guards, publication, refresh and scheduling. Later work falls outside them. |
+| Command callback duration | `maxQueuedInputTurnMs` and `maxDragScrollStepMs` time the longest synchronous queued-input and drag-scroll callbacks on this mount. |
 | Navigation work | `navigationWorkMs` and `maxNavigationTurnMs` count initialization and scheduled navigation callbacks, including synchronous flushes. Nested work counts once. Later caret and render frames fall outside the measurement. |
 | Navigation preparation | `navigationPreparationMs` times the initial viewport and primary-caret geometry setup within navigation work. |
-| Pointer word selection | `lastWordSelectionMs` times the double-click handler, including its first scans and synchronous subscribers. Measure later scan turns and rendering separately. |
-| Word/grapheme scan step | `maxWordScanStepMs` and `maxGraphemeScanStepMs` time kernel advances. Final normalization, model commit and rendering fall outside this span. |
 | Event observation span | Time from the capture observer to the bubble observer, including every listener between them. |
 | Edit interaction start | For a handled Enter, start at keydown capture. For native `insertText`, start at beforeinput capture. Keep the two handler and readiness measurements separate. Count UTF-16 units, input events and transactions independently. |
 | Work units | Algorithm steps charged against a cooperative scheduling budget. Duration and memory use vary. |

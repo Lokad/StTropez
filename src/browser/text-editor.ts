@@ -64,10 +64,9 @@ export type TextEditorActivity = Readonly<{ disposed: boolean; composing: boolea
 export type TextEditorDiagnostics = TextEditorActivity & Readonly<{
     inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number;
     maxQueuedInputTurnMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number;
-    navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number;
-    lastWordSelectionMs: number; maxWordSelectionTurnMs: number; dragScrollFrames: number; maxDragScrollStepMs: number;
-    commits: number; conflicts: number; queuedInputUnits: number; wordScanSteps: number; maxWordScanStepMs: number;
-    graphemeScanSteps: number; maxGraphemeScanStepMs: number;
+    navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number;
+    dragScrollFrames: number; maxDragScrollStepMs: number;
+    commits: number; conflicts: number; queuedInputUnits: number;
 }>;
 export type TextEditorSnapshot = Readonly<{ focused: boolean; disabled: boolean; composing: boolean;
     readOnlyReason: EditRefusedDetail["reason"] | null }>;
@@ -178,11 +177,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     let beforeInputEvents = 0, lastBeforeInputMs = 0, maxQueuedInputTurnMs = 0;
     let keydownEvents = 0, lastKeydownMs = 0;
     let navigationTurns = 0, navigationPreparationMs = 0, maxNavigationTurnMs = 0, navigationWorkMs = 0, navigationDepth = 0;
-    let wordSelectionEvents = 0, lastWordSelectionMs = 0, maxWordSelectionTurnMs = 0;
     type VisualColumns = Readonly<{ head: number | undefined; anchor?: number | undefined }>;
     let preferred: Readonly<{ selections: SelectionSet; revision: number; layout: string; columns: readonly (VisualColumns | undefined)[] }> | undefined;
-    let wordScanSteps = 0, maxWordScanStepMs = 0;
-    let graphemeScanSteps = 0, maxGraphemeScanStepMs = 0;
     let group: Readonly<{ type: string; revision: number; selectionSet: SelectionSet; tail: ReturnType<typeof typingRun> | "spaces" | undefined; key: string }> | undefined;
     type ColumnDrag = { kind: "column"; middle: boolean; originRow: number; anchorColumn: number;
         projection?: { layout: string; column: number; direction: -1 | 1; count: number; ranges: (Selection & { reaches: boolean })[] } };
@@ -198,7 +194,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     function cancelLineRequest(): void {
         const request = lineRequest; lineRequest = undefined; request?.abort.abort();
     }
-    let graphemeJob: Readonly<{ cursor: GraphemeCursor; capture: CommandCapture; purpose: "word" | "word-selection" | "grapheme" }> | undefined, cancelGraphemeTask: (() => void) | undefined;
+    let graphemeJob: Readonly<{ cursor: GraphemeCursor; capture: CommandCapture; purpose: "word" | "grapheme" }> | undefined, cancelGraphemeTask: (() => void) | undefined;
     let graphemeCache: Readonly<{ buffer: TextBuffer; from: number; to: number; index: GraphemeIndex }> | undefined;
     const lineCopyFormat = "application/x-sttropez-lines";
     const copiedLines = (data: DataTransfer | null) => data?.getData(lineCopyFormat) === "1";
@@ -504,7 +500,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         && !(capture.deleting && input.readOnly) && live()
         && workspace.observeDocument(documentId).getSnapshot()?.revision === capture.revision
         && view.getSnapshot().selectionSet === capture.selectionSet;
-    function withGraphemes(capture: CommandCapture, offset: number, side: -1 | 1, purpose: "word" | "word-selection" | "grapheme", done: (point: GraphemePoint) => void,
+    function withGraphemes(capture: CommandCapture, offset: number, side: -1 | 1, purpose: "word" | "grapheme", done: (point: GraphemePoint) => void,
         turn: (work: () => void) => void = work => work()): void {
         cancelScans(); if (!validCommand(capture)) return;
         const local = localAsciiGraphemePoint(capture.buffer, offset);
@@ -515,15 +511,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (graphemeCache?.buffer === buffer && graphemeCache.from === from && graphemeCache.to === to) { done(point(graphemeCache.index)); return; }
         const job = { cursor: createGraphemeCursor(buffer, { from, to }), capture, purpose }; graphemeJob = job;
         const step = () => turn(() => commandTurn(() => {
-            const started = purpose === "word-selection" ? win.performance.now() : 0;
-            try {
             if (graphemeJob !== job) return; if (!validCommand(capture)) { cancelWord(); return; }
-            const began = win.performance.now();
             const result = commandRunner.slice(() => job.cursor.next(commandBudget.cursorUnits), result => result.status === "running", commandBudget.graphemeCalls);
-            graphemeScanSteps++; maxGraphemeScanStepMs = Math.max(maxGraphemeScanStepMs, win.performance.now() - began);
             if (result.status === "running") { cancelGraphemeTask = commandRunner.schedule(() => { if (graphemeJob === job) cancelGraphemeTask = undefined; step(); }, 0, turn); return; }
             const index = result.result!; job.cursor.dispose(); graphemeJob = undefined; graphemeCache = Object.freeze({ buffer, from, to, index }); done(point(index));
-            } finally { if (purpose === "word-selection") maxWordSelectionTurnMs = Math.max(maxWordSelectionTurnMs, win.performance.now() - started); }
         })); step();
     }
     function commandCapture(deleting: boolean): CommandCapture {
@@ -581,7 +572,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (disposed || composing || input.disabled || input.readOnly) return false;
         hostInsertion?.cancel(); view.folding.revealSelection(view.folding.getSnapshot()); cancelWord();
         syncSelection(); preferred = undefined;
-        const capture = commandCapture(true); graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
+        const capture = commandCapture(true);
         const scanColumns = lineColumnScanner((from, to) => capture.buffer.slice(from, to), language.tabSize);
         eachRange(capture, "grapheme", (range, done) => {
             if (range.anchor !== range.head) { done(range); return; }
@@ -609,7 +600,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (disposed || composing || input.disabled || deleting && input.readOnly) return false;
         hostInsertion?.cancel(); view.folding.revealSelection(view.folding.getSnapshot()); cancelWord();
         group = undefined; preferred = undefined; syncSelection();
-        wordScanSteps = 0; maxWordScanStepMs = 0; graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
         const capture = commandCapture(deleting);
         eachRange(capture, "word", (selected, done) => {
         if (deleting && selected.anchor !== selected.head) { done(selected); return; }
@@ -621,9 +611,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             if (wordJob !== job) return;
             const current = workspace.observeDocument(documentId).getSnapshot();
             if (!validCommand(capture) || current?.revision !== job.revision) { cancelWord(); return; }
-            const began = win.performance.now();
             const result = commandRunner.slice(() => job.cursor.next(commandBudget.cursorUnits), result => result.status === "running", commandBudget.wordCalls);
-            wordScanSteps++; maxWordScanStepMs = Math.max(maxWordScanStepMs, win.performance.now() - began);
             if (result.status === "running") {
                 cancelWordTask = commandRunner.schedule(() => { if (wordJob === job) cancelWordTask = undefined; step(); }); return;
             }
@@ -641,25 +629,19 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const line = buffer.lineAt(offset), from = buffer.offsetAt(line);
         const to = lineContentEnd(buffer, line);
         if (to === from) { accept(); return; }
-        wordScanSteps = 0; maxWordScanStepMs = 0; graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
         const scan = (start: number, direction: -1 | 1, done: (offset: number) => void) => {
             if (!validCommand(capture)) return;
             const job = { cursor: new WordCursor(buffer, start, direction, { from, to, skipWhitespace: false }), revision: capture.revision }; wordJob = job;
             const step = () => commandTurn(() => {
-                const started = win.performance.now();
-                try {
                 if (wordJob !== job) return; if (!validCommand(capture)) { cancelWord(); return; }
-                const began = win.performance.now();
                 const result = commandRunner.slice(() => job.cursor.next(commandBudget.cursorUnits), result => result.status === "running", commandBudget.wordCalls);
-                wordScanSteps++; maxWordScanStepMs = Math.max(maxWordScanStepMs, win.performance.now() - began);
                 if (result.status === "running") {
                     cancelWordTask = commandRunner.schedule(() => { if (wordJob === job) cancelWordTask = undefined; step(); }); return;
                 }
                 done(result.offset!);
-                } finally { maxWordSelectionTurnMs = Math.max(maxWordSelectionTurnMs, win.performance.now() - started); }
             }); step();
         };
-        withGraphemes(capture, Math.min(offset, to), -1, "word-selection", point => {
+        withGraphemes(capture, Math.min(offset, to), -1, "word", point => {
             const characterAt = (at: number) => Array.from(buffer.slice(at, Math.min(to, at + 2)))[0] ?? "";
             let probe = Math.max(from, point.floor), character = characterAt(probe);
             if (probe === to || wordsOnly && probe === offset && !isCodeWordBase(character)) {
@@ -667,7 +649,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             }
             if (wordsOnly && !isCodeWordBase(character)) { accept(); return; }
             scan(probe + character.length, -1, left => scan(probe, 1, right => {
-                withGraphemes(capture, left, -1, "word-selection", low => withGraphemes(capture, right, 1, "word-selection", high => {
+                withGraphemes(capture, left, -1, "word", low => withGraphemes(capture, right, 1, "word", high => {
                     if (rangeCommand?.capture === capture && validCommand(capture)) accept({ anchor: Math.max(from, low.floor), head: Math.min(to, high.ceil) });
                 }));
             }));
@@ -794,7 +776,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     }
     function moveToBoundary(key: "Home" | "End", extend: boolean, documentBoundary = false): boolean {
         prepareMovement(); preferred = undefined; cancelWord();
-        graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
         navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
         const capture = commandCapture(false), buffer = capture.buffer, firstNonblank = new Map<number, number>();
         if (!validCommand(capture)) return false;
@@ -825,7 +806,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     }
     function horizontal(key: "ArrowLeft" | "ArrowRight", extend: boolean): boolean {
         prepareMovement(); preferred = undefined;
-        graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
         beginNavigation((capture, style, inline) => {
         const began = win.performance.now(); viewport.flush();
         if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
@@ -1317,14 +1297,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (event.detail === 1) foldSummaryClick = (event.target as HTMLElement).dataset?.ornament === "fold";
     }, { capture: true, signal: listeners.signal });
     root.addEventListener("dblclick", event => {
-        const began = win.performance.now();
-        try {
-        wordSelectionEvents++;
         if (event.button !== 0 || disposed || composing || input.disabled || !live()
             || (event.target as Element | null)?.closest(".st-viewport-gutter")) return;
         const point = pointerHit(event, viewport.getSnapshot().gutterWidth); if (!point) return;
         event.preventDefault(); if (!draggedWord && !foldSummaryClick) selectWord(point.offset, event.altKey);
-        } finally { lastWordSelectionMs = win.performance.now() - began; maxWordSelectionTurnMs = Math.max(maxWordSelectionTurnMs, lastWordSelectionMs); }
     }, { signal: listeners.signal });
     const textDrag = mountTextDragDrop({ workspace, tab: target, view, viewport, input,
         available: () => !disposed && !composing && !input.disabled,
@@ -1632,7 +1608,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const pendingInput = hostInsertion !== undefined || inputQueue.pending !== undefined || inputQueue.executing !== undefined || rangeCommand?.capture.deleting === true;
         const pendingCommand = rangeCommand !== undefined || wordJob !== undefined || graphemeJob !== undefined;
         const pendingCaret = caretLayer.pending(), pendingDragScroll = dragScrolling.pending();
-        const pendingWord = rangeCommand?.purpose === "word" || wordJob !== undefined || graphemeJob?.purpose === "word" || graphemeJob?.purpose === "word-selection" || inputQueue.pending?.purpose === "word";
+        const pendingWord = rangeCommand?.purpose === "word" || wordJob !== undefined || graphemeJob?.purpose === "word" || inputQueue.pending?.purpose === "word";
         const pendingGrapheme = rangeCommand?.purpose === "grapheme" || graphemeJob !== undefined || inputQueue.pending?.purpose === "grapheme";
         if (activitySnapshot && activitySnapshot.disposed === disposed && activitySnapshot.composing === composing
             && activitySnapshot.pendingInput === pendingInput && activitySnapshot.pendingCommand === pendingCommand
@@ -1723,8 +1699,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         reveal,
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state, options) => { const result = viewport.restoreView(state, options); if (result) refresh(); return result; },
-        getDiagnostics: () => Object.freeze({ ...activity(), inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, maxQueuedInputTurnMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs,
-            dragScrollFrames, maxDragScrollStepMs, commits, conflicts, queuedInputUnits: inputQueue.pending?.units ?? 0, wordScanSteps, maxWordScanStepMs, graphemeScanSteps, maxGraphemeScanStepMs }),
+        getDiagnostics: () => Object.freeze({ ...activity(), inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, maxQueuedInputTurnMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs,
+            dragScrollFrames, maxDragScrollStepMs, commits, conflicts, queuedInputUnits: inputQueue.pending?.units ?? 0 }),
         dispose: () => {
             if (disposed) return;
             notifications.assertWritable(); disposed = true; activitySnapshot = undefined; editTransform = undefined;
