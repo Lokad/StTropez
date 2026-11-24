@@ -32,10 +32,10 @@ export function attachConvertedPaste(
     convert: (html: string, signal: AbortSignal) => Promise<string>,
     report: (message: string) => void
 ): () => void {
-    return editor.registerPasteHandler({
-        accepts: data => data.types.includes("text/html"),
-        paste(data, target) {
-            const html = data.getData("text/html");
+    return editor.registerPasteHandler(data => {
+        if (!data.types.includes("text/html")) return;
+        const html = data.getData("text/html");
+        return target => {
             if (html.length > 262_144) {
                 target.cancel();
                 report("Clipboard HTML exceeds the conversion limit.");
@@ -56,7 +56,7 @@ export function attachConvertedPaste(
                     target.cancel();
                 }
             })();
-        }
+        };
     });
 }
 ```
@@ -151,11 +151,11 @@ result stays on screen, retain its capture. Cancel on dismissal or disposal.
 
 ### Captured insertion and structured paste
 
-`editor.registerPasteHandler({ accepts, paste })` installs one handler for the mount. Its
-synchronous, read-only `accepts(data)` decides which clipboard formats to convert. Return
-`false` to use the editor’s literal paste and line-ending rules. On acceptance,
-`paste(data, target)` receives the clipboard and a single-use insertion. Copy the needed formats before
-the callback returns. Finish the conversion with `target.insert(text)` or `target.cancel()`.
+`editor.registerPasteHandler(prepare)` installs one handler for the mount. During the paste
+event, `prepare(data)` reads the clipboard and returns a function that receives a single-use
+insertion. Return `undefined` for the editor’s literal paste and line-ending rules.
+Workspace state is read-only during preparation. Copy the data you need before the event ends.
+Finish the conversion with `target.insert(text)` or `target.cancel()`.
 Unregistering cancels its pending insertion. A read-only source refuses
 paste before consulting the handler. Paste during ordered navigation or input queues literal
 text at the eventual selection. Composition and externally cancelled paste bypass conversion.
@@ -174,16 +174,13 @@ before reading the document. If an
 observer invalidates the capture, a microtask releases its lease and aborts the signal. Successful
 insertion also aborts the signal when it finishes.
 
-`insert(text)` consumes the capture once and replaces every captured selection with that text.
-It returns whether the edit applied and uses the existing edit transform, snippet mirroring,
-workspace validation and shared history. Empty text consumes the capture without deleting
-selected text. `cancel()` is idempotent. Pending conversion participates in the editor's input
+`insert(text)` repeats one string across the selections. Pass an array to use one string per
+range, in `target.selectionSet.ranges` order. The array must match the range count. The editor
+applies the replacements together through its edit transform, snippet mirroring and shared
+history. An entirely empty conversion consumes the capture and returns `false`. In a mixed
+array an empty string replaces its range with empty text. `cancel()` is idempotent.
+Pending conversion participates in the editor's input
 activity; later editing cancels conversion and proceeds. Capturing needs no full-text export.
-
-For different indentation at each caret, a host that owns the [edit transform](editor.md#edit-transforms)
-can use `planSelectionEdits` with one string per normalized selection and return its edits and
-selection set. The editor has one transform slot, also used for LSP snippet mirroring.
-`CapturedInsertion` has no per-selection overload.
 
 Copy clipboard data during the event. Before inserting, validate the converted text and its total
 size across selections. A cooperative parser can yield between steps. Clipboard retrieval, native

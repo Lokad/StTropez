@@ -84,13 +84,13 @@ export class HostTablePaste {
     attach(id: string, _tab: TabId, editor: TextEditor): () => void {
         if (this.sessions.has(id)) throw new Error("Table paste view is already mounted.");
         const session = { id, editor }, clock = editor.element.ownerDocument.defaultView!.performance;
-        const stop = editor.registerPasteHandler({
-            accepts: () => this.cell.get().enabled,
-            paste: (data, insertion) => {
+        const stop = editor.registerPasteHandler(data => {
+            if (!this.cell.get().enabled) return;
+            return insertion => {
                 const began = clock.now();
                 try { this.start(session, insertion, data.getData("text/plain"), data.getData("text/html")); }
                 finally { this.lastHostPasteMs = clock.now() - began; }
-            },
+            };
         });
         this.sessions.set(id, session);
         return () => { if (this.sessions.get(id) !== session) return;

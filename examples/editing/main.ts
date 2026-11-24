@@ -44,7 +44,6 @@ const unsubscribe = workspace.observeDocument(source.documentId).subscribe(statu
 const fixture = { ready: true, setText, edit, select, history,
     get settled() { return !disposed && editorSettled(editors.primary) && editorSettled(editors.secondary); },
     failNextDecoration: () => { failDecoration = true; primarySyntax.invalidate(); },
-    operation: editors.primary.operation,
     captureInsertion: () => editors.primary.captureInsertion(),
     onEditIntent: editors.primary.onEditIntent,
     registerEditTransform: (transform: TextEditorEditTransform) => editors.primary.registerEditTransform(transform),

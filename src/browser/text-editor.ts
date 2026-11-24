@@ -35,8 +35,6 @@ import { lineColumnScanner, planLanguageEdit, resolveLanguageConfiguration } fro
 import { exportText, lineContentEnd, lineEnding } from "../core/newlines.ts";
 import type { EditingCommand, LanguageConfiguration, ResolvedLanguageConfiguration } from "../core/language-edits.ts";
 import { captureInsertion } from "./captured-insertion.ts";
-import { runEditorOperation } from "./editor-operation.ts";
-import type { EditorOperation, EditorOperationOptions, EditorOperationOutcome } from "./editor-operation.ts";
 import type { CapturedInsertion } from "./captured-insertion.ts";
 import { mountBracketHighlights } from "./bracket-highlights.ts";
 import type { BracketHighlights } from "./bracket-highlights.ts";
@@ -79,13 +77,11 @@ export type ResolvedEditorSettings = ViewportSettings & Readonly<{ language: Res
 export type EditorRevealRange = Readonly<{ from: number; to: number }>;
 export type EditorRevealOptions = Readonly<{ align?: RevealAlignment; select?: boolean; focus?: boolean; expectedRevision?: number }>;
 export type TextEditorOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; requestLine?: LinePrompt; settings?: EditorSettings }>;
-export type EditorPasteHandler = Readonly<{ accepts: (data: DataTransfer) => boolean;
-    paste: (data: DataTransfer, insertion: CapturedInsertion) => void }>;
+export type EditorPasteHandler = (data: DataTransfer) => ((insertion: CapturedInsertion) => void) | undefined;
 const editIntents = ["beforeinput", "compositionstart", "paste", "cut"] as const;
 export type EditorEditIntent = typeof editIntents[number];
 type PasteOwner = { handler: EditorPasteHandler; pending?: CapturedInsertion };
 export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HTMLDivElement; workspace: Workspace; tab: TabTarget | undefined; signal: AbortSignal; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
-    operation: <T>(options: EditorOperationOptions, work: (op: EditorOperation) => T | PromiseLike<T>) => Promise<EditorOperationOutcome<T>>;
     /** One pending host insertion, invalidated by later editing/selection/authority/lifecycle changes. */
     captureInsertion: (kind?: "paste" | "replace") => CapturedInsertion | undefined;
     registerPasteHandler: (handler: EditorPasteHandler) => () => void;
@@ -1564,12 +1560,13 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (type === "paste") {
             hostInsertion?.cancel();
             const owner = pasteOwner, data = event.clipboardData;
-            if (owner && canCaptureInsertion() && notifications.read(() => owner.handler.accepts(data))) {
+            const paste = owner && canCaptureInsertion() && notifications.read(() => owner.handler(data));
+            if (owner && paste) {
                 const capture = editor.captureInsertion();
                 if (!capture) return;
                 if (owner !== pasteOwner) { capture.cancel(); return; }
                 owner.pending = capture;
-                try { owner.handler.paste(data, capture); }
+                try { paste(capture); }
                 catch (error) { capture.cancel(); throw error; }
                 return;
             }
@@ -1644,7 +1641,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             const stop = () => { unsubscribe(); stateSubscriptions.delete(stop); };
             stateSubscriptions.add(stop); return stop;
         },
-        operation: (options, work) => runEditorOperation(editor, options, work),
         captureInsertion: (kind = "paste") => {
             hostInsertion?.cancel();
             if (!canCaptureInsertion()) return;

@@ -26,69 +26,6 @@ test("edit intents belong to the source pane and expire with their observer or m
     expect(result).toEqual({ kinds: ["cut", "paste", "compositionstart", "beforeinput"], compositionAtStart: false });
 });
 
-test("an async editor operation applies once and releases every expired or failed request", async ({ page }) => {
-    const result = await page.evaluate(async () => {
-        const f = window.editingFixture; f.setText("abc");
-        const ownership = () => { const d = f.snapshot().diagnostics; return [d.leases, d.subscriptions]; };
-        const before = ownership(), edit = { edits: [{ from: 0, to: 1, insert: "X" }], source: "test" };
-        const applied = await f.operation({ write: true }, async op => {
-            await op.step(Promise.resolve("ready"));
-            return [op.apply(edit), op.apply(edit)];
-        });
-        let cancelled = 0, continued = false;
-        const delayed = f.operation({ write: true }, async op => {
-            op.apply({ edits: [{ from: 0, to: 1, insert: "never" }] });
-            await op.step({ result: new Promise<void>(() => {}), cancel: () => { cancelled++; } });
-            continued = true; return op.apply(edit);
-        });
-        const retained = ownership(); f.edit([{ from: 3, to: 3, insert: "!" }]);
-        const stale = await delayed;
-        let providerCurrent = true;
-        const withdrawn = await f.operation({ write: true }, async op => {
-            await op.step(Promise.resolve({ isCurrent: () => providerCurrent }));
-            op.apply({ edits: [{ from: 0, to: 1, insert: "expired" }] }); providerCurrent = false;
-        });
-        let error = "";
-        try { await f.operation({ write: true }, op => op.apply({ edits: [{ from: -1, to: 0, insert: "" }] })); }
-        catch (cause) { error = cause instanceof Error ? cause.name : String(cause); }
-        const abort = new AbortController();
-        const abandoned = f.operation({ signal: abort.signal }, () => new Promise<void>(() => {}));
-        abort.abort(); const interrupted = await abandoned;
-        const after = ownership(), text = f.range(0, 4);
-        const replaced = f.operation({ write: true }, async op => {
-            await op.step(Promise.resolve()); return op.apply(edit);
-        });
-        f.replacePrimary();
-        return { before, retained, after, applied, stale, withdrawn, error, interrupted, cancelled, continued, text, replaced: await replaced };
-    });
-    expect(result.applied).toEqual({ status: "completed", value: [true, false] });
-    for (const outcome of [result.stale, result.withdrawn, result.interrupted, result.replaced]) expect(outcome).toEqual({ status: "stale" });
-    expect(result.retained[0]).toBe(result.before[0]! + 1);
-    expect(result.after).toEqual(result.before);
-    expect(result).toMatchObject({ error: "RangeError", cancelled: 1, continued: false, text: "Xbc!" });
-});
-
-test("operation delivery runs at validation and releases pending presentation on cancellation", async ({ page }) => {
-    const observed = await page.evaluate(async () => {
-        const f = window.editingFixture;
-        const leases = () => f.snapshot().diagnostics.leases;
-        const before = leases(), abort = new AbortController();
-        let atDelivery: boolean | undefined, cancelledCalls = 0, continued = false;
-        const reply = { isCurrent: () => { queueMicrotask(() => abort.abort()); return !abort.signal.aborted; } };
-        const pending = f.operation({ signal: abort.signal }, async op => {
-            await op.step({ result: Promise.resolve(reply), cancel: () => { cancelledCalls++; } }, value => {
-                atDelivery = value === reply && !abort.signal.aborted;
-                return new Promise<void>(() => {});
-            });
-            continued = true;
-        });
-        const { status } = await pending;
-        return { status, atDelivery, cancelledCalls, continued, before, after: leases() };
-    });
-    expect(observed).toMatchObject({ status: "stale", atDelivery: true, cancelledCalls: 0, continued: false });
-    expect(observed.after).toBe(observed.before);
-});
-
 const state = (page: Page) => page.evaluate(() => window.editingFixture.snapshot());
 test.beforeEach(async ({ page }) => {
 
@@ -337,17 +274,30 @@ test("typing, newline, paste and history keep a visible caret in place on both s
 
 test("captured host insertion uses the input transform once and expires before later typing", async ({ page }) => {
     const events = await recordTypedText(page);
-    await page.evaluate(() => { window.editingFixture.setText("abc"); window.editingFixture.select("primary", { anchor: 1, head: 2 }); }); await ready(page);
+    await page.evaluate(() => {
+        window.editingFixture.setText("abc");
+        window.editingFixture.selections([{ anchor: 0, head: 0 }, { anchor: 2, head: 1 }], 1);
+    });
+    await ready(page);
     expect(await page.evaluate(() => {
         const f = window.editingFixture, completions: boolean[] = [];
+        const invalid = f.captureInsertion()!;
+        let rejected = false;
+        try { invalid.insert(["only one"]); } catch (error) { rejected = error instanceof TypeError; }
+        const empty = f.captureInsertion()!.insert(["", ""]);
         const stop = f.registerEditTransform(plan => ({ ...plan, edits: plan.edits.map(edit => ({ ...edit, insert: edit.insert.toUpperCase() })), complete: applied => completions.push(applied) }));
         const capture = f.captureInsertion()!, pending = f.snapshot().primary.pendingInput, settledDuringCapture = f.settled;
-        const inserted = capture.insert("x"), again = capture.insert("late"); stop();
-        return { pending, settledDuringCapture, inserted, again, completions, aborted: capture.signal.aborted, text: f.range(0, 3), pendingAfter: f.snapshot().primary.pendingInput };
-    })).toEqual({ pending: true, settledDuringCapture: false, inserted: true, again: false, completions: [true], aborted: true, text: "aXc", pendingAfter: false });
+        const inserted = capture.insert(["y", "x"]), again = capture.insert("late");
+        stop();
+        return { rejected, invalidAborted: invalid.signal.aborted, empty, pending, settledDuringCapture, inserted,
+            again, completions, aborted: capture.signal.aborted, text: f.range(0, 4), pendingAfter: f.snapshot().primary.pendingInput };
+    })).toEqual({ rejected: true, invalidAborted: true, empty: false, pending: true, settledDuringCapture: false,
+        inserted: true, again: false, completions: [true], aborted: true, text: "YaXc", pendingAfter: false });
     await page.getByRole("textbox", { name: "Primary source", exact: true }).press("Control+z"); await ready(page);
     const pending = await page.evaluateHandle(() => {
-        const f = window.editingFixture, old = f.captureInsertion()!, next = f.captureInsertion()!;
+        const f = window.editingFixture;
+        f.select("primary", { anchor: 1, head: 2 });
+        const old = f.captureInsertion()!, next = f.captureInsertion()!;
         const superseded = old.signal.aborted && !old.insert("late");
         return { superseded, next };
     });

@@ -4,7 +4,7 @@ import type { DocumentId, DocumentView, TabTarget, Workspace } from "../core/wor
 import { captureViewRequest } from "./captured-view.ts";
 
 export type CapturedInsertion = Readonly<{ documentId: DocumentId; revision: number; length: number; selectionSet: SelectionSet;
-    signal: AbortSignal; isCurrent: () => boolean; insert: (text: string) => boolean; cancel: () => void }>;
+    signal: AbortSignal; isCurrent: () => boolean; insert: (text: string | readonly string[]) => boolean; cancel: () => void }>;
 
 /** Internal capture shared by the browser input owner and host-controller contract tests. */
 export function captureInsertion(workspace: Workspace, target: TabTarget | undefined, view: DocumentView, available: () => boolean,
@@ -18,9 +18,13 @@ export function captureInsertion(workspace: Workspace, target: TabTarget | undef
     return Object.freeze({ documentId: document.id, revision: document.revision, length: document.buffer.length, selectionSet,
         signal: capture.signal, isCurrent: capture.isCurrent, cancel, insert: text => {
             if (!capture.isCurrent()) { cancel(); return false; }
-            // Empty clipboard/conversion results never delete selected source text.
-            if (!text.length) { cancel(); return false; }
             try {
+                if (typeof text !== "string") {
+                    if (!Array.isArray(text) || text.length !== selectionSet.ranges.length
+                        || !selectionSet.ranges.every((_, index) => typeof text[index] === "string"))
+                        throw new TypeError("Expected one string per captured selection.");
+                }
+                if (text === "" || Array.isArray(text) && text.every(part => part === "")) { cancel(); return false; }
                 const plan = planSelectionEdits(document.buffer.length, selectionSet, text);
                 return capture.commit(() => { finish(); return commit(plan, document.revision); });
             } catch (error) { cancel(); throw error; }

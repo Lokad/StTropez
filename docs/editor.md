@@ -112,38 +112,8 @@ export function openProblem(editor: TextEditor, revision: number, from: number, 
 }
 ```
 
-### Async operations
-
-Use `editor.operation(options, work)` for a request that belongs to the current editor, document
-revision, selections and folds. The callback receives the captured document and an abort signal.
-Await `op.step(call)` for a promise or a provider call with `result` and `cancel()`. The editor
-cancels an outstanding call when the target expires. A result with an `isCurrent()` method stays
-part of the check through the next step and any edit.
-
-Use `op.step(call, deliver)` to open a popup or start another command at the captured caret.
-The editor checks the target and calls `deliver(result)` in the same turn, before another
-microtask can change focus or the selection. If delivery returns a promise, the step waits
-for it and rechecks the target. Use `op.signal` to cancel work started by the callback.
-
-```ts
-import type { TextEditor } from "sttropez/browser";
-
-export function formatSelection(editor: TextEditor, format: (text: string, signal: AbortSignal) => Promise<string>) {
-    return editor.operation({ write: true }, async op => {
-        const range = op.selectionSet.ranges[op.selectionSet.primary]!;
-        const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
-        const insert = await op.step(format(op.document.buffer.slice(from, to), op.signal));
-        return op.apply({ edits: [{ from, to, insert }], source: "format", history: { kind: "refactor" } });
-    });
-}
-```
-
-A completed call returns `{ status: "completed", value }`. A replaced target, composition or caller
-cancellation returns `{ status: "stale" }`. Pass a host `signal` to cancel a request. The handle
-expires when the callback ends. With `write: true`, `op.apply` stages one edit. It commits with human edit authority when the callback
-finishes and all captured results are current. A throw or cancellation discards the staged edit.
-
-Provider and validation errors propagate to the caller. The editor releases the capture on every exit.
+For delayed host work, retain the original document, revision and selections with a
+[captured view request](host-integration.md#captured-view-requests).
 
 ### What happens when you type during a command
 

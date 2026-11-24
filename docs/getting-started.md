@@ -257,12 +257,11 @@ asynchronously, keep the capture until it finishes.
 
 ```js
 for (const pane of [editor, split]) {
-    const stop = pane.registerPasteHandler({
-        accepts: data => data.getData("text/plain").includes("\t"),
-        paste(data, target) {
-            const cells = data.getData("text/plain").split(/\t|\r?\n/).filter(Boolean);
-            target.insert(cells.map(cell => "- [ ] " + cell).join("\n"));
-        }
+    const stop = pane.registerPasteHandler(data => {
+        const text = data.getData("text/plain");
+        if (!text.includes("\t")) return;
+        const cells = text.split(/\t|\r?\n/).filter(Boolean);
+        return target => target.insert(cells.map(cell => "- [ ] " + cell).join("\n"));
     });
     controls.signal.addEventListener("abort", stop, { once: true });
 }
