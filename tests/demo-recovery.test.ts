@@ -237,7 +237,7 @@ test("automatic recovery exports text after the edit notification and clears its
     for (const ticket of tickets) { ticket.start(); ticket.accept({ serverVersion: "saved" }); ticket.finish(); }
     // A peer notice can start a read before the scheduled cleanup. Reading must not cancel it.
     await f.recovery.refresh();
-    assert.equal(f.recovery.state.getSnapshot().message, "All changes are saved.");
+    assert.equal(f.recovery.state.getSnapshot().message, "No local recovery draft.");
     assert.equal(store.row, null);
 });
 
