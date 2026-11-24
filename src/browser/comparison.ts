@@ -235,16 +235,21 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         stateScope.assertWritable();
         const current = controller.getSnapshot(), reference = referenceViewport();
         if (disposed || composing() || current.status !== "ready" || current.generation !== generation || !Number.isSafeInteger(index)) return false;
-        const hunk = current.hunks[index]; if (!hunk || !current.working || !reference || epoch !== current.baseline?.epoch) return false;
+        const hunk = current.hunks[index]; if (!hunk || !current.working || !current.baseline || !reference || epoch !== current.baseline.epoch) return false;
         const document = reference.view.getSnapshot();
         const revision = current.working.revision;
+        const baselineStart = selectRange || hunk.baseline.from === hunk.baseline.to
+            ? hunk.baseline.from : current.baseline.buffer.offsetAt(hunk.baseline.lineFrom);
+        const workingStart = selectRange || hunk.working.from === hunk.working.to
+            ? hunk.working.from : current.working.buffer.offsetAt(hunk.working.lineFrom);
+        lastFocused ??= working;
         stateScope.batch(() => {
-            reference.view.setSelection(document.revision, { anchor: hunk.baseline.from, head: selectRange ? hunk.baseline.to : hunk.baseline.from });
-            controller.view.setSelection(revision, { anchor: hunk.working.from, head: selectRange ? hunk.working.to : hunk.working.from });
+            reference.view.setSelection(document.revision, { anchor: baselineStart, head: selectRange ? hunk.baseline.to : baselineStart });
+            controller.view.setSelection(revision, { anchor: workingStart, head: selectRange ? hunk.working.to : workingStart });
             reference.view.folding.reveal(reference.view.folding.getSnapshot(), hunk.baseline.from, hunk.baseline.to);
             working.view.folding.reveal(working.view.folding.getSnapshot(), hunk.working.from, hunk.working.to);
         });
-        reference.revealOffset(hunk.baseline.from); working.viewport.revealOffset(hunk.working.from); render(); return true;
+        reference.revealOffset(baselineStart); working.viewport.revealOffset(workingStart); render(); return true;
     }
     function navigateFrom(pane: TextEditor, direction: -1 | 1): boolean {
         stateScope.assertWritable();

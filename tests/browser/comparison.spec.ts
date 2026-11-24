@@ -289,10 +289,7 @@ test("paired navigation exposes exact whitespace and reverts one hunk through sh
         const { panes } = window.comparisonFixture.review;
         return [panes.reference.view.getSnapshot().selection, panes.working.view.getSnapshot().selection];
     });
-    for (const [i, side] of (["baseline", "working"] as const).entries()) {
-        const start = initial.hunks[0]![side].from;
-        expect(carets[i]).toMatchObject({ anchor: start, head: start });
-    }
+    for (const caret of carets) expect(caret).toMatchObject({ anchor: 0, head: 0 });
     const fitting = await page.locator(".st-comparison-panes .st-viewport").evaluateAll(panes => panes.map(pane => {
         const row = pane.querySelector<HTMLElement>(".st-viewport-row")!, bounds = pane.getBoundingClientRect(), range = pane.ownerDocument.createRange();
         range.selectNodeContents(row);

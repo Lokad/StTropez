@@ -156,7 +156,7 @@ validate the budget and return the current progress.
 ### Reverting a change or accepting a version
 
 Call `comparison.navigateHunk(1)` for the next change or `comparison.navigateHunk(-1)` for the previous
-one. Both start at the active caret, wrap at either end and place a caret at the start of the change in both panes.
+one. Both start at the active caret, wrap at either end and place a caret at the start of the first changed line in both panes.
 Each pane registers `comparison.nextChange` (F7) and `comparison.previousChange` (Shift+F7).
 The command starts at that pane’s caret and leaves focus in place. Hosts can rebind either shortcut on
 the pane’s keymap. Clicking Previous or Next returns focus to the last active pane. Activating
