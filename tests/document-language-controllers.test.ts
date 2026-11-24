@@ -7,7 +7,7 @@ import {
 } from "../src/browser/index.ts";
 import { createDecorationLayers } from "../src/browser/decoration-layers.ts";
 import { editorState } from "./helpers/editor-state.ts";
-import { latch, waitForState } from "./helpers/latch.ts";
+import { latch } from "./helpers/latch.ts";
 import { clientFixture, settled } from "./helpers/lsp-client.ts";
 import { ResponseError } from "vscode-languageserver-protocol/node.js";
 
@@ -76,9 +76,10 @@ for (const [cause, interrupt] of Object.entries(sourceChanges)) {
         const resolved = { ...lazy, edit: { changes: { "generic:source": [{ range, newText: "late" }] } } };
         f.peer.onRequest("textDocument/codeAction", () => [lazy]);
         const held = holdReply(f, "codeAction/resolve", resolved);
-        actions.request();
-        await waitForState(actions, snapshot => snapshot.status !== "pending");
-        const choice = actions.getSnapshot().choices[0];
+        const list = await actions.request();
+        assert.equal(list.status, "done");
+        assert.equal(list.value, actions.getSnapshot().choices);
+        const choice = list.value[0];
         assert.ok(choice?.needsResolve);
         choice.select(() => true);
         await held.received;
@@ -114,6 +115,37 @@ for (const [cause, interrupt] of Object.entries(sourceChanges)) {
     });
 }
 
+test("code action discovery settles before a cancelled or superseded provider replies", { timeout: 5000 }, async t => {
+    const f = await fixture(t);
+    let available = false;
+    const actions = createCodeActionController(f.editor, f.provider, { canCapture: () => available });
+    assert.deepEqual(await actions.request(), { status: "refused", reason: "unavailable-view" });
+    available = true;
+    const held = holdReply(f, "textDocument/codeAction", [{ title: "Retired" }]);
+    const previous = actions.request();
+    await held.received;
+    const next = holdReply(f, "textDocument/codeAction", [{ title: "Also retired" }]);
+    const pending = actions.request();
+    assert.deepEqual(await previous, { status: "stale" });
+    await next.received;
+    actions.cancel();
+    assert.deepEqual(await pending, { status: "stale" });
+    f.peer.onRequest("textDocument/codeAction", () => []);
+    assert.deepEqual(await actions.request(), { status: "done", value: [] });
+    const ready = actions.getSnapshot();
+    held.send();
+    next.send();
+    await f.flush();
+    assert.equal(actions.getSnapshot(), ready);
+    f.peer.onRequest("textDocument/codeAction", () => { throw new ResponseError(-32801, "Content changed"); });
+    assert.deepEqual(await actions.request(), { status: "stale" });
+    f.peer.onRequest("textDocument/codeAction", () => { throw new Error("Discovery failed"); });
+    const failure = await actions.request();
+    assert.equal(failure.status, "failed");
+    assert.ok(failure.error instanceof Error);
+    assert.match(failure.error.message, /Discovery failed/);
+});
+
 test("a rename request returns its preview, refusal or provider error", async t => {
     const f = await fixture(t);
     const rename = createRenameController(f.editor, f.provider);
@@ -146,35 +178,42 @@ test("a rename request returns its preview, refusal or provider error", async t 
     assert.equal(f.document().buffer.slice(0, 4), "next");
 });
 
-test("a rename deadline settles during host preparation and releases its capture", { timeout: 5000 }, async t => {
-    const f = await fixture(t);
-    const started = latch<void>();
-    const finish = latch<void>();
-    const clock = f.editor.element.ownerDocument.defaultView!;
-    let deadline: (() => void) | undefined;
-    t.mock.method(clock, "setTimeout", (callback: () => void) => { deadline = callback; return 1; });
-    t.mock.method(clock, "clearTimeout", () => { deadline = undefined; });
-    const rename = createRenameController(f.editor, f.provider, {
-        prepareRequest: () => async () => { started.resolve(); await finish.promise; },
+for (const method of ["textDocument/codeAction", "textDocument/rename"] as const) {
+    test(`a ${method} deadline settles during host preparation and releases its capture`, { timeout: 5000 }, async t => {
+        const f = await fixture(t);
+        const started = latch<void>();
+        const finish = latch<void>();
+        const clock = f.editor.element.ownerDocument.defaultView!;
+        let deadline: (() => void) | undefined;
+        t.mock.method(clock, "setTimeout", (callback: () => void) => { deadline = callback; return 1; });
+        t.mock.method(clock, "clearTimeout", () => { deadline = undefined; });
+        const prepare = async () => {
+            started.resolve();
+            await finish.promise;
+        };
+        const controller = method === "textDocument/codeAction"
+            ? createCodeActionController(f.editor, f.provider, { prepareRequest: prepare })
+            : createRenameController(f.editor, f.provider, { prepareRequest: () => prepare });
+        if ("setName" in controller) controller.setName("next");
+        const before = f.workspace.diagnostics().leases;
+        try {
+            const pending = controller.request();
+            await started.promise;
+            assert.ok(deadline);
+            deadline();
+            const result = await pending;
+            assert.equal(result.status, "failed");
+            assert.ok(result.error instanceof Error);
+            assert.match(result.error.message, /timed out/);
+            assert.equal(controller.getSnapshot().status, "failed");
+            assert.equal(f.workspace.diagnostics().leases, before);
+        } finally {
+            finish.resolve();
+        }
+        await f.flush();
+        assert.equal(f.sent(method).length, 0);
     });
-    const before = f.workspace.diagnostics().leases;
-    try {
-        const pending = rename.request("next");
-        await started.promise;
-        assert.ok(deadline);
-        deadline();
-        const result = await pending;
-        assert.equal(result.status, "failed");
-        assert.ok(result.error instanceof Error);
-        assert.match(result.error.message, /timed out/);
-        assert.equal(rename.getSnapshot().status, "failed");
-        assert.equal(f.workspace.diagnostics().leases, before);
-    } finally {
-        finish.resolve();
-    }
-    await f.flush();
-    assert.equal(f.sent("textDocument/rename").length, 0);
-});
+}
 
 test("rename rejects an obsolete project capture before sending it to the provider", async t => {
     const f = await fixture(t);

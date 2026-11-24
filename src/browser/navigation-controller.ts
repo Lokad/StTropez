@@ -4,7 +4,7 @@ import type { DocumentSnapshot } from "../core/workspace.ts";
 import { createLspNavigationClient, type LspNavigationClient, type LspNavigationResult, type LspDefinitionPreview } from "../protocol/lsp-navigation.ts";
 import type { LspLocation } from "../protocol/lsp-features.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
-import { captureViewRequest, sameEditAuthority } from "./captured-view.ts";
+import { captureViewRequest, editorReadyForRequest, sameEditAuthority } from "./captured-view.ts";
 import { bindDefinitionPointer } from "./definition-pointer.ts";
 import type { DefinitionHit } from "./definition-pointer.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -76,11 +76,7 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
     if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Navigation requires a live document view.");
     const notifications = workspace.createNotificationScope(), state = new Store(idle, notifications);
     const events = new AbortController();
-    const available = () => {
-        const activity = editor.activity();
-        return !events.signal.aborted && editor.element.isConnected && !editor.getSnapshot().disabled && !activity.composing
-            && !activity.pendingCommand && !activity.pendingInput && (options.canCapture?.() ?? true);
-    };
+    const available = () => !events.signal.aborted && editorReadyForRequest(editor) && (options.canCapture?.() ?? true);
     const capture = () => captureViewRequest(workspace, tab, view, { available });
     type Source = NonNullable<ReturnType<typeof capture>>;
     type Hover = { hit: DefinitionHit; client: LspNavigationClient; source: Source; reply: Promise<LspDefinitionPreview>; result?: LspDefinitionPreview };

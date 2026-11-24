@@ -1,4 +1,5 @@
 import { Store } from "../core/observable.ts";
+import { editorReadyForRequest } from "./captured-view.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DocumentationContent } from "../core/documentation.ts";
 import type { FoldIndex } from "../core/folding.ts";
@@ -58,9 +59,8 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
         win.clearTimeout(previous.timer); for (const stop of previous.stops) stop(); calls.cancel(); client.cancel();
     }
     function available(): boolean {
-        const activity = editor.activity();
-        return !disposed && editor.element.isConnected && !editor.getSnapshot().disabled && !activity.composing && !activity.pendingInput
-            && !activity.pendingCommand && workspace.ownsDocumentView(view, tab) && (options.canCapture?.() ?? true);
+        return !disposed && editorReadyForRequest(editor) && workspace.ownsDocumentView(view, tab)
+            && (options.canCapture?.() ?? true);
     }
     const valid = (current: Inspection) => available() && view.getSnapshot().revision === current.revision
         && view.getSnapshot().selectionSet === current.selection && current.folds.sameProjection(view.folding.getSnapshot().index)

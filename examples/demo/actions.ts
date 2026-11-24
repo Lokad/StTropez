@@ -72,7 +72,10 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     };
     const request = () => {
         if (!idle()) return; dismissOther(); editor.focus();
-        commandAction = false; open = true; anchor(); tools.request();
+        commandAction = false;
+        open = true;
+        anchor();
+        void tools.request();
     };
     const readPages = createActionPages(tools, reviewKey, render);
     let oldChoices: unknown, oldChoicePage = -1;

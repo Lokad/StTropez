@@ -10,7 +10,7 @@ import type { LspWorkspaceEdit } from "../protocol/lsp-features.ts";
 import { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../protocol/lsp-workspace-edit.ts";
 import type { LspWorkspaceEditPreview } from "../protocol/lsp-workspace-edit.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
-import { captureViewRequest } from "./captured-view.ts";
+import { captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainEditProject, writableEdit } from "./edit-project.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -42,11 +42,8 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
     if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Rename requires a live document view.");
     const scope = workspace.createNotificationScope(), cell = new Store(idle, scope), events = new AbortController();
     let job: Job | undefined;
-    const available = (id: DocumentId) => {
-        const a = editor.activity();
-        return !events.signal.aborted && editor.element.isConnected && !editor.getSnapshot().disabled && !a.composing
-            && !a.pendingCommand && !a.pendingInput && (options.canCapture?.(id) ?? true);
-    };
+    const available = (id: DocumentId) => !events.signal.aborted && editorReadyForRequest(editor)
+        && (options.canCapture?.(id) ?? true);
     const publish = (patch: Partial<RenameSnapshot>) => scope.publish(cell, Object.freeze({ ...idle, name: cell.get().name, ...patch }));
     function release() {
         const old = job; job = undefined;

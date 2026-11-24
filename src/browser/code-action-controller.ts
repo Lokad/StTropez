@@ -1,10 +1,11 @@
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
+import { stale, type Outcome } from "../core/outcome.ts";
 import type { DocumentId, DocumentSnapshot, TabTarget } from "../core/workspace.ts";
 import { applyLspWorkspaceEdit, createLspActionClient, type LspActionResult, previewLspWorkspaceEdit } from "../protocol/index.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
 import type { LspCodeAction, LspCommandPolicy, LspCommandReceipt, LspCommandScope, LspPrepare, LspWorkspace, LspWorkspaceEdit, LspWorkspaceEditPreview } from "../protocol/index.ts";
-import { captureViewRequest } from "./captured-view.ts";
+import { captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainEditProject, writableEdit } from "./edit-project.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -45,11 +46,12 @@ export type CodeActionControllerOptions = Readonly<{
 type Job = {
     id: number; capture: CapturedViewRequest<TabTarget | undefined>; project: ReturnType<typeof retainEditProject>;
     timer?: number; invalid: boolean; batch?: LspActionResult; selection?: LspCodeAction;
+    failure?: Outcome<never>;
     resolving?: { index: number; applyWhen: ((action: LspCodeAction) => boolean) | undefined };
 };
 const empty: CodeActionSnapshot = Object.freeze({ status: "idle", message: "", choices: Object.freeze([]), choice: null, preview: null, changes: Object.freeze([]) });
 export type CodeActionController = Observable<CodeActionSnapshot> & Readonly<{
-    request: () => void; cancel: () => void; dispose: () => void;
+    request: () => Promise<Outcome<readonly CodeActionChoice[]>>; cancel: () => void; dispose: () => void;
 }>;
 
 /** One editor owns the request, lazy resolution and confirmation of its displayed preview. */
@@ -60,9 +62,9 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
     const client = createLspActionClient(provider, options), events = new AbortController();
     let job: Job | undefined, execution: CodeActionExecution | undefined, disposed = false;
     const available = (id: DocumentId) => {
-        const a = editor.activity();
-        return !disposed && editor.element.isConnected && !a.disposed && !a.composing && !a.pendingInput && !a.pendingCommand
-            && !a.pendingGrapheme && !a.pendingWord && !editor.getSnapshot().disabled && (options.canCapture?.(id) ?? true);
+        const activity = editor.activity();
+        return !disposed && editorReadyForRequest(editor, activity) && !activity.pendingGrapheme
+            && !activity.pendingWord && (options.canCapture?.(id) ?? true);
     };
     const publish = (state: CodeActionSnapshot) => scope.publish(cell, Object.freeze(state));
     function current(j: Job): boolean {
@@ -85,15 +87,27 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
         queueMicrotask(() => { if (job === j) { release(); publish({ ...empty, status: "expired", message: "The captured source or provider changed." }); } });
     };
     const expired = Object.freeze({ status: "expired" } as const);
+    const reportFailure = (error: unknown) => {
+        const message = error instanceof Error ? error.message : "Code action failed.";
+        publish({ ...empty, status: "failed", message });
+        return Object.freeze({ status: "failed" as const, message });
+    };
     const fail = (j: Job, error: unknown): CodeActionConfirmation => {
         if (job !== j) return expired;
-        const message = error instanceof Error ? error.message : "Code action failed.";
-        release(); publish({ ...empty, status: "failed", message });
-        return Object.freeze({ status: "failed", message });
+        release();
+        return reportFailure(error);
     };
-    const requestFailed = (j: Job, error: unknown) => {
-        if (j.invalid || !j.capture.isCurrent() || isStaleRequest(error)) expire(j);
-        else fail(j, error);
+    const requestFailed = (j: Job, error: unknown): Outcome<never> => {
+        if (j.failure) return j.failure;
+        try {
+            if (job !== j || j.invalid || isStaleRequest(error) || !j.capture.isCurrent()) {
+                expire(j);
+                return stale;
+            }
+        } catch (captureError) { error = captureError; }
+        j.failure = Object.freeze({ status: "failed", error });
+        fail(j, error);
+        return j.failure;
     };
     const timeout = (j: Job) => {
         win.clearTimeout(j.timer);
@@ -201,30 +215,49 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
         if (previous) client.cancel();
         release(); publish(applied ? { ...empty, message: "Action command cancelled after application. Its edits remain undoable." } : empty);
     }
-    function request(): void {
-        scope.assertWritable(); if (disposed) return;
-        cancel();
-        const capture = captureViewRequest(workspace, tab, view, { available: () => available(view.documentId) });
-        if (!capture) { publish({ ...empty, status: "expired", message: "Finish the current editor operation before requesting actions." }); return; }
-        const id = workspace.allocateIdentity();
-        const j: Job = { id, capture, project: retainEditProject(editor, available, () => expire(j)), invalid: false }; job = j;
+    async function discover(): Promise<Outcome<readonly CodeActionChoice[]>> {
+        if (disposed) return stale;
+        let pending: Job | undefined;
         try {
+            const capture = captureViewRequest(workspace, tab, view, { available: () => available(view.documentId) });
+            if (!capture) {
+                publish({ ...empty, status: "expired", message: "Finish the current editor operation before requesting actions." });
+                return Object.freeze({ status: "refused", reason: "unavailable-view" });
+            }
+            const id = workspace.allocateIdentity();
+            const j: Job = { id, capture, project: retainEditProject(editor, available, () => expire(j)), invalid: false };
+            job = pending = j;
             j.project.include(capture.document);
             for (const doc of options.documents?.() ?? []) j.project.include(doc);
             capture.signal.addEventListener("abort", () => expire(j), { once: true });
             const range = capture.selectionSet.ranges[capture.selectionSet.primary]!;
-            timeout(j); publish({ ...empty, status: "pending", message: "Requesting code actions." });
-            void client.run({ document: capture.document, project: [...j.project.documents.values()], from: Math.min(range.anchor, range.head), to: Math.max(range.anchor, range.head), prepare: options.prepareRequest }).result.then(batch => {
-                j.batch = batch;
-                if (!current(j)) { expire(j); return; }
-                win.clearTimeout(j.timer); for (const action of batch.actions) if (action.edit) j.project.includeEdit(action.edit);
-                const choices = Object.freeze(batch.actions.map((action, index): CodeActionChoice => Object.freeze({ index, title: action.title, kind: action.kind,
-                    preferred: action.preferred, disabled: disabled(batch, action), needsResolve: action.resolve !== null,
-                    select: applyWhen => choose(id, index, applyWhen) })));
-                publish({ ...empty, status: "ready", choices, message: choices.length ? "Choose an action to review." : "No actions for this range." });
-                if (batch.actions[0]?.edit && !choices[0]!.disabled) choices[0]!.select();
-            }).catch(error => requestFailed(j, error));
-        } catch (error) { requestFailed(j, error); }
+            timeout(j);
+            publish({ ...empty, status: "pending", message: "Requesting code actions." });
+            const batch = await client.run({ document: capture.document, project: [...j.project.documents.values()],
+                from: Math.min(range.anchor, range.head), to: Math.max(range.anchor, range.head),
+                prepare: options.prepareRequest }).result;
+            j.batch = batch;
+            if (!current(j)) {
+                expire(j);
+                return stale;
+            }
+            win.clearTimeout(j.timer);
+            for (const action of batch.actions) if (action.edit) j.project.includeEdit(action.edit);
+            const choices = Object.freeze(batch.actions.map((action, index): CodeActionChoice => Object.freeze({
+                index, title: action.title, kind: action.kind, preferred: action.preferred, disabled: disabled(batch, action),
+                needsResolve: action.resolve !== null, select: applyWhen => choose(id, index, applyWhen) })));
+            publish({ ...empty, status: "ready", choices, message: choices.length ? "Choose an action to review." : "No actions for this range." });
+            if (batch.actions[0]?.edit && !choices[0]!.disabled) choices[0]!.select();
+            return Object.freeze({ status: "done", value: choices });
+        } catch (error) {
+            if (pending) return requestFailed(pending, error);
+            reportFailure(error);
+            return Object.freeze({ status: "failed", error });
+        }
+    }
+    function request() {
+        cancel();
+        return discover();
     }
     const stopClient = client.subscribe(() => {
         if (job?.batch && (provider.getSnapshot().phase !== "ready" || cell.get().status !== "resolving" && !job.batch.isCurrent())) expire(job);

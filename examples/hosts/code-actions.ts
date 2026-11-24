@@ -132,7 +132,8 @@ export class HostActionsTools {
         if (!validDomainModule(module)) { this.publish({ status: "failed", message: "Choose a valid module identifier." }); return; }
         const controller = origin.controller;
         this.panel = { source: origin, settings, stop: controller.subscribe(() => this.publish()), pages: createActionPages(controller, this.reviewKey, () => this.publish()) };
-        this.requested++; controller.request();
+        this.requested++;
+        void controller.request();
         if (keyboard && this.moduleField.element && this.cell.get().pending) { this.moduleField.element.focus(); this.moduleField.element.select(); }
     }
     openChangedDocument(document: DocumentId): void {

@@ -567,7 +567,11 @@ The browser controller owns these lifetimes for a mounted editor.
 
 `createCodeActionController(editor, provider, options?)` requests actions for the editor’s primary
 selection. The origin document is always included. Supply `documents` to include other project files.
-Render `getSnapshot().choices` and call the chosen item’s `select()` to resolve and preview it.
+`await actions.request()` returns `done` with the same choices as `getSnapshot().choices`.
+An empty list means the provider found no actions. Cancellation, supersession and a changed
+capture return `stale`. An unavailable view returns `refused` with reason `unavailable-view`.
+A provider error or timeout returns `failed` with the error.
+Call a choice’s `select()` to resolve and preview it.
 The user can choose another action while a preview loads. Only the latest choice can open a
 preview or run its direct-fix predicate.
 If the first choice already has an edit, its preview opens with the list. A preview page contains up

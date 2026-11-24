@@ -4,7 +4,7 @@ import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
 import type { LspDocumentLink } from "../protocol/lsp-features.ts";
 import { createLspLinkClient, type LspLinkClient } from "../protocol/lsp-language.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
-import { captureViewRequest } from "./captured-view.ts";
+import { captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainDocuments } from "./retained-documents.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -45,11 +45,8 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
     if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Document links require a live document view.");
     const scope = workspace.createNotificationScope(), state = new Store(idle, scope), events = new AbortController();
     let job: Job | undefined;
-    const available = (id: DocumentId) => {
-        const activity = editor.activity();
-        return !events.signal.aborted && editor.element.isConnected && !editor.getSnapshot().disabled && !activity.composing
-            && !activity.pendingInput && !activity.pendingCommand && (options.canCapture?.(id) ?? true);
-    };
+    const available = (id: DocumentId) => !events.signal.aborted && editorReadyForRequest(editor)
+        && (options.canCapture?.(id) ?? true);
     const capture = () => captureViewRequest(workspace, tab, view, { available: () => available(view.documentId) });
     function publish(status: DocumentLinkSnapshot["status"], links = empty, message = "") {
         scope.publish(state, Object.freeze({ status, links, message }));

@@ -7,7 +7,7 @@ import type { LspColor, LspColorPresentation, LspDocumentColor } from "../protoc
 import { describeLspEdit, type LspWorkspaceEditNote } from "../protocol/lsp-workspace-edit.ts";
 import { createLspColorClient, type LspColorClient } from "../protocol/lsp-language.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
-import { captureViewRequest } from "./captured-view.ts";
+import { captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainDocuments } from "./retained-documents.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -43,9 +43,7 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
     const scope = workspace.createNotificationScope(), state = new Store(idle, scope), events = new AbortController();
     let job: Job | undefined;
     function available() {
-        const a = editor.activity();
-        return !events.signal.aborted && editor.element.isConnected && !editor.getSnapshot().disabled && !a.composing && !a.pendingInput
-            && !a.pendingCommand && (options.canCapture?.() ?? true);
+        return !events.signal.aborted && editorReadyForRequest(editor) && (options.canCapture?.() ?? true);
     }
     const capture = () => captureViewRequest(workspace, tab, view, { available });
     function writable() {
