@@ -9,7 +9,7 @@ export type OverlayAnchor = OverlayPosition | Readonly<{ revision: number; from:
 export type OverlayDismissEvent = "focus-leave" | "outside-pointerdown";
 export type AnchoredOverlayOptions = Readonly<{ prefer?: "above" | "below"; priority?: number;
     dismissOn?: readonly OverlayDismissEvent[]; onDismiss?: (event: OverlayDismissEvent) => void;
-    /** Called before an offscreen popup hides if one of its controls has focus. */
+    /** Called before a focused popup hides when its anchor leaves view or its revision expires. */
     onFocusedAnchorHidden?: () => void }>;
 export type AnchoredOverlay = Readonly<{ show: (anchor: OverlayAnchor) => void; hide: () => void; dispose: () => void }>;
 
@@ -110,15 +110,19 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
         placement.rectangle = rectangle;
         for (const peer of peers) if (peer.priority < priority) peer.schedule();
     }
-    function conceal(): void {
+    function conceal(expired = false): void {
+        const previous = anchor;
         if (!element.hidden && element.matches(":focus-within")) options.onFocusedAnchorHidden?.();
-        element.hidden = true; report();
+        if (anchor !== previous) return;
+        if (expired) hide();
+        else { element.hidden = true; report(); }
     }
     function position(): void {
         frame = undefined;
         if (!anchor) return;
         const document = workspace.observeDocument(view.documentId).getSnapshot();
-        if (!document || document.revision !== anchor.revision || !workspace.ownsDocumentView(view, editor.tab)) { hide(); return; }
+        if (!document || !workspace.ownsDocumentView(view, editor.tab)) { hide(); return; }
+        if (document.revision !== anchor.revision) { conceal(true); return; }
         if (!element.isConnected) { conceal(); return; }
         const box = clientBox(viewport.element, viewport.settings().minimap, viewport.getSnapshot().gutterWidth);
         const visual = win.visualViewport, left = visual?.offsetLeft ?? 0, top = visual?.offsetTop ?? 0;

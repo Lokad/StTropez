@@ -190,8 +190,8 @@ first visible text row, even when both endpoints are offscreen. The popup clears
 height. An empty range uses the caret.
 Scrolling, resizing and folding update the placement. The popup hides while its anchor is outside
 the text viewport and reappears when the source is visible again. A new revision expires the anchor.
-If the popup contains a focused control, `onFocusedAnchorHidden` lets the host return focus
-before an offscreen or folded anchor hides that control.
+If a popup control has focus, `onFocusedAnchorHidden` lets the host return focus before the
+popup hides. This applies when the anchor scrolls out of view, folds away or expires on a new revision.
 
 The popup opens below the line by default. Pass `{ prefer: "above" }` to prefer the other side.
 The popup keeps its position while its content fits. It can move when it grows or the available
