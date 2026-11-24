@@ -370,9 +370,9 @@ prefix.
 See [packaging](packaging.md) for public exports, CSS and installation. Compiler and bundle checks
 reject private or checkout imports in restored consumers.
 
-The restored demo exercises editing, review, saving, two-page conflicts, recovery and host
-integrations. Source tests use the WebSocket provider. Static tests load the browser worker and
-assets under the repository prefix. These suites own individual language and editor feature cases.
+Demo feature tests run on the development server with the WebSocket or browser provider.
+The static suite checks that assets load under the repository prefix, exercises one editing and
+review walkthrough, and verifies worker failure and retry.
 
 ### Native-device checklist
 
