@@ -129,7 +129,7 @@ fix. Escape from either list returns focus to the source.
 The Example picker loads samples on demand. You can keep using the arrow keys while a sample
 opens. The last choice appears, and returning to a sample keeps its edits. [Sample catalogue](../examples/demo/samples.ts)
 
-- **Large file · 100,000 lines** — Scroll to the middle, edit a row, search and undo. Both source
+- **Large file · 10,000 lines** — Scroll to the middle, edit a row, search and undo. Both source
   and output render visible rows.
 - **Completion catalogue · 1,200 fields** — Type `catalogue.` and press Up for the final member,
   or type `item119` to filter. Scroll the full list and click a member to insert it. Arrow keys

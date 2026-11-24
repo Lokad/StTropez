@@ -5,6 +5,18 @@ import { DemoProject } from "../examples/demo/project.ts";
 import type { DraftStore, StoredDraft } from "../examples/hosts/draft-store.ts";
 import { latch } from "./helpers/latch.ts";
 
+import { demoSample, sampleChoices } from "../examples/demo/samples.ts";
+import { corpus, corpusIds } from "../fixtures/workloads.ts";
+
+test("shipped sample files and benchmark corpora fit in 512 KB of UTF-8", () => {
+    for (const { id } of sampleChoices) {
+        for (const [name, text] of Object.entries(demoSample(id).files)) {
+            assert.ok(Buffer.byteLength(text, "utf8") <= 512_000, `${id}/${name}`);
+        }
+    }
+    for (const id of corpusIds) assert.ok(Buffer.byteLength(corpus(id), "utf8") <= 512_000, id);
+});
+
 class MemoryStore implements DraftStore {
     row: StoredDraft | null = null;
     writes = 0;

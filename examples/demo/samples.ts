@@ -33,7 +33,7 @@ console.log(\`Your total is €\${total.toFixed(2)}.\`);
 
 export const sampleChoices: readonly Readonly<{ id: SampleId; title: string }>[] = Object.freeze([
     { id: "pricing", title: "Shopping cart" }, { id: "shipping", title: "Shipping quotes" }, { id: "errors", title: "Fix a type error" },
-    { id: "unicode", title: "Languages & Unicode" }, { id: "large", title: "Large file · 100,000 lines" },
+    { id: "unicode", title: "Languages & Unicode" }, { id: "large", title: "Large file · 10,000 lines" },
     { id: "catalogue", title: "Completion catalogue · 1,200 fields" },
     { id: "templates", title: "Snippets & lazy completion" },
     { id: "results", title: "Project-wide results · 1,200 uses" },
@@ -170,11 +170,11 @@ for (const quote of shippingQuotes(parcel, "local")) {
         files: { "catalogue.ts": "// A real TypeScript object supplies every completion candidate.\nconst catalogue = {\n"
             + Array.from({ length: 1200 }, (_, i) => `    item${String(i).padStart(4, "0")}: ${i},`).join("\n")
             + "\n};\n\n// Try catalogue. on the next line, or request completion with Ctrl+Space.\n" } };
-    if (id === "large") return { id, title: "Large file", description: "Jump to the end, edit, search and undo in a 100,000-line file.",
-        files: { "large.ts": Array.from({ length: 100_000 }, (_, i) => `// Row ${i + 1}: try editing or searching here.`).join("\n") } };
-    if (id === "unicode") return { id, title: "Languages & Unicode", description: "Edit accents, emoji and different writing systems. Amber outlines mark unusual characters, including intentional emoji joiners. Code → Inspect source characters explains those near your cursor; Character warnings turns the outlines on or off.", files: {
+    if (id === "large") return { id, title: "Large file", description: "Jump to the end, edit, search and undo in a 10,000-line file.",
+        files: { "large.ts": Array.from({ length: 10_000 }, (_, i) => `// Row ${i + 1}: try editing or searching here.`).join("\n") } };
+    if (id === "unicode") return { id, title: "Languages & Unicode", description: "Edit accented letters, combining characters and emoji. Amber outlines mark unusual characters, including intentional emoji joiners. Code → Inspect source characters explains those near your cursor; Character warnings turns the outlines on or off.", files: {
         "greetings.ts": `// Invisible: a\u200bb | Non-breaking: a\u00a0b
-const greetings = ["Bonjour", "日本語", "你好", "مرحبا", "שלום"];
+const greetings = ["Bonjour", "Hello", "Café", "¡Hola!"];
 const accents = "café · cafe\u0301";
 const emoji = "👩‍💻 · 👨‍👩‍👧‍👦 · 🇫🇷";
 

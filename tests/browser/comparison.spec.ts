@@ -445,7 +445,7 @@ for (const kind of ["long", "unique", "repeated", "unbalanced"] as const)
     test(`${kind} comparison stays virtualized, exact and cooperative during real input`, async ({ page }) => {
         const { length, at } = await page.evaluate(kind => {
             const many = kind !== "long";
-            const text = many ? Array.from({ length: 10000 }, (_, i) => `row ${kind === "unique" ? i : i % 20}\n`).join("") : "unchanged source line\r\n".repeat(30000);
+            const text = many ? Array.from({ length: 10000 }, (_, i) => `row ${kind === "unique" ? i : i % 20}\n`).join("") : "unchanged source line\r\n".repeat(20_000);
             let working = many ? text.replace(/^row (\d+)$/gm, (line, n: string) => Number(n) % 10 === 0 ? "changed " + n : line) : text.replace("unchanged", "modified") + "tail";
             if (kind === "unbalanced") working = working.replaceAll("row 11\n", "row 11\nrow 11\n");
             const at = kind === "unbalanced" ? working.indexOf("changed ", Math.floor(working.length / 2)) + 3 : working.length;

@@ -13,11 +13,8 @@ function browserDemo(baseURL: string) {
 
 async function openRows(page: Page, url: string) {
     await page.goto(url);
-    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
-    await source.press("Control+a");
-    await page.keyboard.insertText(Array.from({ length: 2000 }, (_, i) => `// Row ${i + 1}: try editing or searching here.`).join("\n"));
-    await source.press("Control+Home");
-    return source;
+    await page.locator("#sample").selectOption("large");
+    return page.getByRole("textbox", { name: "large.ts", exact: true });
 }
 
 function copyOutput(reader: Locator) {
@@ -694,7 +691,7 @@ test("a pending regex search allows large-file scrolling and typing and expires 
     const source = await openRows(page, browserDemo(baseURL!)), viewport = page.locator("#editor .st-viewport");
     await source.press("Control+f"); await page.locator("#find-regex").click();
     const query = page.locator("#find-query");
-    await query.fill("Row 1500:");
+    await query.fill("Row 7500:");
     await expect.poll(gate.waiting, { timeout: 15000 }).toBe(1);
     await viewport.evaluate(root => { root.scrollTop = root.scrollHeight / 3; });
     const chosenScroll = await viewport.evaluate(root => root.scrollTop);
@@ -702,20 +699,20 @@ test("a pending regex search allows large-file scrolling and typing and expires 
     await expect(page.locator("#find-status")).toHaveText("1 match");
     await expect(query).toBeFocused(); expect(await viewport.evaluate(root => root.scrollTop)).toBe(chosenScroll);
     await viewport.evaluate(root => { root.scrollTop = root.scrollHeight / 2; });
-    await expect(viewport.locator('.st-viewport-row[data-line="1003"]')).toContainText("Row 1004:");
+    await expect(viewport.locator('.st-viewport-row[data-line="5003"]')).toContainText("Row 5004:");
     await gate.setHolding(true);
-    await query.fill("Row (?:5|1004):"); await expect.poll(gate.waiting, { timeout: 15000 }).toBe(1);
+    await query.fill("Row (?:5|5004):"); await expect.poll(gate.waiting, { timeout: 15000 }).toBe(1);
     await page.getByRole("button", { name: "Next match", exact: true }).click();
     await gate.release();
-    await expect(page.locator("#cursor")).toContainText("Ln 1004,"); await expect(query).toBeFocused();
+    await expect(page.locator("#cursor")).toContainText("Ln 5004,"); await expect(query).toBeFocused();
     await gate.setHolding(true);
     await query.fill(String.raw`\brow(?= \d| ")`);
     await expect.poll(gate.waiting, { timeout: 15000 }).toBe(1);
     await viewport.evaluate(root => { root.scrollTop = root.scrollHeight / 2; });
-    const middle = viewport.locator('.st-viewport-row[data-line="1000"]');
-    await expect(middle).toHaveText("// Row 1001: try editing or searching here.");
+    const middle = viewport.locator('.st-viewport-row[data-line="5000"]');
+    await expect(middle).toHaveText("// Row 5001: try editing or searching here.");
     await middle.click(); await source.press("End"); await source.press("!");
-    await expect(middle).toHaveText("// Row 1001: try editing or searching here.!");
+    await expect(middle).toHaveText("// Row 5001: try editing or searching here.!");
     await expect.poll(gate.waiting, { timeout: 15000 }).toBe(2);
     await source.press("F3");
     await gate.setHolding(false);
@@ -1046,29 +1043,29 @@ test("reset names its sample and recovery follows the stored draft across sample
     } finally { startup.resolve(); await opening; }
     await page.getByRole("button", { name: "Reset sample", exact: true }).click();
     expect(prompts.at(-1)).toContain("Shopping cart");
-    await page.locator("#sample").selectOption("shipping");
-    const source = page.getByRole("textbox", { name: "shipping.ts", exact: true }); await expect(source).toBeVisible();
+    await page.locator("#sample").selectOption("large");
+    const source = page.getByRole("textbox", { name: "large.ts", exact: true }); await expect(source).toBeVisible();
     await expect(page.locator("#recovery-status")).toHaveText("Recovery is ready.");
     await expect(page.locator("#recovery-offer")).toBeHidden();
-    await source.press("Control+Home"); await source.pressSequentially("// My previous shipping edits\n");
+    await source.press("Control+Home"); await source.pressSequentially("// My previous large-file edits\n");
     await expect(page.locator("#recovery-status")).toHaveText("Recovery draft captured in this browser.");
     await page.reload(); await page.getByRole("button", { name: "Reset sample", exact: true }).click();
     await expect(page.locator("#recovery-offer")).toBeHidden();
-    await page.locator("#sample").selectOption("shipping");
+    await page.locator("#sample").selectOption("large");
     await expect(page.locator("#recovery-offer")).toBeVisible();
-    await expect(page.locator("#recovery-message")).toContainText("unsaved draft for shipping.ts");
+    await expect(page.locator("#recovery-message")).toContainText("unsaved draft for large.ts");
     await page.getByRole("button", { name: "Restore draft", exact: true }).click();
-    await expect(page.locator("#editor")).toContainText("// My previous shipping edits");
+    await expect(page.locator("#editor")).toContainText("// My previous large-file edits");
     await page.getByRole("button", { name: "Reset sample", exact: true }).click();
-    expect(prompts.at(-1)).toContain("Shipping quotes");
+    expect(prompts.at(-1)).toContain("Large file");
     await expect(page.locator("#status")).toContainText("Sample restored.");
     await source.press("Control+z"); await expect(page.locator("#status")).toHaveText("Unsaved changes.");
     await source.press("Control+y"); await expect(page.locator("#status")).toHaveText("Files match the original sample.");
     await expect(page.locator("#recovery-status")).toHaveText("All changes are saved.");
-    await page.reload(); await page.locator("#sample").selectOption("shipping");
+    await page.reload(); await page.locator("#sample").selectOption("large");
     await expect(page.locator("#recovery-status")).toHaveText("Recovery is ready.");
     await expect(page.locator("#recovery-offer")).toBeHidden();
-    await expect(page.locator("#editor")).not.toContainText("My previous shipping edits");
+    await expect(page.locator("#editor")).not.toContainText("My previous large-file edits");
 });
 
 test("completion holds its prefix and side while filtering and makes room for signature help", async ({ page, baseURL }) => {
@@ -1150,7 +1147,7 @@ test("dragging the scrollbar paints source rows with their line numbers during a
             const at = row.getBoundingClientRect(); return at.top >= box.top && at.bottom <= box.bottom;
         });
         const line = Number(row?.dataset.line), gutter = [...document.querySelectorAll("#editor .st-line-numbers span")];
-        return line > 800 && line < 1200 && row?.textContent === `// Row ${line + 1}: try editing or searching here.`
+        return line > 4000 && line < 6000 && row?.textContent === `// Row ${line + 1}: try editing or searching here.`
             && gutter.some(number => number.textContent === String(line + 1) && Math.abs(number.getBoundingClientRect().top - row!.getBoundingClientRect().top) < 1);
     })).toBe(true);
 });

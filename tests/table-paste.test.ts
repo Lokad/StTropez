@@ -70,8 +70,8 @@ test("invalid/empty tables, composition and explicit cancellation preserve text 
 
 test("aggregate multi-range expansion is refused before publishing any source or selection change", () => {
     const f = fixture(); try {
-        f.view.setSelections(0, Array.from({ length: 6 }, (_, head) => ({ anchor: head, head })), 3); const selections = f.view.getSnapshot().selectionSet;
-        f.paste("x".repeat(800000)); f.drain(); assert.equal(f.tools.state.getSnapshot().status, "failed"); assert.match(f.tools.state.getSnapshot().message, /aggregate/);
+        f.view.setSelections(0, Array.from({ length: 9 }, (_, head) => ({ anchor: head, head })), 3); const selections = f.view.getSnapshot().selectionSet;
+        f.paste("x".repeat(500_000)); f.drain(); assert.equal(f.tools.state.getSnapshot().status, "failed"); assert.match(f.tools.state.getSnapshot().message, /aggregate/);
         assert.equal(f.text(), "abc\r\nxyz"); assert.equal(f.view.getSnapshot().selectionSet, selections); assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, 0);
     } finally { f.finish(); }
 });

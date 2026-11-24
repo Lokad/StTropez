@@ -458,7 +458,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
     });
     if (coversHost("plain-candidate", host, "candidate")) test("large-document hover and reference pages expose every target without changing source or history", async ({ page }) => {
-        const text = "const unrelated = 123;\r\n".repeat(98_976) + "const target = 1;\r\n" + "target;\r\n".repeat(1023);
+        const text = "const unrelated = 123;\r\n".repeat(18_976) + "const target = 1;\r\n" + "target;\r\n".repeat(1023);
         await seed(page, text, text.lastIndexOf("target") + 2); const before = await snapshot(page);
         await hover(page); await expect(page.getByRole("tooltip")).toContainText("target"); await field(page).press("Escape"); await field(page).press("F12"); await waitForNavigation(page); await expect(results(page)).toHaveCount(1);
         const selected = (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection; expect(selected).toMatchObject({ anchor: text.lastIndexOf("const target") + 6, head: text.lastIndexOf("const target") + 12 });

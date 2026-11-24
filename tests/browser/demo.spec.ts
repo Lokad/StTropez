@@ -160,17 +160,16 @@ test("demo save receipts retain their captured files and leave later typing dirt
     expect(saved["pricing.ts"]).not.toContain("Later");
 });
 
-test("demo opens a generated project and edits its final line", async ({ page }) => {
+test("demo edits and undoes on the final line of the large sample", async ({ page }) => {
     await page.goto("/");
-    await page.locator("#sample").selectOption("results");
-    const source = page.getByRole("textbox", { name: "uses.ts", exact: true });
+    await page.locator("#sample").selectOption("large");
+    const source = page.getByRole("textbox", { name: "large.ts", exact: true });
     await source.press("Control+End");
-    await page.keyboard.insertText("// edited");
+    await page.keyboard.insertText(" edited");
     const lastRow = page.locator("#editor .st-viewport-row").last();
-    await expect(lastRow).toHaveText("// edited");
-    await expect(page.locator("#cursor")).toHaveText("Ln 1202, Col 10");
+    await expect(lastRow).toHaveText("// Row 10000: try editing or searching here. edited");
     await source.press("Control+z");
-    await expect(lastRow).toHaveText("");
+    await expect(lastRow).toHaveText("// Row 10000: try editing or searching here.");
 });
 
 test("demo local save persists both files and prevents a stale page from replacing them", async ({ page, context }) => {

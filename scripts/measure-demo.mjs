@@ -241,7 +241,7 @@ export async function measureDemo(browser, url, identity, abortBrowser) {
                 assert.equal(activeCase.bulkInput.commits, 1); assert.ok(observations.peakNativeUnits <= 2560); bounded(state);
             }
             await ready(page); const firstEditorProxyMs = performance.now() - sampleAt, initial = await snapshot(page);
-            if (corpus === "large") assert.equal(initial.lines, 100000);
+            if (corpus === "large") assert.equal(initial.lines, 10000);
             await page.evaluate(() => globalThis.sttropezDemoMeasurement.place("start")); await ready(page);
             const firstEdit = await input(page, abortBrowser, true), firstFeedbackState = await snapshot(page);
             heap = { afterFirstFeedback: await session.send("Runtime.getHeapUsage") };

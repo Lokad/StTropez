@@ -34,7 +34,7 @@ as soon as you serve the page, then add the features you need.
 
 ## Support matrix
 
-StTropez supports documents up to 512 KB. Larger documents may open, with no responsiveness guarantee.
+StTropez supports documents up to 512,000 UTF-8 bytes. Larger documents may open, with no responsiveness guarantee.
 The **Supported** column lists what StTropez guarantees. Check the **Unverified** column
 when choosing devices and integration tests for your application.
 
