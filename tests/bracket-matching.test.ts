@@ -86,6 +86,9 @@ test("interior navigation skips balanced neighbors and shares eligibility, depth
     assert.equal(jump("outer(inner(value))", 14).result!.match, 17);
     assert.equal(jump("<ignore> text", 11).result!.kind, "none");
     assert.equal(jump("([]) text", 7).result!.kind, "none");
+    const skipped = jump("() [ignored] {}", 3, undefined, { allowPair: ({ pair }) => pair.open !== "[" }).result;
+    assert.ok(skipped && "next" in skipped);
+    assert.equal(skipped.next, 13);
     assert.equal(jump("([)] text", 7).result!.kind, "unmatched");
     assert.equal(jump("( left ]", 4).result!.kind, "unmatched");
     assert.equal(jump("( left [ x ] right )", 9, undefined, { allowPair: ({ pair }) => pair.open !== "[" }).result!.match, 19);

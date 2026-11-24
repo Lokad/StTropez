@@ -1007,7 +1007,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                             return;
                         }
                         cursor.dispose();
-                        const destination = result.result?.match;
+                        const destination = result.result?.match ?? result.result?.next;
                         done(destination == null ? range : moved(range, destination, false));
                     });
                     advance();

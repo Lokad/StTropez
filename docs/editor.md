@@ -551,7 +551,8 @@ both eligible roles is `ambiguous`; symmetric quote pairs are insertion/surround
 `allowPair` supplies lexical eligibility for each examined delimiter's existing range.
 
 `jump-to-bracket` moves to the partner of a bracket touching the caret. From inside a pair,
-it moves to the innermost enclosing closing bracket. Both directions share one work budget.
+it moves to the innermost enclosing closing bracket. Outside a pair, it moves to the next
+eligible bracket. The searches share one work budget.
 The caret stays in place if the scan encounters mismatched brackets or reaches a limit.
 
 ```ts

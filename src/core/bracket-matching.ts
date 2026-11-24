@@ -36,8 +36,8 @@ export class BracketMatcher {
 export function createClosingBracketCursor(configuration: ResolvedLanguageConfiguration, buffer: TextBuffer, at: number, closer: string): BracketMatchCursor {
     return bracketCursor(configuration, buffer, at, {}, { closer });
 }
-/** The explicit jump command also accepts a caret inside a pair. */
-export function createBracketNavigationCursor(configuration: ResolvedLanguageConfiguration, buffer: TextBuffer, caret: number, options?: BracketMatchOptions): BracketMatchCursor {
+/** Jump to the partner, the enclosing closer, or the next eligible bracket. */
+export function createBracketNavigationCursor(configuration: ResolvedLanguageConfiguration, buffer: TextBuffer, caret: number, options?: BracketMatchOptions) {
     return bracketCursor(configuration, buffer, caret, options ?? {}, "enclosing");
 }
 const compiled = new WeakMap<ResolvedLanguageConfiguration, Map<string, Roles>>();
@@ -55,7 +55,8 @@ function bracketTokens(configuration: ResolvedLanguageConfiguration) {
     }
     return tokens;
 }
-function bracketCursor(configuration: ResolvedLanguageConfiguration, buffer: TextBuffer, caret: number, options: BracketMatchOptions, mode?: "enclosing" | { closer: string }): BracketMatchCursor {
+function bracketCursor(configuration: ResolvedLanguageConfiguration, buffer: TextBuffer, caret: number,
+    options: BracketMatchOptions, mode?: "enclosing" | { closer: string }) {
     const typedCloser = typeof mode === "object" ? mode.closer : undefined;
     const tokens = bracketTokens(configuration);
     if (!Number.isSafeInteger(caret) || caret < 0 || caret > buffer.length) throw new RangeError("Invalid bracket caret.");
@@ -75,7 +76,7 @@ function bracketCursor(configuration: ResolvedLanguageConfiguration, buffer: Tex
         }
         return found;
     }
-    function* scan(): Generator<void, BracketMatchResult | null> {
+    function* scan(): Generator<void, (BracketMatchResult & { readonly next?: number }) | null> {
         try {
             if (!tokens.size) return result("none");
             let initial: Roles | undefined, vetoed = false;
@@ -89,13 +90,20 @@ function bracketCursor(configuration: ResolvedLanguageConfiguration, buffer: Tex
                 if (!found.open && !found.close.size) { vetoed = true; continue; }
                 at = offset; initial = found; break;
             }
-            if (!initial && (vetoed || mode !== "enclosing")) return result(vetoed ? "vetoed" : "none");
+            if (!initial && mode !== "enclosing") return result(vetoed ? "vetoed" : "none");
             if (initial?.open && initial.close.size) return result("ambiguous");
             direction = initial?.open ? 1 : -1;
             // Each backward frame may admit several openings that share a closing character.
             const pending: Roles[] = initial ? [initial] : [];
             let offset = at === null ? caret - 1 : at + direction;
-            while (offset >= 0 && offset < buffer.length) {
+            while (offset < buffer.length) {
+                if (offset < 0) {
+                    if (at !== null) break;
+                    // Reaching the start with no enclosing opener leaves only the forward search.
+                    direction = 1;
+                    offset = caret;
+                    continue;
+                }
                 const from = direction === 1 ? offset : Math.max(0, offset - 255);
                 const to = direction === 1 ? Math.min(buffer.length, offset + 256) : offset + 1;
                 const text = buffer.slice(from, to); reads += text.length;
@@ -106,6 +114,9 @@ function bracketCursor(configuration: ResolvedLanguageConfiguration, buffer: Tex
                     if (!tokens.has(char)) { offset += direction; continue; }
                     const found = yield* roles(char, offset);
                     if (found.open && found.close.size) return result("ambiguous");
+                    if (at === null && direction === 1 && (found.open || found.close.size)) {
+                        return Object.freeze({ ...result("none"), next: offset });
+                    }
                     const push = direction === 1 ? found.open : found.close.size;
                     const pop = direction === 1 ? found.close.size : found.open;
                     if (push) {
@@ -129,6 +140,6 @@ function bracketCursor(configuration: ResolvedLanguageConfiguration, buffer: Tex
             return result(at === null ? "none" : "unmatched");
         } catch (error) { if (error === exhausted) return result("limited", null, null, "work"); throw error; }
     }
-    return kernelCursor(scan(), () => work, (status, result, failure): BracketMatchProgress => Object.freeze({
+    return kernelCursor(scan(), () => work, (status, result, failure) => Object.freeze({
         status, result, failure, workUnits: work, scannedUnits: scanned, readUnits: reads, callbackCalls: calls }), "Bracket match");
 }
