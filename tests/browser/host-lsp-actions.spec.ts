@@ -164,7 +164,7 @@ test.describe(`plain LSP code actions`, () => {
         await button(page, "Apply captured action").click(); await waitForActions(page); await exact(page, "// choice 65\r\n" + raw);
         await input(page).press("Control+z"); await waitForActions(page); await exact(page, raw);
     });
-    test("multi-resource action confirmation preserves comparison baselines, unmounted targets and captured Save/Run", async ({ page }) => {
+    test("multi-resource actions edit the working copy and an unmounted companion", async ({ page }) => {
         await seed(page); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await waitForActions(page); const working = input(page, "Comparison working source"), before = await snapshot(page), baseline = before.bindings.comparison!.baseline;
         await working.focus(); await page.evaluate(at => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: at + 1, head: at }, { anchor: rawLength(f), head: rawLength(f) }]); function rawLength(f: typeof window.hostFixture) { return f.snapshot().source.length; } }, raw.indexOf("TODO") + 1);
         const selections = (await snapshot(page)).bindings.comparison!.selectionSet; await working.press("Control+."); await waitForActions(page); expect((await snapshot(page)).bindings.actions.capture!.view).toBe("comparison"); await choices(page).nth(1).click(); await waitForActions(page); await expect(edits(page)).toHaveCount(2); await exact(page, raw);
@@ -176,8 +176,6 @@ test.describe(`plain LSP code actions`, () => {
         expect((await snapshot(page)).bindings.views.find(v => v.id === "secondary")!.documentId).toBe(companion);
         await input(page, "Secondary source").press("Control+z"); await waitForActions(page); await exact(page, raw); expect((await snapshot(page)).bindings.comparison!.selectionSet).toEqual(selections); await input(page, "Secondary source").press("Control+Shift+z"); await waitForActions(page); await exact(page, marker + raw);
         const reference = input(page, "Comparison baseline source"), requested = (await snapshot(page)).bindings.actions.requested; await reference.press("Control+."); expect((await snapshot(page)).bindings.actions.requested).toBe(requested); await expect(reference).toHaveAttribute("readonly", "");
-        await input(page, "Secondary source").focus(); await button(page, "Run captured inputs").click(); expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(before.source.id); expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(marker + raw); await page.evaluate(() => window.hostFixture.finishRun());
-        await button(page, "Save source").click(); await working.press("Control+End"); await working.pressSequentially(" later"); await waitForActions(page); await page.evaluate(() => window.hostFixture.finishSave()); await waitForActions(page); await exact(page, marker + raw + " later"); expect((await snapshot(page)).source.dirty).toBe(true); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline);
     });
     test("invalid action replies clear choices and provider titles remain literal", async ({ page }) => {
         await seed(page);

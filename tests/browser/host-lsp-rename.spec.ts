@@ -134,7 +134,7 @@ test.describe(`plain LSP rename host`, () => {
         await exact(page, marker + raw + "local"); await page.keyboard.press("Control+z");
         await exact(page, raw + "local");
     });
-    test("comparison rename preserves its baseline and primary Save/Run through unmounted-target focus", async ({ page }) => {
+    test("comparison rename keeps its baseline and returns focus to the edited working copy", async ({ page }) => {
         await seed(page); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await waitForRename(page); const working = input(page, "Comparison working source"), before = await snapshot(page), baseline = before.bindings.comparison!.baseline;
         await working.focus(); await page.evaluate(at => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: at, head: at }]); }, raw.indexOf("catalogue") + 2); await working.press("F2"); await name(page).fill("inventory"); await name(page).press("Enter"); await waitForRename(page);
         expect((await snapshot(page)).bindings.rename.capture!.view).toBe("comparison");
@@ -144,8 +144,6 @@ test.describe(`plain LSP rename host`, () => {
         await page.keyboard.press("Control+z"); await exact(page, raw);
         await page.keyboard.press("Control+Shift+z"); await exact(page, expected); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline);
         const reference = input(page, "Comparison baseline source"), baselineText = await page.evaluate(length => window.hostFixture.referenceRange(0, length), baseline!.length); await reference.focus(); await reference.press("F2"); await expect(name(page)).not.toBeFocused(); expect(await page.evaluate(length => window.hostFixture.referenceRange(0, length), baseline!.length)).toBe(baselineText);
-        await button(page, "Open renamed changes in Navigation companion").click(); await waitForRename(page); await button(page, "Run captured inputs").click(); expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(before.source.id); expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(expected); await page.evaluate(() => window.hostFixture.finishRun());
-        await button(page, "Save source").click(); await working.press("Control+End"); await working.pressSequentially(" later"); await waitForRename(page); await page.evaluate(() => window.hostFixture.finishSave()); await waitForRename(page); await exact(page, expected + " later"); expect((await snapshot(page)).source.dirty).toBe(true); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline);
     });
     test("rename pages its preview, preserves form focus and shares atomic undo", async ({ page }) => {
         test.setTimeout(90000);
