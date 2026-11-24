@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import assert from "node:assert/strict";
 import { nextSeed } from "../fixtures/workloads.ts";
 import test from "node:test";
@@ -13,7 +14,7 @@ test("shared edges checkpoint structural descents and unproved leaves without ad
     }
     const iterator = a.sharedEdge(b, "start")[Symbol.iterator]();
     assert.deepEqual(iterator.next(), { value: 0, done: false }); iterator.return?.();
-    assert.equal(iterator.next().done, true); assert.deepEqual(a.readMetrics(), { textExports: 0, sliceUnits: 0 });
+    assert.equal(iterator.next().done, true); assert.deepEqual(bufferReads(a), { textExports: 0, sliceUnits: 0 });
 });
 
 test("shared edges prove owned spans without text reads, including split backing and reversed ranges", () => {
@@ -23,7 +24,7 @@ test("shared edges prove owned spans without text reads, including split backing
     assert.equal(last(a.sharedEdge(a, "start")), a.length);
     assert.equal(last(a.sharedEdge(TextBuffer.from(original), "start")), 0);
     assert.equal(last(a.sharedEdge(b, "end", { from: 30003, to: 40000, otherFrom: 30008, otherTo: 40005 })), 9997);
-    assert.equal(a.readMetrics().sliceUnits, 0); assert.equal(a.readMetrics().textExports, 0);
+    assert.equal(bufferReads(a).sliceUnits, 0); assert.equal(bufferReads(a).textExports, 0);
     const range = { from: 0, to: 20, otherFrom: 0, otherTo: 20 }, captured = a.sharedEdge(a, "start", range);
     range.to = 0; assert.equal(last(captured), 20);
     assert.throws(() => a.sharedEdge(b, "start", { from: -1, to: 0, otherFrom: 0, otherTo: 0 }), RangeError);

@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { TextBuffer, createSelectionSet, planLanguageEdit, resolveLanguageConfiguration } from "../src/index.ts";
@@ -144,7 +145,7 @@ test("a contextual mirror edit in a large document reads only its active fields"
     const buffer = TextBuffer.from(prefix + local.buffer.text() + prefix), stops = offsetSnippetStops(local.stops, prefix.length), at = stops[0]!.ranges[0]!.to - 1;
     const plan = planSnippetEdit(buffer, stops, 0, [{ from: at, to: at + 1, insert: "😀" }], createSelectionSet(buffer.length, [{ anchor: at, head: at + 1 }]),
         createSelectionSet(buffer.length + 1, [{ anchor: at + 2, head: at + 2 }]))!;
-    assert.ok(plan); assert.deepEqual(buffer.readMetrics(), { textExports: 0, sliceUnits: 18 });
+    assert.ok(plan); assert.deepEqual(bufferReads(buffer), { textExports: 0, sliceUnits: 18 });
     const next = buffer.apply(plan.edits).buffer;
     assert.deepEqual(plan.stops[0]!.ranges.map(range => next.slice(range.from, range.to)), ["a\n        😀", "a\n    😀"]);
     t.diagnostic(JSON.stringify({ documentUnits: buffer.length, fieldReadUnits: 18, textExports: 0 }));

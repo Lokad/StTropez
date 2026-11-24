@@ -58,7 +58,7 @@ const fixture = { ready: true, load, edit, background,
     snapshot: () => {
         const current = workspace.getSnapshot().documents.find(document => document.id === source.documentId);
         return { document: current ? { revision: current.revision, length: current.buffer.length, lines: current.buffer.lineCount,
-            longest: current.buffer.longestLineLength, exports: current.buffer.readMetrics().textExports } : null,
+            longest: current.buffer.longestLineLength } : null,
             primary: views.primary.getDiagnostics(), secondary: views.secondary.getDiagnostics(), diagnostics: workspace.diagnostics(), ticks, disposed };
     },
     dispose: () => {

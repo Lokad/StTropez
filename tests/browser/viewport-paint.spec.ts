@@ -3,7 +3,7 @@ import { build } from "esbuild";
 import { basename } from "node:path";
 
 test("viewport skips unchanged row work while consuming scheduled notifications and painting changed captures", async ({ page }, testInfo) => {
-    const built = await build({ entryPoints: { core: "src/index.ts", viewport: "src/browser/viewport.ts", rows: "src/core/comparison-rows.ts" }, outdir: "artifacts/viewport-paint",
+    const built = await build({ entryPoints: { probe: "tests/observe-buffer-reads.ts", core: "src/index.ts", viewport: "src/browser/viewport.ts", rows: "src/core/comparison-rows.ts" }, outdir: "artifacts/viewport-paint",
         bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
     const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
     await page.route("**/viewport-paint/**", route => {
@@ -16,6 +16,7 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountViewport } = await import(path + "viewport.js") as typeof import("../../src/browser/viewport.ts");
         const { ComparisonRowsCursor } = await import(path + "rows.js") as typeof import("../../src/core/comparison-rows.ts");
+        const { observeBufferReads } = await import(path + "probe.js") as typeof import("../observe-buffer-reads.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "paint-captures", variant: "text" }, "Paint", { value: "const sample = 123;\r\n".repeat(1000) });
         const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "paint"), host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
@@ -31,11 +32,12 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
         const settle = () => { for (let i = 0; i < 8; i++) { viewport.flush(); if (!viewport.activity().pending) return; } throw new Error("Viewport did not settle."); };
         const work = (name: string, change: () => void = () => {}, count = 1) => {
             change(); observer.takeRecords();
-            const before = viewport.getDiagnostics(), buffer = documentState().buffer, read = buffer.readMetrics().sliceUnits, decorated = calls, notified = notices;
+            const before = viewport.getDiagnostics(), buffer = documentState().buffer, read = reads.read(buffer).sliceUnits, decorated = calls, notified = notices;
             for (let i = 0; i < count; i++) viewport.flush();
-            return { name, renders: viewport.getDiagnostics().renders - before.renders, read: buffer.readMetrics().sliceUnits - read,
+            return { name, renders: viewport.getDiagnostics().renders - before.renders, read: reads.read(buffer).sliceUnits - read,
                 decorated: calls - decorated, mutations: observer.takeRecords().length, notices: notices - notified, pending: viewport.activity().pending };
         };
+        const reads = observeBufferReads();
         try {
             viewport.revealOffset(documentState().buffer.offsetAt(500)); settle();
             const middle = viewport.getDiagnostics(), row = host.querySelector<HTMLElement>('.st-viewport-row[data-line="500"]')!, child = row.firstChild;
@@ -96,7 +98,7 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
                 exactBounds, stableGeometry, resizePublished, released,
                 correcting, correctionPaints: corrected.renders - beforeCorrection, extentError: Math.abs(corrected.horizontalExtent - measured - 24),
                 idleAfterCorrection, partialIdle, partialAnchor: capture.horizontalAnchor !== undefined, restoredError: Math.abs(point.left - restored.left) };
-        } finally { observer.disconnect(); viewport.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
+        } finally { reads.dispose(); observer.disconnect(); viewport.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
     });
     await testInfo.attach("paint-work", { body: JSON.stringify(result), contentType: "application/json" });
     for (const work of [result.idle, result.afterSelection, result.idleAfterCorrection, result.partialIdle])

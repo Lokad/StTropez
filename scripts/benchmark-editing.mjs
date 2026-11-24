@@ -6,7 +6,7 @@ import { corpusIds } from "../fixtures/workloads.ts";
 
 /** @typedef {ReturnType<Window["editingFixture"]["snapshot"]>} EditingState */
 /** @typedef {{beforeInputToFrameProxyMs: number, inputHandlerMs: number, inputEvents: number, commits: number,
- * revisionDelta: number, length: number, wholeTextExports: number, primary: EditingState["primary"], secondary: EditingState["secondary"]}} InputObservation */
+ * revisionDelta: number, length: number, primary: EditingState["primary"], secondary: EditingState["secondary"]}} InputObservation */
 /** @typedef {typeof globalThis & {editingMeasurement: Promise<InputObservation>}} MeasurementGlobal */
 
 const source = await sourceIdentity(), harness = await openHarness();
@@ -50,7 +50,7 @@ try {
                             clearTimeout(timeout);
                             resolve({ beforeInputToFrameProxyMs: performance.now() - start, inputHandlerMs: state.primary.lastInputMs,
                                 inputEvents: state.primary.inputEvents - before.primary.inputEvents, commits: state.primary.commits - before.primary.commits,
-                                revisionDelta: state.document.revision - beforeDocument.revision, length: state.document.length, wholeTextExports: state.document.exports,
+                                revisionDelta: state.document.revision - beforeDocument.revision, length: state.document.length,
                                 primary: state.primary, secondary: state.secondary });
                         }; requestAnimationFrame(check);
                     }, { once: true });
@@ -62,7 +62,7 @@ try {
             const completeActionProxyMs = performance.now() - actionStart;
             const sample = Object.assign(observation, { completeActionProxyMs });
             assert.equal(sample.inputEvents, 1); assert.equal(sample.commits, 1); assert.equal(sample.revisionDelta, 1);
-            assert.equal(sample.wholeTextExports, 0); assert.equal(sample.length, length + index + 1);
+            assert.equal(sample.length, length + index + 1);
             assert.equal(await harness.page.evaluate(offset => window.editingFixture.range(offset, offset + 1), offset + index), "z");
             assert.ok(Number.isFinite(sample.inputHandlerMs)); assert.ok(Number.isFinite(sample.beforeInputToFrameProxyMs));
             for (const view of [sample.primary, sample.secondary]) {
@@ -83,7 +83,7 @@ try {
                 style: style.fontStyle, ligatures: style.fontVariantLigatures, kerning: style.fontKerning, letterSpacing: style.letterSpacing }, tabSize: style.tabSize };
     });
     assert.equal((await sourceIdentity()).sha256, source.sha256);
-    const report = { schemaVersion: 2, created: new Date().toISOString(), source, environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode, display },
+    const report = { schemaVersion: 3, created: new Date().toISOString(), source, environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode, display },
         runtime: "bounded-text-editor", activeViews: 2, features: { visibleLineTokens: true, find: "idle", provider: "connected; no pending requests" }, cases, errors: harness.errors,
         note: "Actual automated keyboard insertion through bounded native context into core history and two DOM views. Input-handler elapsed time covers the adapter input-event handler, model commit, context refresh and synchronous work invoked within that span, including browser work if triggered there. It excludes beforeinput, native work before the handler and later scheduled work; it is not process CPU time. Beforeinput-to-frame-ready requires exact inserted text, revision, primary selection and both rendered view revisions across two consecutive animation frames. Complete-action proxy starts before the automation keyboard call and ends after the same readiness promise returns, including transport and settlement. Neither proxy measures physical presentation. No IME/native-device or long contextual-line qualification follows." };
     await mkdir("artifacts/bench/editing", { recursive: true }); await writeFile("artifacts/bench/editing/latest.json", JSON.stringify(report, null, 2));

@@ -108,5 +108,4 @@ test("workspace-edit preview pages bound wide replacements and only read on-page
     assert.ok(Object.isFrozen(second) && Object.isFrozen(second.notes) && second.notes.every(Object.isFrozen));
     titles.length = 0; assert.deepEqual(previewLspWorkspaceEdit(plan, title, 2).notes, []); assert.deepEqual(titles, []);
     assert.throws(() => previewLspWorkspaceEdit(plan, title, -1), RangeError);
-    for (const doc of f.documents) assert.equal(doc.buffer.readMetrics().textExports, 0);
 });

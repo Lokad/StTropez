@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Workspace, applyTextEdits, anchoredRange } from "../src/index.ts";
@@ -104,7 +105,7 @@ test("packed bulk changes preserve initiating selection, independent views and e
     assert.equal(second.getSnapshot().selection.anchor, 2 * 24 + 11); assert.equal(second.getSnapshot().selection.head, 998 * 24 + 12);
     assert.equal(source.metadata.getSnapshot().dirty, false);
     assert.equal(redo().applied, true); assert.equal(document().buffer, after); assert.equal(first.getSnapshot().selection.head, 3);
-    assert.equal(before.readMetrics().textExports, 0); assert.equal(after.readMetrics().textExports, 0); first.dispose(); second.dispose();
+    assert.equal(bufferReads(before).textExports, 0); assert.equal(bufferReads(after).textExports, 0); first.dispose(); second.dispose();
 });
 
 test("workspace snapshots export text only through explicit captured readers", () => {
@@ -126,18 +127,18 @@ test("workspace snapshots export text only through explicit captured readers", (
         const spread = { ...snapshot }, assigned = Object.assign({}, snapshot);
         assert.deepEqual(Object.keys(spread), Object.keys(assigned)); JSON.stringify(spread); JSON.stringify(snapshot);
     }
-    assert.equal(document(), current); assert.equal(saved.diagnostics().textExports, 0); assert.equal(current.buffer.diagnostics().textExports, 0);
+    assert.equal(document(), current); assert.equal(bufferReads(saved).textExports, 0); assert.equal(bufferReads(current.buffer).textExports, 0);
     assert.equal(seen.length, 1); assert.ok(Object.isFrozen(current)); assert.equal(errors.length, 0);
     assert.ok(Object.isFrozen(source.getSnapshot())); assert.ok(Object.isFrozen(source.metadata.getSnapshot()));
     assert.equal(source.getSnapshot().metadata, source.metadata.getSnapshot());
     assert.equal(readText().length, saved.length); assert.equal(readValue(), readText());
-    assert.equal(saved.readMetrics().textExports, 1); assert.equal(current.buffer.readMetrics().textExports, 0);
+    assert.equal(bufferReads(saved).textExports, 1); assert.equal(bufferReads(current.buffer).textExports, 0);
     const currentResource = source.getSnapshot(); assert.ok(currentResource.state === "ready");
     assert.equal(current.text().slice(0, 2), "😀"); assert.equal(currentResource.value(), current.text());
-    assert.equal(current.buffer.readMetrics().textExports, 1);
+    assert.equal(bufferReads(current.buffer).textExports, 1);
     unsubscribe(); workspace.releaseResource(source.id, true);
     assert.equal(readValue(), readText()); assert.equal(currentResource.value(), current.text());
-    assert.equal(saved.readMetrics().textExports, 1); assert.equal(current.buffer.readMetrics().textExports, 1);
+    assert.equal(bufferReads(saved).textExports, 1); assert.equal(bufferReads(current.buffer).textExports, 1);
 });
 
 test("explicit consecutive groups, origins, standalone intents and saved boundaries keep exact undo-to-saved states", async () => {
@@ -320,7 +321,7 @@ test("history bounds count groups, changes and changed units without flattening,
     assert.ok(state.getSnapshot().redoDepth <= 3);
     while (redo().applied) { /* bounded */ }
     replace("oversized".repeat(100)); assert.equal(state.getSnapshot().undoDepth, 0); assert.equal(undo().applied, false);
-    assert.equal(document().buffer.diagnostics().textExports, 0);
+    assert.equal(bufferReads(document().buffer).textExports, 0);
     assert.throws(() => fixture("", { maxChanges: -1 }), RangeError);
     const independent = workspace.createDocument({ scope: "history", resource: "independent", variant: "working" }, "Independent", "a");
     workspace.edit({ documentId: independent, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 1, insert: "b" }] });

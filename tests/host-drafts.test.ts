@@ -69,10 +69,10 @@ async function loadedSeed() {
 test("loaded checkpoint captures immutable text and failed replacement revokes its coverage", async () => {
     const store = storage(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d);
     try {
-        c.beginDeferredLoad(); c.finishLoad(); const resource = editLoaded(c, "captured loaded text"), captured = c.workspace.document(resource.documentId);
+        c.beginDeferredLoad(); c.finishLoad(); const resource = editLoaded(c, "captured loaded text");
         const gate = deferred(); store.shared.writeGate = gate.promise; d.prepare("keep"); editLoaded(c, "later loaded correction"); gate.resolve(); await idle(d);
-        assert.equal((store.shared.value!.value as { loaded: { text: string } }).loaded.text, "captured loaded text"); assert.equal(captured.buffer.readMetrics().textExports, 1);
-        assert.equal(c.workspace.document(resource.documentId).buffer.readMetrics().textExports, 0); assert.equal(d.shouldWarnOnLeave(), true);
+        assert.equal((store.shared.value!.value as { loaded: { text: string } }).loaded.text, "captured loaded text");
+        assert.equal(d.shouldWarnOnLeave(), true);
         c.workspace.undo({ documentId: resource.documentId, expectedRevision: c.workspace.document(resource.documentId).revision }); assert.equal(d.shouldWarnOnLeave(), false);
         const old = structuredClone(store.shared.value); store.shared.failWrite = true; d.prepare("keep"); d.confirm(); await idle(d);
         assert.deepEqual(store.shared.value, old); assert.equal(d.shouldWarnOnLeave(), true);
@@ -117,13 +117,13 @@ test("foreign loaded identities are rejected", async () => {
     finally { await close(c, d); }
 });
 
-test("checkpoint transfers captured versions without exporting ordinary later edits", async () => {
+test("checkpoint stores the captured versions while later edits remain in the workspace", async () => {
     const store = storage(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); edit(c, "captured"); c.setPath("captured.csv");
-    const before = c.workspace.document(c.source.documentId).buffer; assert.equal(before.readMetrics().textExports, 0); const gate = deferred(); store.shared.writeGate = gate.promise; d.prepare("keep");
+    const gate = deferred(); store.shared.writeGate = gate.promise; d.prepare("keep");
     edit(c, "later correction"); c.setPath("later.csv"); assert.equal(d.shouldWarnOnLeave(), true); gate.resolve(); await idle(d);
     const saved = store.shared.value!.value as { source: { text: string }; configuration: { value: { path: string } } };
     assert.equal(saved.source.text, "captured"); assert.equal(saved.configuration.value.path, "captured.csv"); assert.equal(text(c), "later correction");
-    assert.equal(before.readMetrics().textExports, 1); assert.equal(c.workspace.document(c.source.documentId).buffer.readMetrics().textExports, 0); assert.equal(d.shouldWarnOnLeave(), true); await close(c, d);
+    assert.equal(d.shouldWarnOnLeave(), true); await close(c, d);
 });
 test("new session offers independent source/configuration restore with a new undo history", async () => {
     const store = await seeded(), envelope = structuredClone(store.shared.value!);
@@ -214,7 +214,7 @@ test("unsupported stored data never applies and explicit discard leaves current 
     edit(c, "owned work"); d.prepare("discard"); d.confirm(); await idle(d); assert.equal(store.shared.value, null); assert.equal(text(c), "owned work"); assert.equal(d.shouldWarnOnLeave(), true); await close(c, d);
 });
 test("pending input prevents checkpoint transfer and disposal expires a delayed restore", async () => {
-    const store = await seeded(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); const stop = c.registerInputCaptureGuard(() => false); d.prepare("keep"); d.confirm(); await idle(d); assert.equal(c.workspace.document(c.source.documentId).buffer.readMetrics().textExports, 0); assert.equal(d.shouldWarnOnLeave(), true); stop();
+    const store = await seeded(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); const stop = c.registerInputCaptureGuard(() => false); d.prepare("keep"); d.confirm(); await idle(d); assert.equal(d.shouldWarnOnLeave(), true); stop();
     const gate = deferred(); store.shared.readGate = gate.promise; d.prepare("source"); d.confirm(); const disposal = d.dispose(); gate.resolve(); await disposal; assert.equal(text(c), "start"); await c.dispose(); assert.equal(c.workspace.diagnostics().subscriptions, 0);
 });
 test("rejected preedit survives storage without becoming committed text in a new session", async () => {

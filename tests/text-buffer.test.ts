@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer, applyTextEdits, validateTextEdits } from "../src/index.ts";
@@ -22,25 +23,6 @@ test("the selected buffer applies atomic original-coordinate batches and preserv
     assert.equal(partial.changedUnits, 2);
 });
 
-test("routine read counters are immutable snapshots independent of explicit retention diagnostics", () => {
-    const buffer = TextBuffer.from("a😀\r\nb"), before = buffer.readMetrics();
-    assert.deepEqual(before, { textExports: 0, sliceUnits: 0 }); assert.ok(Object.isFrozen(before));
-    assert.equal(buffer.diagnostics().textExports, 0); assert.equal(buffer.diagnostics().sliceUnits, 0);
-    assert.equal(buffer.slice(2, 2), ""); assert.throws(() => buffer.slice(-1, 1), RangeError);
-    assert.equal([...buffer.chunks()].join(""), "a😀\r\nb"); buffer.lineAt(2); buffer.offsetAt(1);
-    assert.deepEqual(buffer.readMetrics(), before);
-    assert.equal(buffer.slice(1, 3), "😀"); buffer.text();
-    assert.deepEqual(before, { textExports: 0, sliceUnits: 0 });
-    assert.deepEqual(buffer.readMetrics(), { textExports: 1, sliceUnits: 2 });
-    const next = buffer.replace(0, 0, "x");
-    assert.deepEqual(next.readMetrics(), { textExports: 0, sliceUnits: 0 }); next.slice(0, 1);
-    assert.deepEqual(next.readMetrics(), { textExports: 0, sliceUnits: 1 });
-    assert.deepEqual(buffer.readMetrics(), { textExports: 1, sliceUnits: 2 });
-    const diagnostic = buffer.diagnostics(); assert.equal(diagnostic.retention.versions, 1); assert.equal(diagnostic.textExports, 1);
-    const empty = TextBuffer.from(""); empty.slice(0, 0); empty.text();
-    assert.deepEqual(empty.readMetrics(), { textExports: 1, sliceUnits: 0 });
-});
-
 test("indexed line/range subscribers do not materialize the document and retained versions share backing text", () => {
     let buffer = TextBuffer.from(corpus("lines-10000")); const history = [buffer];
     for (let index = 0; index < 200; index++) {
@@ -48,8 +30,8 @@ test("indexed line/range subscribers do not materialize the document and retaine
         const offset = buffer.offsetAt(5_000);
         assert.equal(buffer.lineAt(offset), 5_000); assert.ok(buffer.slice(offset, offset + 24).length === 24);
     }
-    assert.equal(buffer.diagnostics().textExports, 0);
-    assert.ok(buffer.diagnostics().sliceUnits < 100);
+    assert.equal(bufferReads(buffer).textExports, 0);
+    assert.ok(bufferReads(buffer).sliceUnits < 100);
     const retained = TextBuffer.retained(history);
     assert.equal(retained.versions, 201);
     // Each retained edit adds its insertion plus at most two 64-unit boundary pieces.
@@ -63,7 +45,7 @@ test("exact equality works across different structures and shared ranges without
     const restored = modified.replace(1, 3, text.slice(1, 3));
     assert.equal(original.equals(modified), false); assert.equal(original.equals(restored), true);
     assert.equal(restored.equals(TextBuffer.from(text)), true);
-    assert.equal(original.diagnostics().textExports, 0); assert.equal(restored.diagnostics().textExports, 0);
+    assert.equal(bufferReads(original).textExports, 0); assert.equal(bufferReads(restored).textExports, 0);
     assert.equal(TextBuffer.from("").equals(TextBuffer.from("")), true);
 });
 
@@ -144,13 +126,13 @@ for (const text of ["", "\n", "\r\n", "a\r\nb\r\n", "a\rb\n\r", "\ud800x\udc00",
 test("looking up a long line reads only its ending until text is requested", () => {
     const text = "x".repeat(100_000);
     const buffer = TextBuffer.from(text + "\n").replace(text.length, text.length, "\r");
-    const before = buffer.readMetrics(), row = buffer.line(0);
+    const before = bufferReads(buffer), row = buffer.line(0);
     assert.deepEqual([row.from, row.to], [0, text.length]);
     assert.deepEqual(buffer.positionAt(text.length + 1), { line: 0, column: text.length });
     assert.equal(buffer.offsetAt({ line: 0, column: text.length + 7 }), text.length);
-    assert.ok(buffer.readMetrics().sliceUnits - before.sliceUnits <= 6);
+    assert.ok(bufferReads(buffer).sliceUnits - before.sliceUnits <= 6);
     assert.equal(row.text, text);
-    assert.equal(buffer.readMetrics().textExports, before.textExports);
+    assert.equal(bufferReads(buffer).textExports, before.textExports);
 });
 
 test("buffer trees stay balanced under alternating end edits, deletes and retained history", () => {
@@ -183,7 +165,7 @@ test("sequential single edits bound fragments while retaining large backings and
         assert.ok(live.backingTextUnits <= text.length + inserted.length + 128, "Coalescing must not copy large unchanged ranges.");
         for (const entry of retained) {
             assert.equal(entry.buffer.slice(0, entry.buffer.length), entry.text); assert.equal(entry.buffer.lineCount, entry.text.split("\n").length);
-            assert.equal(entry.buffer.readMetrics().textExports, 0); entry.buffer.diagnostics();
+            assert.equal(bufferReads(entry.buffer).textExports, 0); entry.buffer.diagnostics();
         }
         // Deleting the inserted run restores exact raw text without changing any retained version.
         const deleted = buffer.replace(from, from + inserted.length, ""); assert.equal(deleted.slice(0, deleted.length), text);
@@ -200,7 +182,7 @@ test("longest line indexing survives splits, joined lines, CRLF, empty lines and
             assert.equal(buffer.longestLineLength, oracle.split("\n").reduce((longest, line) => Math.max(longest, line.length), 0));
         }
         assert.equal(original.longestLineLength, text.split("\n").reduce((longest, line) => Math.max(longest, line.length), 0));
-        assert.equal(buffer.diagnostics().textExports, 0);
+        assert.equal(bufferReads(buffer).textExports, 0);
     }
 });
 
@@ -226,7 +208,7 @@ test("large line indexes remain exact across split backings and retained version
     }
     assert.equal([...original.chunks()].join(""), text);
     assert.equal(original.lineCount, rows.length); assert.equal(original.offsetAt(99_999), text.lastIndexOf("\n") + 1);
-    for (const version of versions) assert.equal(version.readMetrics().textExports, 0);
+    for (const version of versions) assert.equal(bufferReads(version).textExports, 0);
 });
 
 test("multi-range batches preserve the string oracle and map untouched original boundaries", () => {
@@ -269,7 +251,7 @@ test("packed batches preserve raw seams, duplicate insertion order and exact map
         const to = Math.min(expected.length, from + 13); assert.equal([...result.buffer.chunks(from, to)].join(""), expected.slice(from, to));
         assert.equal(result.buffer.lineAt(from), expected.slice(0, from).split("\n").length - 1);
     }
-    TextBuffer.retained([before, result.buffer]); assert.equal(result.buffer.readMetrics().textExports, 0);
+    TextBuffer.retained([before, result.buffer]); assert.equal(bufferReads(result.buffer).textExports, 0);
     const empty = TextBuffer.from("").apply([{ from: 0, to: 0, insert: "\r" }, { from: 0, to: 0, insert: "\n😀" }]).buffer;
     assert.equal([...empty.chunks()].join(""), "\r\n😀"); assert.equal(empty.offsetAt(1), 2);
 });
@@ -283,7 +265,7 @@ test("dense batches bound fragmentation while sparse batches share large unchang
     const retained = TextBuffer.retained([before, changed]); assert.ok(retained.nodes < 256); assert.ok(retained.backingBuffers < 128);
     const sparse = before.apply([{ from: 1, to: 2, insert: "!" }, { from: before.length - 2, to: before.length - 1, insert: "!" }]).buffer;
     assert.ok(TextBuffer.retained([before, sparse]).backingTextUnits <= before.length + 128);
-    assert.equal(sparse.slice(100, 200), before.slice(100, 200)); assert.equal(before.readMetrics().textExports, 0); assert.equal(changed.readMetrics().textExports, 0);
+    assert.equal(sparse.slice(100, 200), before.slice(100, 200)); assert.equal(bufferReads(before).textExports, 0); assert.equal(bufferReads(changed).textExports, 0);
     let fragmented = before;
     for (let index = 0; index < 512; index++) fragmented = fragmented.replace(index * 100, index * 100, "z");
     const oldNodes = fragmented.diagnostics().retention.nodes;

@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
@@ -17,7 +18,7 @@ test("shared-edge planning isolates a small edit between shared ranges and handl
     assert.deepEqual(delta(after, before), { from: 123456, to: 123460, insertFrom: 123456, insertTo: 123456 });
     assert.deepEqual(delta(before, before), { from: before.length, to: before.length, insertFrom: before.length, insertTo: before.length });
     assert.deepEqual(delta(TextBuffer.from("abc"), TextBuffer.from("abc")), { from: 0, to: 3, insertFrom: 0, insertTo: 3 });
-    const cursor = new BufferChangeCursor(before, after); cursor.dispose(); assert.equal(cursor.next().status, "disposed"); assert.equal(before.readMetrics().textExports, 0); assert.equal(after.readMetrics().textExports, 0);
+    const cursor = new BufferChangeCursor(before, after); cursor.dispose(); assert.equal(cursor.next().status, "disposed"); assert.equal(bufferReads(before).textExports, 0); assert.equal(bufferReads(after).textExports, 0);
 });
 
 test("change planning charges fragmented structural work and suspends without text reads", () => {
@@ -32,7 +33,7 @@ test("change planning charges fragmented structural work and suspends without te
     assert.deepEqual(cursor.next(), ready); cursor.dispose();
     const cancelled = new BufferChangeCursor(before, after); cancelled.next(); cancelled.dispose();
     assert.deepEqual(cancelled.next(), { status: "disposed", workUnits: 256, result: null, failure: null });
-    assert.deepEqual(before.readMetrics(), { textExports: 0, sliceUnits: 0 }); assert.deepEqual(after.readMetrics(), before.readMetrics());
+    assert.deepEqual(bufferReads(before), { textExports: 0, sliceUnits: 0 }); assert.deepEqual(bufferReads(after), bufferReads(before));
 });
 test("generated raw incremental edits, batched changes and older immutable versions remain exactly equivalent", () => {
     let buffer = TextBuffer.from("\ufeffhead\r\n😀 café\ntail"); const history = [buffer]; let seed = 17;

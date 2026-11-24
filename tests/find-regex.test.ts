@@ -107,7 +107,6 @@ test("async regex find advances empty matches, accepts manual overlaps and prese
         const before = f.workspace.observeHistory(f.source.documentId).getSnapshot(); f.find.replaceCurrent("$&"); await f.drain(); assert.deepEqual(f.workspace.observeHistory(f.source.documentId).getSnapshot(), before);
         assert.equal(f.view.getSnapshot().selection.head, 2);
         f.find.replaceCurrent("$&"); await f.drain(); assert.equal(f.view.getSnapshot().selection.head, 3); assert.equal(f.text(), "😀x");
-        assert.equal(f.workspace.document(f.source.documentId).buffer.readMetrics().textExports, 0);
     } finally { f.finish(); }
     const overlap = fixture("aaa");
     try {

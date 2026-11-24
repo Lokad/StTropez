@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
@@ -27,7 +28,7 @@ test("complete Unicode18 extended-grapheme corpus agrees for strings and ropes",
         const tokens = line.trim().split(/\s+/), units: number[] = [], points: number[] = [], cps: number[] = []; let utf16 = 0;
         for (const token of tokens) { if (token === "÷") { units.push(utf16); points.push(cps.length); } else if (token !== "×") { const cp = parseInt(token, 16); cps.push(cp); utf16 += cp > 0xffff ? 2 : 1; } }
         const text = String.fromCodePoint(...cps), buffer = TextBuffer.from(text), cursor = createGraphemeCursor(buffer), result = finish(cursor, [256, 777, 4096][rows % 3]); assert.deepEqual(result.boundaries(), units, `${rows}:rope:${line}`); assert.deepEqual(graphemeBoundaries(text), units, `${rows}:string`);
-        assert.equal(buffer.readMetrics().textExports, 0); assert.equal(cursor.snapshot().readUnits, buffer.readMetrics().sliceUnits); cursor.dispose();
+        assert.equal(bufferReads(buffer).textExports, 0); assert.equal(cursor.snapshot().readUnits, bufferReads(buffer).sliceUnits); cursor.dispose();
         boundaries += units.length; rows++;
     }
     assert.ok(rows > 700); console.log(`Grapheme conformance: ${rows} rows /${boundaries} boundaries /2 input kinds.`);
@@ -38,7 +39,7 @@ test("emoji sequences, RI parity and Unicode18 conjuncts use full left context",
 });
 test("raw surrogate seams, CRLF and independent ranges preserve absolute UTF16 coordinates", () => {
     const text = "a".repeat(255) + "😀\u0301\r\n\ud800\u0300x\udc00", original = TextBuffer.from(text), source = original.replace(256, 257, "").replace(256, 256, text.slice(256, 257)), cursor = createGraphemeCursor(source), index = finish(cursor);
-    assert.deepEqual(index.boundaries(255), [255, 258, 260, 262, 263, 264]); assert.equal(index.clusterAt(255).to, 258); assert.deepEqual(source.readMetrics().textExports, 0); cursor.dispose(); assert.equal(index.source.kind, "buffer");
+    assert.deepEqual(index.boundaries(255), [255, 258, 260, 262, 263, 264]); assert.equal(index.clusterAt(255).to, 258); assert.deepEqual(bufferReads(source).textExports, 0); cursor.dispose(); assert.equal(index.source.kind, "buffer");
     const part = finish(createGraphemeCursor(source, { from: 256, to: 259 })); assert.deepEqual(part.boundaries(), [256, 258, 259]); assert.equal(part.from, 256); assert.equal(part.to, 259);
 });
 test("indexed queries distinguish containing clusters and strict/inclusive boundaries", () => {
@@ -63,7 +64,7 @@ test("paged queries retain strict and inclusive boundaries in a nonzero source r
 
 test("arbitrarily long mark, ZWJ and RI sequences use linear work and suspend without exporting buffers", () => {
     for (const text of ["A" + "\u0301".repeat(90_000), "👩" + "\u0301".repeat(50_000) + "‍💻", "🇫".repeat(50_001), "\u094d" + "\u0301".repeat(90_000) + "क"]) {
-        const source = TextBuffer.from(text), cursor = createGraphemeCursor(source), initial = cursor.snapshot(); assert.equal(initial.readUnits, 0); const first = cursor.next(4096); assert.equal(first.status, "running"); assert.equal(first.result, null); const index = finish(cursor, 4096); assert.ok(cursor.snapshot().workUnits < text.length * 8); assert.equal(source.readMetrics().textExports, 0); assert.equal(index.to, text.length); cursor.dispose();
+        const source = TextBuffer.from(text), cursor = createGraphemeCursor(source), initial = cursor.snapshot(); assert.equal(initial.readUnits, 0); const first = cursor.next(4096); assert.equal(first.status, "running"); assert.equal(first.result, null); const index = finish(cursor, 4096); assert.ok(cursor.snapshot().workUnits < text.length * 8); assert.equal(bufferReads(source).textExports, 0); assert.equal(index.to, text.length); cursor.dispose();
     }
 });
 test("cancellation, copied options and limits expose no partial index and preserve completed source", () => {

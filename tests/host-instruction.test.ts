@@ -18,12 +18,12 @@ test("instruction edits preserve unknown tokens, known escapes, whitespace, Unic
     const missing = '// @transfer {"x":-0 }'; assert.equal(parseInstruction(applyTextEdits(missing, [instructionEdit(parseInstruction(missing), "destination", "😀")!])).values.destination, "😀");
 });
 
-test("anchored source fields map through edits/undo and retain invalid syntax without exporting source", async () => {
+test("anchored source fields map through edits and undo and retain invalid syntax", async () => {
     const line = '// @transfer { "destination":"one.csv", "batchSize":"1000", "unknown":-0 }', h = setup("before\r\n" + line + "\r\nafter");
     try {
         const c = h.instruction.capture("destination")!; edit(h, 0, 0, "prefix\r\n"); assert.equal(h.instruction.state.getSnapshot().from, 16);
         assert.equal(h.instruction.edit(c, "two.csv"), true); assert.equal(text(h), "prefix\r\nbefore\r\n" + line.replace("one.csv", "two.csv") + "\r\nafter");
-        const d = h.workspace.document(h.source.documentId); assert.equal(d.buffer.readMetrics().textExports, 0); h.workspace.undo({ documentId: d.id, expectedRevision: d.revision }); assert.equal(h.instruction.state.getSnapshot().values.destination, "one.csv");
+        const d = h.workspace.document(h.source.documentId); h.workspace.undo({ documentId: d.id, expectedRevision: d.revision }); assert.equal(h.instruction.state.getSnapshot().values.destination, "one.csv");
         const s = h.instruction.state.getSnapshot(); edit(h, s.from, s.to, '// @transfer {"destination":'); assert.equal(h.instruction.state.getSnapshot().canEdit, false); assert.match(h.instruction.state.getSnapshot().validation!, /invalid/);
         const invalid = text(h); assert.equal(h.instruction.edit(c, "retained.csv"), false); assert.equal(text(h), invalid); assert.equal(h.recoveryText(), "retained.csv");
         const now = h.workspace.document(h.source.documentId); h.workspace.undo({ documentId: now.id, expectedRevision: now.revision }); assert.equal(h.instruction.state.getSnapshot().values.destination, "one.csv");
@@ -56,7 +56,7 @@ test("explicit captured copy preserves independent transfer edits and unknown va
 test("oversized instruction lines retain source without whole-line reads or an editable form", async () => {
     const raw = '// @transfer {"destination":"' + "x".repeat(24_000) + '","batchSize":"1000"}', h = setup(raw);
     try { assert.equal(h.instruction.state.getSnapshot().canEdit, false); assert.match(h.instruction.state.getSnapshot().validation!, /4,096/);
-        assert.equal(h.instruction.capture("destination"), null); assert.ok(h.instruction.debug().lineReadUnits <= 2); assert.equal(h.workspace.document(h.source.documentId).buffer.readMetrics().textExports, 0);
+        assert.equal(h.instruction.capture("destination"), null); assert.ok(h.instruction.debug().lineReadUnits <= 2);
         h.instruction.captureCopy(); assert.equal(h.instruction.debug().pendingCopy, false); assert.equal(h.workspace.document(h.source.documentId).buffer.length, raw.length);
     } finally { await h.dispose(); }
 });

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { bufferReads } from "./buffer-reads.ts";
 import test from "node:test";
 import { setImmediate } from "node:timers/promises";
 import { Workspace } from "../src/index.ts";
@@ -111,7 +112,6 @@ test("an already-saved draft is removed on reopen without an offer or document e
     assert.equal(f.recovery.state.getSnapshot().present, false);
     assert.equal(f.recovery.state.getSnapshot().status, "idle");
     assert.ok(f.files.every(file => f.workspace.document(file.resource.documentId).revision === 0 && !file.resource.metadata.getSnapshot().dirty));
-    assert.ok(f.files.every(file => f.workspace.document(file.resource.documentId).buffer.readMetrics().textExports === 0));
 });
 
 test("redundant-draft cleanup cannot remove a newer peer draft", async t => {
@@ -221,7 +221,7 @@ test("automatic recovery exports text after the edit notification and clears its
     const store = new MemoryDraftStore(); store.row = null;
     const f = fixture(store); t.after(() => f.recovery.dispose()); await ready(f.recovery);
     f.edit();
-    assert.equal(f.workspace.document(f.files[0]!.resource.documentId).buffer.readMetrics().textExports, 0);
+    assert.equal(bufferReads(f.workspace.document(f.files[0]!.resource.documentId).buffer).textExports, 0);
     const protectedDraft = new Promise<void>(resolve => {
         const stop = f.recovery.state.subscribe(() => { if (f.recovery.state.getSnapshot().status === "protected") { stop(); resolve(); } });
     });

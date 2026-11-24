@@ -16,16 +16,8 @@ type Root = Node | null;
 type PairRange = Readonly<{ from: number; to: number; otherFrom: number; otherTo: number }>;
 export type BufferChange = Readonly<{ buffer: TextBuffer; mapping: PositionMap; changedUnits: number }>;
 export type BufferRetention = Readonly<{ versions: number; nodes: number; backingBuffers: number; backingTextUnits: number; lineEntries: number; gapEntries: number }>;
-export type BufferReadMetrics = Readonly<{ textExports: number; sliceUnits: number }>;
-const counters = new WeakMap<TextBuffer, { textExports: number; sliceUnits: number }>();
-const noReads: BufferReadMetrics = Object.freeze({ textExports: 0, sliceUnits: 0 });
 const smallPieceUnits = 64;
 
-function readCounters(buffer: TextBuffer) {
-    let value = counters.get(buffer);
-    if (!value) { value = { ...noReads }; counters.set(buffer, value); }
-    return value;
-}
 function lowerBound(values: ArrayLike<number>, target: number): number {
     return partitionPoint(values.length, index => values[index]! < target);
 }
@@ -233,12 +225,12 @@ export class TextBuffer {
     /** Longest LF-delimited line in raw UTF-16 units. No document export or line scan. */
     get longestLineLength(): number { return this.#root?.longest ?? 0; }
     slice(from: number, to: number): string {
-        validateRange(this.length, from, to); if (from !== to) readCounters(this).sliceUnits += to - from;
+        validateRange(this.length, from, to);
         return rangeText(this.#root, from, to);
     }
     chunks(from = 0, to = this.length): Iterable<string> { validateRange(this.length, from, to); return ranges(this.#root, from, to); }
     /** Explicit whole-text export. Document/viewport subscribers should use ranges and line indexes. */
-    text(): string { readCounters(this).textExports++; return rangeText(this.#root, 0, this.length); }
+    text(): string { return rangeText(this.#root, 0, this.length); }
     replace(from: number, to: number, insert: string): TextBuffer { return this.apply([{ from, to, insert }]).buffer; }
     apply(edits: readonly TextEdit[]): BufferChange {
         validateTextEdits(this.length, edits);
@@ -313,11 +305,9 @@ export class TextBuffer {
         }
         return left.done === right.done;
     }
-    /** Constant-work counters for routine telemetry. Full retention diagnostics traverse the tree. */
-    readMetrics(): BufferReadMetrics { const value = counters.get(this); return value ? Object.freeze({ ...value }) : noReads; }
-    diagnostics(): Readonly<{ length: number; lineCount: number; height: number; textExports: number; sliceUnits: number; retention: BufferRetention }> {
+    diagnostics(): Readonly<{ length: number; lineCount: number; height: number; retention: BufferRetention }> {
         return Object.freeze({ length: this.length, lineCount: this.lineCount, height: this.#root?.height ?? 0,
-            ...(counters.get(this) ?? noReads), retention: TextBuffer.retained([this]) });
+            retention: TextBuffer.retained([this]) });
     }
     /** Counts structural sharing without exposing roots, deleted text or backing buffers. */
     static retained(versions: readonly TextBuffer[]): BufferRetention {

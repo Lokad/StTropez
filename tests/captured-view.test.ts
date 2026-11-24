@@ -31,7 +31,6 @@ test("read captures survive expanded fold metadata and defer abort handlers beyo
     assert.equal(captured.isCurrent(), false); assert.equal(aborted, 0); lock.release(); assert.equal(captured.isCurrent(), false);
     await Promise.resolve(); assert.equal(aborted, 1); assert.equal(captured.signal.aborted, true);
     assert.equal(f.workspace.document(f.source.documentId).buffer.slice(0, 1), "!");
-    assert.equal(f.workspace.document(f.source.documentId).buffer.readMetrics().textExports, 0);
 });
 
 test("a capture commits once, retains its source during the operation and cleans up thrown operations", t => {

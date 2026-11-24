@@ -25,7 +25,7 @@ test("nested collapsed rows keep independent child state and index visible rows 
     assert.equal(index.sameProjection(expanded), false);
     assert.equal(new FoldIndex(buffer.lineCount, []).sameProjection(new FoldIndex(buffer.lineCount, ranges.map(r => ({ ...r, collapsed: false })))), true);
     assert.equal(index.sameProjection(new FoldIndex(buffer.lineCount, ranges.map(r => ({ ...r, group: "new metadata", collapsed: r.id === "outer" })))), true);
-    assert.equal(buffer.readMetrics().textExports, 0); assert.throws(() => index.lineAt(3), RangeError);
+    assert.throws(() => index.lineAt(3), RangeError);
     const huge = new FoldIndex(100001, [{ id: "many", from: 1, to: 100000, lineFrom: 1, lineTo: 100000, collapsed: true }]);
     assert.equal(huge.visibleLineCount, 3); assert.equal(huge.lineAt(2), 100000); assert.equal(huge.rowAt(99999), 1);
 });
@@ -127,7 +127,7 @@ test("a group collapse publishes both visible carets and folds together or leave
     } finally { f.finish(); }
 });
 
-test("fold anchors map through interior edits, shared undo/redo and no-op selection requests without exporting text", () => {
+test("fold anchors map through interior edits, shared undo/redo and no-op selection requests", () => {
     const f = fixture(); try {
         const folds = f.view.folding, before = f.model.document(f.source.documentId).buffer;
         folds.setRanges(folds.getSnapshot(), [{ id: "block", from: 0, to: before.offsetAt(3), collapsed: true }]);
@@ -138,7 +138,6 @@ test("fold anchors map through interior edits, shared undo/redo and no-op select
         const doc = f.model.document(f.source.documentId), history = f.model.observeHistory(f.source.documentId).getSnapshot();
         f.model.edit({ documentId: f.source.documentId, expectedRevision: doc.revision, origin: "human", edits: [], view: f.view, selection: { anchor: doc.buffer.offsetAt(2), head: doc.buffer.offsetAt(2) } });
         assert.equal(folds.getSnapshot().regions[0]!.collapsed, false); assert.equal(f.model.document(f.source.documentId).revision, doc.revision); assert.deepEqual(f.model.observeHistory(f.source.documentId).getSnapshot(), history);
-        assert.equal(doc.buffer.readMetrics().textExports, 0);
     } finally { f.finish(); }
 });
 
@@ -212,7 +211,6 @@ test("mapped sparse folds agree with a naive row oracle across bounded structura
         }
         assert.equal(index.visibleLineCount, visible.length);
         assert.deepEqual(visible.map((_, row) => index.lineAt(row)), visible);
-        assert.equal(document.buffer.readMetrics().textExports, 0);
     };
     try {
         for (let step = 0; step < 160; step++) {

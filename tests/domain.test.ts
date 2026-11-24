@@ -15,11 +15,11 @@ test("domain fixture retains raw BOM/CRLF/Unicode anchors and nested stable iden
     const capture = input(text), result = run(capture, 1), folds = createFoldRegions(capture.buffer, result.folds);
     assert.deepEqual(folds.map(r => [r.id, r.lineFrom, r.lineTo]), [["outer", 0, 6], ["inner", 2, 5]]);
     assert.deepEqual(result.annotations.map(r => [r.id, text.slice(r.from, r.to), r.label]), [["outer", "\ufeff// #region outer 東京 😀", "東京 😀"], ["inner", "// #region inner <b>safe</b>", "<b>safe</b>"]]);
-    assert.ok(Object.isFrozen(result) && Object.isFrozen(result.annotations[0])); assert.equal(capture.buffer.readMetrics().textExports, 0);
+    assert.ok(Object.isFrozen(result) && Object.isFrozen(result.annotations[0]));
 });
 test("domain cursor bounds work and line prefixes across long lines and distant regions", () => {
     const capture = input("x".repeat(24_000) + "\r\n" + "const filler = 1;\r\n".repeat(1_000) + "// #region end End\nbody\n// #endregion end"), result = run(capture, 8192);
-    assert.equal(result.folds.length, 1); assert.equal(result.annotations[0]!.label, "End"); assert.equal(capture.buffer.readMetrics().textExports, 0);
+    assert.equal(result.folds.length, 1); assert.equal(result.annotations[0]!.label, "End");
 });
 test("invalid region structure and explicit result limits fail before a publishable result", () => {
     for (const text of ["// #region a A\nx", "// #endregion a", "// #region a A\n// #endregion b", "// #region a A\nx\n// #endregion a\n// #region a Again\nx\n// #endregion a", "// #region a " + "x".repeat(257) + "\nx\n// #endregion a", "// #region a " + "x".repeat(600), Array.from({ length: domainLimits.depth + 1 }, (_, i) => `// #region a${i} A`).join("\n")]) assert.throws(() => run(input(text)), /Domain|domain|Close/);

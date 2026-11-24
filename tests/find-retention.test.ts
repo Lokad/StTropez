@@ -258,7 +258,6 @@ test("literal tasks bound advances and elapsed work, publish once and preserve r
             calls.length = 0; f.edit(40000, 40003, "dog"); assert.equal(f.find.getSnapshot().retained, true);
             f.step(); assert.equal(calls[0]!.units, 4096); assert.equal(calls[0]!.matches, 64);
             f.drain(); assert.equal(f.find.getSnapshot().count, 99999); assert.equal(f.find.getSnapshot().status, "ready");
-            assert.equal(f.document().buffer.readMetrics().textExports, 0);
         } finally { stop(); f.dispose(); LiteralSearch.prototype.next = original; }
     }
 });

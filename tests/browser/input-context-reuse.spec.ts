@@ -3,7 +3,7 @@ import { build } from "esbuild";
 import { basename } from "node:path";
 
 test("input refresh reuses bounded projections while repairing native state and capturing current targets", async ({ page }, testInfo) => {
-    const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/index.ts", context: "src/browser/input-context.ts" },
+    const built = await build({ entryPoints: { probe: "tests/observe-buffer-reads.ts", core: "src/index.ts", browser: "src/browser/index.ts", context: "src/browser/input-context.ts" },
         outdir: "artifacts/input-context-reuse", bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
     const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
     await page.route("**/input-context-reuse/**", route => {
@@ -16,6 +16,7 @@ test("input refresh reuses bounded projections while repairing native state and 
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const { inputContext } = await import(path + "context.js") as typeof import("../../src/browser/input-context.ts");
+        const { observeBufferReads } = await import(path + "probe.js") as typeof import("../observe-buffer-reads.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "context-reuse", variant: "text" }, "Context",
             { value: "const row = '東京 😀';\r\n".repeat(1000) });
         const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "context"), host = document.createElement("section");
@@ -33,12 +34,13 @@ test("input refresh reuses bounded projections while repairing native state and 
             && (input.selectionDirection === "backward") === (projection.nativeAnchor > projection.nativeHead);
         const work: { name: string; sliceUnits: number }[] = [];
         const measure = (name: string, action: () => void) => {
-            const buffer = doc().buffer, before = buffer.readMetrics().sliceUnits; action();
-            work.push({ name, sliceUnits: buffer.readMetrics().sliceUnits - before });
+            const buffer = doc().buffer, before = reads.read(buffer).sliceUnits; action();
+            work.push({ name, sliceUnits: reads.read(buffer).sliceUnits - before });
         };
         const edit = (from: number, to: number, insert: string) => {
             if (!workspace.edit({ documentId: source.documentId, expectedRevision: doc().revision, origin: "host", edits: [{ from, to, insert }] }).applied) throw new Error("Edit rejected");
         };
+        const reads = observeBufferReads();
         try {
             const at = doc().buffer.offsetAt(500) + 6;
             editor.view.setSelection(doc().revision, { anchor: at, head: at }); await settle();
@@ -83,10 +85,10 @@ test("input refresh reuses bounded projections while repairing native state and 
             editor.view.setSelection(doc().revision, { anchor: crlf, head: crlf }); refresh(); input.dispatchEvent(new Event("select"));
             const rawCrLf = editor.view.getSnapshot().selection.head === crlf && exact();
             await settle(); workspace.tabs.close(tab); const disabled = input.disabled;
-            editor.dispose(); const reads = doc().buffer.readMetrics().sliceUnits; refresh();
+            editor.dispose(); const prior = reads.read(doc().buffer).sliceUnits; refresh();
             return { work, compressedExact, repaired, authority, directionChanged, completeSet, newBuffer, expiredComposition, rawCrLf, disabled,
-                disposed: !input.isConnected && input.value === "" && doc().buffer.readMetrics().sliceUnits === reads };
-        } finally { editor.dispose(); if (workspace.tabs.resolve(target)) workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
+                disposed: !input.isConnected && input.value === "" && reads.read(doc().buffer).sliceUnits === prior };
+        } finally { reads.dispose(); editor.dispose(); if (workspace.tabs.resolve(target)) workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
     });
     await testInfo.attach("input-context-reuse", { body: JSON.stringify(result), contentType: "application/json" });
     for (const item of result.work) expect(item.sliceUnits, item.name).toBe(0);

@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { TextBuffer } from "../src/index.ts";
@@ -31,6 +32,6 @@ test("directional windows preserve raw bounds and count successful and failed su
             assert.deepEqual(window, { from, to, text: text.slice(from, to), readUnits });
             assert.equal(actualReads, readUnits); assert.ok(calls <= 2);
         }
-        assert.equal(buffer.readMetrics().sliceUnits, readUnits); assert.equal(buffer.readMetrics().textExports, 0);
+        assert.equal(bufferReads(buffer).sliceUnits, readUnits); assert.equal(bufferReads(buffer).textExports, 0);
     }
 });

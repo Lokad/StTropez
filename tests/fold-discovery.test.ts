@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer, Workspace, createFoldRegions, discoverIndentationFolds, reconcileFoldRanges } from "../src/index.ts";
@@ -12,7 +13,7 @@ test("off-side discovery handles nested indentation, tab stops, interior blanks 
     const b = TextBuffer.from("#region task\r\nroot\r\n\tchild\r\n\t  leaf\r\n\r\n\tsibling\r\n\r\n#endregion\r\n\r\n#regional\r\n#region unclosed\r\n");
     const ranges = createFoldRegions(b, reconcileFoldRanges(b, finish(discoverIndentationFolds(b, policy)), []));
     assert.deepEqual(ranges.map(r => [r.lineFrom, r.lineTo, r.group]), [[0, 8, "regions"], [1, 6, "indentation"], [2, 4, "indentation"]]);
-    assert.equal(b.readMetrics().textExports, 0);
+    assert.equal(bufferReads(b).textExports, 0);
     assert.deepEqual(finish(discoverIndentationFolds(b, { ...policy, indentation: false })).map(r => r.group), ["regions"]);
     assert.throws(() => finish(discoverIndentationFolds(b, { tabSize: 0 })), /tab size/);
     const discovered = finish(discoverIndentationFolds(b, policy));
@@ -58,8 +59,8 @@ test("rediscovery follows mapped headers, keeps view choices through edit/undo a
 test("large off-side discovery yields without exporting the document, including long indentation", () => {
     const buffer = TextBuffer.from("root\n" + "  leaf\n".repeat(10_000) + "end"), iterator = discoverIndentationFolds(buffer);
     let yields = 0, next; do { next = iterator.next(256); if (next.status === "running") { yields++; assert.equal(next.result, null); } } while (next.status === "running");
-    assert.ok(yields > 100); assert.equal(next.result!.length, 1); assert.equal(next.readUnits, buffer.readMetrics().sliceUnits);
-    assert.equal(buffer.readMetrics().textExports, 0); iterator.dispose();
+    assert.ok(yields > 100); assert.equal(next.result!.length, 1); assert.equal(next.readUnits, bufferReads(buffer).sliceUnits);
+    assert.equal(bufferReads(buffer).textExports, 0); iterator.dispose();
     const long = discoverIndentationFolds(TextBuffer.from("root\n" + " ".repeat(20000) + "leaf"));
     assert.equal(long.next().status, "running"); assert.equal(finish(long).length, 1);
 });
@@ -68,10 +69,10 @@ test("dedent and EOF stacks charge work and publish complete immutable folds onl
     for (const tail of ["", "tail"]) {
         const buffer = TextBuffer.from(Array.from({ length: 600 }, (_, i) => " ".repeat(i) + "x\n").join("") + tail);
         const cursor = discoverIndentationFolds(buffer); let previous = cursor.snapshot(), drainTurns = 0;
-        assert.equal(previous.workUnits, 0); assert.equal(buffer.readMetrics().sliceUnits, 0);
+        assert.equal(previous.workUnits, 0); assert.equal(bufferReads(buffer).sliceUnits, 0);
         while (previous.status === "running") {
             const next = cursor.next(256); assert.ok(Object.isFrozen(next));
-            assert.equal(next.readUnits, buffer.readMetrics().sliceUnits);
+            assert.equal(next.readUnits, bufferReads(buffer).sliceUnits);
             assert.ok(next.workUnits >= previous.workUnits); assert.ok(next.bulkWorkUnits >= previous.bulkWorkUnits);
             assert.ok(next.workUnits - previous.workUnits - (next.bulkWorkUnits - previous.bulkWorkUnits) <= 256 + 4096);
             if (next.status === "running") assert.equal(next.result, null);
@@ -92,8 +93,8 @@ test("marker validation and lookup cooperate and cancelled or failed discovery s
     for (const advance of [false, true]) {
         const cursor = discoverIndentationFolds(buffer, options);
         if (advance) { const next = cursor.next(256); assert.equal(next.status, "running"); assert.equal(next.phase, "validate"); }
-        const reads = buffer.readMetrics(); cursor.dispose();
-        assert.equal(cursor.next().status, "disposed"); assert.equal(cursor.snapshot().result, null); assert.deepEqual(buffer.readMetrics(), reads);
+        const reads = bufferReads(buffer); cursor.dispose();
+        assert.equal(cursor.next().status, "disposed"); assert.equal(cursor.snapshot().result, null); assert.deepEqual(bufferReads(buffer), reads);
     }
     const cursor = discoverIndentationFolds(buffer, options); let previous = cursor.snapshot(), lookupTurns = 0;
     while (previous.status === "running") {

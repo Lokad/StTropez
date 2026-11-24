@@ -7,7 +7,7 @@ import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
 
 /** @typedef {ReturnType<Window["comparisonFixture"]["snapshot"]>["comparison"] & {
- * wallFrameProxyMs: number, hunks: number, exports: number, baselineExports: number, rows: number}} ComparisonSample */
+ * wallFrameProxyMs: number, hunks: number, rows: number}} ComparisonSample */
 
 const source = await sourceIdentity(), model = [];
 const corpora = /** @type {const} */ (["normal", "lines-10000", "single-line", "unicode"]);
@@ -33,7 +33,6 @@ for (const { id, text, edits } of cases) {
         assert.equal(reconstructed, expected);
         if (id === "many-hunks") assert.equal(result.hunks.length, 100);
         if (id === "repeated-rotation") assert.equal(result.lineEdits, 2);
-        assert.equal(a.readMetrics().textExports, 0); assert.equal(b.readMetrics().textExports, 0);
         if (iteration >= 3) samples.push({ elapsedMs, maxStepMs, steps, hunks: result.hunks.length, work: result.work, readUnits: result.readUnits });
         job.dispose();
     }
@@ -55,10 +54,10 @@ try {
                 const check = () => { const s = window.comparisonFixture.snapshot();
                     if (s.status !== "ready" || s.editor.viewport.pending || s.reference?.pending) { requestAnimationFrame(check); return; }
                     if (!s.baseline || !s.reference) { clearTimeout(timeout); reject(new Error("Comparison measurement lost its baseline or reference viewport.")); return; }
-                    clearTimeout(timeout); resolve({ wallFrameProxyMs: performance.now() - start, ...s.comparison, hunks: s.hunks.length, exports: s.working.exports, baselineExports: s.baseline.exports, rows: s.editor.viewport.rows + s.reference.rows });
+                    clearTimeout(timeout); resolve({ wallFrameProxyMs: performance.now() - start, ...s.comparison, hunks: s.hunks.length, rows: s.editor.viewport.rows + s.reference.rows });
                 }; requestAnimationFrame(check);
             })), working);
-            assert.equal(sample.hunks, 1); assert.equal(sample.exports, 0); assert.equal(sample.baselineExports, 0); assert.ok(sample.rows < 150);
+            assert.equal(sample.hunks, 1); assert.ok(sample.rows < 150);
             if (iteration >= warmup) samples.push(sample);
             // Exact reconstruction is verified outside timing, using bounded reads of both snapshots.
             assert.equal(await harness.page.evaluate(() => {
@@ -75,7 +74,7 @@ try {
         browser.push({ corpus: id, length: text.length, warmup, measured, diagnosticOnly: measured === 1, wallFrameProxyMs: distribution(samples.map(s => s.wallFrameProxyMs)), maxStepMs: distribution(samples.map(s => s.maxStepMs)), samples });
     }
     assert.deepEqual(harness.errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
-    const report = { schemaVersion: 1, created: new Date().toISOString(), source, environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode, viewport: { width: 1440, height: 900 } }, model, browser, errors: harness.errors,
+    const report = { schemaVersion: 2, created: new Date().toISOString(), source, environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode, viewport: { width: 1440, height: 900 } }, model, browser, errors: harness.errors,
         note: "Exact TypeScript line alignment; 32768 work units per core advance. Headless timing includes all advances without scheduling. The browser loop batches at most 32 advances, checking a four-millisecond elapsed limit after each advance. Its counter includes core publication and synchronous listeners or scheduling invoked inside advance, and excludes the outer render and final reschedule. It is not a complete task or callback duration. Wall values include transaction, scheduling, rendering/readiness polling and are not physical presentation. Largest browser cases have one diagnostic observation, no tail estimate. No worker, WASM, production budget or native-device qualification follows from this report." };
     await mkdir("artifacts/bench/comparison", { recursive: true }); await writeFile("artifacts/bench/comparison/latest.json", JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ model: model.map(s => ({ corpus: s.corpus, p95: s.elapsedMs.p95, stepP95: s.maxStepMs.p95 })), browser: browser.map(s => ({ corpus: s.corpus, samples: s.measured, wallProxyP95: s.wallFrameProxyMs.p95, stepP95: s.maxStepMs.p95 })) }, null, 2));

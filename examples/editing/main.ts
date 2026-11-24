@@ -72,7 +72,7 @@ const fixture = { ready: true, setText, edit, select, history,
     replacePrimary: () => workspace.tabs.replace(primaryTab, { kind: "text", documentId: source.documentId }),
     snapshot: () => {
         const current = workspace.getSnapshot().documents.find(document => document.id === source.documentId);
-        return { document: current ? { revision: current.revision, length: current.buffer.length, exports: current.buffer.readMetrics().textExports } : null,
+        return { document: current ? { revision: current.revision, length: current.buffer.length } : null,
             primary: { ...editors.primary.getDiagnostics(), viewport: editors.primary.viewport.getDiagnostics(), selection: editors.primary.view.getSnapshot().selection },
             secondary: { ...editors.secondary.getDiagnostics(), viewport: editors.secondary.viewport.getDiagnostics(), selection: editors.secondary.view.getSnapshot().selection },
             history: current ? workspace.observeHistory(source.documentId).getSnapshot() : null,

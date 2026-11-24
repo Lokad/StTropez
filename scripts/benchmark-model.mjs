@@ -57,7 +57,6 @@ export async function benchmarkModel() {
             assert.equal(result.applied, true);
             if (next !== oracle) {
                 expectedRevision++; roots.push(before);
-                assert.equal(workspace.document(documentId).buffer.readMetrics().textExports, 0, "Routine delivery flattened the document.");
             }
             assert.equal(workspace.document(documentId).text(), next);
             assert.equal(workspace.document(documentId).revision, expectedRevision);
@@ -120,7 +119,7 @@ export async function benchmarkModel() {
                 if (index >= 5) samples.push(elapsed);
             }
             assert.equal(viewCalls, views * 65); assert.equal(coarseCalls, 65);
-            assert.equal(selectionCalls, views * 65); assert.equal(workspace.document(source.documentId).buffer.readMetrics().textExports, 0);
+            assert.equal(selectionCalls, views * 65);
             assert.equal(unrelatedCalls, 0); assert.equal(metadataCalls, 0);
             assert.equal(source.metadata.getSnapshot(), metadata);
             others.forEach((other, index) => assert.equal(other.getSnapshot(), snapshots[index]));

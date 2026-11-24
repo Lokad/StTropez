@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer, applyTextEdits } from "../src/index.ts";
@@ -45,7 +46,7 @@ test("regex backend retains one complete source across pattern changes and captu
     const units = f.workers.flatMap(worker => worker.messages).reduce((sum, message) => sum + (typeof message.text === "string" ? message.text.length : 0), 0);
     t.diagnostic(`five queries: ${f.workers.length} workers, ${units} source units`);
     assert.equal(f.workers.length, 1); assert.equal(f.workers[0]!.messages.length, 5); assert.equal(units, buffer.length); assert.equal(f.workers[0]!.terminated, false);
-    assert.equal(buffer.readMetrics().textExports, 0); assert.equal(f.timers.size, 0);
+    assert.equal(bufferReads(buffer).textExports, 0); assert.equal(f.timers.size, 0);
     backend.dispose(); assert.equal(f.workers[0]!.terminated, true);
 });
 
@@ -127,7 +128,7 @@ test("regex replacement preserves captures, large insertions, zero-width and who
         let pages = 0;
         for (;;) { const step = await f.cursor.next(); assert.deepEqual(step.matches, []); assert.ok(step.edits.length <= 1024); assert.ok(Object.isFrozen(step.edits));
             if (step.edits.length) pages++; edits.push(...step.edits); if (step.done) break; }
-        assert.equal(applyTextEdits(text, edits), text.replace(new RegExp(pattern, "gmu"), replacement)); assert.equal(buffer.readMetrics().textExports, 0);
+        assert.equal(applyTextEdits(text, edits), text.replace(new RegExp(pattern, "gmu"), replacement)); assert.equal(bufferReads(buffer).textExports, 0);
         if (text.length > 40000) { assert.equal(edits.length, 1); assert.equal(edits[0]!.insert.length, 80000); assert.equal(f.workers[0]!.messages.length, 1); }
         if (text.length === 2200) assert.equal(pages, 2);
         f.client.dispose(); assert.equal(f.workers[0]!.terminated, true); assert.equal(f.timers.size, 0);

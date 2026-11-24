@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Workspace, applyTextEdits } from "../src/index.ts";
@@ -78,8 +79,8 @@ test("forwarded transactions and history send the two distant changes and keep i
     const forward = [{ from: 0, to: 0, insert: "[" }, { from: body.length, to: body.length, insert: "]" }];
     const peer = workspace.createDocument({ scope: "fixture", resource: "peer", variant: "working" }, "Peer", body);
     const replay = (expected: typeof forward) => {
-        const current = workspace.document(documentId), reads = current.buffer.readMetrics().sliceUnits, edits = current.change!.edits;
-        assert.ok(current.buffer.readMetrics().sliceUnits - reads < 32);
+        const current = workspace.document(documentId), reads = bufferReads(current.buffer).sliceUnits, edits = current.change!.edits;
+        assert.ok(bufferReads(current.buffer).sliceUnits - reads < 32);
         assert.deepEqual(edits, expected);
         assert.ok(workspace.edit({ documentId: peer, expectedRevision: workspace.document(peer).revision, origin: "host", edits }).applied);
         assert.ok(current.buffer.equals(workspace.document(peer).buffer));
@@ -89,10 +90,10 @@ test("forwarded transactions and history send the two distant changes and keep i
     replay([{ from: 0, to: 1, insert: "" }, { from: body.length + 1, to: body.length + 2, insert: "" }]);
     assert.ok(workspace.redo({ documentId, expectedRevision: result.revision + 1 }).applied); replay(forward);
     workspace.replaceText(documentId, "q".repeat(100_000), options);
-    const current = workspace.document(documentId), reads = current.buffer.readMetrics().sliceUnits, [whole] = current.change!.edits;
-    assert.equal(whole!.from, 0); assert.equal(current.buffer.readMetrics().sliceUnits, reads);
-    assert.equal(whole!.insert.length, 100_000); assert.equal(current.buffer.readMetrics().sliceUnits - reads, 100_000);
-    assert.equal(whole!.insert.length, 100_000); assert.equal(current.buffer.readMetrics().sliceUnits - reads, 100_000);
+    const current = workspace.document(documentId), reads = bufferReads(current.buffer).sliceUnits, [whole] = current.change!.edits;
+    assert.equal(whole!.from, 0); assert.equal(bufferReads(current.buffer).sliceUnits, reads);
+    assert.equal(whole!.insert.length, 100_000); assert.equal(bufferReads(current.buffer).sliceUnits - reads, 100_000);
+    assert.equal(whole!.insert.length, 100_000); assert.equal(bufferReads(current.buffer).sliceUnits - reads, 100_000);
 });
 
 test("forwarded edits keep surrogate pairs and CRLF together in both coordinate spaces", () => {

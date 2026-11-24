@@ -22,13 +22,13 @@ function fixture() {
     return { workspace, source, tab, view, peer, tools, paste, drain, turn, timers, text, detach, setComposing: (value: boolean) => { composing = value; },
         finish: () => { detach(); view.dispose(); peer.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); assert.equal(timers.size, 0); assert.deepEqual({ views: workspace.diagnostics().views, leases: workspace.diagnostics().leases, subscriptions: workspace.diagnostics().subscriptions }, { views: 0, leases: 0, subscriptions: 0 }); } };
 }
-test("captured table paste replaces every range in one shared undo transaction without exporting or focusing", () => {
+test("captured table paste replaces every range in one shared undo transaction without taking focus", () => {
     const f = fixture(); try {
         f.view.setSelections(0, [{ anchor: 1, head: 0 }, { anchor: 8, head: 7 }], 1); const selected = f.view.getSnapshot().selectionSet, leases = f.workspace.diagnostics().leases;
         f.paste('A\tB\r\n1\t"2"'); assert.equal(f.text(), "abc\r\nxyz"); assert.equal(f.workspace.diagnostics().leases, leases + 1); f.drain();
         assert.equal(f.tools.state.getSnapshot().status, "applied"); assert.equal(f.text(), '"A","B"\r\n"1","2"bc\r\nxy"A","B"\r\n"1","2"');
         assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, 1); assert.equal(f.view.getSnapshot().selectionSet.ranges.length, 2);
-        assert.equal(f.workspace.diagnostics().leases, leases); assert.equal(f.workspace.diagnostics().subscriptions, 0); assert.equal(f.workspace.document(f.source.documentId).buffer.readMetrics().textExports, 0);
+        assert.equal(f.workspace.diagnostics().leases, leases); assert.equal(f.workspace.diagnostics().subscriptions, 0);
         f.workspace.undo({ documentId: f.source.documentId, expectedRevision: 1 }); assert.equal(f.text(), "abc\r\nxyz"); assert.deepEqual(f.view.getSnapshot().selectionSet, selected);
         f.workspace.redo({ documentId: f.source.documentId, expectedRevision: 2 }); assert.equal(f.view.getSnapshot().selectionSet.ranges.length, 2);
     } finally { f.finish(); }

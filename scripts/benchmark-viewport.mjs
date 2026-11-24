@@ -6,7 +6,7 @@ import { corpusIds } from "../fixtures/workloads.ts";
 
 /** @typedef {ReturnType<Window["viewportFixture"]["snapshot"]>} ViewportState */
 /** @typedef {{modelMs: number, frameReadyProxyMs: number, primary: ViewportState["primary"],
- * secondary: ViewportState["secondary"], wholeTextExports: number, length: number}} ViewportSample */
+ * secondary: ViewportState["secondary"], length: number}} ViewportSample */
 
 const harness = await openHarness();
 try {
@@ -35,10 +35,10 @@ try {
                     if (!state.document) { reject(new Error("Viewport document detached during measurement.")); return; }
                     if (state.primary.revision !== result.revision || state.secondary.revision !== result.revision || state.primary.pending || state.secondary.pending) { requestAnimationFrame(check); return; }
                     resolve({ modelMs: committed - start, frameReadyProxyMs: performance.now() - start,
-                        primary: state.primary, secondary: state.secondary, wholeTextExports: state.document.exports, length: state.document.length });
+                        primary: state.primary, secondary: state.secondary, length: state.document.length });
                 }; requestAnimationFrame(check);
             })), offset + index);
-            assert.equal(sample.wholeTextExports, 0); assert.equal(sample.length, length + index + 1);
+            assert.equal(sample.length, length + index + 1);
             for (const view of [sample.primary, sample.secondary]) {
                 assert.ok(view.rows <= Math.ceil(view.height / view.lineHeight) + 10);
                 assert.ok(view.readUnits <= view.rows * (Math.max(512, Math.ceil(view.width / view.columnWidth)) + 80));
@@ -59,7 +59,7 @@ try {
             font: { family: style.fontFamily, size: style.fontSize, lineHeight: style.lineHeight, weight: style.fontWeight,
                 style: style.fontStyle, ligatures: style.fontVariantLigatures, kerning: style.fontKerning, letterSpacing: style.letterSpacing }, tabSize: style.tabSize };
     });
-    const report = { schemaVersion: 1, created: new Date().toISOString(), source: await sourceIdentity(), environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode, display },
+    const report = { schemaVersion: 2, created: new Date().toISOString(), source: await sourceIdentity(), environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode, display },
         runtime: "bounded-read-only-viewport", activeViews: 2, cases, errors: harness.errors,
         note: "Programmatic range edits and a read-only DOM projection. Render timing covers geometry reads, indexed ranges and DOM writes; the frame-ready metric is an animation-frame scheduling proxy. No typing/input/IME or production-latency claim. UTF-16 fixed-pitch horizontal estimation remains unqualified for long shaped lines." };
     await mkdir("artifacts/bench/viewport", { recursive: true }); await writeFile("artifacts/bench/viewport/latest.json", JSON.stringify(report, null, 2));

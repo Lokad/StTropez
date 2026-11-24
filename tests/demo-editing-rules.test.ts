@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer } from "../src/index.ts";
@@ -28,5 +29,5 @@ test("demo rules preserve lexical authority through new lines, stale earlier edi
 test("demo pairing bounds synchronous reads on large unknown prefixes without exporting text", () => {
     const buffer = TextBuffer.from("x\n".repeat(100000)), rules = new DemoEditingRules();
     assert.equal(rules.configuration().allowPair!({ buffer, from: 100000, to: 100000, pair: { open: "{", close: "}" }, operation: "open" }), false);
-    assert.deepEqual(buffer.readMetrics(), { textExports: 0, sliceUnits: 0 });
+    assert.deepEqual(bufferReads(buffer), { textExports: 0, sliceUnits: 0 });
 });

@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
@@ -5,9 +6,9 @@ import { TextBuffer } from "../src/index.ts";
 import { WordCursor } from "../src/kernels/index.ts";
 import type { WordOptions } from "../src/index.ts";
 const checkedCursor = (buffer: TextBuffer, offset: number, direction: -1 | 1, options: WordOptions = {}) => {
-    const beforeConstruction = buffer.readMetrics(), cursor = new WordCursor(buffer, offset, direction, options);
-    const checkReads = (before: ReturnType<TextBuffer["readMetrics"]>, readUnits: number) => {
-        const current = buffer.readMetrics();
+    const beforeConstruction = bufferReads(buffer), cursor = new WordCursor(buffer, offset, direction, options);
+    const checkReads = (before: ReturnType<typeof bufferReads>, readUnits: number) => {
+        const current = bufferReads(buffer);
         assert.equal(current.textExports, before.textExports);
         assert.ok(current.sliceUnits - before.sliceUnits <= readUnits, "Unreported word-navigation slice reads.");
     };
@@ -18,13 +19,13 @@ const checkedCursor = (buffer: TextBuffer, offset: number, direction: -1 | 1, op
         snapshot: () => cursor.snapshot(),
         next: (budget = 4096) => {
             // Measure each call independently: another cursor may read the same captured buffer.
-            const before = buffer.readMetrics(), prior = cursor.snapshot(), step = cursor.next(budget);
+            const before = bufferReads(buffer), prior = cursor.snapshot(), step = cursor.next(budget);
             checkReads(before, step.readUnits - prior.readUnits);
             assert.ok(step.workUnits - prior.workUnits <= budget + 256);
             assert.ok(step.readUnits <= step.workUnits + 512);
             return step;
         },
-        dispose: () => { const before = buffer.readMetrics(); cursor.dispose(); assert.deepEqual(buffer.readMetrics(), before); }
+        dispose: () => { const before = bufferReads(buffer); cursor.dispose(); assert.deepEqual(bufferReads(buffer), before); }
     };
 };
 const next = (buffer: TextBuffer, offset: number, direction: -1 | 1, options: WordOptions = {}) => {
@@ -122,7 +123,7 @@ test("lexical run boundaries exclude neighboring whitespace and stay inside capt
     assert.equal(boundary(buffer, to - 1, 1, options), to);
     assert.equal(boundary(buffer, from, -1, options), from);
     assert.equal(next(buffer, from + 3, 1), from + 12);
-    assert.equal(buffer.readMetrics().textExports, 0);
+    assert.equal(bufferReads(buffer).textExports, 0);
     for (const options of [{ from: -1 }, { to: buffer.length + 1 }, { from: from + 1 }, { to: from - 1 }]) {
         assert.throws(() => checkedCursor(buffer, from, 1, options), RangeError);
     }
@@ -135,7 +136,7 @@ test("run scans yield over long word, symbol and whitespace runs and release can
         const first = cursor.next(256); assert.equal(first.status, "running"); assert.ok(first.readUnits <= 768);
         assert.equal(boundary(buffer, 12_000, -1), 0);
         assert.equal(boundary(buffer, 12_000, 1), buffer.length);
-        assert.equal(buffer.readMetrics().textExports, 0);
+        assert.equal(bufferReads(buffer).textExports, 0);
         cursor.dispose(); assert.equal(cursor.next().status, "disposed"); assert.equal(cursor.next().offset, null);
     }
 });
@@ -154,9 +155,9 @@ test("Unicode runs preserve raw clipped surrogate seams and the final whitespace
         assert.equal(boundary(source, 263, 1), 523);
         assert.equal(boundary(source, 523, -1), control ? 263 : 260);
         assert.equal(boundary(source, 525, -1), 523);
-        assert.equal(source.readMetrics().textExports, 0);
+        assert.equal(bufferReads(source).textExports, 0);
     }
-    assert.equal(buffer.readMetrics().textExports, 0);
+    assert.equal(bufferReads(buffer).textExports, 0);
 });
 
 test("Unicode and fragmented run scans match an independent complete grapheme/run table", () => {
@@ -183,6 +184,6 @@ test("Unicode and fragmented run scans match an independent complete grapheme/ru
             assert.equal(boundary(buffer, cluster.index, 1), run.to, JSON.stringify({ text, offset: cluster.index, direction: 1 }));
             assert.equal(boundary(buffer, cluster.index + cluster.segment.length, -1), run.from, JSON.stringify({ text, offset: cluster.index, direction: -1 }));
         }
-        assert.equal(buffer.readMetrics().textExports, 0);
+        assert.equal(bufferReads(buffer).textExports, 0);
     }
 });

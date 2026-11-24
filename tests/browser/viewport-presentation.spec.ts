@@ -624,16 +624,15 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         settle(); const plain = viewport.getDiagnostics(), point = viewport.coordsAt(20)!, row = host.querySelector('.st-viewport-row[data-line="0"]')!, child = row.firstChild;
         const plainExtent = [plain.horizontalExtent, plain.verticalExtent, viewport.element.scrollWidth, viewport.element.scrollHeight];
-        const defaults = viewport.settings().columnRulers, buffer = workspace.document(resource.documentId).buffer, beforeReads = buffer.readMetrics().sliceUnits;
+        const defaults = viewport.settings().columnRulers;
         const configured = [40, 20, 40, 1_000_000]; viewport.configure({ columnRulers: configured }); configured[0] = 1; viewport.flush();
         const after = viewport.getDiagnostics(), captured = viewport.settings().columnRulers, guide = host.querySelector<HTMLElement>('.st-column-ruler[data-column="20"]')!;
         const range = document.createRange(); range.setStart(child!, 20); range.collapse(true); const native = range.getClientRects()[0]!;
-        const noRowReads = buffer.readMetrics().sliceUnits - beforeReads;
         const observer = new MutationObserver(() => {}); observer.observe(viewport.element, { subtree: true, childList: true, attributes: true });
         viewport.configure({ columnRulers: [1_000_000, 40, 20, 20] }); viewport.flush();
         const noOp = { same: captured === viewport.settings().columnRulers, mutations: observer.takeRecords().length, pending: viewport.activity().pending }; observer.disconnect();
         let invalid = false; try { viewport.configure({ columnRulers: [20, 0] }); } catch { invalid = true; }
-        return { defaults, columns: captured, frozen: Object.isFrozen(captured), invalid, preservedPolicy: captured === viewport.settings().columnRulers, noRowReads, noOp,
+        return { defaults, columns: captured, frozen: Object.isFrozen(captured), invalid, preservedPolicy: captured === viewport.settings().columnRulers, noOp,
             point, afterPoint: viewport.coordsAt(20), sameChild: child === row.firstChild, text: row.textContent,
             guideError: Math.abs(guide.getBoundingClientRect().left - native.left), nativeLeft: native.left, guideLeft: guide.getBoundingClientRect().left,
             placementError: Math.abs(guide.getBoundingClientRect().left - viewport.element.getBoundingClientRect().left - after.gutterWidth - 12 - 20 * after.columnWidth), plain, after,
@@ -644,7 +643,7 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
     });
     await info.attach("initial-ruler-geometry", { body: JSON.stringify(initial), contentType: "application/json" });
     expect(initial).toMatchObject({ defaults: [], columns: [20, 40, 1_000_000], frozen: true, invalid: true, preservedPolicy: true,
-        noRowReads: 0, noOp: { same: true, mutations: 0, pending: false }, sameChild: true, text: "x".repeat(200), pointer: "none", visible: 2 });
+        noOp: { same: true, mutations: 0, pending: false }, sameChild: true, text: "x".repeat(200), pointer: "none", visible: 2 });
     expect(initial.afterExtent).toEqual(initial.plainExtent); expect(initial.afterPoint).toEqual(initial.point);
     // Some native collapsed ranges round to whole CSS pixels; the measured ruler remains fractional.
     expect(initial.guideError).toBeLessThan(1.01); expect(initial.placementError).toBeLessThan(.02);

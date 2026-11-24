@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import assert from "node:assert/strict";
 import { nextSeed } from "../fixtures/workloads.ts";
 import test from "node:test";
@@ -69,7 +70,7 @@ test("large repeated-row removal and scattered changes complete in bounded work 
         forward = forward.slice(0, hunk.baseline.from) + changed.slice(hunk.working.from, hunk.working.to) + forward.slice(hunk.baseline.to);
         reverse = reverse.slice(0, hunk.working.from) + original.slice(hunk.baseline.from, hunk.baseline.to) + reverse.slice(hunk.working.to);
     }
-    assert.equal(forward, changed); assert.equal(reverse, original); assert.equal(baseline.readMetrics().textExports + working.readMetrics().textExports, 0); job.dispose();
+    assert.equal(forward, changed); assert.equal(reverse, original); assert.equal(bufferReads(baseline).textExports + bufferReads(working).textExports, 0); job.dispose();
     }
 });
 
@@ -80,7 +81,7 @@ test("comparison yields within a long line, never exports full text and cancels 
     while (result.status === "running" && result.readUnits === 0) result = job.next(512);
     assert.equal(result.status, "running"); assert.ok(result.readUnits <= 1024);
     job.dispose(); result = job.next(512); assert.equal(result.status, "disposed"); assert.equal(result.hunks.length, 0);
-    assert.equal(a.readMetrics().textExports, 0); assert.equal(b.readMetrics().textExports, 0);
+    assert.equal(bufferReads(a).textExports, 0); assert.equal(bufferReads(b).textExports, 0);
     assert.throws(() => job.next(1), RangeError);
     const same = new TextDiff(a, a).next(512); assert.equal(same.status, "ready"); assert.equal(same.work, 0);
 });
@@ -89,7 +90,7 @@ test("comparison snapshots do not advance work and the default retains its charg
     const a = TextBuffer.from("x".repeat(100_000)), b = TextBuffer.from("x".repeat(99_999) + "y");
     const job = new TextDiff(a, b), explicit = new TextDiff(a, b), initial = job.snapshot();
     assert.deepEqual(initial, { status: "running", work: 0, readUnits: 0, lineEdits: 0, hunks: [], failure: null });
-    assert.ok(Object.isFrozen(initial)); assert.equal(a.readMetrics().sliceUnits + b.readMetrics().sliceUnits, 0);
+    assert.ok(Object.isFrozen(initial)); assert.equal(bufferReads(a).sliceUnits + bufferReads(b).sliceUnits, 0);
     const first = job.next(); assert.deepEqual(first, explicit.next(32_768));
     assert.equal(first.status, "running"); assert.ok(first.work >= 32_768 && first.work <= 32_768 + 768);
     assert.deepEqual(job.snapshot(), first); assert.equal(initial.work, 0);
@@ -134,7 +135,7 @@ test("fragmented snapshots preserve raw seams, unpaired surrogates and every edi
         const onLeft = random(2) === 0, text = onLeft ? a : b, from = random(text.length + 1), to = Math.min(text.length, from + random(4)), insert = ["\r", "\n", "😀", "é", "", "\ud800"][random(6)]!;
         if (onLeft) { a = a.slice(0, from) + insert + a.slice(to); left = left.replace(from, to, insert); }
         else { b = b.slice(0, from) + insert + b.slice(to); right = right.replace(from, to, insert); }
-        diff(a, b, [left, right]); assert.equal(left.readMetrics().textExports, 0); assert.equal(right.readMetrics().textExports, 0);
+        diff(a, b, [left, right]); assert.equal(bufferReads(left).textExports, 0); assert.equal(bufferReads(right).textExports, 0);
     }
 });
 
@@ -181,9 +182,9 @@ test("alignment stays minimal for successive edits with mixed endings and long r
         for (const hunk of [...result.hunks].reverse()) restored = restored.slice(0, hunk.baseline.from)
             + expected.slice(hunk.working.from, hunk.working.to) + restored.slice(hunk.baseline.to);
         assert.equal(restored, expected); assert.equal(JSON.stringify(retained), retainedJson);
-        assert.equal(working.readMetrics().textExports, 0);
+        assert.equal(bufferReads(working).textExports, 0);
     }
-    assert.equal(baseline.readMetrics().textExports, 0);
+    assert.equal(bufferReads(baseline).textExports, 0);
 });
 
 test("independent buffers preserve literal edits at both ends", () => {
@@ -202,9 +203,9 @@ test("independent buffers preserve literal edits at both ends", () => {
                 working: { from: original.length, to: original.length + tail.length, lineFrom: 9_999, lineTo: 10_000 }, whitespaceOnly: false },
         ]);
         assert.equal(result.lineEdits, 4);
-        assert.equal(working.readMetrics().textExports, 0);
+        assert.equal(bufferReads(working).textExports, 0);
     }
-    assert.equal(baseline.readMetrics().textExports, 0);
+    assert.equal(bufferReads(baseline).textExports, 0);
 });
 
 test("shared-source restoration skips equal rows beyond the restored edge", () => {
@@ -231,6 +232,6 @@ test("shared-source restoration skips equal rows beyond the restored edge", () =
         assert.equal(rebuilt, expected);
         assert.ok(result.readUnits < 8192, `${count} rows, restored ${restoredEdge}: ${result.readUnits} comparison reads`);
         assert.ok(result.work < 20000);
-        assert.equal(baseline.readMetrics().textExports, 0); assert.equal(working.readMetrics().textExports, 0); job.dispose();
+        assert.equal(bufferReads(baseline).textExports, 0); assert.equal(bufferReads(working).textExports, 0); job.dispose();
     }
 });

@@ -83,13 +83,12 @@ async function sessionJourney(large: boolean) {
     const register = () => session.request("fixture/register", { registrations: [{ id: "hover", method: "textDocument/hover", registerOptions: { documentSelector: [{ scheme: "host+fixture", pattern: "**/*.ts" }] } }] }).result;
     try {
         const opening = performance.now(); await session.connect(); const openMs = performance.now() - opening;
-        const before = buffer.readMetrics().sliceUnits, from = large ? buffer.offsetAt(1500) + 10 : buffer.offsetAt(1) + 1;
+        const from = large ? buffer.offsetAt(1500) + 10 : buffer.offsetAt(1) + 1;
         const far = large ? buffer.offsetAt(2998) : 0;
         const edits = [{ from, to: from, insert: "Q\r\n" }, ...(large ? [{ from: far, to: far, insert: "Z" }] : [])];
         const next = buffer.apply(edits).buffer, started = performance.now(); document.update(100, 107, next, edits); const enqueueMs = performance.now() - started;
         await session.flush();
         const remote = await session.request("fixture/document", { uri, from: Math.max(0, from - 8), to: from + 14 }).result, syncMs = performance.now() - started;
-        const boundedReads = { before: buffer.readMetrics().sliceUnits - before, after: next.readMetrics().sliceUnits };
         const tail = large ? await session.request("fixture/document", { uri, from: far + 3, to: far + 20 }).result : null;
         await register(); const available = session.canRequest("textDocument/hover", document);
         const hover = await session.requestDocument("textDocument/hover", document, index => ({ position: index.at(from) })).result;
@@ -102,7 +101,7 @@ async function sessionJourney(large: boolean) {
         const reopened = await session.request("fixture/document", { uri, from: 0, to: 20 }).result;
         const fresh = session.getSnapshot().registrations.length === 0 && !session.canRequest("textDocument/hover", document);
         await session.shutdown(); session.dispose();
-        return { uri, length: next.length, expectedSample: next.slice(Math.max(0, from - 8), Math.min(next.length, from + 14)), remote, boundedReads, sent, tail,
+        return { uri, length: next.length, expectedSample: next.slice(Math.max(0, from - 8), Math.min(next.length, from + 14)), remote, sent, tail,
             expectedTail: large ? next.slice(far + 3, far + 20) : null, available, hover, withdrawn, custom, fresh, reopened,
             expectedReopened: offline.slice(0, 20), ownership: session.snapshotOwnership(), timers: timers.size,
             diagnostic: { openMs, enqueueMs, syncMs, scope: "single document-session action; enqueue is not an input handler or display latency" } };

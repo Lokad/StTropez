@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
@@ -65,11 +66,11 @@ test("distant batch changes and their inverses send bounded text without copying
     const undoEdit = () => workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision });
     edit([{ from: 2, to: 2, insert: "Z\r" }, { from: far, to: far + 1, insert: "\n😀" }]);
     const result = workspace.document(documentId);
-    const fallback = await index.change(result.buffer, cooperate), oldReads = before.readMetrics().sliceUnits, newReads = result.buffer.readMetrics().sliceUnits;
+    const fallback = await index.change(result.buffer, cooperate), oldReads = bufferReads(before).sliceUnits, newReads = bufferReads(result.buffer).sliceUnits;
     const exact = await index.change(result.buffer, cooperate, { before, edits: result.change!.edits });
     const counts = { fallbackUnits: fallback.changes.reduce((sum, change) => sum + change.text.length, 0),
         batchUnits: exact.changes.reduce((sum, change) => sum + change.text.length, 0),
-        batchReads: before.readMetrics().sliceUnits - oldReads + result.buffer.readMetrics().sliceUnits - newReads };
+        batchReads: bufferReads(before).sliceUnits - oldReads + bufferReads(result.buffer).sliceUnits - newReads };
     t.diagnostic(JSON.stringify(counts));
     assert.ok(counts.fallbackUnits > 140_000); assert.ok(counts.batchUnits < 32); assert.ok(counts.batchReads < 256);
     assert.equal(exact.changes.length, 2); assert.ok(exact.changes[0]!.range.start.line > exact.changes[1]!.range.start.line);
@@ -102,12 +103,12 @@ test("unproved, mismatched and skipped change hints preserve the exact fallback"
 test("large document opening yields; point changes reuse LF metadata and bound text reads", async () => {
     const text = "sample 😀\r\n".repeat(20_000), before = TextBuffer.from(text); let yields = 0;
     const index = await LspLineIndex.create(before, async () => { yields++; }); assert.ok(yields > 10);
-    const baseline = before.readMetrics().sliceUnits, from = before.offsetAt(10_000) + 2, after = before.replace(from, from, "Z\r");
+    const baseline = bufferReads(before).sliceUnits, from = before.offsetAt(10_000) + 2, after = before.replace(from, from, "Z\r");
     const changed = await index.change(after, cooperate), change = changed.changes[0]!;
     assert.deepEqual(changed.index.at(from + 2), { line: 10_001, character: 0 });
     assert.equal(TextDocument.applyEdits(TextDocument.create("fixture:large", "fixture", 1, text), [{ range: change.range, newText: change.text }]), text.slice(0, from) + "Z\r" + text.slice(from));
-    assert.ok(before.readMetrics().sliceUnits - baseline < 64); assert.ok(after.readMetrics().sliceUnits < 64);
-    assert.equal(before.readMetrics().textExports + after.readMetrics().textExports, 0);
+    assert.ok(bufferReads(before).sliceUnits - baseline < 64); assert.ok(bufferReads(after).sliceUnits < 64);
+    assert.equal(bufferReads(before).textExports + bufferReads(after).textExports, 0);
     const unchanged = await changed.index.change(after, cooperate); assert.equal(unchanged.index, changed.index); assert.deepEqual(unchanged.changes, []);
 });
 
@@ -124,8 +125,8 @@ test("chunk-edge CRLF classification and cooperative cancellation preserve the o
     assert.deepEqual(index.at(16_385), { line: 1, character: 0 });
     const original = TextBuffer.from("row\r\n".repeat(60000)), captured = await LspLineIndex.create(original, cooperate); let fragmented = original;
     for (let i = 1; i <= 200; i++) { const at = i * 1000; fragmented = fragmented.replace(at, at, "x".repeat(65)).replace(at, at + 65, ""); }
-    const reads = original.readMetrics();
+    const reads = bufferReads(original);
     await assert.rejects(captured.change(fragmented, async () => { throw new Error("Cancelled traversal"); }), /Cancelled traversal/);
-    assert.deepEqual(original.readMetrics(), reads); assert.equal(fragmented.readMetrics().sliceUnits, 0);
+    assert.deepEqual(bufferReads(original), reads); assert.equal(bufferReads(fragmented).sliceUnits, 0);
     assert.deepEqual(captured.at(1000), { line: 200, character: 0 });
 });

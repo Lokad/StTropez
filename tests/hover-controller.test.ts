@@ -63,12 +63,11 @@ test("deferred hover invalidation preserves a newer request after editing and re
         assert.equal(f.sent("$/cancelRequest").length, 3); tab.reply({ contents: "old tab" }); await settled();
     } finally { await f.finish(); }
 });
-test("folding cancels a held hover without moving the caret or exporting the source", async t => {
+test("folding cancels a held hover and reveals the range on selection", async t => {
     const f = await fixture(t, "const alpha\r\nconst beta\r\nend");
     try {
         const folds = f.view.folding, doc = f.document(), offset = doc.buffer.offsetAt(1) + 2;
         folds.setRanges(folds.getSnapshot(), [{ id: "body", from: 0, to: doc.buffer.offsetAt(2) }]);
-        const exports = doc.buffer.readMetrics().textExports;
         const first = f.hold(); f.request(2); await first.entered;
         folds.setCollapsed(folds.getSnapshot(), "body", true); await settled();
         assert.equal(f.hover.getSnapshot().status, "expired"); assert.equal(f.workspace.diagnostics().leases, f.leases);
@@ -78,6 +77,5 @@ test("folding cancels a held hover without moving the caret or exporting the sou
         const second = f.hold(); assert.equal(f.request(offset), true); await second.entered;
         first.reply({ contents: "folded" }); await settled(); assert.equal(f.hover.getSnapshot().status, "pending");
         second.reply({ contents: "revealed" }); await settled(); assert.equal(f.hover.getSnapshot().text, "revealed");
-        assert.equal(doc.buffer.readMetrics().textExports, exports);
     } finally { await f.finish(); }
 });

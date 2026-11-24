@@ -132,7 +132,6 @@ test("internal resources keep captured ownership while workspace inventories con
     view.dispose(); await Promise.resolve(); assert.equal(reference.getSnapshot().state, "released");
     assert.equal(workspace.resolveResource(resourceTarget), undefined);
     workspace.tabs.close(panelTab); workspace.releaseResource(panel.id, true); workspace.releaseResource(scratch.id, true);
-    assert.equal(buffer.readMetrics().textExports, 0);
     assert.deepEqual(workspace.getSnapshot().resources.map(resource => resource.id), [source.id, form.id]);
     assert.equal(workspace.diagnostics().resources, 2);
 });

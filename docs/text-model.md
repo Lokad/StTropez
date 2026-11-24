@@ -236,10 +236,9 @@ storage need not prove any span. Close an interrupted iterator and
 dispose an abandoned change cursor to release captured buffers. These proofs do not authorize
 updates to a live resource.
 
-`readMetrics()` returns `BufferReadMetrics` for explicit text exports and requested slice units.
-Chunk reads bypass those counters. `diagnostics()` and `TextBuffer.retained(versions)` traverse
-retained storage. `BufferRetention` counts shared nodes, backings and indexed units. Keep these
-traversals out of input handlers and readiness polls. Heap usage requires a separate measurement.
+`diagnostics()` reports length, line count, tree height and retained storage for one buffer.
+`TextBuffer.retained(versions)` counts shared nodes, backings and indexed units across versions.
+Both traverse the tree. Keep them out of input handlers and readiness polls.
 
 | Limit | Contract |
 | --- | --- |

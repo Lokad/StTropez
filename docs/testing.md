@@ -96,7 +96,7 @@ Strict Mode, render isolation and root-error recovery. Keep separate cases for l
 event paths when a focus or input transition depends on the event target.
 
 The editor fixture checks the native textarea's actual value during editing. Viewport tests check
-painted rows and selection geometry. The model and benchmarks count full-text exports.
+painted rows and selection geometry. Model tests check which operations materialize text.
 The host disposal test checks for leaked views, leases and subscriptions. In a save or recovery
 test, check the pending write or draft after the editor remounts.
 
@@ -172,9 +172,9 @@ alignment, source text and syntax colors in both comparison panes. A final scree
 blank row or a color flash. Assert which provider answered. Record editor-frame, service and
 whole-action times separately.
 
-Poll activity snapshots and buffer read counters. Walking the entire buffer tree inside a
-poll or input subscriber adds work to the interaction you're measuring. Take full diagnostics
-afterward. [Text-model diagnostics](text-model.md#conservative-change-spans-and-diagnostics)
+Poll activity snapshots. Take retention diagnostics after the interaction because they walk
+the buffer tree. Tests for bounded reads instrument `slice()` and `text()` on the buffers
+under test. [Text-model diagnostics](text-model.md#conservative-change-spans-and-diagnostics)
 
 ### Workloads
 

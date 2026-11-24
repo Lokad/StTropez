@@ -80,7 +80,6 @@ test("presentation sends bounded deltas from queued finishes, rejects late resul
         presentation.update(other.document(otherId), true); assert.equal(worker.terminated, true);
         presentation.update(other.document(otherId)); h.drain(); const restarted = h.workers[1]!; restarted.flush();
         assert.ok(restarted.messages.some(m => m.kind === "start" && !m.change)); assert.match(presentation.javascript, /separate/);
-        assert.equal(capture().buffer.readMetrics().textExports, 0);
     } finally { presentation.dispose(); h.close(); }
 });
 

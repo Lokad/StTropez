@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
@@ -141,10 +142,10 @@ test("indexing batches checkpoints, makes progress during edits and reuses its i
     document = session.bindDocument({ ...input(), buffer: buffers[0]! }); await session.connect(); await settled();
     assert.ok(edits > 0 && edits < 20, "Indexing must finish while new edits are still arriving.");
     assert.equal(host.peers[0]!.documents.get(document.getSnapshot().uri)!.getText(), buffers.at(-1)!.slice(0, buffers.at(-1)!.length));
-    assert.ok(buffers.reduce((units, buffer) => units + buffer.readMetrics().sliceUnits, 0) < buffers[0]!.length * 4, "Retain indexed text instead of restarting its scan.");
-    const current = buffers.at(-1)!, before = current.readMetrics().sliceUnits; document = undefined;
+    assert.ok(buffers.reduce((units, buffer) => units + bufferReads(buffer).sliceUnits, 0) < buffers[0]!.length * 4, "Retain indexed text instead of restarting its scan.");
+    const current = buffers.at(-1)!, before = bufferReads(current).sliceUnits; document = undefined;
     session.disconnect(); await session.connect(); await settled();
-    assert.ok(current.readMetrics().sliceUnits - before <= current.length + 64, "Reconnect exports text once without rescanning its line index.");
+    assert.ok(bufferReads(current).sliceUnits - before <= current.length + 64, "Reconnect exports text once without rescanning its line index.");
 });
 
 test("an encoded document failure is isolated, reported once and retried after a new revision", async t => {
@@ -240,7 +241,7 @@ test("reference peer receives ordered initialization and exact coalesced UTF-16 
     assert.equal(firstCapture.isCurrent(), false); assert.equal(session.synchronized(document), undefined);
     await session.flush(); await settled(); assert.equal(peer.documents.get(initial.uri)?.getText(), latest.slice(0, latest.length)); assert.equal(peer.documents.get(initial.uri)?.version, 2);
     document.update(51, 52, latest); await session.flush(); await settled(); assert.equal(peer.documents.get(initial.uri)?.version, 3);
-    assert.equal(initial.buffer.readMetrics().textExports + latest.readMetrics().textExports, 0);
+    assert.equal(bufferReads(initial.buffer).textExports + bufferReads(latest).textExports, 0);
     document.dispose(); const replacement = session.bindDocument(input("replacement", initial.uri, "resource:two", 0)); document.dispose(); assert.throws(() => document.update(52, 53, latest), error => error instanceof RpcError && error.code === -32801);
     await session.flush(); await settled(); assert.equal(peer.documents.get(initial.uri)?.getText(), "replacement"); assert.deepEqual(peer.events.slice(-2), ["close", "open"]); replacement.dispose(); await session.flush(); await settled();
     session.dispose(); replacement.dispose(); assert.deepEqual(session.snapshotOwnership(), { documents: 0, remoteDocuments: 0, registrations: 0, subscriptions: 0, scheduledTasks: 0, pendingDocumentRequests: 0, pendingRequests: 0, incomingRequests: 0 }); assert.equal(host.timers.size, 0);
@@ -326,9 +327,9 @@ test("registration changes during indexing reconcile the latest snapshot without
     await peer.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: change.id, method: change.method }] });
     blocked = false; for (const callback of queued) callback(); queued.clear(); await session.flush(); await session.request("fixture/barrier").result;
     assert.equal(peer.documents.size, 0); assert.equal(peer.events.filter(event => event === "change").length, 0); assert.equal(session.synchronized(document), undefined);
-    const reads = large.readMetrics().sliceUnits;
+    const reads = bufferReads(large).sliceUnits;
     await peer.rpc.sendRequest("client/registerCapability", { registrations: [change] }); await session.flush(); await session.request("fixture/barrier").result;
-    assert.ok(large.readMetrics().sliceUnits - reads <= large.length, "Restoring synchronization should reuse the completed index and export the current text once.");
+    assert.ok(bufferReads(large).sliceUnits - reads <= large.length, "Restoring synchronization should reuse the completed index and export the current text once.");
     assert.equal(peer.documents.get(initial.uri)!.getText(), large.slice(0, large.length)); assert.deepEqual(peer.events.slice(-2), ["close", "open"]);
     assert.equal(session.synchronized(document)!.document.revision, 41); assert.equal(session.snapshotOwnership().scheduledTasks, 0);
 });
@@ -478,8 +479,8 @@ test("local edits retain useful indexing while URI replacement cancels obsolete 
         change = () => { if (replacement) { original.dispose(); current = session.bindDocument(input("replacement", initial.uri, "other-resource", 0)); }
             else original.update(41, 42, latest, edits); };
         original.update(40, 41, large); await session.flush(); await settled(); const peer = host.peers[0]!;
-        if (replacement) assert.ok(large.readMetrics().sliceUnits < 16500, "A replaced binding stops after its first bounded chunk.");
-        else assert.ok(latest.readMetrics().sliceUnits < latest.length + 128, "A newer revision reuses completed indexing and exports only its final wire delta.");
+        if (replacement) assert.ok(bufferReads(large).sliceUnits < 16500, "A replaced binding stops after its first bounded chunk.");
+        else assert.ok(bufferReads(latest).sliceUnits < latest.length + 128, "A newer revision reuses completed indexing and exports only its final wire delta.");
         assert.equal(session.synchronized(current)?.document, current.getSnapshot());
         if (replacement) { assert.deepEqual(peer.events.slice(-2), ["close", "open"]); assert.equal(peer.documents.get(initial.uri)?.getText(), "replacement"); assert.equal(peer.documents.get(initial.uri)?.version, 1); }
         else { assert.equal(peer.documents.get(initial.uri)?.getText(), latest.slice(0, latest.length)); assert.equal(peer.documents.get(initial.uri)?.version, 2); }

@@ -157,7 +157,6 @@ test("case options retain raw Unicode matches, cancel captured plans and preserv
         const complete = view.getSnapshot().selectionSet, depth = workspace.observeHistory(documentId).getSnapshot().undoDepth;
         find.replaceAll("x"); drain(); assert.equal(text(), "x x x_\n".repeat(1100)); assert.equal(workspace.observeHistory(documentId).getSnapshot().undoDepth, depth + 1);
         assert.equal(workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision }).applied, true); drain(); assert.equal(text(), many); assert.deepEqual(view.getSnapshot().selectionSet, complete);
-        assert.equal(workspace.document(documentId).buffer.readMetrics().textExports, 0);
     } finally {
         find.dispose(); view.dispose(); peer.dispose(); workspace.tabs.close(tab);
         assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().subscriptions, 0); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().views, 0);

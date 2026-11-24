@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { FoldIndex, TextBuffer, createFoldRegions, createSelectionSet, resolveLanguageConfiguration, planLanguageEdit, Workspace } from "../src/index.ts";
@@ -26,7 +27,7 @@ function plan(text: string, ranges: readonly Selection[], command: Parameters<ty
     assert.equal(step.status, "ready");
     const value = step.result!; iterator.dispose();
     const after = buffer.apply(value.edits).buffer;
-    assert.equal(buffer.readMetrics().textExports, 0);
+    assert.equal(bufferReads(buffer).textExports, 0);
     assert.ok(Object.isFrozen(value)); assert.ok(Object.isFrozen(value.edits));
     return { value, turns, text: after.slice(0, after.length), ranges: value.selectionSet.ranges.map(range => [range.anchor, range.head]) };
 }
@@ -248,7 +249,7 @@ test("block comment discovery shares bounded scans across distant and adjacent c
     let last = cursor.snapshot(), turns = 0;
     while (last.status === "running") {
         const next = cursor.next(256);
-        assert.ok(next.readUnits - last.readUnits <= 2600); assert.equal(next.readUnits, buffer.readMetrics().sliceUnits);
+        assert.ok(next.readUnits - last.readUnits <= 2600); assert.equal(next.readUnits, bufferReads(buffer).sliceUnits);
         if (next.status === "running") assert.equal(next.result, null);
         last = next; turns++;
     }
@@ -342,11 +343,11 @@ test("language cursor charges reads, blank comment records and final assembly wi
         const cursor = planLanguageEdit(buffer, selections, command, resolveLanguageConfiguration(configuration));
         let previous = cursor.snapshot(), planningWithoutReads = 0;
         assert.equal(previous.phase, "validate"); assert.equal(previous.workUnits, 0);
-        assert.deepEqual(buffer.readMetrics(), { textExports: 0, sliceUnits: 0 });
+        assert.deepEqual(bufferReads(buffer), { textExports: 0, sliceUnits: 0 });
         const phases = new Set<LanguageEditProgress["phase"]>([previous.phase]);
         while (previous.status === "running") {
             const current = cursor.next(256); phases.add(current.phase);
-            assert.ok(Object.isFrozen(current)); assert.equal(current.readUnits, buffer.readMetrics().sliceUnits);
+            assert.ok(Object.isFrozen(current)); assert.equal(current.readUnits, bufferReads(buffer).sliceUnits);
             assert.ok(current.workUnits >= previous.workUnits); assert.ok(current.bulkWorkUnits >= previous.bulkWorkUnits);
             // These fixtures have bounded scan/record steps; bulk assembly is deliberately separate.
             assert.ok(current.workUnits - previous.workUnits - (current.bulkWorkUnits - previous.bulkWorkUnits) <= 256 + 4096 + 8);
@@ -370,9 +371,9 @@ test("language cursor releases cancelled planning and records validation or host
     for (const advance of [false, true]) {
         const cursor = planLanguageEdit(buffer, selections, "line-comment", resolveLanguageConfiguration(configuration));
         if (advance) assert.equal(cursor.next(256).status, "running");
-        const before = buffer.readMetrics(); cursor.dispose();
+        const before = bufferReads(buffer); cursor.dispose();
         assert.equal(cursor.next().status, "disposed"); assert.equal(cursor.snapshot().result, null);
-        assert.deepEqual(buffer.readMetrics(), before);
+        assert.deepEqual(bufferReads(buffer), before);
     }
     const invalid = planLanguageEdit(buffer, { ranges: [{ anchor: 4, head: 4 }, { anchor: 0, head: 0 }], primary: 0 }, "indent", resolveLanguageConfiguration());
     assert.equal(invalid.snapshot().status, "running");

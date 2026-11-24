@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CharacterWarnings, characterWarningKinds, characterWarningLabel, TextBuffer } from "../src/index.ts";
@@ -66,9 +67,9 @@ test("bounded continuation neither splits code points nor drops warnings at unit
 test("small and limited queries in large buffers do bounded reads without exports or source changes", () => {
     const rules = new CharacterWarnings(), buffer = TextBuffer.from("x".repeat(5_000) + "\u200B" + "y".repeat(5_000));
     const local = rules.scan(buffer, 5_000, 5_001); assert.equal(local.warnings.length, 1); assert.ok(local.readUnits <= 5);
-    const before = buffer.readMetrics().sliceUnits, bounded = rules.scan(buffer, 0, buffer.length, { maxUnits: 128 });
+    const before = bufferReads(buffer).sliceUnits, bounded = rules.scan(buffer, 0, buffer.length, { maxUnits: 128 });
     assert.equal(bounded.limit, "units"); assert.equal(bounded.nextFrom, 128); assert.ok(bounded.readUnits <= 129);
-    assert.equal(buffer.readMetrics().sliceUnits - before, bounded.readUnits); assert.equal(buffer.readMetrics().textExports, 0);
+    assert.equal(bufferReads(buffer).sliceUnits - before, bounded.readUnits); assert.equal(bufferReads(buffer).textExports, 0);
     const changed = buffer.replace(5_000, 5_001, "z"); assert.equal(rules.scan(changed, 5_000, 5_001).warnings.length, 0);
     assert.equal(rules.scan(buffer, 5_000, 5_001).warnings.length, 1);
 });

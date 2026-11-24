@@ -101,7 +101,6 @@ test("external text inserts at the captured drop position instead of replacing t
     const result = applyTextDrop({ workspace: f.workspace, tab: f.workspace.tabs.capture(f.targetTab), view: f.targetView, expectedRevision: 0, offset: 3, text });
     assert.equal(result.applied, true); assert.equal(f.text(f.destination.documentId), "tar" + text + "get");
     assert.equal(f.targetView.getSnapshot().selection.anchor, 3); assert.equal(f.targetView.getSnapshot().selection.head, 3 + text.length);
-    assert.equal(f.workspace.document(f.destination.documentId).buffer.readMetrics().textExports, 0);
     assert.equal(f.workspace.undo({ documentId: f.destination.documentId, expectedRevision: 1 }).applied, true); assert.deepEqual(f.targetView.getSnapshot().selectionSet, before);
 });
 

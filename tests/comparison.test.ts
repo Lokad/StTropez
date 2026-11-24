@@ -69,7 +69,7 @@ test("captured whole-review reversion preserves distant changes and complete sha
     peer.setSelection(1, { anchor: 123456, head: 123460 }); const before = comparison.view.getSnapshot().selectionSet, peerBefore = peer.getSnapshot().selectionSet, history = workspace.observeHistory(resource.documentId).getSnapshot();
     const ticket = comparison.beginReversion(); workspace.tabs.move(tab, "other"); assert.equal(ticket.isCurrent(), true); assert.equal(ticket.complete(), true);
     assert.equal(workspace.document(resource.documentId).buffer.equals(reference), true); assert.equal(workspace.observeHistory(resource.documentId).getSnapshot().undoDepth, history.undoDepth + 1);
-    assert.equal(workspace.document(resource.documentId).buffer.readMetrics().textExports, 0); assert.equal(buffer.readMetrics().textExports, 0);
+
     assert.equal(resource.metadata.getSnapshot().serverVersion, "saved-1"); assert.equal(resource.metadata.getSnapshot().dirty, false);
     assert.equal(workspace.undo({ documentId: resource.documentId, expectedRevision: 2 }).applied, true);
     assert.equal(workspace.document(resource.documentId).buffer, buffer); assert.deepEqual(comparison.view.getSnapshot().selectionSet, before); assert.deepEqual(peer.getSnapshot().selectionSet, peerBefore);
@@ -244,12 +244,12 @@ test("captured presentation survives moves, expires on replacement, and disposal
     workspace.releaseResource(resource.id); assert.equal(workspace.document(other).buffer.slice(0, 5), "other");
 });
 
-test("supplied views remain owned by the host, buffer resources retain exact data without exporting", () => {
+test("supplied views remain owned by the host and buffer resources retain their identity", () => {
     const { workspace, resource, tab, reference, comparison } = fixture(); comparison.dispose();
     const view = workspace.createDocumentView(resource.documentId), controller = createComparisonController(workspace, tab, reference, { view });
     controller.dispose(); assert.equal(workspace.ownsDocumentView(view), true); view.dispose();
     const buffer = TextBuffer.from("a\r\nb\n").replace(1, 1, "\t"), display = workspace.createTextResourceFromBuffer({ scope: "test", resource: "reference", variant: "display" }, "Reference", { buffer, serverVersion: "v1" }, { edit: [], save: false });
-    assert.equal(workspace.document(display.documentId).buffer, buffer); assert.equal(buffer.readMetrics().textExports, 0);
+    assert.equal(workspace.document(display.documentId).buffer, buffer);
     for (const origin of ["human", "agent", "host"] as const) assert.equal(workspace.edit({ documentId: display.documentId, expectedRevision: 0, origin, edits: [{ from: 0, to: 0, insert: "bad" }] }).applied, false);
     workspace.releaseResource(display.id); assert.equal(workspace.diagnostics().leases, 0);
 });

@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
@@ -5,12 +6,12 @@ import { TextBuffer } from "../src/index.ts";
 import { LiteralSearch } from "../src/kernels/index.ts";
 import type { LiteralSearchOptions } from "../src/index.ts";
 function all(buffer: TextBuffer, query: string, budget = 3, options?: LiteralSearchOptions) {
-    let previous = buffer.readMetrics(); // Include construction in the first measured advance.
+    let previous = bufferReads(buffer); // Include construction in the first measured advance.
     const cursor = new LiteralSearch(buffer, query, options), matches = [];
     for (;;) {
-        const step = cursor.next(budget, 2), current = buffer.readMetrics();
+        const step = cursor.next(budget, 2), current = bufferReads(buffer);
         assert.equal(current.textExports, previous.textExports);
-        // Chunk traversal is charged by the cursor; materialized boundary reads also have buffer counters.
+        // Chunk traversal is charged by the cursor; materialized boundary reads are measured independently.
         assert.ok(current.sliceUnits - previous.sliceUnits <= step.readUnits, "Unreported literal-search slice reads.");
         assert.ok(step.readUnits <= budget); previous = current;
         matches.push(...step.matches); if (step.done) return matches;

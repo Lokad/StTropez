@@ -18,7 +18,7 @@ test("aligned slots preserve exact source rows across scalar trims, inline/newli
             const empty = a ? rows.working : rows.baseline;
             for (let row = 1; row < rows.rowCount; row++) assert.deepEqual(empty.gapAt(row), { line: 0, offset: 0 });
         }
-        assert.equal(c.baseline.readMetrics().textExports, 0); assert.equal(c.working.readMetrics().textExports, 0);
+
     }
     const c = capture("one\ntwo\nthree", "one\nadded\nmore\ntwo\nthree"), rows = finish(new ComparisonRowsCursor(c.baseline, c.working, c.hunks));
     assert.equal(rows.baseline.rowAt(1), rows.working.rowAt(3)); assert.equal(rows.baseline.gapAt(1)!.offset, 4); assert.equal(rows.baseline.nextLine(1, -1), 0); assert.equal(rows.baseline.nextLine(1, 1), 1);

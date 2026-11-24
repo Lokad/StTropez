@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
@@ -14,8 +15,8 @@ function verify(text: string): number {
     const index = step.result!, native = [0, ...[...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)].map(p => p.index + p.segment.length)];
     let accepted = 0;
     for (let offset = 0; offset <= text.length; offset++) {
-        const reads = buffer.readMetrics().sliceUnits, point = localAsciiGraphemePoint(buffer, offset);
-        assert.ok(buffer.readMetrics().sliceUnits - reads <= 4);
+        const reads = bufferReads(buffer).sliceUnits, point = localAsciiGraphemePoint(buffer, offset);
+        assert.ok(bufferReads(buffer).sliceUnits - reads <= 4);
         if (!point) continue; accepted++;
         assert.ok(Object.isFrozen(point));
         assert.deepEqual(point, { offset, floor: index.floor(offset), ceil: index.ceil(offset), preceding: index.preceding(offset), following: index.following(offset) }, JSON.stringify({ text, offset }));
@@ -24,7 +25,7 @@ function verify(text: string): number {
         assert.equal(point.preceding, native.filter(at => at < offset).at(-1) ?? null);
         assert.equal(point.following, native.find(at => at > offset) ?? null);
     }
-    assert.equal(buffer.readMetrics().textExports, 0); cursor.dispose(); return accepted;
+    assert.equal(bufferReads(buffer).textExports, 0); cursor.dispose(); return accepted;
 }
 
 test("bounded ASCII point queries agree with full-context indexes and a native grapheme oracle", () => {
@@ -48,18 +49,18 @@ test("accepted ASCII neighborhoods remain exact beside arbitrary Unicode and con
 test("huge immutable buffers answer proven points with four units and reject invalid offsets", () => {
     const buffer = TextBuffer.from("x".repeat(24000));
     for (const offset of [0, 1, 12000, 23999, 24000]) {
-        const before = buffer.readMetrics().sliceUnits, point = localAsciiGraphemePoint(buffer, offset)!;
+        const before = bufferReads(buffer).sliceUnits, point = localAsciiGraphemePoint(buffer, offset)!;
         assert.equal(point.floor, offset); assert.equal(point.ceil, offset);
         assert.equal(point.preceding, offset ? offset - 1 : null); assert.equal(point.following, offset < buffer.length ? offset + 1 : null);
-        assert.ok(buffer.readMetrics().sliceUnits - before <= 4);
+        assert.ok(bufferReads(buffer).sliceUnits - before <= 4);
     }
     for (const offset of [-1, buffer.length + 1, 0.5, NaN, Infinity]) assert.throws(() => localAsciiGraphemePoint(buffer, offset), RangeError);
     const crlf = buffer.replace(12000, 12000, "\r\n");
     for (const [offset, floor, ceil, preceding, following] of [[12000, 12000, 12000, 11999, 12002],
         [12001, 12000, 12002, 12000, 12002], [12002, 12002, 12002, 12000, 12003]] as const) {
-        const reads = crlf.readMetrics().sliceUnits;
+        const reads = bufferReads(crlf).sliceUnits;
         assert.deepEqual(localAsciiGraphemePoint(crlf, offset), { offset, floor, ceil, preceding, following });
-        assert.ok(crlf.readMetrics().sliceUnits - reads <= 4);
+        assert.ok(bufferReads(crlf).sliceUnits - reads <= 4);
     }
-    assert.equal(buffer.readMetrics().textExports, 0);
+    assert.equal(bufferReads(buffer).textExports, 0);
 });

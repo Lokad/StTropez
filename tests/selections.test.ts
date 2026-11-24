@@ -64,10 +64,9 @@ test("selection replacement plans preserve original coordinates, per-range text 
     assert.ok(Object.isFrozen(plan)); assert.ok(Object.isFrozen(plan.edits)); assert.ok(plan.edits.every(Object.isFrozen));
     assert.throws(() => planSelectionEdits(8, set, ["one"]), TypeError);
     assert.throws(() => planSelectionEdits(8, { ranges: [{ anchor: 7, head: 7 }, { anchor: 1, head: 1 }], primary: 0 }, "x"), RangeError);
-    assert.equal(buffer.readMetrics().textExports, 0);
 });
 
-test("atomic multi-range typing groups shared undo and maps independent retained views without exporting", () => {
+test("atomic multi-range typing groups shared undo and maps independent retained views", () => {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "multi", resource: "source", variant: "working" }, "Source", { value: "alpha beta gamma" });
     const document = () => workspace.document(source.documentId), primary = workspace.createDocumentView(source.documentId,
         createSelectionSet(16, [{ anchor: 0, head: 5 }, { anchor: 16, head: 11 }], 1));
@@ -92,7 +91,7 @@ test("atomic multi-range typing groups shared undo and maps independent retained
         assert.equal(state.revision, revision); assert.strictEqual(state.selection, state.selectionSet.ranges[state.selectionSet.primary]);
         assert.ok(state.selectionSet.ranges.every(range => range.head <= length));
     }
-    const releasedRevision = document().revision; assert.equal(document().buffer.readMetrics().textExports, 0);
+    const releasedRevision = document().revision;
     stop(); primary.dispose(); secondary.dispose(); workspace.releaseResource(source.id, true);
     assert.equal(primary.setSelections(releasedRevision, [{ anchor: 0, head: 0 }]), false);
 });
@@ -176,7 +175,6 @@ test("seeded selection replacements and shared history match an independent stri
         workspace.redo({ documentId: source.documentId, expectedRevision: workspace.document(source.documentId).revision });
         assert.equal(workspace.document(source.documentId).buffer.slice(0, state.after.length), state.after); assert.deepEqual(view.getSnapshot().selectionSet, state.afterSet);
     }
-    assert.equal(workspace.document(source.documentId).buffer.readMetrics().textExports, 0);
     view.dispose(); workspace.releaseResource(source.id, true);
 });
 

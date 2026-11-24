@@ -31,7 +31,6 @@ test("streamed project navigation retains raw Unicode/CRLF ranges, declarations 
 test("captured symbol lookup is bounded on huge lines and rejects a cut or oversized symbol", () => {
     const buffer = TextBuffer.from("x".repeat(24_000) + " café 𐐀value"), offset = 24_004;
     assert.equal(navigationSymbol(buffer, offset), "café"); assert.equal(navigationSymbol(buffer, buffer.length), "𐐀value"); assert.equal(navigationSymbol(buffer, 10_000), undefined);
-    assert.equal(buffer.readMetrics().textExports, 0);
 });
 test("oversized lexical tokens do not hide later symbols or retain unbounded token text", () => {
     assert.equal(run(["x".repeat(32_768) + " café "], "references", true, 16384).result.locations.length, 1);

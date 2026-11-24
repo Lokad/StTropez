@@ -1,3 +1,4 @@
+import { bufferReads } from "./buffer-reads.ts";
 import assert from "node:assert/strict";
 import { nextSeed } from "../fixtures/workloads.ts";
 import test from "node:test";
@@ -6,9 +7,9 @@ import { createBracketNavigationCursor } from "../src/core/bracket-matching.ts";
 import type { BracketMatchCursor, BracketMatchOptions, LanguageConfiguration, PairingContext } from "../src/index.ts";
 
 function checkedCursor(matcher: BracketMatcher, buffer: TextBuffer, caret: number, options?: BracketMatchOptions): BracketMatchCursor {
-    const beforeConstruction = buffer.readMetrics(), cursor = matcher.createCursor(buffer, caret, options);
-    const checkReads = (before: ReturnType<TextBuffer["readMetrics"]>, readUnits: number) => {
-        const current = buffer.readMetrics();
+    const beforeConstruction = bufferReads(buffer), cursor = matcher.createCursor(buffer, caret, options);
+    const checkReads = (before: ReturnType<typeof bufferReads>, readUnits: number) => {
+        const current = bufferReads(buffer);
         assert.equal(current.textExports, before.textExports);
         assert.equal(current.sliceUnits - before.sliceUnits, readUnits, "Unreported bracket-matching slice reads.");
     };
@@ -18,7 +19,7 @@ function checkedCursor(matcher: BracketMatcher, buffer: TextBuffer, caret: numbe
         snapshot: () => cursor.snapshot(),
         next: (budget = 4096) => {
             // These callbacks do not read source; oracle reads and other cursors stay outside this call.
-            const before = buffer.readMetrics(), prior = cursor.snapshot();
+            const before = bufferReads(buffer), prior = cursor.snapshot();
             try { return cursor.next(budget); }
             finally {
                 const step = cursor.snapshot(), work = step.workUnits - prior.workUnits, reads = step.readUnits - prior.readUnits;
@@ -27,7 +28,7 @@ function checkedCursor(matcher: BracketMatcher, buffer: TextBuffer, caret: numbe
                 assert.ok(reads <= work + 256);
             }
         },
-        dispose: () => { const before = buffer.readMetrics(); try { cursor.dispose(); } finally { assert.deepEqual(buffer.readMetrics(), before); } }
+        dispose: () => { const before = bufferReads(buffer); try { cursor.dispose(); } finally { assert.deepEqual(bufferReads(buffer), before); } }
     };
 }
 

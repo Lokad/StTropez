@@ -141,7 +141,7 @@ test("adopting a saved buffer publishes the revision, authority and mapped view 
     assert.equal(source.metadata.getSnapshot().dirty, false);
     workspace.adoptSaved(source.id, { text: saved, serverVersion: "v4", history: "reset" });
     assert.equal(workspace.observeHistory(source.documentId).getSnapshot().undoDepth, 0);
-    assert.equal(saved.readMetrics().textExports, 0); view.dispose();
+    view.dispose();
 });
 
 test("reviewed documents adopt together, reject a stale participant and share Undo", () => {

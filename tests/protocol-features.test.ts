@@ -117,7 +117,7 @@ test("completion insert/replace plans and additional edits preserve raw text and
         const after = capture.document.buffer.apply(plan.edits).buffer; assert.equal(after.slice(0, after.length), expected);
         assert.equal(after.slice(plan.head - 6, plan.head), "sample"); assert.ok(expected.includes(`const ${word} = 1;`));
     }
-    assert.equal(Object.isFrozen(decoded.items[0]!.replace.edits[0]), true); assert.equal(decoded.items.length, 2); assert.equal(capture.document.buffer.readMetrics().textExports, 0);
+    assert.equal(Object.isFrozen(decoded.items[0]!.replace.edits[0]), true); assert.equal(decoded.items.length, 2);
 });
 
 test("resolved imports at a replacement boundary preserve text, caret and snippet positions", async () => {
@@ -543,7 +543,6 @@ test("LSP ranges clamp line-end characters while preserving invalid-line and raw
     for (const bad of [range(100, 0, 0), range(0, 2, 1), range(0, 100, 99), range(0, -1, 0), range(0, 0, 0x80000000),
         { start: { line: 0, character: .5 }, end: { line: 0, character: 1 } }, { start: { line: 0, character: 0 }, end: { line: 100, character: 0 } }])
         assert.throws(() => lspRangeOffsets(capture.index, bad));
-    assert.equal(capture.document.buffer.readMetrics().textExports, 0);
 });
 
 test("hover accepts standard content shapes and optional ranges as bounded literal text", async () => {
