@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { FoldIndex, TextBuffer, createFoldRegions, createSelectionSet, resolveLanguageConfiguration, planLanguageEdit, Workspace } from "../src/index.ts";
+import { nextSeed } from "../fixtures/workloads.ts";
 import type { LanguageConfiguration, LanguageEditProgress, Selection } from "../src/index.ts";
 
 const configuration: LanguageConfiguration = { tabSize: 2, lineComment: "//", blockComment: { open: "/*", close: "*/" }, enter: "keep",
@@ -118,6 +119,84 @@ test("moving and copying line blocks retains directed selections, mixed endings 
     const cursor = planLanguageEdit(buffer, createSelectionSet(buffer.length, selection(2, buffer.length - 1)), "move-line-up", resolveLanguageConfiguration());
     const result = cursor.next(256); cursor.dispose();
     assert.equal(result.status, "ready"); assert.equal(result.result!.edits.length, 2); assert.ok(result.readUnits < 10);
+});
+
+test("line commands apply once per selected row and preserve directed moves through EOF", () => {
+    let seed = 17;
+    const pick = (limit: number) => {
+        seed = nextSeed(seed);
+        return Math.floor(seed / 0x100000000 * limit);
+    };
+    for (let sample = 0; sample < 160; sample++) {
+        const lines = Array.from({ length: 1 + pick(9) }, (_, i) =>
+            " ".repeat(pick(5)) + (pick(2) ? "// " : "") + "row" + i + "x".repeat(pick(8)));
+        if (sample % 4 >= 2) lines.push("");
+        const ending = sample % 2 && lines.length > 1 ? "\r\n" : "\n";
+        const rows = lines.map((text, i) => ({
+            text, selected: pick(3) === 0 || i === sample % lines.length,
+            anchor: pick(text.length + 1), head: pick(text.length + 1),
+        }));
+        const selected = rows.filter(row => row.selected);
+        function offset(order: typeof rows, index: number) {
+            return order.slice(0, index).reduce((n, row) => n + row.text.length + ending.length, 0);
+        }
+        const ranges = selected.map(row => {
+            const start = offset(rows, rows.indexOf(row));
+            return { anchor: start + row.anchor, head: start + row.head };
+        });
+        const blocks: (typeof rows)[] = [];
+        for (const [i, row] of rows.entries()) {
+            if (!row.selected) continue;
+            if (!rows[i - 1]?.selected) blocks.push([]);
+            blocks.at(-1)!.push(row);
+        }
+        for (const command of ["move-line-up", "move-line-down", "copy-line-up", "copy-line-down", "delete-lines"] as const) {
+            const order = rows.slice();
+            for (const block of blocks) {
+                const at = order.indexOf(block[0]!);
+                const after = at + block.length;
+                if (command === "delete-lines") order.splice(at, block.length);
+                else if (command === "copy-line-up" || command === "copy-line-down") {
+                    // Keep the selected row objects on the side that receives the caret.
+                    order.splice(command === "copy-line-up" ? after : at, 0, ...block.map(row => ({ ...row })));
+                } else if (command === "move-line-up" && at > 0) {
+                    const neighbor = order.splice(at - 1, 1)[0]!;
+                    order.splice(after - 1, 0, neighbor);
+                } else if (command === "move-line-down" && after < order.length) {
+                    const neighbor = order.splice(after, 1)[0]!;
+                    order.splice(at, 0, neighbor);
+                }
+            }
+            const context = JSON.stringify({ command, lines, ending, ranges });
+            const actual = plan(lines.join(ending), ranges, command);
+            assert.equal(actual.text, order.map(row => row.text).join(ending), context);
+            const expected = selected.map(row => {
+                if (command === "delete-lines") {
+                    const i = rows.indexOf(row);
+                    const survivor = rows.slice(i + 1).find(other => !other.selected) ?? order.at(-1);
+                    const caret = survivor ? offset(order, order.indexOf(survivor)) + Math.min(row.head, survivor.text.length) : 0;
+                    return [caret, caret];
+                }
+                const start = offset(order, order.indexOf(row));
+                return [start + row.anchor, start + row.head];
+            });
+            const distinct = expected.filter(([a, h], i) => !expected.slice(0, i).some(r => r[0] === a && r[1] === h));
+            distinct.sort((a, b) => Math.min(...a) - Math.min(...b));
+            assert.deepEqual(actual.ranges, distinct, context);
+        }
+        for (const command of ["indent-lines", "outdent", "add-line-comment", "remove-line-comment"] as const) {
+            const expected = rows.map(({ text, selected }) => {
+                if (!selected) return text;
+                const indent = text.length - text.trimStart().length;
+                if (command === "indent-lines") return " ".repeat(2 - indent % 2) + text;
+                if (command === "outdent") return text.slice(Math.min(indent, indent % 2 || 2));
+                const body = text.slice(indent);
+                return text.slice(0, indent) + (command === "add-line-comment" ? "// " + body : body.replace(/^\/\/ ?/, ""));
+            });
+            assert.equal(plan(lines.join(ending), ranges, command).text, expected.join(ending),
+                JSON.stringify({ command, lines, ending, ranges }));
+        }
+    }
 });
 
 test("inserting and deleting lines keeps local endings, collapses overlapping rows and clamps surviving columns", () => {
