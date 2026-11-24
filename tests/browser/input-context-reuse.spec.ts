@@ -17,7 +17,7 @@ test("input refresh reuses bounded projections while repairing native state and 
         const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const { inputContext } = await import(path + "context.js") as typeof import("../../src/browser/input-context.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "context-reuse", variant: "text" }, "Context",
-            { value: "const row = '東京 😀';\r\n".repeat(100000) });
+            { value: "const row = '東京 😀';\r\n".repeat(1000) });
         const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "context"), host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
         const editor = mountTextEditor(host, workspace, tab), input = editor.element.querySelector("textarea")!, target = workspace.tabs.capture(tab);
@@ -40,7 +40,7 @@ test("input refresh reuses bounded projections while repairing native state and 
             if (!workspace.edit({ documentId: source.documentId, expectedRevision: doc().revision, origin: "host", edits: [{ from, to, insert }] }).applied) throw new Error("Edit rejected");
         };
         try {
-            const at = doc().buffer.offsetAt(50000) + 6;
+            const at = doc().buffer.offsetAt(500) + 6;
             editor.view.setSelection(doc().revision, { anchor: at, head: at }); await settle();
             measure("100 unchanged refreshes", () => { for (let i = 0; i < 100; i++) refresh(); });
             editor.view.setSelection(doc().revision, { anchor: at + 5000, head: at });

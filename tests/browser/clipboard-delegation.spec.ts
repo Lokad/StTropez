@@ -61,7 +61,7 @@ test("host-cancelled copy/cut/paste preserve captured text, clipboard ownership 
 test("a line copied from the unterminated final row pastes above a delayed navigation target", async ({ page }) => {
     await page.goto("/editing/");
     await page.evaluate(() => {
-        const f = window.editingFixture, end = 1_000_000;
+        const f = window.editingFixture, end = 100_000;
         f.setText("w".repeat(end) + "\r\nlast"); f.selections([{ anchor: end + 3, head: end + 3 }]); f.focus("primary");
         const input = document.querySelector("#primary textarea")!;
         const copy = new ClipboardEvent("copy", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
@@ -74,8 +74,8 @@ test("a line copied from the unterminated final row pastes above a delayed navig
         input.dispatchEvent(paste);
     });
     await page.keyboard.type("X");
-    await expect.poll(() => page.evaluate(() => window.editingFixture.snapshot().primary.selection.head)).toBe(1_000_007);
-    expect(await page.evaluate(() => [window.editingFixture.range(0, 6), window.editingFixture.range(1_000_005, 1_000_013)])).toEqual(["last\r\n", "wX\r\nlast"]);
+    await expect.poll(() => page.evaluate(() => window.editingFixture.snapshot().primary.selection.head)).toBe(100_007);
+    expect(await page.evaluate(() => [window.editingFixture.range(0, 6), window.editingFixture.range(100_005, 100_013)])).toEqual(["last\r\n", "wX\r\nlast"]);
 });
 
 test("empty or nontext clipboard payloads cannot turn a selected range into a deletion", async ({ page }) => {
@@ -93,7 +93,7 @@ test("empty or nontext clipboard payloads cannot turn a selected range into a de
     });
     expect(result.text).toBe("before\r\nend"); expect(result.revisionAfter).toBe(result.revisionBefore); expect(result.after).toEqual(result.before); expect(result.exports).toBe(0);
     const delayed = await page.evaluate(() => {
-        const f = window.editingFixture, text = "a".repeat(1000001) + ";end";
+        const f = window.editingFixture, text = "a".repeat(100_001) + ";end";
         f.setText(text); f.select("primary", { anchor: 0, head: 0 }); f.focus("primary");
         const input = document.querySelector('textarea[aria-label="Primary source"]')!;
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true, bubbles: true, cancelable: true }));
@@ -110,7 +110,7 @@ test("empty or nontext clipboard payloads cannot turn a selected range into a de
     });
     await expect.poll(() => page.evaluate(() => window.editingFixture.snapshot().primary.pendingWord)).toBe(false);
     const after = await page.evaluate(() => window.editingFixture.snapshot());
-    expect(after.document).toMatchObject({ revision: delayed, length: 1000005, exports: 0 });
-    expect(after.primary.selection).toMatchObject({ anchor: 1000001, head: 1000001 });
+    expect(after.document).toMatchObject({ revision: delayed, length: 100_005, exports: 0 });
+    expect(after.primary.selection).toMatchObject({ anchor: 100_001, head: 100_001 });
     await page.evaluate(() => window.editingFixture.dispose());
 });

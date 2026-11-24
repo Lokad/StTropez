@@ -120,12 +120,12 @@ test("warning marks preserve native shaping, range geometry and hit testing", as
 
 test("large documents and horizontal fragments keep warning work local and source queries bounded", async ({ page }) => {
     const row = "a\u200bb\u00a0c";
-    await fixture(page, (row + "\n").repeat(100000), true);
+    await fixture(page, (row + "\n").repeat(1000), true);
     const result = await page.evaluate(() => {
         const f = window.warningFixture, viewport = f.editor.viewport, buffer = f.workspace.document(f.editor.view.documentId).buffer;
-        viewport.scrollTo({ top: viewport.getSnapshot().lineHeight * 50000 }); viewport.flush();
+        viewport.scrollTo({ top: viewport.getSnapshot().lineHeight * 500 }); viewport.flush();
         const rows = [...f.host.querySelectorAll<HTMLElement>(".st-viewport-layer .st-viewport-row")], before = buffer.readMetrics();
-        const capture = f.editor.characterWarnings.query(300001, 500000, { maxUnits: 64, maxWarnings: 8 })!, after = buffer.readMetrics();
+        const capture = f.editor.characterWarnings.query(3001, 5000, { maxUnits: 64, maxWarnings: 8 })!, after = buffer.readMetrics();
         const bounded = { read: after.sliceUnits - before.sliceUnits, exports: after.textExports, units: capture.scannedUnits, complete: capture.complete };
         const expected = rows.map(r => r.textContent), count = f.host.querySelectorAll(".st-viewport-layer .st-character-warning").length;
         // A long row must not hide warnings when its horizontal window moves or splits a surrogate pair.

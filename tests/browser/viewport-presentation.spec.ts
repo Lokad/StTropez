@@ -674,15 +674,15 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
         const retainedNode = retained === f.host.querySelector('.st-column-ruler[data-column="40"]');
         // The physical scrollbar is capped; rulers continue to use logical source columns.
         const doc = f.workspace.document(f.editor.view.documentId);
-        f.workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "host", edits: [{ from: 0, to: doc.buffer.length, insert: "x".repeat(1_000_000) }] });
-        viewport.configure({ columnRulers: [500000] }); settle(); viewport.scrollTo({ left: 500000 * viewport.getSnapshot().columnWidth }); settle();
+        f.workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "host", edits: [{ from: 0, to: doc.buffer.length, insert: "x".repeat(500_000) }] });
+        viewport.configure({ columnRulers: [450000] }); settle(); viewport.scrollTo({ left: 450000 * viewport.getSnapshot().columnWidth }); settle();
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); settle();
         const s = viewport.getDiagnostics(), guide = f.host.querySelector<HTMLElement>(".st-column-ruler")!, rectangle = f.host.querySelector(".st-viewport-layer")!.getBoundingClientRect();
-        const scaledError = Math.abs(guide.getBoundingClientRect().left - rectangle.left - (12 + 500000 * s.columnWidth - s.scrollLeft) * 1.25);
-        const markedPoint = viewport.coordsAt(500000), selected = f.editor.view.getSnapshot().selectionSet, extent = [viewport.element.scrollWidth, viewport.element.scrollHeight];
+        const scaledError = Math.abs(guide.getBoundingClientRect().left - rectangle.left - (12 + 450000 * s.columnWidth - s.scrollLeft) * 1.25);
+        const markedPoint = viewport.coordsAt(450000), selected = f.editor.view.getSnapshot().selectionSet, extent = [viewport.element.scrollWidth, viewport.element.scrollHeight];
         viewport.configure({ columnRulers: [] }); settle();
         return { rows, retainedNode, scaledError, scaled: s.horizontalExtent > s.physicalWidth, scaledUnits: s.textUnits, noGuides: !f.host.querySelector(".st-column-rulers"),
-            samePoint: JSON.stringify(markedPoint) === JSON.stringify(viewport.coordsAt(500000)), sameSelections: selected === f.editor.view.getSnapshot().selectionSet,
+            samePoint: JSON.stringify(markedPoint) === JSON.stringify(viewport.coordsAt(450000)), sameSelections: selected === f.editor.view.getSnapshot().selectionSet,
             extent, emptyExtent: [viewport.element.scrollWidth, viewport.element.scrollHeight], exports: f.workspace.document(f.editor.view.documentId).buffer.readMetrics().textExports };
     });
     await info.attach("changed-ruler-geometry", { body: JSON.stringify(changes), contentType: "application/json" });

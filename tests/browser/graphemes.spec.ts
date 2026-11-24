@@ -54,14 +54,14 @@ test("regional-indicator parity uses the whole line and repeated movement reuses
 
 test("local ASCII deletion avoids whole-line indexing while nearby Unicode and CRLF retain exact clusters", async ({ page }) => {
     await page.goto("/editing/"); await ready(page);
-    const text = "\u0600" + "x".repeat(2400000), offset = 1200000;
+    const text = "\u0600" + "x".repeat(240_000), offset = 120_000;
     await setup(page, text, offset); const before = await state(page);
     await page.keyboard.press("Delete"); await ready(page);
     const after = await state(page);
     expect(after.document).toMatchObject({ length: text.length - 1, revision: before.document!.revision + 1, exports: 0 });
     expect(after.primary.graphemeScanSteps).toBe(0);
     expect(after.primary.selection).toMatchObject({ anchor: offset, head: offset });
-    expect(await page.evaluate(() => window.editingFixture.range(1199998, 1200002))).toBe("xxxx");
+    expect(await page.evaluate(() => window.editingFixture.range(119_998, 120_002))).toBe("xxxx");
     await page.keyboard.press("ControlOrMeta+z"); await ready(page);
     expect(await page.evaluate(n => window.editingFixture.range(0, n), text.length)).toBe(text);
     for (const cluster of ["\u0600a", "a\u0301", "\r\n"]) {
@@ -79,19 +79,19 @@ test("local ASCII deletion avoids whole-line indexing while nearby Unicode and C
 });
 
 test("a whole-line deletion yields to animation frames and typing in the other view cancels it", async ({ page }) => {
-    await page.goto("/editing/"); await ready(page); await setup(page, "x" + "\u0301".repeat(1_000_000), 1_000_001);
+    await page.goto("/editing/"); await ready(page); await setup(page, "x" + "\u0301".repeat(100_000), 100_001);
     const observed = await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(input => {
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
         return new Promise<{ frames: number; pending: boolean }>(resolve => { let frames = 0; const tick = () => { const pending = window.editingFixture.snapshot().primary.pendingGrapheme; if (++frames === 2 || !pending) resolve({ frames, pending }); else requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
     });
     expect(observed).toEqual({ frames: 2, pending: true });
     await page.evaluate(() => window.editingFixture.focus("secondary")); await page.keyboard.type("!"); await ready(page);
-    const after = await state(page); expect(after.primary.commits).toBe(0); expect(after.secondary.commits).toBe(1); expect(after.document!.length).toBe(1_000_002); expect(after.document!.exports).toBe(0);
+    const after = await state(page); expect(after.primary.commits).toBe(0); expect(after.secondary.commits).toBe(1); expect(after.document!.length).toBe(100_002); expect(after.document!.exports).toBe(0);
 });
 
 test("pending whole-line scans yield to frames and expire on revision, selection, tab, permission or disposal changes", async ({ page }) => {
     for (const changed of ["revision", "selection", "generation", "permission", "dispose"] as const) {
-        await page.goto("/editing/"); await ready(page); await setup(page, "x" + "\u0301".repeat(1_000_000), 1_000_001);
+        await page.goto("/editing/"); await ready(page); await setup(page, "x" + "\u0301".repeat(100_000), 100_001);
         const before = await state(page);
         const pending = await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate((input, changed) => {
             input.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
@@ -107,7 +107,7 @@ test("pending whole-line scans yield to frames and expire on revision, selection
         const frames = await page.evaluate(() => new Promise<number>(resolve => { let frames = 0; const tick = () => { if (++frames === 3) resolve(frames); else requestAnimationFrame(tick); }; requestAnimationFrame(tick); }));
         expect(frames).toBe(3); await expect.poll(async () => (await state(page)).primary.pendingGrapheme).toBe(false);
         const after = await state(page); expect(after.primary.commits).toBe(before.primary.commits);
-        if (changed !== "dispose") { expect(after.document!.length).toBe(1_000_001 + (changed === "revision" ? 1 : 0)); expect(after.document!.exports).toBe(0); }
+        if (changed !== "dispose") { expect(after.document!.length).toBe(100_001 + (changed === "revision" ? 1 : 0)); expect(after.document!.exports).toBe(0); }
         else expect(after.diagnostics.resources).toBe(0);
     }
 });

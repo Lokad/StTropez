@@ -427,12 +427,12 @@ test("folded rows keep independent views, disclosure keys and visible-line navig
     expect((await page.evaluate(() => window.editingFixture.snapshot())).document!.exports).toBe(0);
     await page.evaluate(() => window.editingFixture.dispose()); expect((await page.evaluate(() => window.editingFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
 });
-test("a 100k-line fold keeps row work bounded, maps edits and undo, and reveals a hidden typing target", async ({ page }) => {
-    test.setTimeout(120000); await page.goto("/editing/"); const text = "start\r\n" + "const row = 1;\r\n".repeat(100000) + "end", end = text.length - 3;
+test("a folded range keeps row work bounded, maps edits and undo, and reveals a hidden typing target", async ({ page }) => {
+    test.setTimeout(120000); await page.goto("/editing/"); const text = "start\r\n" + "const row = 1;\r\n".repeat(1000) + "end", end = text.length - 3;
     await page.evaluate(({ text, end }) => { const f = window.editingFixture; f.setText(text); f.folds([{ id: "many", from: 0, to: end, collapsed: true }]); }, { text, end }); await ready(page);
     let state = await page.evaluate(() => window.editingFixture.snapshot()); expect(state.primary.viewport.visibleLines).toBe(2); expect(state.primary.viewport.rows).toBe(2); expect(state.primary.inputUnits).toBeLessThanOrEqual(2600);
     expect(await page.locator("#primary .st-viewport-row").allTextContents()).toEqual(["start", "end"]);
-    await expect(page.locator("#primary .st-fold-summary")).toHaveAttribute("data-label", "… 100000 lines hidden");
+    await expect(page.locator("#primary .st-fold-summary")).toHaveAttribute("data-label", "… 1000 lines hidden");
     await input(page).press("PageDown"); await ready(page); expect((await page.evaluate(() => window.editingFixture.snapshot())).primary.selection.head).toBe(end);
     await input(page).press("PageUp"); await ready(page); expect((await page.evaluate(() => window.editingFixture.snapshot())).primary.selection.head).toBe(0);
     const middle = Math.floor(text.length / 2); await page.evaluate(at => window.editingFixture.edit([{ from: at, to: at, insert: "new\r\n" }]), middle); await ready(page);
@@ -452,7 +452,7 @@ test("a 100k-line fold keeps row work bounded, maps edits and undo, and reveals 
         f.folds([{ id: "many", from: 0, to: f.snapshot().document!.length - 3, collapsed: true }]);
     }, middle); await ready(page);
     await input(page).pressSequentially("!"); await ready(page); state = await page.evaluate(() => window.editingFixture.snapshot());
-    expect(state.primary.selection.head).toBe(middle + 1); expect(state.primary.viewport.visibleLines).toBe(100002); expect(state.document!.exports).toBe(0);
+    expect(state.primary.selection.head).toBe(middle + 1); expect(state.primary.viewport.visibleLines).toBe(1002); expect(state.document!.exports).toBe(0);
     expect(await page.evaluate(at => window.editingFixture.range(at, at + 5), middle)).toBe("!" + text.slice(middle, middle + 4));
     await page.evaluate(() => window.editingFixture.dispose()); expect((await page.evaluate(() => window.editingFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
 });

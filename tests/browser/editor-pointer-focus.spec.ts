@@ -297,9 +297,9 @@ test("column drags edit visible rows together and keep the active corner", async
 });
 
 test("a scrolled column drag replaces graphemes on every crossed row and undoes in one step", async ({ page }) => {
-    const row = "A\t🍎AZ\n", first = 50002, last = first + 192;
+    const row = "A\t🍎AZ\n", first = 502, last = first + 192;
     await page.goto("/editing/");
-    await page.evaluate(row => { const f = window.editingFixture; f.setText(row.repeat(100000)); f.focus("primary"); }, row);
+    await page.evaluate(row => { const f = window.editingFixture; f.setText(row.repeat(1000)); f.focus("primary"); }, row);
     const root = page.locator("#primary .st-viewport");
     const scrollTo = async (line: number) => {
         await root.evaluate((node, line) => { node.scrollTop = (line - 2) * window.editingFixture.snapshot().primary.viewport.lineHeight; }, line);

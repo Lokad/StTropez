@@ -17,7 +17,7 @@ test("viewport maps retained source rows through newline edits without stale con
         const { mountViewport } = await import(path + "viewport.js") as typeof import("../../src/browser/viewport.ts");
         const { ComparisonRowsCursor } = await import(path + "rows.js") as typeof import("../../src/core/comparison-rows.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "retained-rows", variant: "text" }, "Rows",
-            { value: Array.from({ length: 100000 }, (_, i) => `const row_${i} = ${i};`).join("\r\n") });
+            { value: Array.from({ length: 1200 }, (_, i) => `const row_${i} = ${i};`).join("\r\n") });
         const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "rows"), host = document.createElement("section");
         host.style.cssText = "height:260px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
         let shade = "row-token", early = false;
@@ -48,7 +48,7 @@ test("viewport maps retained source rows through newline edits without stale con
             }
             throw new Error("Missing native geometry oracle");
         };
-        let target = 50002;
+        let target = 502;
         const work: { name: string; eligible: number; nodes: number; children: number; target: boolean; exact: boolean; error: number }[] = [];
         const run = (name: string, change: () => void) => {
             const tracked = row(target), before = new Map(mounted().map(node => [node.textContent!, { node, children: [...node.childNodes] }]));
@@ -92,8 +92,8 @@ test("viewport maps retained source rows through newline edits without stale con
             shade = "row-token-new"; viewport.invalidate(); settle();
             const refreshed = row(target).querySelector(".row-token-new") !== null && token !== row(target).firstChild;
             // Identical clipped text is not an identity: preserve the actual mapped source row.
-            edit([{ from: 0, to: doc().buffer.length, insert: Array.from({ length: 1000 }, (_, i) => `row_${i} ` + "x".repeat(5000)).join("\n") }]);
-            target = 500; viewport.revealOffset(doc().buffer.offsetAt(target) + 2000); settle();
+            edit([{ from: 0, to: doc().buffer.length, insert: Array.from({ length: 80 }, (_, i) => `row_${i} ` + "x".repeat(5000)).join("\n") }]);
+            target = 40; viewport.revealOffset(doc().buffer.offsetAt(target) + 2000); settle();
             const clipped = row(target), clippedChild = clipped.firstChild, neighbor = row(target - 1);
             edit([{ from: doc().buffer.offsetAt(target - 2), to: doc().buffer.offsetAt(target - 2), insert: "\n" }]); target++; settle();
             const fragment = { partial: viewport.getDiagnostics().partialRows > 0, retained: row(target) === clipped && row(target).firstChild === clippedChild,

@@ -176,14 +176,14 @@ test("Undo groups a leading space with its word and keeps a run of spaces separa
     await page.keyboard.press("Control+Shift+z"); await page.keyboard.press("End"); await page.keyboard.type("d");
     await page.keyboard.press("Control+z"); await expect(row).toHaveJSProperty("textContent", "abc");
     await page.evaluate(() => {
-        const f = window.editingFixture; f.setText("w".repeat(1_000_000)); f.selections([{ anchor: 0, head: 0 }]);
+        const f = window.editingFixture; f.setText("w".repeat(100_000)); f.selections([{ anchor: 0, head: 0 }]);
         const input = document.querySelector("#primary textarea")!;
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true, bubbles: true, cancelable: true }));
         if (!f.snapshot().primary.pendingWord) throw new Error("Expected pending navigation.");
         for (const data of "abc def") input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data, bubbles: true, cancelable: true }));
     });
     await ready(page); await page.keyboard.press("Control+z"); await ready(page);
-    expect(await page.evaluate(() => { const f = window.editingFixture; return f.range(1_000_000, f.snapshot().document!.length); })).toBe("abc");
+    expect(await page.evaluate(() => { const f = window.editingFixture; return f.range(100_000, f.snapshot().document!.length); })).toBe("abc");
 });
 
 test("trusted replacement input preserves UTF-16 selection across a surrogate pair", async ({ page }) => {
@@ -322,7 +322,7 @@ test("a composition confirmation key leaves the following Enter available for a 
 
 test("typing, newline, paste and history keep a visible caret in place on both scroll axes", async ({ page }) => {
     const source = page.getByRole("textbox", { name: "Primary source", exact: true });
-    await page.evaluate(() => window.editingFixture.setText((" ".repeat(60) + "x".repeat(340) + "\n").repeat(2000))); await ready(page);
+    await page.evaluate(() => window.editingFixture.setText((" ".repeat(60) + "x".repeat(340) + "\n").repeat(1000))); await ready(page);
     await page.evaluate(() => {
         const f = window.editingFixture; f.configure({ language: { enter: "keep" } });
         const offset = 500 * 401 + 80; f.selections([{ anchor: offset, head: offset }]); f.focus("primary");

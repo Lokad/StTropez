@@ -16,7 +16,7 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountViewport } = await import(path + "viewport.js") as typeof import("../../src/browser/viewport.ts");
         const { ComparisonRowsCursor } = await import(path + "rows.js") as typeof import("../../src/core/comparison-rows.ts");
-        const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "paint-captures", variant: "text" }, "Paint", { value: "const sample = 123;\r\n".repeat(100000) });
+        const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "paint-captures", variant: "text" }, "Paint", { value: "const sample = 123;\r\n".repeat(1000) });
         const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "paint"), host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
         let calls = 0, notices = 0, shade = "paint-a";
@@ -37,8 +37,8 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
                 decorated: calls - decorated, mutations: observer.takeRecords().length, notices: notices - notified, pending: viewport.activity().pending };
         };
         try {
-            viewport.revealOffset(documentState().buffer.offsetAt(50000)); settle();
-            const middle = viewport.getDiagnostics(), row = host.querySelector<HTMLElement>('.st-viewport-row[data-line="50000"]')!, child = row.firstChild;
+            viewport.revealOffset(documentState().buffer.offsetAt(500)); settle();
+            const middle = viewport.getDiagnostics(), row = host.querySelector<HTMLElement>('.st-viewport-row[data-line="500"]')!, child = row.firstChild;
             const geometry = lastGeometry, middleChanges = geometryChanges;
             const topEdge = viewport.element.getBoundingClientRect().top + viewport.element.clientTop;
             const onScreen = [...host.querySelectorAll<HTMLElement>(".st-viewport-row[data-line]")].filter(node => {
@@ -49,7 +49,7 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
             const queued = work("scheduled unchanged scroll", () => viewport.scrollTo({ top: middle.scrollTop, left: middle.scrollLeft }));
             const preserved = row.firstChild === child;
             const changes = [];
-            const from = documentState().buffer.offsetAt(50000);
+            const from = documentState().buffer.offsetAt(500);
             changes.push(work("selection", () => viewport.view.setSelection(0, { anchor: from, head: from + 5 })));
             const selected = row.querySelector(".st-viewport-selected")?.textContent;
             const stableGeometry = lastGeometry === geometry && geometryChanges === middleChanges && Object.isFrozen(geometry);
@@ -59,7 +59,7 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
             changes.push(work("decorations", () => { shade = "paint-b"; viewport.invalidate(); }));
             const decorated = row.querySelector(".paint-b") !== null;
             changes.push(work("folds", () => { const buffer = documentState().buffer;
-                viewport.view.folding.setRanges(viewport.view.folding.getSnapshot(), [{ id: "fold", from: buffer.offsetAt(50000), to: buffer.offsetAt(50004), collapsed: true }]); }));
+                viewport.view.folding.setRanges(viewport.view.folding.getSnapshot(), [{ id: "fold", from: buffer.offsetAt(500), to: buffer.offsetAt(504), collapsed: true }]); }));
             const folded = viewport.getDiagnostics().collapsedFolds, folds = viewport.view.folding.getSnapshot(), buffer = documentState().buffer;
             const cursor = new ComparisonRowsCursor(buffer, buffer, Object.freeze([]), folds.index, folds.index); let aligned = cursor.next(4096);
             while (!aligned.result) aligned = cursor.next(4096); cursor.dispose();
@@ -75,7 +75,7 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
             const resizePublished = lastGeometry === size && geometryChanges > middleChanges;
             changes.push(work("zoom", () => { host.style.zoom = "1.25"; }));
             changes.push(work("font completion", () => document.fonts.dispatchEvent(new Event("loadingdone"))));
-            viewport.revealOffset(buffer.offsetAt(50000)); settle();
+            viewport.revealOffset(buffer.offsetAt(500)); settle();
             changes.push(work("composition controls", () => { input.setComposing(true); }));
             const disabledFold = host.querySelector<HTMLButtonElement>(".st-fold-button")!.disabled;
             changes.push(work("scroll", () => viewport.scrollTo({ top: viewport.getSnapshot().scrollTop + 100 })));

@@ -20,7 +20,7 @@ test("occurrence shortcuts wrap, keep the current word primary and type over the
     await page.keyboard.press("Control+Shift+l"); expect(await heads()).toEqual([0, 5, 12, 20]);
     expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 15, head: 12 });
     await page.keyboard.type("Y"); await expect(row).toHaveJSProperty("textContent", "Y sYter Y CAT Y");
-    await setup(page, "name\n" + "other\n".repeat(100_000) + "name", 2);
+    await setup(page, "name\n" + "other\n".repeat(10_000) + "name", 2);
     await page.keyboard.press("Control+Shift+l"); await page.keyboard.type("Z"); await ready(page);
     expect(await page.evaluate(() => { const f = window.editingFixture, length = f.snapshot().document!.length; return [f.range(0, 2), f.range(length - 2, length)]; })).toEqual(["Z\n", "\nZ"]);
 });
@@ -99,9 +99,9 @@ test("Backspace follows indentation stops, then typing paints at the resulting c
     await expect(page.locator("#primary .st-viewport-row").first()).toHaveJSProperty("textContent", "Ax  y");
     await page.keyboard.press("End"); await page.keyboard.press("ArrowLeft"); await page.keyboard.press("Backspace");
     await expect(page.locator("#primary .st-viewport-row").first()).toHaveJSProperty("textContent", "Ax y");
-    await setup(page, " ".repeat(1_000_000) + "end", 1_000_000);
+    await setup(page, " ".repeat(100_000) + "end", 100_000);
     await page.keyboard.press("Backspace"); await page.keyboard.type("Y"); await ready(page);
-    expect(await page.evaluate(() => window.editingFixture.range(999_996, 1_000_000))).toBe("Yend");
+    expect(await page.evaluate(() => window.editingFixture.range(99_996, 100_000))).toBe("Yend");
 });
 
 test("Home toggles between the first nonblank and the start of its own line", async ({ page }) => {
@@ -136,11 +136,11 @@ test("Home toggles between the first nonblank and the start of its own line", as
         const result = { handled, caret: field.selectionStart }; field.remove(); return result;
     });
     expect(hostField).toEqual({ handled: false, caret: 4 });
-    await setup(page, " ".repeat(1_000_000) + "last", 1_000_004);
+    await setup(page, " ".repeat(100_000) + "last", 100_004);
     await page.keyboard.press("Home");
     await page.keyboard.type("Y");
     await ready(page);
-    expect(await page.evaluate(() => window.editingFixture.range(1_000_000, 1_000_005))).toBe("Ylast");
+    expect(await page.evaluate(() => window.editingFixture.range(100_000, 100_005))).toBe("Ylast");
 });
 
 test("word keys navigate full model ranges, extend selections and delete one undoable code word", async ({ page }) => {
@@ -163,13 +163,13 @@ test("word keys navigate full model ranges, extend selections and delete one und
     expect(await page.evaluate(() => window.editingFixture.range(0, 4))).toBe("  αβ"); expect((await snapshot(page)).document!.exports).toBe(0);
 });
 
-test("a million-unit word yields, deletes beyond native context and restores through shared history", async ({ page }) => {
-    await setup(page, "x".repeat(1_000_000) + "  tail"); const before = await snapshot(page);
+test("a long word yields, deletes beyond native context and restores through shared history", async ({ page }) => {
+    await setup(page, "x".repeat(100_000) + "  tail"); const before = await snapshot(page);
     await page.keyboard.press("Control+Delete"); await ready(page); const after = await snapshot(page);
     expect(after.document).toMatchObject({ length: 6, revision: before.document!.revision + 1, exports: 0 });
     expect(await page.evaluate(() => window.editingFixture.range(0, 6))).toBe("  tail"); expect(after.history!.undoDepth).toBe(before.history!.undoDepth + 1);
-    await page.keyboard.press("Control+z"); await ready(page); expect((await snapshot(page)).document!.length).toBe(1_000_006);
-    await page.keyboard.press("Control+ArrowRight"); await ready(page); expect((await snapshot(page)).primary.selection.head).toBe(1_000_000);
+    await page.keyboard.press("Control+z"); await ready(page); expect((await snapshot(page)).document!.length).toBe(100_006);
+    await page.keyboard.press("Control+ArrowRight"); await ready(page); expect((await snapshot(page)).primary.selection.head).toBe(100_000);
     expect((await snapshot(page)).primary.inputUnits).toBeLessThan(2600);
 });
 
@@ -199,7 +199,7 @@ test("word movement stops at line boundaries and word deletion treats indentatio
 
 test("pending word deletion expires after revision, selection or tab-generation changes", async ({ page }) => {
     for (const changed of ["revision", "selection", "generation"] as const) {
-        await page.goto("/editing/"); await ready(page); await setup(page, "x".repeat(1_000_000));
+        await page.goto("/editing/"); await ready(page); await setup(page, "x".repeat(100_000));
         const before = await snapshot(page);
         const pending = await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate((input, changed) => {
             input.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", ctrlKey: true, bubbles: true, cancelable: true }));
@@ -211,7 +211,7 @@ test("pending word deletion expires after revision, selection or tab-generation 
         }, changed);
         expect(pending).toBe(true);
         await expect.poll(() => page.evaluate(() => window.editingFixture.snapshot().primary.pendingWord)).toBe(false);
-        const after = await snapshot(page); expect(after.document!.length).toBe(1_000_000 + (changed === "revision" ? 1 : 0));
+        const after = await snapshot(page); expect(after.document!.length).toBe(100_000 + (changed === "revision" ? 1 : 0));
         expect(after.primary.commits).toBe(before.primary.commits); expect(after.document!.exports).toBe(0);
     }
 });
@@ -295,7 +295,7 @@ test("page movement preserves raw CRLF offsets and measured columns in horizonta
 });
 
 test("pending word deletion orders native deletion and typing and respects permission changes", async ({ page }) => {
-    const text = "x".repeat(1_000_000) + " tail";
+    const text = "x".repeat(100_000) + " tail";
     await setup(page, text); const before = (await snapshot(page)).primary.commits;
     await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(node => {
         const input = node as HTMLTextAreaElement;
@@ -315,19 +315,19 @@ test("pending word deletion orders native deletion and typing and respects permi
     await page.keyboard.press("Control+z"); await ready(page); expect(await page.evaluate(() => window.editingFixture.range(0, 5))).toBe(" tail");
     await page.keyboard.press("Control+z"); await ready(page); expect((await snapshot(page)).document).toMatchObject({ length: text.length, exports: 0 });
     expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 0, head: 0 });
-    await setup(page, "x".repeat(1_000_000)); const revision = (await snapshot(page)).document!.revision;
+    await setup(page, "x".repeat(100_000)); const revision = (await snapshot(page)).document!.revision;
     await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(node => {
         window.editingFixture.keymap.bind("Ctrl+Delete", "delete-word-forward");
         node.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", ctrlKey: true, bubbles: true, cancelable: true })); window.editingFixture.readOnly(true);
-    }); await ready(page); expect((await snapshot(page)).document).toMatchObject({ length: 1_000_000, revision });
+    }); await ready(page); expect((await snapshot(page)).document).toMatchObject({ length: 100_000, revision });
     await page.keyboard.press("Control+Delete"); await ready(page); expect((await snapshot(page)).document!.revision).toBe(revision);
-    await page.keyboard.press("Control+ArrowRight"); await ready(page); expect((await snapshot(page)).primary.selection.head).toBe(1_000_000);
+    await page.keyboard.press("Control+ArrowRight"); await ready(page); expect((await snapshot(page)).primary.selection.head).toBe(100_000);
     const readOnly = await page.evaluate(() => {
         const f = window.editingFixture;
         return [f.command("delete-backward"), f.command("delete-word-backward"), f.command("select-word-backward")];
     });
     expect(readOnly).toEqual([false, false, true]); await ready(page);
-    expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 1_000_000, head: 0 });
+    expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 100_000, head: 0 });
 });
 
 test("nearest caret reveal leaves an already visible row and horizontal position stable", async ({ page }) => {

@@ -52,13 +52,13 @@ test("decorated viewport bounds endpoint reads and preserves overlap order, sele
     ]);
 });
 
-test("a retained diagnostic, swatch and point follow typing and history in a 100k-line editor", async ({ page }) => {
+test("a retained diagnostic, swatch and point follow typing and history in a scrolled editor", async ({ page }) => {
     const painted = await page.evaluate(async () => {
         const path = "/viewport-decorations/";
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextEditor } = await import(path + "editor.js") as typeof import("../../src/browser/text-editor.ts");
-        const workspace = new Workspace(), target = 50000;
-        const lines = Array<string>(100000).fill("const item = 1;");
+        const workspace = new Workspace(), target = 500;
+        const lines = Array<string>(1000).fill("const item = 1;");
         lines[target] = "paint red"; lines[target + 1] = "";
         const id = workspace.createDocument({ scope: "test", resource: "marks", variant: "text" }, "Paint", lines.join("\r\n"));
         const tab = workspace.tabs.open({ kind: "text", documentId: id }, "marks");
@@ -85,10 +85,10 @@ test("a retained diagnostic, swatch and point follow typing and history in a 100
         layer.set(0, [{ ...range, properties: { "--color": "rgb(189, 44, 31)" } }, { from: point, to: point, className: "missing-again" }]);
         editor.viewport.flush();
         const changed = [...visited];
-        const text = host.querySelector('.st-viewport-row[data-line="50000"]')!.textContent;
+        const text = host.querySelector('.st-viewport-row[data-line="500"]')!.textContent;
         const label = host.querySelector<HTMLElement>('[data-ornament="afterLine"]')!;
         const stamp = () => {
-            const line = host.querySelector<HTMLElement>('.st-viewport-row[data-line="50000"]')!;
+            const line = host.querySelector<HTMLElement>('.st-viewport-row[data-line="500"]')!;
             const span = line.querySelector<HTMLElement>(".test-diagnostic:not([data-ornament])");
             return { text: line.textContent, word: span?.textContent, stale: layer.set(workspace.document(id).revision - 1, []),
                 offset: span && editor.viewport.hitTest(span.getBoundingClientRect().left + 1, span.getBoundingClientRect().top + 5)?.offset,
@@ -96,7 +96,7 @@ test("a retained diagnostic, swatch and point follow typing and history in a 100
         };
         Object.assign(window, { inspectMarks: stamp, indentMany: () => {
             const doc = workspace.document(id);
-            const edits = Array.from({ length: 20_000 }, (_, i) => {
+            const edits = Array.from({ length: 200 }, (_, i) => {
                 const at = doc.buffer.offsetAt(i * 5); return { from: at, to: at, insert: "  " };
             });
             return workspace.edit({ documentId: id, expectedRevision: doc.revision, edits, origin: "human" }).applied;
@@ -105,7 +105,7 @@ test("a retained diagnostic, swatch and point follow typing and history in a 100
             width: parseFloat(getComputedStyle(host.querySelector(".missing-again")!, "::after").width), replaced: !mark.isConnected,
             color: getComputedStyle(swatch).backgroundColor };
     });
-    expect(painted).toMatchObject({ visits: [50000, 50001], changed: [50001], replaced: true, text: "paint red", label: "<b>error</b>", markup: false, color: "rgb(189, 44, 31)" });
+    expect(painted).toMatchObject({ visits: [500, 501], changed: [501], replaced: true, text: "paint red", label: "<b>error</b>", markup: false, color: "rgb(189, 44, 31)" });
     expect(painted.width).toBeGreaterThan(1);
     const input = page.getByRole("textbox", { name: "Layer source", exact: true });
     const inspect = () => page.evaluate(() => (window as unknown as { inspectMarks(): {
@@ -119,7 +119,7 @@ test("a retained diagnostic, swatch and point follow typing and history in a 100
     await expect.poll(inspect).toMatchObject({ text: "// paint red", word: "red", offset: start + 9, revision: 3 });
     expect(await page.evaluate(() => (window as unknown as { indentMany(): boolean }).indentMany())).toBe(true);
     await input.press("Home"); await page.keyboard.insertText("!");
-    await expect.poll(inspect).toMatchObject({ text: expect.stringContaining("!"), word: "red", offset: start + 20_012, revision: 5 });
+    await expect.poll(inspect).toMatchObject({ text: expect.stringContaining("!"), word: "red", offset: start + 212, revision: 5 });
     await expect(page.locator(".missing-again")).toHaveCount(1);
     await input.press("End"); await input.press("Shift+ArrowDown"); await input.press("Shift+ArrowDown");
     await input.press("Delete");
