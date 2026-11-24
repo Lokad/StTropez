@@ -73,7 +73,8 @@ test("real rename previews a captured name, rejects an old name and shares one u
     const oldApply = await apply.evaluateHandle(node => (node as HTMLButtonElement).onclick!.bind(node));
     await name.fill("basketTotal"); await expect(apply).toBeDisabled();
     await name.press("Enter"); await expect(apply).toBeEnabled(); await expect(dialog.getByLabel("Rename edits")).toContainText("basketTotal");
-    expect(await oldApply.evaluate(confirm => confirm(new PointerEvent("click")))).toEqual({ applied: false, reason: "expired" }); await oldApply.dispose();
+    expect(await oldApply.evaluate(confirm => confirm(new PointerEvent("click")))).toEqual({ status: "stale" });
+    await oldApply.dispose();
     await expect(page.locator("#files")).not.toContainText("●"); await expect(apply).toBeEnabled();
     await name.dispatchEvent("keydown", { key: "Enter", repeat: true }); await expect(apply).toBeEnabled();
     await expect(name).toBeFocused(); await page.keyboard.press("Enter"); await expect(dialog).toBeHidden(); await expect(pricing).toBeFocused();
