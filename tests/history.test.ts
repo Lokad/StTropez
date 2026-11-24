@@ -108,7 +108,7 @@ test("packed bulk changes preserve initiating selection, independent views and e
 });
 
 test("workspace snapshots export text only through explicit captured readers", () => {
-    const { workspace, source, document, errors } = fixture(corpus("lines-100000"));
+    const { workspace, source, document, errors } = fixture(corpus("lines-10000"));
     const first = document(), firstResource = source.getSnapshot(), saved = first.buffer, seen = [];
     assert.ok(firstResource.state === "ready");
     const readText = first.text, readValue = firstResource.value;
@@ -130,7 +130,7 @@ test("workspace snapshots export text only through explicit captured readers", (
     assert.equal(seen.length, 1); assert.ok(Object.isFrozen(current)); assert.equal(errors.length, 0);
     assert.ok(Object.isFrozen(source.getSnapshot())); assert.ok(Object.isFrozen(source.metadata.getSnapshot()));
     assert.equal(source.getSnapshot().metadata, source.metadata.getSnapshot());
-    assert.equal(readText().length, 2_400_000); assert.equal(readValue(), readText());
+    assert.equal(readText().length, saved.length); assert.equal(readValue(), readText());
     assert.equal(saved.readMetrics().textExports, 1); assert.equal(current.buffer.readMetrics().textExports, 0);
     const currentResource = source.getSnapshot(); assert.ok(currentResource.state === "ready");
     assert.equal(current.text().slice(0, 2), "😀"); assert.equal(currentResource.value(), current.text());

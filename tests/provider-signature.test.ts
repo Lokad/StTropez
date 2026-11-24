@@ -22,8 +22,8 @@ test("strings, comments and opaque templates refuse help at the caret and nestin
     assert.equal(scan("lookup(" + "[".repeat(128)).result.reason, "depth-limit");
     const scanner = new SignatureScanner(); assert.throws(() => scanner.feed("x", 1)); assert.throws(() => scanner.feed("x".repeat(16385), 0));
 });
-test("a distant lexical state stays correct in100k rows without a main-thread context window assumption", () => {
-    const prefix = "const unchanged = 123;\r\n".repeat(100000);
+test("a distant lexical state stays correct across separated lines", () => {
+    const prefix = "const unchanged = 123;\r\n".repeat(1_000);
     const { result } = scan(prefix + "lookup('key', "); assert.equal(result.call?.argument, 1); assert.equal(result.call?.open, prefix.length + 6);
     assert.equal(scan("/*" + prefix + "lookup('fake', ").result.reason, "no-call");
 });

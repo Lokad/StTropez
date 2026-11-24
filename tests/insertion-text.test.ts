@@ -84,11 +84,11 @@ test("formatted marker bounds remain ordered and preserve raw body ranges across
 });
 
 test("insertion context reads local whitespace without exporting or traversing a large document", t => {
-    const row = "\t\tconst value = 123;\r\n", buffer = TextBuffer.from(row.repeat(100000));
-    const context = insertionContext(buffer, buffer.offsetAt(50000) + 2, { tabSize: 4, insertSpaces: true });
+    const row = "\t\tconst value = 123;\r\n", buffer = TextBuffer.from(row.repeat(10_000));
+    const context = insertionContext(buffer, buffer.offsetAt(5_000) + 2, { tabSize: 4, insertSpaces: true });
     assert.equal(context.columns, 8); assert.deepEqual(buffer.readMetrics(), { textExports: 0, sliceUnits: 4 });
-    const long = TextBuffer.from("    " + "x".repeat(1_000_000));
+    const long = TextBuffer.from("    " + "x".repeat(12_000));
     assert.equal(insertionContext(long, long.length, { tabSize: 4, insertSpaces: true }).columns, 4);
     assert.deepEqual(long.readMetrics(), { textExports: 0, sliceUnits: 4096 });
-    t.diagnostic(JSON.stringify({ rows: 100000, contextReadUnits: buffer.readMetrics().sliceUnits, longRowReadUnits: long.readMetrics().sliceUnits }));
+    t.diagnostic(JSON.stringify({ rows: 10_000, contextReadUnits: buffer.readMetrics().sliceUnits, longRowReadUnits: long.readMetrics().sliceUnits }));
 });

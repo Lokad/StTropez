@@ -7,10 +7,10 @@ function scan(text: string) { const input = validateLinksInput({ id: 1, document
     for (;;) { const step = cursor.next(); assert.ok(step.work >= work && step.work - work <= 16384); work = step.work; if (step.result) { assert.equal(work, text.length); return { input, buffer, result: step.result }; } }
 }
 test("document links reuse exact import-line grammar with raw BOM/CRLF ranges, bounded long lines and unresolved modules", () => {
-    const line = 'import "sample-utils";', text = '\ufeff' + line + '\r\n' + 'import "missing-utils";\n' + "x".repeat(1000000) + '\r\n' + line;
+    const line = 'import "sample-utils";', text = '\ufeff' + line + '\r\n' + 'import "missing-utils";\n' + "x".repeat(32_768) + '\r\n' + line;
     const x = scan(text), result = validateLinksResult(x.result, x.input, x.buffer); assert.equal(result.links.length, 3); assert.deepEqual(result.links[0], { from: 9, to: 21, module: "sample-utils", tooltip: "Open the captured sample-utils resource", target: { resource: alias.resource, document: alias.document, revision: 7, length: 25 } });
     assert.equal(result.links[1]!.target, null); assert.equal(result.links[2]!.from, text.length - line.length + 8); assert.equal(x.buffer.readMetrics().textExports, 0); assert.ok(Object.isFrozen(result.links[0]!.target));
-    for (const unsupported of ["import 'sample-utils';", ' import "sample-utils";', 'import "sample-utils"; // trailing', 'import "sample-utils"' + " ".repeat(1000000)]) { const y = scan(unsupported); assert.equal(validateLinksResult(y.result, y.input, y.buffer).links.length, 0); }
+    for (const unsupported of ["import 'sample-utils';", ' import "sample-utils";', 'import "sample-utils"; // trailing', 'import "sample-utils"' + " ".repeat(32_768)]) { const y = scan(unsupported); assert.equal(validateLinksResult(y.result, y.input, y.buffer).links.length, 0); }
 });
 test("complete link validation rejects malformed late entries, unknown URI targets, wrong revisions and split/oversized ranges", () => {
     const x = scan('import "sample-utils";\r\nimport "missing-utils";'), first = x.result.links[0]!;

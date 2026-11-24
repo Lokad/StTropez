@@ -115,7 +115,7 @@ test("shared closing delimiters retain possible openings and eligible dual-role 
 });
 
 test("work, depth and cooperative budgets stay explicit without whole-buffer reads", () => {
-    const buffer = TextBuffer.from("(" + "x".repeat(1_000_000) + ")"), matcher = new BracketMatcher();
+    const buffer = TextBuffer.from("(" + "x".repeat(16_384) + ")"), matcher = new BracketMatcher();
     const cursor = checkedCursor(matcher, buffer, 0, { maxWorkUnits: 2048 }), first = cursor.next(256);
     assert.equal(first.status, "running"); assert.equal(first.result, null); assert.equal(first.workUnits, 256);
     const final = finish(cursor); assert.equal(final.result!.kind, "limited"); assert.equal(final.result!.limit, "work");

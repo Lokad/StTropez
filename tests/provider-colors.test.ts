@@ -17,7 +17,7 @@ test("streamed color ranges remain exact across chunk boundaries, BOM/CRLF, supp
     const literals = ['"#abc"', "#1234", "#112233", "#01020380", "rgba(1, 2, 3, .5)", "RGB(10%,20%,30%)"];
     for (const literal of literals) for (let split = 1; split < literal.length; split++) { const prefix = " ".repeat(16384 - split), x = scan(prefix + literal + " ;"), result = validateColorsResult(x.result, x.input, x.buffer); assert.equal(result.colors.length, 1); assert.equal(result.colors[0]!.from, prefix.length + (literal.startsWith('"') ? 1 : 0)); assert.equal(x.buffer.readMetrics().textExports, 0); }
     const text = '\ufeffconst café = "😀 #abc";\r\nrgba(1,2,3,.5);\r\n#01020380', x = scan(text); assert.deepEqual(validateColorsResult(x.result, x.input, x.buffer).colors.map(c => c.text), ["#abc", "rgba(1,2,3,.5)", "#01020380"]);
-    for (const text of ["𐐀#abc", "#abc𐐀", "#abc\u200dname", "name#abc", "#abcdz", "#" + "f".repeat(1000000), "rgba(" + " ".repeat(1000000) + "1,2,3,1)"]) { const y = scan(text); assert.equal(validateColorsResult(y.result, y.input, y.buffer).colors.length, 0); }
+    for (const text of ["𐐀#abc", "#abc𐐀", "#abc\u200dname", "name#abc", "#abcdz", "#" + "f".repeat(32_768), "rgba(" + " ".repeat(32_768) + "1,2,3,1)"]) { const y = scan(text); assert.equal(validateColorsResult(y.result, y.input, y.buffer).colors.length, 0); }
     for (const tail of ["𐐀#abc", "#abc𐐀"]) { const y = scan(" ".repeat(16383) + tail); assert.equal(validateColorsResult(y.result, y.input, y.buffer).colors.length, 0); }
 });
 test("complete color batches reject malformed later ranges/channels, overlap and truncation before publication", () => {

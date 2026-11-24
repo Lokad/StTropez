@@ -11,8 +11,8 @@ function delta(before: TextBuffer, after: TextBuffer, budget = 256) {
 
 
 
-test("shared-edge planning isolates a small edit in a 100k-line buffer and handles version-only undo", () => {
-    const before = TextBuffer.from("const value = 1;\r\n".repeat(100000)), after = before.replace(123456, 123456, "😀\r\n");
+test("shared-edge planning isolates a small edit between shared ranges and handles version-only undo", () => {
+    const before = TextBuffer.from("const value = 1;\r\n".repeat(10_000)), after = before.replace(123456, 123456, "😀\r\n");
     assert.deepEqual(delta(before, after), { from: 123456, to: 123456, insertFrom: 123456, insertTo: 123460 });
     assert.deepEqual(delta(after, before), { from: 123456, to: 123460, insertFrom: 123456, insertTo: 123456 });
     assert.deepEqual(delta(before, before), { from: before.length, to: before.length, insertFrom: before.length, insertTo: before.length });

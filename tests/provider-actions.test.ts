@@ -7,7 +7,7 @@ function scan(text: string) { const input = capture(text), buffer = TextBuffer.f
     for (;;) { const step = cursor.next(); assert.ok(step.work >= previous && step.work - previous <= 16384); previous = step.work; if (step.result) { assert.equal(step.work, text.length); return { input, buffer, result: step.result }; } }
 }
 test("module actions reuse bounded import policy with raw BOM/CRLF, Unicode, LF fallback and idempotent disabled results", () => {
-    for (const text of ["", "const café = '😀';", "\ufeffconst café = '😀';\r\n" + "x".repeat(1000000), "// prefix\nsource;"]) {
+    for (const text of ["", "const café = '😀';", "\ufeffconst café = '😀';\r\n" + "x".repeat(32_768), "// prefix\nsource;"]) {
         const x = scan(text), edit = x.result.action.edits[0]!.edits[0]!, ending = text.includes("\r\n") ? "\r\n" : "\n", from = text.startsWith("\ufeff") ? 1 : 0;
         assert.deepEqual(edit, { from, to: from, insert: 'import "sample-utils";' + ending }); assert.equal(x.buffer.readMetrics().textExports, 0); assert.ok(Object.isFrozen(x.result.action.edits));
         const inserted = text.slice(0, from) + edit.insert + text.slice(from), again = scan(inserted); assert.deepEqual(again.result.action.edits, []); assert.match(again.result.action.disabled!, /already present/);

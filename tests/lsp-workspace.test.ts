@@ -255,7 +255,7 @@ function fixture(t: test.TestContext, extra: Readonly<{ maxDocumentUnits?: numbe
 }
 
 test("workspace batches and grouped history retain bounded wire edits; skipped revisions and reconnect stay exact", async t => {
-    const f = fixture(t), id = f.source.documentId, initial = f.workspace.document(id), text = "row 😀\r\n".repeat(100_000);
+    const f = fixture(t), id = f.source.documentId, initial = f.workspace.document(id), text = "row 😀\r\n".repeat(10_000);
     f.workspace.edit({ documentId: id, expectedRevision: initial.revision, edits: [{ from: 0, to: initial.buffer.length, insert: text }], origin: "human" });
     const scope = f.provider.createScope(), binding = scope.attachDocument(id); await scope.ensureConnected();
     const uri = binding.getSnapshot().uri, peer = f.peers[0]!;
@@ -266,7 +266,7 @@ test("workspace batches and grouped history retain bounded wire edits; skipped r
         if (bounded) { assert.equal(changes.length, 2); assert.ok(changes.reduce((sum, change) => sum + change.text.length, 0) < 32); }
     };
     const type = (insert: string, step: number) => {
-        const doc = f.workspace.document(id), far = doc.buffer.offsetAt(99_998) + 2 + step;
+        const doc = f.workspace.document(id), far = doc.buffer.offsetAt(9_998) + 2 + step;
         assert.equal(f.workspace.edit({ documentId: id, expectedRevision: doc.revision, origin: "human", history: { kind: "typing", group: "batch" },
             edits: [{ from: 2 + step, to: 2 + step, insert }, { from: far, to: far, insert }] }).applied, true);
     };

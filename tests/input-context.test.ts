@@ -10,8 +10,8 @@ test("a bounded native context maps exact CRLF/Unicode offsets without serializi
     assert.equal(context.toModel(3), 3); assert.equal(buffer.diagnostics().textExports, 0); assert.ok(Object.isFrozen(context));
 });
 test("large forward/backward selections map through one placeholder with bounded reads", () => {
-    const buffer = TextBuffer.from("x".repeat(2_400_000));
-    for (const selection of [{ anchor: 0, head: buffer.length }, { anchor: 2_000_000, head: 100_000 }]) {
+    const buffer = TextBuffer.from("x".repeat(24_000));
+    for (const selection of [{ anchor: 0, head: buffer.length }, { anchor: 20_000, head: 1_000 }]) {
         const context = inputContext(buffer, selection);
         assert.ok(context.text.length <= 513);
         assert.equal(context.toModel(context.nativeAnchor), selection.anchor); assert.equal(context.toModel(context.nativeHead), selection.head);

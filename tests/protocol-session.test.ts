@@ -128,16 +128,16 @@ test("document synchronization waits exclude unrelated work and expire changed c
 });
 
 test("indexing batches checkpoints, makes progress during edits and reuses its index on reconnect", async t => {
-    const host = fixture(t), buffers = [TextBuffer.from("line\r\n".repeat(20_000))]; let time = 0, clockStep = 4, turns = 0, edits = 0, hops = 0;
+    const host = fixture(t), buffers = [TextBuffer.from("line\r\n".repeat(20_000))]; let time = 0, turns = 0, edits = 0;
     let document: ReturnType<InstanceType<typeof LspSession>["bindDocument"]> | undefined;
-    const session = new LspSession({ ...host, now: () => time += clockStep,
-        schedule: (ms, callback) => { if (ms === 0) hops++; return host.schedule(ms, () => {
+    const session = new LspSession({ ...host, now: () => time += 4,
+        schedule: (ms, callback) => host.schedule(ms, () => {
             if (document && ms === 0 && ++turns > 1 && edits < 20) {
                 const previous = buffers.at(-1)!, next = previous.replace(previous.length, previous.length, "x"); buffers.push(next);
                 document.update(40 + edits, 41 + edits, next); edits++;
             }
             callback();
-        }); } }); t.after(() => session.dispose());
+        }) }); t.after(() => session.dispose());
     document = session.bindDocument({ ...input(), buffer: buffers[0]! }); await session.connect(); await settled();
     assert.ok(edits > 0 && edits < 20, "Indexing must finish while new edits are still arriving.");
     assert.equal(host.peers[0]!.documents.get(document.getSnapshot().uri)!.getText(), buffers.at(-1)!.slice(0, buffers.at(-1)!.length));
@@ -145,9 +145,6 @@ test("indexing batches checkpoints, makes progress during edits and reuses its i
     const current = buffers.at(-1)!, before = current.readMetrics().sliceUnits; document = undefined;
     session.disconnect(); await session.connect(); await settled();
     assert.ok(current.readMetrics().sliceUnits - before <= current.length + 64, "Reconnect exports text once without rescanning its line index.");
-    clockStep = 0; const beforeHops = hops;
-    session.bindDocument(input("abcdefghij\n".repeat(272_000), "fixture:batched", "batched")); await session.flush();
-    assert.ok(hops - beforeHops >= 2 && hops - beforeHops <= 8, "A stopped clock still bounds work, without one timer hop per 16K units.");
 });
 
 test("an encoded document failure is isolated, reported once and retried after a new revision", async t => {

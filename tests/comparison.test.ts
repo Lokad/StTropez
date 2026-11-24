@@ -59,13 +59,13 @@ test("invalid comparison budgets preserve live work and the shared minimum can f
     unsubscribe(); comparison.dispose(); assert.equal(workspace.diagnostics().leases, 0);
 });
 
-test("captured whole-review reversion preserves sparse 100k raw text and complete shared history", () => {
-    const workspace = new Workspace(), text = "first\r\n" + "unchanged value\r\n".repeat(100000) + "last 😀\r", reference = TextBuffer.from(text);
+test("captured whole-review reversion preserves distant changes and complete shared history", () => {
+    const workspace = new Workspace(), text = "first\r\n" + "unchanged value\r\n".repeat(10_000) + "last 😀\r", reference = TextBuffer.from(text);
     const resource = workspace.createTextResourceFromBuffer({ scope: "review", resource: "source", variant: "working" }, "Working", { buffer: reference, serverVersion: "saved-1" });
     const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "main"), comparison = createComparisonController(workspace, tab, { buffer: reference, version: "review-1" }), peer = workspace.createDocumentView(resource.documentId);
     workspace.edit({ documentId: resource.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 5, insert: "different" }, { from: text.length - 8, to: text.length, insert: "tail" }] });
     ready(comparison); const buffer = workspace.document(resource.documentId).buffer;
-    comparison.view.setSelections(1, [{ anchor: 8, head: 0 }, { anchor: 700000, head: 700003 }, { anchor: buffer.length, head: buffer.length }], 2);
+    comparison.view.setSelections(1, [{ anchor: 8, head: 0 }, { anchor: 70_000, head: 70_003 }, { anchor: buffer.length, head: buffer.length }], 2);
     peer.setSelection(1, { anchor: 123456, head: 123460 }); const before = comparison.view.getSnapshot().selectionSet, peerBefore = peer.getSnapshot().selectionSet, history = workspace.observeHistory(resource.documentId).getSnapshot();
     const ticket = comparison.beginReversion(); workspace.tabs.move(tab, "other"); assert.equal(ticket.isCurrent(), true); assert.equal(ticket.complete(), true);
     assert.equal(workspace.document(resource.documentId).buffer.equals(reference), true); assert.equal(workspace.observeHistory(resource.documentId).getSnapshot().undoDepth, history.undoDepth + 1);

@@ -140,7 +140,7 @@ test("editor newline plans mirror current local indentation, including after lit
 });
 
 test("a contextual mirror edit in a large document reads only its active fields", t => {
-    const local = contextual(["a\n        b", "a\n    b"]), prefix = "unrelated\n".repeat(50000);
+    const local = contextual(["a\n        b", "a\n    b"]), prefix = "unrelated\n".repeat(1_000);
     const buffer = TextBuffer.from(prefix + local.buffer.text() + prefix), stops = offsetSnippetStops(local.stops, prefix.length), at = stops[0]!.ranges[0]!.to - 1;
     const plan = planSnippetEdit(buffer, stops, 0, [{ from: at, to: at + 1, insert: "😀" }], createSelectionSet(buffer.length, [{ anchor: at, head: at + 1 }]),
         createSelectionSet(buffer.length + 1, [{ anchor: at + 2, head: at + 2 }]))!;

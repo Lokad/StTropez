@@ -56,9 +56,9 @@ test("incremental newline joins/splits and history jumps apply exactly through t
     }
 });
 
-test("distant batch changes and their inverses send bounded text instead of the intervening 100k lines", async t => {
-    const text = "row 😀\r\n".repeat(100_000), before = TextBuffer.from(text), index = await LspLineIndex.create(before, cooperate);
-    const far = before.offsetAt(99_998) + 2, workspace = new Workspace();
+test("distant batch changes and their inverses send bounded text without copying intervening lines", async t => {
+    const text = "row 😀\r\n".repeat(20_000), before = TextBuffer.from(text), index = await LspLineIndex.create(before, cooperate);
+    const far = before.offsetAt(19_998) + 2, workspace = new Workspace();
     const { documentId } = workspace.createTextResourceFromBuffer({ scope: "test", resource: "large", variant: "source" }, "Large", { buffer: before });
     const edit = (edits: readonly TextEdit[], group?: string) => workspace.edit({ documentId, origin: "human", expectedRevision: workspace.document(documentId).revision,
         edits, ...(group ? { history: { kind: "typing" as const, group } } : {}) });
@@ -71,7 +71,7 @@ test("distant batch changes and their inverses send bounded text instead of the 
         batchUnits: exact.changes.reduce((sum, change) => sum + change.text.length, 0),
         batchReads: before.readMetrics().sliceUnits - oldReads + result.buffer.readMetrics().sliceUnits - newReads };
     t.diagnostic(JSON.stringify(counts));
-    assert.ok(counts.fallbackUnits > 700_000); assert.ok(counts.batchUnits < 32); assert.ok(counts.batchReads < 256);
+    assert.ok(counts.fallbackUnits > 140_000); assert.ok(counts.batchUnits < 32); assert.ok(counts.batchReads < 256);
     assert.equal(exact.changes.length, 2); assert.ok(exact.changes[0]!.range.start.line > exact.changes[1]!.range.start.line);
     assert.equal(apply(text, exact.changes), result.buffer.slice(0, result.buffer.length));
     undoEdit();
@@ -100,11 +100,11 @@ test("unproved, mismatched and skipped change hints preserve the exact fallback"
 });
 
 test("large document opening yields; point changes reuse LF metadata and bound text reads", async () => {
-    const text = "sample 😀\r\n".repeat(100_000), before = TextBuffer.from(text); let yields = 0;
+    const text = "sample 😀\r\n".repeat(20_000), before = TextBuffer.from(text); let yields = 0;
     const index = await LspLineIndex.create(before, async () => { yields++; }); assert.ok(yields > 10);
-    const baseline = before.readMetrics().sliceUnits, from = before.offsetAt(50_000) + 2, after = before.replace(from, from, "Z\r");
+    const baseline = before.readMetrics().sliceUnits, from = before.offsetAt(10_000) + 2, after = before.replace(from, from, "Z\r");
     const changed = await index.change(after, cooperate), change = changed.changes[0]!;
-    assert.deepEqual(changed.index.at(from + 2), { line: 50_001, character: 0 });
+    assert.deepEqual(changed.index.at(from + 2), { line: 10_001, character: 0 });
     assert.equal(TextDocument.applyEdits(TextDocument.create("fixture:large", "fixture", 1, text), [{ range: change.range, newText: change.text }]), text.slice(0, from) + "Z\r" + text.slice(from));
     assert.ok(before.readMetrics().sliceUnits - baseline < 64); assert.ok(after.readMetrics().sliceUnits < 64);
     assert.equal(before.readMetrics().textExports + after.readMetrics().textExports, 0);

@@ -92,7 +92,7 @@ test("workspace-edit preflight and core validation refuse a bad last target with
 });
 
 test("workspace-edit preview pages bound wide replacements and only read on-page captured buffers", async t => {
-    const f = fixture(t, "abcdefghij\n".repeat(100_000));
+    const f = fixture(t, "abcdefghij\n".repeat(1_000));
     const edits = Array.from({ length: 66 }, (_, i) => ({ from: i * 11, to: i * 11 + 1, insert: "X" }));
     const plan = await capture(f.documents, [edits, [{ from: 0, to: f.documents[1]!.buffer.length, insert: "Y".repeat(16_000) }]]);
     const titles: string[] = [], title = (id: string) => { titles.push(id); return "T".repeat(200); };

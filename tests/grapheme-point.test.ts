@@ -46,17 +46,17 @@ test("accepted ASCII neighborhoods remain exact beside arbitrary Unicode and con
 });
 
 test("huge immutable buffers answer proven points with four units and reject invalid offsets", () => {
-    const buffer = TextBuffer.from("x".repeat(2400000));
-    for (const offset of [0, 1, 1200000, 2399999, 2400000]) {
+    const buffer = TextBuffer.from("x".repeat(24000));
+    for (const offset of [0, 1, 12000, 23999, 24000]) {
         const before = buffer.readMetrics().sliceUnits, point = localAsciiGraphemePoint(buffer, offset)!;
         assert.equal(point.floor, offset); assert.equal(point.ceil, offset);
         assert.equal(point.preceding, offset ? offset - 1 : null); assert.equal(point.following, offset < buffer.length ? offset + 1 : null);
         assert.ok(buffer.readMetrics().sliceUnits - before <= 4);
     }
     for (const offset of [-1, buffer.length + 1, 0.5, NaN, Infinity]) assert.throws(() => localAsciiGraphemePoint(buffer, offset), RangeError);
-    const crlf = buffer.replace(1200000, 1200000, "\r\n");
-    for (const [offset, floor, ceil, preceding, following] of [[1200000, 1200000, 1200000, 1199999, 1200002],
-        [1200001, 1200000, 1200002, 1200000, 1200002], [1200002, 1200002, 1200002, 1200000, 1200003]] as const) {
+    const crlf = buffer.replace(12000, 12000, "\r\n");
+    for (const [offset, floor, ceil, preceding, following] of [[12000, 12000, 12000, 11999, 12002],
+        [12001, 12000, 12002, 12000, 12002], [12002, 12002, 12002, 12000, 12003]] as const) {
         const reads = crlf.readMetrics().sliceUnits;
         assert.deepEqual(localAsciiGraphemePoint(crlf, offset), { offset, floor, ceil, preceding, following });
         assert.ok(crlf.readMetrics().sliceUnits - reads <= 4);

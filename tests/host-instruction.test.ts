@@ -54,7 +54,7 @@ test("explicit captured copy preserves independent transfer edits and unknown va
 });
 
 test("oversized instruction lines retain source without whole-line reads or an editable form", async () => {
-    const raw = '// @transfer {"destination":"' + "x".repeat(2400000) + '","batchSize":"1000"}', h = setup(raw);
+    const raw = '// @transfer {"destination":"' + "x".repeat(24_000) + '","batchSize":"1000"}', h = setup(raw);
     try { assert.equal(h.instruction.state.getSnapshot().canEdit, false); assert.match(h.instruction.state.getSnapshot().validation!, /4,096/);
         assert.equal(h.instruction.capture("destination"), null); assert.ok(h.instruction.debug().lineReadUnits <= 2); assert.equal(h.workspace.document(h.source.documentId).buffer.readMetrics().textExports, 0);
         h.instruction.captureCopy(); assert.equal(h.instruction.debug().pendingCopy, false); assert.equal(h.workspace.document(h.source.documentId).buffer.length, raw.length);

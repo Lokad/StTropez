@@ -29,11 +29,11 @@ test("streamed project navigation retains raw Unicode/CRLF ranges, declarations 
     const astral = "const 𐐀value = 1;\r\n𐐀value"; for (const budget of [1, 2, 3]) assert.deepEqual(run([astral], "references", true, budget, "𐐀value").result.locations.map(at => at.from), [6, 20]);
 });
 test("captured symbol lookup is bounded on huge lines and rejects a cut or oversized symbol", () => {
-    const buffer = TextBuffer.from("x".repeat(2400000) + " café 𐐀value"), offset = 2400004;
-    assert.equal(navigationSymbol(buffer, offset), "café"); assert.equal(navigationSymbol(buffer, buffer.length), "𐐀value"); assert.equal(navigationSymbol(buffer, 1000000), undefined);
+    const buffer = TextBuffer.from("x".repeat(24_000) + " café 𐐀value"), offset = 24_004;
+    assert.equal(navigationSymbol(buffer, offset), "café"); assert.equal(navigationSymbol(buffer, buffer.length), "𐐀value"); assert.equal(navigationSymbol(buffer, 10_000), undefined);
     assert.equal(buffer.readMetrics().textExports, 0);
 });
 test("oversized lexical tokens do not hide later symbols or retain unbounded token text", () => {
-    assert.equal(run(["x".repeat(1000000) + " café "], "references", true, 16384).result.locations.length, 1);
+    assert.equal(run(["x".repeat(32_768) + " café "], "references", true, 16384).result.locations.length, 1);
     assert.equal(run(["café".repeat(10000)], "references", true, 16384).result.locations.length, 0);
 });

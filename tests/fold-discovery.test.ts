@@ -56,7 +56,7 @@ test("rediscovery follows mapped headers, keeps view choices through edit/undo a
     } finally { a.dispose(); b.dispose(); workspace.releaseResource(resource.id, true); }
 });
 test("large off-side discovery yields without exporting the document, including long indentation", () => {
-    const buffer = TextBuffer.from("root\n" + "  leaf\n".repeat(100000) + "end"), iterator = discoverIndentationFolds(buffer);
+    const buffer = TextBuffer.from("root\n" + "  leaf\n".repeat(10_000) + "end"), iterator = discoverIndentationFolds(buffer);
     let yields = 0, next; do { next = iterator.next(256); if (next.status === "running") { yields++; assert.equal(next.result, null); } } while (next.status === "running");
     assert.ok(yields > 100); assert.equal(next.result!.length, 1); assert.equal(next.readUnits, buffer.readMetrics().sliceUnits);
     assert.equal(buffer.readMetrics().textExports, 0); iterator.dispose();

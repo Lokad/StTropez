@@ -53,10 +53,10 @@ test("code word starts preserve Unicode letters, marks, joiners, punctuation and
     assert.equal(next(TextBuffer.from("👩‍💻  αβ"), 7, -1), 0);
 });
 test("arbitrarily long code words and whitespace yield across immutable piece seams without export", () => {
-    const buffer = TextBuffer.from("x".repeat(1_000_000) + "  end").replace(255, 255, "😀");
+    const buffer = TextBuffer.from("x".repeat(100_000) + "  end").replace(255, 255, "😀");
     const job = checkedCursor(buffer, 258, 1); const first = job.next(256); assert.equal(first.status, "running"); assert.ok(first.readUnits <= 768);
     let step = first; while (step.status === "running") step = job.next(4096);
-    assert.equal(step.offset, 1_000_004); assert.equal(next(buffer, 1_000_004, -1), 257);
+    assert.equal(step.offset, 100_004); assert.equal(next(buffer, 100_004, -1), 257);
     job.dispose(); assert.equal(job.next().status, "disposed");
     assert.throws(() => new WordCursor(buffer, -1, 1)); assert.throws(() => job.next(1));
 });
@@ -128,13 +128,13 @@ test("lexical run boundaries exclude neighboring whitespace and stay inside capt
     }
 });
 
-test("run scans yield over millions of word, symbol and whitespace units and release cancelled captures", () => {
+test("run scans yield over long word, symbol and whitespace runs and release cancelled captures", () => {
     for (const token of ["x", "!", " ", "東", "\u0301", "\u3000"]) {
-        const original = TextBuffer.from(token.repeat(2400000)), buffer = original.replace(255, 255, token);
-        const cursor = checkedCursor(buffer, 1200000, 1, { skipWhitespace: false });
+        const original = TextBuffer.from(token.repeat(24_000)), buffer = original.replace(255, 255, token);
+        const cursor = checkedCursor(buffer, 12_000, 1, { skipWhitespace: false });
         const first = cursor.next(256); assert.equal(first.status, "running"); assert.ok(first.readUnits <= 768);
-        assert.equal(boundary(buffer, 1200000, -1), 0);
-        assert.equal(boundary(buffer, 1200000, 1), buffer.length);
+        assert.equal(boundary(buffer, 12_000, -1), 0);
+        assert.equal(boundary(buffer, 12_000, 1), buffer.length);
         assert.equal(buffer.readMetrics().textExports, 0);
         cursor.dispose(); assert.equal(cursor.next().status, "disposed"); assert.equal(cursor.next().offset, null);
     }

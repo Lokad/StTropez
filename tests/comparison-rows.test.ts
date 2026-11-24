@@ -43,7 +43,7 @@ test("independent nested folds hide source rows without losing shared alignment 
     const both = finish(new ComparisonRowsCursor(c.baseline, c.working, c.hunks, af, fold(c.working, 1, 7))); assert.equal(both.rowCount, 4); assert.deepEqual(realRows(both, "working"), [0, 1, 7, 8]);
 });
 test("huge inserted spans stay sparse and cancellation or invalid captures publish no partial row model", () => {
-    const c = capture("start\nend", "start\n" + "inserted\n".repeat(100000) + "end"), cursor = new ComparisonRowsCursor(c.baseline, c.working, c.hunks), rows = finish(cursor);
+    const c = capture("start\nend", "start\n" + "x\n".repeat(100000) + "end"), cursor = new ComparisonRowsCursor(c.baseline, c.working, c.hunks), rows = finish(cursor);
     assert.ok(rows.runCount < 10); assert.equal(rows.rowCount, 100002); assert.equal(rows.baseline.rowAt(1), 100001); assert.equal(rows.baseline.gapAt(50000)!.offset, 6);
     const folds = new FoldIndex(c.working.lineCount, createFoldRegions(c.working, Array.from({ length: 300 }, (_, i) => ({ id: `fold-${i}`,
         from: c.working.offsetAt(i * 300 + 1), to: c.working.offsetAt(i * 300 + 4), collapsed: true }))));

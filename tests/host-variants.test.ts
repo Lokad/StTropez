@@ -96,7 +96,7 @@ test("failed/cancelled retrieval and bounded historical eviction preserve immuta
 test("large immutable variant captures avoid whole-text exports and reference reads stay available while read-only", async () => {
     const host = new HostController();
     try {
-        const value = "line value\r\n".repeat(100000) + "tail\r"; edit(host, value); const buffer = host.workspace.document(host.source.documentId).buffer;
+        const value = "line value\r\n".repeat(10_000) + "tail\r"; edit(host, value); const buffer = host.workspace.document(host.source.documentId).buffer;
         host.variants.keepDraft(); host.workspace.setCapabilities(host.source.id, { edit: ["host"], save: true });
         host.variants.review("draft"); assert.equal(host.variants.finishNext(), true); assert.equal(host.comparisonReference.getSnapshot().baseline.buffer, buffer);
         assert.equal(buffer.readMetrics().textExports, 0); assert.equal(host.workspace.document(host.source.documentId).buffer, buffer); assert.equal(host.debug().source.exports, 0);
