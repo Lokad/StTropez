@@ -713,12 +713,14 @@ a new target and tooltip while requiring the original range and identity.
 
 ### Document colors
 
-`createDocumentColorController(editor, provider)` discovers colours for a mounted editor.
-Call `request()`, choose a reference from `getSnapshot().colors` and call its `preview(rgba)`.
-The first returned presentation is selected. Another presentation's `select()` creates a new
-review. Give each review its own Apply button as in the rename example. Call `review.apply()`
-for that review. It returns `{ applied: true }` on success, or a `ReviewEditResult` with
-`reason` set to `expired`, `not-writable` or `failed`.
+`createDocumentColorController(editor, provider).request()` returns an `Outcome` containing the
+captured color choices on success. Await a choice's `preview(rgba)` for its presentation choices.
+An empty list is a successful reply. Invalid RGBA channels return `refused` with reason `invalid-color`.
+A superseded request returns `stale`.
+
+The first presentation is selected automatically. Call a presentation's `select()` to get its
+review, or `undefined` if the choice has expired. Bind Apply to that review's `apply()`. It returns
+`{ applied: true }` on success, or a `ReviewEditResult` with reason `expired`, `not-writable` or `failed`.
 
 Use `review.notes` to display the proposed edits. Each note gives the captured range, nearby text,
 the first 256 UTF-16 units of the insertion and its full length in `insertUnits`.

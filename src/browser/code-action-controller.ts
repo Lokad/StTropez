@@ -1,3 +1,4 @@
+import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
@@ -269,8 +270,5 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
         cell.clearSnapshotListeners();
     }
     editor.signal.addEventListener("abort", dispose, { once: true, signal: events.signal });
-    return Object.freeze({ request, cancel, dispose, getSnapshot: cell.observable.getSnapshot, subscribe(listener: () => void) {
-        scope.assertWritable(); if (disposed) throw new Error("Code action controller is disposed.");
-        return cell.observable.subscribe(listener);
-    } });
+    return Object.freeze({ request, cancel, dispose, ...controllerObservable(cell, "Code action", () => disposed, scope) });
 }

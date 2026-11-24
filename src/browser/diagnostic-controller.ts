@@ -1,3 +1,4 @@
+import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DecorationLayer } from "./decoration-layers.ts";
@@ -98,10 +99,7 @@ export function createDiagnosticController(editor: TextEditor, provider: LspWork
     };
     try { request(); } catch (error) { dispose(); throw error; }
     editor.signal.addEventListener("abort", dispose, { once: true });
-    return Object.freeze({ getSnapshot: cell.observable.getSnapshot, subscribe(listener: () => void) {
-        notifications.assertWritable(); if (disposed) throw new Error("Diagnostic controller is disposed.");
-        return cell.observable.subscribe(listener);
-    }, request, cancel, dispose, getDiagnostics: () => {
+    return Object.freeze({ ...controllerObservable(cell, "Diagnostic", () => disposed, notifications), request, cancel, dispose, getDiagnostics: () => {
         const { received, stale, invalid } = source.getSnapshot();
         return Object.freeze({ received, stale, invalid });
     } });

@@ -1,3 +1,4 @@
+import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DocumentViewSnapshot } from "../core/workspace.ts";
@@ -235,8 +236,5 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         cell.clearSnapshotListeners();
     }
     editor.signal.addEventListener("abort", dispose, { once: true });
-    return Object.freeze({ request: () => request(), cancel, dispose, getSnapshot: cell.observable.getSnapshot, subscribe(listener: () => void) {
-        if (events.signal.aborted) throw new Error("Signature controller is disposed.");
-        return cell.observable.subscribe(listener);
-    }, getDiagnostics: () => Object.freeze({ requested, applied, scheduled: !!queued }) });
+    return Object.freeze({ request: () => request(), cancel, dispose, ...controllerObservable(cell, "Signature", () => events.signal.aborted), getDiagnostics: () => Object.freeze({ requested, applied, scheduled: !!queued }) });
 }

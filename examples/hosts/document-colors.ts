@@ -187,7 +187,10 @@ export class HostDocumentColors {
         this.cancel(); this.owner = s; this.metrics.requested++;
         s.swatches.cancel(); this.selectedSwatch = swatch;
         if (swatch) this.value = colorReference(this.host.workspace.document(s.editor.view.documentId), swatch).label;
-        void s.controller.request().then(() => { if (keyboard && this.owner === s && s.controller.getSnapshot().status === "ready" && s.editor.getSnapshot().focused) this.colorList.element?.focus(); });
+        void s.controller.request().then(result => {
+            if (keyboard && result.status === "done" && this.owner === s && s.editor.getSnapshot().focused
+                && s.controller.getSnapshot().colors === result.value) this.colorList.element?.focus();
+        });
         if (swatch) { this.valueField.element?.focus(); this.valueField.element?.select(); }
     }
     readonly preview = () => {

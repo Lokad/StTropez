@@ -1,3 +1,4 @@
+import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
@@ -178,8 +179,5 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
         if (!Number.isSafeInteger(offset) || !job || snapshot.status !== "ready" || !current(job)) return;
         return snapshot.links.find(link => link.from <= offset && offset < link.to);
     }
-    return Object.freeze({ request, cancel, dispose, linkAt, getSnapshot: state.observable.getSnapshot, subscribe(listener: () => void) {
-        if (events.signal.aborted) throw new Error("Document link controller is disposed.");
-        return state.observable.subscribe(listener);
-    } });
+    return Object.freeze({ request, cancel, dispose, linkAt, ...controllerObservable(state, "Document link", () => events.signal.aborted) });
 }

@@ -1,3 +1,4 @@
+import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
@@ -247,8 +248,5 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
         state.clearSnapshotListeners();
     }
     editor.signal.addEventListener("abort", dispose, { once: true });
-    return Object.freeze({ request, cancel, dispose, getSnapshot: state.observable.getSnapshot, subscribe(listener: () => void) {
-        if (events.signal.aborted) throw new Error("Navigation controller is disposed.");
-        return state.observable.subscribe(listener);
-    }, getDiagnostics: () => explicit?.client.snapshot() ?? null });
+    return Object.freeze({ request, cancel, dispose, ...controllerObservable(state, "Navigation", () => events.signal.aborted), getDiagnostics: () => explicit?.client.snapshot() ?? null });
 }

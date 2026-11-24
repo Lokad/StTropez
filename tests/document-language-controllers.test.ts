@@ -178,7 +178,7 @@ test("a rename request returns its preview, refusal or provider error", async t 
     assert.equal(f.document().buffer.slice(0, 4), "next");
 });
 
-for (const method of ["textDocument/codeAction", "textDocument/rename"] as const) {
+for (const method of ["textDocument/codeAction", "textDocument/rename", "textDocument/documentColor", "textDocument/colorPresentation"] as const) {
     test(`a ${method} deadline settles during host preparation and releases its capture`, { timeout: 5000 }, async t => {
         const f = await fixture(t);
         const started = latch<void>();
@@ -191,13 +191,23 @@ for (const method of ["textDocument/codeAction", "textDocument/rename"] as const
             started.resolve();
             await finish.promise;
         };
-        const controller = method === "textDocument/codeAction"
-            ? createCodeActionController(f.editor, f.provider, { prepareRequest: prepare })
-            : createRenameController(f.editor, f.provider, { prepareRequest: () => prepare });
-        if ("setName" in controller) controller.setName("next");
         const before = f.workspace.diagnostics().leases;
+        const controller = method === "textDocument/codeAction" ? createCodeActionController(f.editor, f.provider, { prepareRequest: prepare })
+            : method === "textDocument/rename" ? createRenameController(f.editor, f.provider, { prepareRequest: () => prepare })
+            : createDocumentColorController(f.editor, f.provider, {
+                prepareRequest: kind => (kind === "discovery") === (method === "textDocument/documentColor") ? prepare : undefined,
+            });
+        if ("setName" in controller) controller.setName("next");
+        const run = async () => {
+            if (method !== "textDocument/colorPresentation" || !("dismissPreview" in controller)) return controller.request();
+            const color = { red: 1, green: 0, blue: 0, alpha: 1 };
+            f.peer.onRequest("textDocument/documentColor", () => [{ range, color }]);
+            const items = await controller.request();
+            assert.equal(items.status, "done");
+            return items.value[0]!.preview(color);
+        };
         try {
-            const pending = controller.request();
+            const pending = run();
             await started.promise;
             assert.ok(deadline);
             deadline();
@@ -238,11 +248,15 @@ for (const [cause, interrupt] of Object.entries(colorChanges)) {
         const presentation = [{ label: "red", textEdit: { range, newText: "#f00" } }];
         f.peer.onRequest("textDocument/documentColor", () => [{ range, color: red }]);
         f.peer.onRequest("textDocument/colorPresentation", () => presentation);
-        await colors.request();
-        const reference = colors.getSnapshot().colors[0];
+        const list = await colors.request();
+        assert.equal(list.status, "done");
+        assert.equal(list.value, colors.getSnapshot().colors);
+        const reference = list.value[0];
         assert.ok(reference);
-        await reference.preview(red);
-        const oldReview = colors.getSnapshot().review;
+        const choices = await reference.preview(red);
+        assert.equal(choices.status, "done");
+        const oldReview = choices.value[0]?.select();
+        assert.equal(oldReview, colors.getSnapshot().review);
         assert.ok(oldReview?.canApply);
 
         const held = holdReply(f, "textDocument/colorPresentation", presentation);
@@ -253,8 +267,8 @@ for (const [cause, interrupt] of Object.entries(colorChanges)) {
         const source = f.document();
         const other = f.workspace.document(f.other.documentId);
         assert.equal(f.sent("$/cancelRequest").length, 1);
+        assert.deepEqual(await pending, { status: "stale" });
         held.send();
-        await pending;
         await f.flush();
         assert.equal(colors.getSnapshot().review, null);
         assert.deepEqual(oldReview.apply(), { applied: false, reason: "expired" });
@@ -262,6 +276,43 @@ for (const [cause, interrupt] of Object.entries(colorChanges)) {
         assert.equal(f.workspace.document(other.id), other);
     });
 }
+
+test("color choices belong to the presentation request that returned them", { timeout: 5000 }, async t => {
+    const f = await fixture(t);
+    const colors = createDocumentColorController(f.editor, f.provider);
+    const red = { red: 1, green: 0, blue: 0, alpha: 1 };
+    f.peer.onRequest("textDocument/documentColor", () => [{ range, color: red }]);
+    const list = await colors.request();
+    assert.equal(list.status, "done");
+    const item = list.value[0]!;
+    f.peer.onRequest("textDocument/colorPresentation", () => [{ label: "first" }]);
+    const first = await item.preview(red);
+    assert.equal(first.status, "done");
+    const held = holdReply(f, "textDocument/colorPresentation", [{ label: "late" }]);
+    const superseded = item.preview(red);
+    await held.received;
+    f.peer.onRequest("textDocument/colorPresentation", () => []);
+    const empty = await item.preview(red);
+    assert.equal(empty.status, "done");
+    assert.deepEqual(empty.value, []);
+    assert.equal(empty.value, colors.getSnapshot().presentations);
+    assert.deepEqual(await superseded, { status: "stale" });
+    f.peer.onRequest("textDocument/colorPresentation", () => [{ label: "#f00" }, { label: "red" }]);
+    const current = await item.preview(red);
+    assert.equal(current.status, "done");
+    const review = current.value[1]?.select();
+    assert.ok(review);
+    held.send();
+    await f.flush();
+    assert.equal(first.value[0]?.select(), undefined);
+    assert.deepEqual(await item.preview({ ...red, alpha: 2 }), { status: "refused", reason: "invalid-color" });
+    assert.equal(review, colors.getSnapshot().review);
+    const before = f.document();
+    assert.deepEqual(review.apply(), { applied: true });
+    assert.equal(f.document().buffer.slice(0, 3), "red");
+    assert.ok(f.workspace.undo({ documentId: before.id, expectedRevision: f.document().revision }).applied);
+    assert.equal(f.document().buffer.text(), before.buffer.text());
+});
 
 const linkChanges = {
     ...sourceChanges,

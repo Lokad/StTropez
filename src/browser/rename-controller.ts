@@ -1,3 +1,4 @@
+import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
 import { changedTextEdits } from "../core/changes.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
@@ -174,8 +175,5 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
         cell.clearSnapshotListeners();
     }
     editor.signal.addEventListener("abort", dispose, { once: true });
-    return Object.freeze({ request, setName, cancel, dispose, getSnapshot: cell.observable.getSnapshot, subscribe(listener: () => void) {
-        if (events.signal.aborted) throw new Error("Rename controller is disposed.");
-        return cell.observable.subscribe(listener);
-    } });
+    return Object.freeze({ request, setName, cancel, dispose, ...controllerObservable(cell, "Rename", () => events.signal.aborted) });
 }

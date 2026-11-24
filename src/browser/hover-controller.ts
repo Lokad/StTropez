@@ -1,3 +1,4 @@
+import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
 import { captureViewRequest, editorReadyForRequest, observeViewSource, type CapturedViewRequest } from "./captured-view.ts";
 import type { Observable } from "../core/observable.ts";
@@ -192,8 +193,5 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
         cell.clearSnapshotListeners();
     }
     editor.signal.addEventListener("abort", dispose, { once: true });
-    return Object.freeze({ request, cancel, dispose, getSnapshot: cell.observable.getSnapshot, subscribe(listener: () => void) {
-        notifications.assertWritable(); if (disposed) throw new Error("Hover controller is disposed.");
-        return cell.observable.subscribe(listener);
-    }, getDiagnostics: () => Object.freeze({ ...counts, connected: client.getSnapshot().phase === "ready", pending: !!inspection?.capture, disposed }) });
+    return Object.freeze({ request, cancel, dispose, ...controllerObservable(cell, "Hover", () => disposed, notifications), getDiagnostics: () => Object.freeze({ ...counts, connected: client.getSnapshot().phase === "ready", pending: !!inspection?.capture, disposed }) });
 }

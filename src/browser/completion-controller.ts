@@ -1,3 +1,4 @@
+import { controllerObservable } from "./controller-observable.ts";
 import { ProtocolDecodeError, rpcCodes, staleRequest } from "../protocol/wire.ts";
 import { dispatchTypedText, typedTextEvent, type TypedTextDetail } from "./input-events.ts";
 import { codeWordConstituentPattern } from "../core/word-patterns.ts";
@@ -76,11 +77,6 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     const notifications = workspace.createNotificationScope(error => options.onError?.(error));
     let providerPhase = scope.getSnapshot().phase;
     const cell = new Store<CompletionSnapshot>(Object.freeze({ message: connectionMessage(providerPhase), connected: providerPhase === "ready", pending: false, offerText: null, anchor: null, choices: Object.freeze([]), choiceIndex: 0, completionAt: () => undefined, completionIncomplete: false, completionDetail: "", resolving: false, snippet: null, omittedCompletions: Object.freeze([]) }), notifications);
-    const state: Observable<CompletionSnapshot> = Object.freeze({ getSnapshot: cell.observable.getSnapshot, subscribe: listener => {
-        notifications.assertWritable();
-        if (disposed) throw new Error("Completion controller is disposed.");
-        return cell.observable.subscribe(listener);
-    } });
     const available = () => !disposed && editor.element.isConnected && !editor.signal.aborted && workspace.ownsDocumentView(view, target);
     const idle = () => { const m = editor.activity(); return !m.composing && !m.pendingInput && !m.pendingCommand && !m.pendingWord && !m.pendingGrapheme && !m.disposed && !editor.getSnapshot().disabled && (options.canCapture?.() ?? true); };
     const authority = resource.metadata.getSnapshot;
@@ -541,7 +537,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     } catch (error) { dispose(); throw error; }
     editor.signal.addEventListener("abort", dispose, { once: true, signal: listeners.signal });
     if (options.autoConnect !== false) connect();
-    return Object.freeze({ ...state, request: () => { notifications.assertWritable(); if (!disposed) request(); },
+    return Object.freeze({ ...controllerObservable(cell, "Completion", () => disposed, notifications), request: () => { notifications.assertWritable(); if (!disposed) request(); },
         cancel: () => { notifications.assertWritable(); if (!disposed) cancel(); }, connect: () => { notifications.assertWritable(); connect(); },
         customRequest: (method, params) => { notifications.assertWritable(); return scope.request(method, params).result; },
         getDiagnostics: () => Object.freeze({ ...counters, received: completion.snapshot().received, connected: scope.getSnapshot().phase === "ready", pending: cell.get().pending, offer: !!job?.visible.length, transport: "lsp3.17", protocol: scope.snapshotOwnership() }),
