@@ -510,7 +510,7 @@ test.describe("plain selected LSP features", () => {
         await expect(back).toBeDisabled();
     });
     test("F4 links restore complete comparison and secondary selections without taking later form focus", async ({ page }) => {
-        const replies = await holdLspReplies(page, "textDocument/documentLink"); await page.reload();
+        const replies = await holdLspReplies(page, "textDocument/documentLink", "prepared"); await page.reload();
         const raw = ['\ufeffimport "sample-utils";', 'const café = "😀";', ...Array.from({ length: 180 }, (_, i) => `const row${i} = ${i};`)].join("\r\n");
         await seed(page, raw);
         await button(page, "Open source review").click(); await button(page, "Add module companion").click(); await settledColorsAndLinks(page);
@@ -585,7 +585,7 @@ test.describe("plain selected LSP features", () => {
         expect((await snapshot(page)).bindings.colors.state.view).toBeNull();
     });
     test("changing a host alias expires link discovery even when the same alias is restored", async ({ page }) => {
-        const replies = await holdLspReplies(page, "textDocument/documentLink");
+        const replies = await holdLspReplies(page, "textDocument/documentLink", "prepared");
         await page.reload();
         const { companion, select } = await linkCaptureScene(page, linkCaptureSource, false);
         await select();

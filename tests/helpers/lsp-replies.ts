@@ -1,13 +1,17 @@
 import { expect, type Page, type WebSocketRoute } from "@playwright/test";
 
 /** Hold a completed response so cancellation cannot prevent the stale reply being tested. */
-export async function holdLspReplies(page: Page, method: string) {
+export async function holdLspReplies(page: Page, method: string, kind?: "prepared" | "background") {
     let hold = false, heldId: number | undefined, heldRoute: WebSocketRoute | undefined, release: (() => void) | undefined, cancelled = false;
     await page.routeWebSocket("**/lsp-fixture", client => {
         const server = client.connectToServer();
         client.onMessage(message => {
             const value = JSON.parse(message.toString());
-            if (hold && value.method === method) { hold = false; heldId = value.id; heldRoute = client; }
+            if (hold && value.method === method && (!kind || (value.params?._fixture !== undefined) === (kind === "prepared"))) {
+                hold = false;
+                heldId = value.id;
+                heldRoute = client;
+            }
             if (client === heldRoute && value.method === "$/cancelRequest" && value.params.id === heldId) cancelled = true;
             server.send(message);
         });
