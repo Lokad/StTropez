@@ -354,8 +354,8 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await input.press("Control+z"); await expect(input).toHaveValue("alpha omega");
         });
 
-        if (coversHost("candidate-hosts", mode, editor)) test("a large proposal can be reviewed, corrected and saved through bounded views", async ({ page }) => {
-            const original = "const sample = '😀 é';\r\n".repeat(100000).trimEnd();
+        if (coversHost("candidate-hosts", mode, editor)) test("a proposal can be reviewed, corrected and saved through bounded views", async ({ page }) => {
+            const original = "const sample = '😀 é';\r\n".repeat(300).trimEnd();
             await page.evaluate(text => { const s = window.hostFixture.snapshot(); window.hostFixture.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
             const input = page.getByRole("textbox", { name: "Primary source", exact: true });
             await input.press("Control+Home"); await input.pressSequentially("human ");

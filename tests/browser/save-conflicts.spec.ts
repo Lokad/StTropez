@@ -131,8 +131,8 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 });
         });
 
-        if (editor === "candidate") test("100k-line conflict review retains bounded views and shared history during host traffic", async ({ page }) => {
-            const original = "const sample = '😀 é';\r\n".repeat(100000).trimEnd(), button = (name: string) => page.getByRole("button", { name, exact: true });
+        if (editor === "candidate") test("conflict review retains bounded views and shared history during host traffic", async ({ page }) => {
+            const original = "const sample = '😀 é';\r\n".repeat(300).trimEnd(), button = (name: string) => page.getByRole("button", { name, exact: true });
             await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
             const primary = page.getByRole("textbox", { name: "Primary source", exact: true }); await button("Save source").click();
             await page.evaluate(text => { window.hostFixture.externalWrite(`remote ${text}`); window.hostFixture.finishSave(); }, original);

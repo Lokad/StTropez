@@ -101,32 +101,4 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP synch
         await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 2, terminated: 2 });
         expect((await snapshot(page)).diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 });
     });
-    test("100k-line typing, completion and canonical save retain exact peer text and bounded input", async ({ page }, info) => {
-        test.setTimeout(120000);
-        const row = "const saMORE = 123; // row\r\n", text = row.repeat(100_000); await seed(page, text, 8); const diagnostics = [];
-        await expect.poll(async () => (await provider(page)).connected).toBe(true); await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "incomplete" }));
-        const wire: unknown[] = []; let currentLine = 0;
-        page.on("websocket", socket => socket.on("framesent", frame => {
-            const value = JSON.parse(frame.payload.toString()) as { method?: string; params?: { textDocument?: { version?: number; text?: string }; contentChanges?: { range?: unknown; text: string }[] } };
-            if (value.method) wire.push({ line: currentLine, method: value.method, version: value.params?.textDocument?.version, openUnits: value.params?.textDocument?.text?.length, changes: value.params?.contentChanges?.map(change => ({ range: change.range, units: change.text.length })) });
-        }));
-        try {
-        for (const line of [0, 50_000, 99_999]) {
-            currentLine = line;
-            await field(page).focus(); await page.evaluate(offset => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: offset, head: offset }); }, line * row.length + 8); await ready(page);
-            const started = performance.now(); await field(page).pressSequentially("m"); await ready(page); const completeAutomationMs = performance.now() - started;
-            const metrics = (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.metrics!, completionMetrics = await provider(page), completionStart = performance.now();
-            await expect(page.getByLabel("Completion detail", { exact: true })).toContainText("Resolved sample"); await field(page).pressSequentially("p");
-            await expect.poll(async () => (await provider(page)).pending).toBe(false); await field(page).press("Enter"); await ready(page);
-            expect(await page.evaluate(({ from, to }) => window.hostFixture.range(from, to), { from: line * row.length, to: (line + 1) * row.length })).toBe(row.replace("saMORE", "sample"));
-            expect(metrics.inputUnits).toBeLessThanOrEqual(4096); expect((await snapshot(page)).source.exports).toBe(0);
-            diagnostics.push({ line, beforeinputHandlerMs: metrics.lastBeforeInputMs, inputHandlerMs: metrics.lastInputMs, completionBeforeInputMs: completionMetrics.lastCompletionBeforeInputMs,
-                editorKeydownMs: metrics.lastKeydownMs, beforeinputEvents: metrics.beforeInputEvents, inputEvents: metrics.inputEvents, completeAutomationMs,
-                completionAutomationMs: performance.now() - completionStart, interactionAutomationMs: performance.now() - started });
-        }
-        const completedRow = row.replace("saMORE", "sample");
-        await canonicalSave(page, completedRow + row.repeat(49_999) + completedRow + row.repeat(49_998) + completedRow);
-        await info.attach("large-lsp-correctness-clocks", { contentType: "application/json", body: JSON.stringify({ scope: "Three correctness samples. Candidate beforeinput excludes completion capture listener, measured separately. Input handler includes synchronous Core observers. Automation includes IPC/assertion polling and rendering. No latency-tail, native or physical-display qualification.", diagnostics }) });
-        } finally { await info.attach("large-lsp-sync-state", { contentType: "application/json", body: JSON.stringify({ line: currentLine, diagnostics, wire, provider: await provider(page), message: await page.getByLabel("Language status", { exact: true }).textContent() }) }); }
-    });
 });

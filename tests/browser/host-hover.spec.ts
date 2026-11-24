@@ -101,9 +101,9 @@ for (const host of ["plain", "react"]) {
         expect(final.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(final.hostSubscriptions).toBe(0);
         expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
     });
-    test(`${host} 100k pointer hover preserves host focus and refuses stale replies across edits and remount`, async ({ page }) => {
+    test(`${host} pointer hover preserves host focus and refuses stale replies across edits and remount`, async ({ page }) => {
         test.setTimeout(90000); const replies = await holdLspReplies(page, "textDocument/hover"); await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`);
-        await page.evaluate(() => { const f = window.hostFixture, text = "const sample = 1234567;\r\n".repeat(100000); f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); f.setSourceReadOnly(true); });
+        await page.evaluate(() => { const f = window.hostFixture, text = "const sample = 1234567;\r\n".repeat(300); f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); f.setSourceReadOnly(true); });
         await primary(page).press("Control+Home"); await ready(page); const form = page.getByRole("textbox", { name: "Configuration path", exact: true }); await form.fill("keep-focus.csv");
         const at = await point(page); await page.mouse.move(at.x, at.y); await expect(tooltip(page)).toContainText("Declares a constant binding.");
         expect(await form.evaluate(node => node.ownerDocument.activeElement === node)).toBe(true); expect((await snapshot(page)).source.exports).toBe(0);

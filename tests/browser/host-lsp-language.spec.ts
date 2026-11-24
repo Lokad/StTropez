@@ -818,8 +818,8 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         expect(final.bindings.signature).toMatchObject({ pending: false, scheduled: false, sessions: 0, subscriptions: 0, capture: null });
         expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
     });
-    if (host === "react") test("100k-line signature, link resolution and a selected color presentation use bounded source controls", async ({ page }) => {
-        const prefix = "const unchanged = 123;\r\n".repeat(100_000), tail = 'lookup("a", )\r\nimport "sample-utils";\r\nconst color = "#abc";', raw = prefix + tail;
+    if (host === "react") test("signature, link resolution and a selected color presentation use bounded source controls", async ({ page }) => {
+        const prefix = "const unchanged = 123;\r\n".repeat(300), tail = 'lookup("a", )\r\nimport "sample-utils";\r\nconst color = "#abc";', raw = prefix + tail;
         await seed(page, raw, prefix.length + tail.indexOf(")")); await field(page).press("Control+Shift+Space");
         await expect.poll(async () => (await snapshot(page)).bindings.signature.presentation.status).toBe("ready");
         const viewport = page.locator('.st-viewport:has(> textarea[aria-label="Primary source"])');

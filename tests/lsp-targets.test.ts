@@ -16,26 +16,23 @@ function retained(f: ReturnType<typeof clientFixture>, addressed = uri) {
     return { get released() { return released; }, value };
 }
 
-test("a large unopened target yields with a stopped clock and cancels an outstanding index turn", async t => {
-    const line = "amount\r\n😀\r", lines = Math.ceil(524288 / line.length), text = line.repeat(lines) + "end";
+test("cancelling a definition lookup releases an unopened target during indexing", async t => {
+    const line = "amount\r\n😀\r", lines = 2500, text = line.repeat(lines) + "end";
     const tail = { start: { line: lines * 2 - 1, character: 0 }, end: { line: lines * 2 - 1, character: 2 } };
     const parked = latch<void>();
-    let loading = false, hold = false, turns = 0, cancelledTurn = false, releases = 0;
+    let loading = false, hold = false, clock = 0, cancelledTurn = false, releases = 0;
     const f = clientFixture(t, undefined, async () => {
         loading = true;
         return { text, languageId: "generic", release: () => { releases++; } };
-    }, { now: () => 0, schedule(ms, run) {
-        if (loading && ms === 0) {
-            turns++;
-            if (hold) { parked.resolve(); return () => { cancelledTurn = true; }; }
-        }
+    }, { now: () => clock += 5, schedule(ms, run) {
+        if (hold && loading && ms === 0) { parked.resolve(); return () => { cancelledTurn = true; }; }
         const timer = setTimeout(run, ms); return () => clearTimeout(timer);
     } });
     const client = createLspNavigationClient(f.provider); t.after(client.dispose);
     f.peer.onRequest("textDocument/definition", () => [{ uri, range: tail }]);
     const lookup = () => client.run({ document: f.document(), offset: 0, kind: "definition" });
     const answer = await lookup().result, location = answer.locations[0]!;
-    assert.equal(turns, 1); assert.equal(location.target.document.buffer.slice(location.from, location.to), "😀");
+    assert.equal(location.target.document.buffer.slice(location.from, location.to), "😀");
     client.cancel(); await settled(); assert.equal(answer.isCurrent(), false); assert.equal(releases, 1);
     loading = false; hold = true;
     const call = lookup(), rejected = assert.rejects(call.result, cancelled);

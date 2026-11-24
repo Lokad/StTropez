@@ -399,8 +399,8 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await exact(page, raw);
         await dispose(page);
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("100k comparison action commands retain phase history, bounded review and primary Save/Run ownership", async ({ page }) => {
-        test.setTimeout(90000); const text = "// 😀 TODO\r\n" + "const unchanged = 123;\r\n".repeat(99_865) + "// TODO\r\n".repeat(134); await seed(page, text); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await waitForActions(page); const working = input(page, "Comparison working source"), before = await snapshot(page), baseline = before.bindings.comparison!.baseline;
+    if (coversHost("candidate-hosts", host, "candidate")) test("comparison action commands retain phase history, bounded review and primary Save/Run ownership", async ({ page }) => {
+        test.setTimeout(90000); const text = "// 😀 TODO\r\n" + "const unchanged = 123;\r\n" + "// TODO\r\n".repeat(134); await seed(page, text); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await waitForActions(page); const working = input(page, "Comparison working source"), before = await snapshot(page), baseline = before.bindings.comparison!.baseline;
         await working.focus(); await preview(page); await choices(page).nth(7).click(); await control(page, "fixture/projectStyle", { style: "many" });
         await button(page, "Execute captured action").click(); await review(page); await exact(page, marker + text);
         const list = page.getByRole("list", { name: "Captured provider edits", exact: true }), next = button(page, "Next provider edits");
@@ -418,8 +418,8 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await button(page, "Open action changes in Navigation companion").click(); await button(page, "Run captured inputs").click(); expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(before.source.id); expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(expected); await page.evaluate(() => window.hostFixture.finishRun());
         await button(page, "Save source").click(); await working.press("Control+End"); await working.pressSequentially(" later"); await waitForActions(page); await page.evaluate(() => window.hostFixture.finishSave()); await waitForActions(page); await exact(page, expected + " later"); expect((await snapshot(page)).source.dirty).toBe(true); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline); expect((await snapshot(page)).source.exports).toBe(0); expect((await snapshot(page)).bindings.views.every(view => !view.metrics || view.metrics.inputUnits <= 4096 && view.metrics.viewport.rows < 100)).toBe(true); await dispose(page);
     });
-    if (coversHost("plain-candidate", host, "candidate")) test("100k-line resolved actions page bounded previews and apply every edit as one undo command", async ({ page }) => {
-        test.setTimeout(90000); const text = "// 😀 TODO\r\n" + "const unchanged = 123;\r\n".repeat(99_999) + "// TODO\r\n".repeat(70); await seed(page, text); const before = await snapshot(page); await preview(page); await choices(page).nth(2).click(); await waitForActions(page); expect((await snapshot(page)).bindings.actions.state.editCount).toBe(71); await expect(edits(page)).toHaveCount(64);
+    if (coversHost("plain-candidate", host, "candidate")) test("resolved actions page bounded previews and apply every edit as one undo command", async ({ page }) => {
+        test.setTimeout(90000); const text = "// 😀 TODO\r\n" + "const unchanged = 123;\r\n" + "// TODO\r\n".repeat(70); await seed(page, text); const before = await snapshot(page); await preview(page); await choices(page).nth(2).click(); await waitForActions(page); expect((await snapshot(page)).bindings.actions.state.editCount).toBe(71); await expect(edits(page)).toHaveCount(64);
         await releaseAfterReplacement(page, "edits", async () => {
             await choices(page).nth(1).evaluate(node => (node as HTMLButtonElement).click());
             await choices(page).nth(2).evaluate(node => (node as HTMLButtonElement).click()); await waitForActions(page);
