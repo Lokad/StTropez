@@ -155,9 +155,10 @@ test("follow-up writes run after listeners in order and expire with their subscr
     });
     const cancelled = workspace.onDocumentChange(documentId, (_change, after) => after(() => { order.push("cancelled"); }));
     const last = workspace.onDocumentChange(documentId, (change, after) => {
-        order.push("last " + change.source); cancelled();
+        order.push("last " + change.source); cancelled(); detachPending();
         if (change.source === "start") after(() => { order.push("last follow-up"); });
     });
+    const detachPending = workspace.onDocumentChange(documentId, () => { order.push("retired listener"); });
     assert.deepEqual(append("start", 0), { applied: true, revision: 1 });
     assert.deepEqual(order, ["first start", "last start"]);
     await Promise.resolve();

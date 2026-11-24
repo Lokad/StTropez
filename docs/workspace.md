@@ -231,8 +231,9 @@ keeps the revision of a typed resource. Typed panels have no text undo stack.
 
 Pass a `source` string to identify writes from a host feature or peer. Edit permissions use
 `origin`. In a change listener, request a follow-up with its second argument. Follow-ups run
-in request order in a microtask after listeners and the initiating command finish. Unsubscribing drops that listener’s queued
-work. Use the change’s revision when a follow-up depends on the exact text.
+in request order in a microtask after listeners and the initiating command finish. Unsubscribing
+from `onDocumentChange` skips any changes awaiting that listener and drops its queued
+follow-ups. Use the change’s revision when a follow-up depends on the exact text.
 
 A listener that writes back to the same document should ignore changes bearing its own
 `source`. Each initial follow-up can schedule up to 255 further callbacks through the changes
@@ -487,10 +488,10 @@ synchronous action returns or throws. A thrown error leaves committed writes in 
 own history. A promise returned by the action doesn’t extend the batch. Use `editDocuments` if several
 documents must change atomically.
 
-Each delivery request captures its current listeners. A batch invokes each captured callback
-once, in first-capture order, using the error policy of the scope that first captured it.
-Later subscription removal does not cancel an already captured callback. Independent workspace
-scopes are unaffected. A batch cannot start during notification delivery.
+Within a batch, `subscribe` callbacks run once, in first-capture order, using the error policy
+of the scope that first captured them. A captured snapshot callback runs even if its subscription
+ends before delivery. Independent workspace scopes are unaffected. A batch cannot start during
+notification delivery.
 
 ```ts
 import type { ResourceId, Workspace } from "sttropez";
