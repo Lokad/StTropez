@@ -10,7 +10,7 @@
   "include": [
     "fixtures/**/*.ts", "examples/**/*.ts", "examples/**/*.tsx", "tests/**/*.ts", "playwright*.ts",
     "scripts/measurement.mjs", "scripts/browser-harness.mjs",
-    "scripts/build.mjs", "scripts/build-demo.mjs", "scripts/finalize-assets.mjs", "scripts/unicode-generation.mjs",
+    "scripts/build.mjs", "scripts/build-demo.mjs", "scripts/finalize-assets.mjs",
     "scripts/package-host.mjs", "scripts/test-package.mjs", "scripts/run-benchmarks.mjs",
     "scripts/host-scene.mjs", "scripts/serve-demo.mjs", "scripts/inspect.mjs",
     "scripts/benchmark-model.mjs",
