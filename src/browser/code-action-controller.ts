@@ -55,7 +55,7 @@ export type CodeActionController = Observable<CodeActionSnapshot> & Readonly<{
 export function createCodeActionController(editor: TextEditor, provider: LspWorkspace, options: CodeActionControllerOptions = {}): CodeActionController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
     if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Code actions require a live document view.");
-    const scope = workspace.createNotificationScope(options.onError), cell = new Store(empty, scope), observers = new Set<() => void>();
+    const scope = workspace.createNotificationScope(options.onError), cell = new Store(empty, scope);
     const client = createLspActionClient(provider, options), events = new AbortController();
     let job: Job | undefined, execution: CodeActionExecution | undefined, disposed = false;
     const available = (id: DocumentId) => {
@@ -232,12 +232,11 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
     function dispose(): void {
         if (disposed) return;
         scope.assertWritable(); cancel(); disposed = true; events.abort(); stopClient(); client.dispose();
-        for (const stop of observers) stop();
+        cell.clearSnapshotListeners();
     }
     editor.signal.addEventListener("abort", dispose, { once: true, signal: events.signal });
     return Object.freeze({ request, cancel, dispose, getSnapshot: cell.observable.getSnapshot, subscribe(listener: () => void) {
         scope.assertWritable(); if (disposed) throw new Error("Code action controller is disposed.");
-        const unsubscribe = cell.observable.subscribe(listener);
-        const stop = () => { unsubscribe(); observers.delete(stop); }; observers.add(stop); return stop;
+        return cell.observable.subscribe(listener);
     } });
 }

@@ -103,6 +103,10 @@ export class Store<T> {
             return () => { if (this.subscriptions.delete(subscription)) this.scope?.subscriptionChanged(-1); };
         } });
     }
+    clearSnapshotListeners(): void {
+        this.scope?.subscriptionChanged(-this.subscriptions.size);
+        this.subscriptions.clear();
+    }
     get(): T { return this.value; }
     set(value: T, changed: Set<Store<unknown>>): void {
         if (Object.is(value, this.value)) return;

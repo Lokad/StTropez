@@ -73,6 +73,11 @@ test("delivery captures unique callbacks in order while registration changes aff
         assert.equal(scope.subscriptionCount(), 5); assert.doesNotThrow(() => scope.assertWritable());
         order.length = 0; publish(3);
         assert.deepEqual(order, ["first", "broken", "late", "tail"]); assert.deepEqual(reported, [failure, failure]);
+        a.clearSnapshotListeners();
+        assert.equal(scope.subscriptionCount(), 2);
+        order.length = 0;
+        publish(5);
+        assert.deepEqual(order, ["broken", "tail"]);
     } finally { [...stops, ...sharedStops, stopLate].forEach(stop => { stop(); stop(); }); }
     assert.equal(scope.subscriptionCount(), 0);
 });

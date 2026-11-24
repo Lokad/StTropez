@@ -34,7 +34,7 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
     if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Hover requires a live document view.");
     const notifications = workspace.createNotificationScope(options.onError), cell = new Store(idle, notifications);
-    const client = createLspHoverClient(provider), calls = editor.latestOperation(), subscribers = new Set<() => void>();
+    const client = createLspHoverClient(provider), calls = editor.latestOperation();
     let inspection: Inspection | undefined, disposed = false;
     let providerScope: ReturnType<LspWorkspace["createScope"]> | undefined, defaultSource: HoverDiagnostics | undefined;
     const counts = { posted: 0, received: 0, stale: 0, invalid: 0, failed: 0, cancelled: 0 };
@@ -161,12 +161,12 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
         if (disposed) return;
         notifications.assertWritable(); disposed = true; release(); stopClient(); calls.dispose(); client.dispose(); providerScope?.dispose();
         intent.dispose(); editor.signal.removeEventListener("abort", dispose);
-        publish({ ...idle, status: "disposed" }); for (const stop of subscribers) stop();
+        publish({ ...idle, status: "disposed" });
+        cell.clearSnapshotListeners();
     }
     editor.signal.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ request, cancel, dispose, getSnapshot: cell.observable.getSnapshot, subscribe(listener: () => void) {
         notifications.assertWritable(); if (disposed) throw new Error("Hover controller is disposed.");
-        const unsubscribe = cell.observable.subscribe(listener);
-        const stop = () => { unsubscribe(); subscribers.delete(stop); }; subscribers.add(stop); return stop;
+        return cell.observable.subscribe(listener);
     }, getDiagnostics: () => Object.freeze({ ...counts, connected: client.getSnapshot().phase === "ready", pending: !!inspection?.pending, disposed }) });
 }

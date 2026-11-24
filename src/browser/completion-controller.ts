@@ -73,12 +73,13 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     const owner = editor.element.ownerDocument, clock = owner.defaultView!;
     const emptyMessages: readonly string[] = Object.freeze([]);
     let labelItems: readonly LspCompletion[] | undefined, labels = emptyMessages;
-    const notifications = workspace.createNotificationScope(error => options.onError?.(error)), observers = new Set<() => void>();
+    const notifications = workspace.createNotificationScope(error => options.onError?.(error));
     let providerPhase = scope.getSnapshot().phase;
     const cell = new Store<CompletionSnapshot>(Object.freeze({ message: connectionMessage(providerPhase), connected: providerPhase === "ready", pending: false, offerText: null, anchor: null, choices: Object.freeze([]), choiceIndex: 0, completionAt: () => undefined, completionIncomplete: false, completionDetail: "", resolving: false, snippet: null, omittedCompletions: Object.freeze([]) }), notifications);
     const state: Observable<CompletionSnapshot> = Object.freeze({ getSnapshot: cell.observable.getSnapshot, subscribe: listener => {
-        notifications.assertWritable(); if (disposed) throw new Error("Completion controller is disposed."); const stop = cell.observable.subscribe(listener);
-        const release = () => { stop(); observers.delete(release); }; observers.add(release); return release;
+        notifications.assertWritable();
+        if (disposed) throw new Error("Completion controller is disposed.");
+        return cell.observable.subscribe(listener);
     } });
     const available = () => !disposed && editor.element.isConnected && !editor.signal.aborted && workspace.ownsDocumentView(view, target);
     const idle = () => { const m = editor.activity(); return !m.composing && !m.pendingInput && !m.pendingCommand && !m.pendingWord && !m.pendingGrapheme && !m.disposed && !editor.getSnapshot().disabled && (options.canCapture?.() ?? true); };
@@ -514,7 +515,8 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
         for (const registration of registrations) registration.dispose();
         stopTransform(); cancelAuto(); for (const stop of stops) stop();
         listeners.abort(); release(); completion.dispose(); binding.dispose(); scope.dispose();
-        publish("Completion controller disposed."); for (const stop of [...observers]) stop();
+        publish("Completion controller disposed.");
+        cell.clearSnapshotListeners();
     };
     try {
         register("completion.request", "Show completions", ["Ctrl+Code:Space", "Meta+Code:Space"], available, () => request());

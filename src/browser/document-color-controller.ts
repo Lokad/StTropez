@@ -40,7 +40,7 @@ const idle: DocumentColorSnapshot = Object.freeze({ status: "idle", colors: empt
 export function createDocumentColorController(editor: TextEditor, provider: LspWorkspace, options: DocumentColorControllerOptions = {}): DocumentColorController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
     if (!workspace.ownsDocumentView(view, tab) || editor.signal.aborted) throw new Error("Document colors require a live document view.");
-    const scope = workspace.createNotificationScope(), state = new Store(idle, scope), events = new AbortController(), observers = new Set<() => void>();
+    const scope = workspace.createNotificationScope(), state = new Store(idle, scope), events = new AbortController();
     let job: Job | undefined;
     function available() {
         const a = editor.activity();
@@ -177,12 +177,12 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
     function dispose() {
         if (events.signal.aborted) return;
         scope.assertWritable(); events.abort(); stop(); release(); editor.signal.removeEventListener("abort", dispose);
-        publish("disposed"); for (const unsubscribe of observers) unsubscribe();
+        publish("disposed");
+        state.clearSnapshotListeners();
     }
     editor.signal.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ request, dismissPreview, cancel, dispose, getSnapshot: state.observable.getSnapshot, subscribe(listener: () => void) {
         if (events.signal.aborted) throw new Error("Document color controller is disposed.");
-        const off = state.observable.subscribe(listener), unsubscribe = () => { off(); observers.delete(unsubscribe); };
-        observers.add(unsubscribe); return unsubscribe;
+        return state.observable.subscribe(listener);
     } });
 }

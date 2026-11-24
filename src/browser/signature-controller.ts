@@ -33,7 +33,6 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
     if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Signature help requires a live document view.");
     const events = new AbortController(), notifications = workspace.createNotificationScope(), cell = new Store(idle, notifications);
-    const stops = new Set<() => void>();
     let client: LspSignatureClient | undefined, job: Request | undefined, armed = false, requested = 0, applied = 0;
     let queued: { timer: number; context: LspSignatureContext } | undefined;
     const publish = (next: SignatureSnapshot) => notifications.publish(cell, Object.freeze(next));
@@ -235,12 +234,12 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
     function dispose() {
         if (events.signal.aborted) return;
         notifications.assertWritable(); events.abort(); cancel(); editor.signal.removeEventListener("abort", dispose);
-        publish({ ...idle, status: "disposed" }); for (const stop of stops) stop();
+        publish({ ...idle, status: "disposed" });
+        cell.clearSnapshotListeners();
     }
     editor.signal.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ request: () => request(), cancel, dispose, getSnapshot: cell.observable.getSnapshot, subscribe(listener: () => void) {
         if (events.signal.aborted) throw new Error("Signature controller is disposed.");
-        const unsubscribe = cell.observable.subscribe(listener), stop = () => { unsubscribe(); stops.delete(stop); };
-        stops.add(stop); return stop;
+        return cell.observable.subscribe(listener);
     }, getDiagnostics: () => Object.freeze({ requested, applied, scheduled: !!queued }) });
 }

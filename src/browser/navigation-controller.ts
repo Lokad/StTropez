@@ -75,7 +75,7 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
     const { workspace, view, tab } = editor;
     if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Navigation requires a live document view.");
     const notifications = workspace.createNotificationScope(), state = new Store(idle, notifications);
-    const events = new AbortController(), subscribers = new Set<() => void>();
+    const events = new AbortController();
     const available = () => {
         const activity = editor.activity();
         return !events.signal.aborted && editor.element.isConnected && !editor.getSnapshot().disabled && !activity.composing
@@ -219,12 +219,12 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
     function dispose() {
         if (events.signal.aborted) return;
         events.abort(); stop(); leave(); clearExplicit(); layer.dispose(); editor.signal.removeEventListener("abort", dispose);
-        publish("disposed"); for (const unsubscribe of subscribers) unsubscribe();
+        publish("disposed");
+        state.clearSnapshotListeners();
     }
     editor.signal.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ request, cancel, dispose, getSnapshot: state.observable.getSnapshot, subscribe(listener: () => void) {
         if (events.signal.aborted) throw new Error("Navigation controller is disposed.");
-        const stop = state.observable.subscribe(listener), unsubscribe = () => { stop(); subscribers.delete(unsubscribe); };
-        subscribers.add(unsubscribe); return unsubscribe;
+        return state.observable.subscribe(listener);
     }, getDiagnostics: () => explicit?.client.snapshot() ?? null });
 }

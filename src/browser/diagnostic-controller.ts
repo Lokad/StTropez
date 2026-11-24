@@ -45,7 +45,7 @@ export function createDiagnosticController(editor: TextEditor, provider: LspWork
         layer = editor.decorations.add({ name: "diagnostics", order: 40 });
     } catch (error) { scope.dispose(); throw error; }
     const notifications = workspace.createNotificationScope(options.onError);
-    const cell = new Store<DiagnosticSnapshot>(empty, notifications), observers = new Set<() => void>();
+    const cell = new Store<DiagnosticSnapshot>(empty, notifications);
     let displayed: LspDiagnostics | null = null, disposed = false, stop: (() => void) | undefined;
     const available = () => !disposed && !editor.signal.aborted && editor.element.isConnected && workspace.ownsDocumentView(view, tab);
     const clear = () => {
@@ -94,14 +94,13 @@ export function createDiagnosticController(editor: TextEditor, provider: LspWork
         notifications.assertWritable(); disposed = true;
         editor.signal.removeEventListener("abort", dispose);
         cancel(); stopTabs?.(); layer.dispose(); scope.dispose();
-        for (const release of observers) release();
+        cell.clearSnapshotListeners();
     };
     try { request(); } catch (error) { dispose(); throw error; }
     editor.signal.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ getSnapshot: cell.observable.getSnapshot, subscribe(listener: () => void) {
         notifications.assertWritable(); if (disposed) throw new Error("Diagnostic controller is disposed.");
-        const unsubscribe = cell.observable.subscribe(listener);
-        const release = () => { unsubscribe(); observers.delete(release); }; observers.add(release); return release;
+        return cell.observable.subscribe(listener);
     }, request, cancel, dispose, getDiagnostics: () => {
         const { received, stale, invalid } = source.getSnapshot();
         return Object.freeze({ received, stale, invalid });
