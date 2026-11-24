@@ -97,14 +97,14 @@ test("a link controller on a later pane requests links on the already open conne
     await mount(page, true);
     const result = await page.evaluate(async () => {
         const path = "/shadow-focus/browser.js";
-        const { mountTextEditor, createDocumentLinkController } = await import(path) as typeof import("../../src/browser/index.ts");
+        const { mountTextEditor, attachEditorLanguage } = await import(path) as typeof import("../../src/browser/index.ts");
         const { workspace, source, editor, provider, dispose } = window.shadowFocus;
         await provider!.connect();
         const epoch = provider!.getSnapshot().epoch;
         const host = document.createElement("div"); document.body.append(host);
         const second = mountTextEditor(host, workspace, source.documentId);
         try {
-            const links = createDocumentLinkController(second, provider!);
+            const { links } = attachEditorLanguage(second, provider!, { links: {} });
             editor.dispose();
             await links.request();
             return { status: links.getSnapshot().status, sameConnection: provider!.getSnapshot().epoch === epoch };

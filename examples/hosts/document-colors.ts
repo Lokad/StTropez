@@ -3,10 +3,10 @@ import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.
 import { formatEditNote } from "./edit-review.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
-import { focusSourceCaret, onSourceFocus } from "./source-focus.ts";
+import { attachPlainPane, focusSourceCaret, onSourceFocus, type PlainPane } from "./source-focus.ts";
 import { openChangedFile, type ChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, DocumentSnapshot, TabId } from "../../src/index.ts";
-import { createDocumentColorController } from "../../src/browser/index.ts";
+import { attachEditorLanguage } from "../../src/browser/index.ts";
 import type { ColorPresentationChoice, DocumentColorChoice, DocumentColorController, ReviewEditResult, TextEditor } from "../../src/browser/index.ts";
 import type { LspDocumentColor, LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import { colorLimits, parseColor, rgbaColor, sameColor } from "../../fixtures/language/colors.ts";
@@ -32,7 +32,7 @@ const initial: DocumentColorsSnapshot = { available: false, connected: false, di
 
 /** The host owns the picker, preview list and focus after confirmation. */
 export class HostDocumentColors {
-    private readonly sessions = new Map<Session, () => void>();
+    private readonly sessions = new Map<Session | PlainPane, () => void>();
     private readonly reviewKey;
     private active: Session | undefined;
     private owner: Session | undefined;
@@ -119,12 +119,12 @@ export class HostDocumentColors {
         const owner = this.owner; this.owner = undefined; this.selectedSwatch = undefined; this.displayed = undefined; this.value = ""; owner?.controller.cancel();
         this.publish({ ...initial, message: "Color preview dismissed." });
     };
-    readonly disconnect = () => { this.disconnected = true; this.cancel(); for (const s of this.sessions.keys()) s.controller.setSwatches(false); };
+    readonly disconnect = () => { this.disconnected = true; this.cancel(); for (const s of this.sessions.keys()) s.controller?.setSwatches(false); };
     readonly reconnect = () => {
         this.disconnected = false;
         this.cancel();
         this.host.reconnect?.();
-        for (const s of this.sessions.keys()) s.controller.setSwatches(this.host.workspace.document(s.editor.view.documentId).key.variant === "working");
+        for (const s of this.sessions.keys()) s.controller?.setSwatches(this.host.workspace.document(s.editor.view.documentId).key.variant === "working");
     };
     readonly bindList = this.colorList.bind;
     readonly bindValue = this.valueField.bind;
@@ -136,11 +136,17 @@ export class HostDocumentColors {
     }
     attach(id: string, _tab: TabId, editor: TextEditor) {
         if (this.disposed) throw new Error("Color panel is disposed.");
-        const working = this.host.workspace.document(editor.view.documentId).key.variant === "working";
-        const controller = createDocumentColorController(editor, this.options.provider, {
+        const source = this.host.workspace.document(editor.view.documentId);
+        if (!source.language) return attachPlainPane(this.sessions, id, editor, () => {
+            this.active = undefined;
+            this.publish();
+        });
+        const working = source.key.variant === "working";
+        const { colors: controller, dispose } = attachEditorLanguage(editor, this.options.provider, { colors: {
             swatches: working && ((item: LspDocumentColor) => { this.active = s; this.start(false, item); }),
             canCapture: () => this.host.canCapture(editor.view.documentId),
-            prepareRequest: kind => this.options.prepare(kind, this.fixture.take()) });
+            prepareRequest: kind => this.options.prepare(kind, this.fixture.take()),
+        } });
         const s: Session = { id, editor, controller };
         return attachPanelSession(this.sessions, s, (signal, register) => {
             if (this.disconnected) controller.setSwatches(false);
@@ -161,7 +167,7 @@ export class HostDocumentColors {
             if (this.active === s) this.active = undefined;
             if (this.owner === s) this.cancel();
             else this.publish();
-        });
+        }, dispose);
     }
     readonly discover = () => this.start(false);
     private inspect(s: Session, ordinal: number, color: DocumentColorChoice) {

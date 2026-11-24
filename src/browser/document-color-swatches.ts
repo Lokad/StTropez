@@ -2,7 +2,6 @@ import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import type { LspColor, LspDocumentColor } from "../protocol/lsp-features.ts";
 import { colorClient } from "../protocol/lsp-language.ts";
 import { documentColorMethod } from "../protocol/lsp-methods.ts";
-import type { LspWorkspace } from "../protocol/lsp-workspace.ts";
 import { documentRangeWatch } from "./document-range-watch.ts";
 import type { TextEditor } from "./text-editor.ts";
 
@@ -11,9 +10,9 @@ const watch = documentRangeWatch<LspDocumentColor>(documentColorMethod, colorCli
     from, to, className: "st-document-color", before: "st-color-swatch", properties: { "--st-swatch-color": css(color) }
 }), { name: "document colors", order: 35 });
 
-export function mountSwatches(editor: TextEditor, provider: LspWorkspace, owner: LspDocumentOwner | LspWorkspace,
+export function mountSwatches(editor: TextEditor, owner: LspDocumentOwner,
     activate?: (item: LspDocumentColor) => void) {
-    const group = watch(editor, provider, owner);
+    const group = watch(editor, owner);
     const events = new AbortController();
     if (activate) {
         editor.element.classList.add("st-interactive-swatches");

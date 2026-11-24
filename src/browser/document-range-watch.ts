@@ -9,7 +9,6 @@ import type { TextEditor } from "./text-editor.ts";
 import type { InlineDecoration } from "./viewport.ts";
 
 type Document = Observable<DocumentSnapshot | undefined>;
-type Owner = LspWorkspace | LspDocumentOwner;
 type Client<T> = {
     run: (request: LspDocumentRequest) => { result: Promise<{ items: readonly T[]; isCurrent(): boolean }> };
     dispose(): void;
@@ -17,11 +16,11 @@ type Client<T> = {
 
 /** Panes share a scan for one provider, feature and document. Each keeps its own decoration layer. */
 export function documentRangeWatch<T extends { from: number; to: number }>(method: LspDocumentFeature,
-    clientFor: (owner: Owner) => Client<T>, decorate: (item: T) => InlineDecoration, layerOptions: DecorationLayerOptions) {
+    clientFor: (owner: LspDocumentOwner) => Client<T>, decorate: (item: T) => InlineDecoration, layerOptions: DecorationLayerOptions) {
     const scans = new WeakMap<LspWorkspace, WeakMap<Document, ReturnType<typeof scanDocument>>>();
 
     function scanDocument(document: Document, provider: LspWorkspace) {
-        const panes = new Map<DecorationLayer, Owner>();
+        const panes = new Map<DecorationLayer, LspDocumentOwner>();
         let last: DocumentSnapshot | undefined;
         let connection: string | undefined;
         let timer: ReturnType<typeof setTimeout> | undefined;
@@ -88,7 +87,7 @@ export function documentRangeWatch<T extends { from: number; to: number }>(metho
                 return paint.items.find(item => matches ? item.from === offset && matches(item)
                     : item.from <= offset && offset < item.to);
             },
-            add(layer: DecorationLayer, owner: Owner) {
+            add(layer: DecorationLayer, owner: LspDocumentOwner) {
                 panes.set(layer, owner);
                 if (paint) layer.set(paint.revision, paint.ranges);
                 schedule();
@@ -108,7 +107,8 @@ export function documentRangeWatch<T extends { from: number; to: number }>(metho
         };
     }
 
-    return function mount(editor: TextEditor, provider: LspWorkspace, owner: Owner) {
+    return function mount(editor: TextEditor, owner: LspDocumentOwner) {
+        const { provider } = owner;
         const source = editor.workspace.observeDocument(editor.view.documentId);
         const layer = editor.decorations.add(layerOptions);
         const byDocument = scans.get(provider) ?? new WeakMap<Document, ReturnType<typeof scanDocument>>();

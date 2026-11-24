@@ -58,8 +58,8 @@ const mounts: Mounts = {
     completion: mountCompletion,
     signature: mountSignature,
     occurrences: mountOccurrences,
-    colors: (editor, owner, options) => mountDocumentColors(editor, owner.provider, options, owner),
-    links: (editor, owner, options) => mountDocumentLinks(editor, owner.provider, options, owner),
+    colors: mountDocumentColors,
+    links: mountDocumentLinks,
 };
 
 type Binding = { owner: LspDocumentOwner; users: number };

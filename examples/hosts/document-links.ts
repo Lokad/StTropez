@@ -3,10 +3,10 @@ import { createPanelKeyBinding, focusResult, registerResultArrows } from "./pane
 import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.ts";
 import { captureDestinationPanes, presentDocument, unavailablePaneMessage, type HostLocation, type NavigationHost } from "./language-host.ts";
-import { focusSource, onSourceFocus } from "./source-focus.ts";
+import { attachPlainPane, focusSource, onSourceFocus, type PlainPane } from "./source-focus.ts";
 import { createWorkingSource } from "./working-source.ts";
 import type { DocumentId, DocumentSnapshot, TabId } from "../../src/index.ts";
-import { createDocumentLinkController } from "../../src/browser/index.ts";
+import { attachEditorLanguage } from "../../src/browser/index.ts";
 import type { DocumentLinkChoice, DocumentLinkController, DocumentLinkSnapshot, NavigationPointerLink, TextEditor, ViewState } from "../../src/browser/index.ts";
 import type { LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import { linkLimits } from "../../fixtures/language/links.ts";
@@ -21,7 +21,7 @@ export type LinkHostOptions = Readonly<{ provider: LspWorkspace;
     prepare: (aliases: readonly Alias[], policy: FixturePolicy<LinkFault>) => LspPrepare }>;
 type Session = { id: string; editor: TextEditor; controller: DocumentLinkController };
 type Origin = { origin: Session; source: DocumentSnapshot };
-type Route = Origin & { documents: Map<string, DocumentSnapshot>; targets: Map<DocumentId, Session>; returnPoint: HostLocation; focusResults?: () => boolean };
+type Route = Origin & { documents: Map<string, DocumentSnapshot>; targets: Map<DocumentId, Session | PlainPane>; returnPoint: HostLocation; focusResults?: () => boolean };
 type Visit = Origin & { destination: TextEditor; viewState: ViewState; release: () => void; returnPoint?: HostLocation };
 type LinkRange = Pick<DocumentLinkChoice, "from" | "to">;
 
@@ -44,7 +44,7 @@ const initial: DocumentLinksSnapshot = { available: false, connected: false, dis
 export class HostDocumentLinks {
     private readonly pageKey;
     private readonly aliases = new Map<string, DocumentId>();
-    private readonly sessions = new Map<Session, () => void>();
+    private readonly sessions = new Map<Session | PlainPane, () => void>();
     private active: Session | undefined;
     private route: Route | undefined;
     private visit: Visit | undefined;
@@ -91,12 +91,12 @@ export class HostDocumentLinks {
     readonly disconnect = () => {
         this.disconnected = true;
         this.cancel();
-        for (const s of this.sessions.keys()) s.controller.setPaint(false);
+        for (const s of this.sessions.keys()) s.controller?.setPaint(false);
     };
     readonly reconnect = () => {
         this.disconnected = false;
         this.cancel();
-        for (const s of this.sessions.keys()) s.controller.setPaint(true);
+        for (const s of this.sessions.keys()) s.controller?.setPaint(true);
         this.host.reconnect?.();
     };
     private listEditor() {
@@ -106,14 +106,19 @@ export class HostDocumentLinks {
     readonly bindList = this.linkList.bind;
     attach(id: string, _tab: TabId, editor: TextEditor) {
         if (this.disposed) throw new Error("Link panel is disposed.");
-        const controller = createDocumentLinkController(editor, this.options.provider, {
+        if (!this.host.workspace.document(editor.view.documentId).language) return attachPlainPane(this.sessions, id, editor, () => {
+            if (this.cell.get().status === "resolving" && !this.presenting) this.cancel();
+            this.active = undefined;
+            this.publish();
+        });
+        const { links: controller, dispose } = attachEditorLanguage(editor, this.options.provider, { links: {
             paint: !this.disconnected,
             documents: () => [...(this.route?.documents.values() ?? [])], canCapture: this.host.canCapture,
             prepareRequest: () => {
                 const aliases = [...this.aliases].map(([module, id]) => ({ module, uri: this.host.workspace.document(id).language!.uri }));
                 return this.options.prepare(aliases, this.fixture.take());
             },
-        });
+        } });
         const session = { id, editor, controller };
         return attachPanelSession(this.sessions, session, (signal, register) => {
             const stop = controller.subscribe(() => {
@@ -154,7 +159,7 @@ export class HostDocumentLinks {
                 else if (route?.targets.get(editor.view.documentId) === session) this.expireResults();
             }
             this.publish();
-        });
+        }, dispose);
     }
     private render(route: Route, page = this.cell.get().page) {
         const state = route.origin.controller.getSnapshot(), status = state.status;
@@ -219,7 +224,7 @@ export class HostDocumentLinks {
     linkAt(editor: TextEditor, offset: number): NavigationPointerLink | undefined {
         if (this.disconnected || this.disposed || !this.host.canCapture(editor.view.documentId)) return;
         const origin = [...this.sessions.keys()].find(session => session.editor === editor);
-        if (!origin) return;
+        if (!origin?.controller) return;
         const source = this.host.workspace.document(editor.view.documentId), previous = this.route;
         const current = previous?.origin === origin && origin.controller.getSnapshot().status === "ready";
         const link = origin.controller.linkAt(offset) ?? (current ? undefined : pendingImport(source, offset));
@@ -239,7 +244,7 @@ export class HostDocumentLinks {
             if (returnPoint) void this.open(route, selected, module, returnPoint);
         } };
     }
-    private place(owner: Route | Visit, doc: DocumentSnapshot, captured: Session | undefined, viewState?: ViewState) {
+    private place(owner: Route | Visit, doc: DocumentSnapshot, captured: Session | PlainPane | undefined, viewState?: ViewState) {
         const current = () => this.route === owner || this.visit === owner;
         const live = this.host.workspace.observeDocument(doc.id).getSnapshot();
         if (!current() || live?.revision !== doc.revision || live.buffer !== doc.buffer) return;

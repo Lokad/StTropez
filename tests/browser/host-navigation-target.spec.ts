@@ -61,6 +61,7 @@ test("links and definitions retry a failed presentation and keep the requesting 
         host.attach("notes", notesTab, notesEditor);
         const links = new HostDocumentLinks(panes, { provider, prepare: () => async () => {} });
         links.setAlias("currency", module.documentId);
+        links.attach("notes", notesTab, notesEditor);
         links.attach("source", tab, editor);
         const removeLinks = mountDocumentLinksPanel(document.getElementById("links")!, links);
         const detach = host.attach("source", tab, editor), removePanel = mountNavigationPanel(document.getElementById("panel")!, host);
@@ -73,11 +74,13 @@ test("links and definitions retry a failed presentation and keep the requesting 
         };
     }, path);
     const findDefinition = page.getByRole("button", { name: "Find definition", exact: true });
+    const discoverLinks = page.getByRole("button", { name: "Discover module links", exact: true });
     await page.getByRole("textbox", { name: "Notes", exact: true }).focus();
     await expect(findDefinition).toBeDisabled();
+    await expect(discoverLinks).toBeDisabled();
     await page.getByRole("textbox", { name: "Main", exact: true }).focus();
     await expect(findDefinition).toBeEnabled();
-    await page.getByRole("button", { name: "Discover module links", exact: true }).click();
+    await discoverLinks.click();
     const link = page.getByRole("list", { name: "Module link results" }).getByRole("button");
     await link.click();
     await expect(page.getByLabel("Module link status", { exact: true })).toHaveText("Module pane is unavailable.");

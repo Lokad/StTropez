@@ -10,7 +10,7 @@ import type { LspColor, LspColorPresentation, LspDocumentColor } from "../protoc
 import { describeLspEdit, type LspWorkspaceEditNote } from "../protocol/lsp-workspace-edit.ts";
 import { colorClient, type LspColorClient } from "../protocol/lsp-language.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
-import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
+import type { LspPrepare } from "../protocol/lsp-workspace.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainDocuments } from "./retained-documents.ts";
@@ -50,11 +50,8 @@ type Job = TimedRequest & { client: LspColorClient; project: ReturnType<typeof r
 const idle: DocumentColorSnapshot = Object.freeze({ status: "idle", colors: emptyList, presentations: emptyList, review: null, message: "", changed: false });
 
 /** Review one provider color presentation and apply all its edits as one undo command. */
-export const createDocumentColorController: (editor: TextEditor, provider: LspWorkspace,
-    options?: DocumentColorControllerOptions) => DocumentColorController = mountDocumentColors;
-
-export function mountDocumentColors(editor: TextEditor, provider: LspWorkspace, options: DocumentColorControllerOptions = {},
-    shared?: LspDocumentOwner): DocumentColorController {
+export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner, options: DocumentColorControllerOptions): DocumentColorController {
+    const { provider } = owner;
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
     const { scope, state, signal, active, available, capture, release, expire, mount } =
         languageReview<Job, DocumentColorSnapshot>(editor, "Document color", idle, options.canCapture,
@@ -65,7 +62,7 @@ export function mountDocumentColors(editor: TextEditor, provider: LspWorkspace, 
         if (signal.aborted || enabled === !!swatches) return;
         if (enabled) {
             const activate = typeof options.swatches === "function" ? options.swatches : undefined;
-            swatches = mountSwatches(editor, provider, shared ?? provider, activate);
+            swatches = mountSwatches(editor, owner, activate);
         } else {
             swatches?.dispose();
             swatches = undefined;
@@ -207,7 +204,7 @@ export function mountDocumentColors(editor: TextEditor, provider: LspWorkspace, 
                 publish("expired");
                 return refused("unavailable-view");
             }
-            const client = colorClient(shared ?? provider);
+            const client = colorClient(owner);
             const j: Job = { source, client, invalid: false,
                 project: retainDocuments(workspace, available, () => expire(j)) };
             pending = active.job = j;

@@ -43,8 +43,8 @@ Use `features` to restrict methods,
 | Rename | `attachEditorLanguage` with `rename`, `createLspRenameClient` | `textDocument/rename` |
 | Server commands | `attachEditorLanguage` with `commands` | `workspace/executeCommand` |
 | Code actions | `attachEditorLanguage` with `codeActions`, `createLspActionClient` | `textDocument/codeAction` |
-| Document links | `createDocumentLinkController`, `createLspLinkClient` | `textDocument/documentLink` |
-| Document colors | `createDocumentColorController`, `createLspColorClient` | `textDocument/documentColor` and `textDocument/colorPresentation` |
+| Document links | `attachEditorLanguage` with `links`, `createLspLinkClient` | `textDocument/documentLink` |
+| Document colors | `attachEditorLanguage` with `colors`, `createLspColorClient` | `textDocument/documentColor` and `textDocument/colorPresentation` |
 | Occurrences | `attachEditorLanguage` with `occurrences`, `createLspHighlightClient` | `textDocument/documentHighlight` |
 | Folding | [Folding client and discovery controller](folding.md#language-server-discovery) | `textDocument/foldingRange` |
 
@@ -698,8 +698,8 @@ after commit, report the uncertain delivery and leave the edit in history.
 
 ### Document links
 
-`createDocumentLinkController(editor, provider, { documents })` discovers links in the mounted
-document. Include any project documents whose revision or edit permissions affect your URI mapping.
+Use the attachment's `links` option to discover links in the mounted document. Pass a `documents`
+callback for any project documents whose revision or edit permissions affect your URI mapping.
 `await links.request()` returns `done` with the list published to `getSnapshot().links`,
 `stale` if the request expires, `refused` for an unavailable view, or `failed` with the error.
 Each choice carries its range, tooltip, optional target and an `open` action.
@@ -739,7 +739,7 @@ a new target and tooltip while requiring the original range and identity.
 
 ### Document colors
 
-`createDocumentColorController(editor, provider).request()` returns an `Outcome` containing the
+With `colors: {}` on the attachment, `await language.colors.request()` returns an `Outcome` containing the
 captured color choices on success. Await a choice's `preview(rgba)` for its presentation choices.
 An empty list is a successful reply. Invalid RGBA channels return `refused` with reason `invalid-color`.
 A superseded request returns `stale`.

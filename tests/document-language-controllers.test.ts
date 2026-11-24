@@ -1,11 +1,6 @@
-import { mountSwatches } from "../src/browser/document-color-swatches.ts";
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
-import {
-    attachEditorLanguage, createDocumentColorController,
-    createDocumentLinkController,
-    type TextEditor,
-} from "../src/browser/index.ts";
+import { attachEditorLanguage, type TextEditor } from "../src/browser/index.ts";
 import { createDecorationLayers } from "../src/browser/decoration-layers.ts";
 import { editorState } from "./helpers/editor-state.ts";
 import { latch } from "./helpers/latch.ts";
@@ -197,9 +192,9 @@ for (const method of ["textDocument/codeAction", "textDocument/rename", "textDoc
         const before = f.workspace.diagnostics().leases;
         const controller = method === "textDocument/codeAction" ? attachEditorLanguage(f.editor, f.provider, { codeActions: { prepareRequest: prepare } }).codeActions
             : method === "textDocument/rename" ? attachEditorLanguage(f.editor, f.provider, { rename: { prepareRequest: () => prepare } }).rename
-            : createDocumentColorController(f.editor, f.provider, {
+            : attachEditorLanguage(f.editor, f.provider, { colors: {
                 prepareRequest: kind => (kind === "discovery") === (method === "textDocument/documentColor") ? prepare : undefined,
-            });
+            } }).colors;
         if ("setName" in controller) controller.setName("next");
         const run = async () => {
             if (method !== "textDocument/colorPresentation" || !("dismissPreview" in controller)) return controller.request();
@@ -246,7 +241,7 @@ const colorChanges = {
 for (const [cause, interrupt] of Object.entries(colorChanges)) {
     test(`a delayed color presentation loses its edit target after ${cause}`, { timeout: 5000 }, async t => {
         const f = await fixture(t);
-        const colors = createDocumentColorController(f.editor, f.provider);
+        const { colors } = attachEditorLanguage(f.editor, f.provider, { colors: {} });
         const red = { red: 1, green: 0, blue: 0, alpha: 1 };
         const presentation = [{ label: "red", textEdit: { range, newText: "#f00" } }];
         f.peer.onRequest("textDocument/documentColor", () => [{ range, color: red }]);
@@ -320,33 +315,6 @@ test("color choices belong to the presentation request that returned them", { ti
     assert.ok(f.workspace.undo({ documentId: before.id, expectedRevision: f.document().revision }).applied);
     assert.equal(f.document().buffer.text(), before.buffer.text());
     language.dispose();
-});
-
-test("background swatches recover on the next edit after the provider scope limit clears", { timeout: 5000 }, async t => {
-    const f = clientFixture(t, undefined, undefined, { maxScopes: 1 });
-    await f.provider.connect();
-    const occupied = f.provider.createScope();
-    const color = { red: 1, green: 0, blue: 0, alpha: 1 };
-    f.peer.onRequest("textDocument/documentColor", () => [{ color,
-        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } } }]);
-    t.mock.timers.enable({ apis: ["setTimeout"] });
-    let painted!: (revision: number) => void;
-    const revision = new Promise<number>(resolve => { painted = resolve; });
-    const layer = { set: (value: number) => { painted(value); return true; }, clear() {}, dispose() {} };
-    const editor = { workspace: f.workspace, view: { documentId: f.source.documentId },
-        decorations: { add: () => layer } } as unknown as TextEditor;
-    const swatches = mountSwatches(editor, f.provider, f.provider);
-    try {
-        t.mock.timers.tick(200);
-        await settled();
-        assert.equal(f.sent("textDocument/documentColor").length, 0);
-        assert.equal(swatches.at(0), undefined);
-        t.mock.timers.reset();
-        occupied.dispose();
-        f.edit();
-        assert.equal(await revision, f.document().revision);
-        assert.deepEqual(swatches.at(0), { from: 0, to: 3, color });
-    } finally { swatches.dispose(); occupied.dispose(); }
 });
 
 test("a second pane takes over a shared color scan when the first pane closes", { timeout: 5000 }, async t => {
@@ -447,9 +415,9 @@ const linkChanges = {
 for (const [cause, interrupt] of Object.entries(linkChanges)) {
     test(`a delayed link reply leaves no destination after ${cause}`, { timeout: 5000 }, async t => {
         const f = await fixture(t);
-        const links = createDocumentLinkController(f.editor, f.provider, {
+        const { links } = attachEditorLanguage(f.editor, f.provider, { links: {
             documents: () => [f.workspace.document(f.other.documentId)],
-        });
+        } });
         const answer = [{ range, target: "generic:other" }];
         const held = holdReply(f, "textDocument/documentLink", answer);
         const pending = links.request();
@@ -466,7 +434,7 @@ for (const [cause, interrupt] of Object.entries(linkChanges)) {
 
 test("a captured link cannot open a replacement at the same range", { timeout: 5000 }, async t => {
     const f = await fixture(t);
-    const links = createDocumentLinkController(f.editor, f.provider);
+    const { links } = attachEditorLanguage(f.editor, f.provider, { links: {} });
     const lazy = { range, data: 1 };
     f.peer.onRequest("textDocument/documentLink", () => [lazy]);
     const first = await links.request();

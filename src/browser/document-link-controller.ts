@@ -45,11 +45,8 @@ const watchLinks = documentRangeWatch<LspDocumentLink>(documentLinkMethod, linkC
     ({ from, to }) => ({ from, to, className: "st-document-link" }), { name: "document links", order: 30 });
 
 /** Discover links for one editor. Only a current user action hands an opaque target to the host. */
-export const createDocumentLinkController: (editor: TextEditor, provider: LspWorkspace,
-    options?: DocumentLinkControllerOptions) => DocumentLinkController = mountDocumentLinks;
-
-export function mountDocumentLinks(editor: TextEditor, provider: LspWorkspace, options: DocumentLinkControllerOptions = {},
-    shared?: LspDocumentOwner): DocumentLinkController {
+export function mountDocumentLinks(editor: TextEditor, owner: LspDocumentOwner, options: DocumentLinkControllerOptions): DocumentLinkController {
+    const { provider } = owner;
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
     const { scope, state, signal, active, available, capture, release, expire, mount } =
         languageReview<Job, DocumentLinkSnapshot>(editor, "Document link", idle, options.canCapture,
@@ -101,7 +98,7 @@ export function mountDocumentLinks(editor: TextEditor, provider: LspWorkspace, o
         const source = capture();
         if (!source) return;
         try {
-            const client = linkClient(shared ?? provider, watched);
+            const client = linkClient(owner, watched);
             const j: Job = { client, watched, invalid: false,
                 project: retainDocuments(workspace, available, () => expire(j)) };
             active.job = j;
@@ -205,7 +202,7 @@ export function mountDocumentLinks(editor: TextEditor, provider: LspWorkspace, o
     function setPaint(enabled: boolean) {
         scope.assertWritable();
         if (signal.aborted || enabled === !!paint) return;
-        if (enabled) paint = watchLinks(editor, provider, shared ?? provider);
+        if (enabled) paint = watchLinks(editor, owner);
         else {
             if (active.job?.watched) expire(active.job);
             paint?.dispose();

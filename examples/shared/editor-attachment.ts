@@ -36,14 +36,14 @@ export function scopedCommands(editor: TextEditor, signal: AbortSignal) {
 }
 
 /** A failed mount and either teardown order release the same pane and controller. */
-export function attachPanelSession<S extends { editor: TextEditor; controller: { dispose(): void } | undefined }>(
+export function attachPanelSession<S extends { editor: TextEditor }>(
     sessions: Map<S, () => void>, session: S,
-    bind: (signal: AbortSignal, register: ReturnType<typeof scopedCommands>) => void, retire: () => void,
-    dispose = session.controller?.dispose,
+    bind: (signal: AbortSignal, register: ReturnType<typeof scopedCommands>) => void, retire?: () => void,
+    dispose?: () => void,
 ) {
     const scope = new CleanupScope(), events = new AbortController();
     if (dispose) scope.defer(dispose);
-    scope.defer(retire);
+    if (retire) scope.defer(retire);
     scope.defer(() => { sessions.delete(session); events.abort(); });
     sessions.set(session, scope.dispose);
     try {
