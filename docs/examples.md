@@ -98,8 +98,9 @@ Escape returns to the search pane. F3 and Shift+F3 continue the last query with 
 
 The Code menu follows the last focused editor. The saved copy and generated JavaScript
 offer **Go to line**. Editing commands are disabled in both read-only panes.
-Open **Code** to see the shortcut beside each bound command. Up and Down move between available
-controls. Inside a select box they change its value. Escape returns to the menu button.
+Open **Code** to see command shortcuts. Up and Down move between commands and checkboxes.
+Use Tab to reach a select box, then use its arrow keys to change the setting. Escape returns
+to the text field or editor you were using.
 **Go to line** accepts a whole line number from 1 to the last line. Invalid input stays in the
 prompt for correction. Ctrl/Cmd+G selects the entry again. Escape or a click outside the prompt
 returns to the original caret.

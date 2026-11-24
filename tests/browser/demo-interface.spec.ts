@@ -529,9 +529,20 @@ test("the Find toolbar follows generated output and both Changes panes", async (
     await page.keyboard.press("Control+f"); await expect(query).toBeFocused(); await query.fill("const cart =");
     await expect(label).toHaveText("JavaScript output · read-only"); await expect(status).toHaveText("1 of 1");
     const codeSummary = page.locator("#code-menu summary");
-    await codeSummary.click(); await codeSummary.press("Escape");
+    await codeSummary.click();
+    const warnings = page.locator("#character-warnings");
+    await warnings.focus();
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowDown");
+    await expect(warnings).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(page.locator("#indentation")).toBeFocused();
+    const comment = page.locator("#line-comment");
+    await expect(comment).toBeDisabled();
+    await comment.click({ force: true });
+    await page.keyboard.press("Escape");
     await codeSummary.dispatchEvent("keydown", { key: "Escape", repeat: true });
-    await expect(codeSummary).toBeFocused(); await expect(query).toBeVisible();
+    await expect(query).toBeFocused(); await expect(page.locator("#code-menu")).not.toHaveAttribute("open", "");
     await expect(output.locator(".st-search-match").first()).toBeVisible(); await expect(source.locator(".st-search-match")).toHaveCount(0);
     await page.locator(".intro p").first().click(); await page.keyboard.press("Control+h"); await expect(query).toBeFocused(); await expect(replace).toBeVisible();
     await expect(replace).toBeDisabled(); await expect(replaceAll).toBeDisabled();
@@ -846,8 +857,8 @@ test("view controls survive file switches and saved-reference replacement in bot
     const viewOption = page.locator("#view-minimap"); await viewOption.focus();
     await expectPanelKeyReserved(viewOption, "Escape"); await expect(page.locator("#view-menu")).toHaveAttribute("open", "");
     await viewOption.press("Escape"); await expect(page.locator("#view-menu")).not.toHaveAttribute("open", "");
-    await expect(page.locator("#view-menu summary")).toBeFocused();
-    await input.press("Control+Home"); await page.keyboard.type("// View controls\n");
+    await expect(input).toBeFocused();
+    await page.keyboard.press("Control+Home"); await page.keyboard.type("// View controls\n");
     await page.getByRole("button", { name: "Compare", exact: true }).click();
     const panes = page.locator(".st-comparison-panes > section"), left = panes.first(), right = panes.last();
     await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
@@ -875,7 +886,8 @@ test("view controls survive file switches and saved-reference replacement in bot
         await expect(pane.locator(".st-column-ruler, .st-current-line-background, .st-minimap")).toHaveCount(0);
         await expect(pane.locator(".st-viewport")).toHaveCSS("font-variant-ligatures", "none");
     }
-    await page.locator("#view-menu summary").press("Escape"); await expect(page.locator("#view-menu summary")).toBeFocused();
+    await page.locator("#view-menu summary").press("Escape");
+    await expect(right.getByRole("textbox")).toBeFocused();
 });
 
 test("character warnings explain source characters and stay consistent across review panes", async ({ page, baseURL }, info) => {

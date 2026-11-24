@@ -701,8 +701,15 @@ codeMenu.addEventListener("click", event => {
 }, { signal: listeners.signal });
 for (const menu of [codeMenu, element("view-menu") as HTMLDetailsElement]) {
     const summary = menu.querySelector("summary")!;
+    let returnField: HTMLTextAreaElement | HTMLInputElement | undefined;
+    const rememberField = (target: EventTarget | null) => {
+        if (!menu.open) returnField = target instanceof HTMLTextAreaElement
+            || target instanceof HTMLInputElement && target.type === "text" ? target : undefined;
+    };
+    summary.addEventListener("pointerdown", () => rememberField(document.activeElement), { signal: listeners.signal });
+    summary.addEventListener("focus", event => rememberField(event.relatedTarget), { signal: listeners.signal });
     const position = () => {
-        if (!menu.open) return;
+        if (!menu.open) { returnField = undefined; return; }
         const trigger = summary.getBoundingClientRect();
         menu.style.setProperty("--menu-right", `${trigger.right}px`);
         menu.style.setProperty("--menu-top", `${Math.max(8, trigger.bottom + 6)}px`);
@@ -711,14 +718,19 @@ for (const menu of [codeMenu, element("view-menu") as HTMLDetailsElement]) {
     window.addEventListener("resize", position, { signal: listeners.signal });
     window.addEventListener("scroll", position, { signal: listeners.signal });
     document.addEventListener("pointerdown", event => { if (!menu.contains(event.target as Node)) menu.open = false; }, { signal: listeners.signal });
+    document.addEventListener("keydown", event => {
+        if (!menu.open || event.key !== "Escape" || !isUnmodifiedShortcut(event)) return;
+        if (event.target !== document.body && !menu.contains(event.target as Node)) return;
+        event.preventDefault();
+        menu.open = false;
+        if (returnField && !returnField.disabled && returnField.getClientRects().length) returnField.focus();
+        else if (activePane) activePane.focus();
+        else summary.focus();
+    }, { signal: listeners.signal });
     menu.addEventListener("keydown", event => {
         if (!menu.open || !isUnmodifiedShortcut(event)) return;
-        if (event.key === "Escape") {
-            event.preventDefault(); menu.open = false; summary.focus();
-            return;
-        }
         if (event.key !== "ArrowDown" && event.key !== "ArrowUp" || event.target instanceof HTMLSelectElement) return;
-        const items = Array.from(menu.querySelectorAll<HTMLElement>("button:enabled, input:enabled, select:enabled, a[href]"))
+        const items = Array.from(menu.querySelectorAll<HTMLElement>("button:enabled, input:enabled, a[href]"))
             .filter(item => item.getClientRects().length);
         const current = items.indexOf(document.activeElement as HTMLElement);
         const next = event.key === "ArrowDown" ? current + 1 : current <= 0 ? items.length - 1 : current - 1;
