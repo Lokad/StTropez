@@ -229,6 +229,22 @@ test("nested shadow focus supports occurrences, automatic completion, deferred a
     expect(await page.evaluate(() => window.shadowFocus.workspace.diagnostics())).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
 });
 
+test("discovering an expanded fold while typing preserves one undo group", async ({ page }) => {
+    const input = await mount(page, false), original = await text(page);
+    await input.focus();
+    await page.keyboard.type("c");
+    await page.evaluate(() => {
+        const { editor, workspace, source } = window.shadowFocus;
+        const { folding } = editor.view, buffer = workspace.document(source.documentId).buffer;
+        const from = buffer.offsetAt(0), to = buffer.length;
+        if (!folding.setRanges(folding.getSnapshot(), [{ id: "body", from, to }])) throw Error("Fold installation failed");
+    });
+    await page.keyboard.type("ache");
+    expect(await text(page)).toBe("cache" + original);
+    await page.keyboard.press("Control+z");
+    expect(await text(page)).toBe(original);
+});
+
 test("removing a focused fold disclosure inside a shadow root returns typing to its source", async ({ page }) => {
     const input = await mount(page, false);
     try {

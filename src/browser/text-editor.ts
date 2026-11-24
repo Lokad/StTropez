@@ -1631,7 +1631,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     };
     const subscriptions = [viewport.onRender(scheduleCaret), workspace.observeDocument(documentId).subscribe(refresh), view.subscribe(observeCaret),
         view.folding.subscribe(() => { const revision = view.folding.getSnapshot().revision;
-            if (revision === observedFoldRevision) { cancelWord(); stopDrag(); preferred = undefined; group = undefined; }
+            if (revision === observedFoldRevision) { cancelWord(); stopDrag(); preferred = undefined; }
             observedFoldRevision = revision; refresh(); }), resource.metadata.subscribe(refresh)];
     if (target) subscriptions.push(workspace.tabs.subscribe(refresh));
     let activitySnapshot: TextEditorActivity | undefined;
