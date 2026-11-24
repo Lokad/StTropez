@@ -2,6 +2,8 @@ import { clientBox, cssZoom, minimapWidth } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
 import { Store, type Observable } from "../core/observable.ts";
 import { lineContentEnd } from "../core/newlines.ts";
+import { localAsciiGraphemePoint } from "../core/grapheme-point.ts";
+import { graphemeBoundaries } from "../core/graphemes.ts";
 import { captureTextSurface } from "../core/workspace.ts";
 import type { DocumentId, DocumentSnapshot, DocumentView, TabId, Workspace } from "../core/workspace.ts";
 import type { Selection } from "../core/history.ts";
@@ -54,8 +56,8 @@ type ViewportNavigation = Readonly<{
     visualRowAt: (line: number) => number;
     columnDragLine: (localY: number, originLine: number) => number;
     navigationLine: (line: number, direction: -1 | 1, count: number, page: boolean) => number;
-    moveVisual: (offset: number, direction: -1 | 1) => CaretRectangle | undefined;
-    collapseVisual: (from: number, to: number, direction: -1 | 1) => CaretRectangle | undefined;
+    horizontalPoint: (buffer: TextBuffer, range: Selection, direction: -1 | 1, extend: boolean) =>
+        Pick<CaretRectangle, "offset" | "affinity"> | undefined;
     columnAt: (offset: number, affinity?: Affinity) => number | undefined;
     caretAtColumn: (line: number, column: number) => Readonly<Pick<CaretRectangle, "offset" | "affinity" | "revision">> | undefined;
     selectionAtColumns: (line: number, anchor: number, head: number) => (Selection & { reaches: boolean }) | undefined;
@@ -516,21 +518,21 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         return renderRowChildren(element, selections.length && parts.length > 1 ? selectedTokenRuns(parts) : parts) || changed;
     };
     type MeasuredRow = Readonly<{ complete: boolean; point: (offset: number, affinity?: Affinity) => CaretRectangle | undefined;
-        visual: (offset: number, direction: -1 | 1) => CaretRectangle | undefined;
-        edge: (direction: -1 | 1, low?: number, high?: number) => CaretRectangle; nearest: (column: number) => CaretRectangle }>;
+        nearest: (column: number) => CaretRectangle }>;
     function measuredRow(entry: CommandRow, revision: number, rectangle: ReturnType<typeof clientBox>): MeasuredRow {
         const { item, element } = entry, buffer = workspace.document(documentId).buffer, start = buffer.offsetAt(item.line);
         const value = entry.geometry ??= rowGeometry(element, 0, revision, lineHeight * rectangle.zoom), bounds = element.getBoundingClientRect(), origin = padding + (item.from - start) * columnWidth;
         const mapped = (point: CaretRectangle): CaretRectangle => Object.freeze({ ...point, offset: point.offset + item.from,
             left: rectangle.left + (origin - left) * rectangle.zoom + point.left - bounds.left, top: rectangle.top + (padding + renderedIndex.rowAt(item.line) * lineHeight - top) * rectangle.zoom + point.top - bounds.top });
-        const optional = (point: CaretRectangle | undefined) => point && mapped(point);
         return { complete: item.complete,
-            point: (offset, affinity) => {
-                const at = rowCaretOffset(buffer, item.to, offset), point = at === undefined ? undefined : optional(value.point(at - item.from, affinity));
-                return point && at !== offset ? Object.freeze({ ...point, offset }) : point;
+            point(offset, affinity) {
+                const at = rowCaretOffset(buffer, item.to, offset);
+                if (at === undefined) return;
+                const point = value.point(at - item.from, affinity);
+                if (!point) return;
+                const result = mapped(point);
+                return at === offset ? result : Object.freeze({ ...result, offset });
             },
-            visual: (offset, direction) => optional(value.visual(offset - item.from, direction)),
-            edge: (direction, low = item.from, high = item.to) => mapped(value.edge(direction, low - item.from, high - item.from)),
             nearest: column => mapped(value.nearest(bounds.left + (column - origin) * rectangle.zoom)) };
     }
     function prepareNavigationRows(lines: readonly number[]): () => void {
@@ -562,21 +564,19 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         root.append(element); navigationRows += batchRows.size; navigationBatches++; maxNavigationBatchRows = Math.max(maxNavigationBatchRows, batchRows.size);
         return () => { if (preparedRows === batch) clearPreparedRows(); };
     }
-    function withRow<T>(line: number, scrollLeft: number, offset: number | undefined, complete: boolean, work: (row: MeasuredRow) => T): T | undefined {
+    function withRow<T>(line: number, scrollLeft: number, offset: number | undefined, work: (row: MeasuredRow) => T): T | undefined {
         const document = workspace.observeDocument(documentId).getSnapshot();
         if (disposed || !live() || document?.revision !== renderedRevision) return;
         const existing = rows.get(line), rectangle = clientBox(root, false, gutterWidth);
-        if (existing && (existing.dataset.complete === "true" || !complete && scrollLeft === left
+        if (existing && (existing.dataset.complete === "true" || scrollLeft === left
             && (offset === undefined || offset >= Number(existing.dataset.from) && offset <= Number(existing.dataset.to)))) {
             const value = geometry(existing);
-            return work({ ...value, complete: existing.dataset.complete === "true",
+            return work({ complete: existing.dataset.complete === "true", point: value.point,
                 nearest: column => value.nearest(rectangle.left + (column - left) * rectangle.zoom) });
         }
         if (preparedRows && (preparedRows.revision !== document.revision || preparedRows.selectionSet !== view.getSnapshot().selectionSet)) clearPreparedRows();
         const prepared = preparedRows?.rows.get(line); if (prepared) return work(measuredRow(prepared, document.revision, rectangle));
-        const buffer = document.buffer, start = buffer.offsetAt(line), end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
-        if (complete && end - start > 514) return;
-        const item = row(buffer, line, scrollLeft, true); if (complete && !item.complete) return;
+        const item = row(document.buffer, line, scrollLeft, true);
         const selectionSet = view.getSnapshot().selectionSet;
         const changed = paintRow(commandRow, item, document, selectionSet, currentLine(document, selectionSet, renderedIndex));
         commandRow.style.height = `${lineHeight}px`; commandRow.style.lineHeight = comparisonRows ? `${lineHeight}px` : ""; root.append(commandMeasure); navigationRows++;
@@ -585,13 +585,6 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             return work(measuredRow({ item, element: commandRow, geometry: commandGeometry }, document.revision, rectangle));
         } finally { commandMeasure.remove(); }
     }
-    const rowForOffset = <T>(offset: number, work: (row: MeasuredRow) => T): T | undefined => {
-        if (disposed || !live()) return;
-        const document = workspace.observeDocument(documentId).getSnapshot();
-        if (disposed || !live() || document?.revision !== renderedRevision) return;
-        const line = document.buffer.lineAt(offset);
-        return withRow(line, left, offset, true, work);
-    };
     function render(scheduled: boolean): void {
         frame = undefined; if (disposed) return;
         const started = win.performance.now();
@@ -1143,21 +1136,54 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const document = workspace.observeDocument(documentId).getSnapshot();
         if (document?.revision !== renderedRevision || view.folding.getSnapshot().generation !== renderedFoldGeneration) return;
         if (!Number.isSafeInteger(line) || line < 0 || line >= document.buffer.lineCount || !Number.isFinite(column)) throw new RangeError("Invalid navigation column.");
-        if (!renderedIndex.hiddenBy(line)) return withRow(line, columnScroll(column), undefined, false, work);
+        if (!renderedIndex.hiddenBy(line)) return withRow(line, columnScroll(column), undefined, work);
     }
-    const navigation: ViewportNavigation = Object.freeze({
+    function completeLine(buffer: TextBuffer, line: number) {
+        const span = buffer.line(line);
+        if (span.to - span.from <= 512 || rows.get(line)?.dataset.complete === "true") return span;
+        // Rows just above the short-line limit can fit in a wide viewport.
+        const end = line + 1 === buffer.lineCount ? buffer.length : buffer.offsetAt(line + 1);
+        if (end - span.from <= 514 && row(buffer, line).complete) return span;
+    }
+    const navigation = Object.freeze<ViewportNavigation>({
         prepareNavigationRows,
-        moveVisual: (offset: number, direction: -1 | 1) => rowForOffset(offset, measured => {
-            const before = measured.point(offset, "before"), after = measured.point(offset, "after"); if (!before || !after) return;
-            if (before.offset !== offset && after.offset !== offset) return direction < 0 ? before : after;
-            const next = measured.visual(offset, direction); if (next) return next;
-            const buffer = workspace.document(documentId).buffer, source = view.folding.getSnapshot().index, at = source.rowAt(buffer.lineAt(offset)) + direction;
-            if (at < 0 || at >= source.visibleLineCount) return measured.edge(direction);
-            const line = source.lineAt(at);
-            return rowForOffset(buffer.offsetAt(line), neighbor => neighbor.edge(direction < 0 ? 1 : -1));
-        }),
-        collapseVisual: (from: number, to: number, direction: -1 | 1) => rowForOffset(from, first => direction < 0
-            ? first.edge(direction, from, to) : rowForOffset(to, last => last.edge(direction, from, to))),
+        horizontalPoint(buffer, range, direction, extend) {
+            const collapse = !extend && range.anchor !== range.head;
+            const leftward = direction < 0;
+            const low = Math.min(range.anchor, range.head);
+            let offset = range.head;
+            if (collapse) offset = leftward ? low : Math.max(range.anchor, range.head);
+            const line = buffer.lineAt(offset);
+            const span = completeLine(buffer, line);
+            if (!span) return;
+            if (collapse && !leftward && low < span.from && !completeLine(buffer, buffer.lineAt(low))) return;
+            const affinity = leftward ? "after" : "before";
+            if (!collapse && (leftward ? offset === span.from : offset >= span.to)) {
+                const index = view.folding.getSnapshot().index;
+                const next = index.rowAt(line) + direction;
+                if (next < 0 || next >= index.visibleLineCount) return { offset: leftward ? span.from : span.to, affinity };
+                const neighbor = completeLine(buffer, index.lineAt(next));
+                return neighbor && { offset: leftward ? neighbor.to : neighbor.from, affinity: leftward ? "before" : "after" };
+            }
+            // The interior CRLF position paints at the content end.
+            if (offset > span.to) return { offset: span.to, affinity };
+            const local = localAsciiGraphemePoint(buffer, offset);
+            if (local) {
+                if (!collapse) offset = (leftward ? local.preceding : local.following)!;
+                return { offset, affinity };
+            }
+            const stops = graphemeBoundaries(span.text.replaceAll("\r", "␍"));
+            const column = offset - span.from;
+            const ceil = partitionPoint(stops.length, index => stops[index]! < column);
+            const exact = stops[ceil] === column;
+            if (collapse) {
+                const edge = !leftward && !exact ? ceil - 1 : ceil;
+                return { offset: span.from + stops[edge]!, affinity };
+            }
+            const next = leftward ? ceil - 1 : ceil + Number(exact);
+            const insideAffinity = leftward ? "before" : "after";
+            return { offset: span.from + stops[next]!, affinity: exact ? affinity : insideAffinity };
+        },
         columnAt: (offset: number, affinity: Affinity = "after") => {
             if (disposed || !live()) return;
             const document = workspace.observeDocument(documentId).getSnapshot();
@@ -1166,7 +1192,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             if (visible) return (visible.left - rectangle.left) / rectangle.zoom + left;
             const originalLine = document.buffer.lineAt(offset), hidden = renderedIndex.hiddenBy(originalLine), line = hidden?.lineFrom ?? originalLine;
             const projected = hidden ? row(document.buffer, line).to : offset, scroll = Math.max(0, padding + (projected - document.buffer.offsetAt(line)) * columnWidth - width / 2);
-            return withRow(line, scroll, projected, false, measured => { const point = measured.point(projected, affinity); return point && (point.left - rectangle.left) / rectangle.zoom + left; });
+            return withRow(line, scroll, projected, measured => { const point = measured.point(projected, affinity); return point && (point.left - rectangle.left) / rectangle.zoom + left; });
         },
         caretAtColumn: (line, column) => withColumnRow(line, column, row => row.nearest(column)),
         selectionAtColumns: (line, anchor, head) => withColumnRow(line, anchor, row => {

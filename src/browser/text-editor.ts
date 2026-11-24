@@ -830,26 +830,15 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         beginNavigation((capture, style, inline) => {
         const began = win.performance.now(); viewport.flush();
         if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
-        const layout = navigationLayout(style), buffer = capture.buffer, foldIndex = view.folding.getSnapshot().index;
+        const layout = navigationLayout(style);
+        const direction = key === "ArrowLeft" ? -1 : 1;
         navigationPreparationMs = win.performance.now() - began;
         eachRange(capture, "grapheme", (range, done) => {
-            const direction = key === "ArrowLeft" ? -1 : 1;
-            const point = !extend && range.anchor !== range.head
-                ? navigation.collapseVisual(Math.min(range.anchor, range.head), Math.max(range.anchor, range.head), direction)
-                : navigation.moveVisual(range.head, direction);
+            const point = navigation.horizontalPoint(capture.buffer, range, direction, extend);
             if (point) { visualMoves++; done(moved(range, point.offset, extend, point.affinity)); return; }
             if (!extend && range.anchor !== range.head) { done(moved(range, direction < 0 ? Math.min(range.anchor, range.head) : Math.max(range.anchor, range.head), false)); return; }
             withGraphemes(capture, range.head, direction, "grapheme", at => done(moved(range, direction < 0 ? at.preceding ?? range.head : at.following ?? range.head, extend)), navigationTurn);
-        }, ranges => finishRanges(capture, ranges), { validLayout: () => navigationLayout() === layout, navigation: true, inline, ...(capture.selectionSet.ranges.length > 1 ? {
-            batchSize: commandBudget.shortRangeBatch, prepare: (ranges: readonly Selection[]) => {
-                const lines = new Set<number>();
-                for (const range of ranges) {
-                    const line = buffer.lineAt(range.head); lines.add(line);
-                    if (!extend && range.anchor !== range.head) lines.add(buffer.lineAt(range.anchor));
-                    else { const row = foldIndex.rowAt(line); if (row) lines.add(foldIndex.lineAt(row - 1)); if (row + 1 < foldIndex.visibleLineCount) lines.add(foldIndex.lineAt(row + 1)); }
-                }
-                return navigation.prepareNavigationRows([...lines]);
-            } } : {}) });
+        }, ranges => finishRanges(capture, ranges), { validLayout: () => navigationLayout() === layout, navigation: true, inline });
         }, shortHorizontal);
         return true;
     }

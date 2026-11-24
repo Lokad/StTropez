@@ -328,6 +328,39 @@ test("pending word deletion orders native deletion and typing and respects permi
     expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 200_000, head: 0 });
 });
 
+test("horizontal arrows move offscreen carets by grapheme without measuring their rows", async ({ page }) => {
+    const lines = Array.from({ length: 2000 }, (_, i) => (i % 2 ? "abe\u0301" : "abcd") + i);
+    await setup(page, lines.join("\n"));
+    let start = 0;
+    const carets = lines.map(line => {
+        const head = start + 2;
+        start += line.length + 1;
+        return { anchor: head, head };
+    });
+    const primary = 999;
+    await page.evaluate(({ carets, primary }) => window.editingFixture.selections(carets, primary), { carets, primary });
+    await ready(page);
+    const measurement = await page.locator("#primary .st-viewport").evaluateHandle(root => {
+        let measured = false;
+        const observer = new MutationObserver(records => {
+            measured ||= records.some(record => Array.from(record.addedNodes).some(node =>
+                node instanceof Element && node.classList.contains("st-viewport-command-measure")));
+        });
+        observer.observe(root, { childList: true });
+        return () => { observer.disconnect(); return measured; };
+    });
+    await page.keyboard.press("ArrowRight");
+    await ready(page);
+    const selection = await page.evaluate(() => window.editingFixture.selectionSet());
+    expect(selection.primary).toBe(primary);
+    expect(selection.ranges).toEqual(carets.map(({ head }, i) => {
+        const offset = head + (i % 2 ? 2 : 1);
+        return { anchor: offset, head: offset, anchorAffinity: "before", headAffinity: "before" };
+    }));
+    expect(await measurement.evaluate(stop => stop())).toBe(false);
+    await measurement.dispose();
+});
+
 test("nearest caret reveal leaves an already visible row and horizontal position stable", async ({ page }) => {
     await setup(page, Array.from({ length: 60 }, () => "0123456789abcdef").join("\n"), 17 * 20 + 4);
     const before = (await snapshot(page)).primary.viewport;
@@ -367,15 +400,20 @@ test("navigation reuses immediate style captures and rejects synchronous layout 
         await ready(page);
     }
     for (const phase of ["render", "geometry"] as const) {
-        await setup(page, text, head);
+        // Give the vertical destination fresh glyphs so it has no cached geometry.
+        await setup(page, phase === "geometry" ? text.replaceAll("0123456789abcdef", "ghijklmnopqrstuv") : text, head);
         changes.push(await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate((input, phase) => {
             const root = input.parentElement!, nativeRects = Range.prototype.getClientRects; let changed = 0;
             const alter = () => { if (!changed) { changed++; root.style.letterSpacing = "1px"; } };
             let stop = () => {};
             if (phase === "render") { stop = window.editingFixture.onRender("primary", () => { stop(); alter(); }); root.scrollTop += 2; root.dispatchEvent(new Event("scroll")); }
-            else Range.prototype.getClientRects = function () { alter(); return nativeRects.call(this); };
+            else Range.prototype.getClientRects = function () {
+                if (this.startContainer.parentElement?.closest('.st-viewport-row[data-line="21"]')) alter();
+                return nativeRects.call(this);
+            };
             try {
-                input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+                const key = phase === "geometry" ? "ArrowDown" : "ArrowRight";
+                input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
                 const state = window.editingFixture.snapshot();
                 return { phase, changed, head: state.primary.selection.head, pending: state.primary.pendingCommand, conflicts: state.conflicts.length };
             } finally { Range.prototype.getClientRects = nativeRects; stop(); }

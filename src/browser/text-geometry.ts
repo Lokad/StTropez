@@ -142,17 +142,5 @@ export function rowGeometry(element: HTMLElement, from: number, revision: number
                     if (next < distance - .02 || Math.abs(next - distance) <= .02 && (inside && !underPointer || inside === underPointer && best?.offset === candidate.offset && candidate.affinity === "after")) { best = candidate; distance = next; underPointer = inside; }
                 }
             } return best ?? point(from)!;
-        },
-        visual: (offset: number, direction: -1 | 1): CaretRectangle | undefined => {
-            ensure();
-            const local = offset - from;
-            const next = direction < 0 ? partitionPoint(boundaries.length, i => boundaries[i]! < local) - 1
-                : partitionPoint(boundaries.length, i => boundaries[i]! <= local);
-            if (next < 0 || next >= boundaries.length) return;
-            return point(from + boundaries[next]!, direction < 0 ? "after" : "before");
-        },
-        edge: (direction: -1 | 1, low = from, high = from + text.length): CaretRectangle => {
-            ensure();
-            return point(direction < 0 ? Math.max(from, low) : Math.min(from + text.length, high), direction < 0 ? "after" : "before")!;
         } });
 }
