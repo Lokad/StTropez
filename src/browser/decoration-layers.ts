@@ -58,7 +58,9 @@ class RangeIndex {
         if (positionMapSize(next) + (prior ? positionMapSize(prior) : 0) > this.ranges.length) {
             const ranges: InlineDecoration[] = [];
             for (const r of this.ranges) {
-                const from = next.map(prior?.map(r.from, "after").offset ?? r.from, "after").offset;
+                const previous = prior?.map(r.from, "after"), start = next.map(previous?.offset ?? r.from, "after");
+                if (r.from === r.to && (previous?.deleted || start.deleted)) continue;
+                const from = start.offset;
                 const to = r.from === r.to ? from : next.map(prior?.map(r.to, "before").offset ?? r.to, "before").offset;
                 if (r.from === r.to || from < to) ranges.push({ ...r, from, to });
             }
@@ -75,10 +77,10 @@ class RangeIndex {
             const mid = low + Math.floor((high - low) / 2), max = this.ends[mid]!;
             if ((map?.map(max, "after").offset ?? max) < from) return;
             visit(low, mid);
-            const r = this.ranges[mid]!, left = map?.map(r.from, "after").offset ?? r.from;
+            const r = this.ranges[mid]!, start = map?.map(r.from, "after"), left = start?.offset ?? r.from;
             if (left > to) return;
             const right = r.from === r.to ? left : map?.map(r.to, "before").offset ?? r.to;
-            if (r.from === r.to ? left >= from : right > from && left < right && left < to) {
+            if (r.from === r.to ? !start?.deleted && left >= from : right > from && left < right && left < to) {
                 matches.push(map ? { ...r, from: left, to: right } : r);
             }
             visit(mid + 1, high);
@@ -88,13 +90,13 @@ class RangeIndex {
     /** A label can reach the visible end of a line whose annotated text has scrolled out to the left. */
     private earlierAnnotations(start: number, from: number, matches: InlineDecoration[]): void {
         const map = this.mapping;
-        const endOf = (r: InlineDecoration) => map?.map(r.to, r.from === r.to ? "after" : "before").offset ?? r.to;
         const first = partitionPoint(this.annotations.length, i => (map?.map(this.annotations[i]!.to, "after").offset ?? this.annotations[i]!.to) < start);
         for (let i = first; i < this.annotations.length; i++) {
-            const r = this.annotations[i]!, to = endOf(r);
-            if ((map?.map(r.to, "before").offset ?? r.to) > from) break;
-            const left = map?.map(r.from, "after").offset ?? r.from;
-            if (to >= start && to <= from && left < from && (r.from === r.to || left < to)) matches.push(map ? { ...r, from: left, to } : r);
+            const r = this.annotations[i]!, right = map?.map(r.to, "before").offset ?? r.to;
+            if (right > from) break;
+            const mapped = map?.map(r.from, "after"), left = mapped?.offset ?? r.from;
+            const point = r.from === r.to, to = point ? left : right;
+            if (to >= start && to <= from && left < from && (point ? !mapped?.deleted : left < to)) matches.push(map ? { ...r, from: left, to } : r);
         }
     }
     collect(from: number, to: number, start: number, endsLine: boolean, matches: InlineDecoration[]): void {

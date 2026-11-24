@@ -74,6 +74,9 @@ Within a row, the selection background runs continuously across syntax tokens an
 
 `set(revision, ranges)` copies its input and returns `false` for a stale revision or a retired view.
 Offsets outside the revision throw. Edits move surviving ranges until the layer receives a replacement.
+A deletion or replacement removes a point mark and its label when the point falls strictly inside
+the edited range. Points at either boundary survive. Undo restores the text. The host can publish
+the mark again against the restored revision.
 `clear()` removes its marks. `dispose()` retires the layer. The view disposes all its layers on teardown.
 
 For syntax, call `decorations.addProvider({ name, order, provide, lineClass })`.

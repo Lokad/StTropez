@@ -121,6 +121,13 @@ test("a retained diagnostic, swatch and point follow typing and history in a 100
     await input.press("Home"); await page.keyboard.insertText("!");
     await expect.poll(inspect).toMatchObject({ text: expect.stringContaining("!"), word: "red", offset: start + 20_012, revision: 5 });
     await expect(page.locator(".missing-again")).toHaveCount(1);
+    await input.press("End"); await input.press("Shift+ArrowDown"); await input.press("Shift+ArrowDown");
+    await input.press("Delete");
+    await expect.poll(inspect).toMatchObject({ word: "red", revision: 6 });
+    await expect(page.locator(".missing-again")).toHaveCount(0);
+    await input.press("Control+z");
+    await expect.poll(inspect).toMatchObject({ word: "red", revision: 7 });
+    await expect(page.locator(".missing-again")).toHaveCount(0);
     expect(await page.evaluate(() => (window as unknown as { clearMarks(): boolean }).clearMarks())).toBe(false);
     await expect(page.locator(".swatch, .test-diagnostic, .missing-again")).toHaveCount(0);
 });
