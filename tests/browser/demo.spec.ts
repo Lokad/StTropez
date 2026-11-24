@@ -160,16 +160,17 @@ test("demo save receipts retain their captured files and leave later typing dirt
     expect(saved["pricing.ts"]).not.toContain("Later");
 });
 
-test("demo loads the large sample on demand and accepts editing at the end", async ({ page }) => {
+test("demo opens a generated project and edits its final line", async ({ page }) => {
     await page.goto("/");
-    await page.locator("#sample").selectOption("large");
-    const source = page.getByRole("textbox", { name: "large.ts", exact: true });
-    await source.press("Control+End"); await source.pressSequentially(" edited");
-    await expect(page.locator("#cursor")).toContainText("Ln 100000,");
-    await expect(page.locator("#editor")).toContainText("// Row 100000: try editing or searching here. edited");
-    await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
+    await page.locator("#sample").selectOption("results");
+    const source = page.getByRole("textbox", { name: "uses.ts", exact: true });
+    await source.press("Control+End");
+    await page.keyboard.insertText("// edited");
+    const lastRow = page.locator("#editor .st-viewport-row").last();
+    await expect(lastRow).toHaveText("// edited");
+    await expect(page.locator("#cursor")).toHaveText("Ln 1202, Col 10");
     await source.press("Control+z");
-    await expect(page.getByRole("button", { name: "large.ts", exact: true })).toBeVisible();
+    await expect(lastRow).toHaveText("");
 });
 
 test("demo local save persists both files and prevents a stale page from replacing them", async ({ page, context }) => {

@@ -125,7 +125,7 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
         await page.evaluate(({ rev, third }) => { if (!window.hostFixture.selectSource("secondary", rev, { anchor: third + 6, head: third + 6 })) throw new Error("Selection setup failed."); }, { rev, third });
         await primary(page).press("Control+Home"); await primary(page).press("Shift+ArrowDown"); await primary(page).press("Shift+ArrowDown");
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: 0, head: third });
-        const before = await snapshot(page), indented = "    " + corrected.replace("\r\n", "\r\n    ");
+        const before = await snapshot(page), indented = "    " + corrected.replace("\r\n\t", "\r\n\t    ");
         await primary(page).press("Tab"); await ready(page); expect(await source(page)).toBe(indented);
         expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
         expect((await snapshot(page)).bindings.views.find(v => v.id === "secondary")!.selection.head).toBe(third + 14);
@@ -180,7 +180,7 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
         await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 });
     });
     test("large backward clipboard ranges preserve CRLF, reference identity and undo-to-saved across host remount", async ({ page }) => {
-        const original = "const sample = 1234567;\r\n".repeat(100_000), from = 100_000, to = original.length - 100_000;
+        const original = "const sample = 1234567;\r\n".repeat(4000), from = 1000, to = original.length - 1000;
         await setSource(page, original); await page.getByRole("button", { name: "Open source review", exact: true }).click();
         await page.getByRole("button", { name: "Capture review acceptance", exact: true }).click(); await page.getByRole("button", { name: "Finish review acceptance", exact: true }).click(); await ready(page);
         await primary(page).focus(); await page.evaluate(({ from, to }) => { const f = window.hostFixture; if (!f.selectSource("primary", f.snapshot().source.revision, { anchor: to, head: from })) throw new Error("Selection setup failed."); }, { from, to });

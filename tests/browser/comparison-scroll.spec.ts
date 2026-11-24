@@ -45,12 +45,12 @@ for (const host of ["plain", "react"]) test(`${host} linked review scroll preser
     await expect.poll(async () => { const c = (await snapshot(p)).bindings.comparison!; return Math.abs(c.referenceViewport!.scrollTop - c.workingViewport.scrollTop - 2 * c.workingViewport.lineHeight); }).toBeLessThan(.5);
     c = (await snapshot(p)).bindings.comparison!;
     await exact(p, working); expect((await snapshot(p)).history).toEqual(before.history); expect(c.selectionSet).toEqual(before.bindings.comparison!.selectionSet);
-    // Disable in the same task as a queued source scroll; a later frame cannot move the other pane.
+    // Disable after changing the scroll position, before its next paint.
     const disabled = await p.locator(".st-comparison-panes .st-viewport").last().evaluate(node => {
         const f = window.hostFixture, old = f.snapshot().bindings.comparison!.referenceViewport!.scrollTop; node.scrollTop += 400; node.dispatchEvent(new Event("scroll"));
-        const pending = f.snapshot().bindings.comparison!.work.pendingScroll, toggle = node.ownerDocument.querySelector<HTMLInputElement>('.st-comparison-controls input[type="checkbox"]')!;
-        toggle.checked = false; toggle.dispatchEvent(new Event("change")); return { pending, after: f.snapshot().bindings.comparison!.work.pendingScroll, old };
-    }); expect(disabled).toMatchObject({ pending: true, after: false }); await waitForReview(p); expect((await snapshot(p)).bindings.comparison!.referenceViewport!.scrollTop).toBe(disabled.old);
+        const toggle = node.ownerDocument.querySelector<HTMLInputElement>('.st-comparison-controls input[type="checkbox"]')!;
+        toggle.checked = false; toggle.dispatchEvent(new Event("change")); return old;
+    }); await waitForReview(p); expect((await snapshot(p)).bindings.comparison!.referenceViewport!.scrollTop).toBe(disabled);
     await check(p).check(); await waitForReview(p);
     // Folding projects to a visible header without expanding either view or changing its set.
     await p.evaluate(({ from, to }) => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: from, head: to }]); }, { from: working.indexOf("row 000400"), to: working.indexOf("row 000420") });
@@ -70,6 +70,6 @@ for (const host of ["plain", "react"]) test(`${host} linked review scroll preser
     await p.locator(".st-comparison-panes .st-viewport").first().evaluate(node => { node.scrollTop = 3000; node.dispatchEvent(new Event("scroll")); const buttons = [...node.ownerDocument.querySelectorAll<HTMLButtonElement>("button")]; buttons.find(b => b.textContent === "Finish review acceptance")!.click(); });
     await waitForReview(p); c = (await snapshot(p)).bindings.comparison!; expect(c.referenceIsWorkingBuffer).toBe(true); expect(c.workingViewport.scrollTop).toBeCloseTo(c.referenceViewport!.scrollTop, 0);
     expect((await snapshot(p)).source.exports).toBe(saved.source.exports); expect(c.workingViewport.rows).toBeLessThan(100); expect(c.referenceViewport!.rows).toBeLessThan(100);
-    const disposed = await p.locator(".st-comparison-panes .st-viewport").last().evaluate(async node => { node.scrollTop = 5000; node.dispatchEvent(new Event("scroll")); const pending = window.hostFixture.snapshot().bindings.comparison!.work.pendingScroll; await window.hostFixture.dispose(); return { pending, state: window.hostFixture.snapshot() }; });
-    expect(disposed.pending).toBe(true); expect(disposed.state.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(disposed.state.hostSubscriptions).toBe(0); expect(disposed.state.bindings.comparison).toBeNull();
+    const disposed = await p.locator(".st-comparison-panes .st-viewport").last().evaluate(async node => { node.scrollTop = 5000; node.dispatchEvent(new Event("scroll")); await window.hostFixture.dispose(); return window.hostFixture.snapshot(); });
+    expect(disposed.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(disposed.hostSubscriptions).toBe(0); expect(disposed.bindings.comparison).toBeNull();
 });

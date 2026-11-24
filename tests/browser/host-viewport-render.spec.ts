@@ -15,7 +15,7 @@ for (const host of ["plain", "react"]) test(`${host} unchanged decorated rows su
     const rows = ["Primary source", "Secondary source", "Comparison working source"].map(name => page.getByRole("region", { name, exact: true }).locator('.st-viewport-row[data-line="4"]'));
     const spans = await Promise.all(rows.map(row => row.locator("span").first().elementHandle())); expect(spans.every(Boolean)).toBe(true);
     for (const span of spans) expect(await span!.textContent()).toBe("const");
-    const baseline = page.getByRole("region", { name: "Comparison baseline source", exact: true }).locator('.st-viewport-row[data-line="0"] span').first(), baselineSpan = await baseline.elementHandle(); expect(baselineSpan).not.toBeNull();
+    const baseline = page.getByRole("region", { name: "Comparison baseline source", exact: true }).locator('.st-viewport-row[data-line="0"]').first(), baselineSpan = await baseline.elementHandle(); expect(baselineSpan).not.toBeNull();
     const comparisonClass = await spans[2]!.getAttribute("class"), baselineClass = await baselineSpan!.getAttribute("class"), working = page.getByRole("textbox", { name: "Comparison working source", exact: true });
     await working.press("Control+Home"); await working.press("ArrowRight"); await waitForReview(page);
     expect(await spans[2]!.evaluate(node => node.isConnected), "An unchanged comparison token should survive its own selection update.").toBe(true);

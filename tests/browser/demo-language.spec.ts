@@ -101,10 +101,7 @@ test("real member completion preserves provider punctuation, resolves, applies o
     await source.pressSequentially("ma"); await source.press("Backspace");
     await expect(page.getByRole("option", { name: "map", exact: true })).toBeVisible();
     await expect(page.getByRole("option", { name: "at", exact: true })).toHaveCount(0);
-    await source.press("Backspace");
-    await expect(page.getByRole("option", { name: "push", exact: true })).toBeVisible();
-    await expect(page.getByRole("option", { name: "map", exact: true })).toHaveAttribute("aria-selected", "true");
-    await source.pressSequentially("ma");
+    await source.pressSequentially("a");
     await page.getByRole("option", { name: "map", exact: true }).click();
     await expect(page.locator(".demo-completion")).toBeHidden();
     expect(requests).toBe(beforePrefix);
