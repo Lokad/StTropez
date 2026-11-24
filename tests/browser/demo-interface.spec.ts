@@ -476,7 +476,13 @@ test("multiline Find and Replace preserves line breaks, regex captures and one-s
     await replacement.dispatchEvent("keydown", { key: "Enter", repeat: true });
     await expect(source).toHaveValue(original); await expect(replacement).toHaveValue("last\nline");
     await replacement.press("Enter"); await expect(source).toHaveValue("start\nitem 2\nend\nstart\nlast\nline");
-    await replacement.press("Escape"); await source.press("Control+z"); await expect(source).toHaveValue(original);
+    const replace = page.locator("#replace-current");
+    await expect(replace).toBeDisabled();
+    await replace.click({ force: true });
+    await expect(replacement).toBeFocused();
+    await page.keyboard.type("!");
+    await expect(replacement).toHaveValue("last\nline!");
+    await page.keyboard.press("Escape"); await source.press("Control+z"); await expect(source).toHaveValue(original);
     await source.press("Control+h"); await page.locator("#find-regex").click();
     await query.fill("start\\r?\nitem (\\d)\\r?\nend"); await expect(status).toHaveText(/2 matches|of 2/);
     await replacement.fill("$1\\nnext\\\\n"); await page.locator("#replace-all").click();

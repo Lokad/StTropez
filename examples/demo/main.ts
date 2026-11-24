@@ -635,6 +635,14 @@ function replacementText(): string {
     return replacement.value.replace(/\\([\\n])/g, (_, char: string) => char === "n" ? "\n" : "\\");
 }
 const on = (id: string, action: () => void) => element(id).addEventListener("click", action, { signal: listeners.signal });
+for (const panel of [findBar, element("save-conflict")]) {
+    // A disabled button can blur the active text field even though it never fires a click.
+    panel.addEventListener("pointerdown", event => {
+        if (event.button === 0 && event.target instanceof Element && event.target.closest("button:disabled")) {
+            event.preventDefault();
+        }
+    }, { capture: true, signal: listeners.signal });
+}
 element("panel-content").addEventListener(editRefusedEvent, () => {
     if (!project || panel !== "javascript") return;
     project.message = "Generated JavaScript is read-only. Edit the TypeScript source.";
@@ -655,7 +663,7 @@ on("replace-toggle", () => {
 });
 for (const [id, command] of [["find-next", "find.next"], ["find-previous", "find.previous"]] as const) {
     button(id).addEventListener("pointerdown", event => {
-        if (event.button !== 0) return;
+        if (event.defaultPrevented || event.button !== 0) return;
         event.preventDefault();
         if (document.activeElement !== replacement) findQuery.focus({ preventScroll: true });
     }, { signal: listeners.signal });
