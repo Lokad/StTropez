@@ -7,13 +7,17 @@ import { closePackageResources, closePackageServer, createPackageRequestHandler,
 /** Static-only qualification server: no language backend, source fallback or SPA fallback. */
 export async function serveDemo(port = 0, prefix = "/StTropez/") {
     const manifest = /** @type {{assets: readonly {path: string}[]}} */ (JSON.parse(await readFile("artifacts/pages-build.json", "utf8")));
-    const files = new Set(manifest.assets.map(asset => asset.path));
+    return serveStatic("artifacts/pages", new Set(manifest.assets.map(asset => asset.path)), port, prefix);
+}
+
+/** @param {string} directory @param {ReadonlySet<string>} files */
+export async function serveStatic(directory, files, port = 0, prefix = "/") {
     /** @type {unknown[]} */
     const failures = [];
     const requests = createPackageRequestHandler(async (request, response) => {
         const url = new URL(request.url ?? "/", "http://localhost"), name = url.pathname.startsWith(prefix) ? url.pathname.slice(prefix.length) || "index.html" : "";
         if (!files.has(name) || request.method !== "GET" && request.method !== "HEAD") { response.writeHead(404).end(); return; }
-        const bytes = await readFile(join("artifacts/pages", name));
+        const bytes = await readFile(join(directory, name));
         response.writeHead(200, { "Content-Type": name.endsWith(".woff2") ? "font/woff2" : name.endsWith(".js") ? "text/javascript" : name.endsWith(".css") ? "text/css" : name.endsWith(".json") ? "application/json" : name.endsWith(".html") ? "text/html" : "text/plain", "Content-Length": bytes.length });
         response.end(request.method === "HEAD" ? undefined : bytes);
     }, failures);

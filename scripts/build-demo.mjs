@@ -3,10 +3,15 @@ import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { demoLibraries } from "./demo-libraries.mjs";
 import { demoFontFiles, stageDemoFonts } from "./demo-fonts.mjs";
-import { join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { build } from "esbuild";
-import { within } from "./package-react-host.mjs";
 import { libraryModules, libraryCss } from "./library-entries.mjs";
+
+/** @param {string} root @param {string} path */
+function within(root, path) {
+    const remainder = relative(root, path);
+    return remainder !== ".." && !remainder.startsWith(`..${sep}`) && !isAbsolute(remainder);
+}
 
 const project = resolve("."), dist = resolve("dist"), site = resolve("artifacts/pages");
 const manifest = JSON.parse(await readFile(join(dist, "manifest.json"), "utf8"));

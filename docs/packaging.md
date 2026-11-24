@@ -145,11 +145,9 @@ accepts runtime inputs only from `src/`. The build copies both license notices u
 into a local archive. Packing requires the compiled manifest and excludes managed build output and
 dependencies. Publishing is separate.
 
-`npm run test:package` restores the archive into a project outside the checkout. It checks the
-file list and hashes, compiles against the declarations, bundles the public imports and loads
-the CSS and worker in a browser. It also changes package versions and staging directories.
-Checks in the same run reuse the restored files after verifying the archive hash and source.
-[Testing a restored package](testing.md#package-qualification)
+The CI smoke test restores the package outside the checkout, checks its manifest and exports, and compiles
+a consumer against the shipped declarations. Chromium loads the stylesheet, a host-supplied font and the
+regex worker, then types into the mounted editor. [Run the smoke test](testing.md#package-qualification)
 
 <a id="bounds-and-validation"></a>
 

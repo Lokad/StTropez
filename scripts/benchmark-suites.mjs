@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-/** @typedef {{id: string, args: readonly string[], environment: readonly string[], reports: readonly string[], setup?: string, note?: string}} BenchmarkSuite */
+/** @typedef {{id: string, args: readonly string[], environment: readonly string[], reports: readonly string[]}} BenchmarkSuite */
 const sourceIds = ["model", "editing", "viewport", "comparison"];
 /** @type {BenchmarkSuite[]} */
 const entries = sourceIds.map(id => ({
@@ -9,9 +9,6 @@ const entries = sourceIds.map(id => ({
     environment: [],
     reports: [id === "model" ? "artifacts/bench/model.json" : `artifacts/bench/${id}`],
 }));
-for (const kind of ["pilot", "hunk", "react"]) entries.push({ id: `package-${kind}`, setup: "pack:nuget",
-    args: ["scripts/test-package.mjs", `--${kind}-only`, "--bench"], environment: [], reports: ["artifacts/package"],
-    note: "Packs/restores assets before measuring the consuming host." });
 /** @type {Readonly<Record<string, Readonly<BenchmarkSuite>>>} */
 export const benchmarkSuites = Object.freeze(Object.fromEntries(entries.map(entry => [entry.id, Object.freeze({ ...entry,
     args: Object.freeze(entry.args), environment: Object.freeze(entry.environment), reports: Object.freeze(entry.reports),

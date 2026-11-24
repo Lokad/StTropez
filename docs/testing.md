@@ -29,7 +29,7 @@ npm run test:browsers -- --project=chromium --project=firefox --project=webkit t
 | `npm run check` | Type checks, documentation checks, model and integration tests, library build and Chromium tests against the source |
 | `npm run inspect` | Check editor behavior in headless Chromium and capture screenshots with the corresponding state |
 | `npm run build:demo` then `npm run test:demo` | Built static demo in the configured engines |
-| `npm run test:package` | One packed/restored asset set across selected consuming hosts |
+| `npm run test:package` | Build, pack and run the isolated consumer smoke test |
 | `npm run bench` | Seeded model work and actual bounded-editor keyboard insertion |
 | `npm run bench:all` | Run the larger set of benchmarks, or list them with `-- --list` |
 
@@ -41,13 +41,8 @@ belongs to one TypeScript project. Core and protocol use ES types, browser code 
 development tools can use Node types. See [tsconfig.json](../tsconfig.json) for the checked tools
 and fixtures. Incremental output goes to `artifacts/types`. Package declarations go to `dist`.
 
-Browser probes use the fixture’s own snapshot and report types. Trace reports omit event arguments
-and other content-bearing fields. Restored-package tooling checks its copied fixture separately from
-the browser consumer, whose declaration check uses `skipLibCheck: false`. Both record compiler
-inputs.
-
-CI runs types, docs, models, the library build, selected Chromium tests and the static demo in
-Chromium. Use the three-engine and restored-package commands above for wider coverage.
+CI checks types, documentation and models, runs the package smoke test, then exercises selected source
+workflows and the built demo in Chromium. Use `npm run test:browsers` for the three-engine suite.
 
 ## Contract
 
@@ -73,7 +68,7 @@ Reviewers check the accuracy of the contracts.
 ### Where to put a regression test
 
 Model tests live in `tests/`. Browser tests in `tests/browser/` add native events, layout and
-view remounts. The `scripts/package-*.mjs` tests build a separate application from the NuGet
+view remounts. The package smoke test builds a separate application from the NuGet
 archive. Add another host or engine when it exercises a different behavior.
 
 | Behavior | Where to test the rule | Where to check the integration |
@@ -84,13 +79,13 @@ archive. Add another host or engine when it exercises a different behavior.
 | Fixed references, hunks and closing a review | [Comparison](../tests/comparison.test.ts), row alignment, scrolling and scheduling | Close and reopen the review, find text in the reference, and align the two panes. |
 | Demo recovery and syntax colors | Demo recovery, [syntax](../tests/demo-syntax.test.ts) and token colors | Save, switch files or samples, reload, and check stored text and visible colors. Exercise storage failures too. |
 | Position-based LSP requests and invalid replies | LSP clients, workspace edits and protocol features | Hover, navigate, rename or invoke an action while the document is changing. |
-| Protocol negotiation, selectors, shared providers and command handling | JSON-RPC, sessions, selectors and the protocol fixture | WebSocket tests and the minimal LSP application built from a restored package |
+| Protocol negotiation, selectors, shared providers and command handling | JSON-RPC, sessions, selectors and the protocol fixture | WebSocket fixture and provider interoperability tests |
 | Native input and composition recovery | [Input context](../tests/input-context.test.ts) and input targets | Input targeting, queued keystrokes and dead-key composition |
 | Caret, grapheme boundaries, scroll, focus and drag | Geometry-independent and Unicode models | Viewport/geometry/paint, zoom, grapheme, pointer/drag and shadow-focus suites |
 | Host conversion, source annotations and forms | Table paste, text transfer and host rules | [Table paste](../tests/browser/host-table-paste.spec.ts), domain examples and transfers through the form |
 | Framework mount/disposal and surrounding UI | Host controller/policy models | Plain/React attachment, Strict Mode, queued-work disposal and error recovery |
-| Font registration lifetime | The browser's font decoder | [Register, measure and release a font](../tests/browser/fonts.spec.ts), then repeat with a restored package. |
-| Compiled assets and installation | Manifest/hash/dependency/export checks | Full restored consumer, version transitions and selected LSP/React/demo routes |
+| Font registration lifetime | The browser's font decoder | [Register, measure and release a font](../tests/browser/fonts.spec.ts). |
+| Compiled assets and installation | Manifest/hash/dependency/export checks | One restored consumer smoke test in CI |
 
 Tests in `tests/integration/` start real servers and processes on temporary loopback ports. Each
 test closes its listeners, stops its processes and removes its files. Keep in-memory peers in
@@ -138,7 +133,7 @@ edits are dirty. Choose assertions from the relevant [API contract](README.md#su
 | Recovery and lifecycle | Restore a draft and check its save permissions against the loaded resource. Switch input routes or remount a view and check its state. Close, replace or dispose during pending work and check for leftover views, listeners, jobs or leases and for lost drafts. Previous-session undo is outside the recovery contract. |
 | Large documents and background work | Edit and navigate at the start, middle and end of the file. Scroll both axes and make bulk edits while inactive documents and background jobs exist. Check the result, native input size, DOM size and routine reads. |
 | Responsiveness and retention | Record the build, hardware and raw timings. Check that the correct text and selection reached the screen. For repeated mounts, record which object you disposed and which memory you measured. |
-| Distribution | Restore outside the checkout. Compile against the public declarations, load the CSS and worker, and edit text. Upgrade, downgrade and reuse a staging directory. Check that all assets come from the intended package. |
+| Distribution | Restore outside the checkout. Compile against the public declarations, load the CSS and worker, and edit text. Check the manifest and public exports against the restored files. |
 | Optional acceleration | Verify that the accelerator ran and produced the same result. Exercise startup, failure and cancellation, and include transfer and allocation in its timings. |
 
 The generic fixture covers the [declared LSP subset](language-server.md). A consuming application
@@ -236,8 +231,7 @@ npm run bench:comparison
 ```
 
 `--list` shows prerequisites and report locations. Pass workload arguments to a named npm command,
-or after `--` on a direct runner call. Groups reject workload arguments. Package suites run through
-npm and require a pack step.
+or after `--` on a direct runner call. Groups reject workload arguments.
 
 The runner executes suites in order. `artifacts/bench/campaigns` contains the manifest and per-step
 output. The first failure stops the run and preserves the exit code when available. Later selected
@@ -293,47 +287,11 @@ and background jobs alongside an idle editor.
 
 ### Package qualification
 
-`npm run test:package` builds/packs once, restores outside the checkout, then runs the selected
-consumers against that same immutable archive and asset root. The default routes are full,
-LSP and React. Select `--scenarios=full,lsp,react`; available routes also include
-`pilot,hunk,activation,workspace,demo`. The full route owns installation/version transitions;
-the coordinator checks source and package identity through the run.
-
-When an unchanged qualified archive exists, `--existing` reuses it. `--skip-transitions` reuses
-applicable installation evidence when packaging inputs are unchanged. Rebuild after runtime,
-declarations or packaging changes. Host/fixture path changes require the affected staging
-route even if library bytes match, because runtime and erased type imports must remain isolated.
-The lower-level `--reuse-consumer=<metadata>` option checks the package hash and staged root.
-Lower-level `--*-only` workload flags are mutually exclusive; use the coordinator's
-`--scenarios` option to qualify multiple workloads against one restored artifact.
-
-Each route compiles its callers against its own copied fixture and restored public declarations. The
-full route also compiles its installation-transition caller. Node and Playwright types belong to the
-test harness. The checks record compiler inputs and reject unexpected imports from the checkout.
-
-Each run creates a temporary consumer. Success removes it after the final identity check.
-`--keep-consumer` retains it. Failures, standalone preparation, benchmarks and borrowed stages keep
-their directories. Cleanup verifies directory identity and skips links to borrowed locations.
-
-Look in `artifacts/package/qualification/receipt.json` for the latest run. The receipt under
-`artifacts/package/qualification/<consumer-name>/` records the scenarios, whether the temporary
-consumer was kept and the total size of its files before cleanup. Cleanup writes the receipt
-before removing the directory it created. A consumer marked for removal or already removed can't
-be reused.
-
-Protocol tests start an ephemeral server through `tests/helpers/protocol-fixture.ts`. Register
-cleanup with `defer` as soon as you acquire a resource. Cleanup runs in reverse order before the
-listener closes.
-
-Package, development and preview servers release partially acquired resources and wait for
-outstanding request handlers on close. Repeated closes share completion. Request failures return an
-empty 500 before headers or abort a partial response. Teardown collects errors even for completed
-responses and attempts every close, without imposing a timeout. Multiple errors list the workload
-error first. The static server accepts GET and HEAD only for manifest-listed assets under its
-prefix.
-
-See [packaging](packaging.md) for public exports, CSS and installation. Compiler and bundle checks
-reject private or checkout imports in restored consumers.
+CI runs `npm run test:package` with the .NET 10 SDK and headless Chromium. A temporary consumer
+restores from a local-only feed and stages the assets through MSBuild. The smoke test checks the archive,
+manifest, hashes and public exports. It compiles the consumer with strict TypeScript, loads the CSS and a
+host-supplied font, runs a regex search in the packaged worker, and types one character in the editor.
+The consumer directory is removed on exit. [Package layout and host setup](packaging.md)
 
 Demo feature tests run on the development server with the WebSocket or browser provider.
 The static suite checks that assets load under the repository prefix, exercises one editing and

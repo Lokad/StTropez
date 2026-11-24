@@ -49,12 +49,11 @@ Use `STTROPEZ_PORT` for a different source-server port and `STTROPEZ_DEMO_PORT` 
 | `npm run inspect` | Headless behavioral and visual inspection |
 | `npm run bench` | Model and keyboard-input measurements |
 | `npm run pack:nuget` | Build and pack the local assets-only NuGet archive |
-| `npm run test:package` | Qualify restored assets through isolated consuming hosts |
+| `npm run test:package` | Restore the NuGet package and run the browser smoke test |
 
 Package commands also require a .NET SDK capable of building the `net10.0` packaging project.
 See [testing](docs/testing.md) for focused checks, ownership, readiness, measurement policy
-and the native-device checklist. CI runs a selected Chromium gate and built-demo checks;
-full multi-engine and package qualification have separate scopes.
+and the native-device checklist. CI runs the restored-package smoke, selected Chromium tests and the built demo.
 
 ## Layout
 

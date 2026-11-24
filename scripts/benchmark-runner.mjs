@@ -33,17 +33,14 @@ export async function runBenchmarkCommand(args, log, cwd) {
 /**
  * Sequential, fail-fast orchestration. Measurements remain at the individual suite owners.
  * @param {BenchmarkPlan} plan
- * @param {{directory?: string, cwd?: string, npmPath?: string}} [options]
+ * @param {{directory?: string, cwd?: string}} [options]
  */
-export async function runBenchmarkPlan(plan, { directory = "artifacts/bench/campaigns", cwd = process.cwd(), npmPath = process.env.npm_execpath } = {}) {
+export async function runBenchmarkPlan(plan, { directory = "artifacts/bench/campaigns", cwd = process.cwd() } = {}) {
     assert.ok(/^[a-z0-9][a-z0-9-]*$/.test(plan.key) && plan.suites.length, "An explicit nonempty benchmark selection is required.");
     assert.equal(new Set(plan.suites.map(suite => suite.id)).size, plan.suites.length, "Benchmark suite IDs must be distinct.");
-    for (const suite of plan.suites) {
-        assert.match(suite.id, /^[a-z0-9][a-z0-9-]*$/);
-        assert.ok(!suite.setup || npmPath, "Run package benchmarks through npm so their pack prerequisite is available.");
-    }
+    for (const suite of plan.suites) assert.match(suite.id, /^[a-z0-9][a-z0-9-]*$/);
     const configuration = { selection: plan.key,
-        suites: plan.suites.map(suite => ({ id: suite.id, args: suite.args, ...(suite.setup ? { setup: suite.setup } : {}) })),
+        suites: plan.suites.map(suite => ({ id: suite.id, args: suite.args })),
         environment: Object.fromEntries([...new Set(plan.suites.flatMap(suite => [...suite.environment]))].sort()
             .map(name => [name, process.env[name] ?? null])),
     };
@@ -65,20 +62,17 @@ export async function runBenchmarkPlan(plan, { directory = "artifacts/bench/camp
             assert.ok(result);
             if (failed) { result.status = "not-run"; result.reason = "earlier-suite-failed"; continue; }
             result.status = "running";
-            const steps = [...(suite.setup ? [{ kind: "setup", args: [/** @type {string} */ (npmPath), "run", suite.setup] }] : []),
-                { kind: "workload", args: suite.args }];
-            for (const step of steps) {
-                const record = { ...step, log: join(logs, `${suite.id}-${step.kind}.log`) };
-                result.steps.push(record);
-                await publish("running");
-                console.log(`Benchmark ${suite.id} ${step.kind}: ${record.log}`);
-                const outcome = await runBenchmarkCommand(step.args, record.log, cwd);
-                Object.assign(record, { result: outcome });
-                if (outcome.exitCode !== 0 || outcome.error) {
-                    result.status = "failed"; result.reason = `${step.kind}-failed`; failed = true;
-                    exitCode = outcome.exitCode || 1;
-                    break;
-                }
+            const record = { kind: "workload", args: suite.args, log: join(logs, `${suite.id}-workload.log`) };
+            result.steps.push(record);
+            await publish("running");
+            console.log(`Benchmark ${suite.id}: ${record.log}`);
+            const outcome = await runBenchmarkCommand(suite.args, record.log, cwd);
+            Object.assign(record, { result: outcome });
+            if (outcome.exitCode !== 0 || outcome.error) {
+                result.status = "failed";
+                result.reason = "workload-failed";
+                failed = true;
+                exitCode = outcome.exitCode || 1;
             }
             if (!failed) result.status = "passed";
             console.log(`Benchmark ${suite.id}: ${result.status}`);
