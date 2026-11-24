@@ -144,6 +144,8 @@ test("a non-text panel traverses load failure, retry, ownership and release with
     const first = workspace.operations.beginLoad(form);
     workspace.tabs.move(tab, "right"); assert.equal(first.fail("Temporary failure"), true);
     assert.equal(form.getSnapshot().state, "failed"); assert.equal(workspace.getSnapshot().documents.length, 0);
+    workspace.operations.beginLoad(form).finish();
+    assert.equal(form.metadata.getSnapshot().failure, "Temporary failure");
     const retry = workspace.operations.beginLoad(form), value = { path: "loaded.csv" };
     workspace.tabs.close(tab); assert.throws(() => workspace.releaseResource(form.id));
     assert.equal(retry.accept({ value, serverVersion: "f1" }), true);
@@ -222,6 +224,10 @@ test("loads distinguish readiness, ignore superseded responses and retain cancel
     assert.equal(handle.getSnapshot().state, "loading");
     assert.throws(() => workspace.document(handle.documentId));
     assert.equal(workspace.edit({ documentId: handle.documentId, expectedRevision: 0, origin: "human", edits: [] }).applied, false);
+    const abandoned = workspace.operations.beginLoad(handle); abandoned.cancel();
+    assert.equal(handle.getSnapshot().state, "failed"); assert.ok(handle.metadata.getSnapshot().failure);
+    assert.equal(workspace.ownership(handle.id).leases, 1);
+    abandoned.finish(); assert.equal(workspace.ownership(handle.id).leases, 0);
     const first = workspace.operations.beginLoad(handle), second = workspace.operations.beginLoad(handle);
     workspace.tabs.move(tab, "right"); workspace.tabs.close(tab);
     assert.equal(first.isCancelled(), true);
@@ -240,6 +246,24 @@ test("loads distinguish readiness, ignore superseded responses and retain cancel
     assert.equal(workspace.resolveResource(target), undefined);
     const fresh = workspace.createTextResource({ scope: "probe", resource: "loading", variant: "working" }, "Fresh", { value: "new" });
     assert.notEqual(fresh.id, handle.id);
+});
+
+test("abandoning superseded refreshes restores the saved panel value with current permissions", () => {
+    const { workspace, form } = fixture(), before = form.getSnapshot();
+    assert.ok(before.state === "ready");
+    const older = workspace.operations.beginLoad(form), latest = workspace.operations.beginLoad(form);
+    older.finish(); assert.equal(form.getSnapshot().state, "loading");
+    const other = workspace.operations.begin(form.id, "load");
+    assert.ok(latest.isCurrent());
+    workspace.setCapabilities(form.id, { edit: [], save: false });
+    latest.finish();
+    const after = form.getSnapshot();
+    assert.ok(after.state === "ready"); assert.equal(after.value, before.value);
+    assert.equal(after.revision, before.revision); assert.equal(after.metadata.serverVersion, "c0");
+    assert.deepEqual(after.metadata.capabilities, { edit: [], save: false });
+    assert.equal(older.accept({ value: { path: "late", nested: { enabled: false } } }), false);
+    assert.ok(other.isCurrent()); other.finish();
+    assert.equal(workspace.ownership(form.id).leases, 0);
 });
 
 test("text reload resets every view's folds and selection at the accepted document revision", () => {

@@ -435,8 +435,10 @@ const fixture = { text: () => workspace.document(documentId).text(),
     saveReview: async () => {
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "retry", variant: "working" }, "Retry", { value: "base", serverVersion: "v0" });
         const doc = model.document(source.documentId);
+        const refresh = model.operations.beginLoad(source); refresh.cancel();
         const proposal = model.replaceText(doc.id, "merged", { expectedRevision: doc.revision, origin: "agent", history: "record", kind: "proposal" });
         if (!proposal.applied || !proposal.changed) throw new Error("Restored proposal did not replace the text.");
+        if (refresh.accept({ value: "obsolete" })) throw new Error("Cancelled refresh replaced the proposed text.");
         const first = model.captureSave(source);
         try { first.start(); first.conflict(); } finally { first.finish(); }
         const baselineBefore = source.metadata.getSnapshot().serverVersion;

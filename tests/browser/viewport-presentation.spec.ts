@@ -70,6 +70,28 @@ test("document mounts own Find, fold discovery and pending insertions across a r
     expect(await fixture.evaluate(f => f.finish())).toMatchObject({ text: "one\n  ok\nend", ranges: 0, tabs: 0, views: 0, leases: 0, subscriptions: 0 });
 });
 
+test("cancelling a refresh makes the same selection editable before the stale reply settles", async ({ page }) => {
+    const fixture = await page.evaluateHandle(async () => {
+        const path = "/presentation-fixture/";
+        const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const workspace = new Workspace();
+        const source = workspace.createTextResource({ scope: "test", resource: "refresh", variant: "working" }, "Source", { value: "left middle right" });
+        const host = document.createElement("main"); document.body.append(host);
+        const editor = mountTextEditor(host, workspace, source.documentId);
+        editor.view.setSelection(0, { anchor: 11, head: 5 });
+        const refresh = workspace.operations.beginLoad(source);
+        return { cancel: refresh.cancel, late: () => refresh.accept({ value: "obsolete" }), dispose: editor.dispose };
+    });
+    const input = page.getByRole("textbox", { name: "Source" });
+    await expect(input).toBeDisabled(); await fixture.evaluate(f => f.cancel());
+    await expect(input).toBeEnabled();
+    await input.focus(); await page.keyboard.type("X"); await expect(input).toHaveValue("left X right");
+    expect(await fixture.evaluate(f => f.late())).toBe(false);
+    await input.press("Control+z"); await expect(input).toHaveValue("left middle right");
+    await fixture.evaluate(f => f.dispose()); await fixture.dispose();
+});
+
 test("remounting after edits uses the retained selection, maps a fresh view or clamps older captures", async ({ page }) => {
     const result = await page.evaluate(async () => {
         const path = "/presentation-fixture/";

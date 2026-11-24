@@ -320,6 +320,10 @@ Omitting an initial value creates a loading resource. `workspace.operations.begi
 load; `accept({ value, serverVersion })` or `fail(message)` settles it. A newer load supersedes
 the earlier generation. Refresh is refused for dirty or locked content, reserved saves and
 leases acquired with `preventReload: true`.
+Cancelling a refresh makes the previous content available immediately, at the same revision and
+with the current permissions. Finishing a pending load without a result also restores the prior
+state. A cancelled initial load with no content enters `failed` and can be retried. Call `finish()`
+when the cancelled request settles to release its lease.
 An accepted text load advances the revision, clears linked history, resets live selections
 to the start and clears folds. The host rediscovers folds for the loaded text.
 

@@ -152,10 +152,11 @@ type ResourceRecord = {
     state: Store<ResourceSnapshot<SnapshotValue>>; metadata: Store<ResourceMetadata>;
     document: Store<DocumentSnapshot | undefined>; saved: SnapshotValue | undefined;
     buffer: TextBuffer | null; savedBuffer: TextBuffer | null; change: DocumentChange | null; history: Store<HistorySnapshot>;
-    views: Map<ViewId, ViewRecord>;
+    views: Map<ViewId, ViewRecord>; beforeLoad?: ResourceSnapshot<SnapshotValue>;
     leases: Set<symbol>;
     saveReservations: number; reloadReservations: number; saving: symbol | null; editLease: EditLease | null;
 };
+const loadLane = Symbol("resource load");
 const defaultCapabilities: Capabilities = Object.freeze({ edit: Object.freeze(["human", "agent", "host"] as const), save: true });
 function capabilities(value: Capabilities): Capabilities {
     return Object.freeze({ edit: Object.freeze([...new Set(value.edit)]), save: value.save });
@@ -649,10 +650,24 @@ export class Workspace {
         const record = this.handles.get(handle);
         if (!record || record.state.get().state === "released") throw new Error("Unknown resource.");
         if (record.metadata.get().dirty || record.saveReservations || record.editLease || record.reloadReservations) throw new Error("Cannot refresh local, locked or pending work.");
-        const operation = this.operations.begin(handle.id, "load");
+        const operation = this.operations.begin(handle.id, loadLane);
         const state = record.state.get();
+        // Superseding refreshes share the last settled value, even while the resource shows loading.
+        record.beforeLoad ??= state;
+        const stop = (end: () => void) => {
+            const before = operation.isCurrent() ? record.beforeLoad : undefined;
+            end();
+            if (!before) return;
+            delete record.beforeLoad;
+            const current = record.state.get();
+            if (current.state !== "loading") return;
+            const restored = before.state === "loading" ? { state: "failed" as const, revision: before.revision } : before;
+            const failure = before.state === "loading" ? "Load ended without content." : before.metadata.failure;
+            this.commitRecord(record, { ...restored, metadata: { ...current.metadata, state: restored.state, failure } });
+        };
+        const finish = () => stop(operation.finish);
         this.commitRecord(record, { state: "loading", revision: state.revision, metadata: { ...state.metadata, state: "loading", failure: null } });
-        return Object.freeze({ ...operation, accept: (loaded: LoadedResource<T>) => {
+        return Object.freeze({ ...operation, cancel: () => stop(operation.cancel), finish, accept: (loaded: LoadedResource<T>) => {
             try {
                 this.scope.assertWritable();
                 if (!operation.isCurrent()) return false;
@@ -672,7 +687,7 @@ export class Workspace {
                 }
                 this.syncHistory(changed); this.publish(changed);
                 return true;
-            } finally { operation.finish(); }
+            } finally { finish(); }
         }, fail: (message: string) => {
             try {
                 this.scope.assertWritable();
@@ -681,7 +696,7 @@ export class Workspace {
                 this.commitRecord(record, { state: "failed", revision: current.revision,
                     metadata: { ...current.metadata, state: "failed", failure: message } });
                 return true;
-            } finally { operation.finish(); }
+            } finally { finish(); }
         } });
     }
 
