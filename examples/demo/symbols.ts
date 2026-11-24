@@ -115,14 +115,17 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
     controls.append(preview, apply, cancel); targets.tabIndex = 0;
     renamePopup.append(heading, label, status, controls, pages, targets);
     let renameSource: CapturedViewRequest | undefined;
+    let checking: { edited: boolean; submit: boolean } | undefined;
     const closeRename = (focus: boolean) => {
         const previous = renameSource; renameSource = undefined;
+        checking = undefined;
         renamePopup.hidden = true; previous?.cancel(); rename.cancel(); if (focus && valid()) editor.focus();
     };
     scope.defer(() => closeRename(false));
-    const cancelUnopenedRename = () => { if (renameSource && renamePopup.hidden) closeRename(false); };
-    editor.element.addEventListener("focusout", cancelUnopenedRename, { signal: events.signal });
-    editor.element.ownerDocument.defaultView!.addEventListener("blur", cancelUnopenedRename, { signal: events.signal });
+    renamePopup.addEventListener("focusout", event => {
+        if (checking && !renamePopup.contains(event.relatedTarget as Node | null)) closeRename(false);
+    }, { signal: events.signal });
+    window.addEventListener("blur", () => { if (checking) closeRename(false); }, { signal: events.signal });
     function beginRename(prompt: (name?: string) => void) {
         if (!idle()) return false;
         dismissOther(); cancelNavigation(); closeRename(false);
@@ -133,31 +136,59 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
         source.signal.addEventListener("abort", () => {
             if (renameSource === source) closeRename(rename.state.getSnapshot().status === "applied" || renamePopup.contains(document.activeElement));
         }, { once: true });
-        const showPrompt = (name?: string) => { renamePopup.hidden = false; prompt(name); };
-        if (!provider.queryFeatureOptions("textDocument/rename", source.document).some(options => options.prepareProvider === true)) {
-            showPrompt(); return true;
-        }
-        notice("Checking rename target…", source.signal);
-        void prepareRenameTarget(provider, source, caret.head, name.maxLength).then(name => {
+        const needsCheck = provider.queryFeatureOptions("textDocument/rename", source.document)
+            .some(options => options.prepareProvider === true);
+        const pending = needsCheck ? { edited: false, submit: false } : undefined;
+        checking = pending;
+        renamePopup.hidden = false;
+        prompt();
+        if (!pending) return true;
+        const rejectTarget = (message: string) => {
             if (renameSource !== source || !source.isCurrent()) return;
-            if (name === null) notice("Place the caret on a name to rename it.", source.signal);
-            else showPrompt(name);
-        }, () => {
-            if (renameSource === source && source.isCurrent()) notice("TypeScript could not prepare a rename here.", source.signal);
-        });
+            closeRename(true);
+            notice(message, events.signal);
+        };
+        void prepareRenameTarget(provider, source, caret.head, name.maxLength).then(placeholder => {
+            if (renameSource !== source || !source.isCurrent()) return;
+            if (placeholder === null) return rejectTarget("Place the caret on a name to rename it.");
+            checking = undefined;
+            if (!pending.edited && name.value !== placeholder) {
+                rename.setName(placeholder);
+                if (document.activeElement === name) name.select();
+            }
+            refreshPrompt();
+            if (pending.submit && !preview.disabled) rename.prepare();
+        }, () => rejectTarget("TypeScript could not prepare a rename here."));
         return true;
     }
-    name.addEventListener("input", () => rename.setName(name.value), { signal: events.signal });
-    preview.addEventListener("click", rename.prepare, { signal: events.signal }); cancel.addEventListener("click", () => closeRename(true), { signal: events.signal });
+    name.addEventListener("input", () => {
+        if (checking) {
+            checking.edited = true;
+            checking.submit = false;
+        }
+        rename.setName(name.value);
+    }, { signal: events.signal });
+    scope.defer(editor.commands.register({ id: "rename.submitWhenReady", label: "Preview after checking the rename target",
+        enabled: () => !!checking && document.activeElement === name,
+        run: () => { if (checking) checking.submit = true; } }, { keys: ["Enter"], shared: true, priority: 34, repeat: false }).dispose);
+    preview.addEventListener("click", () => {
+        name.focus();
+        rename.prepare();
+    }, { signal: events.signal });
+    cancel.addEventListener("click", () => closeRename(true), { signal: events.signal });
     rename.bindName(name); scope.defer(() => rename.bindName(null));
     let displayed = rename.state.getSnapshot().locations;
+    function refreshPrompt() {
+        const state = rename.state.getSnapshot();
+        status.textContent = checking ? "Checking rename target…" : state.status === "pending" ? "Preparing rename preview…" : state.status === "ready" ? state.message
+            : state.status === "expired" ? "The code or selection changed. Preview again." : state.status === "failed" ? state.message : "Enter a name, then preview its changes.";
+        preview.disabled = !!checking || state.pending || !state.name.trim();
+    }
     scope.defer(rename.state.subscribe(() => {
         const state = rename.state.getSnapshot();
-        status.textContent = state.status === "pending" ? "Preparing rename preview…" : state.status === "ready" ? state.message
-            : state.status === "expired" ? "The code or selection changed. Preview again." : state.status === "failed" ? state.message : "Enter a name, then preview its changes.";
+        refreshPrompt();
         if (name.value !== state.name) name.value = state.name;
         apply = renderPanelButton(apply, { label: "Apply rename", reviewKey: state.reviewKey, disabled: !state.canApply, invoke: state.preview?.confirm ?? null });
-        preview.disabled = state.pending || !state.name.trim();
         if (displayed !== state.locations) {
             displayed = state.locations; targets.start = (displayed[0]?.ordinal ?? 0) + 1;
             targets.replaceChildren(...displayed.map(at => {

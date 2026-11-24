@@ -120,8 +120,12 @@ test("rename preparation distinguishes declarations, string values and quoted pr
     await runDemoRenameTargets(page);
 });
 
-test("leaving the source while rename preparation is pending preserves the next typing target", async ({ page }) => {
+test("F2 accepts immediate typing and retires a pending rename when focus leaves", async ({ page }) => {
     let request: number | undefined, release: (() => void) | undefined, cancelled = false;
+    const releaseHeld = () => {
+        release!();
+        release = undefined;
+    };
     await page.routeWebSocket("**/demo-provider/*", client => {
         const server = client.connectToServer();
         client.onMessage(message => {
@@ -136,11 +140,32 @@ test("leaving the source while rename preparation is pending preserves the next 
             else client.send(message);
         });
     });
-    await openDemo(page); const source = await symbol(page); await source.press("F2"); await expect.poll(() => !!release).toBe(true);
+    await openDemo(page);
+    const source = await symbol(page);
+    const original = await source.inputValue();
+    const dialog = page.getByRole("dialog", { name: "Rename symbol" });
+    const name = dialog.getByLabel("New name");
+    await source.press("F2");
+    await page.keyboard.type("newTotal");
+    await expect(name).toHaveValue("newTotal");
+    await expect(source).toHaveValue(original);
+    await expect.poll(() => !!release).toBe(true);
     const output = page.getByRole("region", { name: "JavaScript output" }).getByRole("textbox"); await output.focus();
-    await expect.poll(() => cancelled).toBe(true); await source.focus(); release!();
+    await expect.poll(() => cancelled).toBe(true);
+    await source.focus();
+    releaseHeld();
+    await expect(dialog).toBeHidden();
+    await source.press("F2");
+    await page.keyboard.type("cartTotal");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => !!release).toBe(true);
+    // The held provider placeholder must not replace the submitted name.
+    releaseHeld();
+    await expect(dialog.getByLabel("Rename edits").getByRole("listitem").first()).toContainText("cartTotal");
+    await expect(name).toBeFocused();
+    await name.press("Escape");
     await page.keyboard.insertText("X"); await expect(source).toBeFocused(); await expect(source).toHaveValue(/cXalculateTotal/);
-    await expect(page.getByRole("dialog", { name: "Rename symbol" })).toBeHidden(); await expect(page.locator("#language-command-status")).toBeHidden();
+    await expect(dialog).toBeHidden(); await expect(page.locator("#language-command-status")).toBeHidden();
 });
 
 test("typing invalidates a held rename preview while retaining the actual edit", async ({ page }) => {
@@ -165,6 +190,7 @@ test("typing invalidates a held rename preview while retaining the actual edit",
     const dialog = page.getByRole("dialog", { name: "Rename symbol", exact: true });
     await dialog.getByRole("textbox", { name: "New name", exact: true }).fill("cartTotal");
     await dialog.getByRole("button", { name: "Preview rename", exact: true }).click(); await expect.poll(() => held).toBe(true);
+    await expect(dialog.getByLabel("New name")).toBeFocused();
     expect(prepared).toBe(false);
     await source.press("Control+Home"); await source.pressSequentially("// Actual edit\n"); release!();
     await expect(dialog).toBeHidden(); await expect(source).toBeFocused();
