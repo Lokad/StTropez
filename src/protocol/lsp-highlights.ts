@@ -1,3 +1,4 @@
+import { documentHighlightMethod } from "./lsp-methods.ts";
 import { ProtocolDecodeError, staleRequest } from "./wire.ts";
 import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspPositionRequest } from "./lsp-client.ts";
 import { lspRangeOffsets } from "./lsp-features.ts";
@@ -42,11 +43,11 @@ export type LspHighlightClient = LspFeatureClient<"textDocument/documentHighligh
     LspDocumentHighlights & Readonly<{ revision: number; isCurrent: () => boolean }>>;
 
 export function createLspHighlightClient(provider: LspWorkspace): LspHighlightClient {
-    const client = createLspClient(provider, "textDocument/documentHighlight");
+    const client = createLspClient(provider, documentHighlightMethod);
     return Object.freeze({ ...lspFeatureHandle(client),
         run: (request: LspPositionRequest) => {
             const { document, offset } = request;
-            return client.request(request, "textDocument/documentHighlight", capture => ({ position: capture.index.at(offset) }), value => value.decode(() => Object.freeze({
+            return client.request(request, documentHighlightMethod, capture => ({ position: capture.index.at(offset) }), value => value.decode(() => Object.freeze({
                 revision: document.revision, ...decodeLspDocumentHighlights(value.response, value.capture), isCurrent: value.isCurrent })));
         } });
 }

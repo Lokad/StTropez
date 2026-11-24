@@ -6,6 +6,23 @@ files and decides which edits to apply. [Connect a provider](language-server.md)
 
 ## Use
 
+Use `attachEditorLanguage` when completion, diagnostics and hover share an editor. Give each
+feature you want an options object. They share one provider scope and document binding. Hover
+uses the diagnostics painted in that view unless you supply another source.
+
+```ts
+import { attachEditorLanguage, type TextEditor } from "sttropez/browser";
+import type { LspWorkspace } from "sttropez/protocol";
+
+export function attachLanguage(editor: TextEditor, provider: LspWorkspace) {
+    const language = attachEditorLanguage(editor, provider, { completion: {}, diagnostics: {}, hover: {} });
+    return { requestCompletion: language.completion.request, dispose: language.dispose };
+}
+```
+
+Each feature cancels its own requests. Disposing the attachment or the editor cancels all three
+and releases the binding. Other mounted views keep their requests.
+
 Connect before or after mounting a feature. The client advertises every supported request method by default.
 Use `features` to restrict methods,
 `diagnostics: false` to disable pushed diagnostics and `workspaceEdits` to enable edit support. Incoming edits and command execution have their own

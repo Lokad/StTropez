@@ -1,3 +1,4 @@
+import { codeActionMethod } from "./lsp-methods.ts";
 import { staleRequest, type JsonValue } from "./wire.ts";
 import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspProjectClientDiagnostics, type LspProjectRequest } from "./lsp-client.ts";
 import { decodeLspCodeActions, decodeLspResolvedCodeAction, lspCodeActionUris } from "./lsp-code-actions.ts";
@@ -20,7 +21,7 @@ export type LspActionClient = LspFeatureClient<"textDocument/codeAction", LspAct
 
 /** Reads share capture policy; confirmed commands retain their distinct mutation policy. */
 export function createLspActionClient(provider: LspWorkspace, options: LspActionOptions = {}): LspActionClient {
-    const client = createLspClient(provider, "textDocument/codeAction"), session = client.scope;
+    const client = createLspClient(provider, codeActionMethod), session = client.scope;
     let executing = false, runner: LspCommandRunner | undefined;
     let resolver: ReturnType<typeof createLspClient<"textDocument/codeAction">> | undefined;
     const releaseResolve = () => { const previous = resolver; resolver = undefined; previous?.dispose(); };
@@ -33,7 +34,7 @@ export function createLspActionClient(provider: LspWorkspace, options: LspAction
             if (executing) return Object.freeze({ result: Promise.reject(new Error("A confirmed action command is still running.")), cancel: () => {} });
             releaseResolve();
             const captured = request.project ? { ...request, project: [...request.project] } : request;
-            return client.request(captured, "textDocument/codeAction", capture => {
+            return client.request(captured, codeActionMethod, capture => {
                 const index = capture.index;
                 const target = session.attachDocument(document.id);
                 const diagnostics = session.observeDiagnostics(target).getSnapshot(), batch = diagnostics.result;
@@ -46,7 +47,7 @@ export function createLspActionClient(provider: LspWorkspace, options: LspAction
                     return { ...wire, ...(severity === null ? {} : { severity }), ...(source === null ? {} : { source }) };
                 }) } };
             }, async value => {
-                const canResolve = session.featureOptions("textDocument/codeAction", value.target).some(options => options.resolveProvider === true);
+                const canResolve = session.featureOptions(codeActionMethod, value.target).some(options => options.resolveProvider === true);
                 const uris = value.decode(() => lspCodeActionUris(value.response)); await value.resolveTargets(uris, "edit");
                 const actions = value.decode(() => decodeLspCodeActions(value.response, value.capture, value.targetForUri, canResolve));
                 const commandCurrent = value.isGenerationCurrent;
@@ -71,10 +72,10 @@ export function createLspActionClient(provider: LspWorkspace, options: LspAction
                         if (!value.isCurrent() || executing || !actions.includes(action) || !action.resolve) throw staleRequest("Captured action cannot be resolved.");
                         releaseResolve();
                         // The choice owns its wire request, host target loads and leases. The list keeps its original capture.
-                        const lane = resolver = createLspClient(provider, "textDocument/codeAction");
+                        const lane = resolver = createLspClient(provider, codeActionMethod);
                         lane.subscribe(client.notify);
                         try {
-                            return await lane.request({ ...captured, prepare }, "textDocument/codeAction",
+                            return await lane.request({ ...captured, prepare }, codeActionMethod,
                                 () => value.decode(() => action.resolve as Record<string, JsonValue>), async reply => {
                                     const missing = reply.decode(() => lspCodeActionUris([reply.response])).filter(uri => !value.targetForUri(uri));
                                     await reply.resolveTargets(missing, "edit");

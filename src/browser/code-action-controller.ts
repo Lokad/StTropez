@@ -6,7 +6,7 @@ import type { DocumentId, DocumentSnapshot, TabTarget } from "../core/workspace.
 import { applyLspWorkspaceEdit, createLspActionClient, type LspActionResult, previewLspWorkspaceEdit } from "../protocol/index.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
 import type { LspCodeAction, LspCommandPolicy, LspCommandReceipt, LspCommandScope, LspPrepare, LspWorkspace, LspWorkspaceEdit, LspWorkspaceEditPreview } from "../protocol/index.ts";
-import { captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
+import { requireLanguageView, captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainEditProject, writableEdit } from "./edit-project.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -58,7 +58,7 @@ export type CodeActionController = Observable<CodeActionSnapshot> & Readonly<{
 /** One editor owns the request, lazy resolution and confirmation of its displayed preview. */
 export function createCodeActionController(editor: TextEditor, provider: LspWorkspace, options: CodeActionControllerOptions = {}): CodeActionController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
-    if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Code actions require a live document view.");
+    requireLanguageView(editor);
     const scope = workspace.createNotificationScope(options.onError), cell = new Store(empty, scope);
     const client = createLspActionClient(provider, options), events = new AbortController();
     let job: Job | undefined, execution: CodeActionExecution | undefined, disposed = false;

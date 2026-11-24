@@ -1,3 +1,8 @@
+import { applyEditMethod, codeActionMethod, colorPresentationMethod, completionMethod,
+    definitionMethod, didChangeMethod, didCloseMethod, didOpenMethod, documentColorMethod,
+    documentHighlightMethod, documentLinkMethod, executeCommandMethod, foldingRangeMethod,
+    hoverMethod, referencesMethod, registerCapabilityMethod, renameMethod, signatureHelpMethod,
+    unregisterCapabilityMethod } from "./lsp-methods.ts";
 import { wireLimits, ProtocolDecodeError, isRecord, isLspIdentityPart, isLspUri, rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError, jsonEqual, jsonSnapshot } from "./wire.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import type { TextEdit } from "../core/changes.ts";
@@ -11,11 +16,11 @@ import type { LspChangeHint, LspTextChange } from "./lsp-positions.ts";
 import { compileLspSelector } from "./lsp-selector.ts";
 import type { LspSelector, LspSelectorDocument, LspUriPath } from "./lsp-selector.ts";
 
-const providers = { "textDocument/completion": "completionProvider", "textDocument/hover": "hoverProvider",
-    "textDocument/definition": "definitionProvider", "textDocument/references": "referencesProvider",
-    "textDocument/rename": "renameProvider", "textDocument/codeAction": "codeActionProvider", "workspace/executeCommand": "executeCommandProvider",
-    "textDocument/signatureHelp": "signatureHelpProvider", "textDocument/documentLink": "documentLinkProvider", "textDocument/documentColor": "colorProvider", "textDocument/colorPresentation": "colorProvider",
-    "textDocument/foldingRange": "foldingRangeProvider", "textDocument/documentHighlight": "documentHighlightProvider" } as const;
+const providers = { [completionMethod]: "completionProvider", [hoverMethod]: "hoverProvider",
+    [definitionMethod]: "definitionProvider", [referencesMethod]: "referencesProvider",
+    [renameMethod]: "renameProvider", [codeActionMethod]: "codeActionProvider", [executeCommandMethod]: "executeCommandProvider",
+    [signatureHelpMethod]: "signatureHelpProvider", [documentLinkMethod]: "documentLinkProvider", [documentColorMethod]: "colorProvider", [colorPresentationMethod]: "colorProvider",
+    [foldingRangeMethod]: "foldingRangeProvider", [documentHighlightMethod]: "documentHighlightProvider" } as const;
 export const defaultDocumentUnits = 3 * 1024 * 1024;
 export type LspFeature = keyof typeof providers;
 type RegistrationMethod = LspFeature | "textDocument/didChange";
@@ -74,9 +79,9 @@ function commandOptions(value: unknown): readonly string[] {
 const closed = () => closedConnection("LSP session is not ready.");
 const stale = () => staleRequest("Document, capability or session capture changed.");
 const cancelError = () => cancelledRequest("Request cancelled.");
-const syncMethods = ["textDocument/didOpen", "textDocument/didChange", "textDocument/didClose"];
-const reserved = (method: string) => ["initialize", "initialized", "shutdown", "exit", "client/registerCapability", "client/unregisterCapability"].includes(method) || method.startsWith("$/") || method.startsWith("textDocument/");
-const reservedIncoming = (method: string) => ["initialize", "initialized", "shutdown", "exit", "client/registerCapability", "client/unregisterCapability", ...syncMethods].includes(method) || method.startsWith("$/");
+const syncMethods = [didOpenMethod, didChangeMethod, didCloseMethod];
+const reserved = (method: string) => ["initialize", "initialized", "shutdown", "exit", registerCapabilityMethod, unregisterCapabilityMethod].includes(method) || method.startsWith("$/") || method.startsWith("textDocument/");
+const reservedIncoming = (method: string) => ["initialize", "initialized", "shutdown", "exit", registerCapabilityMethod, unregisterCapabilityMethod, ...syncMethods].includes(method) || method.startsWith("$/");
 
 /** Host-driven LSP 3.17 session. This module owns no sockets, timers, documents or editor UI. */
 export class LspSession {
@@ -142,33 +147,33 @@ export class LspSession {
         this.clientFeatures = Object.freeze(diagnostics ? [...this.features, "textDocument/publishDiagnostics"] : [...this.features]);
         const textDocument: Record<string, JsonValue> = { synchronization: { dynamicRegistration: true, didSave: false, willSave: false, willSaveWaitUntil: false } };
         for (const method of this.features) if (method.startsWith("textDocument/")) textDocument[method.slice("textDocument/".length)] = { dynamicRegistration: true };
-        if (this.features.has("textDocument/rename")) textDocument.rename = { dynamicRegistration: true, prepareSupport: true };
-        if (this.features.has("textDocument/completion")) textDocument.completion = { dynamicRegistration: true, contextSupport: true,
+        if (this.features.has(renameMethod)) textDocument.rename = { dynamicRegistration: true, prepareSupport: true };
+        if (this.features.has(completionMethod)) textDocument.completion = { dynamicRegistration: true, contextSupport: true,
             completionItem: { snippetSupport: true, insertReplaceSupport: true, documentationFormat: ["plaintext"], insertTextModeSupport: { valueSet: [1, 2] },
                 commitCharactersSupport: true, preselectSupport: true, resolveSupport: { properties: ["detail", "documentation", "additionalTextEdits", "insertText", "textEdit"] } },
             insertTextMode: 2, completionList: { itemDefaults: ["editRange", "insertTextFormat", "insertTextMode", "data", "commitCharacters"] } };
         if (diagnostics) textDocument.publishDiagnostics = { versionSupport: true, relatedInformation: true,
             tagSupport: { valueSet: [1, 2] }, codeDescriptionSupport: true, dataSupport: true };
         const documentationFormats = options.markdownDocumentation ? ["markdown", "plaintext"] : ["plaintext"];
-        if (this.features.has("textDocument/hover")) textDocument.hover = { dynamicRegistration: true, contentFormat: documentationFormats };
-        if (this.features.has("textDocument/signatureHelp")) textDocument.signatureHelp = { dynamicRegistration: true, contextSupport: true,
+        if (this.features.has(hoverMethod)) textDocument.hover = { dynamicRegistration: true, contentFormat: documentationFormats };
+        if (this.features.has(signatureHelpMethod)) textDocument.signatureHelp = { dynamicRegistration: true, contextSupport: true,
             signatureInformation: { documentationFormat: documentationFormats, parameterInformation: { labelOffsetSupport: true }, activeParameterSupport: true } };
-        if (this.features.has("textDocument/documentLink")) textDocument.documentLink = { dynamicRegistration: true, tooltipSupport: true };
-        if (this.features.has("textDocument/documentHighlight")) textDocument.documentHighlight = { dynamicRegistration: true };
-        if (this.features.has("textDocument/foldingRange")) textDocument.foldingRange = { dynamicRegistration: true, lineFoldingOnly: true,
+        if (this.features.has(documentLinkMethod)) textDocument.documentLink = { dynamicRegistration: true, tooltipSupport: true };
+        if (this.features.has(documentHighlightMethod)) textDocument.documentHighlight = { dynamicRegistration: true };
+        if (this.features.has(foldingRangeMethod)) textDocument.foldingRange = { dynamicRegistration: true, lineFoldingOnly: true,
             foldingRangeKind: { valueSet: ["comment", "imports", "region"] } };
-        if (this.features.has("textDocument/documentColor") || this.features.has("textDocument/colorPresentation")) {
+        if (this.features.has(documentColorMethod) || this.features.has(colorPresentationMethod)) {
             delete textDocument.documentColor; delete textDocument.colorPresentation; textDocument.colorProvider = { dynamicRegistration: true };
         }
-        if (this.features.has("textDocument/definition")) textDocument.definition = { dynamicRegistration: true, linkSupport: true };
-        if (this.features.has("textDocument/codeAction")) textDocument.codeAction = { dynamicRegistration: true,
+        if (this.features.has(definitionMethod)) textDocument.definition = { dynamicRegistration: true, linkSupport: true };
+        if (this.features.has(codeActionMethod)) textDocument.codeAction = { dynamicRegistration: true,
             codeActionLiteralSupport: { codeActionKind: { valueSet: ["quickfix", "refactor", "source"] } },
             disabledSupport: true, isPreferredSupport: true, dataSupport: true, resolveSupport: { properties: ["edit"] }, honorsChangeAnnotations: false };
         return jsonSnapshot({ ...this.initializeBase,
             capabilities: { general: { positionEncodings: ["utf-16"], ...(options.markdownDocumentation ? { markdown: { parser: "sttropez-documentation-subset", version: "1", allowedTags: [] } } : {}) }, textDocument,
-                ...(options.workspaceEdits || options.applyEdit || this.features.has("workspace/executeCommand") ? { workspace: {
+                ...(options.workspaceEdits || options.applyEdit || this.features.has(executeCommandMethod) ? { workspace: {
                     ...(options.workspaceEdits || options.applyEdit ? { workspaceEdit: { documentChanges: true, resourceOperations: [], failureHandling: "transactional", normalizesLineEndings: false } } : {}),
-                    ...(options.applyEdit ? { applyEdit: true } : {}), ...(this.features.has("workspace/executeCommand") ? { executeCommand: { dynamicRegistration: true } } : {}) } } : {}) } });
+                    ...(options.applyEdit ? { applyEdit: true } : {}), ...(this.features.has(executeCommandMethod) ? { executeCommand: { dynamicRegistration: true } } : {}) } } : {}) } });
     }
     private report(error: unknown): void { try { this.options.onError?.(error instanceof Error ? error : new Error(String(error))); } catch { /* Reporting cannot interrupt disposal. */ } }
     private release(stop: (() => void) | undefined): void { try { stop?.(); } catch (error) { this.report(error); } }
@@ -187,7 +192,7 @@ export class LspSession {
 
     connect(): Promise<void> {
         this.writable(); if (this.store.get().phase === "ready") return Promise.resolve();
-        if (this.options.applyEdit && !this.requests.has("workspace/applyEdit")) return Promise.reject(new TypeError("Advertised applyEdit requires a registered request handler before connection."));
+        if (this.options.applyEdit && !this.requests.has(applyEditMethod)) return Promise.reject(new TypeError("Advertised applyEdit requires a registered request handler before connection."));
         if (this.connectWork) return this.connectWork;
         if (this.store.get().phase !== "disconnected") return Promise.reject(closed());
         const epoch = ++this.epoch, listeners = new Set<() => void>(); let cancelled = false, rejectOpening!: (reason: Error) => void;
@@ -228,15 +233,15 @@ export class LspSession {
         for (const provider of Object.values(providers)) if (capabilities[provider] !== undefined && typeof capabilities[provider] !== "boolean" && !isRecord(capabilities[provider])) throw new ProtocolDecodeError("Malformed feature capability.");
         for (const provider of Object.values(providers)) { const value = capabilities[provider];
             if (isRecord(value) && Object.hasOwn(value, "documentSelector")) this.staticSelectors.set(provider, compileLspSelector(value.documentSelector, this.options.pathForUri)); }
-        if (this.features.has("workspace/executeCommand") && capabilities.executeCommandProvider !== undefined) commandOptions(capabilities.executeCommandProvider);
+        if (this.features.has(executeCommandMethod) && capabilities.executeCommandProvider !== undefined) commandOptions(capabilities.executeCommandProvider);
         this.capabilities = capabilities as Readonly<Record<string, JsonValue>>;
         this.sync = { openClose: sync === 2 || isRecord(sync) && sync.openClose === true, change: sync === 2 || isRecord(sync) && sync.change === 2 };
         rpc.notify("initialized", {}); this.cancelOpening = undefined; this.publish("ready"); this.reconcile(); await this.flush();
     }
     private install(rpc: JsonRpcConnection, epoch: number): void {
         rpc.onRequest("window/showMessageRequest", () => null);
-        rpc.onRequest("client/registerCapability", params => { this.ready(epoch); return this.register(params); });
-        rpc.onRequest("client/unregisterCapability", params => { this.ready(epoch); return this.unregister(params); });
+        rpc.onRequest(registerCapabilityMethod, params => { this.ready(epoch); return this.register(params); });
+        rpc.onRequest(unregisterCapabilityMethod, params => { this.ready(epoch); return this.unregister(params); });
         for (const [method, handler] of this.requests) this.requestStops.set(method, this.installRequest(rpc, epoch, method, handler));
         for (const method of this.notifications.keys()) this.notificationStops.set(method, this.installNotification(rpc, epoch, method));
     }
@@ -261,12 +266,12 @@ export class LspSession {
         const next = new Map(this.registrations);
         for (const item of params.registrations) {
             if (!isRecord(item) || typeof item.id !== "string" || !item.id || typeof item.method !== "string" || next.has(item.id) ||
-                !syncMethods.includes(item.method) && !this.features.has(item.method as LspFeature) && !(item.method === "textDocument/documentColor" && this.features.has("textDocument/colorPresentation")) || !isRecord(item.registerOptions)) throw new RpcError(rpcCodes.invalidParams, "Unsupported or duplicate registration.");
-            if (item.method === "textDocument/didChange" && item.registerOptions.syncKind !== 2) throw new RpcError(rpcCodes.invalidParams, "Only incremental changes are supported.");
+                !syncMethods.includes(item.method) && !this.features.has(item.method as LspFeature) && !(item.method === documentColorMethod && this.features.has(colorPresentationMethod)) || !isRecord(item.registerOptions)) throw new RpcError(rpcCodes.invalidParams, "Unsupported or duplicate registration.");
+            if (item.method === didChangeMethod && item.registerOptions.syncKind !== 2) throw new RpcError(rpcCodes.invalidParams, "Only incremental changes are supported.");
             if (item.id.length > 256 || JSON.stringify(item.registerOptions).length > 65536) throw new RpcError(rpcCodes.invalidParams, "Registration options exceed their limit.");
             let selector: LspSelector;
             try {
-                if (item.method === "workspace/executeCommand") { commandOptions(item.registerOptions); if ("documentSelector" in item.registerOptions) throw new ProtocolDecodeError("Command registration cannot select documents."); selector = () => true; }
+                if (item.method === executeCommandMethod) { commandOptions(item.registerOptions); if ("documentSelector" in item.registerOptions) throw new ProtocolDecodeError("Command registration cannot select documents."); selector = () => true; }
                 else selector = compileLspSelector(item.registerOptions.documentSelector, this.options.pathForUri);
             } catch (error) { if (!(error instanceof ProtocolDecodeError)) throw error; throw new RpcError(rpcCodes.invalidParams, "Invalid registration selector or command options."); }
             const value = Object.freeze({ id: item.id, method: item.method, registerOptions: jsonSnapshot(item.registerOptions) }); next.set(item.id, { value, selector });
@@ -292,14 +297,14 @@ export class LspSession {
         if (syncChanged) this.syncGeneration = version;
         for (const method of methods) {
             versions.set(method, version);
-            if (method === "textDocument/documentColor") versions.set("textDocument/colorPresentation", version);
+            if (method === documentColorMethod) versions.set(colorPresentationMethod, version);
         }
         this.methodVersions = versions;
         this.publish();
         if (syncChanged) this.reconcile();
         return null;
     }
-    private matchesRegistration(registered: string, method: string): boolean { return registered === method || registered === "textDocument/documentColor" && method === "textDocument/colorPresentation"; }
+    private matchesRegistration(registered: string, method: string): boolean { return registered === method || registered === documentColorMethod && method === colorPresentationMethod; }
     private matches(selector: LspSelector, entry: SelectorEntry): boolean {
         if (entry.selectors?.generation !== this.generation) entry.selectors = { generation: this.generation, values: new Map() };
         const cached = entry.selectors.values.get(selector); if (cached !== undefined) return cached;
@@ -309,7 +314,7 @@ export class LspSession {
         for (const item of this.registrations.values()) if (this.matchesRegistration(item.value.method, method) && this.matches(item.selector, entry)) return true;
         return false;
     }
-    private syncs(entry: SelectorEntry): boolean { return (this.sync.openClose || this.registered("textDocument/didOpen", entry)) && (this.sync.change || this.registered("textDocument/didChange", entry)); }
+    private syncs(entry: SelectorEntry): boolean { return (this.sync.openClose || this.registered(didOpenMethod, entry)) && (this.sync.change || this.registered(didChangeMethod, entry)); }
     private failed(entry: Entry): Error | undefined {
         return entry.failure?.snapshot === entry.snapshot && entry.failure.generation === this.syncGeneration ? entry.failure.error : undefined;
     }
@@ -346,22 +351,22 @@ export class LspSession {
     }
     private collectCommands(registrations: ReadonlyMap<string, Registration> = this.registrations): readonly string[] {
         const values = new Set<string>(), provider = this.capabilities.executeCommandProvider;
-        if (this.features.has("workspace/executeCommand") && provider !== undefined) for (const name of commandOptions(provider)) values.add(name);
-        for (const item of registrations.values()) if (item.value.method === "workspace/executeCommand") for (const name of commandOptions(item.value.registerOptions)) values.add(name);
+        if (this.features.has(executeCommandMethod) && provider !== undefined) for (const name of commandOptions(provider)) values.add(name);
+        for (const item of registrations.values()) if (item.value.method === executeCommandMethod) for (const name of commandOptions(item.value.registerOptions)) values.add(name);
         return Object.freeze([...values]);
     }
-    commandNames(): readonly string[] { return this.store.get().phase === "ready" && this.features.has("workspace/executeCommand") ? this.collectCommands() : Object.freeze([]); }
+    commandNames(): readonly string[] { return this.store.get().phase === "ready" && this.features.has(executeCommandMethod) ? this.collectCommands() : Object.freeze([]); }
     /** Explicit caller policy/confirmation is required; commands are never replayed across a session. */
     requestCommand(command: string, args: readonly JsonValue[] = [], timeoutMs = this.options.rpc?.timeoutMs ?? wireLimits.timeoutMs, authorization?: LspCommandAuthorization): LspCommandCall<JsonValue> {
         this.writable();
         const argumentsValue = jsonSnapshot(args); if (!Array.isArray(argumentsValue) || JSON.stringify(argumentsValue).length > wireLimits.commandArgumentUnits) throw new RangeError("LSP command arguments exceed their limit.");
         if (authorization && (authorization.command !== command || !jsonEqual(authorization.arguments, argumentsValue))) throw new RpcError(rpcCodes.methodNotFound, "Host command authorization does not match this invocation.");
         const permitted = authorization?.isCurrent ?? (() => this.commandNames().includes(command));
-        if (!this.features.has("workspace/executeCommand") || !permitted()) throw new RpcError(rpcCodes.methodNotFound, "LSP command is neither advertised nor authorized by the host.");
-        const method = "workspace/executeCommand", epoch = this.epoch, version = this.store.get().registrationVersion(method);
+        if (!this.features.has(executeCommandMethod) || !permitted()) throw new RpcError(rpcCodes.methodNotFound, "LSP command is neither advertised nor authorized by the host.");
+        const method = executeCommandMethod, epoch = this.epoch, version = this.store.get().registrationVersion(method);
         const isCurrent = () => this.current(epoch) && this.store.get().phase === "ready"
             && this.store.get().registrationVersion(method) === version && permitted();
-        const call = this.ready(epoch).request("workspace/executeCommand", { command, arguments: argumentsValue }, timeoutMs);
+        const call = this.ready(epoch).request(executeCommandMethod, { command, arguments: argumentsValue }, timeoutMs);
         return Object.freeze({ id: call.id, cancel: call.cancel, isCurrent, result: call.result.then(result => { if (!isCurrent()) throw stale(); return result; }) });
     }
     private entry(handle: LspDocument): Entry { const entry = this.handles.get(handle); if (!entry || this.documents.get(entry.snapshot.uri) !== entry) throw stale(); return entry; }
@@ -420,7 +425,7 @@ export class LspSession {
             const rpc = this.ready(epoch), generation = this.syncGeneration, entry = this.documents.get(uri), remote = this.remote.get(uri);
             try {
                 if (remote && (remote.entry !== entry || !this.syncs(entry!))) {
-                    rpc.notify("textDocument/didClose", { textDocument: { uri } }); this.remote.delete(uri);
+                    rpc.notify(didCloseMethod, { textDocument: { uri } }); this.remote.delete(uri);
                 }
                 if (!entry) continue;
                 if (this.failed(entry)) continue;
@@ -445,7 +450,7 @@ export class LspSession {
                 this.ready(epoch); if (!valid()) { this.dirty.add(uri); continue; }
                 const version = (old?.version ?? 0) + 1; if (version > 0x7fffffff) throw new RangeError("LSP document version exhausted; reconnect required.");
                 if (old) {
-                    const send = () => rpc.notify("textDocument/didChange", { textDocument: { uri, version }, contentChanges: changes });
+                    const send = () => rpc.notify(didChangeMethod, { textDocument: { uri, version }, contentChanges: changes });
                     try { send(); } catch (error) {
                         // notify validates/encodes before sending; transport failures dispose RPC.
                         // Escaped text or range overhead can make the other encoding smaller.
@@ -457,7 +462,7 @@ export class LspSession {
                         send();
                     }
                 }
-                else rpc.notify("textDocument/didOpen", { textDocument: { uri, languageId: snapshot.languageId, version, text: snapshot.buffer.slice(0, snapshot.buffer.length) } });
+                else rpc.notify(didOpenMethod, { textDocument: { uri, languageId: snapshot.languageId, version, text: snapshot.buffer.slice(0, snapshot.buffer.length) } });
                 this.ready(epoch); this.remote.set(uri, { entry, snapshot, index: plan.index, version });
                 // A host transport can edit or close the binding synchronously during send.
                 if (!valid()) this.dirty.add(uri);
@@ -473,7 +478,7 @@ export class LspSession {
         const rpc = this.ready(epoch); if (rpc.snapshot().disposed) throw cause;
         const snapshot = entry.snapshot, error = new RpcError(rpcCodes.pendingLimit, `LSP synchronization failed for ${snapshot.uri}: ${cause instanceof Error ? cause.message : String(cause)}`);
         if (this.remote.get(snapshot.uri)?.entry === entry) {
-            rpc.notify("textDocument/didClose", { textDocument: { uri: snapshot.uri } }); this.remote.delete(snapshot.uri);
+            rpc.notify(didCloseMethod, { textDocument: { uri: snapshot.uri } }); this.remote.delete(snapshot.uri);
         }
         delete entry.change; entry.failure = { snapshot, generation: this.syncGeneration, error }; this.report(error);
     }
@@ -523,12 +528,12 @@ export class LspSession {
     }
     requestDocument(method: LspDocumentFeature | "textDocument/prepareRename", document: LspDocument, params: (index: LspLineIndex, snapshot: LspDocumentSnapshot, capture: LspDocumentCapture) => Readonly<Record<string, JsonValue>>): LspCall<JsonValue> {
         this.writable(); this.ready(); if (this.documentCalls.size >= (this.options.rpc?.maxPending ?? wireLimits.pendingRequests)) throw new RpcError(rpcCodes.pendingLimit, "Too many pending document requests.");
-        const feature = method === "textDocument/prepareRename" ? "textDocument/rename" : method;
+        const feature = method === "textDocument/prepareRename" ? renameMethod : method;
         const entry = this.entry(document), snapshot = entry.snapshot, epoch = this.epoch, generation = this.store.get().registrationVersion(feature), waiting = this.waitForSync([entry]); let cancelled = false, call: RpcCall<JsonValue> | undefined;
         const guard = () => { if (cancelled) throw cancelError(); this.ready(epoch); if (this.documents.get(snapshot.uri) !== entry || entry.snapshot !== snapshot || generation !== this.store.get().registrationVersion(feature)) throw stale(); };
         const result = (async () => { await waiting.result; guard(); const failure = this.failed(entry); if (failure) throw failure;
             const supported = method === "textDocument/prepareRename"
-                ? this.featureOptions("textDocument/rename", document).some(options => options.prepareProvider === true)
+                ? this.featureOptions(renameMethod, document).some(options => options.prepareProvider === true)
                 : this.canRequest(method, document);
             if (!supported) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable for this document.");
             const capture = this.synchronized(document, feature); if (capture?.document !== snapshot) throw stale();

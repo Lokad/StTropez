@@ -4,9 +4,70 @@ import { clientFixture, protocol, settled } from "./helpers/lsp-client.ts";
 import { latch } from "./helpers/latch.ts";
 import type { DocumentSnapshot } from "../src/core/workspace.ts";
 import type { LspPrepare } from "../src/protocol/index.ts";
+import { createLspClient, retainLspDocument } from "../src/protocol/lsp-client.ts";
 const { createLspHoverClient, createLspNavigationClient, createLspRenameClient, createLspActionClient, RpcError } = protocol;
 const stale = (error: unknown) => error instanceof RpcError && error.code === -32801;
 const cancelled = (error: unknown) => error instanceof RpcError && error.code === -32800;
+
+test("features sharing a mounted scope cancel independently and capture only their own project", { timeout: 5000 }, async t => {
+    const f = clientFixture(t);
+    const owner = retainLspDocument(f.provider, f.source.documentId);
+    const hover = createLspClient(owner, "textDocument/hover");
+    const navigation = createLspClient(owner, "textDocument/definition");
+    t.after(() => { hover.dispose(); navigation.dispose(); owner.dispose(); });
+    const document = f.document();
+    const project = [document, f.workspace.document(f.other.documentId)];
+    const params = () => ({ position: { line: 0, character: 0 } });
+    const runHover = (prepare?: LspPrepare) =>
+        hover.request({ document, prepare }, "textDocument/hover", params, reply => reply);
+    const runNavigation = () =>
+        navigation.request({ document, project }, "textDocument/definition", params, reply => reply);
+
+    const received = latch<void>();
+    const answer = latch<null>();
+    f.peer.onRequest("textDocument/definition", () => { received.resolve(); return answer.promise; });
+    const pending = runNavigation();
+    await received.promise;
+    const prepared = latch<Parameters<LspPrepare>[0]>();
+    const finish = latch<void>();
+    const retired = runHover(async access => {
+        prepared.resolve(access);
+        await finish.promise;
+    });
+    const access = await prepared.promise;
+    const customReply = latch<null>();
+    f.peer.onRequest("test/custom", () => customReply.promise);
+    const custom = access.request("test/custom");
+    const interrupted = Promise.all([assert.rejects(custom.result, cancelled), assert.rejects(retired.result, cancelled)]);
+    retired.cancel();
+    await interrupted;
+    assert.throws(() => access.request("test/late"), cancelled);
+    finish.resolve();
+    customReply.resolve(null);
+    const single = await runHover().result;
+    assert.deepEqual([...single.captures.keys()], ["generic:source"]);
+    assert.equal(f.provider.snapshot().scopes, 1);
+    assert.equal(f.provider.snapshot().documentParticipants, 2);
+    answer.resolve(null);
+    const both = await pending.result;
+    assert.deepEqual([...both.captures.keys()], ["generic:source", "generic:other"]);
+    assert.equal(single.isCurrent(), true);
+
+    const waiting = latch<void>();
+    const last = latch<null>();
+    const wire = latch<void>();
+    f.peer.onRequest("textDocument/definition", () => { wire.resolve(); return last.promise; });
+    const a = runHover(async () => { waiting.resolve(); await last.promise; });
+    const b = runNavigation();
+    await Promise.all([waiting.promise, wire.promise]);
+    const closed = Promise.all([assert.rejects(a.result, cancelled), assert.rejects(b.result, cancelled)]);
+    owner.dispose();
+    await closed;
+    last.resolve(null);
+    assert.equal(f.provider.snapshot().scopes, 0);
+    assert.equal(f.provider.snapshot().documentParticipants, 0);
+    assert.equal(f.sent("test/late").length, 0);
+});
 
 test("public feature handles share read-only options, busy state and disposal", async t => {
     type Fixture = ReturnType<typeof clientFixture>;

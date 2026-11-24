@@ -3,6 +3,12 @@ import type { FoldingSnapshot } from "../core/folding.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import type { TextEditor } from "./text-editor.ts";
 
+export function requireLanguageView(editor: TextEditor): void {
+    if (editor.signal.aborted || !editor.workspace.ownsDocumentView(editor.view, editor.tab)) {
+        throw new Error("Language features require a live document view.");
+    }
+}
+
 export function editorReadyForRequest(editor: TextEditor, activity = editor.activity()): boolean {
     return editor.element.isConnected && !editor.getSnapshot().disabled && !activity.disposed
         && !activity.composing && !activity.pendingInput && !activity.pendingCommand;

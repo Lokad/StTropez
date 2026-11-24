@@ -183,8 +183,9 @@ After the last participant leaves, the client closes the binding and releases th
 notification delivery. Keep a project scope if closed panes should contribute files to rename or
 navigation.
 
-`LspScopeAccess` exposes scoped requests and host preparation callbacks. `scope.ensureConnected()`
-starts or joins the shared connection. Cancelling your wait leaves other scopes connected.
+Feature preparation receives `LspScopeAccess` to flush its captured documents, read advertised
+command names or send a custom request. Cancelling that read cancels its pending custom requests.
+Use `scope.ensureConnected()` on a workspace scope to start or join the shared connection.
 `scope.cancel()` expires the scope’s requests and results but keeps bindings and handlers.
 `scope.dispose()` also releases the handlers and document participation and is safe to repeat. Use the
 owner to `disconnect()`, `reconnect()` or `shutdown()` the shared connection. Disposing the owner

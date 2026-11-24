@@ -1,3 +1,4 @@
+import { beginReadRequest, type LspReadRequest } from "../../src/protocol/lsp-workspace.ts";
 import { BrowserLspWorkspace, type BrowserLspWorkspaceOptions } from "../../src/browser/index.ts";
 import type { JsonValue, LspDocumentFeature, LspScopeAccess, LspWorkspaceScope } from "../../src/protocol/index.ts";
 import type { Workspace } from "../../src/index.ts";
@@ -47,25 +48,32 @@ export class FixtureLspWorkspace extends BrowserLspWorkspace {
 
     override createScope(): LspWorkspaceScope {
         const scope = super.createScope();
+        return this.wrap(scope, (take, clear) => ({
+            [beginReadRequest]: (interrupted, documents) => this.wrap(scope[beginReadRequest](interrupted, documents)),
+            requestCommand: (command, args, timeout, authorization) => this.sendCommand(command, take(commandKey(command)),
+                () => scope.requestCommand(command, args, timeout, authorization)),
+            cancel: () => { clear(); scope.cancel(); },
+        }));
+    }
+
+    private wrap<T extends LspReadRequest>(scope: T,
+        extra?: (take: (method: string) => JsonValue | undefined, clear: () => void) => Partial<T>): T {
         let pending: { method: string; policy: JsonValue } | undefined;
         const take = (method: string) => { if (pending?.method !== method) return undefined; const policy = pending.policy; pending = undefined; return policy; };
-        const wrapped: LspWorkspaceScope = Object.freeze({ ...scope,
-            requestDocument: (method, document, params) => {
+        const wrapped = Object.freeze({ ...scope, ...extra?.(take, () => { pending = undefined; }),
+            requestDocument: (...[method, document, params]: Parameters<LspReadRequest["requestDocument"]>) => {
                 // Take the policy before synchronization can yield to another request.
                 const policy = take(method);
                 return scope.requestDocument(method, document, (index, snapshot, capture) => ({ ...params(index, snapshot, capture),
                     ...(policy === undefined ? {} : { _fixture: policy }) }));
             },
-            request: (method, params) => {
+            request: (...[method, params]: Parameters<LspReadRequest["request"]>) => {
                 const policy = take(method);
                 if (policy === undefined) return scope.request(method, params);
                 if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("Fixture policy requires named request parameters.");
                 return scope.request(method, { ...params, _fixture: policy });
             },
-            requestCommand: (command, args, timeout, authorization) => this.sendCommand(command, take(commandKey(command)),
-                () => scope.requestCommand(command, args, timeout, authorization)),
-            cancel: () => { pending = undefined; scope.cancel(); },
-            release: () => { pending = undefined; this.preparations.delete(wrapped); scope.dispose(); },
+            dispose: () => { pending = undefined; this.preparations.delete(wrapped); scope.dispose(); },
         });
         this.preparations.set(wrapped, (method, policy, replacePending) => {
             // Only the latest-intent owner may replace an abandoned policy for the same method.

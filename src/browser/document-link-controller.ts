@@ -1,3 +1,4 @@
+import { documentLinkMethod } from "../protocol/lsp-methods.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
@@ -7,7 +8,7 @@ import type { LspDocumentLink } from "../protocol/lsp-features.ts";
 import { createLspLinkClient, type LspLinkClient } from "../protocol/lsp-language.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
-import { captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
+import { requireLanguageView, captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainDocuments } from "./retained-documents.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -39,7 +40,7 @@ const idle: DocumentLinkSnapshot = Object.freeze({ status: "idle", links: empty,
 /** Discover links for one editor. Only a current user action hands an opaque target to the host. */
 export function createDocumentLinkController(editor: TextEditor, provider: LspWorkspace, options: DocumentLinkControllerOptions = {}): DocumentLinkController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
-    if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Document links require a live document view.");
+    requireLanguageView(editor);
     const scope = workspace.createNotificationScope(), state = new Store(idle, scope), events = new AbortController();
     let job: Job | undefined;
     const available = (id: DocumentId) => !events.signal.aborted && editorReadyForRequest(editor)
@@ -67,7 +68,7 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
     function providerChanged(j: Job) {
         const connection = provider.getSnapshot();
         return j.connection && (connection.phase !== "ready" || connection.epoch !== j.connection.epoch
-            || connection.registrationVersion("textDocument/documentLink") !== j.connection.registrationVersion("textDocument/documentLink"));
+            || connection.registrationVersion(documentLinkMethod) !== j.connection.registrationVersion(documentLinkMethod));
     }
     function fail(j: Job | undefined, error: unknown): Outcome<never> {
         if (j?.failure) return j.failure;

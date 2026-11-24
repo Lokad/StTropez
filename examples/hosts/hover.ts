@@ -80,9 +80,12 @@ export class HostHoverTools {
         return this.inspect(session, selected.revision, selected.selection.head, selected.selection.headAffinity ?? "after", "keyboard");
     }
     attach(id: string, _tab: TabId, editor: TextEditor): () => void {
+        return this.bind(id, editor);
+    }
+    bind(id: string, editor: TextEditor, mounted?: HoverController): () => void {
         if (this.sessions.has(id)) throw new Error("Hover view already mounted.");
         const settings: Settings = { delay: 0 }, { provider, diagnostics, beforeRequest } = this.options;
-        const controller = createHoverController(editor, provider, { canCapture: () => this.canCapture(editor.view.documentId),
+        const controller = mounted ?? createHoverController(editor, provider, { canCapture: () => this.canCapture(editor.view.documentId),
             ...(diagnostics && { diagnostics }), ...(beforeRequest && { prepareRequest: session => {
                 const config = { ...settings }; delete settings.fault; return beforeRequest(session, config);
             } }) });

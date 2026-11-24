@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import {
-    createCodeActionController, createDiagnosticController, createDocumentColorController,
+    attachEditorLanguage, createCodeActionController, createDocumentColorController,
     createDocumentLinkController, createRenameController,
     type TextEditor,
 } from "../src/browser/index.ts";
@@ -383,8 +383,10 @@ test("a diagnostic tracks its text through an edit and a fresh push replaces the
             return "from" in range ? range : null;
         },
     };
-    const controller = createDiagnosticController(editor, f.provider);
-    t.after(() => { controller.dispose(); layers.dispose(); });
+    const before = f.provider.snapshot();
+    const language = attachEditorLanguage(editor, f.provider, { diagnostics: {}, hover: {} });
+    const controller = language.diagnostics;
+    t.after(() => { language.dispose(); layers.dispose(); });
     const marks = () => {
         const doc = f.document();
         const line = { documentId: doc.id, revision: doc.revision, line: 0, lineStart: 0,
@@ -404,6 +406,11 @@ test("a diagnostic tracks its text through an edit and a fresh push replaces the
     const original = controller.getSnapshot().diagnostics[0]!;
     const warning = "st-diagnostic st-diagnostic-warning st-deprecated";
     assert.deepEqual(marks(), [{ from: 6, to: 10, className: warning }]);
+    assert.ok(language.hover.request({ revision: f.document().revision, offset: 7 }));
+    await settled();
+    assert.match(language.hover.getSnapshot().text, /Check beta/);
+    assert.equal(f.provider.snapshot().scopes, before.scopes + 1);
+    assert.equal(f.provider.snapshot().documentParticipants, before.documentParticipants + 1);
     assert.ok(f.edit().applied);
     await f.flush();
     const pending = controller.getSnapshot();
@@ -426,4 +433,5 @@ test("a diagnostic tracks its text through an edit and a fresh push replaces the
     f.replace();
     assert.equal(fresh.diagnostics[0]!.select(), false);
     assert.deepEqual(marks(), []);
+    assert.equal(f.provider.snapshot().scopes, before.scopes);
 });

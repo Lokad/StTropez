@@ -1,3 +1,5 @@
+import { requireLanguageView } from "./captured-view.ts";
+import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
@@ -36,15 +38,19 @@ const empty: DiagnosticSnapshot = Object.freeze({ diagnostics: Object.freeze([])
     diagnosticsPending: false, unversionedDiagnostics: Object.freeze([]) });
 
 /** Displays pushed diagnostics for one view, including positions mapped while analysis is pending. */
-export function createDiagnosticController(editor: TextEditor, provider: LspWorkspace, options: DiagnosticControllerOptions = {}): DiagnosticController {
+export const createDiagnosticController: (editor: TextEditor, provider: LspWorkspace,
+    options?: DiagnosticControllerOptions) => DiagnosticController = mountDiagnostic;
+
+export function mountDiagnostic(editor: TextEditor, provider: LspWorkspace, options: DiagnosticControllerOptions = {},
+    shared?: LspDocumentOwner): DiagnosticController {
     const { workspace, view, tab } = editor, documentId = view.documentId;
-    if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Diagnostics require a live document view.");
-    const scope = provider.createScope();
+    requireLanguageView(editor);
+    const scope = shared?.scope ?? provider.createScope();
     let source: Observable<LspDiagnosticState>, layer: DecorationLayer;
     try {
-        source = scope.observeDiagnostics(scope.attachDocument(documentId));
+        source = scope.observeDiagnostics(shared?.binding ?? scope.attachDocument(documentId));
         layer = editor.decorations.add({ name: "diagnostics", order: 40 });
-    } catch (error) { scope.dispose(); throw error; }
+    } catch (error) { if (!shared) scope.dispose(); throw error; }
     const notifications = workspace.createNotificationScope(options.onError);
     const cell = new Store<DiagnosticSnapshot>(empty, notifications);
     let displayed: LspDiagnostics | null = null, disposed = false, stop: (() => void) | undefined;
@@ -94,7 +100,7 @@ export function createDiagnosticController(editor: TextEditor, provider: LspWork
         if (disposed) return;
         notifications.assertWritable(); disposed = true;
         editor.signal.removeEventListener("abort", dispose);
-        cancel(); stopTabs?.(); layer.dispose(); scope.dispose();
+        cancel(); stopTabs?.(); layer.dispose(); if (!shared) scope.dispose();
         cell.clearSnapshotListeners();
     };
     try { request(); } catch (error) { dispose(); throw error; }

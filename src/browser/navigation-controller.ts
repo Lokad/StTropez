@@ -7,7 +7,7 @@ import { createLspNavigationClient, type LspNavigationClient, type LspNavigation
 import type { LspLocation } from "../protocol/lsp-features.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
-import { captureViewRequest, editorReadyForRequest, sameEditAuthority } from "./captured-view.ts";
+import { requireLanguageView, captureViewRequest, editorReadyForRequest, sameEditAuthority } from "./captured-view.ts";
 import { bindDefinitionPointer } from "./definition-pointer.ts";
 import type { DefinitionHit } from "./definition-pointer.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -76,7 +76,7 @@ function navigationResult(reply: LspNavigationResult, canOpen: () => boolean): N
 /** A passive definition lookup can paint a link. Only an explicit request resolves its target URIs. */
 export function createNavigationController(editor: TextEditor, provider: LspWorkspace, options: NavigationControllerOptions = {}): NavigationController {
     const { workspace, view, tab } = editor;
-    if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Navigation requires a live document view.");
+    requireLanguageView(editor);
     const notifications = workspace.createNotificationScope(), state = new Store(idle, notifications);
     const events = new AbortController();
     const available = () => !events.signal.aborted && editorReadyForRequest(editor) && (options.canCapture?.() ?? true);

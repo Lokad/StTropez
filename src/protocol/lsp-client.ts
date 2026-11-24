@@ -1,9 +1,9 @@
 import { rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError } from "./wire.ts";
 import type { Observable } from "../core/observable.ts";
-import type { DocumentSnapshot } from "../core/workspace.ts";
+import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
 import type { JsonValue } from "./wire.ts";
 import type { LspCall, LspConnectContext, LspDocument, LspDocumentCapture, LspDocumentFeature, LspDocumentSnapshot } from "./lsp-session.ts";
-import { sameDocument, type LspPrepare, type LspWorkspace, type LspWorkspaceScope, type LspWorkspaceSnapshot } from "./lsp-workspace.ts";
+import { beginReadRequest, bindProject, sameDocument, type LspPrepare, type LspReadRequest, type LspWorkspace, type LspWorkspaceScope, type LspWorkspaceSnapshot } from "./lsp-workspace.ts";
 import { createLspTargets } from "./lsp-targets.ts";
 import type { LspTargetContext } from "./lsp-targets.ts";
 
@@ -24,14 +24,44 @@ type FeatureControls<Method extends LspDocumentFeature, Diagnostics extends LspC
 export type LspFeatureClient<Method extends LspDocumentFeature, Request, Result, Diagnostics extends LspClientDiagnostics = LspClientDiagnostics> =
     FeatureControls<Method, Diagnostics> & Readonly<{ run: (request: Request) => LspCall<Result> }>;
 
-type Request = { generation: number; pending: number; cancelled: boolean; reject: (error: unknown) => void;
+type Request = { wire: LspReadRequest; pending: number; reject: (error: unknown) => void;
     cancellation: Promise<never>; cleanups: Set<() => void>; identities: ReadonlyMap<LspDocument, LspDocumentSnapshot> };
 const cancelled = () => cancelledRequest("LSP feature request cancelled.");
 const stale = () => staleRequest("Captured LSP documents changed.");
 
-/** One feature scope, one latest intent. Decoding and mutation policy remain with the caller. */
-export function createLspClient<Method extends LspDocumentFeature>(provider: LspWorkspace, ...methods: [Method, ...Method[]]) {
-    const scope = provider.createScope(), listeners = new Set<() => void>();
+type Project = ReadonlyMap<string, LspDocument>;
+export type LspDocumentOwner = ReturnType<typeof retainLspDocument>;
+
+/** Features in a mounted view borrow the same binding. Overlapping projects retain other bindings independently. */
+export function retainLspDocument(provider: LspWorkspace, id: DocumentId) {
+    const scope = provider.createScope();
+    let binding: LspDocument;
+    try { binding = scope.attachDocument(id); } catch (error) { scope.dispose(); throw error; }
+    const references = new Map([[binding, 1]]);
+    function release(project: Project) {
+        for (const document of project.values()) {
+            const count = references.get(document)! - 1;
+            if (count) references.set(document, count);
+            else {
+                references.delete(document);
+                document.dispose();
+            }
+        }
+    }
+    function replace(previous: Project, snapshots: readonly DocumentSnapshot[]) {
+        const project = scope[bindProject](snapshots);
+        for (const document of project.values()) references.set(document, (references.get(document) ?? 0) + 1);
+        release(previous);
+        return project;
+    }
+    return { provider, scope, binding, replace, release, dispose: scope.dispose };
+}
+
+/** One latest intent per feature. The editor can own the scope and bindings for several features. */
+export function createLspClient<Method extends LspDocumentFeature>(owner: LspWorkspace | LspDocumentOwner, ...methods: [Method, ...Method[]]) {
+    const shared = "createScope" in owner ? undefined : owner;
+    const provider = "createScope" in owner ? owner : owner.provider;
+    const scope = shared?.scope ?? provider.createScope(), listeners = new Set<() => void>();
     let disposed = false, generation = 0, latest: Request | undefined, notificationQueued = false;
     let documents: ReadonlyMap<string, LspDocument> = new Map();
     const notify = () => {
@@ -47,9 +77,14 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
         notificationQueued = true;
         void Promise.resolve().then(() => { if (!disposed && notificationQueued) notify(); });
     };
-    const stop = scope.subscribe(notify);
+    let stop: () => void;
+    try { stop = scope.subscribe(notify); } catch (error) {
+        if (!shared) scope.dispose();
+        throw error;
+    }
     const release = () => {
-        for (const document of documents.values()) document.dispose();
+        if (shared) shared.release(documents);
+        else for (const document of documents.values()) document.dispose();
         documents = new Map();
     };
     const invalidate = (releaseDocuments: boolean, reason: unknown = cancelled()) => {
@@ -57,14 +92,13 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
         latest = undefined;
         generation++;
         if (previous) {
-            previous.cancelled = true;
             previous.reject(reason);
+            previous.wire.dispose();
             for (const cleanup of [...previous.cleanups]) cleanup(); previous.cleanups.clear();
         }
-        scope.cancel();
         if (releaseDocuments) release();
     };
-    const current = (request: Request) => !disposed && latest === request && !request.cancelled && request.generation === generation;
+    const current = (request: Request) => latest === request;
     const guard = (request: Request) => { if (!current(request)) throw cancelled(); };
     const validate = (request: Request) => {
         guard(request);
@@ -86,7 +120,8 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
     async function receive(op: Request, { document, project, prepare }: LspProjectRequest, method: LspDocumentFeature,
         params: Params, wireMethod?: "completionItem/resolve" | "codeAction/resolve") {
         if (project && !sameDocument(project.find(snapshot => snapshot.id === document.id), document)) throw stale();
-        documents = scope.setDocuments(project ?? [document]);
+        const snapshots = project ?? [document];
+        documents = shared ? shared.replace(documents, snapshots) : scope.setDocuments(snapshots);
         op.identities = new Map([...documents.values()].map(document => [document, document.getSnapshot()]));
         const target = documents.get(document.id);
         if (!target) throw new Error("LSP source is outside the captured project.");
@@ -94,22 +129,22 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
         if (connection.phase === "disconnected" && connection.epoch !== 0) throw closedConnection("LSP connection requires an explicit host connect or reconnect.");
         await scope.ensureConnected();
         validate(op);
-        await scope.flush([...documents.values()]);
+        await op.wire.flush();
         validate(op);
-        if (prepare) await prepare(scope);
+        if (prepare) await prepare(op.wire);
         validate(op);
         let capture: LspDocumentCapture | undefined, captures: ReadonlyMap<string, LspDocumentCapture> | undefined;
         const captureParams = (value: LspDocumentCapture) => {
             validate(op);
-            captures = scope.captureProject(method); capture = value;
+            captures = scope.captureProject(method, op.identities.keys()); capture = value;
             return params(value);
         };
         const call = wireMethod ? (() => {
             if (!scope.canRequest(method, target)) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable.");
             const value = scope.synchronized(target, method); if (!value) throw stale();
             const body = captureParams(value); validate(op);
-            return scope.request(wireMethod, body);
-        })() : scope.requestDocument(method, target, (_index, _document, value) => captureParams(value));
+            return op.wire.request(wireMethod, body);
+        })() : op.wire.requestDocument(method, target, (_index, _document, value) => captureParams(value));
         const response = await call.result;
         validate(op);
         const isGenerationCurrent = () => current(op) && scope.getSnapshot().phase === "ready"
@@ -134,7 +169,7 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
                 }
             },
             follow: (feature: LspDocumentFeature, wireMethod: string, values: JsonValue, prepareFollow?: LspPrepare, onCancel?: LspConnectContext["onCancel"]) => {
-                let interrupted = false, next: LspCall<JsonValue> | undefined, unsubscribe: (() => void) | undefined;
+                let interrupted = false, unsubscribe: (() => void) | undefined;
                 const check = () => {
                     if (interrupted) throw cancelled();
                     validate(op);
@@ -142,22 +177,32 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
                 };
                 const send = async () => {
                     check();
-                    if (prepareFollow) { await prepareFollow(scope); check(); }
+                    if (prepareFollow) { await prepareFollow(followWire); check(); }
                     if (!scope.canRequest(feature, target)) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable.");
                     const body = { ...values as Record<string, JsonValue> };
                     delete body.textDocument;
-                    next = feature === wireMethod ? scope.requestDocument(feature, target, () => { check(); return body; }) : scope.request(wireMethod, values);
+                    const next = feature === wireMethod ? followWire.requestDocument(feature, target, () => { check(); return body; })
+                        : followWire.request(wireMethod, values);
                     const result = await next.result;
                     check();
                     return result;
                 };
+                const followWire = scope[beginReadRequest](() => invalidate(false), () => {
+                    check();
+                    return op.identities.keys();
+                });
+                op.cleanups.add(followWire.dispose);
                 return wait(op, () => {
                     if (!onCancel) return send();
                     return new Promise<JsonValue>((resolve, reject) => {
-                        unsubscribe = onCancel(() => { interrupted = true; reject(cancelled()); next?.cancel(); });
+                        unsubscribe = onCancel(() => { interrupted = true; reject(cancelled()); followWire.dispose(); });
                         if (!interrupted) void send().then(resolve, reject);
                     });
-                }, () => interrupted).finally(() => unsubscribe?.());
+                }, () => interrupted).finally(() => {
+                    unsubscribe?.();
+                    followWire.dispose();
+                    op.cleanups.delete(followWire.dispose);
+                });
             } });
     }
     function request<T>(input: LspProjectRequest, method: LspDocumentFeature, params: Params,
@@ -166,7 +211,16 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
         invalidate(false);
         let reject!: (error: unknown) => void;
         const cancellation = new Promise<never>((_resolve, no) => { reject = no; });
-        const op: Request = { generation, identities: new Map(), pending: 1, cancelled: false, cancellation, reject, cleanups: new Set() };
+        let wire: LspReadRequest;
+        try {
+            wire = scope[beginReadRequest](() => invalidate(false), () => {
+                validate(op);
+                return op.identities.keys();
+            });
+        } catch (error) {
+            return Object.freeze({ result: Promise.reject(error), cancel: () => {} });
+        }
+        const op: Request = { wire, identities: new Map(), pending: 1, cancellation, reject, cleanups: new Set() };
         latest = op;
         let finished = false;
         const work = receive(op, input, method, params, wireMethod).then(value => { guard(op); return read(value); });
@@ -180,9 +234,7 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
         queueNotify();
         // Completed calls may be released by a view without invalidating their published result.
         return Object.freeze({ result, cancel: () => {
-            if (finished || op.cancelled) return;
-            if (latest === op) invalidate(false);
-            else { op.cancelled = true; op.reject(cancelled()); }
+            if (!finished && current(op)) invalidate(false);
         } });
     }
     return Object.freeze({ methods, scope, request, notify, getSnapshot: scope.getSnapshot,
@@ -207,7 +259,7 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
             disposed = true;
             invalidate(true);
             stop();
-            scope.dispose();
+            if (!shared) scope.dispose();
             listeners.clear();
         } });
 }

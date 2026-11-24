@@ -11,7 +11,7 @@ import type { LspWorkspaceEdit } from "../protocol/lsp-features.ts";
 import { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../protocol/lsp-workspace-edit.ts";
 import type { LspWorkspaceEditPreview } from "../protocol/lsp-workspace-edit.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
-import { captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
+import { requireLanguageView, captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainEditProject, writableEdit } from "./edit-project.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -40,7 +40,7 @@ const idle: RenameSnapshot = Object.freeze({ name: "", status: "idle", message: 
 /** Review and confirm one provider rename from the captured caret and project. */
 export function createRenameController(editor: TextEditor, provider: LspWorkspace, options: RenameControllerOptions = {}): RenameController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
-    if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Rename requires a live document view.");
+    requireLanguageView(editor);
     const scope = workspace.createNotificationScope(), cell = new Store(idle, scope), events = new AbortController();
     let job: Job | undefined;
     const available = (id: DocumentId) => !events.signal.aborted && editorReadyForRequest(editor)

@@ -1,4 +1,4 @@
-import { createCompletionController, createLspHighlightController, mountAnchoredOverlay } from "../../src/browser/index.ts";
+import { attachEditorLanguage, createLspHighlightController, mountAnchoredOverlay } from "../../src/browser/index.ts";
 import type { TextEditor, CompletionController, CompletionSnippet, LspHighlightController, NavigationOrigin } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import type { DemoFile, DemoProject } from "./project.ts";
@@ -83,9 +83,17 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
         const attach = (provider: LspWorkspace) => {
             if (!valid()) return;
             try {
-                controller = createCompletionController(editor, provider, { autoConnect: false, filterManualCompletions: true, canCapture: valid,
-                    getPageSize: () => completionPageSize(choices) });
-                scope.defer(() => controller!.dispose());
+                const tools = attachEditorLanguage(editor, provider, {
+                    completion: { autoConnect: false, filterManualCompletions: true, canCapture: valid,
+                        getPageSize: () => completionPageSize(choices) },
+                    hover: { canCapture: valid, diagnostics: { subscribe: language.state.subscribe, getSnapshot() {
+                        const state = language.state.getSnapshot(), doc = workspace.document(file.resource.documentId);
+                        return { diagnosticRevision: doc.revision, diagnosticsPending: state.checking,
+                            diagnostics: state.diagnostics.filter(item => item.documentId === doc.id && item.revision === doc.revision) };
+                    } } },
+                });
+                controller = tools.completion;
+                scope.defer(tools.dispose);
                 highlights = createLspHighlightController(editor, { provider });
                 scope.defer(() => highlights!.dispose());
                 const occurrences = editor.decorations.add({ name: "occurrences", order: 20, minimap: false });
@@ -100,7 +108,7 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
                     })));
                     else occurrences.clear();
                 }));
-                inspection = mountDemoInspection(scope, workspace, file, editor, provider, language, valid, () => !!controller?.getSnapshot().choices.length || !!symbols?.isOpen() || !!actions?.isOpen(),
+                inspection = mountDemoInspection(scope, editor, provider, tools.hover, valid, () => !!controller?.getSnapshot().choices.length || !!symbols?.isOpen() || !!actions?.isOpen(),
                     () => controller?.cancel(), () => { symbols?.dismiss(); actions?.dismiss(); },
                     state => {
                         if (state.status === "empty" || state.status === "failed") commands.feedback("signature", state.message, true);

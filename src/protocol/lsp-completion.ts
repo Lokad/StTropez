@@ -1,3 +1,5 @@
+import { completionMethod } from "./lsp-methods.ts";
+import type { LspDocumentOwner } from "./lsp-client.ts";
 import { cancelledRequest, staleRequest } from "./wire.ts";
 import type { JsonValue } from "./wire.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
@@ -28,8 +30,10 @@ const same = (left: DocumentSnapshot | undefined, right: DocumentSnapshot) => !!
 const stale = () => staleRequest("LSP completion batch expired.");
 
 /** One current choice batch and one request/resolve intent; host view and acceptance policy stay outside. */
-export function createLspCompletionClient(provider: LspWorkspace): LspCompletionClient {
-    const client = createLspClient(provider, "textDocument/completion"), batches = new WeakMap<LspCompletionBatch, Batch>();
+export const createLspCompletionClient: (provider: LspWorkspace) => LspCompletionClient = completionClient;
+
+export function completionClient(provider: LspWorkspace | LspDocumentOwner): LspCompletionClient {
+    const client = createLspClient(provider, completionMethod), batches = new WeakMap<LspCompletionBatch, Batch>();
     let active: Batch | undefined, sequence = 0, received = 0, disposed = false;
     let pending: LspCall<unknown> | undefined;
     const cancelPending = () => { sequence++; const old = pending; pending = undefined; old?.cancel(); };
@@ -68,11 +72,11 @@ export function createLspCompletionClient(provider: LspWorkspace): LspCompletion
                 if (!same(document, options.retain.document) || offset !== options.retain.offset) throw stale();
             } else active = undefined;
             cancelPending();
-            const call = client.request(options, "textDocument/completion", capture => ({ position: capture.index.at(offset), context }), value => value.decode(() => {
+            const call = client.request(options, completionMethod, capture => ({ position: capture.index.at(offset), context }), value => value.decode(() => {
                 received++;
-                const binding = client.scope.captureBinding(value.target, "textDocument/completion"), local = binding?.getSnapshot();
+                const binding = client.scope.captureBinding(value.target, completionMethod), local = binding?.getSnapshot();
                 if (!binding || !local || !same(local, document)) throw stale();
-                const configuration = client.options(document, "textDocument/completion"),
+                const configuration = client.options(document, completionMethod),
                     commitCharacters = configuration.flatMap(option => Array.isArray(option.allCommitCharacters) ? option.allCommitCharacters.filter((value): value is string => typeof value === "string") : []);
                 const choices = decodeLspCompletions(value.response, value.capture, offset, fallback, {
                     resolve: configuration.some(option => option.resolveProvider === true), commitCharacters, ...(indentation ? { indentation } : {}) });
@@ -97,7 +101,7 @@ export function createLspCompletionClient(provider: LspWorkspace): LspCompletion
             const batch = requireBatch(value);
             if (!value.items.includes(item) || !item.resolve) throw new TypeError("Choose a captured unresolved completion.");
             cancelPending();
-            const call = client.request({ document: value.document, prepare }, "textDocument/completion", () => {
+            const call = client.request({ document: value.document, prepare }, completionMethod, () => {
                 if (!current(batch)) throw stale(); return item.resolve as Record<string, JsonValue>;
             }, response => response.decode(() => {
                 if (!current(batch)) throw stale();

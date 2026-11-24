@@ -1,3 +1,4 @@
+import { definitionMethod, referencesMethod } from "./lsp-methods.ts";
 import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspProjectClientDiagnostics, type LspProjectRequest } from "./lsp-client.ts";
 import { decodeLspLocations, definitionOriginRange, lspLocationUris } from "./lsp-features.ts";
 import type { LspCall } from "./lsp-session.ts";
@@ -17,12 +18,12 @@ export type LspNavigationClient = LspFeatureClient<"textDocument/definition" | "
 
 /** Captured read-only queries; the host chooses how to present each validated target. */
 export function createLspNavigationClient(provider: LspWorkspace): LspNavigationClient {
-    const client = createLspClient(provider, "textDocument/definition", "textDocument/references");
+    const client = createLspClient(provider, definitionMethod, referencesMethod);
     type Reply = Parameters<Parameters<typeof client.request>[3]>[0];
     function lookup<T>(request: LspNavigationRequest,
         read: (reply: Reply, hasTargets: boolean, load: () => Promise<LspNavigationResult>) => T | Promise<T>) {
         const { offset, kind, includeDeclaration = true } = request;
-        return client.request(request, kind === "definition" ? "textDocument/definition" : "textDocument/references", capture => ({
+        return client.request(request, kind === "definition" ? definitionMethod : referencesMethod, capture => ({
             position: capture.index.at(offset), ...(kind === "references" ? { context: { includeDeclaration } } : {}) }), reply => {
             const uris = reply.decode(() => lspLocationUris(reply.response, kind));
             return read(reply, uris.length > 0, async () => {

@@ -1,3 +1,7 @@
+import { completionMethod } from "../protocol/lsp-methods.ts";
+import { retainLspDocument, type LspDocumentOwner } from "../protocol/lsp-client.ts";
+import { completionClient } from "../protocol/lsp-completion.ts";
+import { beginReadRequest, type LspReadRequest } from "../protocol/lsp-workspace.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import { ProtocolDecodeError, rpcCodes, staleRequest } from "../protocol/wire.ts";
 import { dispatchTypedText, typedTextEvent, type TypedTextDetail } from "./input-events.ts";
@@ -12,9 +16,9 @@ import type { FoldIndex } from "../core/folding.ts";
 import type { TextEditor } from "./text-editor.ts";
 import { editorInput } from "./editor-input.ts";
 import type { DecorationLayer } from "./decoration-layers.ts";
-import { sameEditAuthority } from "./captured-view.ts";
-import { RpcError, createLspCompletionClient, type LspCompletionClient, lspCompletionPlan } from "../protocol/index.ts";
-import type { LspCall, LspCompletion, LspCompletionBatch, LspCompletionResolution, LspCompletions, LspCompletionFallback, LspDocument, LspScopeAccess, LspWorkspace, LspWorkspaceSnapshot, JsonValue } from "../protocol/index.ts";
+import { requireLanguageView, sameEditAuthority } from "./captured-view.ts";
+import { RpcError, lspCompletionPlan } from "../protocol/index.ts";
+import type { LspCall, LspCompletion, LspCompletionBatch, LspCompletionResolution, LspCompletions, LspCompletionFallback, LspScopeAccess, LspWorkspace, LspWorkspaceSnapshot, JsonValue } from "../protocol/index.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 
@@ -55,14 +59,32 @@ function connectionMessage(phase: LspWorkspaceSnapshot["phase"]): string {
 }
 
 /** Captured editor coordination; hosts render controls and supply provider/custom-message policy. */
-export function createCompletionController(editor: TextEditor, provider: LspWorkspace, options: CompletionControllerOptions = {}): CompletionController {
+export const createCompletionController: (editor: TextEditor, provider: LspWorkspace,
+    options?: CompletionControllerOptions) => CompletionController = mountCompletion;
+
+export function mountCompletion(editor: TextEditor, provider: LspWorkspace, options: CompletionControllerOptions = {},
+    shared?: LspDocumentOwner): CompletionController {
     const input = editorInput(editor);
     const { workspace, tab: target, view } = editor, documentId = view.documentId, resource = workspace.resourceForDocument(documentId);
-    if (editor.signal.aborted || !workspace.ownsDocumentView(view, target)) throw new Error("LSP provider requires the captured document view.");
-    const listeners = new AbortController(), scope = provider.createScope();
-    let binding: LspDocument, completion: LspCompletionClient;
-    try { binding = scope.attachDocument(documentId); completion = createLspCompletionClient(provider); }
-    catch (error) { scope.dispose(); throw error; }
+    requireLanguageView(editor);
+    const listeners = new AbortController();
+    const ownerConnection = shared ?? retainLspDocument(provider, documentId);
+    const { scope, binding } = ownerConnection;
+    let custom: LspReadRequest | undefined;
+    let completion: ReturnType<typeof completionClient>;
+    try {
+        custom = scope[beginReadRequest](() => {}, () => [binding]);
+        completion = completionClient(ownerConnection);
+    } catch (error) {
+        custom?.dispose();
+        if (!shared) ownerConnection.dispose();
+        throw error;
+    }
+    function releaseConnection() {
+        custom!.dispose();
+        completion.dispose();
+        if (!shared) ownerConnection.dispose();
+    }
     const counters = { posted: 0, applied: 0, stale: 0, cancelled: 0, invalid: 0, failed: 0, resolved: 0,
         lastCompletionBeforeInputMs: 0, lastCompletionCommandMs: 0 };
     let job: Job | undefined, disposed = false, connecting: Promise<void> | undefined, inputIntent: AutomaticInput | undefined, prefixEdit: PrefixEdit | undefined, autoFrame: number | undefined, autoTurns = 0, applying = false;
@@ -360,8 +382,8 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
             snippet = applied ? { ...captured, stops: plan.stops, revision: workspace.document(documentId).revision } : undefined;
             publish(applied ? "Snippet placeholder edited." : "Snippet edit rejected.");
         } };
-    }); } catch (error) { completion.dispose(); binding.dispose(); scope.dispose(); throw error; }
-    const triggers = () => new Set(scope.featureOptions("textDocument/completion", binding).flatMap(option => Array.isArray(option.triggerCharacters)
+    }); } catch (error) { releaseConnection(); throw error; }
+    const triggers = () => new Set(scope.featureOptions(completionMethod, binding).flatMap(option => Array.isArray(option.triggerCharacters)
         ? option.triggerCharacters.filter((value): value is string => typeof value === "string" && value.length > 0 && value.length <= 8).slice(0, 64) : []));
     const scheduleAuto = () => {
         if (options.automatic === false || !inputIntent || autoFrame !== undefined) return;
@@ -373,7 +395,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
                 if (++autoTurns < 120) scheduleAuto(); else cancelAuto();
                 return;
             }
-            if (!connecting && scope.getSnapshot().phase !== "ready" || scope.getSnapshot().phase === "ready" && !scope.canRequest("textDocument/completion", binding)) { cancelAuto(); return; }
+            if (!connecting && scope.getSnapshot().phase !== "ready" || scope.getSnapshot().phase === "ready" && !scope.canRequest(completionMethod, binding)) { cancelAuto(); return; }
             let character: string | undefined;
             for (const trigger of triggers()) if (intent.text.endsWith(trigger) && trigger.length > (character?.length ?? 0)) character = trigger;
             if (!intent.word && !character) { cancelAuto(); return; }
@@ -510,7 +532,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
         notifications.assertWritable(); disposed = true; snippet = undefined;
         for (const registration of registrations) registration.dispose();
         stopTransform(); cancelAuto(); for (const stop of stops) stop();
-        listeners.abort(); release(); completion.dispose(); binding.dispose(); scope.dispose();
+        listeners.abort(); release(); releaseConnection();
         publish("Completion controller disposed.");
         cell.clearSnapshotListeners();
     };
@@ -539,7 +561,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     if (options.autoConnect !== false) connect();
     return Object.freeze({ ...controllerObservable(cell, "Completion", () => disposed, notifications), request: () => { notifications.assertWritable(); if (!disposed) request(); },
         cancel: () => { notifications.assertWritable(); if (!disposed) cancel(); }, connect: () => { notifications.assertWritable(); connect(); },
-        customRequest: (method, params) => { notifications.assertWritable(); return scope.request(method, params).result; },
+        customRequest: (method, params) => { notifications.assertWritable(); return custom.request(method, params).result; },
         getDiagnostics: () => Object.freeze({ ...counters, received: completion.snapshot().received, connected: scope.getSnapshot().phase === "ready", pending: cell.get().pending, offer: !!job?.visible.length, transport: "lsp3.17", protocol: scope.snapshotOwnership() }),
         dispose });
 }

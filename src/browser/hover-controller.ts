@@ -1,11 +1,12 @@
 import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
-import { captureViewRequest, editorReadyForRequest, observeViewSource, type CapturedViewRequest } from "./captured-view.ts";
+import { requireLanguageView, captureViewRequest, editorReadyForRequest, observeViewSource, type CapturedViewRequest } from "./captured-view.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DocumentationContent } from "../core/documentation.ts";
 import type { FoldIndex } from "../core/folding.ts";
 import type { SelectionSet } from "../core/selections.ts";
-import { createLspHoverClient } from "../protocol/index.ts";
+import { hoverClient } from "../protocol/lsp-hover.ts";
+import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
 import type { LspHoverResult, LspDiagnostic, LspPrepare, LspWorkspace } from "../protocol/index.ts";
 import type { OverlayPosition } from "./anchored-overlay.ts";
@@ -33,11 +34,15 @@ type Inspection = { revision: number; selection: SelectionSet; folds: FoldIndex;
     stops: (() => void)[]; timer?: number; capture?: CapturedViewRequest<TextEditor["tab"]>; symbol?: LspHoverResult; failure?: string };
 
 /** A mounted view owns the range, provider reply and diagnostic messages displayed together. */
-export function createHoverController(editor: TextEditor, provider: LspWorkspace, options: HoverControllerOptions = {}): HoverController {
+export const createHoverController: (editor: TextEditor, provider: LspWorkspace,
+    options?: HoverControllerOptions) => HoverController = mountHover;
+
+export function mountHover(editor: TextEditor, provider: LspWorkspace, options: HoverControllerOptions = {},
+    shared?: LspDocumentOwner): HoverController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
-    if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Hover requires a live document view.");
+    requireLanguageView(editor);
     const notifications = workspace.createNotificationScope(options.onError), cell = new Store(idle, notifications);
-    const client = createLspHoverClient(provider);
+    const client = hoverClient(shared ?? provider);
     let inspection: Inspection | undefined, disposed = false;
     let providerScope: ReturnType<LspWorkspace["createScope"]> | undefined, defaultSource: HoverDiagnostics | undefined;
     const counts = { posted: 0, received: 0, stale: 0, invalid: 0, failed: 0, cancelled: 0 };
@@ -45,15 +50,16 @@ export function createHoverController(editor: TextEditor, provider: LspWorkspace
     function diagnosticSource(): HoverDiagnostics {
         if (options.diagnostics) return options.diagnostics;
         if (defaultSource) return defaultSource;
-        const scope = provider.createScope();
+        const scope = shared?.scope ?? provider.createScope();
         try {
-            const source = scope.observeDiagnostics(scope.attachDocument(view.documentId));
+            const source = scope.observeDiagnostics(shared?.binding ?? scope.attachDocument(view.documentId));
             defaultSource = { subscribe: source.subscribe, getSnapshot() {
                 const state = source.getSnapshot(), result = state.isPlacementCurrent() ? state.result : null;
                 return { diagnosticRevision: result?.snapshotRevision ?? -1, diagnostics: result?.items ?? [], diagnosticsPending: state.status === "pending" };
             } };
-            providerScope = scope; return defaultSource;
-        } catch (error) { scope.dispose(); throw error; }
+            if (!shared) providerScope = scope;
+            return defaultSource;
+        } catch (error) { if (!shared) scope.dispose(); throw error; }
     }
     function finish(current: Inspection): void {
         const capture = current.capture;

@@ -1,3 +1,4 @@
+import { documentHighlightMethod } from "../protocol/lsp-methods.ts";
 import { Store, type Observable } from "../core/observable.ts";
 import { codeWordConstituentPattern } from "../core/word-patterns.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
@@ -84,7 +85,7 @@ export function createLspHighlightController(editor: TextEditor,
         options.provider.subscribe(() => {
             const next = options.provider.getSnapshot();
             const changed = next.phase !== provider.phase || next.epoch !== provider.epoch
-                || next.registrationVersion("textDocument/documentHighlight") !== provider.registrationVersion("textDocument/documentHighlight");
+                || next.registrationVersion(documentHighlightMethod) !== provider.registrationVersion(documentHighlightMethod);
             provider = next; if (changed) refresh();
         })];
     if (target) stops.push(workspace.tabs.subscribe(() => { if (!available()) refresh(); }));

@@ -37,6 +37,7 @@ export type { HoverController, HoverControllerOptions, HoverDiagnostics, HoverSn
 export type { CodeActionController, CodeActionControllerOptions, CodeActionSnapshot, CodeActionChoice, CodeActionPreview, CodeActionConfirmation, CodeActionCommand, CodeActionExecution } from "./code-action-controller.ts";
 export type { DiagnosticController, DiagnosticControllerOptions, DiagnosticSnapshot, EditorDiagnostic } from "./diagnostic-controller.ts";
 export { createCompletionController } from "./completion-controller.ts";
+export { attachEditorLanguage } from "./editor-language.ts";
 export { createLspHighlightController } from "./lsp-highlights.ts";
 export { mountDocumentation } from "./documentation.ts";
 export type { DocumentationOptions, DocumentationView } from "./documentation.ts";

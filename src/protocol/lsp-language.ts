@@ -1,3 +1,4 @@
+import { colorPresentationMethod, documentColorMethod, documentLinkMethod, signatureHelpMethod } from "./lsp-methods.ts";
 import { wireLimits, jsonSnapshot } from "./wire.ts";
 import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspDocumentRequest, type LspPositionRequest } from "./lsp-client.ts";
 import type { JsonValue } from "./wire.ts";
@@ -20,12 +21,12 @@ export type LspColorClient = LspFeatureClient<"textDocument/documentColor" | "te
 }>>;
 
 export function createLspSignatureClient(provider: LspWorkspace): LspSignatureClient {
-    const lane = createLspClient(provider, "textDocument/signatureHelp");
+    const lane = createLspClient(provider, signatureHelpMethod);
     // Prior wire context is not fresh range/edit authority. Keep only its binding identities,
     // never the old buffer/capture, and compare them after the next request has synchronized.
     let previous: Readonly<{ document: string; resource: string; uri: string; language: string; epoch: number; generation: number; wire: JsonValue }> | undefined;
     const stop = lane.subscribe(() => { const state = lane.getSnapshot();
-        if (state.phase !== "ready" || previous?.epoch !== state.epoch || previous.generation !== state.registrationVersion("textDocument/signatureHelp")) previous = undefined;
+        if (state.phase !== "ready" || previous?.epoch !== state.epoch || previous.generation !== state.registrationVersion(signatureHelpMethod)) previous = undefined;
     });
     return Object.freeze({ ...lspFeatureHandle(lane, {
         cancel: () => { previous = undefined; lane.cancel(); }, dispose: () => { previous = undefined; stop(); lane.dispose(); } }),
@@ -36,7 +37,7 @@ export function createLspSignatureClient(provider: LspWorkspace): LspSignatureCl
                 || JSON.stringify(wireContext).length > wireLimits.signatureContextUnits) throw new TypeError("Invalid signature help context.");
             const retrigger = context.isRetrigger, inherit = context.activeSignatureHelp === undefined;
             if (!retrigger) previous = undefined;
-            return lane.request(request, "textDocument/signatureHelp", capture => {
+            return lane.request(request, signatureHelpMethod, capture => {
                 const doc = capture.document; let active = wireContext;
                 if (previous && (previous.document !== doc.documentId || previous.resource !== doc.resourceId || previous.uri !== doc.uri || previous.language !== doc.languageId
                     || previous.epoch !== capture.epoch || previous.generation !== capture.registrationGeneration)) previous = undefined;
@@ -60,27 +61,27 @@ export function createLspSignatureClient(provider: LspWorkspace): LspSignatureCl
         } });
 }
 export function createLspLinkClient(provider: LspWorkspace): LspLinkClient {
-    const lane = createLspClient(provider, "textDocument/documentLink");
+    const lane = createLspClient(provider, documentLinkMethod);
     return Object.freeze({ ...lspFeatureHandle(lane),
-        run: ({ document, prepare }: LspDocumentRequest) => lane.request({ document, prepare }, "textDocument/documentLink", () => ({}), result => {
+        run: ({ document, prepare }: LspDocumentRequest) => lane.request({ document, prepare }, documentLinkMethod, () => ({}), result => {
             const { capture, isCurrent } = result;
-            const items = result.decode(() => decodeLspDocumentLinks(result.response, capture, lane.options(document, "textDocument/documentLink").some(option => option.resolveProvider === true)));
+            const items = result.decode(() => decodeLspDocumentLinks(result.response, capture, lane.options(document, documentLinkMethod).some(option => option.resolveProvider === true)));
             return Object.freeze({ items, isCurrent, resolve: async (item: LspDocumentLink, prepareResolve?: LspPrepare) => {
                 if (!items.includes(item) || !item.resolve) throw new TypeError("Choose a captured resolvable document link.");
-                const value = await result.follow("textDocument/documentLink", "documentLink/resolve", item.resolve, prepareResolve);
+                const value = await result.follow(documentLinkMethod, "documentLink/resolve", item.resolve, prepareResolve);
                 return result.decode(() => decodeLspResolvedDocumentLink(value, item, capture));
             } });
         }) });
 }
 export function createLspColorClient(provider: LspWorkspace): LspColorClient {
-    const lane = createLspClient(provider, "textDocument/documentColor", "textDocument/colorPresentation");
+    const lane = createLspClient(provider, documentColorMethod, colorPresentationMethod);
     return Object.freeze({ ...lspFeatureHandle(lane),
-        run: (request: LspDocumentRequest) => lane.request(request, "textDocument/documentColor", () => ({}), result => {
+        run: (request: LspDocumentRequest) => lane.request(request, documentColorMethod, () => ({}), result => {
             const { capture, isCurrent } = result;
             const items = result.decode(() => decodeLspDocumentColors(result.response, capture));
             return Object.freeze({ items, isCurrent, presentations: async (item: LspDocumentColor, color: LspColor, preparePresentation?: LspPrepare, onCancel?: LspConnectContext["onCancel"]) => {
                 if (!items.includes(item)) throw new TypeError("Choose a captured document color.");
-                const value = await result.follow("textDocument/colorPresentation", "textDocument/colorPresentation", {
+                const value = await result.follow(colorPresentationMethod, colorPresentationMethod, {
                     textDocument: { uri: capture.document.uri }, color: decodeLspColor(color), range: { start: capture.index.at(item.from), end: capture.index.at(item.to) } }, preparePresentation, onCancel);
                 return result.decode(() => decodeLspColorPresentations(value, item, capture));
             } });

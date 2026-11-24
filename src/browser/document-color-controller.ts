@@ -1,3 +1,4 @@
+import { colorPresentationMethod } from "../protocol/lsp-methods.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
 import { reviewApplied, reviewFailed, reviewRefused, type ReviewEditResult } from "./review-edit.ts";
@@ -10,7 +11,7 @@ import { describeLspEdit, type LspWorkspaceEditNote } from "../protocol/lsp-work
 import { createLspColorClient, type LspColorClient } from "../protocol/lsp-language.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
-import { captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
+import { requireLanguageView, captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainDocuments } from "./retained-documents.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -47,7 +48,7 @@ const idle: DocumentColorSnapshot = Object.freeze({ status: "idle", colors: empt
 /** Review one provider color presentation and apply all its edits as one undo command. */
 export function createDocumentColorController(editor: TextEditor, provider: LspWorkspace, options: DocumentColorControllerOptions = {}): DocumentColorController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
-    if (!workspace.ownsDocumentView(view, tab) || editor.signal.aborted) throw new Error("Document colors require a live document view.");
+    requireLanguageView(editor);
     const scope = workspace.createNotificationScope(), state = new Store(idle, scope), events = new AbortController();
     let job: Job | undefined;
     function available() {
@@ -216,7 +217,7 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
                 return stale;
             }
             j.reply = reply;
-            j.registration = provider.getSnapshot().registrationVersion("textDocument/colorPresentation");
+            j.registration = provider.getSnapshot().registrationVersion(colorPresentationMethod);
             source.cancel();
             win.clearTimeout(j.timer);
             const colors = Object.freeze(reply.items.map((item, index) => reference(item, index, j.source.document.revision)));
@@ -238,7 +239,7 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
         if (!j?.reply || j.reply.isCurrent()) return;
         const connection = provider.getSnapshot();
         // A pending decoder reports its own error. Disconnects and withdrawn capabilities cancel the request immediately.
-        if (!j.preview || j.preview.result || connection.phase !== "ready" || connection.registrationVersion("textDocument/colorPresentation") !== j.registration) expire(j);
+        if (!j.preview || j.preview.result || connection.phase !== "ready" || connection.registrationVersion(colorPresentationMethod) !== j.registration) expire(j);
     });
     editor.onEditIntent(() => { if (job) cancel(); }, events.signal);
     function dispose() {

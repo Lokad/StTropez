@@ -1,3 +1,4 @@
+import { foldingRangeMethod } from "./lsp-methods.ts";
 import { ProtocolDecodeError, staleRequest } from "./wire.ts";
 import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspDocumentRequest } from "./lsp-client.ts";
 import type { LspDocumentCapture } from "./lsp-session.ts";
@@ -27,11 +28,11 @@ export type LspFoldingClient = LspFeatureClient<"textDocument/foldingRange", Lsp
     Readonly<{ revision: number; ranges: readonly DiscoveredFold[]; isCurrent: () => boolean }>>;
 
 export function createLspFoldingClient(provider: LspWorkspace): LspFoldingClient {
-    const client = createLspClient(provider, "textDocument/foldingRange");
+    const client = createLspClient(provider, foldingRangeMethod);
     return Object.freeze({ ...lspFeatureHandle(client),
         run: (request: LspDocumentRequest) => {
             const { document } = request;
-            return client.request(request, "textDocument/foldingRange", () => ({}), value => value.decode(() =>
+            return client.request(request, foldingRangeMethod, () => ({}), value => value.decode(() =>
                 Object.freeze({ revision: document.revision, ranges: decodeLspFoldingRanges(value.response, value.capture), isCurrent: value.isCurrent })));
         } });
 }

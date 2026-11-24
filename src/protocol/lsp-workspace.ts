@@ -1,3 +1,4 @@
+import { applyEditMethod, didChangeMethod, executeCommandMethod } from "./lsp-methods.ts";
 import { wireLimits, isLspUri, isLspIdentityPart, ProtocolDecodeError, rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError } from "./wire.ts";
 import type { DocumentId, DocumentLanguage, DocumentSnapshot, ResourceLease, Workspace } from "../core/workspace.ts";
 import { NotificationScope, Store } from "../core/observable.ts";
@@ -13,7 +14,12 @@ import { decodeLspDiagnostics } from "./lsp-features.ts";
 import type { LspDiagnostics } from "./lsp-features.ts";
 import type { LspResolvedTarget, LspTargetResolver, LspTargetContext, ResolveRetainedTarget } from "./lsp-targets.ts";
 
-export type LspScopeAccess = Pick<LspSession, "getSnapshot" | "subscribe" | "flush" | "bindDocument" | "synchronized" | "requestDocument" | "canRequest" | "featureOptions" | "commandNames" | "requestCommand" | "request" | "notify" | "onRequest" | "onNotification" | "snapshotOwnership"> & Readonly<{
+/** Preparation can synchronize the capture and send custom requests on its behalf. */
+export type LspScopeAccess = Pick<LspSession, "request" | "commandNames"> & Readonly<{ flush: () => Promise<void> }>;
+export type LspReadRequest = LspScopeAccess & Pick<LspSession, "requestDocument"> & Readonly<{ dispose: () => void }>;
+export const beginReadRequest = Symbol("LSP read request");
+export const bindProject = Symbol("bind captured documents");
+type ScopeAccess = Pick<LspSession, "flush" | "bindDocument" | "synchronized" | "requestDocument" | "canRequest" | "featureOptions" | "commandNames" | "requestCommand" | "request" | "notify" | "onRequest" | "onNotification" | "snapshotOwnership"> & Readonly<{
     /** Start or join the owner's shared connection; cancellation expires only this scope's wait. */
     ensureConnected: () => Promise<void>;
     /** Cancel this scope's intents, retaining its bindings, handlers and shared connection. */
@@ -23,12 +29,14 @@ export type LspScopeAccess = Pick<LspSession, "getSnapshot" | "subscribe" | "flu
 }>;
 /** Optional host custom-message preparation, inside the feature's captured request lifetime. */
 export type LspPrepare = (scope: LspScopeAccess) => Promise<unknown>;
-export type LspWorkspaceScope = Omit<LspScopeAccess, "getSnapshot" | "subscribe"> & Observable<LspWorkspaceSnapshot> & Readonly<{
+export type LspWorkspaceScope = ScopeAccess & Observable<LspWorkspaceSnapshot> & Readonly<{
+    [beginReadRequest]: (interrupted: () => void, documents: () => Iterable<LspDocument>) => LspReadRequest;
+    [bindProject]: (documents: readonly DocumentSnapshot[]) => ReadonlyMap<string, LspDocument>;
     attachDocument: (id: DocumentId) => LspDocument;
     setDocuments: (documents: readonly DocumentSnapshot[]) => ReadonlyMap<string, LspDocument>;
     /** Read-only handle/snapshot validation, including Workspace edits not yet synchronized. */
     isDocumentCurrent: (document: LspDocument, snapshot: LspDocumentSnapshot) => boolean;
-    captureProject: (method?: LspFeature) => ReadonlyMap<string, LspDocumentCapture>;
+    captureProject: (method?: LspFeature, documents?: Iterable<LspDocument>) => ReadonlyMap<string, LspDocumentCapture>;
     /** Binding/connection authority independent of this scope's request generation; no new retention. */
     captureBinding: (document: LspDocument, method?: LspFeature) => LspBindingCapture | undefined;
     observeDiagnostics: (document: LspDocument) => Observable<LspDiagnosticState>;
@@ -55,12 +63,57 @@ export type LspWorkspaceOptions = LspSessionOptions & Readonly<{
 
 type Handler = Parameters<LspSession["onRequest"]>[1];
 type DocumentEntry = { id: DocumentId; language: DocumentLanguage; binding: LspDocument; lease: ResourceLease; active: boolean; queued: boolean; stop: () => void; users: Set<() => void>; diagnostics: Store<LspDiagnosticState> };
-type Scope = { active: boolean; generation: number; close: () => void; applyEdit: Handler | undefined; incoming: Set<() => void> };
+type Scope = { active: boolean; generation: number; close: () => void; applyEdit: Handler | undefined; interruptions: Set<() => void> };
 type CommandIntent = { scope: Scope; epoch: number; generation: number; registrationGeneration: number; sent: boolean; cancelled: boolean; listeners: Set<() => void> };
 const stale = () => staleRequest("Captured provider participation changed.");
 const cancelled = () => cancelledRequest("Provider feature scope was cancelled.");
 export function sameDocument(live: DocumentSnapshot | undefined, snapshot: DocumentSnapshot): boolean {
     return live?.resourceId === snapshot.resourceId && live.revision === snapshot.revision && live.buffer === snapshot.buffer && live.language === snapshot.language;
+}
+
+/** A feature or follow-up cancels only its own wire calls. Closing the scope interrupts every read. */
+function readRequest(source: LspWorkspaceScope, interruptions: Set<() => void>, interrupted: () => void,
+    documents: () => Iterable<LspDocument>): LspReadRequest {
+    const calls = new Set<() => void>();
+    let active = true;
+    const check = () => { if (!active) throw cancelled(); };
+    function dispose() {
+        active = false;
+        interruptions.delete(interrupt);
+        for (const cancel of calls) cancel();
+        calls.clear();
+    }
+    function interrupt() {
+        if (!active) return;
+        dispose();
+        interrupted();
+    }
+    function own<T extends { cancel: () => void; result: Promise<unknown> }>(call: T): T {
+        if (!active) call.cancel();
+        else calls.add(call.cancel);
+        const finish = () => calls.delete(call.cancel);
+        void call.result.then(finish, finish);
+        return call;
+    }
+    interruptions.add(interrupt);
+    return Object.freeze({
+        commandNames: source.commandNames,
+        request(method, params) {
+            check();
+            documents();
+            return own(source.request(method, params));
+        },
+        requestDocument(method, document, params) {
+            check();
+            return own(source.requestDocument(method, document, params));
+        },
+        async flush() {
+            check();
+            await source.flush(Array.from(documents()));
+            check();
+        },
+        dispose,
+    } satisfies LspReadRequest);
 }
 
 /** One explicitly owned provider connection and synchronization stream per workspace/configuration.
@@ -109,7 +162,7 @@ export class LspWorkspace {
         this.stopState = this.session.subscribe(() => {
             const next = this.session.getSnapshot();
             if (next.phase !== "ready" || next.epoch !== this.store.get().epoch) for (const entry of this.documents.values()) this.expireDiagnostics(entry);
-            if (this.command && (this.command.epoch !== next.epoch || this.command.registrationGeneration !== next.registrationVersion("workspace/executeCommand"))) this.endCommand(this.command, this.command.sent && this.command.epoch === next.epoch);
+            if (this.command && (this.command.epoch !== next.epoch || this.command.registrationGeneration !== next.registrationVersion(executeCommandMethod))) this.endCommand(this.command, this.command.sent && this.command.epoch === next.epoch);
             if (this.quarantinedEpoch !== next.epoch) this.quarantinedEpoch = undefined;
             this.store.set(this.snapshotState(), this.changed);
             // Bind/close operations finish their ownership changes before observers can react.
@@ -132,7 +185,7 @@ export class LspWorkspace {
             }
             this.queueDelivery();
         }) : undefined;
-        this.stopApply = options.applyEdit ? this.session.onRequest("workspace/applyEdit", (value, context) => {
+        this.stopApply = options.applyEdit ? this.session.onRequest(applyEditMethod, (value, context) => {
             const owner = this.command;
             if (!owner || !owner.sent || !this.commandCurrent(owner) || owner.epoch !== context.epoch || !owner.scope.applyEdit) return { applied: false, failureReason: "No available captured command review intent." };
             const isCurrent = () => context.isCurrent() && this.commandCurrent(owner);
@@ -143,7 +196,7 @@ export class LspWorkspace {
         }) : undefined;
     }
     private report(error: unknown): void { try { this.options.onError?.(error instanceof Error ? error : new Error(String(error))); } catch { /* Reporting cannot prevent cleanup. */ } }
-    private commandCurrent(intent: CommandIntent): boolean { const state = this.session.getSnapshot(); return this.command === intent && !intent.cancelled && intent.scope.active && intent.scope.generation === intent.generation && state.phase === "ready" && state.epoch === intent.epoch && state.registrationVersion("workspace/executeCommand") === intent.registrationGeneration; }
+    private commandCurrent(intent: CommandIntent): boolean { const state = this.session.getSnapshot(); return this.command === intent && !intent.cancelled && intent.scope.active && intent.scope.generation === intent.generation && state.phase === "ready" && state.epoch === intent.epoch && state.registrationVersion(executeCommandMethod) === intent.registrationGeneration; }
     private endCommand(intent: CommandIntent, quarantine: boolean, cancelled = true): void {
         if (quarantine) this.quarantinedEpoch = intent.epoch; if (cancelled) intent.cancelled = true;
         if (this.command === intent) this.command = undefined;
@@ -247,7 +300,7 @@ export class LspWorkspace {
         const session = this.session.getSnapshot();
         const connected = () => {
             const now = this.session.getSnapshot();
-            return scopeCurrent() && now.phase === "ready" && now.epoch === session.epoch && now.registrationVersion("textDocument/didChange") === session.registrationVersion("textDocument/didChange");
+            return scopeCurrent() && now.phase === "ready" && now.epoch === session.epoch && now.registrationVersion(didChangeMethod) === session.registrationVersion(didChangeMethod);
         };
         if (!isLspUri(uri)) throw new TypeError("Invalid target URI.");
         if (!connected() || !context.isCurrent()) throw stale();
@@ -285,7 +338,7 @@ export class LspWorkspace {
             const documents = this.workspace.observeDocument(doc.id), metadata = this.workspace.resourceForDocument(doc.id).metadata, access = metadata.getSnapshot();
             const entry = this.uris.get(uri);
             if (entry && entry.id !== doc.id && this.bindingCurrent(entry)) throw stale();
-            const capture = entry && this.live(entry) ? this.session.synchronized(entry.binding, "textDocument/didChange") : undefined;
+            const capture = entry && this.live(entry) ? this.session.synchronized(entry.binding, didChangeMethod) : undefined;
             const isCurrent = () => {
                 const now = metadata.getSnapshot(), owner = this.uris.get(uri);
                 return !released && connected() && documents.getSnapshot() === doc && now.capabilities === access.capabilities && now.editLock === access.editLock
@@ -311,7 +364,7 @@ export class LspWorkspace {
 
     createScope(): LspWorkspaceScope {
         this.writable(); if (this.scopes.size >= (this.options.maxScopes ?? wireLimits.scopes)) throw new RangeError("Provider scope limit exceeded.");
-        const scope: Scope = { active: true, generation: 0, close: () => {}, applyEdit: undefined, incoming: new Set() }, documents = new Map<string, LspDocument>();
+        const scope: Scope = { active: true, generation: 0, close: () => {}, applyEdit: undefined, interruptions: new Set() }, documents = new Map<string, LspDocument>();
         const handles = new Map<LspDocument, DocumentEntry>(), pending = new Set<{ cancel: () => void }>(), stops = new Set<() => void>();
         const documentCalls = new Map<LspDocument, Set<{ cancel: () => void }>>();
         let closedState: LspWorkspaceSnapshot | undefined;
@@ -346,7 +399,7 @@ export class LspWorkspace {
             documents.set(id, document); handles.set(document, entry); entry.users.add(close); return document;
         };
         const listen = (stop: () => void) => { const release = () => { stops.delete(release); stop(); }; stops.add(release); return release; };
-        const cancel = () => { if (!scope.active) return; scope.generation++; if (this.command?.scope === scope) this.endCommand(this.command, this.command.sent); for (const notify of [...scope.incoming]) notify(); for (const call of [...pending]) call.cancel(); };
+        const cancel = () => { if (!scope.active) return; scope.generation++; if (this.command?.scope === scope) this.endCommand(this.command, this.command.sent); for (const notify of [...scope.interruptions]) notify(); for (const call of [...pending]) call.cancel(); };
         scope.close = () => {
             if (!scope.active) return; cancel(); scope.active = false; closedState = Object.freeze({ ...this.getSnapshot(), phase: "disposed", commandAvailable: false });
             for (const stop of [...stops]) stop(); for (const document of [...documents.values()]) document.dispose(); this.scopes.delete(scope); scope.applyEdit = undefined;
@@ -356,23 +409,27 @@ export class LspWorkspace {
         const reserve = (): CommandIntent => {
             writable(); const state = this.session.getSnapshot();
             if (state.phase !== "ready" || this.command || this.quarantinedEpoch === state.epoch) throw staleRequest("Provider command lane requires an available captured intent or fresh connection.");
-            const intent: CommandIntent = { scope, epoch: state.epoch, generation: scope.generation, registrationGeneration: state.registrationVersion("workspace/executeCommand"), sent: false, cancelled: false, listeners: new Set() };
+            const intent: CommandIntent = { scope, epoch: state.epoch, generation: scope.generation, registrationGeneration: state.registrationVersion(executeCommandMethod), sent: false, cancelled: false, listeners: new Set() };
             this.command = intent; this.store.set(this.snapshotState(), this.changed); this.queueDelivery(); return intent;
         };
         const scopedHandler = (handler: Handler): Handler => (value, context) => new Promise((resolve, reject) => {
             const generation = scope.generation, listeners = new Set<() => void>(); let done = false, stopRemote = () => {};
             const isCurrent = () => current(generation) && context.isCurrent();
-            const finish = (complete: () => void) => { if (done) return; done = true; scope.incoming.delete(invalidated); stopRemote(); listeners.clear(); complete(); };
+            const finish = (complete: () => void) => { if (done) return; done = true; scope.interruptions.delete(invalidated); stopRemote(); listeners.clear(); complete(); };
             const invalidated = () => { if (isCurrent()) return;
                 for (const listener of [...listeners]) listener(); finish(() => reject(cancelled())); };
             const captured: LspRequestContext = Object.freeze({ id: context.id, epoch: context.epoch, get cancelled() { return context.cancelled || !isCurrent(); }, isCurrent,
                 onCancel: listener => { let stopped = false; const notify = () => { if (!stopped) { stopped = true; void Promise.resolve().then(listener).catch(error => this.report(error)); } };
                     if (!isCurrent()) notify(); else listeners.add(notify); return () => { stopped = true; listeners.delete(notify); }; } });
-            scope.incoming.add(invalidated); stopRemote = context.onCancel(invalidated); if (done) stopRemote(); else invalidated();
+            scope.interruptions.add(invalidated); stopRemote = context.onCancel(invalidated); if (done) stopRemote(); else invalidated();
             void Promise.resolve().then(() => { if (!isCurrent()) throw cancelled(); return handler(value, captured); }).then(
                 result => finish(() => { if (isCurrent()) resolve(result); else reject(cancelled()); }), error => finish(() => reject(error)));
         });
         const api: LspWorkspaceScope = Object.freeze({ ...state, reportError: error => this.report(error),
+            [beginReadRequest]: (interrupted, documents) => {
+                writable();
+                return readRequest(api, scope.interruptions, interrupted, documents);
+            },
             resolveTarget: (uri, context) => {
                 writable(); const generation = scope.generation;
                 return this.loadTarget(uri, context, () => current(generation));
@@ -391,7 +448,7 @@ export class LspWorkspace {
                     this.observers.add(release); return listen(release);
                 } });
             },
-            setDocuments: snapshots => {
+            [bindProject]: snapshots => {
                 writable(); const ids = new Set(snapshots.map(snapshot => snapshot.id)); if (ids.size !== snapshots.length) throw new Error("Provider project repeats a document.");
                 const uris = new Set<string>();
                 for (const snapshot of snapshots) { const live = this.workspace.document(snapshot.id), info = live.language;
@@ -399,11 +456,29 @@ export class LspWorkspace {
                     if (!info || uris.has(info.uri)) throw new Error("Provider project has unavailable or repeated URI mappings."); uris.add(info.uri);
                 }
                 const added: LspDocument[] = [];
-                try { for (const snapshot of snapshots) { const previous = documents.get(snapshot.id); const document = attach(snapshot.id); if (previous !== document) added.push(document); } }
+                const selected = new Map<string, LspDocument>();
+                try { for (const snapshot of snapshots) {
+                    const previous = documents.get(snapshot.id);
+                    const document = attach(snapshot.id);
+                    selected.set(snapshot.id, document);
+                    if (previous !== document) added.push(document);
+                } }
                 catch (error) { for (const document of added) document.dispose(); throw error; }
-                for (const [id, document] of [...documents]) if (!ids.has(id as DocumentId)) document.dispose(); return new Map(documents);
+                return selected;
             },
-            captureProject: method => { writable(); return new Map([...documents.values()].map(document => { const value = capture(document, method); if (!value) throw stale(); return [value.document.uri, value] as const; })); },
+            setDocuments: snapshots => {
+                const selected = api[bindProject](snapshots);
+                for (const [id, document] of documents) if (!selected.has(id)) document.dispose();
+                return selected;
+            },
+            captureProject: (method, selected = documents.values()) => {
+                writable();
+                return new Map(Array.from(selected, document => {
+                    const value = capture(document, method);
+                    if (!value) throw stale();
+                    return [value.document.uri, value] as const;
+                }));
+            },
             captureBinding: (document, method) => {
                 const entry = handles.get(document); if (!scope.active || !entry?.active || !this.live(entry)) return;
                 const value = this.session.synchronized(entry.binding, method); if (!value) return;
@@ -444,7 +519,7 @@ export class LspWorkspace {
             request: (method: string, params?: JsonValue): RpcCall<JsonValue> => { writable(); return track(this.session.request(method, params)); },
             notify: (method, params) => { writable(); this.session.notify(method, params); },
             onRequest: (method, handler) => {
-                writable(); if (method !== "workspace/applyEdit") return listen(this.session.onRequest(method, scopedHandler(handler)));
+                writable(); if (method !== applyEditMethod) return listen(this.session.onRequest(method, scopedHandler(handler)));
                 if (!this.options.applyEdit || scope.applyEdit) throw new TypeError("Duplicate or unadvertised edit handler."); scope.applyEdit = handler;
                 return listen(() => { if (scope.applyEdit === handler) scope.applyEdit = undefined; });
             },

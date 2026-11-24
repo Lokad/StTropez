@@ -1,3 +1,4 @@
+import { signatureHelpMethod } from "../protocol/lsp-methods.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
@@ -6,7 +7,7 @@ import { createLspSignatureClient, type LspSignatureClient } from "../protocol/l
 import type { LspSignatureContext } from "../protocol/lsp-language.ts";
 import type { LspSignature } from "../protocol/lsp-features.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
-import { captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
+import { requireLanguageView, captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import type { TextEditor } from "./text-editor.ts";
 import { revealCaretInPage } from "./input-caret.ts";
@@ -32,7 +33,7 @@ const changed = Object.freeze({ triggerKind: 3, isRetrigger: true } as const);
 /** Manual and advertised signature triggers on a single mounted editing surface. */
 export function createSignatureController(editor: TextEditor, provider: LspWorkspace, options: SignatureControllerOptions = {}): SignatureController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
-    if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Signature help requires a live document view.");
+    requireLanguageView(editor);
     const events = new AbortController(), notifications = workspace.createNotificationScope(), cell = new Store(idle, notifications);
     let client: LspSignatureClient | undefined, job: Request | undefined, armed = false, requested = 0, applied = 0;
     let queued: { timer: number; context: LspSignatureContext } | undefined;
@@ -180,7 +181,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
             || detail.selectionSet !== after.selectionSet || typeof detail.text !== "string" || !workspace.ownsDocumentView(view, tab)) return;
         const doc = workspace.document(view.documentId);
         let trigger = "";
-        for (const option of provider.queryFeatureOptions("textDocument/signatureHelp", doc)) {
+        for (const option of provider.queryFeatureOptions(signatureHelpMethod, doc)) {
             for (const list of [option.triggerCharacters, armed && option.retriggerCharacters]) {
                 if (Array.isArray(list)) for (const value of list) {
                     if (typeof value === "string" && value.length > trigger.length && value.length <= 8 && detail.text.endsWith(value)) trigger = value;
@@ -203,7 +204,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
     const stopProvider = provider.subscribe(() => {
         const current = job, next = provider.getSnapshot();
         const changedProvider = next.phase !== "ready" || next.epoch !== providerState.epoch
-                || next.registrationVersion("textDocument/signatureHelp") !== providerState.registrationVersion("textDocument/signatureHelp");
+                || next.registrationVersion(signatureHelpMethod) !== providerState.registrationVersion(signatureHelpMethod);
         providerState = next;
         if (current && changedProvider) delete current.argumentKey;
         if (current && (current.help && !current.help.isCurrent() || cell.get().signature && changedProvider)) queueMicrotask(() => expire(current));
