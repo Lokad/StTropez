@@ -488,7 +488,8 @@ in the same result list to give them one Return point. The history keeps the las
 
 `history.back(present)` asks the host to present the original `DocumentView`. Return its editor,
 `undefined` to skip it, or `"busy"` to keep it for a later attempt. Return skips closed views
-and replaced tabs. It restores the selections and scroll and reports `"restored"`, `"empty"` or
+and replaced tabs. Edits after a jump move the saved selections and scroll anchors with the source.
+Back restores them and reports `"restored"`, `"empty"` or
 `"busy"`. Pass `{ focus: true }` as the second argument to focus the editor on return.
 Dispose the history with its host.
 [Restoring a view after edits](viewport.md#scrolling-and-saved-views)

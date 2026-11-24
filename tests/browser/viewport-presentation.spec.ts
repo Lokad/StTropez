@@ -229,6 +229,31 @@ test("remounting after edits uses the retained selection, maps a fresh view or c
         foreign: null, kept: "current", retained: true, sameRevision: "current", caret: 1 });
 });
 
+test("Back restores the origin selections across edits at a same-file destination", async ({ page }) => {
+    const result = await page.evaluate(async () => {
+        const path = "/presentation-fixture/";
+        const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { mountTextEditor, createNavigationHistory } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const workspace = new Workspace();
+        const { documentId } = workspace.createTextResource({ scope: "test", resource: "jump", variant: "source" }, "Jump",
+            { value: "abc\norigin line\n" });
+        const host = document.body.appendChild(document.createElement("section"));
+        const editor = mountTextEditor(host, workspace, documentId), history = createNavigationHistory(workspace);
+        try {
+            const { view } = editor, revision = workspace.document(documentId).revision;
+            view.setSelections(revision, [{ anchor: 10, head: 4 }, { anchor: 13, head: 13 }], 1);
+            const origin = history.capture(editor)!;
+            origin.visit(() => view.setSelection(revision, { anchor: 1, head: 1 }));
+            for (const insert of ["xx", "y"]) workspace.edit({ documentId, expectedRevision: workspace.document(documentId).revision,
+                edits: [{ from: 1, to: 1, insert }], origin: "human" });
+            const restored = history.back(() => editor);
+            const { ranges, primary } = view.getSnapshot().selectionSet;
+            return { restored, primary, ranges: ranges.map(({ anchor, head }) => [anchor, head]), depth: history.getSnapshot() };
+        } finally { history.dispose(); editor.dispose(); host.remove(); }
+    });
+    expect(result).toEqual({ restored: "restored", primary: 1, ranges: [[13, 7], [16, 16]], depth: 0 });
+});
+
 test("revealing a source range in a read-only editor aligns the painted rows and preserves the caller's focus", async ({ page }) => {
     const result = await page.evaluate(async () => {
         const path = "/presentation-fixture/";
