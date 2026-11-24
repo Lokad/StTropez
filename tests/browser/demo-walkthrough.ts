@@ -286,7 +286,9 @@ export async function runDemoDocumentation(page: Page, url = "/") {
     await warning.getByRole("button", { name: /^details\.ts:\d+:\d+ · legacy-price:/ }).click(); await page.keyboard.insertText("currentPrice");
     await expect(warning).toHaveCount(0); await expect(error).toBeVisible();
     await details.press("Control+z"); await expect(warning).toBeVisible();
-    await page.locator("#sample").selectOption("pricing"); await expect(problems).toContainText("No problems in this project.");
+    await page.locator("#sample").selectOption("pricing");
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    await expect(problems).toContainText("No problems in this project.");
     await page.context().unroute(diagnosticGuide);
 }
 
@@ -609,9 +611,9 @@ export async function runDemoEditingRules(page: Page, url = "/") {
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "/", ctrlKey: true, bubbles: true, cancelable: true }));
         document.querySelector<HTMLButtonElement>("#save")!.click();
     });
-    await expect(page.locator("#status")).toHaveText("Save skipped while an edit was pending. Save again to keep your changes.");
     await source.press("Control+Home"); await expect(page.locator("#cursor")).toHaveText("Ln 1, Col 1");
     await expect.poll(async () => (await source.inputValue()).startsWith("// pending")).toBe(true);
+    await expect(page.locator("#status")).toHaveText("Unsaved changes.");
     await page.getByRole("button", { name: "Save locally", exact: true }).click();
     await expect(page.locator("#status")).toContainText("Saved in this browser");
     await expect(page.locator("#files")).not.toContainText("●");
