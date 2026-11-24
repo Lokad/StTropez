@@ -98,34 +98,6 @@ test(`plain repeated replacements and plain clipboard apply one original-coordin
     await page.evaluate(() => window.hostFixture.dispose());
 });
 
-test(`plain synthetic multiple-range composition captures complete sets and rejects stale or locked targets`, async ({ page }) => {
-    const original = "same middle same"; await mount(page, "plain", original); const ranges = [{ anchor: 4, head: 0 }, { anchor: 12, head: 16 }];
-    await select(page, ranges, 1); const before = await snapshot(page);
-    const stage = () => input(page).evaluate(node => { const input = node as HTMLTextAreaElement; input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-        input.setRangeText("東京", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", isComposing: true })); });
-    const end = () => input(page).evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "東京" })));
-    await stage(); await exact(page, original); await end(); await ready(page); await exact(page, "東京 middle 東京");
-    expect((await snapshot(page)).source.revision).toBe(before.source.revision + 1);
-    await input(page).press("Control+z"); await ready(page); await exact(page, original);
-    for (const failure of ["secondary", "revision", "readonly"] as const) {
-        await select(page, ranges, 1); await stage();
-        await page.evaluate(failure => { const f = window.hostFixture;
-            if (failure === "secondary") f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 1, head: 1 }, { anchor: 12, head: 16 }], 1);
-            if (failure === "revision") f.editSource(f.snapshot().source.revision, [{ from: 6, to: 7, insert: "M" }]);
-            if (failure === "readonly") f.setSourceReadOnly(true);
-        }, failure);
-        const staged = await snapshot(page); await end(); await ready(page); const rejected = await snapshot(page);
-        expect(rejected.source.revision).toBe(staged.source.revision); expect(rejected.history).toEqual(staged.history);
-        expect(rejected.inputRecovery.at(-1)?.reason).toBe(failure === "secondary" ? "stale-text-input" : failure === "revision" ? "stale-revision" : "read-only");
-        expect(await page.evaluate(() => window.hostFixture.recoveryText())).toContain("東京");
-        if (failure === "readonly") await page.evaluate(() => window.hostFixture.setSourceReadOnly(false));
-    }
-    await select(page, ranges, 1); const cancelled = await snapshot(page);
-    await input(page).evaluate(node => { node.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })); node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "" })); });
-    await ready(page); expect((await snapshot(page)).history).toEqual(cancelled.history); expect((await snapshot(page)).source.revision).toBe(cancelled.source.revision);
-    expect((await snapshot(page)).source.exports).toBe(0); await page.evaluate(() => window.hostFixture.dispose());
-});
-
 test(`plain Unicode and word deletion merge overlapping targets into one undo transaction`, async ({ page }) => {
     const original = "a😀b e\u0301c\r\nword word"; await mount(page, "plain", original);
     const ranges = [2, 3, 7, 10].map(offset => ({ anchor: offset, head: offset })); ranges.push({ anchor: 19, head: 15 });

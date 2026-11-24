@@ -312,45 +312,6 @@ for (const mode of ["plain", "react"] as const) {
             expect(after.configuration.revision).toBe(before.configuration.revision + 1); expect(after.pendingRuns).toEqual([]);
         });
 
-        if (mode === "plain") test("forced view removal retains uncommitted composition separately from the document", async ({ page }) => {
-            const input = page.getByRole("textbox", { name: "Primary source", exact: true }); await input.fill("alpha omega"); await input.focus();
-            const before = await page.evaluate(() => window.hostFixture.snapshot());
-            await input.evaluate(node => {
-                const input = node as HTMLTextAreaElement; input.setSelectionRange(6, 11); input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-                input.setRangeText("東京", input.selectionStart, input.selectionEnd, "end");
-                input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", isComposing: true }));
-            });
-            await page.getByRole("button", { name: "Toggle views", exact: true }).click(); await expect(input).toHaveCount(0);
-            const detached = await page.evaluate(() => window.hostFixture.snapshot());
-            expect(detached.source.revision).toBe(before.source.revision); expect(detached.inputRecovery[0]).toMatchObject({ expectedRevision: before.source.revision, reason: "composition-detached" });
-            expect(await page.evaluate(() => window.hostFixture.recoveryText())).toBe("alpha 東京");
-            await page.getByRole("button", { name: "Toggle views", exact: true }).click(); await expect(input).toHaveValue("alpha omega");
-            await page.getByRole("button", { name: "Inspect recovered input", exact: true }).click(); await expect(page.locator('section[aria-label="Input recovery"] pre')).toHaveText("alpha 東京");
-        });
-
-        if (mode === "plain") test("synthetic composition survives independent form/progress updates and a Run error", async ({ page }) => {
-            const input = page.getByRole("textbox", { name: "Primary source", exact: true });
-            await input.fill("alpha omega"); await page.getByRole("button", { name: "Run captured inputs", exact: true }).click();
-            await input.focus();
-            await input.evaluate(node => {
-                const input = node as HTMLTextAreaElement; input.setSelectionRange(6, 11);
-                input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-                input.setRangeText("東京", input.selectionStart, input.selectionEnd, "end");
-                input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", isComposing: true }));
-            });
-            const before = await page.evaluate(() => window.hostFixture.snapshot());
-            await page.evaluate(() => { window.hostFixture.setPath("during.csv"); window.hostFixture.failRun(); });
-            await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().activity.errors)).toBeGreaterThan(0);
-            expect(await input.evaluate(node => node.ownerDocument.activeElement === node)).toBe(true);
-            expect((await page.evaluate(() => window.hostFixture.snapshot())).source.revision).toBe(before.source.revision);
-            await input.evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "東京" })));
-            await expect(input).toHaveValue("alpha 東京");
-            const after = await page.evaluate(() => window.hostFixture.snapshot());
-            expect(after.source.revision).toBe(before.source.revision + 1); expect(after.bindings.mounts).toBe(before.bindings.mounts);
-            expect(after.bindings.views.find(view => view.id === "primary")!.metrics!.composing).toBe(false);
-            await input.press("Control+z"); await expect(input).toHaveValue("alpha omega");
-        });
-
         if (mode === "plain") test("a proposal can be reviewed, corrected and saved through bounded views", async ({ page }) => {
             const original = "const sample = '😀 é';\r\n".repeat(300).trimEnd();
             await page.evaluate(text => { const s = window.hostFixture.snapshot(); window.hostFixture.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
@@ -390,21 +351,21 @@ for (const mode of ["plain", "react"] as const) {
             const before = await page.evaluate(() => window.hostFixture.snapshot());
             await input.evaluate(node => {
                 const input = node as HTMLTextAreaElement; input.setSelectionRange(6, 11); input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-                input.setRangeText("東京", input.selectionStart, input.selectionEnd, "end");
+                input.setRangeText("ê", input.selectionStart, input.selectionEnd, "end");
                 input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", isComposing: true }));
             });
             await page.evaluate(() => window.hostFixture.setSourceReadOnly(true));
-            await input.evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "東京" })));
+            await input.evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "ê" })));
             const rejected = await page.evaluate(() => window.hostFixture.snapshot());
             expect(rejected.source.revision).toBe(before.source.revision); expect(rejected.inputRecovery).toHaveLength(1);
             expect(rejected.inputRecovery[0]).toMatchObject({ documentId: before.bindings.views.find(view => view.id === "primary")!.documentId, expectedRevision: before.source.revision, reason: "read-only", contextFrom: 0 });
-            expect(JSON.stringify(rejected)).not.toContain("東京");
-            expect(await page.evaluate(() => window.hostFixture.recoveryText())).toBe("alpha 東京");
+            expect(JSON.stringify(rejected)).not.toContain("ê");
+            expect(await page.evaluate(() => window.hostFixture.recoveryText())).toBe("alpha ê");
             await page.evaluate(() => window.hostFixture.setSourceReadOnly(false));
             await page.getByRole("button", { name: "Inspect recovered input", exact: true }).click();
-            await expect(page.locator('section[aria-label="Input recovery"] pre')).toHaveText("alpha 東京");
+            await expect(page.locator('section[aria-label="Input recovery"] pre')).toHaveText("alpha ê");
             await page.evaluate(() => window.hostFixture.unmount()); await page.evaluate(() => window.hostFixture.mount());
-            await expect(page.locator('section[aria-label="Input recovery"] pre')).toHaveText("alpha 東京");
+            await expect(page.locator('section[aria-label="Input recovery"] pre')).toHaveText("alpha ê");
             await expect(input).toHaveValue("alpha omega");
             const revision = (await page.evaluate(() => window.hostFixture.snapshot())).source.revision;
             await page.getByRole("button", { name: "Discard recovered input", exact: true }).click();

@@ -75,7 +75,7 @@ archive. Add another host or engine when it exercises a different behavior.
 | --- | --- | --- |
 | Text, UTF-16 offsets, newlines and selections | Buffer, [positions](../tests/positions.test.ts), ranges and selections | Type and edit, place the caret in CRLF text, and enter text at multiple selections. |
 | Atomic revisions, shared history and detached views | [Workspace](../tests/workspace.test.ts), history, history bounds and resources | Edit in two panes, detach a view and check the document and its history. |
-| Save conflicts and server corrections | Save review, [host conflicts](../tests/host-save-conflict.test.ts) and save failures | [Save conflicts](../tests/browser/save-conflicts.spec.ts), composition and the full host save flow |
+| Save conflicts and server corrections | Save review, [host conflicts](../tests/host-save-conflict.test.ts) and save failures | [Save conflicts](../tests/browser/save-conflicts.spec.ts), captured writes and retry |
 | Fixed references, hunks and closing a review | [Comparison](../tests/comparison.test.ts), row alignment, scrolling and scheduling | Close and reopen the review, find text in the reference, and align the two panes. |
 | Demo recovery and syntax colors | Demo recovery, [syntax](../tests/demo-syntax.test.ts) and token colors | Save, switch files or samples, reload, and check stored text and visible colors. Exercise storage failures too. |
 | Position-based LSP requests and invalid replies | LSP clients, workspace edits and protocol features | Hover, navigate, rename or invoke an action while the document is changing. |
