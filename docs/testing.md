@@ -34,7 +34,7 @@ npm run test:browsers -- --project=chromium --project=firefox --project=webkit t
 | `npm run bench:pilot` | Integrated input, comparison and save/conflict workloads |
 | `npm run bench:all` | Run the larger set of benchmarks, or list them with `-- --list` |
 
-Source tests use `STTROPEZ_PORT`. Static tests use `STTROPEZ_DEMO_PORT` locally or
+Source tests default to port 4183. Set `STTROPEZ_PORT` to override it. Static tests use `STTROPEZ_DEMO_PORT` locally or
 `STTROPEZ_DEMO_URL` for a deployed site. Give tests their own port on a shared desktop.
 
 Run `npm run typecheck` after checkout, or add `-- --force` for a clean recheck. Each source file

@@ -5,11 +5,11 @@ import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import { libraryModules, libraryCss, regexWorker } from "./library-entries.mjs";
 
+const runtimeByteBudget = 585_186;
+
 export async function buildLibrary() {
     const output = fileURLToPath(new URL("../dist", import.meta.url));
     if (output !== resolve("dist")) throw new Error("Build must run from the project root.");
-    // Only this known generated directory is cleared; stale chunks must not enter packages.
-    await rm(output, { recursive: true, force: true });
     const main = await build({ entryPoints: Object.fromEntries(libraryModules.map(entry => [entry.output.slice(0, -3), entry.source])),
         outdir: "dist", bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022",
         minify: true, metafile: true, write: false });
@@ -22,11 +22,18 @@ export async function buildLibrary() {
     for (const input of inputs) {
         if (!input.replaceAll("\\", "/").startsWith("src/")) throw new Error(`Unexpected runtime input: ${input}`);
     }
-    let bytes = 0, gzipBytes = 0;
-    for (const file of results.flatMap(result => result.outputFiles)) {
+    const files = results.flatMap(result => result.outputFiles);
+    const bytes = files.reduce((sum, file) => sum + file.contents.length, 0);
+    if (bytes > runtimeByteBudget) {
+        throw new Error(`Runtime JavaScript is ${bytes} bytes, exceeding the ${runtimeByteBudget}-byte budget.`);
+    }
+    // Only this known generated directory is cleared; stale chunks must not enter packages.
+    await rm(output, { recursive: true, force: true });
+    let gzipBytes = 0;
+    for (const file of files) {
         await mkdir(dirname(file.path), { recursive: true });
         await writeFile(file.path, file.contents);
-        bytes += file.contents.length; gzipBytes += gzipSync(file.contents, { level: 9 }).length;
+        gzipBytes += gzipSync(file.contents, { level: 9 }).length;
     }
     await copyFile(libraryCss.source, `dist/${libraryCss.output}`);
     await copyFile("LICENSE.txt", "dist/LICENSE.txt");
