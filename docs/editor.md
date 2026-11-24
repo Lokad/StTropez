@@ -142,9 +142,6 @@ A completed call returns `{ status: "completed", value }`. A replaced target, co
 cancellation returns `{ status: "stale" }`. Pass a host `signal` to cancel a request. The handle
 expires when the callback ends. With `write: true`, `op.apply` stages one edit. It commits with human edit authority when the callback
 finishes and all captured results are current. A throw or cancellation discards the staged edit.
-For hover or other requests that replace each other, create one lane with `editor.latestOperation()`.
-`lane.run(options, work)` cancels its previous pending request. Other lanes run independently.
-`lane.cancel()` dismisses a request and `lane.dispose()` retires the lane.
 
 Provider and validation errors propagate to the caller. The editor releases the capture on every exit.
 

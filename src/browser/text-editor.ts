@@ -35,8 +35,8 @@ import { lineColumnScanner, planLanguageEdit, resolveLanguageConfiguration } fro
 import { exportText, lineContentEnd, lineEnding } from "../core/newlines.ts";
 import type { EditingCommand, LanguageConfiguration, ResolvedLanguageConfiguration } from "../core/language-edits.ts";
 import { captureInsertion } from "./captured-insertion.ts";
-import { createOperationLane, runEditorOperation } from "./editor-operation.ts";
-import type { EditorOperation, EditorOperationLane, EditorOperationOptions, EditorOperationOutcome } from "./editor-operation.ts";
+import { runEditorOperation } from "./editor-operation.ts";
+import type { EditorOperation, EditorOperationOptions, EditorOperationOutcome } from "./editor-operation.ts";
 import type { CapturedInsertion } from "./captured-insertion.ts";
 import { mountBracketHighlights } from "./bracket-highlights.ts";
 import type { BracketHighlights } from "./bracket-highlights.ts";
@@ -86,7 +86,6 @@ export type EditorEditIntent = typeof editIntents[number];
 type PasteOwner = { handler: EditorPasteHandler; pending?: CapturedInsertion };
 export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HTMLDivElement; workspace: Workspace; tab: TabTarget | undefined; signal: AbortSignal; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
     operation: <T>(options: EditorOperationOptions, work: (op: EditorOperation) => T | PromiseLike<T>) => Promise<EditorOperationOutcome<T>>;
-    latestOperation: () => EditorOperationLane;
     /** One pending host insertion, invalidated by later editing/selection/authority/lifecycle changes. */
     captureInsertion: (kind?: "paste" | "replace") => CapturedInsertion | undefined;
     registerPasteHandler: (handler: EditorPasteHandler) => () => void;
@@ -1646,7 +1645,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             stateSubscriptions.add(stop); return stop;
         },
         operation: (options, work) => runEditorOperation(editor, options, work),
-        latestOperation: () => createOperationLane(editor),
         captureInsertion: (kind = "paste") => {
             hostInsertion?.cancel();
             if (!canCaptureInsertion()) return;

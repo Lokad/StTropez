@@ -1,4 +1,4 @@
-import type { TextEditor } from "../../src/browser/index.ts";
+import { captureViewRequest, type CapturedViewRequest, type TextEditor } from "../../src/browser/index.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 
 const shortcuts = {
@@ -26,36 +26,63 @@ export function bindPopupCommands(scope: CleanupScope, editor: TextEditor, popup
 export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, output: HTMLElement,
     execute: (command: Command, menu: boolean) => void, reportError: (error: unknown) => void) {
     type Feedback = (command: "complete" | "signature", message: string, finished: boolean) => void;
-    const lane = editor.latestOperation(); scope.defer(lane.dispose);
+    let pending: CapturedViewRequest<TextEditor["tab"]> | undefined;
     let phase: "starting" | "ready" | "failed" = "starting";
     let resume: (() => void) | undefined, receive: Feedback | undefined;
     const show = (message: string) => { output.textContent = message; output.hidden = !message; };
+    function cancel() {
+        const source = pending;
+        if (!source) return;
+        pending = undefined;
+        resume = undefined;
+        receive = undefined;
+        show("");
+        // Feedback can finish inside a controller notification. Release the lease after delivery.
+        queueMicrotask(source.cancel);
+    }
+    scope.defer(cancel);
+    function capture(signal?: AbortSignal) {
+        if (signal?.aborted || editor.signal.aborted) return;
+        const source = captureViewRequest(editor.workspace, editor.tab, editor.view, { available: () => {
+            const input = editor.activity();
+            return editor.element.isConnected && !editor.getSnapshot().disabled && !input.disposed
+                && !input.composing && !input.pendingInput && !input.pendingCommand;
+        } });
+        if (!source) return;
+        pending = source;
+        const expire = () => { if (pending === source) cancel(); };
+        source.signal.addEventListener("abort", expire, { once: true });
+        signal?.addEventListener("abort", expire, { once: true, signal: source.signal });
+        return source;
+    }
     const run = (command: Command, menu = true) => {
-        lane.cancel();
+        cancel();
         if (menu) editor.focus();
         if (phase === "failed" || !editor.getSnapshot().focused) return;
         if (phase === "ready" && command !== "complete" && command !== "signature") { execute(command, menu); return; }
-        void lane.run({}, async op => {
-            op.signal.addEventListener("abort", () => { resume = undefined; receive = undefined; show(""); }, { once: true });
-            const dispatch = () => {
-                resume = undefined; show("");
-                if (command !== "complete" && command !== "signature") { execute(command, menu); return; }
-                // Keep an empty-result message at its originating caret until the user leaves it.
-                return new Promise<void>(done => {
-                    op.signal.addEventListener("abort", () => done(), { once: true });
-                    receive = (feature, message, finished) => {
-                        if (feature !== command) return;
-                        show(message);
-                        if (finished) { receive = undefined; if (!message) done(); }
-                    };
-                    execute(command, menu);
-                });
-            };
-            if (phase === "starting") {
-                show(shortcuts[command][0] + " when TypeScript is ready…");
-                await op.step(new Promise<void>(ready => { resume = ready; }), dispatch);
-            } else await dispatch();
-        }).catch(reportError);
+        const source = capture();
+        if (!source) return;
+        const dispatch = () => {
+            if (pending !== source || !source.isCurrent()) return;
+            resume = undefined;
+            show("");
+            if (command === "complete" || command === "signature") {
+                receive = (feature, message, finished) => {
+                    if (feature !== command || pending !== source || !source.isCurrent()) return;
+                    show(message);
+                    if (finished) {
+                        receive = undefined;
+                        if (!message) cancel();
+                    }
+                };
+            } else cancel();
+            try { execute(command, menu); }
+            catch (error) { if (pending === source) cancel(); reportError(error); }
+        };
+        if (phase === "starting") {
+            show(shortcuts[command][0] + " when TypeScript is ready…");
+            resume = dispatch;
+        } else dispatch();
     };
     for (const command of Object.keys(shortcuts) as Command[]) {
         const [label, ...keys] = shortcuts[command];
@@ -64,20 +91,18 @@ export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, o
             run: from => run(command, from === "menu") }, { keys, priority: 50 }).dispose);
     }
     scope.defer(editor.commands.register({ id: "demo.language.dismiss", label: "Dismiss language request",
-        enabled: () => !!resume || !!receive || !output.hidden, run: () => { const waiting = !!resume; lane.cancel(); return waiting; } },
+        enabled: () => !!resume || !!receive || !output.hidden, run: () => { const waiting = !!resume; cancel(); return waiting; } },
         { keys: ["Escape"], priority: 50 }).dispose);
     const events = new AbortController(); scope.defer(() => events.abort());
-    scope.defer(editor.subscribe(() => { if (!editor.getSnapshot().focused) lane.cancel(); }));
-    editor.onEditIntent(lane.cancel, events.signal);
-    editor.element.ownerDocument.defaultView!.addEventListener("blur", lane.cancel, { signal: events.signal });
+    scope.defer(editor.subscribe(() => { if (!editor.getSnapshot().focused) cancel(); }));
+    editor.onEditIntent(cancel, events.signal);
+    editor.element.ownerDocument.defaultView!.addEventListener("blur", cancel, { signal: events.signal });
     return {
-        ready() { phase = "ready"; resume?.(); },
-        failed() { phase = "failed"; lane.cancel(); },
+        ready() { phase = "ready"; if (resume) queueMicrotask(resume); },
+        failed() { phase = "failed"; cancel(); },
         notice(message: string, signal: AbortSignal) {
-            void lane.run({ signal }, op => new Promise<void>(done => {
-                show(message);
-                op.signal.addEventListener("abort", () => { show(""); done(); }, { once: true });
-            })).catch(reportError);
+            cancel();
+            if (capture(signal)) show(message);
         },
         feedback: (...args: Parameters<Feedback>) => receive?.(...args),
     };

@@ -54,41 +54,28 @@ test("an async editor operation applies once and releases every expired or faile
         const abort = new AbortController();
         const abandoned = f.operation({ signal: abort.signal }, () => new Promise<void>(() => {}));
         abort.abort(); const interrupted = await abandoned;
-        const lane = f.latestOperation(), independent = f.latestOperation();
-        let finish!: () => void;
-        const other = independent.run({}, op => op.step(new Promise<void>(resolve => { finish = resolve; })));
-        const first = lane.run({ write: true }, async op => {
-            op.apply({ edits: [{ from: 0, to: 0, insert: "superseded" }] });
-            await op.step(new Promise<void>(() => {}));
-        });
-        const second = lane.run({ signal: new AbortController().signal }, op => op.document.revision);
-        finish();
-        const latest = [(await first).status, (await second).status, (await other).status];
-        lane.dispose(); independent.dispose();
-        latest.push((await lane.run({}, () => 0)).status);
         const after = ownership(), text = f.range(0, 4);
         const replaced = f.operation({ write: true }, async op => {
             await op.step(Promise.resolve()); return op.apply(edit);
         });
         f.replacePrimary();
-        return { before, retained, after, applied, stale, withdrawn, error, interrupted, cancelled, continued, text, latest, replaced: await replaced };
+        return { before, retained, after, applied, stale, withdrawn, error, interrupted, cancelled, continued, text, replaced: await replaced };
     });
     expect(result.applied).toEqual({ status: "completed", value: [true, false] });
     for (const outcome of [result.stale, result.withdrawn, result.interrupted, result.replaced]) expect(outcome).toEqual({ status: "stale" });
     expect(result.retained[0]).toBe(result.before[0]! + 1);
     expect(result.after).toEqual(result.before);
-    expect(result.latest).toEqual(["stale", "completed", "completed", "stale"]);
     expect(result).toMatchObject({ error: "RangeError", cancelled: 1, continued: false, text: "Xbc!" });
 });
 
 test("operation delivery runs at validation and releases pending presentation on cancellation", async ({ page }) => {
     const observed = await page.evaluate(async () => {
-        const f = window.editingFixture, lane = f.latestOperation();
+        const f = window.editingFixture;
         const leases = () => f.snapshot().diagnostics.leases;
         const before = leases(), abort = new AbortController();
         let atDelivery: boolean | undefined, cancelledCalls = 0, continued = false;
         const reply = { isCurrent: () => { queueMicrotask(() => abort.abort()); return !abort.signal.aborted; } };
-        const pending = lane.run({ signal: abort.signal }, async op => {
+        const pending = f.operation({ signal: abort.signal }, async op => {
             await op.step({ result: Promise.resolve(reply), cancel: () => { cancelledCalls++; } }, value => {
                 atDelivery = value === reply && !abort.signal.aborted;
                 return new Promise<void>(() => {});
@@ -96,7 +83,6 @@ test("operation delivery runs at validation and releases pending presentation on
             continued = true;
         });
         const { status } = await pending;
-        lane.dispose();
         return { status, atDelivery, cancelledCalls, continued, before, after: leases() };
     });
     expect(observed).toMatchObject({ status: "stale", atDelivery: true, cancelledCalls: 0, continued: false });

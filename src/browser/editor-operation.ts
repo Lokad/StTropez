@@ -14,22 +14,6 @@ export type EditorOperation = Readonly<{
 }>;
 export type EditorOperationOptions = Readonly<{ write?: boolean; signal?: AbortSignal }>;
 export type EditorOperationOutcome<T> = Readonly<{ status: "completed"; value: T } | { status: "stale" }>;
-export type EditorOperationLane = Readonly<{ run: TextEditor["operation"]; cancel: () => void; dispose: () => void }>;
-
-/** One host feature can replace its pending request without cancelling another feature. */
-export function createOperationLane(editor: TextEditor): EditorOperationLane {
-    let pending: AbortController | undefined, disposed = false;
-    const cancel = () => { const previous = pending; pending = undefined; previous?.abort(); };
-    return Object.freeze({ cancel, dispose: () => { disposed = true; cancel(); }, run: async (options, work) => {
-        if (disposed || editor.signal.aborted) return stale;
-        const previous = pending, next = new AbortController();
-        pending = next; previous?.abort();
-        try {
-            const signal = options.signal ? AbortSignal.any([options.signal, next.signal]) : next.signal;
-            return await editor.operation({ ...options, signal }, work);
-        } finally { if (pending === next) pending = undefined; }
-    } });
-}
 
 /** A private interruption unwinds the callback at its await. Callers receive a typed outcome. */
 export async function runEditorOperation<T>(editor: TextEditor, options: EditorOperationOptions,

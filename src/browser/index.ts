@@ -7,7 +7,7 @@ export type { EditRefusedDetail, InputConflictDetail, TypedTextDetail } from "./
 export { mountTextViewport } from "./viewport.ts";
 export type { DecorationLayer, DecorationLayerOptions, DecorationLayers, DecorationProvider } from "./decoration-layers.ts";
 export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RenderedRowBounds, RevealAlignment, RevealOptions, TextViewport, TextViewportOptions, ViewportSettings, ViewportActivity, ViewportDiagnostics, ViewportSnapshot, ViewportInputBinding } from "./viewport.ts";
-export type { EditorOperation, EditorOperationLane, EditorOperationOptions, EditorOperationOutcome } from "./editor-operation.ts";
+export type { EditorOperation, EditorOperationOptions, EditorOperationOutcome } from "./editor-operation.ts";
 export { mountTextEditor } from "./text-editor.ts";
 export { mountAnchoredOverlay } from "./anchored-overlay.ts";
 export type { AnchoredOverlay, AnchoredOverlayOptions, OverlayAnchor, OverlayPosition, OverlayDismissEvent } from "./anchored-overlay.ts";
