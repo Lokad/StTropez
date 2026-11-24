@@ -372,6 +372,36 @@ test("right-click targets the word under the pointer and preserves a selection c
     await expect(rows.first()).toHaveText("YX line");
 });
 
+test("using the editor scrollbar keeps typing in the focused host field", async ({ page }, info) => {
+    test.skip(info.project.name !== "chromium-scrollbars", "Requires a native scrollbar track.");
+    await page.goto("/comparison/");
+    await page.evaluate(() => {
+        const f = window.comparisonFixture;
+        f.setText("target\n" + "body\n".repeat(500));
+        f.begin("accept"); f.finish("accept");
+        const field = document.createElement("input");
+        field.id = "host-query";
+        document.body.prepend(field);
+        field.focus();
+    });
+    await ready(page);
+    const track = await page.evaluate(() => {
+        const viewport = window.comparisonFixture.review.panes.working.viewport.element;
+        const box = viewport.getBoundingClientRect(), left = box.left + viewport.clientLeft + viewport.clientWidth;
+        return { x: (left + box.right - viewport.clientLeft) / 2, top: box.top + viewport.clientTop, height: viewport.clientHeight };
+    });
+    await page.mouse.move(track.x, track.top + 23);
+    await page.mouse.down();
+    await page.mouse.move(track.x, track.top + track.height / 3, { steps: 5 });
+    await page.mouse.up();
+    await expect.poll(() => page.evaluate(() => window.comparisonFixture.review.panes.working.viewport.element.scrollTop)).toBeGreaterThan(0);
+    await expect(page.locator("#host-query")).toBeFocused();
+    await page.mouse.click(track.x, track.top + track.height * .8);
+    await page.keyboard.type("price");
+    await expect(page.locator("#host-query")).toHaveValue("price", { timeout: 1000 });
+    expect(await page.evaluate(() => window.comparisonFixture.range(0, 6))).toBe("target");
+});
+
 test("typing after a native scrollbar drag or track click edits the selected source", async ({ page }, info) => {
     test.skip(info.project.name !== "chromium-scrollbars", "Requires a native scrollbar track.");
     await page.goto("/editing/");

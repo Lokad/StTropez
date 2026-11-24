@@ -927,6 +927,10 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const box = clientBox(root);
         scrollbarPressed = event.clientX >= box.right || event.clientY >= box.bottom;
     }, { capture: true, signal: listeners.signal });
+    root.addEventListener("mousedown", event => {
+        // The native track scrolls independently of mousedown's focus default.
+        if (inputOwner && scrollbarPressed && event.target === root && event.button === 0) event.preventDefault();
+    }, { signal: listeners.signal });
     root.addEventListener("scroll", () => {
         if (revealSettling !== undefined) {
             if (correctScrollbarReveal()) settleScrollbarReveal();

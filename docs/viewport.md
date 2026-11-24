@@ -127,7 +127,8 @@ document that fits and keeps a minimum grab height on long files. Style its edge
 clamp to zero and nonfinite values throw. Large logical extents fit bounded physical scrollbars. Use
 `revealOffset(offset, RevealOptions)` to expand a hidden target and schedule scrolling. Each axis
 accepts `"center"` (default) or `"nearest"`. Nearest keeps a visible caret in place.
-Typing after a scrollbar drag or track click brings the edited caret back into view, including during a track animation.
+A scrollbar drag or track click preserves keyboard focus. When the editor has focus,
+typing brings the edited caret back into view, including during a track animation.
 Vertical `"center-if-outside"` keeps a fully visible row in place and centers it when it falls outside the viewport.
 `affinity` takes
 `"before"` or `"after"` (default). Ctrl/Meta-wheel passes through to browser zoom.
