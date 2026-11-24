@@ -244,7 +244,8 @@ Idle local allocations expire after two minutes.
 
 Press Ctrl+S or Cmd+S to save the whole sample in IndexedDB, including files you haven’t opened.
 Holding the shortcut submits one save. An input field can handle the shortcut itself. Saving keeps the
-current tabs and selection. If you type during a save, the footer reports that the later edits
+current tabs and selection. If you save while a replacement is pending, the footer asks you to save
+again when the edit finishes. If you type during a save, the footer reports that the later edits
 are unsaved. Save, Restore draft and Keep current files return
 keyboard focus to the source editor or the last active comparison pane as soon as you activate them.
 Recovery and conflict actions appear below the editor. **Reset sample** restores the open sample’s original

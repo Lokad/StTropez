@@ -216,7 +216,7 @@ function paintMetadata(): void {
     button("save").disabled = project.saving;
     button("navigate-back").disabled = !activePane?.commands.get("demo.back", "menu")?.enabled;
     element("save-conflict").hidden = !project.hasConflict();
-    button("conflict-save").disabled = button("conflict-take").disabled = !project.canSaveReviewed();
+    button("conflict-save").disabled = button("conflict-take").disabled = !project.canSaveReviewed() || find?.getSnapshot().status === "replacing";
     button("conflict-review").disabled = project.saving;
     if (reviewLabel) reviewLabel.textContent = project.isReviewingConflict() ? "Other page's saved copy" : "Saved copy";
     const recovery = project.recovery.state.getSnapshot();
@@ -396,7 +396,7 @@ function loadProject(id: SampleId): Promise<DemoProject> {
     if (pending) return pending;
     const load = DemoProject.open(id, () => {
         const state = project?.sample.id === id ? editor?.activity() : undefined;
-        return !state || !state.composing && !state.pendingInput && !state.pendingCommand;
+        return !state || !state.composing && !state.pendingInput && !state.pendingCommand && find?.getSnapshot().status !== "replacing";
     }, openProvider).then(next => {
         if (disposed) next.dispose();
         else projects.set(id, next);
@@ -506,6 +506,7 @@ function bindPaneCommands(target: TextEditor): void {
 }
 function releaseFind(): void {
     pendingPanel = undefined;
+    if (find?.getSnapshot().status === "replacing") scheduleMetadata();
     stopFind?.(); stopFind = undefined; find?.dispose(); find = undefined;
 }
 function setActivePane(target: TextEditor, repeat = false): void {
@@ -523,10 +524,14 @@ function setActivePane(target: TextEditor, repeat = false): void {
     element("find-target").textContent = readOnly ? `${label} · read-only` : "";
     const status = element("find-status"), previous = button("find-previous"), next = button("find-next");
     const replace = button("replace-current"), all = button("replace-all");
+    let replacing = false;
     const render = () => {
         const snapshot = current.getSnapshot();
+        const wasReplacing = replacing;
+        replacing = snapshot.status === "replacing";
+        if (replacing !== wasReplacing) scheduleMetadata();
         const requested = pendingPanel;
-        if (requested && snapshot.status !== "replacing") queueMicrotask(() => {
+        if (requested && !replacing) queueMicrotask(() => {
             if (current === find && pendingPanel === requested) setPanel(requested);
         });
         const searching = snapshot.status === "searching", ready = snapshot.status === "ready", matches = snapshot.count > 0;
@@ -538,7 +543,7 @@ function setActivePane(target: TextEditor, repeat = false): void {
         replace.disabled = readOnly || !matches || !(ready || searching && snapshot.retained);
         all.disabled = readOnly || !matches || !ready;
         const reason = readOnly ? `${label} is read-only.` : searching ? "Waiting for search results."
-            : snapshot.status === "replacing" ? "Replacement in progress." : message || "Enter text to find.";
+            : replacing ? "Replacement in progress." : message || "Enter text to find.";
         replace.title = replace.disabled ? reason : "Replace the current match";
         all.title = all.disabled ? reason : "Replace all matches";
     };

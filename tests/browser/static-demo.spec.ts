@@ -572,6 +572,31 @@ async function holdRegexReply(page: Page, operation: "regex-matches" | "regex-ed
     };
 }
 
+test("Save during Replace all keeps the saved copy until the edit is ready and Save is retried", async ({ page, context, baseURL }) => {
+    const gate = await holdRegexReply(page, "regex-edits");
+    await page.goto(baseURL!);
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    await source.press("Control+a"); await page.keyboard.insertText("// Saved copy"); await source.press("Control+s");
+    await expect(page.locator("#status")).toHaveText("Saved in this browser.");
+    await source.press("Control+a"); await page.keyboard.insertText("// old\n// old");
+    await source.press("Control+Home"); await source.press("Control+h");
+    await page.locator("#find-regex").click(); await page.locator("#find-query").fill("old");
+    await page.locator("#replacement").fill("new"); await page.locator("#replace-all").click();
+    await expect.poll(gate.waiting).toBe(1);
+    await page.getByRole("button", { name: "Save locally", exact: true }).click();
+    await expect(page.locator("#status")).toHaveText("An edit is still in progress. Save again when it finishes.");
+    await gate.release(); await expect(source).toHaveValue("// new\n// new");
+
+    const peer = await context.newPage();
+    try {
+        await peer.goto(baseURL!);
+        const saved = peer.getByRole("textbox", { name: "main.ts", exact: true });
+        await expect(saved).toHaveValue("// Saved copy");
+        await source.press("Control+s"); await expect(page.locator("#status")).toHaveText("Saved in this browser.");
+        await peer.reload(); await expect(saved).toHaveValue("// new\n// new");
+    } finally { await peer.close(); }
+});
+
 test("opening Changes during Replace all reviews the committed edit and a file switch drops the pending request", async ({ page, baseURL }) => {
     const gate = await holdRegexReply(page, "regex-edits");
     await page.goto(baseURL!);
@@ -596,6 +621,30 @@ test("opening Changes during Replace all reviews the committed edit and a file s
     await expect(review.locator(".st-comparison-controls output")).toHaveText("No changes");
     await page.locator('#files [data-file="main.ts"]').click();
     await expect(review.locator(".st-comparison-controls output")).toHaveText("No changes");
+});
+
+test("cancelling a replacement makes a reviewed save conflict actionable again", async ({ page, context, baseURL }) => {
+    const gate = await holdRegexReply(page, "regex-edits");
+    await page.goto(baseURL!);
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    await source.press("Control+Home"); await page.keyboard.insertText("// Local edit\n");
+    const peer = await context.newPage();
+    try {
+        await peer.goto(baseURL!);
+        const remote = peer.getByRole("textbox", { name: "main.ts", exact: true });
+        await remote.press("Control+a"); await peer.keyboard.insertText("// Peer save"); await remote.press("Control+s");
+        await expect(peer.locator("#status")).toHaveText("Saved in this browser.");
+    } finally { await peer.close(); }
+    await source.press("Control+s"); await page.locator("#conflict-review").click();
+    const take = page.locator("#conflict-take"), save = page.locator("#conflict-save");
+    const working = page.getByRole("textbox", { name: "Comparison working source", exact: true });
+    await expect(take).toBeEnabled(); await working.press("Control+h");
+    await page.locator("#find-regex").click(); await page.locator("#find-query").fill("Local");
+    await page.locator("#replacement").fill("Cancelled"); await page.locator("#replace-all").click();
+    await expect.poll(gate.waiting).toBe(1); await expect(take).toBeDisabled(); await expect(save).toBeDisabled();
+    await page.locator("#find-close").click(); await gate.release();
+    await expect(save).toBeEnabled(); await expect(working).toHaveValue(/^\/\/ Local edit/);
+    await take.click(); await expect(working).toHaveValue("// Peer save");
 });
 
 for (const interrupt of ["folding", "a focus round trip in a shadow root"] as const) {
