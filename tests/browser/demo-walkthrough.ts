@@ -513,7 +513,8 @@ export async function runDemoFoldingBoundaries(page: Page, url = "/") {
             return Math.min(...[span, row].map(el => (ink + .05) / (luminance(getComputedStyle(el).backgroundColor) + .05)));
         }, pane === left ? "draft" : "reviewed")).toBeGreaterThanOrEqual(4.5);
         const toggles = pane.locator(".st-fold-button");
-        await expect(toggles).toHaveCount(2);
+        // The working copy gets its folds from the language server after the edit.
+        await expect(toggles).toHaveCount(2, { timeout: 30_000 });
         await toggles.first().click(); await toggles.last().click();
         await expect(pane.locator(".st-viewport-row")).toHaveText([branches[0]!, branches[2]!, ...branches.slice(4)]);
         const summaries = pane.locator(".st-fold-summary");
