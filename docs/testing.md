@@ -205,11 +205,11 @@ pair. Browser navigation follows grapheme and geometry rules.
 | Corpus | Shape |
 | --- | --- |
 | `normal` | Small synthetic source |
-| `lines-100`, `lines-10000`, `lines-100000` | Repeated 24-unit source line: 2,400 / 240,000 / 2,400,000 UTF-16 units |
-| `single-line` | 2,400,000 ASCII units with no newline |
-| `unicode` | Tabs, combining marks, emoji/joiners, RTL, CRLF and LF |
+| `lines-100`, `lines-10000` | Repeated 24-unit source line |
+| `unicode` | Tabs, combining marks, emoji/joiners and mixed line endings |
 | Workspace combinations | 1/10/100 resources, 1/2 active views, annotations and background updates |
 
+Keep qualification documents within the [supported document size](README.md#support-matrix).
 Vary line count, text length and token density independently. Exercise cold open, sustained input,
 bulk edits, search, folding, comparison, tab switches and disposal. See
 [operation costs](architecture.md#performance-invariants-and-cost-boundaries) when interpreting a

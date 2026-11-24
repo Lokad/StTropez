@@ -370,7 +370,7 @@ const stopDiagnostics = diagnostics.subscribe(showLanguage);
 button("Connect", language.connect);
 ```
 
-For cross-file rename, enable `textDocument/rename` and pass the project’s document snapshots to
+For cross-file rename, set `workspaceEdits: true` and pass the project’s document snapshots to
 the client returned by `createLspRenameClient(provider)`. Its `run` method returns a proposed
 edit. Show the changes with `previewLspWorkspaceEdit`. On approval, recheck the target and
 apply the plan with `applyLspWorkspaceEdit`. One undo restores every affected file.

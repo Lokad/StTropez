@@ -62,6 +62,7 @@ full multi-engine and package qualification have separate scopes.
 | --- | --- |
 | `src/core/` | Headless text, edits, selections, history, resources and computation |
 | `src/protocol/` | Headless JSON-RPC/LSP sessions, synchronization and feature clients |
+| `src/kernels/` | Headless algorithms and protocol decoders for direct use |
 | `src/browser/` | Editor DOM, input, geometry, view controllers and browser adapters |
 | `examples/demo/` | TypeScript project demo and example-owned compiler/providers |
 | `examples/hosts/` | Plain/React host controllers, forms, deferred services and recovery |

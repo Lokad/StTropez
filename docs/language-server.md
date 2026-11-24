@@ -299,7 +299,7 @@ The provider retains the resource and checks its identity after loading. See [ta
 
 ### Commands and edit decisions
 
-Enable `workspace/executeCommand` for command support and `applyEdit: true` for incoming edits.
+The client advertises `workspace/executeCommand` by default. Set `applyEdit: true` to accept incoming edits.
 A session advertising incoming edits requires a `workspace/applyEdit` handler before connecting;
 the workspace owner supplies routing for feature scopes. `createLspCommandRunner(scope)` installs
 the scoped decision handler. Supply captured project snapshots, `isCurrent`, optional preparation

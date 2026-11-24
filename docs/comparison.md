@@ -1,7 +1,7 @@
 # Text comparison
 
 To review unsaved edits, pass the last saved text to `mountTextComparison`. It displays that
-reference beside the editable document and keeps it fixed as the user types. Use
+baseline beside the editable document and keeps it fixed as the user types. Use
 `createComparisonController` if you only need the diff. Your application fetches versions,
 chooses which changes to accept and saves the result.
 
@@ -22,13 +22,13 @@ import { mountTextComparison } from "sttropez/browser";
 import type { TextComparisonOptions } from "sttropez/browser";
 
 export function showChanges(
-    host: HTMLElement, workspace: Workspace, documentId: DocumentId, reference: ComparisonBaseline
+    host: HTMLElement, workspace: Workspace, documentId: DocumentId, baseline: ComparisonBaseline
 ) {
     const options: TextComparisonOptions = {
         ariaLabel: "Review changes",
         rowsAligned: true
     };
-    return mountTextComparison(host, workspace, documentId, reference, options); // Call dispose() when the review attachment ends.
+    return mountTextComparison(host, workspace, documentId, baseline, options); // Call dispose() when the review attachment ends.
 }
 ```
 
@@ -38,16 +38,16 @@ current change and total using the browser’s number format. The `ariaLabel` op
 its selection and folds when you close the comparison. The mount disposes only views it creates.
 
 For your own toolbar, set `controls: false`. This gives you just the two panes. Put your controls
-outside their DOM subtree. The returned `TextComparison` exposes the working editor, reference
+outside their DOM subtree. The returned `TextComparison` exposes the working editor, baseline
 view, `controller` and the same commands the built-in toolbar uses.
 
 ```ts
 import type { TextComparison } from "sttropez/browser";
 
-export function bindRestoreButton(button: HTMLButtonElement, review: TextComparison) {
-    const render = () => { button.disabled = !review.getSnapshot().canRevert; };
-    const restore = () => review.revertSelectedHunk();
-    const stop = review.subscribe(render);
+export function bindRestoreButton(button: HTMLButtonElement, comparison: TextComparison) {
+    const render = () => { button.disabled = !comparison.getSnapshot().canRevert; };
+    const restore = () => comparison.revertSelectedHunk();
+    const stop = comparison.subscribe(render);
     button.addEventListener("click", restore); render();
     return () => { stop(); button.removeEventListener("click", restore); };
 }
@@ -61,10 +61,10 @@ Pass a working document or text tab to `createComparisonController`. A supplied 
 to that workspace and document. Moving a tab preserves the comparison. Closing or replacing a
 captured tab expires it.
 
-For an external reference, supply a `TextBuffer` and opaque `version`. Alternatively, pass the
-reference’s `DocumentId`. The headless controller retains both documents, follows each reference
+For an external baseline, supply a `TextBuffer` and opaque `version`. Alternatively, pass the
+baseline’s `DocumentId`. The headless controller retains both documents, follows each baseline
 revision, and uses its decimal revision as the baseline version. Editing either document expires
-old hunk commands. Refresh and acceptance tickets apply to external references.
+old hunk commands. Refresh and acceptance tickets apply to external baselines.
 `mountTextComparison` attaches the controller and panes for a browser review.
 
 `ComparisonController` is an observable with immutable `ComparisonSnapshot` values:
@@ -73,19 +73,19 @@ old hunk commands. Refresh and acceptance tickets apply to external references.
 | --- | --- |
 | `status` | `running`, `ready`, `failed`, `expired` or `disposed` |
 | `generation` | Identity of this comparison result or in-progress replacement |
-| `baseline` | Buffer/version and a separate reference `epoch`, or `null` after expiry/disposal |
+| `baseline` | Buffer/version and a separate baseline `epoch`, or `null` after expiry/disposal |
 | `working` | Captured working document snapshot, or `null` after expiry/disposal |
 | `hunks` | Exact when ready; mapped presentation from the preceding comparison while running |
 | `progress`, `failure` | Current diff work counters or a failure message |
 
 Each edit starts a new diff. You may see old change markers move with the text while StTropez
-recomputes the hunks. A gap in revision history or a new reference clears those markers.
+recomputes the hunks. A gap in revision history or a new baseline clears those markers.
 When the diff is ready, StTropez replaces them all at once and enables navigation and reversion.
 A change to the progress count alone doesn't repaint the panes.
 
 While checking an edit, the built-in toolbar keeps the last completed preview in place. A longer
 comparison shows “Updating…”. Previous, Next and Use baseline stay disabled until the new result
-is ready. Changing the reference clears the old preview immediately.
+is ready. Changing the baseline clears the old preview immediately.
 
 Subscribe to `TextComparison` for a `TextComparisonSnapshot`. Repeated reads return the same
 immutable object until a field changes. Its `comparison` field holds the controller snapshot.
@@ -127,8 +127,8 @@ If you use `TextDiff` directly, your caller decides when to take the next step.
 import { TextDiff } from "sttropez/kernels";
 import type { DiffProgress, TextBuffer } from "sttropez";
 
-export function* compareText(reference: TextBuffer, working: TextBuffer): Generator<DiffProgress> {
-    const diff = new TextDiff(reference, working);
+export function* compareText(baseline: TextBuffer, working: TextBuffer): Generator<DiffProgress> {
+    const diff = new TextDiff(baseline, working);
     try {
         for (;;) {
             const progress = diff.next(4096);
@@ -155,7 +155,7 @@ validate the budget and return the current progress.
 
 ### Reverting a change or accepting a version
 
-Call `review.navigateHunk(1)` for the next change or `review.navigateHunk(-1)` for the previous
+Call `comparison.navigateHunk(1)` for the next change or `comparison.navigateHunk(-1)` for the previous
 one. Both start at the active caret, wrap at either end and select the change in both panes.
 Each pane registers `comparison.nextChange` (F7) and `comparison.previousChange` (Shift+F7).
 The command starts at that pane’s caret and leaves focus in place. Hosts can rebind either shortcut on
@@ -163,12 +163,12 @@ the pane’s keymap. Clicking Previous or Next returns focus to the last active 
 either button from the keyboard keeps focus on the button. Clicking a disabled review button
 preserves editor focus.
 
-`review.revertSelectedHunk()` restores the change at the active caret and focuses the working pane.
-If a button press or host confirmation spans multiple events, capture `review.getSnapshot()` at
+`comparison.revertSelectedHunk()` restores the change at the active caret and focuses the working pane.
+If a button press or host confirmation spans multiple events, capture `comparison.getSnapshot()` at
 the start and pass it to `revertSelectedHunk(shown)`. It returns `false` if the comparison or
 target changed before activation.
 
-Call `review.hunkAt(index)` when presenting a change. It returns a handle for that exact change,
+Call `comparison.hunkAt(index)` when presenting a change. It returns a handle for that exact change,
 or `undefined` while the diff is pending or the index is out of range. Keep the handle through a
 confirmation dialog. Its `select()` reveals and selects both ranges, unfolding them if needed.
 Its `revert()` restores the baseline range in one undoable edit. Both return `false` after either
@@ -177,29 +177,29 @@ write access. Headless consumers use `controller.hunkAt(index)?.revert()`. Undo 
 the text and selection. The built-in **Use baseline** button focuses the working editor so you can
 undo or type there immediately. After a working edit the next ready comparison resolves the target again.
 
-Take a ticket before fetching a reference or asking the user to confirm a change.
+Take a ticket before fetching a baseline or asking the user to confirm a change.
 
 | Command | Capture and completion |
 | --- | --- |
-| `beginRefresh()` | Capture reference epoch/version, working snapshot and server version; complete with a fetched baseline |
-| `beginAcceptance()` | Capture the working snapshot; complete with that exact buffer object and a host reference version |
+| `beginRefresh()` | Capture baseline epoch/version, working snapshot and server version; complete with a fetched baseline |
+| `beginAcceptance()` | Capture the working snapshot; complete with that exact buffer object and a host baseline version |
 | `beginReversion()` | Capture a ready result, tab, complete selection set and authority for confirmation; `complete()` reverts all reviewed hunks in one transaction |
 
 `ComparisonTicket` exposes `capture`, `isCurrent`, `complete`, `cancel` and `finish`. Its
-`ComparisonCapture` records the reference identity, the working snapshot and the server version
+`ComparisonCapture` records the baseline identity, the working snapshot and the server version
 separately. Starting a refresh supersedes an earlier refresh. The same rule applies to two
-acceptances. When the reference advances, all tickets for its previous epoch expire.
+acceptances. When the baseline advances, all tickets for its previous epoch expire.
 
 If a user types another line while acceptance is pending, that line stays in the working pane
-as an edit. The new reference is the revision the ticket captured. Refresh also changes only
-the reference. Acceptance requires user edit permission and an unlocked document both when you
+as an edit. The new baseline is the revision the ticket captured. Refresh also changes only
+the baseline. Acceptance requires user edit permission and an unlocked document both when you
 take the ticket and when you complete it. The dirty flag, undo history and server version
 keep their values. To persist the text, save it separately.
 
 ```ts
 import type { ComparisonBaseline, ComparisonCapture, ComparisonController } from "sttropez";
 
-export async function refreshReference(
+export async function refreshBaseline(
     controller: ComparisonController,
     load: (capture: ComparisonCapture) => Promise<ComparisonBaseline>
 ): Promise<boolean> {
@@ -214,7 +214,7 @@ export async function refreshReference(
 
 `ComparisonReversion` also captures the comparison generation and every selection in the
 initiating view. Ask for confirmation again if the text, selections, server version,
-permissions or edit lock changed, even if the user regained permission. A new reference
+permissions or edit lock changed, even if the user regained permission. A new baseline
 request, replacement tab, disposed view or newer confirmation also expires the ticket.
 An empty comparison succeeds without adding an undo step. Otherwise the other views map
 their selections through the same transaction.
@@ -224,10 +224,10 @@ command is unavailable. Completing a stale ticket returns `false` and releases i
 are idempotent. `isCurrent()` checks lifetime. Completion also checks edit authority. Cancel the
 host fetch separately if needed.
 
-### Reference views and decoration
+### Baseline views and decoration
 
 Both entries in `comparison.panes` are editor handles. Attach Find, folding and decoration providers
-once. Replacing a baseline keeps the reference editor, its settings and its view. Find reruns its
+once. Replacing a baseline keeps the baseline editor, its settings and its view. Find reruns its
 current query, and folding maps surviving ranges to the new revision. Publish decoration ranges
 against the revision of the pane they describe. [Decoration layers](viewport.md#decoration-layers)
 
@@ -242,7 +242,7 @@ row tints. The matching `--st-comparison-baseline-bar` and `--st-comparison-work
 the gutter-edge colors. `--st-comparison-removed` and `--st-comparison-added` set the backgrounds
 behind the changed characters. Choose colors that keep your syntax tokens legible on both backgrounds.
 
-The reference pane is read-only. Passing a workspace document displays it directly and follows
+The baseline pane is read-only. Passing a workspace document displays it directly and follows
 its edits. An external baseline uses a private read-only document with Save disabled. It takes no tab
 and stays out of the workspace inventory. A host lease can retain it after comparison disposal.
 [Inventory visibility](workspace.md#inventory-visibility)
@@ -260,12 +260,12 @@ With the default options, the panes scroll independently. Pass `rowsAligned: tru
 changes and link scrolling, or add `scrollLinked: false` to keep scrolling independent. After
 mounting, turning alignment on with `setRowsAligned(true)` also links scrolling. Call `setScrollLinked(false)`
 to turn linking off while keeping the rows aligned.
-The comparison mount owns row publication for its captured working and reference panes.
+The comparison mount owns row publication for its captured working and baseline panes.
 
 Linked scrolling projects vertical positions through the completed diff and each pane's folds.
 Unchanged rows keep their fractional position; changed rows interpolate between captured bounds,
 and insertions/deletions map to opposite anchors. Each pane clamps to its own extent. Horizontal
-scroll, focus, selection, history and reference identity are independent.
+scroll, focus, selection, history and baseline identity are independent.
 
 Aligned panes use the same measured line height. If you insert three lines on the right, the
 grid adds three lines of padding on the left using the completed diff. An empty document keeps
@@ -283,7 +283,7 @@ and hidden nested folds require no alignment traversal. Progress exposes cumulat
 Both panes use the completed grid; partial row indexes are not installed.
 
 Both features wait for current comparison/view captures and settled input/navigation. Alignment
-also waits for pointer gestures. Edits, reference/fold changes, disable and disposal cancel stale
+also waits for pointer gestures. Edits, baseline/fold changes, disable and disposal cancel stale
 work. Disabling either feature releases its subscriptions and pending work independently.
 Both features share pane render and fold subscriptions. Disabling both releases those subscriptions.
 Only the visible row window creates DOM. `getDiagnostics()` exposes `scrollLinked`, `pendingScroll`, `rowsAligned`
@@ -291,13 +291,13 @@ and alignment phase/work/failure; controller readiness alone does not establish 
 
 ## Host responsibilities
 
-Fetch and retain the reference, attach search or language clients and store view state. Capture the
-working resource explicitly for Save or Run from the reference pane. On confirmation, check
+Fetch and retain the baseline, attach search or language clients and store view state. Capture the
+working resource explicitly for Save or Run from the baseline pane. On confirmation, check
 composition and whether the user chose another version. Handle transport failures in the host.
 Finish or cancel tickets and call `dispose()` on the mount or headless controller before releasing
 host-owned views.
 
 ## Not covered
 
-The comparison works with a reference and a working document. If users need a three-way merge
+The comparison works with a baseline and a working document. If users need a three-way merge
 or a conflict-resolution UI, the host supplies it. [Search and review support](README.md#support-matrix)

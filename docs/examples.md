@@ -361,8 +361,7 @@ Use **Inspect stored draft** for a bounded preview or **Discard stored draft** t
 copy. Discard leaves open files alone. A storage token prevents an old discard or replacement from
 overwriting another page’s newer draft. Finish composition before capturing or restoring.
 
-The [checkpoint decoder](../examples/hosts/draft-recovery.ts) reads and writes format 3. It requires
-transfer data. A null loaded-source entry leaves that restore option unavailable. An unsupported
+The [checkpoint decoder](../examples/hosts/draft-recovery.ts) validates transfer data before offering a draft. A null loaded-source entry leaves that restore option unavailable. An unsupported
 record stays in storage until you replace or discard it, with no restore choices. A draft includes
 inputs and recovery context. Undo, Run and log history, simulated server state and pending requests
 end with the session.

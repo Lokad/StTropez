@@ -141,8 +141,7 @@ Pass `"start"`, `"center"` or `"nearest"` to change it. The selection stays in p
 Save `captureView()` by document and view. `restoreView(state, options?)` cancels a pending reveal
 and restores the scroll and selection together. A closed mount or a capture from another document returns `null`.
 
-On the captured revision, restore uses the saved selection set, or `anchor` and `head` for older
-snapshots. After an edit, a retained view keeps its live selections. A fresh view maps the saved
+On the captured revision, restore uses the saved selection set, or `anchor` and `head` when the capture holds a single range. After an edit, a retained view keeps its live selections. A fresh view maps the saved
 selection through the last edit when it connects the two revisions. Otherwise it clamps the saved
 endpoints to the new length. Pass `{ selection: "current" }` to keep the mounted view’s selection
 even when the revision is unchanged.

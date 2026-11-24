@@ -24,7 +24,7 @@ export function attachFolding(editor: TextEditor): FoldingController {
 ```
 
 Build controls from `FoldingController.getSnapshot()` and `subscribe()`. To collapse a group, call
-`runCommand("collapse-all", "regions")`. Call `refresh()` after a rule change. Disposing the editor cancels pending discovery
+`editor.commands.run("fold.collapse-all", "regions")`. Call `refresh()` after a rule change. Disposing the editor cancels pending discovery
 and disposes this controller.
 
 If you already have an outline, pass its ranges to `DocumentView.folding`.
@@ -139,9 +139,7 @@ Snapshots also give the revision, counts and available groups.
 ### Language-server discovery
 
 `createLspFoldingClient(provider).run({ document })` from `sttropez/protocol` returns a
-cancellable call. Its `result` resolves to the captured revision, ranges and an `isCurrent` guard. Enable
-`textDocument/foldingRange` in the [provider configuration](language-server.md), and preserve
-the guard when returning a batch to the folding controller. Dispose the client with its host
+cancellable call. Its `result` resolves to the captured revision, ranges and an `isCurrent` guard. The server must provide `textDocument/foldingRange`. Preserve the guard when returning a batch to the folding controller. Dispose the client with its host
 attachment. Capability registration and reconnect use the shared provider session.
 
 The client advertises complete-line folds. `decodeLspFoldingRanges` from `sttropez/kernels` converts inclusive LSP end

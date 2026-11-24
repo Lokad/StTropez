@@ -85,8 +85,6 @@ to resource capabilities and locks. Remount with the same view to change this op
 The root's `data-read-only` attribute carries the reason while editing is unavailable.
 Use the [edit refusal event](host-integration.md#input-conflict-recovery) to explain it after a blocked gesture.
 
-<a id="native-input-and-ordered-commands"></a>
-
 ### Reveal a destination
 
 Call `editor.reveal(target, options)` to open folds covering a destination and scroll it into view
@@ -202,7 +200,7 @@ Consecutive deletes in the same direction can share a step. A command, newline, 
 replacement, focus loss, caret movement or an edit from another origin starts a new step. Undo
 from either editable view. [Shared history and save boundaries](workspace.md#transactions-and-history)
 
-### Keyboard and pointer commands
+### Selecting lines in the gutter
 
 Click or double-click a line number to select the line and its line break. On a folded header,
 the selection includes the hidden lines. Drag across numbers to select several
@@ -326,7 +324,7 @@ An empty or nontext payload leaves selections and pending commands
 alone.
 
 Read clipboard formats during dispatch. The editor releases the clipboard objects when the event ends.
-To convert a paste yourself, intercept the event during capture on the input, call `preventDefault()`
+To convert a paste yourself, intercept the event during capture on `editor.element`, call `preventDefault()`
 and [insert at the captured selections](host-integration.md#captured-insertion-and-structured-paste).
 
 Dragging painted selected text captures source fragments, the whole selection set, revision
@@ -366,7 +364,11 @@ and frozen; callbacks receive the exact immutable buffer and source endpoints.
 | `enter` | Omitted: newline without indentation copying. `"keep"`: copy indentation. Callback: return `EnterIndent` with `indent: -1 \| 0 \| 1` and optional `split` |
 
 `EditingPair` describes delimiters; `LanguageEditContext` describes the immutable buffer/range.
-`ResolvedLanguageConfiguration` supplies validated defaults. Pass a built-in `TextEditorCommand`
+`ResolvedLanguageConfiguration` supplies validated defaults.
+
+### Running and binding commands
+
+Pass a built-in `TextEditorCommand`
 or a registered host command ID to `editor.commands.run(id)`.
 `undo` and `redo` use the document’s shared history. Their entries are disabled in a read-only
 pane or when the corresponding history stack is empty.

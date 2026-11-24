@@ -240,15 +240,15 @@ that occurrence. Undo restores all selections.
 
 | Limit or setting | Contract |
 | --- | --- |
-| Source | At most 32 Mi UTF-16 units; transferred in acknowledged 32,768-unit chunks |
+| Source transfer | Acknowledged chunks of 32,768 UTF-16 units |
 | Pattern | At most 4,096 UTF-16 units |
 | Matches | At most 1,000,000; response pages contain at most 512 ranges |
 | Replacement template | At most 32,768 UTF-16 units |
-| Replacement output | Inserted text bounded by `maxOutputUnits`, an integer from 0 through 32 Mi, default 32 Mi; final document at most 32 Mi |
+| Replacement output | `maxOutputUnits` limits inserted UTF-16 units. The worker enforces a 32 Mi-unit allocation ceiling. |
 | Replacement transfer | At most 512 small edits per page; large insertions use 32,768-unit fragments |
 | `regularExpressionDelayMs` | Controller query delay: default 80; finite value from 0 through 1,000 |
 | `timeoutMs` | Backend exchange timeout: default 5,000; positive finite value |
-| Worker protocol | Client and worker require matching version 2 before source transfer |
+| Worker protocol | Client and worker require matching protocol versions before source transfer |
 
 The worker reuses source for the same document, revision and immutable buffer. A new revision
 requires another full transfer. Cancelling an active exchange terminates the worker and drops its

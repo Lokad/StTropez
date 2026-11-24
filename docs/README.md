@@ -7,7 +7,7 @@ as soon as you serve the page, then add the features you need.
 
 - [Move a tab or close it without losing the draft](getting-started.md#switch-and-move-tabs)
 - [Color source text with your own tokenizer](getting-started.md#plug-in-a-standalone-tokenizer)
-- [Look up a keyboard or pointer command](editor.md#keyboard-and-pointer-commands)
+- [Look up a keyboard or pointer command](editor.md#shortcuts)
 - [Save a file while the user keeps typing](workspace.md#save-and-conflicts)
 - [Connect a language server](language-server.md#use)
 
@@ -34,6 +34,7 @@ as soon as you serve the page, then add the features you need.
 
 ## Support matrix
 
+StTropez supports documents up to 512 KB. Larger documents may open, with no responsiveness guarantee.
 The **Supported** column lists what StTropez guarantees. Check the **Unverified** column
 when choosing devices and integration tests for your application.
 
@@ -44,7 +45,7 @@ when choosing devices and integration tests for your application.
 | Clipboard and drag | Plain-text clipboard events; host conversion; captured text transfer | Arbitrary rich-document import | OS/app clipboard formats and permissions; native drag images and token-preserving transfer across applications |
 | Search and review | Literal/regular-expression search; replacement; immutable references; editable comparisons; independent folding and aligned rows | General merge/conflict-resolution UI | Consuming-host review policies and durable retention |
 | Lifecycle and recovery | Explicit teardown, cached-page retention, captured save conflicts and host-managed draft restoration | Portable previous-session undo; a crash/power-loss durability guarantee | Native application termination; interactive/cross-browser back/forward-cache restoration; consuming-host storage policy |
-| Language services | [LSP subset](language-server.md), JSON-RPC 2.0, WebSocket transport, UTF-16 positions; host-defined URIs and custom messages | Full LSP coverage; full text synchronization, save notifications, prepare-rename, file operations/change annotations, notebooks/file watching, semantic tokens, formatting, code lens, inlay hints and completion follow-up commands | Compatibility with a consuming application's language server and deployment |
+| Language services | [LSP subset](language-server.md), JSON-RPC 2.0, WebSocket transport, UTF-16 positions, prepare-rename, host-defined URIs and custom messages | Full LSP coverage; full text synchronization, save notifications, file operations/change annotations, notebooks/file watching, semantic tokens, formatting, code lens, inlay hints and completion follow-up commands | Compatibility with a consuming application's language server and deployment |
 | Documentation | Plaintext, code and a [focused Markdown subset](language-features.md#hover-and-documentation); explicit host link actions | Full CommonMark/GFM; nested lists, headings, tables, entities, reference links, automatic URLs, provider HTML and embedded media | — |
 | Presentation | Virtualized rows, optional minimap, decorations, measured local geometry, grapheme navigation | Right-to-left caret and selection geometry; sticky scroll; bracket-pair coloring | Physical display latency; native font rendering across target devices; constrained hardware |
 | Distribution | Compiled dependency-free modules, declarations, CSS and worker assets in NuGet | A .NET runtime dependency or consumer-time library compilation | Production deployment/toolchain adoption |

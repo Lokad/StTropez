@@ -257,8 +257,8 @@ history boundary and permissions. If later work in another file blocks a shared 
 `history-blocked`. `observeHistory` depths include blocked entries.
 [Which selections undo restores](#document-views)
 
-An omitted history policy creates a standalone `replace` unit. Origins are `human`, `agent`
-and `host`; `EditKind` distinguishes typing, deletion, paste, composition, form, refactor,
+An omitted history policy creates a standalone `replace` unit. Use `human` for user edits, `agent` for edits made by an automated agent
+and `host` for application updates. Each origin has its own edit permission. `EditKind` distinguishes typing, deletion, paste, composition, form, refactor,
 proposal, live update, replacement and canonical response. An explicit group joins only
 consecutive compatible edits with the same document, origin, kind, group, initiating view and set of open views.
 Core grouping has no timer. Selection movement, undo/redo and that document's save
@@ -445,17 +445,8 @@ requires a matching revision, host edit permission and no active edit lease. Pas
 `{ applyCanonical: false }` to `ticket.accept` to skip replacement. Canonical text edits get a
 separate undo unit. Undoing to the baseline clears dirty state even at a later revision.
 
-For a user-confirmed server merge or discard, capture the save ticket before the request, call
-`start()` before sending it, and pass the acknowledged `{ canonical, serverVersion }` to
-`accept()`. Finish the ticket in `finally`. On success the server reply becomes the saved
-baseline. If the user typed, an edit lease is active or the host lacks edit permission, their working
-text and undo history survive. An equal canonical value also leaves history intact.
-
-To erase undo only when the discard replaces working text, check `receipt.canonicalApplied`. If true,
-submit `edits: []` with `origin: "host"`, `history: { kind: "replace", reset: true }` and
-`expectedRevision: ticket.revision + 1`. Keep `accept` and the reset in one synchronous
-[notification batch](#observables) if observers must see the two effects together. Do not reset at
-a revision read after awaiting another operation.
+To discard local edits after confirmation, call `adoptSaved` with the saved text, its server version,
+the revision the user reviewed and `history: "reset"`. Use `history: "record"` for an undoable replacement.
 
 For a clean, unlocked resource, a [load](#loading-and-resource-lifetime) can install a remote
 version without a save. It keeps view handles but resets selections, folds and history. Save
