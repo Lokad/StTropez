@@ -67,7 +67,7 @@ function presentationSettings() {
 let referencePresentation: DemoPresentation | undefined;
 let syntaxLayer: DecorationProvider | undefined, diagnosticsLayer: DecorationLayer | undefined;
 let paintedDiagnostics: unknown;
-let problemPage = 0, problemBatch: unknown, renderedProblemState: unknown;
+let problemPage = 0, renderedProblemState: unknown;
 function refreshBrackets(captured: TextEditor | undefined) {
     // Plain-source notifications may run inside a Workspace publication; retain the owning view.
     if (captured) queueMicrotask(() => { if (!captured.activity().disposed) captured.bracketMatching.refresh(); });
@@ -109,7 +109,9 @@ function renderProblems(): void {
     if (renderedProblemState === state && host.firstElementChild?.classList.contains("demo-problems")) return;
     renderedProblemState = state;
     const confirmed = state.status === "ready" && !state.checking;
-    if (problemBatch !== state.diagnostics) { problemBatch = state.diagnostics; problemPage = 0; }
+    const pageSize = 64;
+    const page = Math.min(problemPage, Math.max(0, Math.ceil(state.diagnostics.length / pageSize) - 1));
+    if (confirmed) problemPage = page;
     const list = document.createElement("div"); list.className = "demo-problems";
     if (!state.diagnostics.length) {
         const note = document.createElement("p"); note.className = "panel-note";
@@ -118,7 +120,7 @@ function renderProblems(): void {
     }
     const key = captured.workspace.allocateIdentity();
     const current = () => project === captured && captured.language.state.getSnapshot() === state && list.parentElement === host;
-    mountProblemPages(list, "problems", state.diagnostics, 64, key, current, problem => {
+    mountProblemPages(list, "problems", state.diagnostics, pageSize, key, current, problem => {
         const row = document.createElement("section"), item = document.createElement("button"), metadata = document.createElement("div");
         row.className = "demo-problem"; item.className = "problem-location"; metadata.className = "problem-metadata";
         const code = problem.code === undefined ? "" : `${problem.source === "typescript" ? "TS" : ""}${problem.code}: `;
@@ -161,7 +163,10 @@ function renderProblems(): void {
             details.addEventListener("toggle", render); row.append(details);
         }
         return row;
-    }, problemPage, at => { problemPage = at; });
+    }, page, at => {
+        problemPage = at;
+        host.scrollTop = 0;
+    });
     host.replaceChildren(list);
 }
 function renderLanguage(): void {
@@ -442,6 +447,7 @@ async function openSample(id: SampleId): Promise<void> {
     stopLanguage?.(); stopLanguage = undefined;
     if (active && editor) savedViews.set(active.view, editor.captureView());
     replaceResult.hidden = true;
+    if (project !== next) problemPage = 0;
     detachView(); project?.language.suspend(); active = undefined; project = next;
     selectSample(id); sample.disabled = false;
     indentation.options[0]!.textContent = `Sample default (${next.sample.indentSize ?? 2} spaces)`;

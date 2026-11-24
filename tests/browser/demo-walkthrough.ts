@@ -1012,11 +1012,25 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     for (let i = 0; i < 4; i++) await page.keyboard.press("Space");
     await expect(problems.getByRole("button", { name: "Previous problems" })).toBeFocused();
     await expect(rows).toHaveCount(44); await expect(problems).toContainText("257–300 of 300");
-    await expect(rows.last()).toContainText("problems.ts:300:7 · TS2322:"); await rows.last().click();
+    await expect(rows.last()).toContainText("problems.ts:300:7 · TS2322:");
+    await rows.last().scrollIntoViewIfNeeded();
+    await expect(problems.getByRole("button", { name: "Previous problems" })).toBeInViewport();
+    await rows.last().click();
     const problemSource = page.getByRole("textbox", { name: "problems.ts", exact: true });
     await expect(problemSource).toBeFocused(); await expect(page.locator("#cursor")).toContainText("Ln 300,");
     await expect(page.locator("#editor")).toContainText("problem299");
     await expect(page.locator("#editor .st-diagnostic").last()).toBeVisible();
+
+    // Removing the entire last page leaves the reader on the preceding page.
+    await rows.first().click();
+    await problemSource.press("Home");
+    await problemSource.press("Control+Shift+End");
+    await page.keyboard.insertText("// resolved");
+    await expect(page.locator('[data-panel="problems"]')).toHaveText("Problems (256)", { timeout: 30000 });
+    await expect(problems).toContainText("193–256 of 256");
+    await expect(rows.last()).toContainText("problems.ts:256:7");
+    await problemSource.press("Control+z");
+    await expect(page.locator('[data-panel="problems"]')).toHaveText("Problems (300)", { timeout: 30000 });
 
     await page.locator('[data-file="uses.ts"]').click();
     const source = page.getByRole("textbox", { name: "uses.ts", exact: true });
