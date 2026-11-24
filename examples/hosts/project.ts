@@ -3,9 +3,8 @@ import { onSourceFocus } from "./source-focus.ts";
 import { isMountedEditor, openChangedFile, type ChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, CodeActionCommand, CodeActionExecution, TextEditor } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, CodeActionController, TextEditor } from "../../src/browser/index.ts";
 import { ProviderLane } from "../shared/provider-lane.ts";
-import { validateNavigationDocuments } from "../../fixtures/language/navigation.ts";
 import { validateProjectCommand } from "../../fixtures/language/project-commands.ts";
 import type { ProjectCommand, ProjectCommandKind } from "../../fixtures/language/project-commands.ts";
 import { HostCell } from "../shared/observable.ts";
@@ -19,11 +18,10 @@ type Session = { token: number; id: string; target: TabTarget; editor: TextEdito
 type Participant = { document: DocumentSnapshot; readonly authority: string };
 type Job = { origin: Session; source: string; documents: Map<string, Participant>;
     leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; applied: boolean; capture: CapturedViewRequest;
-    review?: Review; providerCurrent?: () => boolean; externalCancel?: () => void; changes: ProjectSnapshot["changes"] };
-type Review = { key: number; request: LspApplyEdit; context: LspRequestContext; finish: (result: LspApplyEditResult) => void; stop: () => void; timer: number;
+    providerCurrent?: () => boolean; changes: ProjectSnapshot["changes"] };
+type Review = { key: number; request: LspApplyEdit; canApply: () => boolean; decide: (approved: boolean) => void;
     page: LspWorkspaceEditPreview; readPage: (index: number) => LspWorkspaceEditPreview };
 export type ProjectReview = LspWorkspaceEditPreview & Readonly<{ key: number; apply: () => void; decline: () => void; paging: PanelPaging | null; label: string; canApply: boolean }>;
-export type ProjectActionEditPolicy = (request: LspApplyEdit) => "apply" | "review" | "decline";
 export type ProjectSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; registered: boolean; pending: boolean;
     status: "idle" | "pending" | "ready" | "rejected" | "failed" | "cancelled"; message: string; view: string | null; changes: readonly ChangedFile[]; review: ProjectReview | null }>;
 /** Local protocol owner. Server edits use the workspace's existing atomic shared-history transaction. */
@@ -36,7 +34,8 @@ export class HostProjectTools {
     private readonly lane = new ProviderLane<LspProjectClient>(client => this.connectionChanged(client));
     private readonly createClient: LspProjectFactory | undefined;
     private readonly provider: LspWorkspace | undefined;
-    private readonly actionEditPolicy: ProjectActionEditPolicy | undefined;
+    private action: { editor: TextEditor; controller: CodeActionController } | undefined;
+    private review: Review | undefined;
     private registered = false;
     private disconnected = false;
     private disposed = false;
@@ -44,18 +43,17 @@ export class HostProjectTools {
     private readonly metrics = { requested: 0, serverRequests: 0, applied: 0, rejected: 0, cancelled: 0, failed: 0 };
     private readonly cell = new HostCell<ProjectSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, registered: false, pending: false, status: "idle", message: "Focus a candidate source to use workspace provider commands.", view: null, changes: [], review: null });
     readonly state = this.cell.observable;
-    constructor(host: LanguageHost, createClient?: LspProjectFactory, provider?: LspWorkspace, actionEditPolicy?: ProjectActionEditPolicy) {
-        this.host = host; this.createClient = createClient; this.provider = provider; this.actionEditPolicy = actionEditPolicy;
+    constructor(host: LanguageHost, createClient?: LspProjectFactory, provider?: LspWorkspace) {
+        this.host = host; this.createClient = createClient; this.provider = provider;
     }
     private available(s: Session): boolean {
         return !this.disposed && this.sessions.get(s.token) === s && isMountedEditor(this.host.workspace, s.editor, s.target);
     }
     private authority(id: DocumentId): string { const m = this.host.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
     private publish(patch: Partial<ProjectSnapshot> = {}): void {
-        const job = this.job, review = job?.review;
-        const preview = job && review ? this.describeReview(job, review) : null;
+        const preview = this.review ? this.describeReview(this.review) : null;
         this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && this.available(this.active), connected: this.lane.value?.snapshot().connected ?? false,
-            disconnected: this.disconnected, reconnectRequired: this.provider?.getSnapshot().commandRequiresReconnect ?? false, registered: this.registered, pending: !!job, view: this.active?.id ?? null, changes: this.changes, review: preview });
+            disconnected: this.disconnected, reconnectRequired: this.provider?.getSnapshot().commandRequiresReconnect ?? false, registered: this.registered, pending: !!this.job || !!this.action, view: this.active?.id ?? null, changes: this.changes, review: preview });
     }
     private editRefusal(job: Job, edit: LspWorkspaceEdit, context?: LspRequestContext): string | null {
         if (context && !context.isCurrent()) return "Captured edit request changed.";
@@ -70,7 +68,7 @@ export class HostProjectTools {
     private drop(): void { this.registered = false; this.lane.drop(); }
     private connectionChanged(client: LspProjectClient): void {
         const state = client.snapshot(), job = this.job; this.registered = state.registered;
-        if (job?.externalCancel) {
+        if (this.action) {
             if (!state.connected && !state.busy) queueMicrotask(() => { if (this.lane.value === client) { this.drop(); this.publish(); } });
             this.publish(); return;
         }
@@ -129,9 +127,9 @@ export class HostProjectTools {
             return job;
         } catch (error) { this.release(job); throw error; }
     }
-    private commandScope(job: Job, policy?: ProjectActionEditPolicy): LspCommandScope {
+    private commandScope(job: Job): LspCommandScope {
         return { snapshots: () => Array.from(job.documents.values(), participant => participant.document),
-            isCurrent: () => this.current(job), review: (request, context) => this.review(job, request, context, policy) };
+            isCurrent: () => this.current(job), review: (request, context) => this.reviewDirectEdit(job, request, context) };
     }
     private renewAfterEdit(job: Job): void {
         const previous = job.capture;
@@ -143,12 +141,17 @@ export class HostProjectTools {
         finally { previous.cancel(); this.changed(job); }
     }
     private release(job: Job): void {
-        if (job.review) this.finishReview(job, job.review, { applied: false, failureReason: "Captured provider work ended or was cancelled." });
+        this.review?.decide(false);
         if (this.job === job) this.job = undefined; job.invalid = true;
         job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.stops.splice(0).forEach(stop => stop()); job.capture.cancel(); job.leases.splice(0).forEach(lease => lease.release());
     }
     readonly cancel = (): void => {
-        const job = this.job; if (!job) return; if (job.externalCancel) job.externalCancel(); else this.drop(); this.release(job); this.metrics.cancelled++;
+        if (this.action) {
+            this.review?.decide(false);
+            this.action.controller.cancel();
+            return;
+        }
+        const job = this.job; if (!job) return; this.drop(); this.release(job); this.metrics.cancelled++;
         this.publish({ status: "cancelled", message: job.applied ? "Provider work cancelled after application; the edit remains available to undo." : "Provider work cancelled; source is unchanged." });
     };
     readonly disconnect = (): void => { this.cancel(); this.drop(); this.disconnected = true; this.publish({ status: "idle", message: "Workspace provider disconnected; local editing remains available." }); };
@@ -158,16 +161,13 @@ export class HostProjectTools {
         onSourceFocus(editor, events.signal, () => { this.active = session; this.publish(); });
         editor.onEditIntent(() => { if (this.job?.documents.has(editor.view.documentId)) this.cancel(); }, events.signal);
         let detached = false;
-        return () => { if (detached) return; detached = true; if (this.job?.origin === session) this.cancel(); events.abort(); this.sessions.delete(session.token);
+        return () => { if (detached) return; detached = true; if (this.job?.origin === session || this.action?.editor === editor) this.cancel(); events.abort(); this.sessions.delete(session.token);
             if (this.active === session) this.active = undefined; if (!this.sessions.size) this.drop(); this.publish(); };
     }
-    private finishReview(job: Job, review: Review, result: LspApplyEditResult): boolean {
-        if (job.review !== review) return false; delete job.review; review.stop(); job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(review.timer); review.finish(Object.freeze(result)); this.publish(); return true;
-    }
-    private review(job: Job, request: LspApplyEdit, context: LspRequestContext, policy?: ProjectActionEditPolicy): Promise<LspApplyEditResult> {
-        this.metrics.serverRequests++;
-        if (!this.current(job) || !context.isCurrent() || !request.edit.isCurrent() || job.review) { this.metrics.rejected++; return Promise.resolve({ applied: false, failureReason: "Captured edit intent is unavailable or changed." }); }
-        if (!request.edit.documents.some(change => change.edits.length)) return Promise.resolve({ applied: true });
+    private async reviewDirectEdit(job: Job, request: LspApplyEdit, context: LspRequestContext): Promise<LspApplyEditResult> {
+        if (!this.current(job) || !context.isCurrent() || !request.edit.isCurrent() || this.review)
+            return { applied: false, failureReason: "Captured edit intent is unavailable or changed." };
+        if (!request.edit.documents.some(change => change.edits.length)) return { applied: true };
         // A server request can resolve targets beyond the initial command project. Its resolver
         // retains them through this decision; the command retains them until its final receipt.
         for (const change of request.edit.documents) {
@@ -177,19 +177,31 @@ export class HostProjectTools {
                 || !change.target.isCurrent() || !this.host.canCapture(document.id)) return Promise.resolve({ applied: false, failureReason: "A resolved edit target changed." });
             this.retainDocument(job, document);
         }
-        if (policy) {
-            try {
-                const decision = policy(request);
-                if (decision === "apply") { this.applyCaptured(job, request.edit, context); return Promise.resolve({ applied: true }); }
-                if (decision === "decline") return Promise.resolve({ applied: false, failureReason: "The host declined this command edit." });
-            } catch (error) { return Promise.resolve({ applied: false, failureReason: error instanceof Error ? error.message : "Host edit policy failed." }); }
-        }
+        const approved = await this.prompt(request, context, () => this.editRefusal(job, request.edit, context) === null);
+        if (!approved) return { applied: false, failureReason: "Provider edits declined." };
+        this.applyCaptured(job, request.edit, context);
+        return { applied: true };
+    }
+    private prompt(request: LspApplyEdit, context: LspRequestContext, canApply: () => boolean): Promise<boolean> {
+        this.metrics.serverRequests++;
+        if (this.review || !context.isCurrent()) return Promise.resolve(false);
         return new Promise(resolve => {
-            const readPage = (index: number) => previewLspWorkspaceEdit(request.edit, id => job.documents.get(id)!.document.title, index);
-            const review: Review = { key: this.host.workspace.allocateIdentity(), request, context, finish: resolve, stop: () => {}, timer: 0, page: readPage(0), readPage }; job.review = review;
-            review.stop = context.onCancel(() => { if (this.finishReview(job, review, { applied: false, failureReason: "Provider edit request cancelled or invalidated." })) this.publish({ message: "Provider edit request cancelled; no pending decision remains." }); });
-            review.timer = job.origin.editor.element.ownerDocument.defaultView!.setTimeout(() => { if (this.finishReview(job, review, { applied: false, failureReason: "Provider edit review timed out." })) this.publish({ message: "Provider edit review timed out without application." }); }, 90000);
-            this.publish({ message: "Review every captured provider edit, then apply or decline the batch." });
+            const readPage = (index: number) => previewLspWorkspaceEdit(request.edit,
+                id => this.host.workspace.document(id as DocumentId).title, index);
+            const review: Review = { key: this.host.workspace.allocateIdentity(), request, canApply, readPage,
+                page: readPage(0), decide: approved => {
+                    if (this.review !== review) return;
+                    this.review = undefined;
+                    clearTimeout(timer);
+                    stop();
+                    if (!approved) this.metrics.rejected++;
+                    resolve(approved);
+                    this.publish({ message: approved ? "Approved provider edits." : "Provider edits declined." });
+                } };
+            this.review = review;
+            const timer = setTimeout(() => review.decide(false), 90000);
+            const stop = context.onCancel(() => review.decide(false));
+            this.publish({ message: "Review the captured provider edits." });
         });
     }
     private applyCaptured(job: Job, edit: LspWorkspaceEdit, context?: LspRequestContext): number {
@@ -207,59 +219,33 @@ export class HostProjectTools {
         }
         return changed.length;
     }
-    private describeReview(job: Job, review: Review): ProjectReview {
+    private describeReview(review: Review): ProjectReview {
         const { key, page, request } = review;
-        return Object.freeze({ ...page, key, label: request.label ?? "Provider workspace edit", canApply: this.editRefusal(job, request.edit, review.context) === null,
-            apply: () => this.confirmReview(key), decline: () => this.declineReview(key), paging: editPaging(key, page.page, page.count, next => {
-                if (job.review === review && review.page === page && this.current(job)) { review.page = review.readPage(next); this.publish(); }
+        return Object.freeze({ ...page, key, label: request.label ?? "Provider workspace edit", canApply: review.canApply(),
+            apply: () => review.decide(true),
+            decline: () => review.decide(false), paging: editPaging(key, page.page, page.count, next => {
+                if (this.review === review && review.page === page) { review.page = review.readPage(next); this.publish(); }
             }) });
     }
-    private confirmReview(key: number): void {
-        const job = this.job, review = job?.review; if (!job || !review || key !== review.key) return;
-        let committed = false;
-        try {
-            const changed = this.applyCaptured(job, review.request.edit, review.context); committed = true;
-            this.finishReview(job, review, { applied: true }); this.publish({ message: changed ? "Captured provider edits applied as one undo command; waiting for acknowledgement." : "The provider edit batch made no text changes; waiting for acknowledgement." });
-        } catch (error) {
-            if (committed) { job.applied = true; this.finishReview(job, review, { applied: true }); this.publish({ message: "Provider edits were applied; any later failure leaves them available to undo." }); }
-            else {
-                const message = error instanceof Error ? error.message : "Provider edits refused.";
-                this.metrics.rejected++; this.finishReview(job, review, { applied: false, failureReason: message }); this.publish({ message });
-            }
-        }
+    canRunAction(editor: TextEditor): boolean {
+        return !this.disposed && !this.job && !this.action && this.provider?.getSnapshot().commandAvailable === true
+            && [...this.sessions.values()].some(session => session.editor === editor && this.available(session));
     }
-    canRunAction(editor: TextEditor): boolean { return (!this.disposed) && !this.job && !this.provider?.getSnapshot().commandRequiresReconnect && [...this.sessions.values()].some(session => session.editor === editor && this.available(session)); }
-    /** Transfer a confirmed action to the existing review owner, independent of later focus. */
-    beginAction(intent: CodeActionCommand & Readonly<{ editor: TextEditor }>): CodeActionExecution | undefined {
-        const origin = [...this.sessions.values()].find(session => session.editor === intent.editor && this.available(session));
-        if (!origin || !this.canRunAction(intent.editor) || !intent.isCurrent()) return undefined;
-        const docs = intent.documents, win = intent.editor.element.ownerDocument.defaultView!;
-        validateNavigationDocuments(docs.map(doc => ({ document: doc.id, revision: doc.revision, length: doc.buffer.length })));
-        const job = this.captureJob(origin, docs);
-        if (!job) return undefined;
-        job.externalCancel = intent.cancel; job.providerCurrent = intent.isCurrent;
-        try {
-            job.stops.push(intent.subscribe(() => this.changed(job)));
-            job.timer = win.setTimeout(() => { if (this.job === job) this.cancel(); }, 120000);
-            if (!this.current(job)) throw new Error("Captured action intent changed before handoff.");
-            this.publish({ status: "pending", message: "Executing the confirmed action under the host's captured edit policy." });
-        } catch (error) { this.release(job); throw error; }
-        const result = Promise.resolve().then(() => intent.execute({ ...this.commandScope(job, this.actionEditPolicy),
-            prepare: () => { if (!this.current(job)) throw new Error("Captured action intent changed."); if (intent.edit) this.applyCaptured(job, intent.edit); } })).then(receipt => {
-            if (!this.current(job)) throw new Error("Captured command intent changed.");
-            const success = receipt.decision?.applied !== false, reason = success ? typeof receipt.value === "string" ? receipt.value.slice(0, 1024) : "Confirmed action command completed." : receipt.decision!.failureReason ?? "Provider edits declined.";
-            const message = !success && job.applied ? `Earlier edits remain applied and undoable. ${reason}` : reason;
-            this.release(job); this.publish({ status: success ? "ready" : "rejected", message });
-            return Object.freeze({ success, applied: job.applied, reason: message, changes: Object.freeze([...job.changes]) });
-        }).catch(error => {
-            intent.cancel(); const failure = error instanceof Error ? error.message.slice(0, 1024) : "Action command failed.";
-            const reason = job.applied ? `${failure} Earlier edits remain applied and undoable.` : failure;
-            if (this.job === job) { this.release(job); this.publish({ status: "failed", message: reason }); }
-            return Object.freeze({ success: false, applied: job.applied, reason, changes: Object.freeze([...job.changes]) });
+    readonly reviewActionEdit = (request: LspApplyEdit, context: LspRequestContext) =>
+        this.prompt(request, context, () => context.isCurrent() && request.edit.isCurrent());
+    observeActions(editor: TextEditor, controller: CodeActionController) {
+        const action = { editor, controller };
+        return controller.subscribe(() => {
+            const state = controller.getSnapshot();
+            if (state.status === "executing") this.action = action;
+            else if (this.action === action) {
+                this.action = undefined;
+                this.review?.decide(false);
+                this.changes = state.changes;
+            } else return;
+            this.publish({ message: state.message });
         });
-        return Object.freeze({ cancel: () => { if (this.job === job) this.cancel(); return { applied: job.applied }; }, result });
     }
-    private declineReview(key: number): void { const job = this.job, review = job?.review; if (job && review && key === review.key) { this.metrics.rejected++; this.finishReview(job, review, { applied: false, failureReason: "Provider edits declined." }); this.publish({ message: "Provider edits declined; waiting for acknowledgement." }); } }
     readonly register = (): void => this.start("register");
     readonly unregister = (): void => this.start("unregister");
     readonly requestEdits = (): void => this.start("review");
@@ -270,7 +256,7 @@ export class HostProjectTools {
     }
     private start(kind: ProjectCommandKind): void {
         const origin = this.active;
-        if (!this.createClient || this.disconnected || this.job || !origin || !this.available(origin)) { this.publish({ message: "Focus an available source and reconnect or finish pending work first." }); return; }
+        if (!this.createClient || this.disconnected || this.job || this.action || !origin || !this.available(origin)) { this.publish({ message: "Focus an available source and reconnect or finish pending work first." }); return; }
         if (kind === "register" ? this.registered : kind !== "status" && !this.registered) { this.publish({ message: "Register the review command before using it; unregister before registering again." }); return; }
         const docs = this.host.workspace.getSnapshot().documents.filter(d => d.key.variant === "working");
         if (docs.some(d => !this.host.canCapture(d.id))) { this.publish({ message: "Finish pending input, navigation, table conversion or composition first." }); return; }
@@ -299,6 +285,6 @@ export class HostProjectTools {
         } catch (error) { this.drop(); this.release(job); this.publish({ status: "failed", message: error instanceof Error ? error.message : "Workspace provider is unavailable." }); }
     }
     faultIdle(): boolean { return this.lane.value?.faultIdle() ?? false; }
-    debug() { return { ...this.metrics, state: this.cell.get(), pending: !!this.job, registered: this.registered, transport: this.lane.value?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
+    debug() { return { ...this.metrics, state: this.cell.get(), pending: !!this.job || !!this.action, registered: this.registered, transport: this.lane.value?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
     dispose(): void { if (this.disposed) return; this.cancel(); this.registered = false; this.lane.dispose(); this.disposed = true; this.active = undefined; this.changes = []; this.publish(); }
 }

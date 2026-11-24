@@ -22,7 +22,8 @@ export function retainDocuments(workspace: Workspace, available: (id: DocumentId
         const permission = metadata.getSnapshot(), lease = workspace.acquire(doc.resourceId);
         stops.push(lease.release, handle.subscribe(() => {
             const next = handle.getSnapshot();
-            if (next?.revision !== doc.revision || next.buffer !== doc.buffer) expire();
+            const expected = documents.get(id)!;
+            if (next?.revision !== expected.revision || next.buffer !== expected.buffer) expire();
         }), metadata.subscribe(() => { if (!sameEditAuthority(permission, metadata.getSnapshot())) expire(); }));
     }
     return { documents, include, dispose() { for (const stop of stops.splice(0)) stop(); } };

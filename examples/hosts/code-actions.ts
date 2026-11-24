@@ -18,7 +18,7 @@ type ActionSettings = Pick<ActionInput, "module" | "delay" | "fault">;
 export type ActionHostOptions = Readonly<{ provider: LspWorkspace; commandPolicy?: LspCommandPolicy;
     beforeRequest?: (scope: LspScopeAccess, config: ActionSettings) => Promise<unknown>;
     beforeResolve?: (scope: LspScopeAccess, config: ActionSettings) => Promise<unknown> }>;
-export type ActionsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; pending: boolean; canApply: boolean; confirm: CodeActionPreview["confirm"] | null; reviewKey: number | null; active: boolean; module: string;
+export type ActionsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; pending: boolean; canApply: boolean; confirm: CodeActionPreview["apply"] | null; reviewKey: number | null; active: boolean; module: string;
     status: "idle" | "pending" | "ready" | "expired" | "failed" | "applied" | "executed"; message: string; title: string; disabled: string | null; command: string | null;
     edits: readonly LspWorkspaceEditNote[]; changes: readonly ChangedFile[]; choices: readonly CodeActionChoice[]; choice: number | null; choicePage: number; choicePaging: PanelPaging | null; editPaging: PanelPaging | null; resolving: boolean; page: number; editCount: number }>;
 
@@ -65,7 +65,7 @@ export class HostActionsTools {
             status: status === "executing" || status === "resolving" ? "pending" : status ?? (changes.length ? this.cell.get().status : "idle"),
             title: preview?.title ?? (state?.choice != null ? state.choices[state.choice]?.title : "") ?? "",
             message: state?.message ?? this.cell.get().message, command: preview?.command ?? null, choices: state?.choices ?? [], choice: state?.choice ?? null,
-            canApply: !!preview?.canApply && (!preview.command || !!this.reviewOwner?.canRunAction(panel!.source.editor)), confirm: preview?.confirm ?? null, reviewKey: this.reviewKey(preview),
+            canApply: !!preview?.canApply && (!preview.command || !!this.reviewOwner?.canRunAction(panel!.source.editor)), confirm: preview?.apply ?? null, reviewKey: this.reviewKey(preview),
             disabled: preview?.disabled ?? null, page: pages?.edits?.page ?? 0, editCount: pages?.edits?.count ?? 0, edits: pages?.edits?.notes ?? [],
             choicePage: pages?.choicePage ?? 0, choicePaging: pages?.choicePaging ?? null, editPaging: pages?.editPaging ?? null,
             changes, ...patch });
@@ -97,9 +97,10 @@ export class HostActionsTools {
                 ...(beforeResolve && {
                     prepareResolve: session => beforeResolve(session, { module: settings().module, ...this.fixture.take() })
                 }),
-                ...(review && { runCommand: command => review.beginAction({ ...command, editor }) })
+                ...(review && { canRunCommand: () => review.canRunAction(editor), reviewCommandEdit: review.reviewActionEdit })
             }
         });
+        const stopAction = review?.observeActions(editor, controller);
         const s = { id, target, editor, controller };
         const ownsModule = () => this.moduleField.focused && this.moduleSource === s;
         return attachPanelSession(this.sessions, s, (signal, register) => {
@@ -121,7 +122,7 @@ export class HostActionsTools {
                 else { this.panel.stop(); this.panel = undefined; }
             }
             this.publish();
-        }, dispose);
+        }, () => { dispose(); stopAction?.(); });
     }
     readonly request = (): void => {
         if (!this.moduleSource?.editor.commands.run("actions.request", "panel"))

@@ -2,7 +2,6 @@ import type { Workspace } from "../../src/index.ts";
 import { mountAnchoredOverlay } from "../../src/browser/index.ts";
 import type { CodeActionController, CodeActionControllerOptions, CodeActionPreview, TextEditor } from "../../src/browser/index.ts";
 import type { LspCodeAction, LspWorkspace } from "../../src/protocol/index.ts";
-import { HostProjectTools } from "../hosts/project.ts";
 import { createReviewKey, pageActions, renderPanelActions, renderPanelButton } from "../hosts/panel-actions.ts";
 import { actionChoicePageSize, createActionPages } from "../hosts/action-pages.ts";
 import { editPageSize } from "../hosts/edit-review.ts";
@@ -13,28 +12,25 @@ import type { DemoLanguage } from "./language.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 import { bindPopupCommands } from "./language-commands.ts";
 
-export function demoActionPolicy(scope: CleanupScope, workspace: Workspace, file: DemoFile, editor: TextEditor,
-    provider: LspWorkspace, language: DemoLanguage, valid: () => boolean) {
-    const idle = () => { const state = editor.activity(); return valid() && !state.composing && !state.pendingInput && !state.pendingCommand; };
-    const present = (id: string) => id === file.resource.documentId && valid() ? editor : undefined;
-    const commands = new HostProjectTools({ workspace, canCapture: idle, present }, undefined, provider, request =>
-        request.edit.documents.length === 1 && request.edit.documents[0]!.target.document.documentId === file.resource.documentId
-        && request.edit.documents[0]!.edits.length === 1 && request.edit.documents[0]!.edits.every(edit => edit.insert === projectReviewNote
-            && edit.from === edit.to && edit.from === request.edit.documents[0]!.target.document.buffer.length) ? "apply" : "decline");
-    scope.defer(() => commands.dispose());
-    const options: CodeActionControllerOptions = {
-        documents: () => workspace.getSnapshot().documents.filter(doc => doc.language !== null), canCapture: idle,
-        commandPolicy: demoCommandPolicy(file, () => workspace.document(file.resource.documentId).language?.uri, idle),
+export function demoActionPolicy(workspace: Workspace, file: DemoFile, language: DemoLanguage,
+    valid: () => boolean): CodeActionControllerOptions {
+    return {
+        documents: () => workspace.getSnapshot().documents.filter(doc => doc.language !== null), canCapture: valid,
+        commandPolicy: demoCommandPolicy(file, () => workspace.document(file.resource.documentId).language?.uri, valid),
         prepareRequest: session => language.prepareActions(session, file),
-        runCommand: command => commands.beginAction({ ...command, editor })
+        reviewCommandEdit: ({ edit }) => {
+            const part = edit.documents[0];
+            if (edit.documents.length !== 1 || part?.target.document.documentId !== file.resource.documentId) return false;
+            const note = part.edits[0];
+            return part.edits.length === 1 && note?.insert === projectReviewNote
+                && note.from === note.to && note.from === part.target.document.buffer.length;
+        }
     };
-    scope.defer(commands.attach("source", file.tab, editor));
-    return { options, commands, idle };
 }
 
 /** Contextual presentation; the existing action controller owns captures, validation and history. */
 export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file: DemoFile, editor: TextEditor, tools: CodeActionController,
-    { commands, idle }: ReturnType<typeof demoActionPolicy>, dismissOther: () => void) {
+    provider: LspWorkspace, idle: () => boolean, dismissOther: () => void) {
     const events = new AbortController(); let disposed = false, commandAction = false;
     scope.defer(() => { disposed = true; events.abort(); });
     const popup = document.createElement("section"); scope.defer(() => popup.remove());
@@ -69,7 +65,7 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     const hide = () => { open = false; overlay.hide(); };
     const dismiss = () => { hide(); tools.cancel(); };
     const canApply = (preview: CodeActionPreview | null) =>
-        !!preview?.canApply && (!preview.command || commands.canRunAction(editor));
+        !!preview?.canApply && (!preview.command || provider.getSnapshot().commandAvailable);
     const anchor = () => {
         if (!open) return;
         const { revision, selection } = editor.view.getSnapshot();
@@ -114,13 +110,13 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
             item.append(`${at.title} `, before, " → ", after); return item;
         }));
         apply = renderPanelButton(apply, { label: preview?.command ? "Run action" : "Apply fix", reviewKey: reviewKey(preview),
-            disabled: !canApply(preview), invoke: preview?.confirm ?? null });
+            disabled: !canApply(preview), invoke: preview?.apply ?? null });
         pages.hidden = !editPaging;
         renderPanelActions(pages, pageActions("edits", editPaging));
         if (state.status === "applied" && !commandAction) queueMicrotask(() => { if (!disposed && tools.getSnapshot() === state) { dismiss(); editor.focus(); } });
     }
     scope.defer(tools.subscribe(render));
-    scope.defer(commands.state.subscribe(() => { if (tools.getSnapshot().preview?.command) render(); }));
+    scope.defer(provider.subscribe(() => { if (tools.getSnapshot().preview?.command) render(); }));
     // Commands can edit their own target while reporting the result to the user.
     scope.defer(editor.view.subscribe(() => { if (commandAction) anchor(); }));
     scope.defer(workspace.onDocumentChange(file.resource.documentId, change => {
@@ -133,7 +129,7 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     bind("quickfix.dismiss", "Dismiss quick fixes", "Escape", () => { dismiss(); editor.focus(); });
     bind("quickfix.apply", "Apply selected fix", "Enter", () => {
         const state = tools.getSnapshot();
-        if (state.preview && canApply(state.preview)) { state.preview.confirm(); return true; }
+        if (state.preview && canApply(state.preview)) { void state.preview.apply(); return true; }
         if (!["pending", "resolving", "executing"].includes(state.status)) dismiss();
         return false;
     });

@@ -590,8 +590,8 @@ Call a choice’s `select()` to resolve and preview it.
 The user can choose another action while a preview loads. Only the latest choice can open a
 preview or run its direct-fix predicate.
 If the first choice already has an edit, its preview opens with the list. A preview page contains up
-to 64 edits. For an edit-only action, `confirm()` applies the full edit across all affected files in
-one undo step and returns `{ status: "applied" }`.
+to 64 edits. For an edit-only action, `apply()` applies the full edit across all affected files in
+one undo step.
 
 ```ts
 import { attachEditorLanguage, type TextEditor } from "sttropez/browser";
@@ -603,7 +603,7 @@ export function attachFixes(editor: TextEditor, provider: LspWorkspace) {
         const { choices, preview } = actions.getSnapshot();
         // Bind each button to this choice or preview, including across a later render.
         renderFixes(choices.map(choice => ({ title: choice.title, select: () => choice.select() })),
-            preview?.readPage()?.count ?? 0, preview?.canApply ? preview.confirm : undefined);
+            preview?.readPage()?.count ?? 0, preview?.canApply ? preview.apply : undefined);
     });
     return { request: actions.request, dispose() { stop(); dispose(); } };
 }
@@ -614,18 +614,15 @@ declare function renderFixes(choices: { title: string; select(): void }[], edits
 A change to the captured selection, fold projection, document revision or edit authority expires
 the preview. Replacing the editor disposes its controller. Old choices and confirmation buttons
 cannot edit the replacement. For a direct fix, an explicit choice button can pass a predicate to
-`select` that checks the resolved action before confirming it. Commands also require a host
-`runCommand` handler that owns authorization and review of any subsequent edits. Return
-`undefined` before starting work to decline a command. The caller receives
-`{ status: "declined" }` and can retry the same preview while it is current. Returning an
-execution handle gives the caller `{ status: "executing" }`. Observe the controller for the
-eventual result (`applied`, `executed` or `failed`).
+`select` that checks the resolved action before confirming it. Enable commands with `reviewCommandEdit(request, context)`. Return a boolean or a promise for the decision.
+For a dialog, use `context.onCancel` to close it when the request expires. The attachment applies
+the action’s initial edit before sending the command. It validates each approved edit against the
+originating view and captured documents. Each changed batch has one Undo step across its files.
 
-`CodeActionConfirmation` also reports `expired` for a retired preview, `disabled` for an
-unavailable action, and `not-writable` when a reviewed edit lacks permission. If an edit targets a
-read-only or locked file, the preview stays available for inspection. Its `disabled` field explains
-the restriction and `canApply` is false. A read-only view also enforces its own editing restriction. A synchronous
-failure returns `{ status: "failed", message }`.
+`await preview.apply()` returns `done` with a list of `ChangedDocument` values, `stale` if the view or request
+expired, `refused` for a denied action or edit, or `failed` for an error. Earlier edits stay undoable
+if a later step fails. Use `canRunCommand` to withhold execution while another host operation is
+active. A busy command returns `refused("command-unavailable")` and leaves the preview available.
 
 `createLspActionClient(provider, options).run({ document, project, from, to }).result` resolves to
 validated `actions`, currentness guards, `supports(command)`, `resolve(action)` and

@@ -27,7 +27,6 @@ export function actionClient(owner: LspWorkspace | LspDocumentOwner, options: Ls
     let executing = false, runner: LspCommandRunner | undefined;
     let resolver: ReturnType<typeof createLspClient<"textDocument/codeAction">> | undefined;
     const releaseResolve = () => { const previous = resolver; resolver = undefined; previous?.dispose(); };
-    const commands = () => runner ??= commandRunner(session, client.notify, client.setDocuments);
     const busy = () => executing || client.isBusy() || !!resolver?.isBusy();
     return Object.freeze({ ...lspFeatureHandle(client, { isBusy: busy,
         cancel: () => { releaseResolve(); runner?.cancel(); client.cancel(); }, dispose: () => { releaseResolve(); runner?.dispose(); client.dispose(); } }),
@@ -63,10 +62,14 @@ export function actionClient(owner: LspWorkspace | LspDocumentOwner, options: Ls
                     supports: (command: LspCommand) => commandCurrent() && routes.has(command) && (routes.get(command)!.isCurrent?.() ?? true),
                     execute: async (action: LspCodeAction, scope: LspCommandScope) => {
                         const route = action.command && routes.get(action.command);
-                        if (!value.isCurrent() || busy() || !actions.includes(action) || !action.command || action.disabled
-                            || !route || !(route.isCurrent?.() ?? true) || !session.getSnapshot().commandAvailable) throw staleRequest("Captured action command is unavailable or changed.");
+                        if (!value.isCurrent() || busy() || !actions.includes(action) || !action.command || !route)
+                            throw staleRequest("Captured action command is unavailable.");
+                        // The runner rechecks the route and reserves the connection before applying the initial edit.
                         executing = true;
-                        try { return await commands().runAuthorized(action.command, scope, route); }
+                        try {
+                            runner ??= commandRunner(session, client.notify, client.setDocuments);
+                            return await runner.runAuthorized(action.command, scope, route);
+                        }
                         finally { executing = false; client.notify(); }
                     },
                     cancelResolve: () => { if (value.isGenerationCurrent()) releaseResolve(); },

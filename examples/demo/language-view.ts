@@ -83,9 +83,12 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
             if (!valid()) return;
             try {
                 const closeProjectPopups = () => { symbols?.dismiss(); actions?.dismiss(); };
-                const policy = demoActionPolicy(scope, workspace, file, editor, provider, language, valid);
+                const idle = () => {
+                    const activity = editor.activity();
+                    return valid() && !activity.composing && !activity.pendingInput && !activity.pendingCommand;
+                };
                 const tools = attachEditorLanguage(editor, provider, {
-                    codeActions: policy.options, occurrences: {},
+                    codeActions: demoActionPolicy(workspace, file, language, idle), occurrences: {},
                     completion: { autoConnect: false, filterManualCompletions: true, canCapture: valid,
                         getPageSize: () => completionPageSize(choices) },
                     signature: { canCapture: valid, beforeRequest: () => {
@@ -107,7 +110,7 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
                         else if (state.status === "ready") commands.feedback("signature", "", true);
                     });
                 symbols = mountDemoSymbols(scope, project, file, editor, provider, valid, () => { controller?.cancel(); inspection?.dismiss(); actions?.dismiss(); }, open, commands.notice);
-                actions = mountDemoActions(scope, workspace, file, editor, tools.codeActions, policy, () => { controller?.cancel(); inspection?.dismiss(); symbols?.dismiss(); });
+                actions = mountDemoActions(scope, workspace, file, editor, tools.codeActions, provider, idle, () => { controller?.cancel(); inspection?.dismiss(); symbols?.dismiss(); });
                 scope.defer(controller.subscribe(render));
                 const ready = () => { if (valid()) { controller!.connect(); render(); commands.ready(); } };
                 if (provider.getSnapshot().phase === "ready") ready();
