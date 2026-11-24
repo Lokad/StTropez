@@ -45,10 +45,8 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
     const navigation = createNavigationController(editor, provider, { canCapture: idle, resultLifetime: "view", documents: () => project.files.map(file => workspace.document(file.resource.documentId)),
         onDefinition: offset => request("definition", offset) });
     scope.defer(navigation.dispose);
-    const pendingNavigation = editor.latestOperation();
-    scope.defer(pendingNavigation.dispose);
     const target = workspace.tabs.capture(file.tab);
-    const hideLocations = () => { pendingNavigation.cancel(); query = undefined; locationsOverlay.hide(); };
+    const hideLocations = () => { query = undefined; locationsOverlay.hide(); };
     const cancelNavigation = () => { hideLocations(); navigation.cancel(); };
     scope.defer(cancelNavigation);
     const markChoice = (captured: Query) => {
@@ -99,17 +97,22 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
             affinity: caret.headAffinity ?? "after", vertical: "center-if-outside", horizontal: "nearest",
         });
         const origin = project.navigation.capture(editor, pointed); if (!origin) return;
-        void pendingNavigation.run({}, op => {
-            const captured: Query = { kind, page: undefined, message: "", offset: pointed ?? caret.head, revision: op.document.revision, origin };
-            query = captured; showNavigation(captured, kind === "definition" ? "Finding definition…" : "Finding references…");
-            const reply = navigation.request(kind, captured.offset).catch((error: unknown) =>
-                error instanceof Error ? `Cannot open this location: ${error.message}` : "This location is unavailable in the sample.");
-            return op.step(reply, result => {
-                if (typeof result === "string") { showNavigation(captured, result); return; }
-                if (kind === "definition" && result.count === 1) { choose(captured, result.locationAt(0)!); return; }
-                captured.page = result.pageFor();
-                showNavigation(captured, result.count ? `Choose a ${kind === "definition" ? "definition" : "reference"}.` : `No ${kind} in this sample.`);
-            });
+        const captured: Query = { kind, page: undefined, message: "", offset: pointed ?? caret.head,
+            revision: editor.view.getSnapshot().revision, origin };
+        query = captured;
+        showNavigation(captured, kind === "definition" ? "Finding definition…" : "Finding references…");
+        void navigation.request(kind, captured.offset).then(outcome => {
+            if (query !== captured) return;
+            if (outcome.status === "stale" || outcome.status === "refused") { hideLocations(); return; }
+            if (outcome.status === "failed") {
+                const message = outcome.error instanceof Error ? outcome.error.message : "Location unavailable.";
+                showNavigation(captured, `Cannot open this location: ${message}`);
+                return;
+            }
+            const result = outcome.value;
+            if (kind === "definition" && result.count === 1) { choose(captured, result.locationAt(0)!); return; }
+            captured.page = result.pageFor();
+            showNavigation(captured, result.count ? `Choose a ${kind === "definition" ? "definition" : "reference"}.` : `No ${kind} in this sample.`);
         }).catch(reportError);
     }
     const rename = new HostRenameTools({ workspace, canCapture: idle, present: id => id === file.resource.documentId && valid() ? editor : undefined },

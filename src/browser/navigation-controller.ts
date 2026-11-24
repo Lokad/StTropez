@@ -1,9 +1,11 @@
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
+import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
 import { createLspNavigationClient, type LspNavigationClient, type LspNavigationResult, type LspDefinitionPreview } from "../protocol/lsp-navigation.ts";
 import type { LspLocation } from "../protocol/lsp-features.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
+import { isStaleRequest } from "../protocol/wire.ts";
 import { captureViewRequest, editorReadyForRequest, sameEditAuthority } from "./captured-view.ts";
 import { bindDefinitionPointer } from "./definition-pointer.ts";
 import type { DefinitionHit } from "./definition-pointer.ts";
@@ -32,7 +34,7 @@ export type NavigationControllerOptions = Readonly<{
 }>;
 export type NavigationSnapshot = Readonly<{ status: "idle" | "pending" | "ready" | "empty" | "expired" | "failed" | "disposed"; result: NavigationResult | null }>;
 export type NavigationController = Observable<NavigationSnapshot> & Readonly<{
-    request: (kind?: Kind, offset?: number, includeDeclaration?: boolean) => Promise<NavigationResult>;
+    request: (kind?: Kind, offset?: number, includeDeclaration?: boolean) => Promise<Outcome<NavigationResult>>;
     cancel: () => void; dispose: () => void; getDiagnostics: () => ReturnType<LspNavigationClient["snapshot"]> | null;
 }>;
 const idle: NavigationSnapshot = Object.freeze({ status: "idle", result: null });
@@ -137,16 +139,32 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
             }).catch(() => { if (hover === job) leave(); });
         } catch { source.cancel(); client?.dispose(); }
     }
-    async function request(kind: Kind = "definition", offset = view.getSnapshot().selection.head, includeDeclaration = true): Promise<NavigationResult> {
-        if (events.signal.aborted) throw new Error("Navigation controller is disposed.");
+    async function request(kind: Kind = "definition", offset = view.getSnapshot().selection.head, includeDeclaration = true): Promise<Outcome<NavigationResult>> {
+        if (events.signal.aborted) return stale;
         notifications.assertWritable();
         const prepared = kind === "definition" && activation && inside(offset, activation.result?.originRange ?? activation.hit) ? activation : undefined;
         if (prepared) activation = undefined;
-        const source = prepared?.source ?? capture();
-        if (!source || !source.isCurrent()) { leave(); clearExplicit(); release(prepared); publish("expired"); throw new Error("Navigation source is unavailable."); }
+        let source: Source | undefined;
         let client: LspNavigationClient;
-        try { client = prepared?.client ?? explicit?.client ?? hover?.client ?? createLspNavigationClient(provider); }
-        catch (error) { source.cancel(); leave(); publish("failed"); throw error; }
+        try {
+            source = prepared?.source ?? capture();
+            if (!source || !source.isCurrent()) {
+                source?.cancel();
+                leave();
+                clearExplicit();
+                release(prepared);
+                publish("expired");
+                return prepared ? stale : refused("unavailable-view");
+            }
+            client = prepared?.client ?? explicit?.client ?? hover?.client ?? createLspNavigationClient(provider);
+        } catch (error) {
+            source?.cancel();
+            leave();
+            clearExplicit();
+            release(prepared);
+            publish("failed");
+            return failed(error);
+        }
         leave(client); clearExplicit(client);
         const job: Request = { client, source, stops: [], expired: false }; explicit = job;
         const abort = () => { if (job.source) expire(job); };
@@ -164,20 +182,21 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
                 };
                 job.stops.push(handle.subscribe(changed), metadata.subscribe(changed)); changed();
             }
-            if (job.expired) throw new Error("Navigation project changed.");
+            if (job.expired) return stale;
             publish("pending");
             const query = () => client.run({ document: source.document, project: documents, offset, kind, includeDeclaration,
                 prepare: options.prepareRequest?.(kind) }).result;
             let reply: LspNavigationResult;
             if (prepared) {
                 const preview = await prepared.reply;
-                if (!source.isCurrent() || !preview.isCurrent()) { expire(job); throw new Error("Definition link expired."); }
+                if (!source.isCurrent() || !preview.isCurrent()) { expire(job); return stale; }
                 reply = preview.originRange && !inside(offset, preview.originRange) && offset !== prepared.hit.offset
                     ? await query()
                     : await preview.resolve();
             } else reply = await query();
             if (explicit !== job || job.expired || !source.isCurrent() || !reply.isCurrent()) {
-                expire(job); throw new Error("Navigation source changed.");
+                expire(job);
+                return stale;
             }
             if (options.resultLifetime !== "view") { delete job.source; source.cancel(); }
             job.reply = reply;
@@ -186,9 +205,18 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
                 return explicit === job && !job.expired && available() && workspace.ownsDocumentView(view, tab)
                     && (!job.source || job.source.isCurrent()) && reply.isCurrent();
             });
-            publish(result.count ? "ready" : "empty", result); return result;
+            publish(result.count ? "ready" : "empty", result);
+            return done(result);
         } catch (error) {
-            if (explicit === job) { clearExplicit(); publish(job.expired ? "expired" : "failed"); } throw error;
+            try {
+                if (explicit !== job || job.expired || isStaleRequest(error) || !source.isCurrent()) {
+                    expire(job);
+                    return stale;
+                }
+            } catch (captureError) { error = captureError; }
+            clearExplicit();
+            publish("failed");
+            return failed(error);
         }
     }
     const stop = provider.subscribe(() => {

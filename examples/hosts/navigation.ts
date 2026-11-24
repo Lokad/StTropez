@@ -79,8 +79,7 @@ export class HostNavigationTools {
         if (!job.mayFocus || !locations.length) return;
         const mayFocus = () => this.job === job && this.cell.get().locations === locations && job.mayFocus?.() && editor.getSnapshot().focused;
         if (job.kind === "definition" && result.count === 1) {
-            // Presenting a pane can write to the workspace. Finish controller notification first.
-            queueMicrotask(() => { if (mayFocus()) locations[0]!.open(); });
+            if (mayFocus()) locations[0]!.open();
         } else {
             editor.element.ownerDocument.defaultView!.requestAnimationFrame(() => { if (mayFocus()) focusResult(this.resultList.element, 0); });
         }
@@ -116,7 +115,6 @@ export class HostNavigationTools {
             const stop = controller.subscribe(() => {
                 const job = this.job, state = controller.getSnapshot();
                 if (job?.origin === session) {
-                    if (state.result) { this.ready(job, state.result); return; }
                     if (state.status === "expired") queueMicrotask(() => { if (this.job === job) { this.metrics.expired++; this.clear("expired", "Captured navigation changed; request fresh results."); } });
                 }
                 this.publish();
@@ -183,9 +181,14 @@ export class HostNavigationTools {
             job.timer = win.setTimeout(() => { if (this.job === job) { this.metrics.failed++; this.clear("failed", "Navigation timed out; source is unchanged."); } }, 30000);
             const { includeDeclaration } = this.cell.get();
             this.publish({ status: "pending", message: `Finding ${kind === "definition" ? "definitions" : "references"} of ${symbol} from ${origin.id}.` });
-            void origin.controller.request(kind, offset, includeDeclaration).catch(error => {
+            void origin.controller.request(kind, offset, includeDeclaration).then(outcome => {
                 if (this.job !== job) return;
-                this.queries.failed++; this.metrics.failed++; this.clear("failed", error instanceof Error ? error.message : "Navigation failed; source is unchanged.");
+                if (outcome.status === "done") this.ready(job, outcome.value);
+                else if (outcome.status === "failed") {
+                    this.queries.failed++;
+                    this.metrics.failed++;
+                    this.clear("failed", outcome.error instanceof Error ? outcome.error.message : "Navigation failed.");
+                }
             });
         } catch (error) { this.metrics.failed++; this.clear("failed", error instanceof Error ? error.message : "Navigation is unavailable."); }
     }

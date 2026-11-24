@@ -406,7 +406,7 @@ is pending. A drag starting inside selected text uses the editor’s text transf
 Editing or remounting the source expires the gesture. Alt+click stays available for multiple carets.
 
 If the provider has reached its scope limit, hovering leaves the symbol unmarked. An explicit
-lookup rejects and sets the controller status to `failed`. Both release the captured view, so
+lookup returns `failed` with the error. Both release the captured view, so
 the host can retry the lookup when a scope becomes available.
 
 Use `options.linkAt(offset)` to handle a document link under the pointer. Return its UTF-16
@@ -420,7 +420,9 @@ those files and checks the current project list. Dismissing the lookup releases 
 A host that opens tabs or shows a chooser handles
 `options.onDefinition(offset)` by calling `controller.request("definition", offset)` during the
 callback. This reuses the hover reply. F12 and reference commands can call the same controller
-at the caret. For a single destination use `result.locationAt(index)`. For a list,
+at the caret. A completed request returns `done` with the published result, even when it has zero
+locations. A cancelled or superseded request returns `stale`. An unavailable view returns
+`refused` with reason `unavailable-view`. For a single destination use `result.locationAt(index)`. For a list,
 `result.pageFor(index)` selects that location and returns its page of up to 64 choices.
 The index defaults to zero. An empty result or an invalid index yields `undefined`.
 

@@ -50,7 +50,11 @@ test("definition lookup releases its source when the provider has no free scope"
         catch { refused = true; }
         return { ownership, pointerHits: () => pointerHits, status: () => navigation.getSnapshot().status,
             retiredMount: () => ({ refused, retiredHits }),
-            lookup: () => navigation.request("definition", 23).then(result => result.locationAt(0)?.from, (error: Error) => error.message),
+            lookup: async () => {
+                const result = await navigation.request("definition", 23);
+                if (result.status === "done") return result.value.locationAt(0)?.from;
+                return result.status === "failed" && result.error instanceof Error ? result.error.message : result.status;
+            },
             freeScope: occupied.dispose,
             finish() { navigation.dispose(); provider.dispose(); editor.dispose(); } };
     });
