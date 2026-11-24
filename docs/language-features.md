@@ -172,6 +172,8 @@ export async function completionLabels(
 
 `createCompletionController(editor, provider, options?)` attaches completion and snippets to one view.
 The controller handles input, selection checks and acceptance. The host renders choices and status.
+When the shared provider disconnects, completion clears its choices and reports the loss of service.
+Local editing stays available. Reconnecting from another feature updates completion in the same view.
 `request()` invokes completion. Set `automatic: false` to require explicit requests. Supply
 `canCapture` for additional readiness checks. `getDiagnostics()` reports completion counts,
 `lastCompletionBeforeInputMs` for the input listener and `lastCompletionCommandMs` for the most
@@ -394,6 +396,10 @@ shadow root. Hover preserves focus, selections and open tabs. Releasing the modi
 underline. A primary click while the modifier is held resolves the target even if the lookup
 is pending. Editing or remounting the source expires
 the gesture. Alt+click stays available for multiple carets.
+
+If the provider has reached its scope limit, hovering leaves the symbol unmarked. An explicit
+lookup rejects and sets the controller status to `failed`. Both release the captured view, so
+the host can retry the lookup when a scope becomes available.
 
 Use `options.linkAt(offset)` to handle a document link under the pointer. Return its UTF-16
 range and an `open()` action. Ctrl/Cmd hover underlines the whole range, including punctuation.

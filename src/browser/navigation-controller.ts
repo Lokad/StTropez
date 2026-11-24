@@ -75,7 +75,6 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
     const { workspace, view, tab } = editor;
     if (editor.signal.aborted || !workspace.ownsDocumentView(view, tab)) throw new Error("Navigation requires a live document view.");
     const notifications = workspace.createNotificationScope(), state = new Store(idle, notifications);
-    const layer = editor.decorations.add({ name: "definition link", order: 110, minimap: false });
     const events = new AbortController(), subscribers = new Set<() => void>();
     const available = () => {
         const activity = editor.activity();
@@ -126,9 +125,10 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
         }
         if (matches(hover, hit)) return;
         const source = capture(); if (!source || source.document.revision !== hit.revision) { leave(); source?.cancel(); return; }
-        const client = hover?.client ?? createLspNavigationClient(provider);
+        let client = hover?.client;
         leave(client);
         try {
+            client ??= createLspNavigationClient(provider);
             const reply = client.prepareDefinition({ document: source.document, project: project(source), offset: hit.offset, prepare: options.prepareRequest?.("definition") }).result;
             const job: Hover = { hit, client, source, reply }; hover = job;
             source.signal.addEventListener("abort", () => { if (hover === job) leave(); }, { once: true });
@@ -139,7 +139,7 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
                 const { from, to } = result.originRange ?? hit;
                 if (from < to) layer.set(hit.revision, [{ from, to, className: "st-definition-link" }]);
             }).catch(() => { if (hover === job) leave(); });
-        } catch { source.cancel(); client.dispose(); }
+        } catch { source.cancel(); client?.dispose(); }
     }
     async function request(kind: Kind = "definition", offset = view.getSnapshot().selection.head, includeDeclaration = true): Promise<NavigationResult> {
         if (events.signal.aborted) throw new Error("Navigation controller is disposed.");
@@ -148,7 +148,9 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
         if (prepared) activation = undefined;
         const source = prepared?.source ?? capture();
         if (!source || !source.isCurrent()) { leave(); clearExplicit(); release(prepared); publish("expired"); throw new Error("Navigation source is unavailable."); }
-        const client = prepared?.client ?? explicit?.client ?? hover?.client ?? createLspNavigationClient(provider);
+        let client: LspNavigationClient;
+        try { client = prepared?.client ?? explicit?.client ?? hover?.client ?? createLspNavigationClient(provider); }
+        catch (error) { source.cancel(); leave(); publish("failed"); throw error; }
         leave(client); clearExplicit(client);
         const job: Request = { client, source, stops: [], expired: false }; explicit = job;
         const abort = () => { if (job.source) expire(job); };
@@ -193,6 +195,12 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
             if (explicit === job) { clearExplicit(); publish(job.expired ? "expired" : "failed"); } throw error;
         }
     }
+    const stop = provider.subscribe(() => {
+        const job = hover, request = explicit;
+        if (job?.result && !job.result.isCurrent()) queueMicrotask(() => { if (hover === job) leave(); });
+        if (request?.reply && !request.reply.isCurrent()) expire(request);
+    });
+    const layer = editor.decorations.add({ name: "definition link", order: 110, minimap: false });
     bindDefinitionPointer(editor, inspect, leave, hit => {
         if (hit.open) {
             const current = markedLink?.source.isCurrent(); leave();
@@ -208,11 +216,6 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
         } finally { const unused = activation; activation = undefined; release(unused); }
     }, events.signal, options.linkAt);
     editor.onEditIntent(kind => { if (kind === "compositionstart") cancel(); else if (markedLink) leave(); }, events.signal);
-    const stop = provider.subscribe(() => {
-        const job = hover, request = explicit;
-        if (job?.result && !job.result.isCurrent()) queueMicrotask(() => { if (hover === job) leave(); });
-        if (request?.reply && !request.reply.isCurrent()) expire(request);
-    });
     function dispose() {
         if (events.signal.aborted) return;
         events.abort(); stop(); leave(); clearExplicit(); layer.dispose(); editor.signal.removeEventListener("abort", dispose);

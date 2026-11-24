@@ -140,12 +140,16 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
     });
     test("shared language disconnect clears presentation and preserves editing until explicit reconnect", async ({ page }) => {
         test.setTimeout(60000);
-        const methods: string[] = []; let disconnect: (() => void) | undefined;
+        const methods: string[] = []; let dropCompletion = false;
         await page.routeWebSocket("**/lsp-fixture", client => {
             const server = client.connectToServer();
             client.onMessage(message => { const value = JSON.parse(message.toString());
                 if (value.method) methods.push(value.method);
-                if (value.method === "initialize") disconnect = () => server.send(JSON.stringify({ jsonrpc: "2.0", method: "fixture/disconnect" }));
+                if (dropCompletion && value.method === "textDocument/completion") {
+                    dropCompletion = false;
+                    server.send(JSON.stringify({ jsonrpc: "2.0", method: "fixture/disconnect" }));
+                    return;
+                }
                 server.send(message);
             });
             server.onMessage(message => client.send(message));
@@ -156,15 +160,21 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await expect(links.getByRole("button")).toHaveCount(1);
         await discoverColors(); await preview(); await expect(apply).toBeEnabled();
         await signature(); await expect(popup.getByLabel("Active signature parameter", { exact: true })).toHaveText("fallback?: string");
-        const connected = await snapshot(page); expect(disconnect).toBeDefined(); disconnect!();
+        const connected = await snapshot(page); dropCompletion = true;
+        await page.evaluate(() => window.hostFixture.requestProvider());
         await expect.poll(async () => (await snapshot(page)).bindings.signature.presentation.connected).toBe(false);
+        const completionStatus = page.getByLabel("Language status", { exact: true });
+        await expect(completionStatus).toContainText("provider disconnected");
+        expect(await page.evaluate(() => window.hostFixture.providerState())).toMatchObject({ connected: false, pending: false, choices: [] });
         await expect(popup).toBeHidden(); await settledColorsAndLinks(page);
         await expect(apply).toBeDisabled(); await expect(links.locator("li")).toHaveCount(0);
         expect((await snapshot(page)).bindings.links.state.connected).toBe(false); expect((await snapshot(page)).bindings.colors.state.choices).toHaveLength(0);
         await expect(button(page, "Reconnect color provider")).toBeEnabled();
         await field(page).press("Control+End"); await field(page).pressSequentially("H"); await ready(page); await exact(page, raw + "H");
+        await expect(completionStatus).toContainText("provider disconnected");
         expect((await snapshot(page)).bindings.lsp!.created).toBe(connected.bindings.lsp!.created);
         await button(page, "Reconnect signature provider").click();
+        await expect(completionStatus).toContainText("provider connected");
         await page.evaluate(at => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: at, head: at }]); }, raw.indexOf(")"));
         await signature(); await expect(popup).toBeVisible(); await button(page, "Discover module links").click(); await settledColorsAndLinks(page); await expect(links.getByRole("button")).toHaveCount(1);
         await discoverColors(); await preview(); await expect(apply).toBeEnabled(); await exact(page, raw + "H");

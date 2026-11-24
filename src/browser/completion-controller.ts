@@ -13,7 +13,7 @@ import { editorInput } from "./editor-input.ts";
 import type { DecorationLayer } from "./decoration-layers.ts";
 import { sameEditAuthority } from "./captured-view.ts";
 import { RpcError, createLspCompletionClient, type LspCompletionClient, lspCompletionPlan } from "../protocol/index.ts";
-import type { LspCall, LspCompletion, LspCompletionBatch, LspCompletionResolution, LspCompletions, LspCompletionFallback, LspDocument, LspScopeAccess, LspWorkspace, JsonValue } from "../protocol/index.ts";
+import type { LspCall, LspCompletion, LspCompletionBatch, LspCompletionResolution, LspCompletions, LspCompletionFallback, LspDocument, LspScopeAccess, LspWorkspace, LspWorkspaceSnapshot, JsonValue } from "../protocol/index.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 
@@ -47,6 +47,12 @@ const word = new RegExp(`^(?:${codeWordConstituentPattern})$`, "u");
 const namedPrefix = new RegExp(`(?:\\$|(?!\\p{Nd})${codeWordConstituentPattern})\\p{Nd}*$`, "u");
 const hasNamedPrefix = (buffer: TextBuffer, head: number) => namedPrefix.test(buffer.slice(Math.max(0, head - 2048), head));
 
+function connectionMessage(phase: LspWorkspaceSnapshot["phase"]): string {
+    if (phase === "ready") return "LSP provider connected. Request completion for results.";
+    if (phase === "connecting" || phase === "initializing") return "LSP provider connecting.";
+    return "LSP provider disconnected; local editing remains available.";
+}
+
 /** Captured editor coordination; hosts render controls and supply provider/custom-message policy. */
 export function createCompletionController(editor: TextEditor, provider: LspWorkspace, options: CompletionControllerOptions = {}): CompletionController {
     const input = editorInput(editor);
@@ -68,7 +74,8 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     const emptyMessages: readonly string[] = Object.freeze([]);
     let labelItems: readonly LspCompletion[] | undefined, labelGeneration: number | undefined, labels = emptyMessages;
     const notifications = workspace.createNotificationScope(error => options.onError?.(error)), observers = new Set<() => void>();
-    const cell = new Store<CompletionSnapshot>(Object.freeze({ message: "LSP provider disconnected; local editing remains available.", connected: false, pending: false, offerText: null, anchor: null, choices: Object.freeze([]), choiceIndex: 0, completionAt: () => undefined, completionIncomplete: false, completionDetail: "", resolving: false, snippet: null, omittedCompletions: Object.freeze([]) }), notifications);
+    let providerPhase = scope.getSnapshot().phase;
+    const cell = new Store<CompletionSnapshot>(Object.freeze({ message: connectionMessage(providerPhase), connected: providerPhase === "ready", pending: false, offerText: null, anchor: null, choices: Object.freeze([]), choiceIndex: 0, completionAt: () => undefined, completionIncomplete: false, completionDetail: "", resolving: false, snippet: null, omittedCompletions: Object.freeze([]) }), notifications);
     const state: Observable<CompletionSnapshot> = Object.freeze({ getSnapshot: cell.observable.getSnapshot, subscribe: listener => {
         notifications.assertWritable(); if (disposed) throw new Error("Completion controller is disposed."); const stop = cell.observable.subscribe(listener);
         const release = () => { stop(); observers.delete(release); }; observers.add(release); return release;
@@ -136,8 +143,8 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
     const expire = (message: string) => { if (job) counters.stale++; release(); publish(message); };
     const connect = () => {
         if (disposed || connecting || scope.getSnapshot().phase === "ready") return;
-        const work = scope.ensureConnected(); connecting = work; publish("LSP provider connecting.");
-        void work.then(() => { if (connecting !== work || disposed) return; connecting = undefined; publish("LSP provider connected. Request completion for results."); }, () => {
+        const work = scope.ensureConnected(); connecting = work; publish(connectionMessage(scope.getSnapshot().phase));
+        void work.then(() => { if (connecting === work) connecting = undefined; }, () => {
             if (connecting !== work || disposed) return; connecting = undefined; counters.failed++; release(); publish("LSP provider unavailable; local editing remains available.");
         });
     };
@@ -388,11 +395,12 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
         } else expire("Completion dismissed while resolution was pending.");
     }
     const stops = [provider.subscribe(() => {
-        const phase = scope.getSnapshot().phase;
+        const previous = providerPhase, phase = scope.getSnapshot().phase;
+        providerPhase = phase;
         if (phase === "disconnected" || phase === "disposed") { cancelAuto(); release(); }
         else if (job?.batch && !bindingCurrent(job)) { expire("LSP completion expired after provider capabilities changed."); return; }
         if (phase === "ready" && inputIntent) scheduleAuto();
-        publish(cell.get().message);
+        publish(phase !== previous && !job ? connectionMessage(phase) : cell.get().message);
     }),
     workspace.observeDocument(documentId).subscribe(() => {
         if (applying || snippetChanging) return;
@@ -421,7 +429,7 @@ export function createCompletionController(editor: TextEditor, provider: LspWork
                 publish("LSP completion follows the typed prefix."); return;
             }
         }
-        expire("LSP results expired after an edit.");
+        if (captured || publishedSession) expire("LSP results expired after an edit.");
     }), editor.view.subscribe(() => { const selected = editor.view.getSnapshot().selectionSet;
         if (snippet && !applying && !snippetChanging && !selected.ranges.every(selection => snippet!.stops[snippet!.active]!.ranges.some(range => range.from <= Math.min(selection.anchor, selection.head) && range.to >= Math.max(selection.anchor, selection.head)))) {
             snippet = undefined; publish("Snippet ended after selection left its placeholder.");

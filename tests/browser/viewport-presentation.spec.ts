@@ -5,6 +5,7 @@ import { basename } from "node:path";
 import type { Workspace, ResourceId, TabId } from "../../src/index.ts";
 import type { TextEditor, TextComparison } from "../../src/browser/index.ts";
 import { fontFixture } from "../fixtures/consumer/font-fixture.ts";
+import { paintedCharacter } from "../helpers/painted-character.ts";
 
 type Fixture = { workspace: Workspace; editor: TextEditor; host: HTMLElement; tab: TabId; resource: ResourceId; comparison?: TextComparison };
 declare global { interface Window { presentationFixture: Fixture } }
@@ -17,12 +18,58 @@ test.beforeAll(async () => {
     modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text])); css = await readFile("src/browser/editor.css", "utf8");
 });
 test.beforeEach(async ({ page }) => {
-    await page.route("**/presentation-fixture/**", route => {
+    await page.route("**/presentation-fixture/*.js", route => {
         const name = new URL(route.request().url()).pathname.split("/").at(-1)!;
-        return route.fulfill({ contentType: name === "" ? "text/html" : "text/javascript", body: name === "" ? "<!doctype html>" : modules.get(name)! });
+        return route.fulfill({ contentType: "text/javascript", body: modules.get(name)! });
     });
     await page.goto("/presentation-fixture/");
     await page.addStyleTag({ content: css });
+});
+
+test("definition lookup releases its source when the provider has no free scope", async ({ page }) => {
+    const fixture = await page.evaluateHandle(async () => {
+        const path = "/presentation-fixture/";
+        const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { BrowserLspWorkspace, createNavigationController, mountTextEditor, openWebSocketTransport } =
+            await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const workspace = new Workspace();
+        const source = workspace.createTextResource({ scope: "test", resource: "source", variant: "working" }, "Source",
+            { value: "const catalogue = 1;\ncatalogue" }, undefined, { language: { uri: "fixture:/source", languageId: "generic" } });
+        const host = document.createElement("main"); host.style.height = "240px"; document.body.append(host);
+        const editor = mountTextEditor(host, workspace, source.documentId);
+        const connect = (signal: AbortSignal) => openWebSocketTransport("ws://" + location.host + "/lsp-fixture", { signal });
+        const provider = new BrowserLspWorkspace(workspace, { maxScopes: 1, connect });
+        const occupied = provider.createScope();
+        let pointerHits = 0;
+        const navigation = createNavigationController(editor, provider, { linkAt() { pointerHits++; return undefined; } });
+        const ownership = () => { const { leases, subscriptions } = workspace.diagnostics(); return { leases, subscriptions }; };
+        const retired = new BrowserLspWorkspace(workspace, { connect });
+        retired.dispose();
+        let refused = false, retiredHits = 0;
+        try { createNavigationController(editor, retired, { linkAt() { retiredHits++; return undefined; } }); }
+        catch { refused = true; }
+        return { ownership, pointerHits: () => pointerHits, status: () => navigation.getSnapshot().status,
+            retiredMount: () => ({ refused, retiredHits }),
+            lookup: () => navigation.request("definition", 23).then(result => result.locationAt(0)?.from, (error: Error) => error.message),
+            freeScope: occupied.dispose,
+            finish() { navigation.dispose(); provider.dispose(); editor.dispose(); } };
+    });
+    const before = await fixture.evaluate(f => f.ownership());
+    const row = page.locator(".st-viewport-row").filter({ hasText: "const catalogue" });
+    await expect(row).toBeVisible();
+    const point = await paintedCharacter(row, "catalogue", 2);
+    await page.keyboard.down("Control"); await page.mouse.move(point.x, point.y);
+    await expect.poll(() => fixture.evaluate(f => f.pointerHits())).toBeGreaterThan(0);
+    await page.keyboard.up("Control");
+    expect(await fixture.evaluate(f => f.retiredMount())).toEqual({ refused: true, retiredHits: 0 });
+    expect(await fixture.evaluate(f => f.ownership())).toEqual(before);
+    expect(await fixture.evaluate(f => f.lookup())).toContain("scope limit");
+    expect(await fixture.evaluate(f => f.status())).toBe("failed");
+    expect(await fixture.evaluate(f => f.ownership())).toEqual(before);
+    await fixture.evaluate(f => f.freeScope());
+    expect(await fixture.evaluate(f => f.lookup())).toBe(6);
+    await fixture.evaluate(f => f.finish());
+    expect(await fixture.evaluate(f => f.ownership())).toEqual({ leases: 0, subscriptions: 0 });
 });
 
 test("document mounts own Find, fold discovery and pending insertions across a remount", async ({ page }) => {

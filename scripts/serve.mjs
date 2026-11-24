@@ -37,6 +37,7 @@ export async function startServer(port, { watch = true } = {}) {
         ["/", "/workspace/", "/viewport/", "/editing/", "/comparison/", "/protocol/", "/fonts/", "/hosts/plain/", "/hosts/react/"].flatMap(path => [path, path + "index.html"])
             .map(async path => /** @type {[string, Buffer]} */ ([path, await readFile(resolve(site, "." + (path.endsWith("/") ? path + "index.html" : path)))]))));
     pages.set("/typescript-libs.json", Buffer.from(await demoLibraries()));
+    pages.set("/presentation-fixture/", Buffer.from("<!doctype html>"));
     await stageDemoFonts(site);
     for (const name of demoFontFiles) pages.set("/" + name, await readFile(resolve(site, name)));
     /** @type {Map<string, Uint8Array>} */
