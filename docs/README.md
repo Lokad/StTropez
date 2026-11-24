@@ -74,6 +74,7 @@ page. Repeat the check on the browsers and devices you support.
 | Term | What it measures |
 | --- | --- |
 | Elapsed duration | Time between the stated start and end, including waiting. |
+| Headless command planning | Elapsed time and calling-thread CPU from planner creation to the complete edit plan. Applying edits, input handling and rendering fall outside this measurement. |
 | Input-handler duration | Time inside one adapter listener. It includes model updates, synchronous subscribers and browser work triggered there. Native work before the listener, other listeners and later service or render work fall outside it. |
 | Editor handler samples | `lastBeforeInputMs`, `lastInputMs` and `lastKeydownMs` each time one listener. Check its event counter to tell whether a sample is new. |
 | Completion samples | `lastCompletionBeforeInputMs` times the completion input listener. `lastCompletionCommandMs` times a registered command, including synchronous publication. `completionCommands` counts those calls. Provider replies and later paint fall outside both clocks. |

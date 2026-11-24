@@ -1,9 +1,37 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
-import { Workspace, TextBuffer } from "../src/index.ts";
+import { Workspace, TextBuffer, createSelectionSet, planLanguageEdit, resolveLanguageConfiguration } from "../src/index.ts";
 import { corpus, corpusIds, editLog, workloadSeed, workspaceWorkload } from "../fixtures/workloads.ts";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
+
+function measureCommentPlanning() {
+    const row = "//x\n", rows = 128_000, text = row.repeat(rows);
+    const bytes = Buffer.byteLength(text);
+    assert.equal(bytes, 512_000);
+    const buffer = TextBuffer.from(text), middle = buffer.offsetAt(rows / 2);
+    const config = resolveLanguageConfiguration({ lineComment: "//" }), budgetMs = 40;
+    return ["caret", "select-all"].map(selection => {
+        const caret = selection === "caret", from = caret ? middle : 0;
+        const ranges = createSelectionSet(buffer.length, [{ anchor: from, head: caret ? from : buffer.length }]);
+        const elapsed = [], cpu = [];
+        for (let sample = 0; sample < 6; sample++) {
+            const before = process.threadCpuUsage(), start = performance.now();
+            const cursor = planLanguageEdit(buffer, ranges, "remove-line-comment", config);
+            const plan = cursor.next(Number.MAX_SAFE_INTEGER);
+            const ms = performance.now() - start, usage = process.threadCpuUsage(before);
+            assert.equal(plan.status, "ready");
+            assert.equal(plan.result?.edits.length, caret ? 1 : rows);
+            assert.deepEqual(plan.result.edits[0], { from, to: from + 2, insert: "" });
+            cursor.dispose();
+            if (sample) { elapsed.push(ms); cpu.push((usage.user + usage.system) / 1000); }
+        }
+        const plannerElapsedMs = distribution(elapsed), withinBudget = plannerElapsedMs.max <= budgetMs;
+        if (caret) assert.ok(withinBudget, "Removing one line comment exceeded the synchronous planning budget.");
+        return { command: "remove-line-comment", bytes, rows, selection, budgetMs, withinBudget,
+            plannerElapsedMs, plannerThreadCpuMs: distribution(cpu) };
+    });
+}
 
 export async function benchmarkModel() {
     const scenarios = [];
@@ -102,7 +130,8 @@ export async function benchmarkModel() {
     }
     return { schemaVersion: 3, created: new Date().toISOString(), runtime: "piece-tree-workspace-with-bounded-history",
         note: "Headless transactions include history and bounded range/line reads during delivery. Undo/redo verify exact retained roots and undo-to-saved state. Oracle exports/validation are outside timing. No renderer or production latency guarantee.",
-        seed: workloadSeed, warmup: 5, measured: 60, source: await sourceIdentity(), environment: environment(), scenarios, propagation };
+        seed: workloadSeed, warmup: 5, measured: 60, source: await sourceIdentity(), environment: environment(), scenarios, propagation,
+        commentPlanning: measureCommentPlanning() };
 }
 
 if (process.argv[1]?.replaceAll("\\", "/").endsWith("/benchmark-model.mjs")) {
