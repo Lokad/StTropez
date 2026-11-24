@@ -219,6 +219,37 @@ test("typing grouping is local to its document while unrelated live traffic and 
     assert.equal(workspace.document(other.documentId).text(), "3");
 });
 
+test("default history retains 150 word groups and an earlier edit in another document", () => {
+    const { workspace, document, replace, undo } = fixture("first");
+    assert.ok(replace("first edit").applied);
+    const other = workspace.createDocument({ scope: "history", resource: "words", variant: "working" }, "Words", "");
+    const words = Array.from({ length: 150 }, (_, index) => "word" + index + " ");
+    const target = () => ({ documentId: other, expectedRevision: workspace.document(other).revision });
+
+    for (const word of words) {
+        for (const insert of word) {
+            const at = workspace.document(other).buffer.length;
+            assert.ok(workspace.edit({
+                ...target(), origin: "human", history: { kind: "typing", group: word },
+                edits: [{ from: at, to: at, insert }],
+            }).applied);
+        }
+    }
+    let expected = words.join("");
+    assert.equal(workspace.document(other).text(), expected);
+    for (const word of [...words].reverse()) {
+        assert.ok(workspace.undo(target()).applied);
+        expected = expected.slice(0, -word.length);
+        assert.equal(workspace.document(other).text(), expected);
+    }
+    assert.equal(workspace.undo(target()).applied, false);
+    assert.ok(workspace.redo(target()).applied);
+    assert.equal(document().text(), "first edit");
+    assert.ok(undo().applied);
+    assert.equal(document().text(), "first");
+    assert.equal(workspace.document(other).text(), words[0]);
+});
+
 test("multi-document edits preflight every target, publish coherently, and undo/redo one shared unit", () => {
     const { workspace, source, document, errors } = fixture();
     const other = workspace.createTextResource({ scope: "history", resource: "other", variant: "working" }, "Other", { value: "xyz" });

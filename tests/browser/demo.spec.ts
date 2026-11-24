@@ -14,26 +14,6 @@ test("fold discovery keeps an inserted line visible above the closing brace", as
     await source.press("Control+z"); await expect(edited).toHaveText(/^\s*$/);
 });
 
-test("Undo restores 150 typed words and the earlier edit in another file", async ({ page }) => {
-    await page.goto("/");
-    const source = (name: string) => page.getByRole("textbox", { name, exact: true });
-    const file = (name: string) => page.locator("#files").getByRole("button", { name, exact: true });
-    await source("main.ts").press("Control+Home");
-    await page.keyboard.type("first");
-    await file("pricing.ts").click();
-    await source("pricing.ts").press("Control+End");
-    await page.keyboard.type(Array.from({ length: 150 }, () => "word").join(" "));
-    await expect(file("pricing.ts ●")).toBeVisible();
-    for (let i = 0; i < 150; i++) await page.keyboard.press("Control+z");
-    await expect(file("pricing.ts")).toBeVisible();
-    await page.keyboard.press("Control+Shift+z");
-    await expect(page.locator("#editor .st-viewport-row").last()).toContainText("word");
-    await file("main.ts ●").click();
-    await source("main.ts").press("Control+z");
-    await expect(file("main.ts")).toBeVisible();
-    await expect(page.locator("#editor .st-viewport-row").first()).toContainText("import");
-});
-
 test("demo edits real files, preserves selection/history, finds text and reviews undoable changes", async ({ page }) => {
 
     await page.goto("/");
