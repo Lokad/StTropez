@@ -750,6 +750,14 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         const replies = await holdLspReplies(page, "textDocument/signatureHelp"); await page.reload();
         const source = field(page), popup = page.getByRole("tooltip", { name: "Signature help", exact: true });
         const parameter = popup.getByLabel("Active signature parameter", { exact: true });
+        await seed(page, "lookup(formatText", 13); await source.press("Control+Shift+Space"); await expect(parameter).toHaveText("key: string");
+        for (const key of ["ArrowLeft", "Delete", "Backspace"]) {
+            replies.hold(); await source.press(key); await expect.poll(replies.waiting).toBe(true);
+            const visible = await parameter.isVisible();
+            await replies.release();
+            expect(visible, key + " keeps the signature while the provider refreshes").toBe(true);
+            await expect.poll(async () => (await snapshot(page)).bindings.signature.presentation.status).toBe("ready");
+        }
         await seed(page, "lookup(format"); await source.press("Control+Shift+Space"); await expect(parameter).toHaveText("key: string");
         replies.hold(); await source.pressSequentially("("); await expect.poll(replies.waiting).toBe(true);
         await expect(popup).not.toContainText("lookup("); await replies.release(); await expect(parameter).toHaveText("value: unknown");

@@ -361,8 +361,9 @@ Subscribe to the controller and render `getSnapshot().signature`. Its label and 
 describe the highlighted text. Use the snapshot's `anchor` to position the popup. While you type
 an argument expression such as `item.price` at the same caret, a `pending` snapshot keeps the last
 signature at the new position. A comma clears the previous parameter highlight until the provider
-identifies the next one. Moving the caret or opening a nested call clears the previous
-signature and requests fresh information. Blur, composition and `cancel()` dismiss help. A host
+identifies the next one. Left, Right, Backspace and Delete also preserve the label within an
+argument name or number. Crossing a call boundary or jumping elsewhere clears it while the
+provider refreshes. Blur, composition and `cancel()` dismiss help. A host
 can move focus to its own field while rendering a signature. Disposing the editor also disposes
 the controller. If attachment fails, the host can retry with a live provider on the same editor.
 
