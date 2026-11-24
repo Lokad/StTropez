@@ -30,7 +30,14 @@ export function mountDemoFolding(project: DemoProject, editor: TextEditor, tabSi
             signal.addEventListener("abort", check, { once: true }); check();
         });
         if (signal.aborted || client !== language.foldingClient) throw new Error("Folding discovery cancelled.");
-        const call = client.run({ document }), cancel = () => call.cancel();
+        // Startup assigns the language URI after the editor can already request folds.
+        const bound = project.workspace.document(document.id);
+        if (bound.resourceId !== document.resourceId || bound.buffer !== document.buffer
+            || bound.revision !== document.revision || (document.language !== null && bound.language !== document.language)) {
+            throw new Error("Folding discovery target changed.");
+        }
+        const call = client.run({ document: bound });
+        const cancel = () => call.cancel();
         signal.addEventListener("abort", cancel, { once: true });
         try { return await call.result; } finally { signal.removeEventListener("abort", cancel); }
     });

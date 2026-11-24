@@ -1,5 +1,6 @@
 import { expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
+import { latch } from "../helpers/latch.ts";
 import { paintedCharacter } from "../helpers/painted-character.ts";
 
 export async function runDemoActions(page: Page, url = "/") {
@@ -343,6 +344,7 @@ export async function runDemoHighlights(page: Page, url = "/", distinctWrites = 
 }
 
 export async function runDemoFolding(page: Page, url = "/") {
+    await page.clock.install();
     page.on("dialog", dialog => dialog.accept());
     await page.goto(url);
     await page.getByRole("button", { name: "pricing.ts", exact: true }).click();
@@ -397,10 +399,21 @@ export async function runDemoFolding(page: Page, url = "/") {
     await expect(right.locator('.st-fold-button[aria-expanded="false"]')).toHaveCount(0);
 
     // Both TypeScript snapshots use syntax colors/outlining; review fold choices stay independent.
-    await page.locator('[data-panel="javascript"]').click(); await page.locator("#sample").selectOption("navigation");
+    const bootstrap = latch<void>();
+    await page.route(url => url.pathname === "/demo-provider" && url.searchParams.get("sample") === "navigation", async route => {
+        await bootstrap.promise;
+        await route.continue();
+    }, { times: 1 });
+    await page.locator('[data-panel="javascript"]').click();
+    await page.locator("#sample").selectOption("navigation");
     const imports = page.getByRole("textbox", { name: "main.ts", exact: true });
     const header = page.locator('#editor .st-viewport-row[data-line="0"]');
-    await expect(imports).toHaveValue(/import type \{ RecordId \}/);
+    try {
+        await expect(imports).toHaveValue(/import type \{ RecordId \}/);
+        await page.clock.runFor(250); // Start debounced discovery before the language URI is assigned.
+    } finally {
+        bootstrap.resolve();
+    }
     await expect(page.locator("#folding-status")).toHaveText("Source · 0 folds · 0 collapsed", { timeout: 30000 });
     await page.locator("#code-menu summary").click();
     for (const id of ["fold", "unfold", "fold-group-collapse", "fold-group-expand"]) await expect(page.locator(`#${id}`)).toBeDisabled();
