@@ -10,7 +10,7 @@ import * as protocol from "../../src/protocol/index.ts";
 export { protocol };
 export const settled = async () => { await setImmediate(); await setImmediate(); };
 export function clientFixture(t: TestContext, connect?: () => Promise<void>, resolveTarget?: LspTargetResolver,
-    timing: Pick<LspWorkspaceOptions, "now" | "schedule"> | undefined = undefined) {
+    options?: Partial<Pick<LspWorkspaceOptions, "now" | "schedule" | "maxScopes">>) {
     const workspace = new Workspace();
     const source = workspace.createTextResource({ scope: "public-client", resource: "source", variant: "working" }, "Source", { value: "alpha beta" }, undefined,
         { language: { uri: "generic:source", languageId: "generic" } });
@@ -43,7 +43,7 @@ export function clientFixture(t: TestContext, connect?: () => Promise<void>, res
         applyEdit: true,
         connect: async () => { await connect?.(); return ports[0]!; },
         schedule: (ms, callback) => { const timer = setTimeout(() => { timers.delete(timer); callback(); }, ms); timers.add(timer); return () => { clearTimeout(timer); timers.delete(timer); }; },
-        ...timing,
+        ...options,
         onError: error => errors.push(error.message)
     });
     t.after(async () => {

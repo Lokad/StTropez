@@ -32,12 +32,14 @@ export function watchColorSwatches(document: Observable<DocumentSnapshot | undef
         const doc = document.getSnapshot();
         if (!layers.size || !enabled || !doc) return;
         if (!provider.queryFeatureOptions("textDocument/documentColor", doc).length) { clear(); return; }
-        const client = createLspColorClient(provider); request = client;
+        let client: ReturnType<typeof createLspColorClient> | undefined;
         try {
+            client = createLspColorClient(provider);
+            request = client;
             const reply = await client.run({ document: doc }).result;
             if (request === client && reply.isCurrent()) accept(doc.revision, reply.items);
         } catch { if (request === client) clear(); }
-        finally { if (request === client) request = undefined; client.dispose(); }
+        finally { if (request === client) request = undefined; client?.dispose(); }
     }
     function schedule() {
         const doc = document.getSnapshot(), state = provider.getSnapshot();
