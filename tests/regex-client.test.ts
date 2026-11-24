@@ -162,6 +162,7 @@ test("regex replacement limits and malformed insertion streams reject incomplete
 
 test("regex client validates complete pages, rejects split pairs/counts and preserves pending steps after stale replies", async () => {
     for (const matches of [[{ from: 0, to: 1 }], [{ from: 0, to: 2 }, { from: 0, to: 2 }], [{ from: 2, to: 99 }], [{ from: -1, to: 0 }],
+        [{ from: 0, to: 0 }, { from: 0, to: 2 }],
         [{ from: 0.5, to: 2 }], [null], Array.from({ length: 513 }, () => ({ from: 0, to: 0 })), []]) {
         const f = fixture(TextBuffer.from("😀x")); await f.cursor.next(); const worker = f.workers[0]!; worker.automatic = false;
         const pending = f.cursor.next(), target = worker.messages.at(-1)!;

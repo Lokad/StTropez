@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { RegexSession } from "../src/protocol/regex-session.ts";
-import { regexChunkUnits, regexSourceLimit, regexProtocolVersion } from "../src/protocol/regex.ts";
+import { regexChunkUnits, regexProtocolVersion } from "../src/protocol/regex.ts";
 const start = (length: number, pattern = "😀(?<word>𐐀value)\\r\\nnext") => ({ operation: "regex-start", version: regexProtocolVersion, source: 1, id: 1, revision: 7, length, pattern, matchCase: true });
 
 test("regex transfer preserves cross-chunk raw spans and publishes bounded pages only after complete capture", () => {
@@ -27,7 +27,8 @@ test("regex capture rejects malformed ordering/bounds and superseded generators 
     assert.equal(invalid.operation, "regex-error");
     assert.match(invalid.message, /^Invalid regular expression: .*group/i);
     assert.ok(!invalid.message.includes("xxxx"));
-    for (const bad of [{ ...start(1), length: regexSourceLimit + 1 }, { ...start(1), matchCase: "yes" },
+    assert.equal([...new RegexSession().receive({ ...start(512_000), replacement: "", maxOutputUnits: 512_000 })][0]!.operation, "regex-progress");
+    for (const bad of [start(512_001), { ...start(1), replacement: "", maxOutputUnits: 512_001 }, { ...start(1), matchCase: "yes" },
         { ...start(1), pattern: "x".repeat(4097) }, { ...start(1), replacement: "x".repeat(32769) }, { ...start(1), range: { from: 0, to: 1 } }]) {
         const session = new RegexSession(); assert.equal([...session.receive(bad)][0]!.operation, "regex-error");
     }
@@ -41,8 +42,6 @@ test("regex capture rejects malformed ordering/bounds and superseded generators 
     assert.deepEqual([...session.receive({ operation: "regex-run", id: 2, revision: 7 })], [
         { operation: "regex-matches", id: 2, revision: 7, matches: [{ from: 0, to: 0 }] }, { operation: "regex-done", id: 2, revision: 7, count: 1 },
     ]);
-    const limited = new RegexSession(2); [...limited.receive(start(3, "x"))]; [...limited.receive({ operation: "regex-chunk", id: 1, revision: 7, from: 0, text: "xxx" })];
-    assert.deepEqual([...limited.receive({ operation: "regex-run", id: 1, revision: 7 })], [{ operation: "regex-error", id: 1, revision: 7, message: "Regex match limit exceeded; narrow the expression." }]);
 });
 
 test("worker source reuse requires a complete capture and matching source token, revision and length", () => {

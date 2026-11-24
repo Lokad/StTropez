@@ -241,11 +241,11 @@ that occurrence. Undo restores all selections.
 
 | Limit or setting | Contract |
 | --- | --- |
-| Source transfer | Acknowledged chunks of 32,768 UTF-16 units |
+| Source transfer | Up to 512,000 UTF-16 units, in acknowledged chunks of 32,768 |
 | Pattern | At most 4,096 UTF-16 units |
-| Matches | At most 1,000,000; response pages contain at most 512 ranges |
+| Matches | Each match starts at a distinct UTF-16 offset, including a possible empty match at EOF. A response page holds up to 512 ranges. |
 | Replacement template | At most 32,768 UTF-16 units |
-| Replacement output | `maxOutputUnits` limits inserted UTF-16 units. The worker enforces a 32 Mi-unit allocation ceiling. |
+| Replacement output | `maxOutputUnits` caps total inserted UTF-16 units (default and maximum 512,000). The resulting document must also fit in 512,000 units. |
 | Replacement transfer | At most 512 small edits per page; large insertions use 32,768-unit fragments |
 | `regularExpressionDelayMs` | Controller query delay: default 80; finite value from 0 through 1,000 |
 | `timeoutMs` | Backend exchange timeout: default 5,000; positive finite value |

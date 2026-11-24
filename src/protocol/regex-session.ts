@@ -2,7 +2,7 @@ import { regexExpression, regexMatches, regexRanges, regexReplacement } from "..
 import type { RegexMatch } from "../core/regex-search.ts";
 import type { TextEdit } from "../core/changes.ts";
 import { splitsSurrogatePair } from "../core/utf16.ts";
-import { regexProtocolVersion, regexChunkUnits, regexSourceLimit, regexMatchLimit, regexPageLimit, regexErrorLimit, regexRecord, regexIdentity, regexChunk, readRegexStart } from "./regex.ts";
+import { regexProtocolVersion, regexChunkUnits, regexSourceLimit, regexPageLimit, regexErrorLimit, regexRecord, regexIdentity, regexChunk, readRegexStart } from "./regex.ts";
 import type { RegexRange, RegexReply } from "./regex.ts";
 type Request = { id: number; source: number; revision: number; length: number; pattern: string; matchCase: boolean; wholeWord: boolean; received: number; parts: string[];
     replacement: string | undefined; range: RegexRange | undefined; maxOutputUnits: number };
@@ -13,11 +13,6 @@ export class RegexSession {
     private request: Request | undefined;
     private source: { id: number; revision: number; text: string } | undefined;
     private generation = 0;
-    private readonly matchLimit: number;
-    constructor(matchLimit = regexMatchLimit) {
-        if (!Number.isSafeInteger(matchLimit) || matchLimit <= 0) throw new RangeError("Invalid regex match limit.");
-        this.matchLimit = matchLimit;
-    }
     *receive(value: unknown): Generator<RegexReply> {
         if (!regexRecord(value)) { if (this.request) yield this.fail("Malformed regex request."); return; }
         if (value.operation === "regex-start") {
@@ -67,7 +62,7 @@ export class RegexSession {
         for (const match of matches) {
             if (this.generation !== generation) return;
             if (request.range && (match.from !== request.range.from || match.to !== request.range.to)) break;
-            if (++count > this.matchLimit) { yield this.fail("Regex match limit exceeded; narrow the expression."); return; }
+            count++;
             if (!("captures" in match)) {
                 page.push(match);
                 if (page.length === regexPageLimit) { yield { operation: "regex-matches", id: request.id, revision: request.revision, matches: Object.freeze(page) }; page = []; }

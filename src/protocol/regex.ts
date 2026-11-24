@@ -4,8 +4,7 @@ import type { SearchMatch } from "../core/search.ts";
 /** Private worker wire contract. Shape validation never establishes live request authority. */
 export const regexProtocolVersion = 2;
 export const regexChunkUnits = 32768;
-export const regexSourceLimit = 32 * 1024 * 1024;
-export const regexMatchLimit = 1_000_000;
+export const regexSourceLimit = 512_000;
 export const regexPatternLimit = 4096;
 export const regexErrorLimit = 256;
 export const regexMessageLimit = 262144;

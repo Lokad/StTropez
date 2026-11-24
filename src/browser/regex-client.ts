@@ -3,7 +3,7 @@ import type { TextBuffer } from "../core/text-buffer.ts";
 import type { TextEdit } from "../core/changes.ts";
 import type { DocumentId } from "../core/workspace.ts";
 import { splitsSurrogatePair } from "../core/utf16.ts";
-import { regexChunkUnits, regexMatchLimit, regexSourceLimit, regexProtocolVersion, regexInteger, regexIdentity, regexQuery, regexOptions, decodeRegexMessage, readRegexReply } from "../protocol/regex.ts";
+import { regexChunkUnits, regexSourceLimit, regexProtocolVersion, regexInteger, regexIdentity, regexQuery, regexOptions, decodeRegexMessage, readRegexReply } from "../protocol/regex.ts";
 import type { RegexCommand, RegexRequest, RegexReply, RegexOptions } from "../protocol/regex.ts";
 type Pending = { resolve: (reply: RegexReply) => void; reject: (error: Error) => void; timer: number };
 const empty: readonly SearchMatch[] = Object.freeze([]);
@@ -117,17 +117,18 @@ export function createRegexClient(host: Readonly<{ clock: Pick<Window, "setTimeo
                 const split = (at: number) => { if (at <= 0 || at >= length) return false; const pair = buffer!.slice(at - 1, at + 1); readUnits += 2;
                     return splitsSurrogatePair(pair, 1); };
                 const range = (value: SearchMatch): SearchMatch => {
-                    if (value.to > length || value.from < lastTo
-                        || value.from === lastFrom && value.to === lastTo || split(value.from) || split(value.to)) throw new Error("Invalid raw regex range.");
+                    // A global expression advances after every match, including an empty one.
+                    if (value.to > length || value.from < lastTo || value.from === lastFrom || split(value.from) || split(value.to))
+                        throw new Error("Invalid raw regex range.");
                     if (options.range && (value.from !== options.range.from || value.to !== options.range.to)) throw new Error("Invalid captured regex replacement range.");
                     lastFrom = value.from; lastTo = value.to; return Object.freeze({ from: value.from, to: value.to });
                 };
                 const reserve = (at: SearchMatch, units: number) => {
-                    if (units > maxOutput - plannedUnits || count >= regexMatchLimit) throw new Error("Regex replacement output limit exceeded.");
+                    if (units > maxOutput - plannedUnits) throw new Error("Regex replacement output limit exceeded.");
                     plannedUnits += units; delta += units - (at.to - at.from);
                 };
                 if (options.replacement === undefined) {
-                    if (reply.operation !== "regex-matches" || count + reply.matches.length > regexMatchLimit) throw new Error("Invalid regex result page.");
+                    if (reply.operation !== "regex-matches") throw new Error("Invalid regex result page.");
                     const matches = reply.matches.map(range); count += matches.length; scanned = Math.max(scanned, lastTo);
                     return step(false, readUnits, Object.freeze(matches));
                 }
