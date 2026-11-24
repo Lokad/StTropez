@@ -392,6 +392,7 @@ export class LspSession {
         });
     }
     private async pump(epoch: number): Promise<void> {
+        const checkpoint = cooperateDuringScan(() => { this.ready(epoch); }, () => this.pause(epoch), this.options.now);
         while (this.dirty.size) {
             const uri = this.dirty.values().next().value!; this.dirty.delete(uri);
             const rpc = this.ready(epoch), generation = this.generation, entry = this.documents.get(uri), remote = this.remote.get(uri);
@@ -406,9 +407,7 @@ export class LspSession {
                 if (old?.snapshot === snapshot) continue;
                 const expired = {}, retained = () => this.documents.get(uri) === entry;
                 const valid = () => entry.snapshot === snapshot && retained() && this.generation === generation;
-                const cooperate = cooperateDuringScan(() => {
-                    this.ready(epoch); if (!retained()) throw expired;
-                }, () => this.pause(epoch), this.options.now);
+                const cooperate = async () => { await checkpoint(); if (!retained()) throw expired; };
                 const base = entry.index ?? old?.index;
                 const compact = denseBatch(hint, snapshot.buffer.length), planHint = compact ? undefined : hint;
                 let plan;
@@ -442,7 +441,10 @@ export class LspSession {
                 if (!valid()) this.dirty.add(uri);
                 if (entry.snapshot === snapshot) delete entry.change;
             } catch (error) { this.failDocument(entry ?? remote!.entry, error, epoch); }
-            finally { this.settle(undefined, true); }
+            finally {
+                this.settle(undefined, true);
+                if (this.dirty.size && this.current(epoch)) await checkpoint();
+            }
         }
     }
     private failDocument(entry: Entry, cause: unknown, epoch: number): void {

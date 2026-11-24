@@ -433,6 +433,30 @@ test("shutdown ordering, listener isolation and explicit disposal release all se
     assert.equal(session.getSnapshot().phase, "disposed"); assert.equal(session.snapshotOwnership().subscriptions, 0); assert.equal(host.timers.size, 0);
 });
 
+test("opening a project yields between small files and sends an intervening edit", async t => {
+    const host = fixture(t), count = 48;
+    let openAtEdit = 0;
+    const session: LspSession = new LspSession({ ...host, now: () => 0, schedule: (ms, callback) => host.schedule(ms, () => {
+        const open = session.snapshotOwnership().remoteDocuments;
+        if (ms === 0 && !openAtEdit && open > 0 && open < count) {
+            openAtEdit = open;
+            last.update(40, 41, TextBuffer.from("edited while opening"));
+        }
+        callback();
+    }) });
+    t.after(() => session.dispose());
+    const documents = Array.from({ length: count }, (_, i) => session.bindDocument(input("initial", "fixture:file" + i, "file" + i)));
+    const last = documents[count - 1]!;
+    await session.connect();
+    const peer = host.peers[0]!;
+    peer.rpc.onRequest("fixture/barrier", () => null);
+    await session.request("fixture/barrier").result;
+    assert.ok(openAtEdit > 0 && openAtEdit < count, "Other tasks can run before the last file opens");
+    assert.equal(peer.documents.size, count);
+    assert.equal(peer.documents.get(last.getSnapshot().uri)?.getText(), "edited while opening");
+    assert.equal(peer.events.includes("change"), false);
+});
+
 test("large opening plans cancel at a cooperative boundary and limits refuse changes before retaining them", async t => {
     const host = fixture(t); let watching = false, zeros = 0, time = 0, planned!: () => void;
     const paused = new Promise<void>(resolve => { planned = resolve; });

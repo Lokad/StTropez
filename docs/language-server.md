@@ -352,6 +352,9 @@ WebSocket and server limits: JSON escaping can exceed a wire budget even when ra
 | Commands | 128 names/static provider or registration, 256-unit names, 256-name combined union, 8,192 JSON units/argument array |
 | Document synchronization and unopened-target indexing | Yield after 4 ms or 32 checkpoints. The optional `now` clock defaults to `Date.now`. |
 
+Synchronization shares this budget across queued files. The browser can process input between file
+opens, including when each file fits in a single scan chunk. Encoding and sending one message are synchronous.
+
 Transport or batch-count overflow closes the connection. An oversized response rejects the identified
 call and releases its deadline. A rejected batch rejects its identified calls together. Other calls
 continue. The client can reuse frozen JSON it validated itself. It checks and copies all host JSON,
