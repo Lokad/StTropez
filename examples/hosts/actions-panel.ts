@@ -28,7 +28,7 @@ export function actionsPanelModel(tools: ActionsPanelTools, s: ActionsSnapshot) 
         choices: { label: "Provider code actions", identity: s.choices, page: s.choicePage, start: s.choicePage * actionChoicePageSize + 1,
             disabled: s.pending && !s.resolving, isSelected: (index: number) => s.choice === index,
             items: () => s.choices.slice(s.choicePage * actionChoicePageSize, (s.choicePage + 1) * actionChoicePageSize).map(choice => ({ key: choice.index, label: actionChoiceLabel(choice),
-                invoke: () => choice.select() } as const)) },
+                invoke: () => choice.select({ review: true }) } as const)) },
         preview: { label: "Captured action title", text: s.title },
         edits: { label: "Proposed action edits", page: s.page, notes: s.edits },
         changes: changedFiles("Action changed resources", "Open action changes in ", s.changes, s.active, id => tools.openChangedDocument(id)),

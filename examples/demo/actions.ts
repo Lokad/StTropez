@@ -1,9 +1,9 @@
 import type { Workspace } from "../../src/index.ts";
 import { mountAnchoredOverlay } from "../../src/browser/index.ts";
-import type { CodeActionController, CodeActionControllerOptions, CodeActionPreview, TextEditor } from "../../src/browser/index.ts";
-import type { LspCodeAction, LspWorkspace } from "../../src/protocol/index.ts";
+import type { CodeActionChoice, CodeActionController, CodeActionControllerOptions, CodeActionPreview, TextEditor } from "../../src/browser/index.ts";
+import type { LspWorkspace } from "../../src/protocol/index.ts";
 import { createReviewKey, pageActions, renderPanelActions, renderPanelButton } from "../hosts/panel-actions.ts";
-import { actionChoicePageSize, createActionPages } from "../hosts/action-pages.ts";
+import { actionChoicePageSize, createActionPages, requestActionsForReview } from "../hosts/action-pages.ts";
 import { editPageSize } from "../hosts/edit-review.ts";
 import { demoCommandPolicy } from "./action-commands.ts";
 import { projectReviewNote } from "./action-fixture.ts";
@@ -53,12 +53,17 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     document.body.append(popup);
     scope.defer(() => { apply.onclick = null; });
     // Host interaction policy only; all captures, permissions and history still pass through tools.
-    const direct = (action: LspCodeAction) => {
-        const changes = action.edit?.documents.filter(change => change.edits.length) ?? [];
-        return (action.kind === "quickfix" || action.kind?.startsWith("quickfix.") === true) && !action.command
-            && changes.length === 1 && changes[0]!.target.document.documentId === file.resource.documentId
-            && changes[0]!.edits.length <= 4 && changes[0]!.edits.reduce((units, edit) => units + edit.to - edit.from + edit.insert.length, 0) <= 256;
-    };
+    async function pick(choice: CodeActionChoice) {
+        const result = await choice.select({ review: true });
+        if (result.status !== "done" || !result.value.canApply || result.value.command) return;
+        if (choice.kind !== "quickfix" && !choice.kind?.startsWith("quickfix.")) return;
+        const page = result.value.readPage();
+        if (!page || !page.count || page.count > 4) return;
+        if (page.notes.every(edit => edit.document === file.resource.documentId)
+            && page.notes.reduce((units, edit) => units + edit.to - edit.from + edit.insertUnits, 0) <= 256) {
+            await result.value.apply();
+        }
+    }
     const overlay = mountAnchoredOverlay(editor, popup, { onFocusedAnchorHidden: editor.focus });
     scope.defer(overlay.dispose);
     let open = false;
@@ -76,7 +81,7 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
         commandAction = false;
         open = true;
         anchor();
-        void tools.request();
+        void requestActionsForReview(tools);
     };
     const readPages = createActionPages(tools, reviewKey, render);
     let oldChoices: unknown, oldChoicePage = -1;
@@ -95,7 +100,7 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
         if (oldChoices !== state.choices || oldChoicePage !== choicePage) {
             oldChoices = state.choices; oldChoicePage = choicePage; choices.replaceChildren(...state.choices.slice(choicePage * actionChoicePageSize, (choicePage + 1) * actionChoicePageSize).map(choice => {
                 const button = document.createElement("button"); button.textContent = choice.title; button.disabled = choice.disabled !== null; button.title = choice.disabled ?? ""; button.dataset.choice = String(choice.index);
-                button.addEventListener("click", () => choice.select(direct)); return button;
+                button.addEventListener("click", () => void pick(choice)); return button;
             }));
         }
         choicePages.hidden = state.choices.length <= actionChoicePageSize;
@@ -140,7 +145,9 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
         for (let step = 1; step <= count; step++) {
             const next = state.choices[(start + direction * step + count) % count]!;
             if (next.disabled !== null) continue;
-            editor.focus(); next.select(); return true;
+            editor.focus();
+            void next.select({ review: true });
+            return true;
         }
         return false;
     };

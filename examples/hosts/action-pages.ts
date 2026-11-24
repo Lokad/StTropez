@@ -5,6 +5,14 @@ import { editPaging } from "./edit-review.ts";
 
 export const actionChoicePageSize = 16;
 
+export async function requestActionsForReview(controller: CodeActionController) {
+    const result = await controller.request();
+    const first = result.status === "done" ? result.value[0] : undefined;
+    if (first && !first.needsResolve && first.disabled === null && controller.getSnapshot().choice === null) {
+        await first.select({ review: true });
+    }
+}
+
 /** Keep the list page across choices, and start each edit preview on its first page. */
 export function createActionPages(controller: CodeActionController, key: ReturnType<typeof createReviewKey>, changed: () => void) {
     let choices = controller.getSnapshot().choices, choicePage = 0;

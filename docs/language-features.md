@@ -584,12 +584,11 @@ selection. The origin document is always included. Supply `documents` to include
 An empty list means the provider found no actions. Cancellation, supersession and a changed
 capture return `stale`. An unavailable view returns `refused` with reason `unavailable-view`.
 A provider error or timeout returns `failed` with the error.
-Call a choice’s `select()` to resolve and preview it.
-The user can choose another action while a preview loads. Only the latest choice can open a
-preview or run its direct-fix predicate.
-If the first choice already has an edit, its preview opens with the list. A preview page contains up
-to 64 edits. For an edit-only action, `apply()` applies the full edit across all affected files in
-one undo step.
+Call `await choice.select()` to resolve and apply the action. The result contains the changed
+documents. An edit-only action has one Undo step across its files. Pass `{ review: true }` to
+receive a preview with `readPage()` and `apply()`. Each page contains up to 64 edits.
+Choosing another action retires the pending choice. Repeated selections of the same pending
+action share its provider request. Only the latest selection can apply or return a preview.
 
 ```ts
 import { attachEditorLanguage, type TextEditor } from "sttropez/browser";
@@ -600,7 +599,7 @@ export function attachFixes(editor: TextEditor, provider: LspWorkspace) {
     const stop = actions.subscribe(() => {
         const { choices, preview } = actions.getSnapshot();
         // Bind each button to this choice or preview, including across a later render.
-        renderFixes(choices.map(choice => ({ title: choice.title, select: () => choice.select() })),
+        renderFixes(choices.map(choice => ({ title: choice.title, select: () => choice.select({ review: true }) })),
             preview?.readPage()?.count ?? 0, preview?.canApply ? preview.apply : undefined);
     });
     return { request: actions.request, dispose() { stop(); dispose(); } };
@@ -610,9 +609,9 @@ declare function renderFixes(choices: { title: string; select(): void }[], edits
 ```
 
 A change to the captured selection, fold projection, document revision or edit authority expires
-the preview. Replacing the editor disposes its controller. Old choices and confirmation buttons
-cannot edit the replacement. For a direct fix, an explicit choice button can pass a predicate to
-`select` that checks the resolved action before confirming it. Approve incoming edits with `reviewCommandEdit(request, context, writable)`. Use `writable` to disable Apply when a file is locked or read-only.
+the preview. Choices and Apply buttons also expire when their editor is replaced.
+Approve incoming server edits with `reviewCommandEdit(request, context, writable)`.
+Use `writable` to disable Apply when a file is locked or read-only.
 For a dialog, use `context.onCancel` to close it when the request expires. The attachment applies
 the action’s initial edit before sending the command. It validates each approved edit against the
 originating view and captured documents. Each changed batch has one Undo step across its files.

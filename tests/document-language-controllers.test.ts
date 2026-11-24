@@ -20,6 +20,7 @@ async function fixture(t: TestContext) {
     const editor = {
         ...editorState(), workspace, view, tab: workspace.tabs.capture(tab), signal: lifetime.signal,
         element: { isConnected: true, ownerDocument: { defaultView: { setTimeout, clearTimeout } } },
+        viewport: { revealOffset() {} }, focus() {},
         activity: () => ({ composing: false, pendingInput: false, pendingCommand: false }),
     } as unknown as TextEditor;
     t.after(() => {
@@ -78,7 +79,7 @@ for (const [cause, interrupt] of Object.entries(sourceChanges)) {
         assert.equal(list.value, actions.getSnapshot().choices);
         const choice = list.value[0];
         assert.ok(choice?.needsResolve);
-        choice.select(() => true);
+        const selected = choice.select();
         await held.received;
         assert.equal(f.provider.snapshot().scopes, scopes);
         interrupt(f);
@@ -86,7 +87,7 @@ for (const [cause, interrupt] of Object.entries(sourceChanges)) {
             const { id, revision } = f.document();
             assert.ok(f.workspace.undo({ documentId: id, expectedRevision: revision }).applied);
         }
-        await settled();
+        assert.deepEqual(await selected, { status: "stale" });
         const source = f.document();
         assert.equal(f.sent("$/cancelRequest").length, 1);
         held.send();
@@ -112,6 +113,27 @@ for (const [cause, interrupt] of Object.entries(sourceChanges)) {
         assert.equal(f.document(), source);
     });
 }
+
+test("a direct selection supersedes a pending review and applies the single resolved edit", { timeout: 5000 }, async t => {
+    const f = await fixture(t);
+    const { codeActions } = attachEditorLanguage(f.editor, f.provider, { codeActions: {} });
+    const lazy = { title: "Change word", data: 1 };
+    f.peer.onRequest("textDocument/codeAction", () => [lazy]);
+    const replacement = { range: { ...range, end: { line: 0, character: 5 } }, newText: "gamma" };
+    const held = holdReply(f, "codeAction/resolve", { ...lazy, edit: { changes: { "generic:source": [replacement] } } });
+    const choices = await codeActions.request();
+    assert.equal(choices.status, "done");
+    const choice = choices.value[0]!;
+    const review = choice.select({ review: true });
+    await held.received;
+    const direct = choice.select();
+    assert.deepEqual(await review, { status: "stale" });
+    assert.equal(f.document().buffer.text(), "alpha beta");
+    held.send();
+    assert.deepEqual(await direct, { status: "done", value: [{ document: f.document().id, title: f.document().title }] });
+    assert.equal(f.document().buffer.text(), "gamma beta");
+    assert.equal(f.sent("codeAction/resolve").length, 1);
+});
 
 test("code action discovery settles before a cancelled or superseded provider replies", { timeout: 5000 }, async t => {
     const f = await fixture(t);

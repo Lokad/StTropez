@@ -1,6 +1,6 @@
 import { fixtureRequests } from "../shared/language/fixture-requests.ts";
 import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
-import { createActionPages } from "./action-pages.ts";
+import { createActionPages, requestActionsForReview } from "./action-pages.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { focusSourceCaret, onSourceFocus } from "./source-focus.ts";
@@ -146,7 +146,7 @@ export class HostActionsTools {
         const controller = origin.controller;
         this.panel = { source: origin, settings, stop: controller.subscribe(() => this.publish()), pages: createActionPages(controller, this.reviewKey, () => this.publish()) };
         this.requested++;
-        void controller.request();
+        void requestActionsForReview(controller);
         if (keyboard && this.moduleField.element && this.cell.get().pending) { this.moduleField.element.focus(); this.moduleField.element.select(); }
     }
     openChangedDocument(document: DocumentId): void {

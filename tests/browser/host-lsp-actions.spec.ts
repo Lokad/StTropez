@@ -96,15 +96,17 @@ test.describe(`plain LSP code actions`, () => {
         await expect(choices(page).nth(5)).toHaveAttribute("data-retained", "action-choice"); await expect(choices(page).nth(5)).toHaveAttribute("aria-pressed", "true");
         await expect(input(page, "Action module")).toHaveAttribute("data-retained", "action-module");
         replies.hold(); await choices(page).nth(2).click(); await expect.poll(replies.waiting).toBe(true);
-        await page.evaluate(() => window.hostFixture.snapshot().bindings.actions.state.choices[2]!.select(() => {
-            Reflect.set(window, "retiredDirectFix", true); return true;
-        }));
+        await page.evaluate(() => {
+            void window.hostFixture.snapshot().bindings.actions.state.choices[2]!.select()
+                .then(outcome => Reflect.set(window, "retiredDirectFix", outcome.status));
+        });
         await choices(page).first().click(); await expect(choices(page).first()).toHaveAttribute("aria-pressed", "true");
         await expect.poll(replies.cancelled).toBe(true); await expect(edits(page).first()).toContainText("sample-utils");
-        // Return to the same lazy row while the first reply is still held. Its old direct-fix predicate has expired.
+        await expect.poll(() => page.evaluate(() => Reflect.get(window, "retiredDirectFix"))).toBe("stale");
+        // Returning to the row may show a fresh review while its earlier reply is still held.
         await choices(page).nth(2).click(); await expect(edits(page).first()).toContainText('Insert "DONE"');
         await input(page, "Configuration path").focus(); await replies.release(); await waitForActions(page); await expect(input(page, "Configuration path")).toBeFocused(); await expect(edits(page)).toHaveCount(1); await expect(edits(page).first()).toContainText('Insert "DONE"');
-        expect(await page.evaluate(() => Reflect.get(window, "retiredDirectFix"))).toBeUndefined(); await exact(page, raw);
+        expect(await page.evaluate(() => Reflect.get(window, "retiredDirectFix"))).toBe("stale"); await exact(page, raw);
         const request = requests.find(r => r.method === "textDocument/codeAction")!;
         expect(request.params._fixture).toEqual({ module: "sample-utils", delay: 0 });
         expect(request.params.range).toEqual({ start: { line: 0, character: 7 }, end: { line: 0, character: 10 } }); expect(request.params.context.triggerKind).toBe(1); expect(request.params.context.diagnostics).toHaveLength(1); expect(request.params.context.diagnostics[0].range).toEqual({ start: { line: 0, character: 6 }, end: { line: 0, character: 10 } });
@@ -167,8 +169,19 @@ test.describe(`plain LSP code actions`, () => {
     test("multi-resource actions edit the working copy and an unmounted companion", async ({ page }) => {
         await seed(page); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await waitForActions(page); const working = input(page, "Comparison working source"), before = await snapshot(page), baseline = before.bindings.comparison!.baseline;
         await working.focus(); await page.evaluate(at => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: at + 1, head: at }, { anchor: rawLength(f), head: rawLength(f) }]); function rawLength(f: typeof window.hostFixture) { return f.snapshot().source.length; } }, raw.indexOf("TODO") + 1);
-        const selections = (await snapshot(page)).bindings.comparison!.selectionSet; await working.press("Control+."); await waitForActions(page); expect((await snapshot(page)).bindings.actions.capture!.view).toBe("comparison"); await choices(page).nth(1).click(); await waitForActions(page); await expect(edits(page)).toHaveCount(2); await exact(page, raw);
-        await button(page, "Apply captured action").click(); await waitForActions(page); await exact(page, marker + raw); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline); const companion = before.bindings.navigation.companion!; expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(marker + "const catalogue = 1;\r\ncatalogue;\r\n");
+        const selections = (await snapshot(page)).bindings.comparison!.selectionSet;
+        await working.press("Control+.");
+        await waitForActions(page);
+        expect((await snapshot(page)).bindings.actions.capture!.view).toBe("comparison");
+        const result = await page.evaluate(() => window.hostFixture.snapshot().bindings.actions.state.choices[1]!.select());
+        const companion = before.bindings.navigation.companion!;
+        const primary = before.bindings.views.find(view => view.id === "primary")!.documentId;
+        expect(result.status === "done" && result.value.map(change => change.document).sort())
+            .toEqual([primary, companion].sort());
+        await exact(page, marker + raw);
+        expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline);
+        expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion))
+            .toBe(marker + "const catalogue = 1;\r\ncatalogue;\r\n");
         const open = button(page, "Open action changes in Navigation companion");
         await button(page, "Toggle views").click(); await expect(input(page, "Secondary source")).toHaveCount(0);
         await open.click(); await expect(page.getByLabel("Code action status", { exact: true })).toContainText("source pane");
@@ -220,6 +233,8 @@ test.describe(`plain LSP code actions`, () => {
         await choices(page).nth(1).click();
         await expect(status).toContainText("read-only or locked");
         expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.actions.state.confirm?.())).toEqual({ status: "refused", reason: "not-writable" });
+        expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.actions.state.choices[1]!.select()))
+            .toEqual({ status: "refused", reason: "not-writable" });
         await waitForActions(page);
         await exact(page, raw);
         expect((await snapshot(page)).history).toEqual(before.history);

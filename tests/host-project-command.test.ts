@@ -51,8 +51,7 @@ test("a command acknowledges a batch with a newly resolved companion and undoes 
     try {
         const list = await language.codeActions.request();
         assert.equal(list.status, "done");
-        list.value[0]!.select();
-        const result = await language.codeActions.getSnapshot().preview!.apply();
+        const result = await list.value[0]!.select();
         const after = workspace.document(companion.id);
         assert.equal(after.buffer.slice(0, 8), "// note\n");
         assert.equal(document().buffer.slice(0, 8), "// note\n");
@@ -78,8 +77,11 @@ test("an advertised direct command leaves a pending action preview usable when i
     } }]);
     const language = attachEditorLanguage(f.editor, f.provider, { commands: {}, codeActions: {} });
     try {
-        await language.codeActions.request();
-        const preview = language.codeActions.getSnapshot().preview!;
+        const list = await language.codeActions.request();
+        assert.equal(list.status, "done");
+        const review = await list.value[0]!.select({ review: true });
+        assert.equal(review.status, "done");
+        const preview = review.value;
         assert.deepEqual(await language.commands.run("fixture.command"), { status: "done", value: [] });
         assert.equal(language.codeActions.getSnapshot().preview, preview);
         assert.equal((await preview.apply()).status, "done");
@@ -109,8 +111,7 @@ test("closing the editor refuses a server edit while host approval is still unan
     try {
         const choices = await language.codeActions.request();
         assert.equal(choices.status, "done");
-        choices.value[0]!.select();
-        const applying = language.codeActions.getSnapshot().preview!.apply();
+        const applying = choices.value[0]!.select();
         await asked.promise;
         language.dispose();
         assert.equal((await applying).status, "stale");
@@ -170,11 +171,12 @@ for (const [cause, interrupt] of Object.entries(interruptions)) {
             });
             return null;
         });
-        actions.request();
-        await waitForState(actions, state => state.status !== "pending");
-        const preview = actions.getSnapshot().preview;
-        assert.ok(preview?.canApply, actions.getSnapshot().message);
-        const applying = preview.apply();
+        const actionsAtCaret = await actions.request();
+        assert.equal(actionsAtCaret.status, "done");
+        const preview = await actionsAtCaret.value[0]!.select({ review: true });
+        assert.equal(preview.status, "done");
+        assert.ok(preview.value.canApply);
+        const applying = preview.value.apply();
         assert.equal(actions.getSnapshot().status, "executing");
         await waitForState(f.host.state, state => state.review !== null || !state.pending);
         const review = f.host.state.getSnapshot().review;

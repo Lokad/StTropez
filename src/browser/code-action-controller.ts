@@ -13,12 +13,11 @@ import { captureEditCommand, commandTransaction, type CapturedCommand, type Chan
 import { writableEdit } from "./edit-project.ts";
 import type { TextEditor } from "./text-editor.ts";
 
-export type CodeActionChoice = Readonly<{
-    index: number; title: string; kind: string | null; preferred: boolean; disabled: string | null; needsResolve: boolean;
-    select: (applyWhen?: (resolved: LspCodeAction) => boolean) => void;
-}>;
+type Changes = readonly ChangedDocument[];
+type SelectionResult = Outcome<CodeActionPreview | Changes>;
+export type CodeActionChoice = ReturnType<typeof actionChoice>;
 export type CodeActionPreview = Readonly<{
-    index: number; title: string; command: string | null; disabled: string | null;
+    title: string; command: string | null; disabled: string | null;
     canApply: boolean; readPage: (page?: number) => LspWorkspaceEditPreview | undefined; apply: () => Promise<Outcome<readonly ChangedDocument[]>>;
 }>;
 export type CodeActionSnapshot = Readonly<{
@@ -37,8 +36,18 @@ type Job = {
     timer?: number; invalid: boolean; batch?: LspActionResult; selection?: LspCodeAction;
     failure?: Outcome<never>;
     changes?: Map<DocumentId, ChangedDocument>;
-    resolving?: { index: number; applyWhen: ((action: LspCodeAction) => boolean) | undefined };
+    resolving?: { index: number; finish: (resolved?: LspCodeAction) => void };
 };
+function actionChoice(action: LspCodeAction, index: number, disabled: string | null, choose: (review: boolean) => Promise<SelectionResult>) {
+    function select(options: Readonly<{ review: true }>): Promise<Outcome<CodeActionPreview>>;
+    function select(options?: Readonly<{ review?: false }>): Promise<Outcome<Changes>>;
+    function select(options: Readonly<{ review?: boolean }>): Promise<SelectionResult>;
+    function select(options?: Readonly<{ review?: boolean }>) {
+        return choose(options?.review === true).catch(failed);
+    }
+    return Object.freeze({ index, title: action.title, kind: action.kind, preferred: action.preferred, disabled,
+        needsResolve: action.resolve !== null, select });
+}
 function afterEdits(reason: string, count?: number) {
     return count ? reason + " Earlier edits remain applied and undoable." : reason;
 }
@@ -47,7 +56,7 @@ export type CodeActionController = Observable<CodeActionSnapshot> & Readonly<{
     request: () => Promise<Outcome<readonly CodeActionChoice[]>>; cancel: () => void; dispose: () => void;
 }>;
 
-/** One editor owns the request, lazy resolution and confirmation of its displayed preview. */
+/** Resolve and apply each choice against the editor that requested it. */
 export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, options: CodeActionControllerOptions): CodeActionController {
     const { workspace, view } = editor, win = editor.element.ownerDocument.defaultView!;
     const scope = workspace.createNotificationScope(options.onError), cell = new Store(empty, scope);
@@ -62,6 +71,7 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
         const previous = job; job = undefined;
         if (!previous) return;
         win.clearTimeout(previous.timer);
+        previous.resolving?.finish();
         previous.capture.dispose();
         client.cancel();
     };
@@ -79,20 +89,20 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
             if (job === j) finish("expired", afterEdits("The captured source or provider changed.", j.changes?.size));
         });
     };
-    const reportFailure = (error: unknown) => {
-        publish({ ...empty, status: "failed", message: error instanceof Error ? error.message : String(error) });
-        return failed(error);
-    };
-    const requestFailed = (j: Job, error: unknown): Outcome<never> => {
-        if (j.failure) return j.failure;
-        try {
-            if (job !== j || j.invalid || isStaleRequest(error) || !j.capture.current()) {
-                expire(j);
-                return stale;
-            }
-        } catch (captureError) { error = captureError; }
-        release();
-        return j.failure = reportFailure(error);
+    const requestFailed = (j: Job | undefined, error: unknown): Outcome<never> => {
+        if (j?.failure) return j.failure;
+        if (j) {
+            try {
+                if (job !== j || j.invalid || isStaleRequest(error) || !j.capture.current()) {
+                    expire(j);
+                    return stale;
+                }
+            } catch (captureError) { error = captureError; }
+        }
+        const outcome = failed(error);
+        if (j) j.failure = outcome;
+        finish("failed", error instanceof Error ? error.message : String(error));
+        return outcome;
     };
     const timeout = (j: Job) => {
         win.clearTimeout(j.timer);
@@ -101,24 +111,25 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
     const disabled = (batch: LspActionResult, action: LspCodeAction) => action.disabled ?? (action.command
         ? !options.reviewCommandEdit || !batch.supports(action.command) ? "This command is unavailable." : null
         : !action.resolve && !action.edit?.documents.some(part => part.edits.length) ? "The provider returned no text changes." : null);
-    async function apply(preview: CodeActionPreview): Promise<Outcome<readonly ChangedDocument[]>> {
+    async function apply(j: Job | undefined, index: number, preview: CodeActionPreview | null): Promise<Outcome<Changes>> {
         scope.assertWritable();
-        const j = job, action = j?.selection, batch = j?.batch;
-        if (cell.get().preview !== preview || !j || !action || !batch || !current(j)) return stale;
+        const action = j?.selection, batch = j?.batch, state = cell.get();
+        if (state.status !== "ready" || state.choice !== index || state.preview !== preview) return stale;
+        if (!j || !action || !batch || !current(j)) return stale;
         if (disabled(batch, action) !== null) return refused("disabled");
         if (!writableEdit(editor, action.edit)) return refused("not-writable");
         if (action.command && (!client.getSnapshot().commandAvailable || options.canRunCommand?.() === false)) {
-            publish({ ...cell.get(), message: "Another command is active. You can retry this preview." });
+            publish({ ...cell.get(), message: "Another command is active. Try again." });
             return refused("command-unavailable");
         }
         const transaction = commandTransaction(editor, j.capture, () => current(j), options.reviewCommandEdit, !!action.command, scope, "code-action");
         const changed = j.changes = transaction.changes;
-        let message = "Applied the reviewed edits.";
+        let message = "Applied the edits.";
         let failure: Outcome<never> | undefined;
         try {
             if (action.command) {
                 j.timer = win.setTimeout(() => expire(j), 120000);
-                publish({ ...empty, status: "executing", message: "Executing the confirmed action." });
+                publish({ ...empty, status: "executing", message: "Executing the action." });
                 const receipt = await batch.execute(action, {
                     ...transaction.scope,
                     prepare: () => { if (action.edit) transaction.write(action.edit); }
@@ -146,7 +157,7 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
         return failure ?? done(changes);
     }
     function makePreview(index: number, title: string, command: string | null, reason: string | null): CodeActionPreview {
-        const preview: CodeActionPreview = Object.freeze({ index, title, command, disabled: reason, canApply: reason === null,
+        const preview: CodeActionPreview = Object.freeze({ title, command, disabled: reason, canApply: reason === null,
             readPage: (page = 0) => {
                 const j = job;
                 if (cell.get().preview !== preview || !j || !current(j)) return;
@@ -154,47 +165,60 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
                 return edit ? previewLspWorkspaceEdit(edit, id => j.capture.project.documents.get(id as DocumentId)!.title, page)
                     : Object.freeze({ page, count: 0, notes: emptyList });
             },
-            apply: () => apply(preview).catch(failed) });
+            apply: () => apply(job, index, preview).catch(failed) });
         return preview;
     }
-    function present(j: Job, index: number, action: LspCodeAction, applyWhen?: (action: LspCodeAction) => boolean): void {
-        if (!j.batch || !current(j)) { expire(j); return; }
+    async function present(j: Job, index: number, action: LspCodeAction, review: boolean): Promise<SelectionResult> {
+        if (!current(j)) return stale;
         j.selection = action;
-        const reason = disabled(j.batch, action) ?? (writableEdit(editor, action.edit) ? null : "This action would edit a read-only or locked file.");
-        const preview = makePreview(index, action.title, action.command?.command ?? null, reason);
-        publish({ ...cell.get(), status: "ready", choice: index, preview, message: reason ?? "Review the selected action before confirming." });
-        if (preview.canApply && cell.get().preview === preview && applyWhen?.(action)) void preview.apply();
+        const reason = disabled(j.batch!, action)
+            ?? (writableEdit(editor, action.edit) ? null : "This action would edit a read-only or locked file.");
+        const preview = review ? makePreview(index, action.title, action.command?.command ?? null, reason) : null;
+        publish({ ...cell.get(), status: "ready", choice: index, preview, message: reason ?? (review ? "Review the action before applying it." : "") });
+        if (!preview) return apply(j, index, null);
+        return cell.get().preview === preview ? done(preview) : stale;
     }
-    function choose(source: AbortSignal, index: number, applyWhen?: (action: LspCodeAction) => boolean): void {
+    async function choose(source: AbortSignal, index: number, review: boolean): Promise<SelectionResult> {
         scope.assertWritable();
         const j = job, batch = j?.batch, action = batch?.actions[index];
-        if (!j || j.capture.first.signal !== source || !batch || !action || !current(j)) return;
         const status = cell.get().status;
-        if (status !== "ready" && status !== "resolving") return;
-        if (status === "resolving" && j.resolving?.index === index) { j.resolving.applyWhen = applyWhen; return; }
-        if (j.resolving) {
-            delete j.resolving; win.clearTimeout(j.timer);
+        if (!j || j.capture.first.signal !== source || !batch || !action || !current(j)
+            || (status !== "ready" && status !== "resolving")) return stale;
+        const previous = j.resolving;
+        previous?.finish();
+        if (previous?.index !== index) {
+            delete j.resolving;
+            win.clearTimeout(j.timer);
+            batch.cancelResolve();
         }
-        batch.cancelResolve();
-        if (!action.resolve || disabled(batch, action)) { present(j, index, action, applyWhen); return; }
-        const choice = j.resolving = { index, applyWhen };
-        publish({ ...cell.get(), status: "resolving", choice: index, preview: null, message: "Resolving the selected action." });
-        if (job !== j || j.resolving !== choice) return;
-        timeout(j);
-        void batch.resolve(action, options.prepareResolve).then(resolved => {
-            if (job !== j || j.resolving !== choice) return;
-            if (!current(j)) { expire(j); return; }
-            win.clearTimeout(j.timer); if (resolved.edit) j.capture.project.includeEdit(resolved.edit);
-            present(j, index, resolved, choice.applyWhen);
-            if (j.resolving === choice) delete j.resolving;
-        }).catch(error => { if (job === j && j.resolving === choice) requestFailed(j, error); });
+        if (!action.resolve) return present(j, index, action, review);
+        return new Promise<SelectionResult>(settle => {
+            const finish = (resolved?: LspCodeAction) => settle(resolved
+                ? present(j, index, resolved, review) : j.failure ?? stale);
+            if (j.resolving) {
+                j.resolving.finish = finish;
+                return;
+            }
+            const choice = j.resolving = { index, finish };
+            publish({ ...cell.get(), status: "resolving", choice: index, preview: null, message: "Resolving the selected action." });
+            timeout(j);
+            void batch.resolve(action, options.prepareResolve).then(resolved => {
+                if (job !== j || j.resolving !== choice) return;
+                if (!current(j)) { expire(j); return; }
+                win.clearTimeout(j.timer);
+                if (resolved.edit) j.capture.project.includeEdit(resolved.edit);
+                delete j.resolving;
+                choice.finish(resolved);
+            }).catch(error => { if (job === j && j.resolving === choice) requestFailed(j, error); });
+        });
     }
     function cancel(): void {
         scope.assertWritable(); if (disposed) return;
         const applied = job?.changes?.size;
         finish("idle", applied ? afterEdits("Action command cancelled.", applied) : "");
     }
-    async function discover(): Promise<Outcome<readonly CodeActionChoice[]>> {
+    async function request(): Promise<Outcome<readonly CodeActionChoice[]>> {
+        cancel();
         if (disposed) return stale;
         let pending: Job | undefined;
         try {
@@ -220,20 +244,13 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
             }
             win.clearTimeout(j.timer);
             for (const action of batch.actions) if (action.edit) j.capture.project.includeEdit(action.edit);
-            const choices = Object.freeze(batch.actions.map((action, index): CodeActionChoice => Object.freeze({
-                index, title: action.title, kind: action.kind, preferred: action.preferred, disabled: disabled(batch, action),
-                needsResolve: action.resolve !== null, select: applyWhen => choose(source, index, applyWhen) })));
-            publish({ ...empty, status: "ready", choices, message: choices.length ? "Choose an action to review." : "No actions for this range." });
-            if (batch.actions[0]?.edit && !choices[0]!.disabled) choices[0]!.select();
+            const choices = Object.freeze(batch.actions.map((action, index) =>
+                actionChoice(action, index, disabled(batch, action), review => choose(source, index, review))));
+            publish({ ...empty, status: "ready", choices, message: choices.length ? "Choose an action." : "No actions for this range." });
             return done(choices);
         } catch (error) {
-            if (pending) return requestFailed(pending, error);
-            return reportFailure(error);
+            return requestFailed(pending, error);
         }
-    }
-    function request() {
-        cancel();
-        return discover();
     }
     const stopClient = client.subscribe(() => {
         if (job?.batch && (job.resolving ? client.getSnapshot().phase !== "ready" : !current(job))) expire(job);
