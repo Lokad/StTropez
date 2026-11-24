@@ -177,7 +177,7 @@ export function compareText(workspace: Workspace, identity: DocumentId | TabId, 
             const insert = current.baseline.buffer.slice(hunk.baseline.from, hunk.baseline.to);
             return workspace.edit({ documentId, expectedRevision: current.working.revision, origin: "human", view,
                 history: { kind: "replace" }, edits: [{ from: hunk.working.from, to: hunk.working.to, insert }],
-                selection: { anchor: hunk.working.from, head: hunk.working.from + insert.length } }).applied;
+                selection: { anchor: hunk.working.from, head: hunk.working.from } }).applied;
         } });
     }, beginRefresh: () => begin("refresh"), beginAcceptance: () => begin("accept"), beginReversion, dispose: () => {
         scope.assertWritable(); if (disposed) return;

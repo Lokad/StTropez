@@ -156,7 +156,7 @@ validate the budget and return the current progress.
 ### Reverting a change or accepting a version
 
 Call `comparison.navigateHunk(1)` for the next change or `comparison.navigateHunk(-1)` for the previous
-one. Both start at the active caret, wrap at either end and select the change in both panes.
+one. Both start at the active caret, wrap at either end and place a caret at the start of the change in both panes.
 Each pane registers `comparison.nextChange` (F7) and `comparison.previousChange` (Shift+F7).
 The command starts at that pane’s caret and leaves focus in place. Hosts can rebind either shortcut on
 the pane’s keymap. Clicking Previous or Next returns focus to the last active pane. Activating
@@ -171,7 +171,7 @@ target changed before activation.
 Call `comparison.hunkAt(index)` when presenting a change. It returns a handle for that exact change,
 or `undefined` while the diff is pending or the index is out of range. Keep the handle through a
 confirmation dialog. Its `select()` reveals and selects both ranges, unfolding them if needed.
-Its `revert()` restores the baseline range in one undoable edit. Both return `false` after either
+Its `revert()` restores the baseline range in one undoable edit and leaves a caret at its start. Both return `false` after either
 side changes or the review closes. Browser actions also guard composition, and revert checks
 write access. Headless consumers use `controller.hunkAt(index)?.revert()`. Undo restores
 the text and selection. The built-in **Use baseline** button focuses the working editor so you can

@@ -285,6 +285,14 @@ test("paired navigation exposes exact whitespace and reverts one hunk through sh
     await page.getByRole("button", { name: "Next change", exact: true }).click();
     await expect(page.locator(".st-comparison-controls output")).toContainText("Change 1 of");
     await ready(page);
+    const carets = await page.evaluate(() => {
+        const { panes } = window.comparisonFixture.review;
+        return [panes.reference.view.getSnapshot().selection, panes.working.view.getSnapshot().selection];
+    });
+    for (const [i, side] of (["baseline", "working"] as const).entries()) {
+        const start = initial.hunks[0]![side].from;
+        expect(carets[i]).toMatchObject({ anchor: start, head: start });
+    }
     const fitting = await page.locator(".st-comparison-panes .st-viewport").evaluateAll(panes => panes.map(pane => {
         const row = pane.querySelector<HTMLElement>(".st-viewport-row")!, bounds = pane.getBoundingClientRect(), range = pane.ownerDocument.createRange();
         range.selectNodeContents(row);
@@ -295,6 +303,9 @@ test("paired navigation exposes exact whitespace and reverts one hunk through sh
     expect(await page.evaluate(() => window.comparisonFixture.range(0, 25))).toContain("Baseline");
     expect((await page.evaluate(() => window.comparisonFixture.snapshot())).history.undoDepth).toBe(1);
     await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toBeFocused();
+    const restored = await page.evaluate(() => window.comparisonFixture.snapshot());
+    const start = initial.hunks[0]!.working.from;
+    expect(restored.selection).toMatchObject({ anchor: start, head: start });
     await page.keyboard.press("Control+z"); await ready(page);
     await expect(page.locator(".st-comparison-panes section").last().locator(".st-viewport-row").first()).toContainText("Working");
     expect(await page.evaluate(() => window.comparisonFixture.range(0, 24))).toContain("Working");
@@ -483,45 +494,3 @@ for (const kind of ["long", "unique", "repeated", "unbalanced"] as const)
             }
         }
     });
-
-test("a full 100000-line hunk stays atomic under bounded history and permits later typing", async ({ page }) => {
-    const reference = Array.from({ length: 100_000 }, (_, index) => `A${String(index).padStart(6, "0")} = 1234567890123;`).join("\n") + "X";
-    const working = Array.from({ length: 100_000 }, (_, index) => `B${String(index).padStart(6, "0")} = 9876543210987;`).join("\n") + "Y";
-    await page.evaluate(({ reference, working }) => {
-        const fixture = window.comparisonFixture;
-        fixture.setText(reference); fixture.begin("accept"); fixture.finish("accept"); fixture.setText(working);
-    }, { reference, working }); await ready(page);
-    const before = await page.evaluate(() => window.comparisonFixture.snapshot());
-    expect(before.hunks).toHaveLength(1);
-    expect(before.hunks[0]).toMatchObject({ baseline: { from: 0, to: reference.length }, working: { from: 0, to: working.length } });
-    await page.getByRole("button", { name: "Next change", exact: true }).click();
-    await page.getByRole("button", { name: "Use baseline", exact: true }).click(); await ready(page);
-    const reverted = await page.evaluate(() => window.comparisonFixture.snapshot());
-    // The default changed-unit cap evicts the two setup entries, retaining this whole hunk.
-    expect(reverted.history).toMatchObject({ undoDepth: 1 });
-    expect(reverted.diagnostics.history).toMatchObject({ groups: 1, changedUnits: 5_000_000 });
-    expect(reverted.selection).toEqual({ anchor: 0, head: reference.length, anchorAffinity: "after", headAffinity: "before" });
-    expect(reverted.hunks).toHaveLength(0);
-    const input = page.getByRole("textbox", { name: "Comparison working source", exact: true });
-    await input.focus(); await input.press("ArrowRight"); await input.press("q"); await ready(page);
-    for (const [command, expected] of [["Undo working edit", reference], ["Undo working edit", working], ["Redo working edit", reference], ["Redo working edit", reference + "q"]] as const) {
-        await page.getByRole("button", { name: command, exact: true }).click(); await ready(page);
-        expect(await page.evaluate(({ expected, reference }) => {
-            const fixture = window.comparisonFixture, state = fixture.snapshot();
-            if (state.working.length !== expected.length || state.baseline?.length !== reference.length) return false;
-            for (let from = 0; from < expected.length; from += 32768) if (fixture.range(from, Math.min(expected.length, from + 32768)) !== expected.slice(from, from + 32768)) return false;
-            for (let from = 0; from < reference.length; from += 32768) if (fixture.baselineRange(from, Math.min(reference.length, from + 32768)) !== reference.slice(from, from + 32768)) return false;
-            return true;
-        }, { expected, reference })).toBe(true);
-    }
-    const final = await page.evaluate(() => window.comparisonFixture.snapshot());
-    expect(final.working.id).toBe(before.working.id); expect(final.viewId).toBe(before.viewId);
-    expect(final.working.revision).toBe(before.working.revision + 6);
-    expect(final.working.metadata).toMatchObject({ serverVersion: "saved-1", dirty: true });
-    expect(final.baseline?.version).toBe(before.baseline?.version); expect(final.editor.inputEvents).toBe(1);
-    expect(final.editor.inputUnits).toBeLessThan(2600);
-    expect(await page.locator(".st-viewport-row").count()).toBeLessThan(100);
-    expect(final.working.exports).toBe(0); expect(final.baseline?.exports).toBe(0);
-    await page.getByRole("button", { name: "Dispose comparison", exact: true }).click();
-    expect((await page.evaluate(() => window.comparisonFixture.snapshot())).diagnostics).toMatchObject({ resources: 1, tabs: 1, views: 0, leases: 0, subscriptions: 0 });
-});

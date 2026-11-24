@@ -231,7 +231,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         }
         render(); if (controller.getSnapshot().status === "running") schedule();
     }
-    function selectHunk(generation: number, index: number): boolean {
+    function revealHunk(generation: number, index: number, selectRange: boolean): boolean {
         stateScope.assertWritable();
         const current = controller.getSnapshot(), reference = referenceViewport();
         if (disposed || composing() || current.status !== "ready" || current.generation !== generation || !Number.isSafeInteger(index)) return false;
@@ -239,8 +239,8 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         const document = reference.view.getSnapshot();
         const revision = current.working.revision;
         stateScope.batch(() => {
-            reference.view.setSelection(document.revision, { anchor: hunk.baseline.from, head: hunk.baseline.to });
-            controller.view.setSelection(revision, { anchor: hunk.working.from, head: hunk.working.to });
+            reference.view.setSelection(document.revision, { anchor: hunk.baseline.from, head: selectRange ? hunk.baseline.to : hunk.baseline.from });
+            controller.view.setSelection(revision, { anchor: hunk.working.from, head: selectRange ? hunk.working.to : hunk.working.from });
             reference.view.folding.reveal(reference.view.folding.getSnapshot(), hunk.baseline.from, hunk.baseline.to);
             working.view.folding.reveal(working.view.folding.getSnapshot(), hunk.working.from, hunk.working.to);
         });
@@ -252,7 +252,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         if (!current.canNavigate || direction !== 1 && direction !== -1) return false;
         const { next, selected } = caretPosition(current.comparison, pane), count = current.comparison.hunks.length;
         const index = direction === 1 ? next % count : ((selected ?? next) + count - 1) % count;
-        return selectHunk(current.comparison.generation, index);
+        return revealHunk(current.comparison.generation, index, false);
     }
     const navigateHunk = (direction: -1 | 1) => navigateFrom(activePane(), direction);
     function revertSelectedHunk(shown = stateStore.get()): boolean {
@@ -270,7 +270,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         const hunk = controller.hunkAt(index);
         if (!hunk) return;
         const generation = controller.getSnapshot().generation;
-        return Object.freeze({ ...hunk, select: () => selectHunk(generation, index), revert: () => {
+        return Object.freeze({ ...hunk, select: () => revealHunk(generation, index, true), revert: () => {
             stateScope.assertWritable();
             const access = working.getSnapshot();
             return !disposed && !composing() && access.readOnlyReason === null && !access.disabled && hunk.revert();
