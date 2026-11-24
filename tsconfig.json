@@ -8,23 +8,16 @@
     "tsBuildInfoFile": "artifacts/types/development.tsbuildinfo"
   },
   "include": [
-    "fixtures/**/*.ts", "examples/**/*.ts", "examples/**/*.tsx", "experiments/**/*.ts", "tests/**/*.ts", "playwright*.ts",
+    "fixtures/**/*.ts", "examples/**/*.ts", "examples/**/*.tsx", "tests/**/*.ts", "playwright*.ts",
     "scripts/measurement.mjs", "scripts/package-scenarios.mjs", "scripts/browser-harness.mjs",
     "scripts/build.mjs", "scripts/build-demo.mjs", "scripts/finalize-assets.mjs", "scripts/unicode-generation.mjs", "scripts/package-consumer.mjs", "scripts/package-host.mjs", "scripts/package-react-host.mjs",
     "scripts/run-benchmarks.mjs", "scripts/host-scene.mjs", "scripts/serve-demo.mjs", "scripts/package-exports.mjs", "scripts/qualify-package.mjs",
     "scripts/package-table-paste.mjs", "scripts/package-react-pilot.mjs", "scripts/inspect.mjs",
-    "scripts/benchmark-model.mjs", "scripts/benchmark-storage.mjs", "scripts/benchmark-bulk.mjs",
-    "scripts/bulk-worker.mjs", "scripts/bulk-workloads.mjs", "scripts/storage-worker.mjs", "scripts/summarize-storage.mjs",
-    "scripts/benchmark-editing.mjs", "scripts/benchmark-host-input.mjs", "scripts/benchmark-navigation.mjs", "scripts/benchmark-services.mjs",
+    "scripts/benchmark-model.mjs",
+    "scripts/benchmark-editing.mjs",
     "scripts/check-docs.mjs", "scripts/documentation-audit.mjs",
     "scripts/generate-grapheme-data.mjs",
-    "scripts/benchmark-comparison.mjs", "scripts/benchmark-viewport.mjs",
-    "scripts/benchmark-hosts.mjs", "scripts/benchmark-save-conflicts.mjs", "scripts/benchmark-save-recovery.mjs",
-    "scripts/benchmark-host-reference.mjs", "scripts/benchmark-host-reference-focus.mjs",
-    "scripts/benchmark-host-pointer.mjs", "scripts/benchmark-host-word-selection.mjs",
-    "scripts/benchmark-host-drag-scroll.mjs", "scripts/benchmark-host-folding.mjs", "scripts/benchmark-host-table-paste.mjs",
-    "scripts/benchmark-graphemes.mjs",
-    "scripts/benchmark.mjs", "scripts/benchmark-trace.mjs"
+    "scripts/benchmark-comparison.mjs", "scripts/benchmark-viewport.mjs"
   ],
   "references": [
     { "path": "./tsconfig.core.json" },

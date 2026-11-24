@@ -73,7 +73,6 @@ full multi-engine and package qualification have separate scopes.
 | `examples/protocol/` | Protocol integration fixture |
 | `examples/shared/` | Shared host presentation, readiness and lifecycle helpers |
 | `fixtures/` | Deterministic text/workspace workloads and language/protocol peers |
-| `experiments/` | Development storage comparisons, excluded from runtime assets |
 | `tests/` | Model/browser tests, helpers and isolated-consumer fixtures |
 | `scripts/` | Build, development servers, qualification, inspection and measurements |
 | `packaging/` | NuGet project, MSBuild bridge and packaged README |

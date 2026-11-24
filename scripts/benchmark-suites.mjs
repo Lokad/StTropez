@@ -1,25 +1,13 @@
 import assert from "node:assert/strict";
 
 /** @typedef {{id: string, args: readonly string[], environment: readonly string[], reports: readonly string[], setup?: string, note?: string}} BenchmarkSuite */
-const sourceIds = ["model", "workspace", "editing", "host-input", "host-folding", "host-reference",
-    "host-pointer", "host-drag-scroll", "host-word-selection", "navigation", "hosts", "save-conflicts", "save-recovery",
-    "comparison", "trace", "storage", "viewport", "services", "bulk", "graphemes", "host-reference-focus", "host-table-paste"];
-/** @type {Record<string, readonly string[]>} */
-const environment = {
-    "host-input": ["STTROPEZ_INPUT_SMOKE"], "host-reference": ["STTROPEZ_REFERENCE_SMOKE"],
-    "host-pointer": ["STTROPEZ_POINTER_SMOKE"], "host-drag-scroll": ["STTROPEZ_DRAG_SMOKE"],
-    "host-word-selection": ["STTROPEZ_WORD_SELECTION_SMOKE", "STTROPEZ_WORD_SELECTION_INSPECT"],
-    hosts: ["STTROPEZ_HOST_SMOKE"], "save-conflicts": ["STTROPEZ_CONFLICT_SMOKE"],
-    "save-recovery": ["STTROPEZ_SAVE_RECOVERY_SMOKE"], storage: ["STTROPEZ_STORAGE_ROUNDS"],
-    bulk: ["STTROPEZ_BULK_ROUNDS"], "host-reference-focus": ["STTROPEZ_REFERENCE_FOCUS_SMOKE", "STTROPEZ_REFERENCE_FOCUS_INSPECT"],
-};
-/** @type {Record<string, readonly string[]>} */
-const reports = { model: ["artifacts/bench/model.json"], workspace: ["artifacts/bench/model.json", "artifacts/bench/latest.json"], trace: ["artifacts/bench/phases.json"] };
+const sourceIds = ["model", "editing", "viewport", "comparison"];
 /** @type {BenchmarkSuite[]} */
-const entries = sourceIds.map(id => ({ id,
-    args: [id === "workspace" ? "scripts/benchmark.mjs" : `scripts/benchmark-${id}.mjs`],
-    environment: environment[id] ?? [], reports: reports[id] ?? [`artifacts/bench/${id}`],
-    ...(id === "workspace" ? { note: "Runs both the headless model and native workspace baseline; the standalone model command is separate." } : {}),
+const entries = sourceIds.map(id => ({
+    id,
+    args: [`scripts/benchmark-${id}.mjs`],
+    environment: [],
+    reports: [id === "model" ? "artifacts/bench/model.json" : `artifacts/bench/${id}`],
 }));
 for (const kind of ["pilot", "hunk", "react"]) entries.push({ id: `package-${kind}`, setup: "pack:nuget",
     args: ["scripts/test-package.mjs", `--${kind}-only`, "--bench"], environment: [], reports: ["artifacts/package"],
@@ -31,9 +19,7 @@ export const benchmarkSuites = Object.freeze(Object.fromEntries(entries.map(entr
 /** @type {Readonly<Record<string, readonly string[]>>} */
 export const benchmarkGroups = Object.freeze({
     default: Object.freeze(["model", "editing"]),
-    pilot: Object.freeze(["host-input", "comparison", "save-conflicts"]),
-    all: Object.freeze(["workspace", "viewport", "editing", "services", "bulk", "comparison", "hosts", "save-conflicts",
-        "save-recovery", "navigation", "host-folding", "host-table-paste", "host-pointer", "host-input", "host-reference", "graphemes"]),
+    all: Object.freeze(sourceIds),
 });
 
 /** @param {readonly string[]} args */

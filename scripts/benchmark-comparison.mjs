@@ -10,7 +10,7 @@ import { distribution, environment, sourceIdentity } from "./measurement.mjs";
  * wallFrameProxyMs: number, hunks: number, exports: number, baselineExports: number, rows: number}} ComparisonSample */
 
 const source = await sourceIdentity(), model = [];
-const corpora = /** @type {const} */ (["normal", "lines-10000", "lines-100000", "single-line", "unicode"]);
+const corpora = /** @type {const} */ (["normal", "lines-10000", "single-line", "unicode"]);
 /** @type {{id: string, text: string, edits: import("../src/index.ts").TextEdit[]}[]} */
 const cases = corpora.map(id => {
     const text = corpus(id), at = Math.floor(text.length / 2); return { id, text, edits: [{ from: at, to: at, insert: "changed\r\n" }] };
@@ -47,7 +47,7 @@ try {
         const text = corpus(id), working = text.slice(0, Math.floor(text.length / 2)) + "changed\r\n" + text.slice(Math.floor(text.length / 2));
         await harness.page.evaluate(text => { window.comparisonFixture.setText(text); window.comparisonFixture.begin("accept"); window.comparisonFixture.finish("accept"); }, text);
         await harness.page.waitForFunction(() => window.comparisonFixture.snapshot().status === "ready");
-        const warmup = id === "lines-100000" || id === "single-line" ? 0 : 2, measured = warmup ? 10 : 1, samples = [];
+        const warmup = id === "single-line" ? 0 : 2, measured = warmup ? 10 : 1, samples = [];
         for (let iteration = 0; iteration < warmup + measured; iteration++) {
             const sample = await harness.page.evaluate(text => /** @type {Promise<ComparisonSample>} */ (new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => reject(new Error("Comparison did not become ready.")), 60000);

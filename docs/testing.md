@@ -31,7 +31,6 @@ npm run test:browsers -- --project=chromium --project=firefox --project=webkit t
 | `npm run build:demo` then `npm run test:demo` | Built static demo in the configured engines |
 | `npm run test:package` | One packed/restored asset set across selected consuming hosts |
 | `npm run bench` | Seeded model work and actual bounded-editor keyboard insertion |
-| `npm run bench:pilot` | Integrated input, comparison and save/conflict workloads |
 | `npm run bench:all` | Run the larger set of benchmarks, or list them with `-- --list` |
 
 Source tests default to port 4183. Set `STTROPEZ_PORT` to override it. Static tests use `STTROPEZ_DEMO_PORT` locally or
@@ -228,14 +227,12 @@ byte. Omit the flag to regenerate. Builds and restores use the checked-in output
 
 ### Measurement policy
 
-The [suite manifest](../scripts/benchmark-suites.mjs) defines `bench`, `bench:pilot`, `bench:all`
-and named suites. Use `--list` to see what a group includes and omits. The native-workspace workload
-also exercises the model.
+The default benchmarks cover model transactions and editing. The full group adds viewport rendering
+and comparison. All four use documents up to 512,000 UTF-8 bytes. [Suite manifest](../scripts/benchmark-suites.mjs)
 
 ```sh
 npm run bench:all -- --list
-npm run bench:services -- --regex --whole-word
-node scripts/run-benchmarks.mjs --suite=host-drag-scroll --list
+npm run bench:comparison
 ```
 
 `--list` shows prerequisites and report locations. Pass workload arguments to a named npm command,
@@ -256,33 +253,6 @@ timeouts.
 Source browser benchmarks start on `about:blank` with a fixed development bundle
 (`development-bundle-no-watch`). Each workload opens its fixture and controls warm-up. Record the
 build mode when comparing against the interactive watcher, static site or restored package.
-
-`scripts/host-edit-measurement.mjs` drives Enter and native text input through
-`scripts/host-reference-probe.mjs`. For event clocks, `inputEvents` records every dispatch, its
-data and handler sample, even if it commits nothing. For inserted units, use the committed text in
-transaction `records`. Render observations belong to the committed revision. Measure settlement
-from the end of the last input event, including fragments after the commit. Inapplicable clocks are
-null. The native probe requires `insertText` intent and accepts WebKit’s `insertParagraph` fragments
-within a multiline insertion. It rejects separate paragraph and composition intentions and saves
-partial results on failure.
-
-`isReady` requires the expected revision, both working views, reference version, complete
-selections, caret, scans, folds, alignment and scroll over two frames. Verify exact text, counters
-and undo/redo. `isSourceReady`/`waitSourceReady` also accept native source views (null metrics) or
-an unmounted review. Conflict input measurements require a mounted review and `beforeinput` on its
-captured input. Missing events and terminal failures release listeners and cancel frame waits.
-
-`scripts/host-scene.mjs` shares mount, readiness and disposal checks across host benchmarks.
-`hostTextEquals` compares length and raw UTF-16 chunks outside point and gesture clocks. A workflow
-clock can include intermediate checks. Disposal timing ends before teardown diagnostics. The
-installed consumer stages the helper against public imports. Individual workloads add their provider
-or service conditions.
-
-Input/reference, folding and table-paste benchmarks write each run to
-`artifacts/bench/<benchmark>/<variant>/runs/`. A successful run also updates that variant's
-`latest.json`. Smoke, full and retention-check runs have separate results. The report keeps
-warmups separate from measured samples. On failure it keeps completed samples and the partial
-sample in progress. [Report writer](../scripts/benchmark-report.mjs)
 
 Use the [clock glossary](README.md#measuring-an-interaction). Record the start event, end condition and included
 work. Nested intervals and inclusive profile weights overlap.
