@@ -78,7 +78,7 @@ archive. Add another host or engine when it exercises a different behavior.
 | Save conflicts and server corrections | Save review, [host conflicts](../tests/host-save-conflict.test.ts) and save failures | [Save conflicts](../tests/browser/save-conflicts.spec.ts), captured writes and retry |
 | Fixed references, hunks and closing a review | [Comparison](../tests/comparison.test.ts), row alignment, scrolling and scheduling | Close and reopen the review, find text in the reference, and align the two panes. |
 | Demo recovery and syntax colors | Demo recovery, [syntax](../tests/demo-syntax.test.ts) and token colors | Save, switch files or samples, reload, and check stored text and visible colors. Exercise storage failures too. |
-| Position-based LSP requests and invalid replies | LSP clients, workspace edits and protocol features | Hover, navigate, rename or invoke an action while the document is changing. |
+| Position-based LSP requests and invalid replies | LSP clients, workspace edits and [stale color and link replies](../tests/document-language-controllers.test.ts) | Check typing in the color field, host alias changes and focus after navigation. |
 | Protocol negotiation, selectors, shared providers and command handling | JSON-RPC, sessions, selectors and the protocol fixture | WebSocket fixture and provider interoperability tests |
 | Native input and composition recovery | [Input context](../tests/input-context.test.ts) and input targets | Input targeting, queued keystrokes and dead-key composition |
 | Caret, grapheme boundaries, scroll, focus and drag | Geometry-independent and Unicode models | Viewport/geometry/paint, zoom, grapheme, pointer/drag and shadow-focus suites |

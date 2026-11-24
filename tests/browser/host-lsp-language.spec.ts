@@ -65,14 +65,13 @@ async function linkCaptureScene(page: Page, text: string, editedTarget: boolean)
     await seed(page, text, 10);
     await button(page, "Add module companion").click();
     const companion = (await snapshot(page)).bindings.links.companion!;
-    const editTarget = async () => page.evaluate(id => {
+    if (editedTarget) await page.evaluate(id => {
         const f = window.hostFixture, document = f.navigationDocument(id);
         f.editLinkTarget(id, document.revision, [{ from: 0, to: 0, insert: "// target\r\n" }]);
     }, companion);
-    if (editedTarget) await editTarget();
     const select = async () => { await field(page).focus(); await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 10, head: 10 }]); }); await settledColorsAndLinks(page); };
     const discover = async () => { await button(page, "Discover module links").click(); await settledColorsAndLinks(page); };
-    return { companion, editTarget, select, discover };
+    return { companion, select, discover };
 }
 test.describe("plain selected LSP features", () => {
     test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/plain/?language=lsp`); await expect(field(page)).toBeVisible(); });
@@ -349,53 +348,27 @@ test.describe("plain selected LSP features", () => {
         expect(methods).toContain("textDocument/documentColor"); expect(methods).toContain("textDocument/colorPresentation");
         expect((await snapshot(page)).source.exports).toBe(0); await disposeColorsAndLinks(page);
     });
-    for (const mode of ["selection", "value", "typing", "authority", "remount"] as const) test(`pending color preview rejects a stale reply after ${mode}`, async ({ page }) => {
-        test.setTimeout(60000);
+    test("changing the proposed color keeps the new preview when the previous reply arrives", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/colorPresentation");
         await page.reload();
-        // These variants retain the text that followed typing in the original shared journey.
-        let current = colorCaptureSource + (mode === "authority" || mode === "remount" ? "H" : "");
-        const { proposed, apply, discover, preview } = await colorCaptureScene(page, current);
+        const { proposed, apply, discover } = await colorCaptureScene(page, colorCaptureSource);
         await discover();
-        const valid = await preview("#112233");
-        const retired = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.colors.state.apply!);
-        await expect(apply).toBeEnabled(); expect(valid.presentation).not.toBe("");
-        await discover(); await proposed.fill("#112233"); replies.hold();
+        await proposed.fill("#112233");
+        replies.hold();
         await button(page, "Preview color presentations").click();
         await expect.poll(replies.waiting).toBe(true);
-        const { state: captured, requested } = (await snapshot(page)).bindings.colors;
-        expect(captured.pending).toBe(true); expect(captured.apply).toBeNull();
-        if (mode === "selection") await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 17, head: 17 }]); });
-        else if (mode === "value") { await proposed.press("Home"); await proposed.press("ArrowRight"); await page.keyboard.type("ff"); await expect(proposed).toHaveValue("#ff112233"); }
-        else if (mode === "typing") { await field(page).press("Control+End"); await field(page).pressSequentially("H"); current += "H"; }
-        else if (mode === "authority") await page.evaluate(() => window.hostFixture.cycleSourceEditLease());
-        else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
-        await settledColorsAndLinks(page);
+        await proposed.press("Home");
+        await proposed.press("ArrowRight");
+        await page.keyboard.type("ff");
+        await expect(proposed).toHaveValue("#ff112233");
         await expect.poll(replies.cancelled).toBe(true);
-        const invalidated = await snapshot(page);
-        if (mode === "value") {
-            expect(invalidated.bindings.colors.state).toMatchObject({ canPreview: true, canApply: false, choices: [], count: captured.count, selected: captured.selected });
-            await proposed.press("Enter");
-            await expect(apply).toBeEnabled();
-        }
+        await expect(apply).toBeDisabled();
+        await proposed.press("Enter");
+        await expect(apply).toBeEnabled();
         await replies.release();
-        expect(await retired.evaluate(apply => apply())).toEqual({ applied: false, reason: "expired" }); await retired.dispose();
         await settledColorsAndLinks(page);
-        const after = await snapshot(page);
-        if (mode === "value") {
-            expect(after.bindings.colors.state).toMatchObject({ pending: false, canApply: true, value: "#ff112233" });
-            expect(after.bindings.colors.requested).toBe(requested);
-        } else expect(after.bindings.colors.state).toMatchObject({ pending: false, canApply: false, choices: [] });
-        expect(after.bindings.colors.applied).toBe(0);
-        expect(after.history).toEqual(invalidated.history);
-        expect(after.bindings.views.map(view => view.selectionSet)).toEqual(invalidated.bindings.views.map(view => view.selectionSet));
-        await exact(page, current);
-        if (mode === "value") {
-            await apply.click(); await exact(page, current.replace("#abc", "#ff112233"));
-            await field(page).press("Control+z"); await exact(page, current);
-        }
-        expect((await snapshot(page)).source.exports).toBe(0);
-        await disposeColorsAndLinks(page);
+        await apply.click();
+        await exact(page, colorCaptureSource.replace("#abc", "#ff112233"));
     });
     test("reviewed colors reject stale Apply after a new value or format and recover from read-only refusal", async ({ page }) => {
         test.setTimeout(60000);
@@ -619,38 +592,26 @@ test.describe("plain selected LSP features", () => {
         await page.keyboard.press("Escape"); await expect(working).toBeFocused();
         expect((await snapshot(page)).bindings.colors.state.view).toBeNull(); expect((await snapshot(page)).source.exports).toBe(0); await disposeColorsAndLinks(page);
     });
-    for (const mode of ["selection", "typing", "target", "authority", "alias", "remount"] as const)
-        test(`pending link discovery rejects a stale reply after ${mode}`, async ({ page }) => {
-            test.setTimeout(60000);
-            const replies = await holdLspReplies(page, "textDocument/documentLink");
-            await page.reload(); await expect(field(page)).toBeVisible();
-            let current = linkCaptureSource + (mode === "selection" || mode === "typing" ? "" : "H");
-            const editedTarget = mode === "authority" || mode === "alias" || mode === "remount";
-            const { companion, select, editTarget } = await linkCaptureScene(page, current, editedTarget);
-            await select(); replies.hold(); await button(page, "Discover module links").click();
-            await expect.poll(replies.waiting).toBe(true);
-            expect((await snapshot(page)).bindings.links.state.status).toBe("pending");
-            if (mode === "selection") await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 11, head: 11 }]); });
-            else if (mode === "typing") { await field(page).press("Control+End"); await field(page).pressSequentially("H"); current += "H"; }
-            else if (mode === "target") await editTarget();
-            else if (mode === "authority") await page.evaluate(id => { window.hostFixture.setProjectTargetReadOnly(id, true); window.hostFixture.setProjectTargetReadOnly(id, false); }, companion);
-            else if (mode === "alias") await page.evaluate(id => { window.hostFixture.setLinkAlias("sample-utils", null); window.hostFixture.setLinkAlias("sample-utils", id); }, companion);
-            else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
-            await settledColorsAndLinks(page);
-            await expect.poll(replies.cancelled).toBe(true);
-            const invalidated = await snapshot(page);
-            await replies.release();
-            await settledColorsAndLinks(page);
-            const after = await snapshot(page);
-            expect(after.bindings.links.opened).toBe(0);
-            expect(after.bindings.links.state.links).toHaveLength(0);
-            if (mode === "selection") expect(after.bindings.links.state.message).toBe("Module links expired. Press F4 in the source to refresh them.");
-            expect(after.history).toEqual(invalidated.history);
-            expect(after.bindings.views.map(view => view.selectionSet)).toEqual(invalidated.bindings.views.map(view => view.selectionSet));
-            await exact(page, current);
-            expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe((editedTarget || mode === "target" ? "// target\r\n" : "") + linkCaptureTarget);
-            await disposeColorsAndLinks(page);
-        });
+    test("changing a host alias expires link discovery even when the same alias is restored", async ({ page }) => {
+        const replies = await holdLspReplies(page, "textDocument/documentLink");
+        await page.reload();
+        const { companion, select } = await linkCaptureScene(page, linkCaptureSource, false);
+        await select();
+        replies.hold();
+        await button(page, "Discover module links").click();
+        await expect.poll(replies.waiting).toBe(true);
+        await page.evaluate(id => {
+            window.hostFixture.setLinkAlias("sample-utils", null);
+            window.hostFixture.setLinkAlias("sample-utils", id);
+        }, companion);
+        await expect.poll(replies.cancelled).toBe(true);
+        await replies.release();
+        await settledColorsAndLinks(page);
+        const results = page.getByLabel("Module link results", { exact: true }).getByRole("button");
+        await expect(results).toHaveCount(0);
+        await button(page, "Discover module links").click();
+        await expect(results).toHaveCount(1);
+    });
     test("retained link actions reject source edits and remounts while a fresh link opens a read-only target", async ({ page }) => {
         test.setTimeout(60000);
         const replies = await holdLspReplies(page, "documentLink/resolve"); await page.reload();
