@@ -98,9 +98,11 @@ export function mapWholeTextSelections(mapping: PositionMapping, after: TextBuff
 
 /** Preserve each endpoint's relative offset inside a replacement, including backwards selections. */
 export function mapReplacementSelections(length: number, selections: SelectionSet, edits: readonly TextEdit[]): SelectionSet {
+    let next = 0;
+    let delta = 0;
     const map = (offset: number) => {
-        let delta = 0;
-        for (const edit of edits) {
+        for (; next < edits.length; next++) {
+            const edit = edits[next]!;
             if (offset < edit.from) break;
             if (offset < edit.to) {
                 let relative = Math.min(offset - edit.from, edit.insert.length);
@@ -111,7 +113,8 @@ export function mapReplacementSelections(length: number, selections: SelectionSe
         }
         return offset + delta;
     };
-    return createSelectionSet(length + edits.reduce((n, e) => n + e.insert.length - (e.to - e.from), 0), selections.ranges.map(r => ({ ...r, anchor: map(r.anchor), head: map(r.head) })), selections.primary);
+    const newLength = length + edits.reduce((n, edit) => n + edit.insert.length - (edit.to - edit.from), 0);
+    return mapEndpoints(newLength, selections, map);
 }
 
 /** Plan one original-coordinate replacement per normalized range; text may differ per range. */

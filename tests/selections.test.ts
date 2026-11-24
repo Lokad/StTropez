@@ -183,4 +183,11 @@ test("replacement selection mapping retains direction, complete sets and name-re
     assert.deepEqual(mapReplacementSelections(30, before, edits), before);
     const short = mapReplacementSelections(30, before, [{ ...edits[0]!, insert: "x" }]); assert.deepEqual(short.ranges.map(r => [r.anchor, r.head]), [[7, 7], [22, 22]]); assert.equal(short.primary, 0);
     const astral = mapReplacementSelections(10, createSelectionSet(10, [{ anchor: 1, head: 3 }]), [{ from: 0, to: 5, insert: "𐐀name" }]); assert.deepEqual(astral.ranges.map(r => [r.anchor, r.head]), [[0, 3]]);
+    const across = createSelectionSet(20, [{ anchor: 10, head: 2 }, { anchor: 13, head: 13 }], 1);
+    const mapped = mapReplacementSelections(20, across, [
+        { from: 0, to: 0, insert: "##" }, { from: 3, to: 6, insert: "" },
+        { from: 8, to: 9, insert: "XYZ" }, { from: 12, to: 12, insert: "!" },
+    ]);
+    assert.deepEqual(endpoints(mapped), [[11, 4], [15, 15]]);
+    assert.equal(mapped.primary, 1);
 });

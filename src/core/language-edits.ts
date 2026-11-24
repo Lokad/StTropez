@@ -7,7 +7,7 @@ import type { TextBuffer } from "./text-buffer.ts";
 import type { TextEdit } from "./changes.ts";
 import type { Selection } from "./history.ts";
 import { PositionMap } from "./positions.ts";
-import { createSelectionSet, mapSelectionRanges } from "./selections.ts";
+import { createSelectionSet, mapReplacementSelections } from "./selections.ts";
 import type { SelectionSet, SelectionEditPlan } from "./selections.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
 import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
@@ -106,16 +106,6 @@ export function lineColumnScanner(read: (from: number, to: number) => string, ta
         }
         return { offset, column, previousStop, indentation: !firstText || offset === firstText.offset };
     };
-}
-function* mapped(buffer: TextBuffer, selections: SelectionSet, edits: TextEdit[], state: MutablePlanning): Generator<void, SelectionEditPlan> {
-    state.phase = "map";
-    bulk(state, edits.length);
-    const mapping = new PositionMap(buffer.length, edits);
-    if (checkpoint(state)) yield;
-    bulk(state, selections.ranges.length);
-    const selectionSet = mapSelectionRanges(mapping, selections, "after");
-    if (checkpoint(state)) yield;
-    return yield* publish(edits, selectionSet, state);
 }
 function* publish(edits: TextEdit[], selectionSet: SelectionSet, state: MutablePlanning): Generator<void, SelectionEditPlan> {
     state.phase = "publish";
@@ -292,7 +282,12 @@ function* lineComments(buffer: TextBuffer, selections: SelectionSet, command: "l
             }
         }
     }
-    return yield* mapped(buffer, selections, edits, state);
+    state.phase = "map";
+    bulk(state, edits.length + selections.ranges.length);
+    // Comment edits only insert or delete. Every endpoint inside a deletion collapses to its start.
+    const selectionSet = mapReplacementSelections(buffer.length, selections, edits);
+    if (checkpoint(state)) yield;
+    return yield* publish(edits, selectionSet, state);
 }
 
 function* enterIndent(buffer: TextBuffer, from: number, to: number, config: ResolvedLanguageConfiguration, unit: string,
