@@ -33,6 +33,29 @@ function plan(text: string, ranges: readonly Selection[], command: Parameters<ty
 }
 const selection = (anchor: number, head = anchor) => [{ anchor, head }];
 
+test("indentation and line comments edit a folded block once for carets on its header and inside it", () => {
+    const original = "before\n  steps\n    prepare\n      validate\n\n    publish\nafter";
+    const indent = "before\n    steps\n      prepare\n        validate\n\n      publish\nafter";
+    const comment = "before\n  // steps\n  //   prepare\n  //     validate\n\n  //   publish\nafter";
+    for (const [command, before, after] of [
+        ["indent", original, indent], ["indent-lines", original, indent], ["outdent", indent, original],
+        ["line-comment", original, comment], ["add-line-comment", original, comment], ["remove-line-comment", comment, original],
+    ] as const) {
+        const buffer = TextBuffer.from(before), folds = new FoldIndex(buffer.lineCount, createFoldRegions(buffer, [
+            { id: "steps", from: buffer.offsetAt(1), to: buffer.offsetAt(6), collapsed: true },
+            { id: "prepare", from: buffer.offsetAt(2), to: buffer.offsetAt(4), collapsed: true },
+        ]));
+        const ranges = [...selection(before.indexOf("steps") + 2), ...selection(before.indexOf("validate") + 3)];
+        const config = resolveLanguageConfiguration(configuration);
+        const cursor = planLanguageEdit(buffer, createSelectionSet(buffer.length, ranges), command, config, folds);
+        const result = cursor.next(4096).result!;
+        cursor.dispose();
+        assert.equal(buffer.apply(result.edits).buffer.text(), after, command);
+        const heads = [after.indexOf("steps") + 2, after.indexOf("validate") + 3];
+        assert.deepEqual(result.selectionSet.ranges.map(r => r.head), heads, command);
+    }
+});
+
 test("Tab advances each inline range to a stop and indents complete lines in the same transaction", () => {
     const config: LanguageConfiguration = { tabSize: 4, enter: () => ({ indent: 1 }) };
     const mixed = plan("a\tbcd\nx\n", [{ anchor: 3, head: 2 }, { anchor: 4, head: 5 }, { anchor: 6, head: 7 }], "indent", config);

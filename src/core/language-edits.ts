@@ -210,22 +210,20 @@ function* blockComments(buffer: TextBuffer, selections: SelectionSet, pair: Edit
     return yield* publish(edits, createSelectionSet(removals.newLength + inserted, ranges, selections.primary), state);
 }
 
-function touchedLines(buffer: TextBuffer, range: Selection) {
-    const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
-    const last = buffer.lineAt(to);
-    return { first: buffer.lineAt(from), last: to > from && to === buffer.offsetAt(last) ? last - 1 : last };
+function projectedLines(first: number, last: number, folds?: FoldIndex) {
+    const start = collapsedLineBlock(folds, first);
+    const end = first === last ? start : collapsedLineBlock(folds, last);
+    return { first: start?.lineFrom ?? first, last: end ? end.lineTo - 1 : last };
 }
 
 function* lineGroups(buffer: TextBuffer, selections: SelectionSet, adjacent: boolean, state: MutablePlanning, folds?: FoldIndex) {
     const groups: { first: number; last: number; firstRange: number; endRange: number }[] = [];
     for (const [i, range] of selections.ranges.entries()) {
-        const lines = touchedLines(buffer, range), previous = groups.at(-1);
-        if (folds?.collapsedCount) {
-            const first = collapsedLineBlock(folds, lines.first);
-            const last = lines.first === lines.last ? first : collapsedLineBlock(folds, lines.last);
-            if (first) lines.first = first.lineFrom;
-            if (last) lines.last = last.lineTo - 1;
-        }
+        const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
+        const last = buffer.lineAt(to);
+        const through = to > from && to === buffer.offsetAt(last) ? last - 1 : last;
+        const lines = projectedLines(buffer.lineAt(from), through, folds);
+        const previous = groups.at(-1);
         if (previous && lines.first <= previous.last + Number(adjacent)) {
             previous.last = Math.max(previous.last, lines.last); previous.endRange = i + 1;
         } else groups.push({ ...lines, firstRange: i, endRange: i + 1 });
@@ -235,9 +233,9 @@ function* lineGroups(buffer: TextBuffer, selections: SelectionSet, adjacent: boo
 }
 
 function* lineComments(buffer: TextBuffer, selections: SelectionSet, command: "line-comment" | "add-line-comment" | "remove-line-comment",
-    marker: string, tabSize: number, read: (from: number, to: number) => string, state: MutablePlanning): Generator<void, SelectionEditPlan> {
+    marker: string, tabSize: number, read: (from: number, to: number) => string, state: MutablePlanning, folds?: FoldIndex): Generator<void, SelectionEditPlan> {
     const edits: TextEdit[] = [];
-    const intervals = yield* lineGroups(buffer, selections, false, state), scan = lineColumnScanner(read, tabSize);
+    const intervals = yield* lineGroups(buffer, selections, false, state, folds), scan = lineColumnScanner(read, tabSize);
     const remove = (from: number) => {
         const end = from + marker.length;
         const space = read(end, Math.min(buffer.length, end + 1)) === " ";
@@ -404,7 +402,7 @@ function* shiftLines(buffer: TextBuffer, selections: SelectionSet, command: Line
 }
 
 function* indent(buffer: TextBuffer, selections: SelectionSet, command: "indent" | "indent-lines" | "outdent", config: ResolvedLanguageConfiguration,
-    read: (from: number, to: number) => string, state: MutablePlanning): Generator<void, SelectionEditPlan> {
+    read: (from: number, to: number) => string, state: MutablePlanning, folds?: FoldIndex): Generator<void, SelectionEditPlan> {
     const { tabSize, insertSpaces } = config, unit = insertSpaces ? " ".repeat(tabSize) : "\t";
     const scan = lineColumnScanner(read, tabSize), edits: TextEdit[] = [];
     const reader = { length: buffer.length, lineCount: buffer.lineCount, offsetAt: (line: number) => buffer.offsetAt(line), slice: read };
@@ -414,11 +412,13 @@ function* indent(buffer: TextBuffer, selections: SelectionSet, command: "indent"
         state.workUnits++; if (checkpoint(state)) yield;
         const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
         const first = buffer.lineAt(from), last = buffer.lineAt(to), start = buffer.offsetAt(first), end = lineContentEnd(reader, first);
-        if (command !== "indent" || from !== to && (first !== last || from === start && to === end)) {
-            const through = first !== last && to === buffer.offsetAt(last) ? last - 1 : last;
-            for (let line = Math.max(first, lastIndented + 1); line <= through; line++) {
+        const through = first !== last && to === buffer.offsetAt(last) ? last - 1 : last;
+        const lines = projectedLines(first, through, folds);
+        const folded = lines.first < first || lines.last > through;
+        if (command !== "indent" || folded || from !== to && (first !== last || from === start && to === end)) {
+            for (let line = Math.max(lines.first, lastIndented + 1); line <= lines.last; line++) {
                 const prefix = yield* scan(buffer.offsetAt(line), line === first ? end : lineContentEnd(reader, line), true);
-                if (first === last || !prefix.indentation) {
+                if ((first === last && !folded) || !prefix.indentation) {
                     if (command !== "outdent") {
                         edits.push({ from: prefix.offset, to: prefix.offset, insert: insertSpaces ? " ".repeat(tabSize - prefix.column % tabSize) : "\t" });
                     } else if (prefix.previousStop < prefix.offset) {
@@ -428,7 +428,7 @@ function* indent(buffer: TextBuffer, selections: SelectionSet, command: "indent"
                 state.workUnits++;
                 if (checkpoint(state)) yield;
             }
-            lastIndented = through;
+            lastIndented = lines.last;
             continue;
         }
         const { column, indentation } = yield* scan(start, from);
@@ -521,11 +521,11 @@ function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCom
         return yield* insertOrDeleteLines(buffer, selections, command, config, unit, read, state, folds);
     if (command === "move-line-up" || command === "move-line-down" || command === "copy-line-up" || command === "copy-line-down")
         return yield* shiftLines(buffer, selections, command, read, state, folds);
-    if (command === "indent" || command === "indent-lines" || command === "outdent") return yield* indent(buffer, selections, command, config, read, state);
+    if (command === "indent" || command === "indent-lines" || command === "outdent") return yield* indent(buffer, selections, command, config, read, state, folds);
     if (command === "block-comment" && config.blockComment) return yield* blockComments(buffer, selections, config.blockComment, config.allowPair, read, state);
     if (command === "line-comment" || command === "add-line-comment" || command === "remove-line-comment") {
         if (!config.lineComment) return yield* publish(edits, selections, state);
-        return yield* lineComments(buffer, selections, command, config.lineComment, config.tabSize, read, state);
+        return yield* lineComments(buffer, selections, command, config.lineComment, config.tabSize, read, state, folds);
     }
     const ranges: Selection[] = []; let delta = 0;
     for (const range of selections.ranges) {

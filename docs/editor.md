@@ -424,7 +424,8 @@ preceding line’s Enter rule. For whole lines, indent and outdent move the end 
 indentation to the next or previous tab stop. With four-column stops, six spaces become eight
 on indent or four on outdent. A multiline selection leaves blank and whitespace-only lines
 alone. A selection starting at column one keeps that boundary. A selection ending at the start
-of the next line excludes that line.
+of the next line excludes that line. On a collapsed row, Tab, indent, outdent and line comments
+apply to the header and its folded lines.
 
 Line comments toggle nonblank lines. Block comments wrap or unwrap selections. Typing an opener
 can insert its closer or surround a selection. Typing the closer steps over it once if this view
@@ -441,7 +442,7 @@ Pairing, comments and cancellable non-composing line-break input
 use the same transaction/transform path. Composition and noncancellable input use literal capture.
 
 For headless planning, use `resolveLanguageConfiguration` and `planLanguageEdit`. Pass the
-view’s current fold index as the fifth argument for line insertion, deletion, moves and copies.
+view’s current fold index as the fifth argument for line commands, including indentation and line comments.
 Each collapsed block counts as one line. Apply the returned edits to the captured buffer so
 folds can follow a move. Omit the index to plan in source lines. A character
 command can supply `canOvertype(offset)` to identify closers the caller inserted. Without it,
