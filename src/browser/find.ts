@@ -383,7 +383,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const pending = pendingNext;
         pendingNext = undefined;
         if (pending && valid() && pending.selection === currentSelection()
-            && (!pending.origin || pending.origin.matches(":focus:not(:disabled)"))) next(pending.direction);
+            && pending.origin === captureFocus() && !pending.origin?.matches(":disabled")) next(pending.direction);
     }
     const next: FindController["next"] = (direction = 1, options) => {
         scope.assertWritable();

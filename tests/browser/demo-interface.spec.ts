@@ -578,7 +578,11 @@ test("the Find toolbar follows generated output and both Changes panes", async (
     await page.locator("#replacement").press("Control+f"); await expect(query).toBeFocused();
     await query.fill("quantity"); await expect(status).toHaveText(/of 4$/); await query.press("Enter"); await query.press("Escape");
     const workingInput = working.getByRole("textbox"), offset = () => workingInput.evaluate(node => (node as HTMLTextAreaElement).selectionStart);
-    const first = await offset(); await workingInput.press("F3"); await expect.poll(offset).toBeGreaterThan(first);
+    const first = await offset();
+    await page.locator("#status").click();
+    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await page.keyboard.press("F3");
+    await expect.poll(offset).toBeGreaterThan(first);
     await workingInput.press("Shift+F3"); await expect.poll(offset).toBe(first); await expect(query).toBeHidden();
 });
 
