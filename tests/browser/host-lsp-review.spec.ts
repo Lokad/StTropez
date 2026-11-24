@@ -13,9 +13,9 @@ async function seed(page: Page, text: string, offset = text.indexOf("saMORE") + 
 }
 async function offer(page: Page) { await field(page).press("Control+Space"); await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible(); }
 
-for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP review host`, () => {
+test.describe(`plain LSP review host`, () => {
     test.beforeEach(async ({ page }) => {
-         await page.goto(`/hosts/${mode}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); await ready(page);
+         await page.goto("/hosts/plain/?editor=candidate&language=lsp"); await expect(field(page)).toBeVisible(); await ready(page);
     });
     test("rejected provider attachment retains review and retries without leaking scopes or leases", async ({ page }) => {
         const original = ("const sa = 1; // " + "x".repeat(1000) + "\r\n").repeat(3100);

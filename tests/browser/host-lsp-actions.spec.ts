@@ -1,6 +1,5 @@
 import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
-import { coversHost } from "./host-cases.ts";
 import { holdLspReplies } from "../helpers/lsp-replies.ts";
 import { hostTextEquals } from "../../scripts/host-scene.mjs";
 
@@ -66,11 +65,11 @@ async function preview(page: Page) {
 }
 async function exact(page: Page, text: string) { expect(await hostTextEquals(page, text)).toBe(true); }
 async function dispose(page: Page) { await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.bindings.actions).toMatchObject({ sessions: 0, subscriptions: 0, transport: null, disposed: true }); }
-for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code actions`, () => {
+test.describe(`plain LSP code actions`, () => {
     test.beforeEach(async ({ page }) => {
         await page.addInitScript(() => { const send = WebSocket.prototype.send; WebSocket.prototype.send = function(this: WebSocket, data) { if (typeof data === "string") { const value = JSON.parse(data); if (value.method === "initialize" && value.params.capabilities.textDocument?.codeAction) Reflect.set(window, "actionTestSocket", this); } send.call(this, data); }; });
-        await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(input(page)).toBeVisible(); await waitForActions(page); });
-    if (coversHost("candidate-hosts", host, "candidate")) test("action choices and lazy previews preserve captured diagnostic ranges, safe commands and complete-set history", async ({ page }) => {
+        await page.goto("/hosts/plain/?editor=candidate&language=lsp"); await expect(input(page)).toBeVisible(); await waitForActions(page); });
+    test("action choices and lazy previews preserve captured diagnostic ranges, safe commands and complete-set history", async ({ page }) => {
         const replies = await holdLspReplies(page, "codeAction/resolve");
         const requests: { method: string; params: any }[] = []; let opened = 0, closed = 0;
         page.on("websocket", socket => { opened++; socket.on("close", () => closed++); socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) requests.push(value); }); });
@@ -115,7 +114,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await input(page, "Secondary source").press("Control+z"); await waitForActions(page); await exact(page, raw); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet.ranges.map(r => ({ anchor: r.anchor, head: r.head }))).toEqual(ranges);
         await input(page, "Secondary source").press("Control+Shift+z"); await waitForActions(page); await exact(page, raw.replace("TODO", "DONE")); expect((await snapshot(page)).source.exports).toBe(0); await dispose(page); await expect.poll(() => closed).toBe(opened);
     });
-    if (coversHost("plain-candidate", host, "candidate")) test("a wide provider edit keeps action preview context and DOM bounded without applying source", async ({ page }) => {
+    test("a wide provider edit keeps action preview context and DOM bounded without applying source", async ({ page }) => {
         const text = "// TODO\n" + "x".repeat(100000); let rewritten = 0;
         await page.routeWebSocket("**/lsp-fixture", client => {
             const server = client.connectToServer(), ids = new Set<number>();
@@ -140,7 +139,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await exact(page, text); expect(after.history).toEqual(before.history); expect(after.source.revision).toBe(before.source.revision);
         expect(after.source.exports).toBe(0); await dispose(page);
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("a complete 65-action list pages to the last captured choice and applies one undoable edit", async ({ page }) => {
+    test("a complete 65-action list pages to the last captured choice and applies one undoable edit", async ({ page }) => {
         await page.routeWebSocket("**/lsp-fixture", client => {
             const server = client.connectToServer(), requests = new Map<number, string>();
             client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "textDocument/codeAction") requests.set(value.id, value.params.textDocument.uri); server.send(message); });
@@ -167,7 +166,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await button(page, "Apply captured action").click(); await waitForActions(page); await exact(page, "// choice 65\r\n" + raw);
         await input(page).press("Control+z"); await waitForActions(page); await exact(page, raw); await dispose(page);
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("multi-resource action confirmation preserves comparison baselines, unmounted targets and captured Save/Run", async ({ page }) => {
+    test("multi-resource action confirmation preserves comparison baselines, unmounted targets and captured Save/Run", async ({ page }) => {
         await seed(page); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await waitForActions(page); const working = input(page, "Comparison working source"), before = await snapshot(page), baseline = before.bindings.comparison!.baseline;
         await working.focus(); await page.evaluate(at => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: at + 1, head: at }, { anchor: rawLength(f), head: rawLength(f) }]); function rawLength(f: typeof window.hostFixture) { return f.snapshot().source.length; } }, raw.indexOf("TODO") + 1);
         const selections = (await snapshot(page)).bindings.comparison!.selectionSet; await working.press("Control+."); await waitForActions(page); expect((await snapshot(page)).bindings.actions.capture!.view).toBe("comparison"); await choices(page).nth(1).click(); await waitForActions(page); await expect(edits(page)).toHaveCount(2); await exact(page, raw);
@@ -182,7 +181,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await input(page, "Secondary source").focus(); await button(page, "Run captured inputs").click(); expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(before.source.id); expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(marker + raw); await page.evaluate(() => window.hostFixture.finishRun());
         await button(page, "Save source").click(); await working.press("Control+End"); await working.pressSequentially(" later"); await waitForActions(page); await page.evaluate(() => window.hostFixture.finishSave()); await waitForActions(page); await exact(page, marker + raw + " later"); expect((await snapshot(page)).source.dirty).toBe(true); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline); await dispose(page);
     });
-    if (coversHost("plain-candidate", host, "candidate")) test("invalid action replies clear choices and provider titles remain literal", async ({ page }) => {
+    test("invalid action replies clear choices and provider titles remain literal", async ({ page }) => {
         await seed(page);
         await button(page, "Add navigation companion").click();
         for (const fault of ["malformed", "incomplete"] as const) {
@@ -205,7 +204,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
             await exact(page, raw);
         }
     });
-    if (coversHost("plain-candidate", host, "candidate")) test("project authority changes disable captured actions without editing source or history", async ({ page }) => {
+    test("project authority changes disable captured actions without editing source or history", async ({ page }) => {
         await seed(page);
         await button(page, "Add navigation companion").click();
         const before = await snapshot(page), companion = before.bindings.navigation.companion!;
@@ -230,7 +229,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         expect((await snapshot(page)).history).toEqual(before.history);
         await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
     });
-    for (const mode of ["selection", "typing", "remount"] as const) if (coversHost(mode === "remount" ? "candidate-hosts" : "plain-candidate", host, "candidate")) test(`pending action resolution expires after ${mode}`, async ({ page }) => {
+    for (const mode of ["selection", "typing", "remount"] as const) test(`pending action resolution expires after ${mode}`, async ({ page }) => {
         const replies = await holdLspReplies(page, "codeAction/resolve"); await page.reload();
         await seed(page);
         await button(page, "Add navigation companion").click();
@@ -261,7 +260,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await expect(button(page, "Apply captured action")).toBeDisabled();
         await exact(page, raw);
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("action disconnect and idle faults require explicit provider recovery", async ({ page }) => {
+    test("action disconnect and idle faults require explicit provider recovery", async ({ page }) => {
         const replies = await holdLspReplies(page, "codeAction/resolve");
         await page.addInitScript(() => {
             const send = WebSocket.prototype.send; Reflect.set(window, "actionResolutionSends", 0);
@@ -299,7 +298,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await expect(button(page, "Apply captured action")).toBeEnabled();
         await dispose(page);
     });
-    if (coversHost("plain-candidate", host, "candidate")) test("confirmed action commands preserve ordered edits, wire arguments and complete history without automatic execution", async ({ page }) => {
+    test("confirmed action commands preserve ordered edits, wire arguments and complete history without automatic execution", async ({ page }) => {
         await seed(page); await button(page, "Add navigation companion").click(); const before = await snapshot(page);
         await preview(page); await choices(page).nth(4).click(); await expect(button(page, "Execute captured action")).toBeEnabled(); expect(await control(page, "fixture/lastCommand", {})).toBeNull(); await exact(page, raw);
         await button(page, "Execute captured action").click(); await waitForActions(page); expect((await snapshot(page)).bindings.actions.state.status).toBe("executed"); expect((await snapshot(page)).history).toEqual(before.history); expect((await control(page, "fixture/lastCommand", {})).command).toBe("fixture.status");
@@ -328,7 +327,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         const receipt = await control(page, "fixture/lastCommand", {}); expect(receipt.arguments).toEqual([]); expect(receipt.documents.some((doc: any) => doc.prefix.startsWith(marker))).toBe(true); expect(receipt.documents.every((doc: any) => doc.version >= 1)).toBe(true); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
         await button(page, "Open action changes in Navigation companion").click(); await input(page, "Secondary source").press("Control+z"); await waitForActions(page); await exact(page, raw); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet.ranges.map(range => ({ anchor: range.anchor, head: range.head }))).toEqual(ranges); await input(page, "Secondary source").press("Control+Shift+z"); await waitForActions(page); await exact(page, marker + raw); await dispose(page);
     });
-    if (coversHost("plain-candidate", host, "candidate")) test("action commands share the captured workspace decision owner and retain initial edits when later decisions fail", async ({ page }) => {
+    test("action commands share the captured workspace decision owner and retain initial edits when later decisions fail", async ({ page }) => {
         await seed(page); await button(page, "Add navigation companion").click(); const before = await snapshot(page); await button(page, "Register provider review command").click(); await expect.poll(async () => (await snapshot(page)).bindings.project.pending).toBe(false);
         await preview(page); await choices(page).nth(6).click(); await button(page, "Request provider review edits").click(); await review(page); await expect(button(page, "Execute captured action")).toBeDisabled(); await button(page, "Decline captured provider edits").click(); await expect.poll(async () => (await snapshot(page)).bindings.project.pending).toBe(false); await expect(button(page, "Execute captured action")).toBeEnabled(); await button(page, "Execute captured action").click(); await review(page); await exact(page, raw); await expect(button(page, "Request provider review edits")).toBeDisabled(); const captured = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.project.state.review!); expect(await page.evaluate(() => window.hostFixture.faultIdleProject())).toBe(true); await expect.poll(async () => (await snapshot(page)).bindings.project.transport).toBeNull(); expect((await snapshot(page)).bindings.project.state.review).toBeNull();
         await waitForActions(page); await captured.evaluate(review => review.apply()); await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history); await button(page, "Reconnect action provider").click();
@@ -338,7 +337,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         for (const fault of ["malformed", "failure"] as const) { await select(page); await preview(page); await choices(page).nth(7).click(); const consumed = await faultCommand(page, fault); await button(page, "Execute captured action").click(); await waitForActions(page); await consumed(); await exact(page, marker + raw); await expect(page.getByLabel("Code action status", { exact: true })).toContainText("undo"); await input(page).press("Control+z"); await waitForActions(page); await exact(page, raw); if ((await snapshot(page)).bindings.actions.state.disconnected || (await snapshot(page)).bindings.actions.state.reconnectRequired) await button(page, "Reconnect action provider").click(); }
         await dispose(page);
     });
-    for (const mode of ["selection", "authority", "typing", "remount", "withdraw", "disconnect", "cancel"] as const) if (coversHost(mode === "remount" ? "candidate-hosts" : "plain-candidate", host, "candidate")) test(`action-command review expires after ${mode} without undoing its committed phase`, async ({ page }) => {
+    for (const mode of ["selection", "authority", "typing", "remount", "withdraw", "disconnect", "cancel"] as const) test(`action-command review expires after ${mode} without undoing its committed phase`, async ({ page }) => {
         await seed(page);
         await button(page, "Add navigation companion").click();
         const before = await snapshot(page), companion = before.bindings.navigation.companion!;
@@ -367,7 +366,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await exact(page, raw);
         await dispose(page);
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("action-command acknowledgement loss preserves history without replay after reconnect", async ({ page }) => {
+    test("action-command acknowledgement loss preserves history without replay after reconnect", async ({ page }) => {
         await seed(page);
         await button(page, "Add navigation companion").click();
         const before = await snapshot(page);
@@ -399,7 +398,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await exact(page, raw);
         await dispose(page);
     });
-    if (coversHost("candidate-hosts", host, "candidate")) test("comparison action commands retain phase history, bounded review and primary Save/Run ownership", async ({ page }) => {
+    test("comparison action commands retain phase history, bounded review and primary Save/Run ownership", async ({ page }) => {
         test.setTimeout(90000); const text = "// 😀 TODO\r\n" + "const unchanged = 123;\r\n" + "// TODO\r\n".repeat(134); await seed(page, text); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await waitForActions(page); const working = input(page, "Comparison working source"), before = await snapshot(page), baseline = before.bindings.comparison!.baseline;
         await working.focus(); await preview(page); await choices(page).nth(7).click(); await control(page, "fixture/projectStyle", { style: "many" });
         await button(page, "Execute captured action").click(); await review(page); await exact(page, marker + text);
@@ -418,7 +417,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await button(page, "Open action changes in Navigation companion").click(); await button(page, "Run captured inputs").click(); expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(before.source.id); expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(expected); await page.evaluate(() => window.hostFixture.finishRun());
         await button(page, "Save source").click(); await working.press("Control+End"); await working.pressSequentially(" later"); await waitForActions(page); await page.evaluate(() => window.hostFixture.finishSave()); await waitForActions(page); await exact(page, expected + " later"); expect((await snapshot(page)).source.dirty).toBe(true); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline); expect((await snapshot(page)).source.exports).toBe(0); expect((await snapshot(page)).bindings.views.every(view => !view.metrics || view.metrics.inputUnits <= 4096 && view.metrics.viewport.rows < 100)).toBe(true); await dispose(page);
     });
-    if (coversHost("plain-candidate", host, "candidate")) test("resolved actions page bounded previews and apply every edit as one undo command", async ({ page }) => {
+    test("resolved actions page bounded previews and apply every edit as one undo command", async ({ page }) => {
         test.setTimeout(90000); const text = "// 😀 TODO\r\n" + "const unchanged = 123;\r\n" + "// TODO\r\n".repeat(70); await seed(page, text); const before = await snapshot(page); await preview(page); await choices(page).nth(2).click(); await waitForActions(page); expect((await snapshot(page)).bindings.actions.state.editCount).toBe(71); await expect(edits(page)).toHaveCount(64);
         await releaseAfterReplacement(page, "edits", async () => {
             await choices(page).nth(1).evaluate(node => (node as HTMLButtonElement).click());

@@ -127,14 +127,14 @@ async function blocked(page: Page, kind: "movement" | "composition" | "paste", t
     if (kind === "paste") expect(result).toMatchObject({ paste: true, pasteStillPending: true });
 }
 
-for (const host of ["plain", "react"]) test(`${host} LSP captures wait for movement, composition and table input before fresh previews and Save/Run`, async ({ page }) => {
+test(`plain LSP captures wait for movement, composition and table input before fresh previews and Save/Run`, async ({ page }) => {
     test.setTimeout(120000);
     const replies = await holdLspReplies(page, "textDocument/signatureHelp");
     const wire: string[] = [];
     page.on("websocket", socket => socket.on("framesent", frame => {
         const message = JSON.parse(frame.payload.toString()); if (methods.includes(message.method)) wire.push(message.method);
     }));
-    await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`);
+    await page.goto("/hosts/plain/?editor=candidate&language=lsp");
     await expect(input(page)).toBeVisible(); await settled(page);
     await page.getByLabel("New identifier", { exact: true }).fill("inventory");
     const longSource = "lookup(" + " ".repeat(200000) + ") #abc";

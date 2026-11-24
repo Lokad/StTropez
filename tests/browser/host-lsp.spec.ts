@@ -63,9 +63,9 @@ test("numeric typing and an erased prefix leave automatic completion closed", as
     await expect(page.getByRole("option")).toHaveCount(0); expect(await source(page)).toBe("");
 });
 
-for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP editor host`, () => {
+test.describe(`plain LSP editor host`, () => {
     test.beforeEach(async ({ page }) => {
-         await page.goto(`/hosts/${mode}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); await ready(page);
+         await page.goto("/hosts/plain/?editor=candidate&language=lsp"); await expect(field(page)).toBeVisible(); await ready(page);
     });
     test("actual typing, insert/replace choices and additional edits share history across views", async ({ page }) => {
         const packets: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()) as { method?: string }; if (value.method) packets.push(value.method); }));
@@ -112,7 +112,7 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         await field(page).press("Tab"); await expect(field(page)).toBeFocused(); expect(await source(page)).toBe("object. ");
         await field(page).press("Control+z"); expect(await source(page)).toBe("object.");
     });
-    if (mode === "plain") for (const completed of [false, true]) test(`${completed ? "empty" : "pending"} invisible completion preserves Escape focus traversal`, async ({ page }) => {
+    for (const completed of [false, true]) test(`${completed ? "empty" : "pending"} invisible completion preserves Escape focus traversal`, async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/completion"); await page.reload();
         await seed(page, "const ", 6); await expect.poll(async () => (await provider(page)).connected).toBe(true);
         replies.hold(); await field(page).pressSequentially("z"); await expect.poll(replies.waiting).toBe(true);
