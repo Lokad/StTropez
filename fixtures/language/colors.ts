@@ -1,17 +1,12 @@
 import type { TextBuffer } from "../../src/index.ts";
 import { navigationLimits, validateNavigationDocuments } from "./navigation.ts";
 import type { NavigationDocument } from "./navigation.ts";
-import { validateProjectEdits } from "./project-commands.ts";
-import type { ServerEdit } from "./project-commands.ts";
 export const colorLimits = Object.freeze({ literal: 96, references: 1024, page: 64 });
 export type Rgba = Readonly<{ red: number; green: number; blue: number; alpha: number }>;
 export type ColorReference = Readonly<{ from: number; to: number; text: string; label: string; color: Rgba }>;
 export type ColorFault = "malformed" | "failure" | "incomplete" | "markup";
 export type ColorsInput = NavigationDocument & Readonly<{ id: number; delay: number; fault?: ColorFault }>;
 export type ColorsResult = Readonly<{ operation: "colors-result"; id: number; document: string; revision: number; complete: true; truncated: boolean; colors: readonly ColorReference[] }>;
-export type ColorPresentationInput = ColorsInput & Readonly<{ discovery: number; reference: ColorReference; proposed: Rgba }>;
-export type ColorPresentation = Readonly<{ id: "hex" | "rgba"; label: string; edits: readonly ServerEdit[] }>;
-export type ColorPresentationsResult = Readonly<{ operation: "color-presentations-result"; id: number; discovery: number; document: string; revision: number; from: number; to: number; proposed: Rgba; complete: true; presentations: readonly ColorPresentation[] }>;
 const record = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object";
 const integer = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 const boundary = (char: string | undefined) => !!char && /[\p{L}\p{N}\p{M}\p{Pc}\u200c\u200d-]/u.test(char);
@@ -43,13 +38,6 @@ export function validateColorsInput(v: unknown): ColorsInput {
     if (!record(v) || !integer(v.id) || !v.id || typeof v.delay !== "number" || !Number.isFinite(v.delay) || v.delay < 0 || v.delay > 1000
         || v.fault !== undefined && !["malformed", "failure", "incomplete", "markup"].includes(v.fault as string)) throw new Error("Invalid color capture.");
     const doc = validateNavigationDocuments([v])[0]!; return Object.freeze({ ...doc, id: v.id, delay: v.delay, ...(v.fault === undefined ? {} : { fault: v.fault as ColorFault }) });
-}
-function reference(v: unknown, buffer: TextBuffer): ColorReference {
-    if (!record(v) || !integer(v.from) || !integer(v.to) || v.to <= v.from || v.to > buffer.length || v.to - v.from > colorLimits.literal || typeof v.text !== "string" || v.text.length !== v.to - v.from
-        || typeof v.label !== "string" || !v.label.length || v.label.length > 128 || buffer.slice(v.from, v.to) !== v.text) throw new Error("Invalid captured color reference.");
-    const parsed = parseColor(v.text), color = validateRgba(v.color), before = Array.from(buffer.slice(Math.max(0, v.from - 2), v.from)).at(-1), after = Array.from(buffer.slice(v.to, Math.min(buffer.length, v.to + 2)))[0];
-    if (!parsed || !sameColor(parsed, color) || boundary(before) || boundary(after)) throw new Error("Color range or channels do not match the source.");
-    return Object.freeze({ from: v.from, to: v.to, text: v.text, label: v.label, color });
 }
 /** Streaming literal scanner: at most96 retained token units and one carried surrogate. */
 class ColorScanner {
@@ -101,29 +89,4 @@ export class DocumentColorsCursor {
         if (this.from !== this.input.length) return { work: this.from }; this.scanner.finish();
         this.result = Object.freeze({ operation: "colors-result", id: this.input.id, document: this.input.document, revision: this.input.revision, complete: true, truncated: this.truncated, colors: Object.freeze(this.colors.slice()) }); return { work: this.from, result: this.result };
     }
-}
-export function validateColorsResult(v: unknown, input: ColorsInput, buffer: TextBuffer): ColorsResult {
-    if (buffer.length !== input.length || !record(v) || v.operation !== "colors-result" || v.id !== input.id || v.document !== input.document || v.revision !== input.revision || v.complete !== true || typeof v.truncated !== "boolean" || !Array.isArray(v.colors) || v.colors.length > colorLimits.references) throw new Error("Invalid or incomplete document colors.");
-    if (v.truncated) throw new Error("Document colors exceed1,024 references; narrow the source."); let end = -1;
-    const colors = v.colors.map((value: unknown) => { const color = reference(value, buffer); if (color.from < end) throw new Error("Overlapping or unordered color references."); end = color.to; return color; });
-    return Object.freeze({ operation: "colors-result", id: input.id, document: input.document, revision: input.revision, complete: true, truncated: false, colors: Object.freeze(colors) });
-}
-export function validateColorPresentationInput(v: unknown, buffer: TextBuffer): ColorPresentationInput {
-    const input = validateColorsInput(v); if (!record(v) || !integer(v.discovery) || !v.discovery || buffer.length !== input.length) throw new Error("Invalid presentation identity.");
-    return Object.freeze({ ...input, discovery: v.discovery, reference: reference(v.reference, buffer), proposed: validateRgba(v.proposed) });
-}
-export function provideColorPresentations(input: ColorPresentationInput): ColorPresentationsResult {
-    const values: readonly ["hex" | "rgba", string | undefined][] = [["hex", hexColor(input.proposed)], ["rgba", rgbaColor(input.proposed)]];
-    const presentations = values.flatMap(([id, text]) => text === undefined ? [] : [{ id, label: text, edits: [{ document: input.document, revision: input.revision, edits: [{ from: input.reference.from, to: input.reference.to, insert: text }] }] }]);
-    return validateColorPresentationsResult({ operation: "color-presentations-result", id: input.id, discovery: input.discovery, document: input.document, revision: input.revision, from: input.reference.from, to: input.reference.to, proposed: input.proposed, complete: true, presentations }, input);
-}
-export function validateColorPresentationsResult(v: unknown, input: ColorPresentationInput): ColorPresentationsResult {
-    if (!record(v) || v.operation !== "color-presentations-result" || v.id !== input.id || v.discovery !== input.discovery || v.document !== input.document || v.revision !== input.revision || v.from !== input.reference.from || v.to !== input.reference.to || v.complete !== true || !sameColor(validateRgba(v.proposed), input.proposed) || !Array.isArray(v.presentations) || !v.presentations.length || v.presentations.length > 2) throw new Error("Invalid or incomplete color presentations.");
-    const ids = new Set<string>(), presentations = v.presentations.map((p: unknown): ColorPresentation => {
-        if (!record(p) || p.id !== "hex" && p.id !== "rgba" || ids.has(p.id) || typeof p.label !== "string" || !p.label.length || p.label.length > 128) throw new Error("Invalid color presentation choice."); ids.add(p.id);
-        const edits = validateProjectEdits(p.edits, [input]), primary = edits.flatMap(at => at.edits).find(e => e.from === input.reference.from && e.to === input.reference.to), parsed = primary && parseColor(primary.insert);
-        if (!parsed || !sameColor(parsed, input.proposed)) throw new Error("Presentation must preserve the requested color at the captured range.");
-        return Object.freeze({ id: p.id, label: p.label, edits });
-    });
-    return Object.freeze({ operation: "color-presentations-result", id: input.id, discovery: input.discovery, document: input.document, revision: input.revision, from: input.reference.from, to: input.reference.to, proposed: input.proposed, complete: true, presentations: Object.freeze(presentations) });
 }

@@ -43,23 +43,3 @@ export class ModuleLinksCursor {
         return { work: step.work, result: Object.freeze({ operation: "links-result", id: this.input.id, document: this.input.document, revision: this.input.revision, complete: true, truncated: this.truncated, links: Object.freeze(this.links.slice()) }) };
     }
 }
-export function validateLinksResult(v: unknown, input: LinksInput, buffer: TextBuffer): LinksResult {
-    if (buffer.length !== input.length || !record(v) || v.operation !== "links-result" || v.id !== input.id || v.document !== input.document || v.revision !== input.revision || v.complete !== true || typeof v.truncated !== "boolean"
-        || !Array.isArray(v.links) || v.links.length > linkLimits.links) throw new Error("Invalid or incomplete document links.");
-    if (v.truncated) throw new Error("Document links exceed 1,024 locations; narrow the source.");
-    let end = -1;
-    const links = v.links.map((raw: unknown): ModuleLink => {
-        if (!record(raw) || !integer(raw.from) || !integer(raw.to) || raw.from < end || raw.to <= raw.from || raw.to > input.length || typeof raw.module !== "string" || !validDomainModule(raw.module)
-            || raw.to - raw.from !== raw.module.length || typeof raw.tooltip !== "string" || !raw.tooltip.length || raw.tooltip.length > 256) throw new Error("Invalid document-link range or text.");
-        const line = buffer.lineAt(raw.from), start = buffer.offsetAt(line), bom = start === 0 && buffer.slice(0, Math.min(1, buffer.length)) === "\ufeff" ? 1 : 0;
-        let until = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
-        if (until && buffer.slice(until - 1, until) === "\n") until--; if (until && buffer.slice(until - 1, until) === "\r") until--;
-        if (raw.from !== start + bom + 8 || raw.to + 2 !== until || buffer.slice(start + bom, raw.to + 2) !== `import "${raw.module}";`) throw new Error("Link does not cover an exact captured import line.");
-        const alias = input.aliases.find(a => a.module === raw.module); let target: LinkTarget | null = null;
-        if (alias) { if (!record(raw.target) || raw.target.resource !== alias.resource || raw.target.document !== alias.document || raw.target.revision !== alias.revision || raw.target.length !== alias.length) throw new Error("Unregistered or stale link target.");
-            target = Object.freeze({ resource: alias.resource, document: alias.document, revision: alias.revision, length: alias.length });
-        } else if (raw.target !== null) throw new Error("A link cannot execute an unregistered target.");
-        end = raw.to; return Object.freeze({ from: raw.from, to: raw.to, module: raw.module, tooltip: raw.tooltip, target });
-    });
-    return Object.freeze({ operation: "links-result", id: input.id, document: input.document, revision: input.revision, complete: true, truncated: false, links: Object.freeze(links) });
-}

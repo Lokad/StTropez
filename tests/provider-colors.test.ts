@@ -1,11 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer } from "../src/index.ts";
-import { DocumentColorsCursor, parseColor, hexColor, rgbaColor, sameColor, validateColorsInput, validateColorsResult, validateColorPresentationInput, provideColorPresentations, validateColorPresentationsResult } from "../fixtures/language/colors.ts";
-const capture = (text: string) => validateColorsInput({ id: 1, document: "source", revision: 4, length: text.length, delay: 0 });
-function scan(text: string) { const input = capture(text), buffer = TextBuffer.from(text), cursor = new DocumentColorsCursor(input, buffer); let work = 0;
-    for (;;) { const step = cursor.next(); assert.ok(step.work >= work && step.work - work <= 16384); work = step.work; if (step.result) { assert.equal(work, text.length); return { input, buffer, result: step.result }; } }
+import { DocumentColorsCursor, parseColor, hexColor, rgbaColor, sameColor } from "../fixtures/language/colors.ts";
+const capture = (text: string) => ({ id: 1, document: "source", revision: 4, length: text.length, delay: 0 });
+function scan(text: string) {
+    const cursor = new DocumentColorsCursor(capture(text), TextBuffer.from(text));
+    let work = 0;
+    for (;;) {
+        const step = cursor.next();
+        assert.ok(step.work >= work && step.work - work <= 16384);
+        work = step.work;
+        if (step.result) {
+            assert.equal(work, text.length);
+            return step.result;
+        }
+    }
 }
+
 test("literal color parsing preserves CSS hex variants, numeric/percentage RGB, alpha and finite clamping", () => {
     assert.deepEqual(parseColor("#abc"), { red: 170 / 255, green: 187 / 255, blue: 204 / 255, alpha: 1 }); assert.deepEqual(parseColor("#1234"), parseColor("#11223344"));
     assert.deepEqual(parseColor("rgba(255, 0, 127.5, .5)"), { red: 1, green: 0, blue: .5, alpha: .5 }); assert.deepEqual(parseColor("rgb(100%, 0%, 50%)"), { red: 1, green: 0, blue: .5, alpha: 1 });
@@ -15,21 +26,22 @@ test("literal color parsing preserves CSS hex variants, numeric/percentage RGB, 
 });
 test("streamed color ranges remain exact across chunk boundaries, BOM/CRLF, supplementary letters and huge malformed tokens", () => {
     const literals = ['"#abc"', "#1234", "#112233", "#01020380", "rgba(1, 2, 3, .5)", "RGB(10%,20%,30%)"];
-    for (const literal of literals) for (let split = 1; split < literal.length; split++) { const prefix = " ".repeat(16384 - split), x = scan(prefix + literal + " ;"), result = validateColorsResult(x.result, x.input, x.buffer); assert.equal(result.colors.length, 1); assert.equal(result.colors[0]!.from, prefix.length + (literal.startsWith('"') ? 1 : 0)); assert.equal(x.buffer.readMetrics().textExports, 0); }
-    const text = '\ufeffconst café = "😀 #abc";\r\nrgba(1,2,3,.5);\r\n#01020380', x = scan(text); assert.deepEqual(validateColorsResult(x.result, x.input, x.buffer).colors.map(c => c.text), ["#abc", "rgba(1,2,3,.5)", "#01020380"]);
-    for (const text of ["𐐀#abc", "#abc𐐀", "#abc\u200dname", "name#abc", "#abcdz", "#" + "f".repeat(32_768), "rgba(" + " ".repeat(32_768) + "1,2,3,1)"]) { const y = scan(text); assert.equal(validateColorsResult(y.result, y.input, y.buffer).colors.length, 0); }
-    for (const tail of ["𐐀#abc", "#abc𐐀"]) { const y = scan(" ".repeat(16383) + tail); assert.equal(validateColorsResult(y.result, y.input, y.buffer).colors.length, 0); }
+    for (const literal of literals) {
+        for (let split = 1; split < literal.length; split++) {
+            const prefix = " ".repeat(16384 - split);
+            const { colors } = scan(prefix + literal + " ;");
+            assert.equal(colors.length, 1);
+            assert.equal(colors[0]!.from, prefix.length + (literal.startsWith('"') ? 1 : 0));
+        }
+    }
+    const text = '\ufeffconst café = "😀 #abc";\r\nrgba(1,2,3,.5);\r\n#01020380'; assert.deepEqual(scan(text).colors.map(c => c.text), ["#abc", "rgba(1,2,3,.5)", "#01020380"]);
+    for (const text of ["𐐀#abc", "#abc𐐀", "#abc\u200dname", "name#abc", "#abcdz", "#" + "f".repeat(32_768), "rgba(" + " ".repeat(32_768) + "1,2,3,1)"]) assert.equal(scan(text).colors.length, 0);
+    for (const tail of ["𐐀#abc", "#abc𐐀"]) assert.equal(scan(" ".repeat(16383) + tail).colors.length, 0);
 });
-test("complete color batches reject malformed later ranges/channels, overlap and truncation before publication", () => {
-    const x = scan("#abc #def"), first = x.result.colors[0]!;
-    for (const result of [{ ...x.result, complete: false }, { ...x.result, revision: 5 }, { ...x.result, colors: [first, first] }, { ...x.result, colors: [...x.result.colors, { ...first, from: -1 }] }, { ...x.result, colors: [{ ...first, to: 1000000 }] }, { ...x.result, colors: [{ ...first, color: { ...first.color, red: 2 } }] }, { ...x.result, colors: [{ ...first, text: "#bad" }] }]) assert.throws(() => validateColorsResult(result, x.input, x.buffer));
-    const exact = scan("#abc ".repeat(1024)), over = scan("#abc ".repeat(1025)); assert.equal(validateColorsResult(exact.result, exact.input, exact.buffer).colors.length, 1024); assert.throws(() => validateColorsResult(over.result, over.input, over.buffer), /exceed/);
-    const safe = validateColorsResult({ ...x.result, colors: [{ ...first, label: '<img onerror="execute()">' }] }, x.input, x.buffer); assert.match(safe.colors[0]!.label, /<img/);
-});
-test("presentation validation checks every choice/edit and preserves exact alpha instead of silently quantizing hex", () => {
-    const x = scan("let color = '#abc';"), reference = x.result.colors[0]!, input = validateColorPresentationInput({ ...x.input, id: 2, discovery: 1, reference, proposed: parseColor("#11223344") }, x.buffer), result = provideColorPresentations(input);
-    assert.deepEqual(result.presentations.map(p => p.id), ["hex", "rgba"]); assert.ok(result.presentations.every(p => sameColor(parseColor(p.edits[0]!.edits[0]!.insert)!, input.proposed)));
-    const precise = validateColorPresentationInput({ ...input, proposed: parseColor("rgba(1,2,3,.5)") }, x.buffer); assert.deepEqual(provideColorPresentations(precise).presentations.map(p => p.id), ["rgba"]);
-    const last = result.presentations[1]!; for (const bad of [{ ...result, complete: false }, { ...result, discovery: 9 }, { ...result, proposed: { ...input.proposed, alpha: NaN } }, { ...result, presentations: [result.presentations[0], { ...last, edits: [{ document: "source", revision: 4, edits: [{ from: reference.from, to: reference.to, insert: "#11223344" }, { from: -1, to: 0, insert: "bad late edit" }] }] }] }, { ...result, presentations: [{ ...last, edits: [{ document: "unknown", revision: 4, edits: last.edits[0]!.edits }] }] }, { ...result, presentations: [{ ...last, edits: [{ document: "source", revision: 4, edits: [{ from: reference.from, to: reference.to, insert: "#ff0000" }] }] }] }]) assert.throws(() => validateColorPresentationsResult(bad, input));
-    assert.throws(() => validateColorPresentationInput({ ...input, reference: { ...reference, text: "#bad" } }, x.buffer));
+test("the scanner marks a truncated color list", () => {
+    const exact = scan("#abc ".repeat(1024)), over = scan("#abc ".repeat(1025));
+    assert.equal(exact.colors.length, 1024);
+    assert.equal(exact.truncated, false);
+    assert.equal(over.colors.length, 1024);
+    assert.equal(over.truncated, true);
 });

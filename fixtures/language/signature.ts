@@ -1,17 +1,8 @@
-import { validateNavigationDocuments } from "./navigation.ts";
 import type { NavigationDocument } from "./navigation.ts";
 export type SignatureInput = NavigationDocument & Readonly<{ id: number; offset: number; delay: number; fault?: "malformed" | "failure" | "markup" }>;
 export type SignatureInformation = Readonly<{ label: string; documentation: string; parameters: readonly Readonly<{ from: number; to: number; documentation: string }>[] }>;
 export type SignatureResult = Readonly<{ id: number; document: string; revision: number; reason: "ready" | "no-call" | "literal" | "unsupported" | "depth-limit";
     call: Readonly<{ name: string; open: number; argument: number }> | null; signatures: readonly SignatureInformation[]; activeSignature: number }>;
-const record = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object";
-const integer = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
-export function validateSignatureInput(v: unknown): SignatureInput {
-    if (!record(v) || !integer(v.id) || !v.id || !integer(v.offset) || typeof v.delay !== "number" || !Number.isFinite(v.delay) || v.delay < 0 || v.delay > 1000
-        || v.fault !== undefined && !["malformed", "failure", "markup"].includes(v.fault as string)) throw new Error("Invalid signature capture.");
-    const doc = validateNavigationDocuments([v])[0]!; if (v.offset > doc.length) throw new Error("Signature caret is outside the captured source.");
-    return Object.freeze({ ...doc, id: v.id, offset: v.offset, delay: v.delay, ...(v.fault === undefined ? {} : { fault: v.fault as NonNullable<SignatureInput["fault"]> }) });
-}
 function signature(name: string, parameters: readonly string[], returns: string, documentation: string): SignatureInformation {
     const label = `${name}(${parameters.join(", ")}): ${returns}`; let from = name.length + 1;
     return Object.freeze({ label, documentation, parameters: Object.freeze(parameters.map(parameter => { const result = Object.freeze({ from, to: from + parameter.length, documentation: parameter }); from += parameter.length + 2; return result; })) });
@@ -21,11 +12,6 @@ const catalogue: Readonly<Record<string, readonly SignatureInformation[]>> = Obj
     format: Object.freeze([signature("format", ["value: unknown", "locale?: string"], "string", "Formats a value using an optional locale.")]),
     "café": Object.freeze([signature("café", ["texte: string", "options?: string"], "string", "Formats Unicode text without changing its source units.")])
 });
-/** Cheap automatic-trigger filter only; complete lexical state is still resolved in the worker. */
-export function signatureTriggerName(prefix: string): boolean {
-    if (prefix.length > 512) throw new Error("Signature trigger prefix exceeds bounds.");
-    const name = /([\p{L}\p{N}\p{Pc}\p{M}\u200c\u200d]+)\s*$/u.exec(prefix)?.[1]; return !!name && Object.hasOwn(catalogue, name);
-}
 type Frame = { close: string; name: string | null; open: number; argument: number };
 /** Streaming lexical fixture: complete prefix state, bounded chunks, names and nesting. No text mirror. */
 export class SignatureScanner {
@@ -90,21 +76,4 @@ export class SignatureScanner {
         const signatures = Object.hasOwn(catalogue, call.name!) ? catalogue[call.name!]! : undefined; if (!signatures) return empty("unsupported");
         return Object.freeze({ ...base, reason: "ready", call: Object.freeze({ name: call.name!, open: call.open, argument: call.argument }), signatures });
     }
-}
-/** Reject the entire response before any label, documentation or parameter range is published. */
-export function validateSignatureResult(v: unknown, input: SignatureInput): SignatureResult {
-    if (!record(v) || v.id !== input.id || v.document !== input.document || v.revision !== input.revision || !["ready", "no-call", "literal", "unsupported", "depth-limit"].includes(v.reason as string)
-        || !integer(v.activeSignature) || !Array.isArray(v.signatures) || v.signatures.length > 8) throw new Error("Invalid signature response.");
-    if (v.call === null) { if (v.reason === "ready" || v.signatures.length || v.activeSignature) throw new Error("Invalid empty signature response."); return Object.freeze({ id: input.id, document: input.document, revision: input.revision, reason: v.reason as SignatureResult["reason"], call: null, signatures: Object.freeze([]), activeSignature: 0 }); }
-    if (!record(v.call) || v.reason !== "ready" || typeof v.call.name !== "string" || !v.call.name.length || v.call.name.length > 256 || !integer(v.call.open) || v.call.open >= input.offset || !integer(v.call.argument) || v.call.argument > input.offset
-        || !v.signatures.length || v.activeSignature >= v.signatures.length) throw new Error("Invalid signature call.");
-    const split = (label: string, at: number) => at > 0 && at < label.length && /[\ud800-\udbff]/.test(label[at - 1]!) && /[\udc00-\udfff]/.test(label[at]!);
-    const signatures = v.signatures.map((s: unknown): SignatureInformation => {
-        if (!record(s) || typeof s.label !== "string" || !s.label.length || s.label.length > 1024 || typeof s.documentation !== "string" || s.documentation.length > 2048 || !Array.isArray(s.parameters) || s.parameters.length > 16) throw new Error("Invalid signature information.");
-        const label = s.label; let end = 0;
-        const parameters = s.parameters.map((p: unknown) => { if (!record(p) || !integer(p.from) || !integer(p.to) || p.from < end || p.to <= p.from || p.to > label.length || split(label, p.from) || split(label, p.to)
-            || typeof p.documentation !== "string" || p.documentation.length > 1024) throw new Error("Invalid signature parameter."); end = p.to; return Object.freeze({ from: p.from, to: p.to, documentation: p.documentation }); });
-        return Object.freeze({ label, documentation: s.documentation, parameters: Object.freeze(parameters) });
-    });
-    return Object.freeze({ id: input.id, document: input.document, revision: input.revision, reason: "ready", call: Object.freeze({ name: v.call.name, open: v.call.open, argument: v.call.argument }), activeSignature: v.activeSignature, signatures: Object.freeze(signatures) });
 }
