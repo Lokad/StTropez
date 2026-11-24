@@ -8,6 +8,7 @@ import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
 import { captureViewRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import type { TextEditor } from "./text-editor.ts";
+import { revealCaretInPage } from "./input-caret.ts";
 import { typedTextEvent, type TypedTextDetail } from "./input-events.ts";
 
 export type SignatureControllerOptions = Readonly<{ canCapture?: () => boolean; beforeRequest?: () => void; prepareRequest?: LspPrepare }>;
@@ -108,7 +109,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         if (context === manual) {
             const caret = view.getSnapshot().selection;
             editor.viewport.revealOffset(caret.head, { horizontal: "nearest", vertical: "nearest", affinity: caret.headAffinity ?? "after" });
-            if (editor.getSnapshot().focused) editor.viewport.element.scrollIntoView({ block: "nearest", inline: "nearest" });
+            if (editor.getSnapshot().focused) revealCaretInPage(editor.element);
         }
         const current = retained ?? captureRequest();
         if (!current) { cancel(); return; }

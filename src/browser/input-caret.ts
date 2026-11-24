@@ -5,6 +5,12 @@ import type { SelectionSet } from "../core/selections.ts";
 import type { DocumentSnapshot, DocumentView } from "../core/workspace.ts";
 import type { TextViewport, ViewportActivity, ViewportSnapshot } from "./viewport.ts";
 
+const pageReveals = new WeakMap<HTMLElement, () => void>();
+
+export function revealCaretInPage(root: HTMLElement): void {
+    pageReveals.get(root)?.();
+}
+
 /** Owns only caret DOM, placement cache and its animation frame; input/model state stays with the adapter. */
 export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement, view: DocumentView,
     viewport: TextViewport, readDocument: () => DocumentSnapshot | undefined, isComposing: () => boolean) {
@@ -112,11 +118,19 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
             blinkSelection = selectionSet;
         } else if (blink) { blink.cancel(); blink = undefined; blinkSelection = undefined; }
     }
+    pageReveals.set(root, () => {
+        // An explicit reveal can move the virtual viewport before its next caret frame.
+        viewport.flush();
+        if (frame !== undefined) win.cancelAnimationFrame(frame);
+        positionCaret();
+        if (!caret.hidden) caret.scrollIntoView({ block: "nearest", inline: "nearest" });
+    });
     return Object.freeze({ schedule, pending: () => frame !== undefined,
         showComposingText(text: string) { caret.textContent = text; schedule(); },
         dispose: () => {
             if (disposed) return;
             disposed = true;
+            pageReveals.delete(root);
             if (frame !== undefined) win.cancelAnimationFrame(frame);
             reducedMotion.removeEventListener("change", schedule); blink?.cancel(); blink = undefined; blinkSelection = undefined;
             frame = undefined; caretLayout = undefined;
