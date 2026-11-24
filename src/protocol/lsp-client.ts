@@ -101,19 +101,19 @@ export function createLspClient<Method extends LspDocumentFeature>(provider: Lsp
         let capture: LspDocumentCapture | undefined, captures: ReadonlyMap<string, LspDocumentCapture> | undefined;
         const captureParams = (value: LspDocumentCapture) => {
             validate(op);
-            captures = scope.captureProject(); capture = value;
+            captures = scope.captureProject(method); capture = value;
             return params(value);
         };
         const call = wireMethod ? (() => {
             if (!scope.canRequest(method, target)) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable.");
-            const value = scope.synchronized(target); if (!value) throw stale();
+            const value = scope.synchronized(target, method); if (!value) throw stale();
             const body = captureParams(value); validate(op);
             return scope.request(wireMethod, body);
         })() : scope.requestDocument(method, target, (_index, _document, value) => captureParams(value));
         const response = await call.result;
         validate(op);
         const isGenerationCurrent = () => current(op) && scope.getSnapshot().phase === "ready"
-            && scope.getSnapshot().epoch === capture!.epoch && scope.getSnapshot().registrationGeneration === capture!.registrationGeneration;
+            && scope.getSnapshot().epoch === capture!.epoch && scope.getSnapshot().registrationVersion(method) === capture!.registrationGeneration;
         const targets = createLspTargets(captures!, scope.resolveTarget, { source: capture!.document, isCurrent: isGenerationCurrent, reportError: scope.reportError,
             onCancel: listener => { op.cleanups.add(listener); return () => { op.cleanups.delete(listener); }; } });
         const isCurrent = targets.isCurrent;

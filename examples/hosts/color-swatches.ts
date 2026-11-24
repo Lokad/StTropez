@@ -41,7 +41,7 @@ export function watchColorSwatches(document: Observable<DocumentSnapshot | undef
     }
     function schedule() {
         const doc = document.getSnapshot(), state = provider.getSnapshot();
-        const next = `${state.phase}:${state.epoch}:${state.registrationGeneration}`;
+        const next = `${state.phase}:${state.epoch}:${state.registrationVersion("textDocument/documentColor")}`;
         if (doc?.revision === previous?.revision && doc?.language === previous?.language && next === connection) return;
         const available = enabled && doc?.key.variant === "working" && state.phase === "ready";
         if (next !== connection || !available) clear(); else cancel();

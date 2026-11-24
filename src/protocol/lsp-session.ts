@@ -18,6 +18,7 @@ const providers = { "textDocument/completion": "completionProvider", "textDocume
     "textDocument/foldingRange": "foldingRangeProvider", "textDocument/documentHighlight": "documentHighlightProvider" } as const;
 export const defaultDocumentUnits = 3 * 1024 * 1024;
 export type LspFeature = keyof typeof providers;
+type RegistrationMethod = LspFeature | "textDocument/didChange";
 export type LspClientFeature = LspFeature | "textDocument/publishDiagnostics";
 export type LspDocumentFeature = Exclude<LspFeature, "workspace/executeCommand">;
 export type LspCommandCall<T> = RpcCall<T> & Readonly<{ isCurrent: () => boolean }>;
@@ -38,7 +39,7 @@ export type LspRequestContext = RpcRequestContext & Readonly<{ epoch: number; is
 export type LspRegistration = Readonly<{ id: string; method: string; registerOptions: JsonValue }>;
 export type LspSessionSnapshot = Readonly<{ phase: "disconnected" | "connecting" | "initializing" | "ready" | "stopping" | "disposed";
     epoch: number; clientFeatures: readonly LspClientFeature[]; capabilities: Readonly<Record<string, JsonValue>>; registrations: readonly LspRegistration[];
-    registrationGeneration: number; documents: number; error: string | null }>;
+    registrationGeneration: number; registrationVersion: (method: RegistrationMethod) => number; documents: number; error: string | null }>;
 export type LspSessionOptions = Readonly<{ connect: (context: LspConnectContext) => Promise<RpcTransport>; schedule: RpcScheduler;
     /** Millisecond clock for cooperative scan slices; defaults to Date.now. */
     now?: () => number;
@@ -104,6 +105,8 @@ export class LspSession {
     private rpc: JsonRpcConnection | undefined;
     private epoch = 0;
     private generation = 0;
+    private syncGeneration = 0;
+    private methodVersions: ReadonlyMap<string, number> = new Map();
     private capabilities: Readonly<Record<string, JsonValue>> = empty;
     private sync = { openClose: false, change: false };
     private connectWork: Promise<void> | undefined;
@@ -171,7 +174,9 @@ export class LspSession {
     private release(stop: (() => void) | undefined): void { try { stop?.(); } catch (error) { this.report(error); } }
     private writable(): void { this.scope.assertWritable(); if (this.store.get().phase === "disposed") throw closed(); }
     private snapshot(phase: LspSessionSnapshot["phase"], error: string | null): LspSessionSnapshot {
-        return Object.freeze({ phase, epoch: this.epoch, clientFeatures: this.clientFeatures, capabilities: this.capabilities,
+        const versions = this.methodVersions, sync = this.syncGeneration;
+        const registrationVersion = (method: RegistrationMethod) => Math.max(sync, versions.get(method) ?? 0);
+        return Object.freeze({ phase, registrationVersion, epoch: this.epoch, clientFeatures: this.clientFeatures, capabilities: this.capabilities,
             registrations: Object.freeze([...this.registrations.values()].map(item => item.value)), registrationGeneration: this.generation, documents: this.documents.size, error });
     }
     private publish(phase = this.store.get().phase, error: string | null = null): void {
@@ -269,7 +274,7 @@ export class LspSession {
         if (next.size > wireLimits.registrations || [...next.values()].reduce((units, item) => units + JSON.stringify(item.value.registerOptions).length, 0) > 1024 * 1024) throw new RpcError(rpcCodes.invalidParams, "Capability registry exceeds its limit.");
         if (this.collectCommands(next).length > 256) throw new RpcError(rpcCodes.invalidParams, "Command registry exceeds its limit.");
         this.registrations.clear(); for (const [id, item] of next) this.registrations.set(id, item);
-        this.generation++; this.publish(); this.reconcile(); return null;
+        return this.registrationChanged(params.registrations.map(item => item.method));
     }
     private unregister(params: unknown): null {
         if (!isRecord(params) || !Array.isArray(params.unregisterations) || !params.unregisterations.length || params.unregisterations.length > wireLimits.registrations) throw new RpcError(rpcCodes.invalidParams, "Invalid capability unregistrations.");
@@ -277,7 +282,22 @@ export class LspSession {
         for (const item of params.unregisterations) {
             if (!isRecord(item) || typeof item.id !== "string" || ids.has(item.id) || this.registrations.get(item.id)?.value.method !== item.method) throw new RpcError(rpcCodes.invalidParams, "Unknown or mismatched registration."); ids.add(item.id);
         }
-        for (const id of ids) this.registrations.delete(id); this.generation++; this.publish(); this.reconcile(); return null;
+        const methods = [...ids].map(id => this.registrations.get(id)!.value.method);
+        for (const id of ids) this.registrations.delete(id);
+        return this.registrationChanged(methods);
+    }
+    private registrationChanged(methods: readonly string[]): null {
+        const version = ++this.generation, versions = new Map(this.methodVersions);
+        const syncChanged = methods.some(method => syncMethods.includes(method));
+        if (syncChanged) this.syncGeneration = version;
+        for (const method of methods) {
+            versions.set(method, version);
+            if (method === "textDocument/documentColor") versions.set("textDocument/colorPresentation", version);
+        }
+        this.methodVersions = versions;
+        this.publish();
+        if (syncChanged) this.reconcile();
+        return null;
     }
     private matchesRegistration(registered: string, method: string): boolean { return registered === method || registered === "textDocument/documentColor" && method === "textDocument/colorPresentation"; }
     private matches(selector: LspSelector, entry: SelectorEntry): boolean {
@@ -291,7 +311,7 @@ export class LspSession {
     }
     private syncs(entry: SelectorEntry): boolean { return (this.sync.openClose || this.registered("textDocument/didOpen", entry)) && (this.sync.change || this.registered("textDocument/didChange", entry)); }
     private failed(entry: Entry): Error | undefined {
-        return entry.failure?.snapshot === entry.snapshot && entry.failure.generation === this.generation ? entry.failure.error : undefined;
+        return entry.failure?.snapshot === entry.snapshot && entry.failure.generation === this.syncGeneration ? entry.failure.error : undefined;
     }
     canRequest(method: LspDocumentFeature, document: LspDocument): boolean {
         const entry = this.entry(document);
@@ -338,7 +358,9 @@ export class LspSession {
         if (authorization && (authorization.command !== command || !jsonEqual(authorization.arguments, argumentsValue))) throw new RpcError(rpcCodes.methodNotFound, "Host command authorization does not match this invocation.");
         const permitted = authorization?.isCurrent ?? (() => this.commandNames().includes(command));
         if (!this.features.has("workspace/executeCommand") || !permitted()) throw new RpcError(rpcCodes.methodNotFound, "LSP command is neither advertised nor authorized by the host.");
-        const epoch = this.epoch, generation = this.generation, isCurrent = () => this.current(epoch) && this.store.get().phase === "ready" && this.generation === generation && permitted();
+        const method = "workspace/executeCommand", epoch = this.epoch, version = this.store.get().registrationVersion(method);
+        const isCurrent = () => this.current(epoch) && this.store.get().phase === "ready"
+            && this.store.get().registrationVersion(method) === version && permitted();
         const call = this.ready(epoch).request("workspace/executeCommand", { command, arguments: argumentsValue }, timeoutMs);
         return Object.freeze({ id: call.id, cancel: call.cancel, isCurrent, result: call.result.then(result => { if (!isCurrent()) throw stale(); return result; }) });
     }
@@ -395,7 +417,7 @@ export class LspSession {
         const checkpoint = cooperateDuringScan(() => { this.ready(epoch); }, () => this.pause(epoch), this.options.now);
         while (this.dirty.size) {
             const uri = this.dirty.values().next().value!; this.dirty.delete(uri);
-            const rpc = this.ready(epoch), generation = this.generation, entry = this.documents.get(uri), remote = this.remote.get(uri);
+            const rpc = this.ready(epoch), generation = this.syncGeneration, entry = this.documents.get(uri), remote = this.remote.get(uri);
             try {
                 if (remote && (remote.entry !== entry || !this.syncs(entry!))) {
                     rpc.notify("textDocument/didClose", { textDocument: { uri } }); this.remote.delete(uri);
@@ -406,7 +428,7 @@ export class LspSession {
                 if (!this.syncs(entry)) continue; const snapshot = entry.snapshot, old = this.remote.get(uri), hint = entry.change;
                 if (old?.snapshot === snapshot) continue;
                 const expired = {}, retained = () => this.documents.get(uri) === entry;
-                const valid = () => entry.snapshot === snapshot && retained() && this.generation === generation;
+                const valid = () => entry.snapshot === snapshot && retained() && this.syncGeneration === generation;
                 const cooperate = async () => { await checkpoint(); if (!retained()) throw expired; };
                 const base = entry.index ?? old?.index;
                 const compact = denseBatch(hint, snapshot.buffer.length), planHint = compact ? undefined : hint;
@@ -453,7 +475,7 @@ export class LspSession {
         if (this.remote.get(snapshot.uri)?.entry === entry) {
             rpc.notify("textDocument/didClose", { textDocument: { uri: snapshot.uri } }); this.remote.delete(snapshot.uri);
         }
-        delete entry.change; entry.failure = { snapshot, generation: this.generation, error }; this.report(error);
+        delete entry.change; entry.failure = { snapshot, generation: this.syncGeneration, error }; this.report(error);
     }
     private settle(error?: Error, documentsOnly = false): void {
         for (const waiter of this.waiters) {
@@ -466,11 +488,11 @@ export class LspSession {
         }
     }
     private waitForSync(entries?: readonly Entry[]): LspCall<void> {
-        this.ready(); const generation = this.generation, captures = entries?.map(entry => ({ entry, snapshot: entry.snapshot }));
+        this.ready(); const generation = this.syncGeneration, captures = entries?.map(entry => ({ entry, snapshot: entry.snapshot }));
         const ready = captures ? () => {
             let synchronized = true;
             for (const { entry, snapshot } of captures) {
-                if (generation !== this.generation || this.documents.get(snapshot.uri) !== entry || entry.snapshot !== snapshot) throw stale();
+                if (generation !== this.syncGeneration || this.documents.get(snapshot.uri) !== entry || entry.snapshot !== snapshot) throw stale();
                 const failure = this.failed(entry); if (failure) throw failure;
                 if (this.remote.get(snapshot.uri)?.snapshot !== snapshot && this.syncs(entry)) synchronized = false;
             }
@@ -487,25 +509,29 @@ export class LspSession {
     /** With documents, wait only for those exact captures; otherwise drain all synchronization work. */
     flush(documents?: readonly LspDocument[]): Promise<void> { this.scope.assertWritable(); return this.waitForSync(documents?.map(document => this.entry(document))).result; }
     /** The exact sent snapshot, never a guessed provider-analysis revision. Unsynced local edits return undefined. */
-    synchronized(document: LspDocument): LspDocumentCapture | undefined {
+    synchronized(document: LspDocument, method?: RegistrationMethod): LspDocumentCapture | undefined {
         const entry = this.handles.get(document); if (this.store.get().phase !== "ready" || !entry || this.failed(entry) || this.documents.get(entry.snapshot.uri) !== entry) return undefined;
         const remote = this.remote.get(entry.snapshot.uri); if (!remote || remote.snapshot !== entry.snapshot) return undefined;
-        const epoch = this.epoch, generation = this.generation;
+        const version = () => method ? this.store.get().registrationVersion(method) : this.generation;
+        const epoch = this.epoch, generation = version();
+        const isBindingCurrent = () => this.store.get().phase === "ready" && this.epoch === epoch
+            && version() === generation && this.documents.get(remote.snapshot.uri) === entry;
         return Object.freeze({ document: remote.snapshot, index: remote.index, version: remote.version, epoch, registrationGeneration: generation, maxDocumentUnits: this.maxDocumentUnits,
-            isBindingCurrent: () => this.store.get().phase === "ready" && this.epoch === epoch && this.generation === generation && this.documents.get(remote.snapshot.uri) === entry,
-            isCurrent: () => this.store.get().phase === "ready" && this.epoch === epoch && this.generation === generation && this.documents.get(remote.snapshot.uri) === entry
+            isBindingCurrent,
+            isCurrent: () => isBindingCurrent()
                 && entry.snapshot === remote.snapshot && this.remote.get(remote.snapshot.uri) === remote });
     }
     requestDocument(method: LspDocumentFeature | "textDocument/prepareRename", document: LspDocument, params: (index: LspLineIndex, snapshot: LspDocumentSnapshot, capture: LspDocumentCapture) => Readonly<Record<string, JsonValue>>): LspCall<JsonValue> {
         this.writable(); this.ready(); if (this.documentCalls.size >= (this.options.rpc?.maxPending ?? wireLimits.pendingRequests)) throw new RpcError(rpcCodes.pendingLimit, "Too many pending document requests.");
-        const entry = this.entry(document), snapshot = entry.snapshot, epoch = this.epoch, generation = this.generation, waiting = this.waitForSync([entry]); let cancelled = false, call: RpcCall<JsonValue> | undefined;
-        const guard = () => { if (cancelled) throw cancelError(); this.ready(epoch); if (this.documents.get(snapshot.uri) !== entry || entry.snapshot !== snapshot || generation !== this.generation) throw stale(); };
+        const feature = method === "textDocument/prepareRename" ? "textDocument/rename" : method;
+        const entry = this.entry(document), snapshot = entry.snapshot, epoch = this.epoch, generation = this.store.get().registrationVersion(feature), waiting = this.waitForSync([entry]); let cancelled = false, call: RpcCall<JsonValue> | undefined;
+        const guard = () => { if (cancelled) throw cancelError(); this.ready(epoch); if (this.documents.get(snapshot.uri) !== entry || entry.snapshot !== snapshot || generation !== this.store.get().registrationVersion(feature)) throw stale(); };
         const result = (async () => { await waiting.result; guard(); const failure = this.failed(entry); if (failure) throw failure;
             const supported = method === "textDocument/prepareRename"
                 ? this.featureOptions("textDocument/rename", document).some(options => options.prepareProvider === true)
                 : this.canRequest(method, document);
             if (!supported) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable for this document.");
-            const capture = this.synchronized(document); if (capture?.document !== snapshot) throw stale();
+            const capture = this.synchronized(document, feature); if (capture?.document !== snapshot) throw stale();
             const value = params(capture.index, snapshot, capture); guard(); call = this.ready(epoch).request(method, { ...value, textDocument: { uri: snapshot.uri } }); const response = await call.result; guard(); return response;
         })();
         const handle = Object.freeze({ result, cancel: () => { cancelled = true; waiting.cancel(); call?.cancel(); } }); this.documentCalls.add(handle);
@@ -536,7 +562,9 @@ export class LspSession {
         this.release(this.scheduled); this.scheduled = undefined; for (const pause of this.pauses) { this.release(pause.stop); pause.reject(failure); } this.pauses.clear();
         const rpc = this.rpc; this.rpc = undefined; this.release(() => rpc?.dispose(failure)); this.pumping = false; this.dirty.clear(); this.settle(failure); this.documentCalls.clear();
         this.features.clear(); this.clientFeatures = Object.freeze([]);
-        this.remote.clear(); this.registrations.clear(); this.staticSelectors.clear(); this.requestStops.clear(); this.notificationStops.clear(); this.capabilities = empty; this.sync = { openClose: false, change: false }; this.generation++;
+        this.remote.clear(); this.registrations.clear(); this.staticSelectors.clear(); this.requestStops.clear(); this.notificationStops.clear(); this.capabilities = empty; this.sync = { openClose: false, change: false };
+        this.methodVersions = new Map();
+        this.syncGeneration = ++this.generation;
         for (const entry of this.documents.values()) { delete entry.failure; delete entry.change; delete entry.selectors; }
         if (dispose) { this.documents.clear(); this.totalUnits = 0; this.requests.clear(); this.notifications.clear(); }
         this.publish(dispose ? "disposed" : "disconnected", error.message);

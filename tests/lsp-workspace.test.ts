@@ -10,6 +10,29 @@ import { LspWorkspace, createLspHoverClient, createLspCommandRunner, createLspSi
 import { latch } from "./helpers/latch.ts";
 const settled = async () => { await setImmediate(); await setImmediate(); };
 
+test("a pending hover and its result survive unrelated capability changes", async t => {
+    const f = fixture(t), client = createLspHoverClient(f.provider);
+    t.after(client.dispose);
+    await f.provider.connect();
+    const peer = f.peers[0]!.rpc, received = latch<void>(), reply = latch<unknown>();
+    peer.onRequest("textDocument/hover", () => { received.resolve(); return reply.promise; });
+    const pending = client.run({ document: f.workspace.document(f.source.documentId), offset: 0 }).result;
+    await received.promise;
+    const registration = { id: "extra", method: "textDocument/definition", registerOptions: { documentSelector: null } };
+    await peer.sendRequest("client/registerCapability", { registrations: [registration] });
+    reply.resolve({ contents: "hover text" });
+    const hover = await pending;
+    assert.ok(hover);
+    assert.ok(hover.isCurrent());
+    await peer.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "extra", method: registration.method }] });
+    assert.ok(hover.isCurrent());
+    const sameFeature = { ...registration, method: "textDocument/hover" };
+    await peer.sendRequest("client/registerCapability", { registrations: [sameFeature] });
+    assert.equal(hover.isCurrent(), false);
+    await peer.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "extra", method: sameFeature.method }] });
+    assert.equal(hover.isCurrent(), false);
+});
+
 test("binding captures read local revisions across request cancellation and expire with provider authority", async t => {
     const f = fixture(t), scope = f.provider.createScope(), handle = scope.attachDocument(f.source.documentId);
     t.after(scope.dispose); await scope.ensureConnected(); await scope.flush([handle]);

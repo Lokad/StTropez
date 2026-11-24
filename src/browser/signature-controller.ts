@@ -179,7 +179,8 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
     let providerState = provider.getSnapshot();
     const stopProvider = provider.subscribe(() => {
         const current = job, next = provider.getSnapshot();
-        const changedProvider = next.phase !== "ready" || next.epoch !== providerState.epoch || next.registrationGeneration !== providerState.registrationGeneration;
+        const changedProvider = next.phase !== "ready" || next.epoch !== providerState.epoch
+                || next.registrationVersion("textDocument/signatureHelp") !== providerState.registrationVersion("textDocument/signatureHelp");
         providerState = next;
         if (current && (current.help && !current.help.isCurrent() || cell.get().signature && changedProvider)) queueMicrotask(() => expire(current));
     });

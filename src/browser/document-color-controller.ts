@@ -161,7 +161,7 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
             startTimer(j); publish("discovering");
             const reply = await client.run({ document: source.document, prepare: options.prepareRequest?.("discovery") }).result;
             if (!current(j) || !reply.isCurrent()) { expire(j); return; }
-            j.reply = reply; j.registration = provider.getSnapshot().registrationGeneration; source.cancel(); win.clearTimeout(j.timer);
+            j.reply = reply; j.registration = provider.getSnapshot().registrationVersion("textDocument/colorPresentation"); source.cancel(); win.clearTimeout(j.timer);
             publish("ready", { colors: Object.freeze(reply.items.map((item, index) => reference(item, index, source.document.revision))) });
         } catch (error) { fail(j, error); }
     }
@@ -171,7 +171,7 @@ export function createDocumentColorController(editor: TextEditor, provider: LspW
         if (!j?.reply || j.reply.isCurrent()) return;
         const connection = provider.getSnapshot();
         // A pending decoder reports its own error. Disconnects and withdrawn capabilities cancel the request immediately.
-        if (!j.preview || j.preview.result || connection.phase !== "ready" || connection.registrationGeneration !== j.registration) expire(j);
+        if (!j.preview || j.preview.result || connection.phase !== "ready" || connection.registrationVersion("textDocument/colorPresentation") !== j.registration) expire(j);
     });
     editor.onEditIntent(() => { if (job) cancel(); }, events.signal);
     function dispose() {

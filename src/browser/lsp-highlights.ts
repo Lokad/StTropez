@@ -82,7 +82,9 @@ export function createLspHighlightController(editor: TextEditor,
     let provider = options.provider.getSnapshot();
     const stops = [workspace.observeDocument(documentId).subscribe(refresh), view.subscribe(viewChanged),
         options.provider.subscribe(() => {
-            const next = options.provider.getSnapshot(), changed = next.phase !== provider.phase || next.epoch !== provider.epoch || next.registrationGeneration !== provider.registrationGeneration;
+            const next = options.provider.getSnapshot();
+            const changed = next.phase !== provider.phase || next.epoch !== provider.epoch
+                || next.registrationVersion("textDocument/documentHighlight") !== provider.registrationVersion("textDocument/documentHighlight");
             provider = next; if (changed) refresh();
         })];
     if (target) stops.push(workspace.tabs.subscribe(() => { if (!available()) refresh(); }));

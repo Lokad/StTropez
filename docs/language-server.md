@@ -213,7 +213,8 @@ Use `scope.captureBinding(binding)` to track a synchronized document without add
 participant. The immutable `LspBindingCapture` exposes the captured binding as `document`.
 `getSnapshot()` reads the current local Core snapshot, even with edits waiting to be sent. Local
 revisions and scope request cancellation preserve the capture. After URI replacement, binding
-closure, a connection or registration change, or scope disposal, the getter returns `undefined`.
+closure, a connection or registration change, or scope disposal, the getter returns `undefined`. Pass a
+method as the second argument to track only its registrations and document synchronization.
 
 A live binding alone cannot tell you whether completion offsets fit. To keep a completion across
 typing, also check the operation and map the edit. Ordinary request captures check the revision
@@ -249,13 +250,14 @@ Synchronization planning yields after its time/checkpoint budget; encoding, allo
 analysis have separate costs. The [measurement glossary](README.md#glossary) defines latency terms.
 
 `flush()` waits for changes to reach the wire. Server analysis can finish later. Pass document handles
-to wait for specific captures in a session or scope. A revision, binding or capability change rejects
+to wait for specific captures in a session or scope. A revision, binding or synchronization capability change rejects
 that wait. Feature clients use it to skip unrelated files. `synchronized(handle)` returns the sent
 snapshot, index and version, or `undefined`. `captureProject()` returns the scope’s synchronized URI
 captures.
 
 `requestDocument` waits for synchronization, supplies the bound URI and captures the binding,
-revision, connection epoch and registration generation. Stale replies are refused. Its immutable
+revision, connection epoch and registrations for that method and document synchronization. Other
+methods can be registered or withdrawn while a request is in flight or its result is displayed. Its immutable
 JSON result needs a feature decoder before presentation. `scope.isDocumentCurrent` also observes
 workspace edits before deferred binding synchronization. `isBindingCurrent` allows revision changes
 and does not establish range freshness. No capture or syntax cache grants edit authority.
@@ -363,7 +365,7 @@ bounds and overlap.
 
 If encoding a document or matching its selector fails, the client closes that remote document and
 calls `onError`. Other files stay usable. Requests for the failed capture reject with that error. A
-corrected revision, capability change or reconnect lets the binding synchronize again. After a failed
+corrected revision, synchronization capability change or reconnect lets the binding synchronize again. After a failed
 connection or disconnect, call `connect()` or `reconnect()` from your Retry control. Repeating a
 feature request won’t reconnect. Cleanup continues even if a deferred release or cancellation reports
 an error to `onError`.

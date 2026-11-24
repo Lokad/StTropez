@@ -6,7 +6,7 @@ import type { Observable } from "../core/observable.ts";
 import { TextBuffer } from "../core/text-buffer.ts";
 import { cooperateDuringScan, LspLineIndex } from "./lsp-positions.ts";
 import { defaultDocumentUnits, LspSession } from "./lsp-session.ts";
-import type { LspDocument, LspDocumentCapture, LspDocumentFeature, LspDocumentSnapshot, LspRequestContext, LspSessionOptions, LspSessionSnapshot } from "./lsp-session.ts";
+import type { LspDocument, LspDocumentCapture, LspDocumentFeature, LspFeature, LspDocumentSnapshot, LspRequestContext, LspSessionOptions, LspSessionSnapshot } from "./lsp-session.ts";
 import type { RpcCall } from "./json-rpc.ts";
 import type { JsonValue } from "./wire.ts";
 import { decodeLspDiagnostics } from "./lsp-features.ts";
@@ -28,9 +28,9 @@ export type LspWorkspaceScope = Omit<LspScopeAccess, "getSnapshot" | "subscribe"
     setDocuments: (documents: readonly DocumentSnapshot[]) => ReadonlyMap<string, LspDocument>;
     /** Read-only handle/snapshot validation, including Workspace edits not yet synchronized. */
     isDocumentCurrent: (document: LspDocument, snapshot: LspDocumentSnapshot) => boolean;
-    captureProject: () => ReadonlyMap<string, LspDocumentCapture>;
+    captureProject: (method?: LspFeature) => ReadonlyMap<string, LspDocumentCapture>;
     /** Binding/connection authority independent of this scope's request generation; no new retention. */
-    captureBinding: (document: LspDocument) => LspBindingCapture | undefined;
+    captureBinding: (document: LspDocument, method?: LspFeature) => LspBindingCapture | undefined;
     observeDiagnostics: (document: LspDocument) => Observable<LspDiagnosticState>;
     reserveCommand: () => Readonly<{ isCurrent: () => boolean; release: () => void }>;
     resolveTarget: ResolveRetainedTarget;
@@ -109,7 +109,7 @@ export class LspWorkspace {
         this.stopState = this.session.subscribe(() => {
             const next = this.session.getSnapshot();
             if (next.phase !== "ready" || next.epoch !== this.store.get().epoch) for (const entry of this.documents.values()) this.expireDiagnostics(entry);
-            if (this.command && (this.command.epoch !== next.epoch || this.command.registrationGeneration !== next.registrationGeneration)) this.endCommand(this.command, this.command.sent && this.command.epoch === next.epoch);
+            if (this.command && (this.command.epoch !== next.epoch || this.command.registrationGeneration !== next.registrationVersion("workspace/executeCommand"))) this.endCommand(this.command, this.command.sent && this.command.epoch === next.epoch);
             if (this.quarantinedEpoch !== next.epoch) this.quarantinedEpoch = undefined;
             this.store.set(this.snapshotState(), this.changed);
             // Bind/close operations finish their ownership changes before observers can react.
@@ -143,7 +143,7 @@ export class LspWorkspace {
         }) : undefined;
     }
     private report(error: unknown): void { try { this.options.onError?.(error instanceof Error ? error : new Error(String(error))); } catch { /* Reporting cannot prevent cleanup. */ } }
-    private commandCurrent(intent: CommandIntent): boolean { const state = this.session.getSnapshot(); return this.command === intent && !intent.cancelled && intent.scope.active && intent.scope.generation === intent.generation && state.phase === "ready" && state.epoch === intent.epoch && state.registrationGeneration === intent.registrationGeneration; }
+    private commandCurrent(intent: CommandIntent): boolean { const state = this.session.getSnapshot(); return this.command === intent && !intent.cancelled && intent.scope.active && intent.scope.generation === intent.generation && state.phase === "ready" && state.epoch === intent.epoch && state.registrationVersion("workspace/executeCommand") === intent.registrationGeneration; }
     private endCommand(intent: CommandIntent, quarantine: boolean, cancelled = true): void {
         if (quarantine) this.quarantinedEpoch = intent.epoch; if (cancelled) intent.cancelled = true;
         if (this.command === intent) this.command = undefined;
@@ -247,7 +247,7 @@ export class LspWorkspace {
         const session = this.session.getSnapshot();
         const connected = () => {
             const now = this.session.getSnapshot();
-            return scopeCurrent() && now.phase === "ready" && now.epoch === session.epoch && now.registrationGeneration === session.registrationGeneration;
+            return scopeCurrent() && now.phase === "ready" && now.epoch === session.epoch && now.registrationVersion("textDocument/didChange") === session.registrationVersion("textDocument/didChange");
         };
         if (!isLspUri(uri)) throw new TypeError("Invalid target URI.");
         if (!connected() || !context.isCurrent()) throw stale();
@@ -285,7 +285,7 @@ export class LspWorkspace {
             const documents = this.workspace.observeDocument(doc.id), metadata = this.workspace.resourceForDocument(doc.id).metadata, access = metadata.getSnapshot();
             const entry = this.uris.get(uri);
             if (entry && entry.id !== doc.id && this.bindingCurrent(entry)) throw stale();
-            const capture = entry && this.live(entry) ? this.session.synchronized(entry.binding) : undefined;
+            const capture = entry && this.live(entry) ? this.session.synchronized(entry.binding, "textDocument/didChange") : undefined;
             const isCurrent = () => {
                 const now = metadata.getSnapshot(), owner = this.uris.get(uri);
                 return !released && connected() && documents.getSnapshot() === doc && now.capabilities === access.capabilities && now.editLock === access.editLock
@@ -324,9 +324,9 @@ export class LspWorkspace {
             }) }); pending.add(tracked); void tracked.result.then(() => pending.delete(tracked), () => pending.delete(tracked)); return tracked as C;
         };
         const unwrap = (document: LspDocument) => { const entry = handles.get(document); if (!scope.active || !entry?.active) throw stale(); return entry.binding; };
-        const capture = (document: LspDocument): LspDocumentCapture | undefined => {
+        const capture = (document: LspDocument, method?: Parameters<LspSession["synchronized"]>[1]): LspDocumentCapture | undefined => {
             const entry = handles.get(document); if (!scope.active || !entry || !this.live(entry)) return;
-            const value = this.session.synchronized(unwrap(document)); if (!value) return; const generation = scope.generation;
+            const value = this.session.synchronized(unwrap(document), method); if (!value) return; const generation = scope.generation;
             return Object.freeze({ ...value, isBindingCurrent: () => current(generation) && handles.has(document) && this.bindingCurrent(entry) && (value.isBindingCurrent?.() ?? value.isCurrent()),
                 isCurrent: () => current(generation) && handles.has(document) && this.live(entry) && value.isCurrent() });
         };
@@ -356,7 +356,7 @@ export class LspWorkspace {
         const reserve = (): CommandIntent => {
             writable(); const state = this.session.getSnapshot();
             if (state.phase !== "ready" || this.command || this.quarantinedEpoch === state.epoch) throw staleRequest("Provider command lane requires an available captured intent or fresh connection.");
-            const intent: CommandIntent = { scope, epoch: state.epoch, generation: scope.generation, registrationGeneration: state.registrationGeneration, sent: false, cancelled: false, listeners: new Set() };
+            const intent: CommandIntent = { scope, epoch: state.epoch, generation: scope.generation, registrationGeneration: state.registrationVersion("workspace/executeCommand"), sent: false, cancelled: false, listeners: new Set() };
             this.command = intent; this.store.set(this.snapshotState(), this.changed); this.queueDelivery(); return intent;
         };
         const scopedHandler = (handler: Handler): Handler => (value, context) => new Promise((resolve, reject) => {
@@ -403,10 +403,10 @@ export class LspWorkspace {
                 catch (error) { for (const document of added) document.dispose(); throw error; }
                 for (const [id, document] of [...documents]) if (!ids.has(id as DocumentId)) document.dispose(); return new Map(documents);
             },
-            captureProject: () => { writable(); return new Map([...documents.values()].map(document => { const value = capture(document); if (!value) throw stale(); return [value.document.uri, value] as const; })); },
-            captureBinding: document => {
+            captureProject: method => { writable(); return new Map([...documents.values()].map(document => { const value = capture(document, method); if (!value) throw stale(); return [value.document.uri, value] as const; })); },
+            captureBinding: (document, method) => {
                 const entry = handles.get(document); if (!scope.active || !entry?.active || !this.live(entry)) return;
-                const value = this.session.synchronized(entry.binding); if (!value) return;
+                const value = this.session.synchronized(entry.binding, method); if (!value) return;
                 return Object.freeze({ document: value.document, getSnapshot: () => {
                     if (!scope.active || this.disposed || handles.get(document) !== entry || !entry.active || !value.isBindingCurrent?.()) return;
                     const current = this.workspace.observeDocument(entry.id).getSnapshot();

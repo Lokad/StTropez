@@ -25,7 +25,7 @@ export function createLspSignatureClient(provider: LspWorkspace): LspSignatureCl
     // never the old buffer/capture, and compare them after the next request has synchronized.
     let previous: Readonly<{ document: string; resource: string; uri: string; language: string; epoch: number; generation: number; wire: JsonValue }> | undefined;
     const stop = lane.subscribe(() => { const state = lane.getSnapshot();
-        if (state.phase !== "ready" || previous?.epoch !== state.epoch || previous.generation !== state.registrationGeneration) previous = undefined;
+        if (state.phase !== "ready" || previous?.epoch !== state.epoch || previous.generation !== state.registrationVersion("textDocument/signatureHelp")) previous = undefined;
     });
     return Object.freeze({ ...lspFeatureHandle(lane, {
         cancel: () => { previous = undefined; lane.cancel(); }, dispose: () => { previous = undefined; stop(); lane.dispose(); } }),

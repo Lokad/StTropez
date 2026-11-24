@@ -70,7 +70,7 @@ export function createLspCompletionClient(provider: LspWorkspace): LspCompletion
             cancelPending();
             const call = client.request(options, "textDocument/completion", capture => ({ position: capture.index.at(offset), context }), value => value.decode(() => {
                 received++;
-                const binding = client.scope.captureBinding(value.target), local = binding?.getSnapshot();
+                const binding = client.scope.captureBinding(value.target, "textDocument/completion"), local = binding?.getSnapshot();
                 if (!binding || !local || !same(local, document)) throw stale();
                 const configuration = client.options(document, "textDocument/completion"),
                     commitCharacters = configuration.flatMap(option => Array.isArray(option.allCommitCharacters) ? option.allCommitCharacters.filter((value): value is string => typeof value === "string") : []);

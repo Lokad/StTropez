@@ -73,7 +73,7 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
     function providerChanged(j: Job) {
         const connection = provider.getSnapshot();
         return j.connection && (connection.phase !== "ready" || connection.epoch !== j.connection.epoch
-            || connection.registrationGeneration !== j.connection.registrationGeneration);
+            || connection.registrationVersion("textDocument/documentLink") !== j.connection.registrationVersion("textDocument/documentLink"));
     }
     function fail(j: Job, error: unknown) {
         if (job !== j) return;
