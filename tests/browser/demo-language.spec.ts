@@ -34,7 +34,9 @@ test("late occurrences cannot follow a changed caret or disposed file view", asy
             if (requests.has(value.id)) replies.push(() => client.send(message)); else client.send(message);
         });
     });
-    await page.goto("/"); const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    await page.goto("/");
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+a"); await page.keyboard.insertText("let value = 1;\nvalue += 1;\n");
     await source.press("Control+Home"); await source.press("Control+ArrowRight"); await source.press("ArrowRight");
     await expect.poll(() => replies.length).toBeGreaterThan(0);
