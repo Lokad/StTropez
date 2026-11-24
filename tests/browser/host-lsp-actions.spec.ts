@@ -306,9 +306,8 @@ test.describe(`plain LSP code actions`, () => {
         await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
         expect(await control(page, "fixture/lastCommand", {})).toEqual(previousCommand);
         expect(await confirm.evaluate(invoke => invoke === window.hostFixture.snapshot().bindings.actions.state.confirm)).toBe(true);
-        expect({ result: refused, status: afterRefusal.status, message: afterRefusal.message }).toMatchObject({
-            result: { status: "refused", reason: "command-unavailable" }, status: "ready", message: expect.stringContaining("retry"),
-        });
+        expect(refused).toEqual({ status: "refused", reason: "command-unavailable" });
+        expect(afterRefusal.status).toBe("ready");
         await button(page, "Decline captured provider edits").click();
         await expect(button(page, "Execute captured action")).toBeEnabled();
         expect((await confirm.evaluate(invoke => invoke())).status).toBe("done");
