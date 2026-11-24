@@ -1,4 +1,5 @@
 import { ready, test, expect } from "./fixtures.ts";
+import { typeAfterClick } from "../helpers/editor-assertions.ts";
 
 test.beforeEach(async ({ page }) => {  await page.goto("/comparison/"); await ready(page); });
 
@@ -25,8 +26,8 @@ test("mouse review controls preserve the typing target and keyboard activation r
     await unchanged.click({ position: { x: 6, y: 8 } }); await expect(restore).toBeDisabled();
     const box = (await restore.boundingBox())!;
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); await expect(working).toBeFocused();
-    await next.click(); await expect(working).toBeFocused();
-    await page.keyboard.type("Q"); await expect(sections.last().locator('.st-viewport-row[data-line="2"]')).toContainText("Q");
+    await typeAfterClick(next, working, "Q");
+    await expect(sections.last().locator('.st-viewport-row[data-line="2"]')).toContainText("Q");
     await working.press("Control+z"); await ready(page);
     await sections.first().locator('.st-viewport-row[data-line="1"]').click();
     await previous.click(); await expect(reference).toBeFocused();

@@ -1,4 +1,5 @@
 import { ready, test, expect } from "./fixtures.ts";
+import { expectCaretOnRow } from "../helpers/editor-assertions.ts";
 import type { Locator, Page } from "@playwright/test";
 
 const source = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
@@ -26,7 +27,7 @@ async function caret(input: Locator, offset: number, secondary = false): Promise
         return { hidden: node.hidden, left: box.left, top: box.top, height: box.height, anchorHeight: anchor.height };
     }, secondary);
     expect(actual.hidden).toBe(false); expect(Math.abs(actual.left - expected.left)).toBeLessThan(1.1);
-    expect(Math.abs(actual.top - expected.rowTop)).toBeLessThan(1.1); expect(Math.abs(actual.height - expected.rowHeight)).toBeLessThan(1.1);
+    expectCaretOnRow(actual, { top: expected.rowTop, height: expected.rowHeight });
     if (!secondary) expect(Math.abs(actual.anchorHeight - expected.height)).toBeLessThan(1.1);
 }
 

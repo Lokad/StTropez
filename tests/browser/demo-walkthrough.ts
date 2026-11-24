@@ -2,6 +2,7 @@ import { expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 import { latch } from "../helpers/latch.ts";
 import { paintedCharacter } from "../helpers/painted-character.ts";
+import { expectAlignedEditorRows, typeAfterClick } from "../helpers/editor-assertions.ts";
 
 export async function runDemoActions(page: Page, url = "/") {
     await page.goto(url);
@@ -370,12 +371,11 @@ export async function runDemoFolding(page: Page, url = "/") {
     await page.locator("#fold-group").selectOption("regions"); await page.locator("#fold-group-collapse").click();
     await expect(page.locator('#editor .st-fold-button[aria-expanded="false"]')).toHaveCount(1);
     await expect(page.locator('#editor .st-viewport-row[data-line="8"]')).toHaveCount(0);
-    expect((await page.locator("#editor .st-line-numbers span").allTextContents()).map(Number).sort((a, b) => a - b))
-        .toEqual(await page.locator("#editor .st-viewport-row").evaluateAll(rows => rows.map(row => Number((row as HTMLElement).dataset.line) + 1).sort((a, b) => a - b)));
+    await expectAlignedEditorRows(page.locator("#editor"));
     await page.locator("#find-toggle").click(); await page.locator("#find-query").fill("validate");
-    await expect(page.locator("#find-status")).toHaveText("1 of 1"); await page.locator("#find-next").click(); await page.locator("#find-close").click();
+    await expect(page.locator("#find-status")).toHaveText("1 of 1"); await page.locator("#find-next").click();
     await expect(page.locator('#editor .st-viewport-row[data-line="8"]')).toContainText("validate");
-    await page.keyboard.insertText("checked");
+    await typeAfterClick(page.locator("#find-close"), outline, "checked");
     await expect.poll(() => outline.inputValue()).toContain("checked");
     await outline.press("Control+z"); await expect.poll(() => outline.inputValue()).toContain("validate");
     await menu("fold-group-collapse");

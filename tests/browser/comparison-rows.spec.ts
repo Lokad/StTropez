@@ -1,4 +1,5 @@
 import { ready, test, expect } from "./fixtures.ts";
+import { expectAlignedEditorRows } from "../helpers/editor-assertions.ts";
 import type { Page } from "@playwright/test";
 import { hostTextEquals } from "../../scripts/host-scene.mjs";
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
@@ -29,18 +30,7 @@ test(`plain aligned rows preserve painted correspondence, complete sets, navigat
     const tops = await p.locator('.st-comparison-panes .st-viewport-row').filter({ hasText: "row 000400:" }).evaluateAll(nodes => nodes.map(n => n.getBoundingClientRect().top)); expect(Math.abs(tops[0]! - tops[1]!)).toBeLessThan(1);
     await scroll(p, 31); expect(await panes(p).first().locator(".st-comparison-padding").count()).toBeGreaterThan(0);
     expect(await panes(p).first().locator(".st-comparison-padding").evaluateAll(nodes => nodes.every(n => n.getAttribute("aria-hidden") === "true" && n.textContent === ""))).toBe(true);
-    for (const pane of await panes(p).all()) {
-        const alignedNumbers = await pane.evaluate(node => {
-            const rows = new Map([...node.querySelectorAll<HTMLElement>(".st-viewport-row")]
-                .map(row => [Number(row.dataset.line) + 1, row.getBoundingClientRect().top]));
-            const numbers = [...node.querySelectorAll(".st-line-numbers span")];
-            return rows.size === numbers.length && numbers.every(number => {
-                const top = rows.get(Number(number.textContent));
-                return top !== undefined && Math.abs(top - number.getBoundingClientRect().top) < 1;
-            });
-        });
-        expect(alignedNumbers).toBe(true);
-    }
+    for (const pane of await panes(p).all()) await expectAlignedEditorRows(pane);
     // Arrows cross a working-side padding block without creating a phantom caret.
     const from = working.indexOf("row 000079") + 4, next = working.indexOf("row 000087") + 4; await sourceSet(p, [{ anchor: from, head: from }]);
     await input(p).press("ArrowDown"); await waitForReview(p); expect((await snapshot(p)).bindings.comparison!.selection.head).toBe(next);

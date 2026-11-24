@@ -1,4 +1,5 @@
 import { expect, ready, test } from "./fixtures.ts";
+import { expectCaretOnRow } from "../helpers/editor-assertions.ts";
 import type { Page } from "@playwright/test";
 
 async function textPoint(page: Page, offset: number) {
@@ -84,6 +85,11 @@ test("selecting an empty line paints its ending and active caret, including in f
     expect(marker.width).toBeGreaterThan(2); expect(Math.abs(marker.height - marker.row)).toBeLessThan(1);
     await input.press("Control+Home"); await input.press("Shift+End"); await ready(page); await expect(breaks).toHaveCount(0);
     await input.press("Control+a"); await ready(page); await expect(breaks).toHaveCount(2); await expect(caret).toBeVisible();
+    const bounds = await root.evaluate(editor => {
+        const box = (selector: string) => editor.querySelector(selector)!.getBoundingClientRect().toJSON();
+        return { caret: box(".st-input-caret"), row: box('.st-viewport-row[data-line="2"]') };
+    });
+    expectCaretOnRow(bounds.caret, bounds.row);
     const heights = await root.locator(".st-viewport-selected").first().evaluate(span => ({
         selection: span.getBoundingClientRect().height, row: span.closest(".st-viewport-row")!.getBoundingClientRect().height
     }));
