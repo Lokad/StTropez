@@ -10,8 +10,10 @@ import type { TextEditor } from "./text-editor.ts";
 import { mountSignature, type SignatureController, type SignatureControllerOptions } from "./signature-controller.ts";
 import { mountOccurrences, type LspHighlightController } from "./lsp-highlights.ts";
 import { mountCodeActions, type CodeActionController, type CodeActionControllerOptions } from "./code-action-controller.ts";
+import { mountLanguageCommands, type LanguageCommands, type LanguageCommandOptions } from "./language-command.ts";
 
 type Options = {
+    commands?: LanguageCommandOptions;
     codeActions?: CodeActionControllerOptions;
     completion?: CompletionControllerOptions;
     diagnostics?: DiagnosticControllerOptions;
@@ -22,6 +24,7 @@ type Options = {
     links?: DocumentLinkControllerOptions;
 };
 type Features = {
+    commands: LanguageCommands;
     codeActions: CodeActionController;
     completion: CompletionController;
     diagnostics: DiagnosticController;
@@ -45,6 +48,7 @@ export function attachEditorLanguage<O extends Options>(editor: TextEditor, prov
         editor.signal.removeEventListener("abort", dispose);
     }
     try {
+        if (options.commands) features.commands = mountLanguageCommands(editor, owner, options.commands);
         if (options.codeActions) features.codeActions = mountCodeActions(editor, owner, options.codeActions);
         if (options.diagnostics) features.diagnostics = mountDiagnostic(editor, owner, options.diagnostics);
         if (options.hover) {

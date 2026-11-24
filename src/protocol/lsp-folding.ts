@@ -9,7 +9,7 @@ import type { DiscoveredFold } from "../core/fold-discovery.ts";
 
 /** Complete-line LSP folding; malformed shapes fail the batch, invalid line ranges are ignored. */
 export function decodeLspFoldingRanges(value: unknown, capture: LspDocumentCapture): readonly DiscoveredFold[] {
-    if (!capture.isCurrent()) throw staleRequest("LSP folding capture expired.");
+    if (!capture.isCurrent()) throw staleRequest();
     if (value === null) return emptyList;
     if (!Array.isArray(value)) throw new ProtocolDecodeError("Expected LSP folding ranges.");
     const buffer = capture.document.buffer, index = capture.index, result: DiscoveredFold[] = [];

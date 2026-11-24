@@ -11,7 +11,7 @@ export type LspCodeAction = Readonly<{ title: string; kind: string | null; prefe
     edit: LspWorkspaceEdit | null; command: LspCommand | null; resolve: JsonValue | null; diagnostics?: readonly LspDiagnostic[] }>;
 export type LspCodeActions = readonly LspCodeAction[];
 function invalid(): never { throw new ProtocolDecodeError("Malformed or unsupported LSP code action."); }
-const current = (capture: LspDocumentCapture) => { if (!capture.isCurrent()) throw staleRequest("LSP code-action capture expired."); };
+const current = (capture: LspDocumentCapture) => { if (!capture.isCurrent()) throw staleRequest(); };
 export function lspCodeActionUris(value: unknown): readonly string[] {
     if (value === null) return []; if (!Array.isArray(value)) invalid();
     return value.flatMap(item => { if (!isRecord(item)) invalid(); return item.edit === undefined ? [] : lspWorkspaceEditUris(item.edit); });
@@ -39,7 +39,7 @@ export function decodeLspCodeActions(value: unknown, origin: LspDocumentCapture,
         return Object.freeze({ title, kind, preferred: item.isPreferred === true, disabled, edit, command: cmd, resolve: deferred,
             ...(diagnostics === undefined ? {} : { diagnostics }) });
     });
-    current(origin); for (const action of actions) if (action.edit && !action.edit.isCurrent()) throw staleRequest("LSP action target capture expired.");
+    current(origin); for (const action of actions) if (action.edit && !action.edit.isCurrent()) throw staleRequest();
     return Object.freeze(actions);
 }
 /** Only the advertised edit property may be added by codeAction/resolve. Opaque data is preserved. */

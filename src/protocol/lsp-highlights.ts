@@ -13,7 +13,7 @@ export type LspDocumentHighlights = Readonly<{ items: readonly LspDocumentHighli
 
 /** Complete response validation and an immutable interval index, including overlapping ranges. */
 export function decodeLspDocumentHighlights(value: unknown, capture: LspDocumentCapture): LspDocumentHighlights {
-    if (!capture.isCurrent()) throw staleRequest("LSP highlight capture expired.");
+    if (!capture.isCurrent()) throw staleRequest();
     if (value !== null && !Array.isArray(value)) throw new ProtocolDecodeError("Expected LSP document highlights.");
     const items = Object.freeze((value ?? []).map((item: unknown): LspDocumentHighlight => {
         if (!item || typeof item !== "object" || Array.isArray(item) || !("range" in item)) throw new ProtocolDecodeError("Malformed LSP document highlight.");

@@ -17,12 +17,12 @@ export class ProtocolDecodeError extends Error {
 export const rpcCodes = Object.freeze({ parseError: -32700, invalidRequest: -32600, methodNotFound: -32601,
     invalidParams: -32602, internalError: -32603, serverNotInitialized: -32002, pendingLimit: -32000,
     timeout: -32098, closed: -32097, requestCancelled: -32800, contentModified: -32801 });
-export const cancelledRequest = (message: string) => new RpcError(rpcCodes.requestCancelled, message);
-export const staleRequest = (message: string) => new RpcError(rpcCodes.contentModified, message);
+export const cancelledRequest = (message = "Request cancelled.") => new RpcError(rpcCodes.requestCancelled, message);
+export const staleRequest = (message = "The captured request expired.") => new RpcError(rpcCodes.contentModified, message);
 export function isStaleRequest(error: unknown): boolean {
     return error instanceof RpcError && (error.code === rpcCodes.contentModified || error.code === rpcCodes.requestCancelled);
 }
-export const closedConnection = (message: string) => new RpcError(rpcCodes.closed, message);
+export const closedConnection = (message = "RPC connection is closed.") => new RpcError(rpcCodes.closed, message);
 export const wireLimits = Object.freeze({ timeoutMs: 15000, pendingRequests: 64, messageUnits: 4 * 1024 * 1024,
     jsonDepth: 64, snapshotNodes: 100000, batchMessages: 128, scopes: 128, registrations: 128,
     commandsPerRegistration: 128, synchronizationWaits: 128, handlers: 128, commandArgumentUnits: 8192,

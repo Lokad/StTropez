@@ -14,17 +14,18 @@ export function createLspProjectClient(options: LspProjectOptions, onChange?: ()
     const session = options.provider.createScope();
     const runner = createLspCommandRunner(session, changed);
     return Object.freeze({
+        reviewCommand: options.reviewCommand,
         run: async (input: ProjectCommand, scope: LspCommandScope) => {
+            if (input.kind === "review") throw new Error("Run reviews from their originating editor.");
             if (disposed || busy) throw new Error("Workspace provider is unavailable."); busy = true;
             try {
                 await session.ensureConnected();
                 const prepare = options.beforeRequest;
                 await runner.sync(scope, prepare && (connection => prepare(connection, input)));
                 if (input.kind === "register" || input.kind === "unregister") { const registered = session.commandNames().includes(options.reviewCommand); return Object.freeze({ registered, applied: registered === (input.kind === "register"), reason: registered ? "Provider review command registered for this connection." : "Provider review command is not registered." }); }
-                const receipt = await runner.run(input.kind === "review" ? options.reviewCommand : options.statusCommand, [], scope, input.kind === "review");
-                const result = input.kind === "status" ? { applied: true, reason: "Provider workspace status received." } : receipt.decision ?? { applied: false, failureReason: "Provider returned without requesting an edit decision." };
-                return Object.freeze({ registered: session.commandNames().includes(options.reviewCommand), applied: result.applied,
-                    reason: "reason" in result ? result.reason : result.applied ? "Captured provider edit decision acknowledged." : result.failureReason ?? "Provider edits declined." });
+                await runner.run(options.statusCommand, [], scope, false);
+                return { registered: session.commandNames().includes(options.reviewCommand), applied: true,
+                    reason: "Provider workspace status received." };
             } finally { busy = false; changed(); }
         },
         isCurrent: () => !disposed && runner.isCurrent(),

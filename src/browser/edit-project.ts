@@ -9,7 +9,7 @@ export function retainEditProject(editor: TextEditor, available: (id: DocumentId
     const { workspace, view } = editor, project = retainDocuments(workspace, available, expire, view.documentId);
     function includeEdit(edit: LspWorkspaceEdit) {
         for (const change of edit.documents) {
-            if (!change.target.isCurrent()) throw staleRequest("A resolved edit target changed.");
+            if (!change.target.isCurrent()) throw staleRequest();
             project.include(change.target.document);
         }
     }

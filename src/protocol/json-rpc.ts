@@ -73,7 +73,7 @@ export class JsonRpcConnection {
     }
     request(method: string, params?: unknown, timeoutMs = this.timeoutMs): RpcCall<JsonValue> {
         methodName(method);
-        if (this.disposed) throw closedConnection("RPC connection is closed.");
+        if (this.disposed) throw closedConnection();
         if (this.pending.size >= this.maxPending) throw new RpcError(rpcCodes.pendingLimit, "Too many pending RPC requests.");
         if (!isPositiveInteger(timeoutMs)) throw new RangeError("Invalid RPC deadline.");
         const id = ++this.serial, message = { jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) };
@@ -92,10 +92,10 @@ export class JsonRpcConnection {
         try { entry.stop = this.options.schedule(timeoutMs, () => cancel(new RpcError(rpcCodes.timeout, "RPC request timed out."))); }
         catch (error) { this.pending.delete(id); reject(error instanceof Error ? error : new Error("RPC scheduling failed.")); }
         if (this.pending.get(id) === entry) this.send(encoded); else this.release(entry.stop);
-        return Object.freeze({ id, result, cancel: () => cancel(cancelledRequest("Request cancelled.")) });
+        return Object.freeze({ id, result, cancel: () => cancel(cancelledRequest()) });
     }
     notify(method: string, params?: unknown): void {
-        methodName(method); if (this.disposed) throw closedConnection("RPC connection is closed.");
+        methodName(method); if (this.disposed) throw closedConnection();
         if (params !== undefined && !isRecord(params) && !Array.isArray(params)) throw new TypeError("RPC parameters must be structured.");
         const message = { jsonrpc: "2.0", method, ...(params === undefined ? {} : { params }) };
         if (!this.send(this.encode(message))) throw closedConnection("RPC transport is closed.");
@@ -184,9 +184,9 @@ export class JsonRpcConnection {
             for (const listener of [...listeners]) { try { listener(); } catch (error) { this.report(error instanceof Error ? error : new Error("RPC cancellation failed.")); } } listeners.clear(); } };
         this.incoming.set(id, entry);
         return Promise.resolve().then(() => {
-            if (this.disposed || context.cancelled) throw cancelledRequest("Request cancelled."); return handler(value.params, context);
+            if (this.disposed || context.cancelled) throw cancelledRequest(); return handler(value.params, context);
         }).then(result => {
-            if (context.cancelled) throw cancelledRequest("Request cancelled.");
+            if (context.cancelled) throw cancelledRequest();
             const reply = { jsonrpc: "2.0", id, result: result === undefined ? null : result }; this.encode(reply); return reply;
         }).catch(error => context.cancelled ? failure(id, rpcCodes.requestCancelled, "Request cancelled.")
             : error instanceof RpcError ? failure(id, error.code, error.message, error.data) : failure(id, rpcCodes.internalError, "Internal error"))
@@ -194,7 +194,7 @@ export class JsonRpcConnection {
     }
     snapshot() { return Object.freeze({ disposed: this.disposed, pendingRequests: this.pending.size, incomingRequests: this.incoming.size,
         requestHandlers: this.requests.size, notificationHandlers: [...this.notifications.values()].reduce((n, handlers) => n + handlers.size, 0) }); }
-    dispose(reason: Error = closedConnection("RPC connection is closed.")): void {
+    dispose(reason: Error = closedConnection()): void {
         if (this.disposed) return; this.disposed = true; this.release(this.stopListening);
         for (const entry of this.pending.values()) { this.release(entry.stop); entry.reject(reason); } this.pending.clear();
         for (const entry of this.incoming.values()) entry.cancel(); this.incoming.clear(); this.requests.clear(); this.notifications.clear();

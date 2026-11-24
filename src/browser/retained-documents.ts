@@ -11,9 +11,9 @@ export function retainDocuments(workspace: Workspace, available: (id: DocumentId
         const existing = documents.get(id);
         let live: DocumentSnapshot;
         try { live = existing ?? workspace.document(id); }
-        catch { throw staleRequest("The captured document was released."); }
+        catch { throw staleRequest(); }
         if (live.resourceId !== snapshot.resourceId || live.revision !== snapshot.revision
-            || live.buffer !== snapshot.buffer || !available(id)) throw staleRequest("The captured document changed.");
+            || live.buffer !== snapshot.buffer || !available(id)) throw staleRequest();
         if (existing) return;
         const doc = "id" in snapshot ? snapshot : live;
         documents.set(doc.id, doc);

@@ -71,7 +71,7 @@ export function linkClient(provider: LspWorkspace | LspDocumentOwner,
     return Object.freeze({ ...lspFeatureHandle(lane),
         run: (request: LspDocumentRequest) => lane.request(request, documentLinkMethod, () => {
             if (!watched) return {};
-            if (!watched.isCurrent()) throw staleRequest("The painted document link changed.");
+            if (!watched.isCurrent()) throw staleRequest();
             return watched.item.resolve as Record<string, JsonValue>;
         }, result => {
             const { capture, isCurrent } = result;

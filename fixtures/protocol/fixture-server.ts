@@ -275,7 +275,10 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
         peer.onRequest("fixture/lastCommand", () => lastCommand);
         peer.onRequest("workspace/executeCommand", (params: { command: string; arguments?: unknown[]; _fixture?: unknown }, token) => {
             if (!["fixture.status", "fixture.review", "fixture.unadvertised"].includes(params?.command)) throw new ResponseError(-32602, "Unknown fixture command");
-            const config = requestPolicy(params._fixture, ["malformed", "failure", "ack"]), project = [...documents.values()], style = projectStyle;
+            const argument = params.arguments?.[0];
+            const policy = params.command === "fixture.review" && argument && typeof argument === "object" && "reviewPolicy" in argument
+                ? argument.reviewPolicy : params._fixture;
+            const config = requestPolicy(policy, ["malformed", "failure", "ack"]), project = [...documents.values()], style = projectStyle;
             lastCommand = { command: params.command, arguments: params.arguments ?? [], documents: project.map(doc => ({ uri: doc.uri, version: doc.version, prefix: doc.getText().slice(0, 64) })) };
             return deferred(config.delay, token, async () => {
                 if (config.fault === "failure") throw new ResponseError(-32001, "Fixture provider command unavailable");

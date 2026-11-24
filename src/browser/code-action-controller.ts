@@ -3,15 +3,14 @@ import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
-import type { DocumentId, DocumentSnapshot, TabTarget } from "../core/workspace.ts";
-import { applyLspWorkspaceEdit, type LspActionResult, previewLspWorkspaceEdit } from "../protocol/index.ts";
+import type { DocumentId } from "../core/workspace.ts";
+import { type LspActionResult, previewLspWorkspaceEdit } from "../protocol/index.ts";
 import { actionClient } from "../protocol/lsp-actions.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
-import { isStaleRequest, staleRequest } from "../protocol/wire.ts";
-import type { LspCodeAction, LspApplyEdit, LspCommandPolicy, LspRequestContext, LspPrepare, LspWorkspaceEdit, LspWorkspaceEditPreview } from "../protocol/index.ts";
-import { captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
-import type { CapturedViewRequest } from "./captured-view.ts";
-import { retainEditProject, writableEdit } from "./edit-project.ts";
+import { isStaleRequest } from "../protocol/wire.ts";
+import type { LspCodeAction, LspCommandPolicy, LspPrepare, LspWorkspaceEditPreview } from "../protocol/index.ts";
+import { captureEditCommand, commandTransaction, type CapturedCommand, type ChangedDocument, type LanguageCommandOptions } from "./language-command.ts";
+import { writableEdit } from "./edit-project.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 export type CodeActionChoice = Readonly<{
@@ -22,22 +21,19 @@ export type CodeActionPreview = Readonly<{
     index: number; title: string; command: string | null; disabled: string | null;
     canApply: boolean; readPage: (page?: number) => LspWorkspaceEditPreview | undefined; apply: () => Promise<Outcome<readonly ChangedDocument[]>>;
 }>;
-export type ChangedDocument = Readonly<{ document: DocumentId; title: string }>;
 export type CodeActionSnapshot = Readonly<{
     status: "idle" | "pending" | "ready" | "resolving" | "executing" | "expired" | "failed" | "applied" | "executed";
     message: string; choices: readonly CodeActionChoice[]; choice: number | null;
     preview: CodeActionPreview | null; changes: readonly ChangedDocument[];
 }>;
-export type CodeActionControllerOptions = Readonly<{
-    documents?: () => readonly DocumentSnapshot[]; canCapture?: (id: DocumentId) => boolean;
+export type CodeActionControllerOptions = LanguageCommandOptions & Readonly<{
     prepareRequest?: LspPrepare; prepareResolve?: LspPrepare; commandPolicy?: LspCommandPolicy;
     canRunCommand?: () => boolean;
-    reviewCommandEdit?: (request: LspApplyEdit, context: LspRequestContext) => boolean | Promise<boolean>;
     onError?: (error: unknown) => void;
 }>;
 
 type Job = {
-    capture: CapturedViewRequest<TabTarget | undefined>; project: ReturnType<typeof retainEditProject>;
+    capture: CapturedCommand;
     timer?: number; invalid: boolean; batch?: LspActionResult; selection?: LspCodeAction;
     failure?: Outcome<never>;
     changes?: Map<DocumentId, ChangedDocument>;
@@ -53,27 +49,20 @@ export type CodeActionController = Observable<CodeActionSnapshot> & Readonly<{
 
 /** One editor owns the request, lazy resolution and confirmation of its displayed preview. */
 export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, options: CodeActionControllerOptions): CodeActionController {
-    const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
+    const { workspace, view } = editor, win = editor.element.ownerDocument.defaultView!;
     const scope = workspace.createNotificationScope(options.onError), cell = new Store(empty, scope);
     const client = actionClient(owner, options), events = new AbortController();
     let job: Job | undefined, disposed = false;
-    const available = (id: DocumentId) => {
-        const activity = editor.activity();
-        return !disposed && editorReadyForRequest(editor, activity) && !activity.pendingGrapheme
-            && !activity.pendingWord && (options.canCapture?.(id) ?? true);
-    };
     const publish = (state: CodeActionSnapshot) => scope.publish(cell, Object.freeze(state));
     function current(j: Job): boolean {
-        if (job !== j || j.invalid || !j.capture.isCurrent() || (j.batch && !(j.changes ? j.batch.commandCurrent() : j.batch.isCurrent()))) return false;
-        if (options.canCapture) for (const id of j.project.documents.keys()) if (!options.canCapture(id)) return false;
-        return true;
+        return job === j && !j.invalid && j.capture.current()
+            && (!j.batch || (j.changes ? j.batch.commandCurrent() : j.batch.isCurrent()));
     }
     const release = () => {
         const previous = job; job = undefined;
         if (!previous) return;
         win.clearTimeout(previous.timer);
-        previous.project.dispose();
-        previous.capture.cancel();
+        previous.capture.dispose();
         client.cancel();
     };
     function finish(status: CodeActionSnapshot["status"], message: string) {
@@ -90,11 +79,6 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
             if (job === j) finish("expired", afterEdits("The captured source or provider changed.", j.changes?.size));
         });
     };
-    const watch = (j: Job) => {
-        const capture = j.capture;
-        capture.signal.addEventListener("abort", () => { if (j.capture === capture) expire(j); }, { once: true });
-    };
-    const captureView = () => captureViewRequest(workspace, tab, view, { available: () => available(view.documentId) });
     const reportFailure = (error: unknown) => {
         publish({ ...empty, status: "failed", message: error instanceof Error ? error.message : String(error) });
         return failed(error);
@@ -102,7 +86,7 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
     const requestFailed = (j: Job, error: unknown): Outcome<never> => {
         if (j.failure) return j.failure;
         try {
-            if (job !== j || j.invalid || isStaleRequest(error) || !j.capture.isCurrent()) {
+            if (job !== j || j.invalid || isStaleRequest(error) || !j.capture.current()) {
                 expire(j);
                 return stale;
             }
@@ -127,29 +111,8 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
             publish({ ...cell.get(), message: "Another command is active. You can retry this preview." });
             return refused("command-unavailable");
         }
-        const changed = j.changes = new Map<DocumentId, ChangedDocument>();
-        const write = (edit: LspWorkspaceEdit) => {
-            if (!current(j) || !writableEdit(editor, edit)) throw staleRequest("Command edit expired.");
-            // Update only committed participants before workspace listeners inspect the new revisions.
-            scope.batch(() => {
-                const documents = applyLspWorkspaceEdit(workspace, edit, {
-                    origin: "host", requiredOrigins: ["human"], source: "code-action", historyKind: "refactor", view
-                });
-                for (const doc of documents) {
-                    j.project.documents.set(doc.id, doc);
-                    changed.set(doc.id, Object.freeze({ document: doc.id, title: doc.title }));
-                }
-                if (action.command && documents.some(doc => doc.id === view.documentId)) {
-                    const previous = j.capture;
-                    const next = captureView();
-                    if (next) {
-                        j.capture = next;
-                        watch(j);
-                        previous.cancel();
-                    } else expire(j);
-                }
-            });
-        };
+        const transaction = commandTransaction(editor, j.capture, () => current(j), options.reviewCommandEdit, !!action.command, scope, "code-action");
+        const changed = j.changes = transaction.changes;
         let message = "Applied the reviewed edits.";
         let failure: Outcome<never> | undefined;
         try {
@@ -157,21 +120,8 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
                 j.timer = win.setTimeout(() => expire(j), 120000);
                 publish({ ...empty, status: "executing", message: "Executing the confirmed action." });
                 const receipt = await batch.execute(action, {
-                    isCurrent: () => current(j),
-                    snapshots: () => [...j.project.documents.values()],
-                    prepare: () => { if (action.edit) write(action.edit); },
-                    review: async (request, context) => {
-                        j.project.includeEdit(request.edit);
-                        if (!writableEdit(editor, request.edit)) return { applied: false, failureReason: "not-writable" };
-                        let stop!: () => void;
-                        const cancelled = new Promise<boolean>(resolve => { stop = context.onCancel(() => resolve(false)); });
-                        try {
-                            const decision = options.reviewCommandEdit!(request, context);
-                            if (!await Promise.race([decision, cancelled]) || !context.isCurrent()) return { applied: false };
-                        } finally { stop(); }
-                        write(request.edit);
-                        return { applied: true };
-                    }
+                    ...transaction.scope,
+                    prepare: () => { if (action.edit) transaction.write(action.edit); }
                 });
                 if (!current(j)) {
                     expire(j);
@@ -181,7 +131,7 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
                     message = receipt.decision.failureReason ?? "Provider edits declined.";
                     failure = refused(message);
                 } else message = typeof receipt.value === "string" ? receipt.value : "Command completed.";
-            } else if (action.edit) write(action.edit);
+            } else if (action.edit) transaction.write(action.edit);
         } catch (error) {
             if (job !== j || j.invalid) return stale;
             message = error instanceof Error ? error.message : String(error);
@@ -201,7 +151,7 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
                 const j = job;
                 if (cell.get().preview !== preview || !j || !current(j)) return;
                 const edit = j.selection?.edit;
-                return edit ? previewLspWorkspaceEdit(edit, id => j.project.documents.get(id as DocumentId)!.title, page)
+                return edit ? previewLspWorkspaceEdit(edit, id => j.capture.project.documents.get(id as DocumentId)!.title, page)
                     : Object.freeze({ page, count: 0, notes: emptyList });
             },
             apply: () => apply(preview).catch(failed) });
@@ -218,7 +168,7 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
     function choose(source: AbortSignal, index: number, applyWhen?: (action: LspCodeAction) => boolean): void {
         scope.assertWritable();
         const j = job, batch = j?.batch, action = batch?.actions[index];
-        if (!j || j.capture.signal !== source || !batch || !action || !current(j)) return;
+        if (!j || j.capture.first.signal !== source || !batch || !action || !current(j)) return;
         const status = cell.get().status;
         if (status !== "ready" && status !== "resolving") return;
         if (status === "resolving" && j.resolving?.index === index) { j.resolving.applyWhen = applyWhen; return; }
@@ -234,7 +184,7 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
         void batch.resolve(action, options.prepareResolve).then(resolved => {
             if (job !== j || j.resolving !== choice) return;
             if (!current(j)) { expire(j); return; }
-            win.clearTimeout(j.timer); if (resolved.edit) j.project.includeEdit(resolved.edit);
+            win.clearTimeout(j.timer); if (resolved.edit) j.capture.project.includeEdit(resolved.edit);
             present(j, index, resolved, choice.applyWhen);
             if (j.resolving === choice) delete j.resolving;
         }).catch(error => { if (job === j && j.resolving === choice) requestFailed(j, error); });
@@ -248,21 +198,19 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
         if (disposed) return stale;
         let pending: Job | undefined;
         try {
-            const capture = captureView();
+            const capture = captureEditCommand(editor, options, () => { if (pending) expire(pending); });
             if (!capture) {
                 publish({ ...empty, status: "expired", message: "Finish the current editor operation before requesting actions." });
                 return refused("unavailable-view");
             }
-            const source = capture.signal;
-            const j: Job = { capture, project: retainEditProject(editor, available, () => expire(j)), invalid: false };
+            const source = capture.first.signal;
+            const j: Job = { capture, invalid: false };
             job = pending = j;
-            j.project.include(capture.document);
-            for (const doc of options.documents?.() ?? []) j.project.include(doc);
-            watch(j);
-            const range = capture.selectionSet.ranges[capture.selectionSet.primary]!;
+            const { document, selectionSet } = capture.first;
+            const range = selectionSet.ranges[selectionSet.primary]!;
             timeout(j);
             publish({ ...empty, status: "pending", message: "Requesting code actions." });
-            const batch = await client.run({ document: capture.document, project: [...j.project.documents.values()],
+            const batch = await client.run({ document, project: [...j.capture.project.documents.values()],
                 from: Math.min(range.anchor, range.head), to: Math.max(range.anchor, range.head),
                 prepare: options.prepareRequest }).result;
             j.batch = batch;
@@ -271,7 +219,7 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
                 return stale;
             }
             win.clearTimeout(j.timer);
-            for (const action of batch.actions) if (action.edit) j.project.includeEdit(action.edit);
+            for (const action of batch.actions) if (action.edit) j.capture.project.includeEdit(action.edit);
             const choices = Object.freeze(batch.actions.map((action, index): CodeActionChoice => Object.freeze({
                 index, title: action.title, kind: action.kind, preferred: action.preferred, disabled: disabled(batch, action),
                 needsResolve: action.resolve !== null, select: applyWhen => choose(source, index, applyWhen) })));

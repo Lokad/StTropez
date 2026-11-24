@@ -63,7 +63,7 @@ export function actionClient(owner: LspWorkspace | LspDocumentOwner, options: Ls
                     execute: async (action: LspCodeAction, scope: LspCommandScope) => {
                         const route = action.command && routes.get(action.command);
                         if (!value.isCurrent() || busy() || !actions.includes(action) || !action.command || !route)
-                            throw staleRequest("Captured action command is unavailable.");
+                            throw staleRequest();
                         // The runner rechecks the route and reserves the connection before applying the initial edit.
                         executing = true;
                         try {
@@ -74,7 +74,7 @@ export function actionClient(owner: LspWorkspace | LspDocumentOwner, options: Ls
                     },
                     cancelResolve: () => { if (value.isGenerationCurrent()) releaseResolve(); },
                     resolve: async (action: LspCodeAction, prepare?: LspPrepare) => {
-                        if (!value.isCurrent() || executing || !actions.includes(action) || !action.resolve) throw staleRequest("Captured action cannot be resolved.");
+                        if (!value.isCurrent() || executing || !actions.includes(action) || !action.resolve) throw staleRequest();
                         releaseResolve();
                         // The choice owns its wire request, host target loads and leases. The list keeps its original capture.
                         const lane = resolver = createLspClient(owner, codeActionMethod);

@@ -51,7 +51,7 @@ export type LspColor = Readonly<{ red: number; green: number; blue: number; alph
 export type LspDocumentColor = Readonly<{ from: number; to: number; color: LspColor }>;
 export type LspColorPresentation = Readonly<{ label: string; edits: readonly TextEdit[] }>;
 function invalid(): never { throw new ProtocolDecodeError("Malformed or unsupported LSP feature result."); }
-function current(capture: Pick<LspDocumentCapture, "isCurrent">): void { if (!capture.isCurrent()) throw staleRequest("LSP feature capture expired."); }
+function current(capture: Pick<LspDocumentCapture, "isCurrent">): void { if (!capture.isCurrent()) throw staleRequest(); }
 function text(value: unknown, maximum = Number.MAX_SAFE_INTEGER, budget?: { units: number }): string {
     if (typeof value !== "string" || value.length > maximum || budget && (budget.units -= value.length) < 0) invalid(); return value;
 }
@@ -229,7 +229,7 @@ export function decodeLspWorkspaceEdit(value: unknown, resolve: (uri: string) =>
         decodePlan(() => validateTextEdits(target.document.buffer.length, edits)); return Object.freeze({ target, edits: Object.freeze(edits) });
     });
     const isCurrent = () => documents.every(document => document.target.isCurrent());
-    if (!isCurrent()) throw staleRequest("LSP edit capture expired.");
+    if (!isCurrent()) throw staleRequest();
     return Object.freeze({ documents: Object.freeze(documents), isCurrent });
 }
 function applyEditValue(value: unknown) {
@@ -376,7 +376,7 @@ export function decodeLspResolvedCompletion(value: unknown, original: LspComplet
     current(capture);
     if (!isRecord(original.resolve) || !isRecord(value)) invalid();
     if (original.source.uri !== capture.document.uri || original.source.resourceId !== capture.document.resourceId || original.source.documentId !== capture.document.documentId
-        || original.source.revision !== capture.document.revision || original.source.buffer !== capture.document.buffer) throw staleRequest("LSP completion source changed before resolution.");
+        || original.source.revision !== capture.document.revision || original.source.buffer !== capture.document.buffer) throw staleRequest();
     const before = { ...original.resolve }, after = { ...value };
     for (const key of ["detail", "documentation", "additionalTextEdits", "insertText", "textEdit"]) { delete before[key]; delete after[key]; }
     if (!jsonEqual(before, after)) throw new ProtocolDecodeError("Resolved LSP completion changed an immutable item property.");

@@ -88,7 +88,12 @@ export class HostActionsTools {
             if (panel?.source.editor !== editor) throw new Error("The action panel has closed.");
             return panel.settings;
         };
-        const { codeActions: controller, dispose } = attachEditorLanguage(editor, provider, {
+        const { codeActions: controller, commands, dispose } = attachEditorLanguage(editor, provider, {
+            commands: {
+                documents: () => this.documents().filter(doc => doc.key.variant === "working"),
+                canCapture: this.host.canCapture,
+                ...(review && { reviewCommandEdit: review.reviewActionEdit })
+            },
             codeActions: {
                 documents: this.documents,
                 canCapture: this.host.canCapture,
@@ -100,7 +105,7 @@ export class HostActionsTools {
                 ...(review && { canRunCommand: () => review.canRunAction(editor), reviewCommandEdit: review.reviewActionEdit })
             }
         });
-        const stopAction = review?.observeActions(editor, controller);
+        const stopAction = review?.observeActions(editor, controller, commands);
         const s = { id, target, editor, controller };
         const ownsModule = () => this.moduleField.focused && this.moduleSource === s;
         return attachPanelSession(this.sessions, s, (signal, register) => {

@@ -70,8 +70,6 @@ type DocumentEntry = { id: DocumentId; language: DocumentLanguage; binding: LspD
 type Scope = { active: boolean; generation: number; close: () => void; interruptions: Set<() => void> };
 type CommandIntent = { scope: Scope; epoch: number; generation: number; registrationGeneration: number; sent: boolean;
     cancelled: boolean; listeners: Set<() => void>; applyEdit: Handler | undefined };
-const stale = () => staleRequest("Captured provider participation changed.");
-const cancelled = () => cancelledRequest("Provider feature scope was cancelled.");
 export function sameDocument(live: DocumentSnapshot | undefined, snapshot: DocumentSnapshot): boolean {
     return live?.resourceId === snapshot.resourceId && live.revision === snapshot.revision && live.buffer === snapshot.buffer && live.language === snapshot.language;
 }
@@ -81,7 +79,7 @@ function readRequest(source: LspWorkspaceScope, interruptions: Set<() => void>, 
     documents: () => Iterable<LspDocument>): LspReadRequest {
     const calls = new Set<() => void>();
     let active = true;
-    const check = () => { if (!active) throw cancelled(); };
+    const check = () => { if (!active) throw cancelledRequest(); };
     function dispose() {
         active = false;
         interruptions.delete(interrupt);
@@ -180,7 +178,7 @@ export class LspWorkspace {
             const previous = entry.diagnostics.get(), sent = this.session.synchronized(entry.binding);
             const isCurrent = () => { const now = this.session.synchronized(entry.binding); return this.live(entry) && !!sent && !!now && now.epoch === sent.epoch && now.version === sent.version && now.document === sent.document; };
             try {
-                if (!sent || !isCurrent()) throw stale();
+                if (!sent || !isCurrent()) throw staleRequest();
                 const result = decodeLspDiagnostics(value, Object.freeze({ ...sent, isCurrent }));
                 entry.diagnostics.set(Object.freeze({ ...previous, status: "current", result, received: previous.received + 1, isCurrent, isPlacementCurrent: isCurrent }), this.changed);
             } catch (error) {
@@ -244,7 +242,7 @@ export class LspWorkspace {
     queryFeatureOptions(method: LspDocumentFeature, document: DocumentSnapshot): readonly Readonly<Record<string, JsonValue>>[] {
         if (this.disposed) return emptyList;
         const current = this.workspace.observeDocument(document.id).getSnapshot();
-        if (!sameDocument(current, document)) throw stale();
+        if (!sameDocument(current, document)) throw staleRequest();
         const info = document.language;
         return info ? this.session.queryFeatureOptions(method, info) : emptyList;
     }
@@ -252,7 +250,7 @@ export class LspWorkspace {
         this.writable(); const current = this.workspace.document(id), info = current.language;
         if (!info) throw new Error("Document is outside this provider configuration.");
         const old = this.documents.get(id);
-        if (old?.language === info) { this.synchronize(old); if (!old.active) throw stale(); return old; }
+        if (old?.language === info) { this.synchronize(old); if (!old.active) throw staleRequest(); return old; }
         if (old) this.closeDocument(old);
         const owner = this.uris.get(info.uri);
         if (owner) {
@@ -308,7 +306,7 @@ export class LspWorkspace {
             return scopeCurrent() && now.phase === "ready" && now.epoch === session.epoch && now.registrationVersion(didChangeMethod) === session.registrationVersion(didChangeMethod);
         };
         if (!isLspUri(uri)) throw new TypeError("Invalid target URI.");
-        if (!connected() || !context.isCurrent()) throw stale();
+        if (!connected() || !context.isCurrent()) throw staleRequest();
         const source = await this.options.resolveTarget?.(uri, context);
         if (!source) return;
         let lease: ResourceLease | undefined, released = false;
@@ -319,14 +317,14 @@ export class LspWorkspace {
             }
         };
         try {
-            if (!connected() || !context.isCurrent()) throw stale();
+            if (!connected() || !context.isCurrent()) throw staleRequest();
             const limit = this.options.maxDocumentUnits ?? defaultDocumentUnits;
             let doc: DocumentSnapshot;
             if ("document" in source) {
                 doc = source.document;
                 if (doc.language?.uri !== uri) throw new TypeError("Resolved document does not match the requested URI.");
                 if (!isLspIdentityPart(doc.language.languageId)) throw new TypeError("Invalid target language ID.");
-                if (this.workspace.document(doc.id) !== doc) throw stale();
+                if (this.workspace.document(doc.id) !== doc) throw staleRequest();
                 if (doc.buffer.length > limit) throw new RangeError("LSP target size limit exceeded.");
                 lease = this.workspace.acquire(doc.resourceId);
             } else {
@@ -342,7 +340,7 @@ export class LspWorkspace {
             }
             const documents = this.workspace.observeDocument(doc.id), metadata = this.workspace.resourceForDocument(doc.id).metadata, access = metadata.getSnapshot();
             const entry = this.uris.get(uri);
-            if (entry && entry.id !== doc.id && this.bindingCurrent(entry)) throw stale();
+            if (entry && entry.id !== doc.id && this.bindingCurrent(entry)) throw staleRequest();
             const capture = entry && this.live(entry) ? this.session.synchronized(entry.binding, didChangeMethod) : undefined;
             const isCurrent = () => {
                 const now = metadata.getSnapshot(), owner = this.uris.get(uri);
@@ -353,11 +351,11 @@ export class LspWorkspace {
             const stop = context.onCancel(() => interrupt?.());
             try {
                 const check = () => {
-                    if (!isCurrent() || !context.isCurrent()) throw stale();
+                    if (!isCurrent() || !context.isCurrent()) throw staleRequest();
                 };
                 const pause = () => new Promise<void>((resolve, reject) => {
                     const cancel = this.options.schedule(0, () => { interrupt = undefined; resolve(); });
-                    interrupt = () => { cancel(); reject(stale()); };
+                    interrupt = () => { cancel(); reject(staleRequest()); };
                 });
                 const index = capture?.index ?? await LspLineIndex.create(doc.buffer, cooperateDuringScan(check, pause, this.options.now));
                 check();
@@ -373,15 +371,15 @@ export class LspWorkspace {
         const handles = new Map<LspDocument, DocumentEntry>(), pending = new Set<{ cancel: () => void }>(), stops = new Set<() => void>();
         const documentCalls = new Map<LspDocument, Set<{ cancel: () => void }>>();
         let closedState: LspWorkspaceSnapshot | undefined;
-        const writable = () => { this.writable(); if (!scope.active) throw cancelled(); };
+        const writable = () => { this.writable(); if (!scope.active) throw cancelledRequest(); };
         const current = (generation: number) => scope.active && scope.generation === generation && !this.disposed;
         const track = <T, C extends { result: Promise<T>; cancel: () => void }>(call: C): C => {
             const generation = scope.generation; let wasCancelled = false;
             const tracked = Object.freeze({ ...call, cancel: () => { wasCancelled = true; call.cancel(); }, result: call.result.then(result => {
-                if (!current(generation) || wasCancelled) throw cancelled(); return result;
+                if (!current(generation) || wasCancelled) throw cancelledRequest(); return result;
             }) }); pending.add(tracked); void tracked.result.then(() => pending.delete(tracked), () => pending.delete(tracked)); return tracked as C;
         };
-        const unwrap = (document: LspDocument) => { const entry = handles.get(document); if (!scope.active || !entry?.active) throw stale(); return entry.binding; };
+        const unwrap = (document: LspDocument) => { const entry = handles.get(document); if (!scope.active || !entry?.active) throw staleRequest(); return entry.binding; };
         const scopedCapture = (document: LspDocument, entry: DocumentEntry, value: LspDocumentCapture, generation: number): LspDocumentCapture =>
             Object.freeze({ ...value,
                 isBindingCurrent: () => current(generation) && handles.has(document) && this.bindingCurrent(entry) && (value.isBindingCurrent?.() ?? value.isCurrent()),
@@ -398,10 +396,10 @@ export class LspWorkspace {
             const close = () => { if (!active) return; active = false; for (const call of documentCalls.get(document) ?? []) call.cancel(); documentCalls.delete(document);
                 handles.delete(document); documents.delete(id); entry.users.delete(close); if (entry.active && !entry.users.size) this.closeDocument(entry); };
             const document: LspDocument = Object.freeze({ getSnapshot: entry.binding.getSnapshot, dispose: close, update: (expected, revision, buffer) => {
-                writable(); if (!active || !entry.active) throw stale(); const latest = this.workspace.document(id), before = entry.binding.getSnapshot();
-                if (latest.language !== entry.language || latest.revision !== revision || latest.buffer !== buffer) throw stale();
+                writable(); if (!active || !entry.active) throw staleRequest(); const latest = this.workspace.document(id), before = entry.binding.getSnapshot();
+                if (latest.language !== entry.language || latest.revision !== revision || latest.buffer !== buffer) throw staleRequest();
                 if (before.revision === revision && before.buffer === buffer) return;
-                if (before.revision !== expected) throw stale(); entry.binding.update(expected, revision, buffer,
+                if (before.revision !== expected) throw staleRequest(); entry.binding.update(expected, revision, buffer,
                     latest.change?.previousRevision === expected ? latest.change.edits : undefined);
             } });
             documents.set(id, document); handles.set(document, entry); entry.users.add(close); return document;
@@ -421,7 +419,7 @@ export class LspWorkspace {
             this.command = intent; this.store.set(this.snapshotState(), this.changed); this.queueDelivery(); return intent;
         };
         const sendCommand = (intent: CommandIntent, ...args: Parameters<LspSession["requestCommand"]>) => {
-            if (intent.sent || !this.commandCurrent(intent)) throw staleRequest("Command reservation expired.");
+            if (intent.sent || !this.commandCurrent(intent)) throw staleRequest();
             intent.sent = true;
             let waiting = true;
             try {
@@ -442,13 +440,13 @@ export class LspWorkspace {
             const isCurrent = () => current(generation) && context.isCurrent();
             const finish = (complete: () => void) => { if (done) return; done = true; scope.interruptions.delete(invalidated); stopRemote(); listeners.clear(); complete(); };
             const invalidated = () => { if (isCurrent()) return;
-                for (const listener of [...listeners]) listener(); finish(() => reject(cancelled())); };
+                for (const listener of [...listeners]) listener(); finish(() => reject(cancelledRequest())); };
             const captured: LspRequestContext = Object.freeze({ id: context.id, epoch: context.epoch, get cancelled() { return context.cancelled || !isCurrent(); }, isCurrent,
                 onCancel: listener => { let stopped = false; const notify = () => { if (!stopped) { stopped = true; void Promise.resolve().then(listener).catch(error => this.report(error)); } };
                     if (!isCurrent()) notify(); else listeners.add(notify); return () => { stopped = true; listeners.delete(notify); }; } });
             scope.interruptions.add(invalidated); stopRemote = context.onCancel(invalidated); if (done) stopRemote(); else invalidated();
-            void Promise.resolve().then(() => { if (!isCurrent()) throw cancelled(); return handler(value, captured); }).then(
-                result => finish(() => { if (isCurrent()) resolve(result); else reject(cancelled()); }), error => finish(() => reject(error)));
+            void Promise.resolve().then(() => { if (!isCurrent()) throw cancelledRequest(); return handler(value, captured); }).then(
+                result => finish(() => { if (isCurrent()) resolve(result); else reject(cancelledRequest()); }), error => finish(() => reject(error)));
         });
         const api: LspWorkspaceScope = Object.freeze({ ...state, reportError: error => this.report(error),
             [beginReadRequest]: (interrupted, documents) => {
@@ -479,7 +477,7 @@ export class LspWorkspace {
                 writable(); const ids = new Set(snapshots.map(snapshot => snapshot.id)); if (ids.size !== snapshots.length) throw new Error("Provider project repeats a document.");
                 const uris = new Set<string>();
                 for (const snapshot of snapshots) { const live = this.workspace.document(snapshot.id), info = live.language;
-                    if (!sameDocument(live, snapshot)) throw stale();
+                    if (!sameDocument(live, snapshot)) throw staleRequest();
                     if (!info || uris.has(info.uri)) throw new Error("Provider project has unavailable or repeated URI mappings."); uris.add(info.uri);
                 }
                 const added: LspDocument[] = [];
@@ -502,7 +500,7 @@ export class LspWorkspace {
                 writable();
                 return new Map(Array.from(selected, document => {
                     const value = capture(document, method);
-                    if (!value) throw stale();
+                    if (!value) throw staleRequest();
                     return [value.document.uri, value] as const;
                 }));
             },
@@ -517,27 +515,27 @@ export class LspWorkspace {
             },
             bindDocument: snapshot => {
                 writable(); const live = this.workspace.document(snapshot.documentId as DocumentId), info = live.language;
-                if (live.resourceId !== snapshot.resourceId || live.revision !== snapshot.revision || live.buffer !== snapshot.buffer || info?.uri !== snapshot.uri || info.languageId !== snapshot.languageId) throw stale();
+                if (live.resourceId !== snapshot.resourceId || live.revision !== snapshot.revision || live.buffer !== snapshot.buffer || info?.uri !== snapshot.uri || info.languageId !== snapshot.languageId) throw staleRequest();
                 return attach(live.id);
             },
-            ensureConnected: async () => { writable(); const generation = scope.generation; await this.connect(); if (!current(generation)) throw cancelled(); },
+            ensureConnected: async () => { writable(); const generation = scope.generation; await this.connect(); if (!current(generation)) throw cancelledRequest(); },
             cancel, dispose: () => { if (!scope.active) return; this.notifications.assertWritable(); scope.close(); },
             flush: async selected => { writable(); const generation = scope.generation, captured = selected && [...selected];
                 if (captured) {
-                    const bindings = captured.map(document => { const entry = handles.get(document); if (!entry) throw stale(); this.synchronize(entry); return unwrap(document); });
+                    const bindings = captured.map(document => { const entry = handles.get(document); if (!entry) throw staleRequest(); this.synchronize(entry); return unwrap(document); });
                     await this.session.flush(bindings);
                 } else await this.flush();
-                if (!current(generation)) throw cancelled();
+                if (!current(generation)) throw cancelledRequest();
                 for (const document of captured ?? []) unwrap(document); },
             synchronized: capture,
             canRequest: (method, document) => scope.active && this.bindingCurrent(handles.get(document)) && this.session.canRequest(method, unwrap(document)),
             featureOptions: (method, document) => scope.active && this.bindingCurrent(handles.get(document)) ? this.session.featureOptions(method, unwrap(document)) : emptyList,
             commandNames: () => scope.active ? this.session.commandNames() : emptyList,
             requestDocument: (method: Parameters<LspSession["requestDocument"]>[0], document: LspDocument, params: Parameters<LspSession["requestDocument"]>[2]) => {
-                writable(); const generation = scope.generation, entry = handles.get(document); if (!entry) throw stale(); this.synchronize(entry);
+                writable(); const generation = scope.generation, entry = handles.get(document); if (!entry) throw staleRequest(); this.synchronize(entry);
                 const raw = this.session.requestDocument(method, unwrap(document), (index, snapshot, captured) =>
                     params(index, snapshot, scopedCapture(document, entry, captured, generation)));
-                const call = track({ ...raw, result: raw.result.then(value => { if (!handles.has(document) || !this.live(entry)) throw stale(); return value; }) });
+                const call = track({ ...raw, result: raw.result.then(value => { if (!handles.has(document) || !this.live(entry)) throw staleRequest(); return value; }) });
                 const calls = documentCalls.get(document) ?? new Set(); documentCalls.set(document, calls); calls.add(call);
                 const settled = () => { calls.delete(call); if (!calls.size) documentCalls.delete(document); }; void call.result.then(settled, settled); return call;
             },

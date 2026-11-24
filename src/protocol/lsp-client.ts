@@ -25,8 +25,6 @@ export type LspFeatureClient<Method extends LspDocumentFeature, Request, Result,
 
 type Request = { wire: LspReadRequest; pending: number; reject: (error: unknown) => void;
     cancellation: Promise<never>; cleanups: Set<() => void>; identities: ReadonlyMap<LspDocument, LspDocumentSnapshot> };
-const cancelled = () => cancelledRequest("LSP feature request cancelled.");
-const stale = () => staleRequest("Captured LSP documents changed.");
 
 type Project = ReadonlyMap<string, LspDocument>;
 export type LspDocumentOwner = ReturnType<typeof retainLspDocument>;
@@ -90,7 +88,7 @@ export function createLspClient<Method extends LspDocumentFeature>(owner: LspWor
         else for (const document of documents.values()) document.dispose();
         documents = new Map();
     };
-    const invalidate = (releaseDocuments: boolean, reason: unknown = cancelled()) => {
+    const invalidate = (releaseDocuments: boolean, reason: unknown = cancelledRequest()) => {
         const previous = latest;
         latest = undefined;
         if (previous) {
@@ -101,11 +99,11 @@ export function createLspClient<Method extends LspDocumentFeature>(owner: LspWor
         if (releaseDocuments) release();
     };
     const current = (request: Request) => latest === request;
-    const guard = (request: Request) => { if (!current(request)) throw cancelled(); };
+    const guard = (request: Request) => { if (!current(request)) throw cancelledRequest(); };
     const validate = (request: Request) => {
         guard(request);
         // Validation must not rebind a captured project or miss unflushed Workspace edits.
-        for (const [document, snapshot] of request.identities) if (!scope.isDocumentCurrent(document, snapshot)) throw stale();
+        for (const [document, snapshot] of request.identities) if (!scope.isDocumentCurrent(document, snapshot)) throw staleRequest();
     };
     const wait = async <T>(request: Request, work: () => Promise<T>, interrupted?: () => boolean) => {
         guard(request);
@@ -121,7 +119,7 @@ export function createLspClient<Method extends LspDocumentFeature>(owner: LspWor
     type Params = (capture: LspDocumentCapture) => Record<string, JsonValue>;
     async function receive(op: Request, { document, project, prepare }: LspProjectRequest, method: LspDocumentFeature,
         params: Params, wireMethod?: "completionItem/resolve" | "codeAction/resolve" | "documentLink/resolve") {
-        if (project && !sameDocument(project.find(snapshot => snapshot.id === document.id), document)) throw stale();
+        if (project && !sameDocument(project.find(snapshot => snapshot.id === document.id), document)) throw staleRequest();
         setDocuments(project ?? [document]);
         op.identities = new Map([...documents.values()].map(document => [document, document.getSnapshot()]));
         const target = documents.get(document.id);
@@ -142,7 +140,7 @@ export function createLspClient<Method extends LspDocumentFeature>(owner: LspWor
         };
         const call = wireMethod ? (() => {
             if (!scope.canRequest(method, target)) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable.");
-            const value = scope.synchronized(target, method); if (!value) throw stale();
+            const value = scope.synchronized(target, method); if (!value) throw staleRequest();
             const body = captureParams(value); validate(op);
             return op.wire.request(wireMethod, body);
         })() : op.wire.requestDocument(method, target, (_index, _document, value) => captureParams(value));
@@ -153,17 +151,17 @@ export function createLspClient<Method extends LspDocumentFeature>(owner: LspWor
         const targets = createLspTargets(captures!, scope.resolveTarget, { source: capture!.document, isCurrent: isGenerationCurrent, reportError: scope.reportError,
             onCancel: listener => { op.cleanups.add(listener); return () => { op.cleanups.delete(listener); }; } });
         const isCurrent = targets.isCurrent;
-        if (!isCurrent()) throw stale();
+        if (!isCurrent()) throw staleRequest();
         return Object.freeze({ response, capture: capture!, captures: captures!, target, isCurrent, isGenerationCurrent, targetForUri: targets.get,
             resolveTargets: (uris: readonly string[], purpose: LspTargetContext["purpose"]) => wait(op, async () => {
                 const stop = scope.subscribe(() => { if (!isCurrent()) void Promise.resolve().then(() => {
                     if (current(op) && !isCurrent()) { invalidate(true); notify(); }
                 }); });
-                try { await targets.resolve(uris, purpose); validate(op); if (!isCurrent()) throw stale(); }
+                try { await targets.resolve(uris, purpose); validate(op); if (!isCurrent()) throw staleRequest(); }
                 finally { stop(); }
             }),
             decode: <T>(read: () => T): T => {
-                try { validate(op); if (!isCurrent()) throw stale(); return read(); }
+                try { validate(op); if (!isCurrent()) throw staleRequest(); return read(); }
                 catch (error) {
                     if (current(op)) { invalidate(true, error); notify(); }
                     throw error;
@@ -172,9 +170,9 @@ export function createLspClient<Method extends LspDocumentFeature>(owner: LspWor
             follow: (feature: LspDocumentFeature, wireMethod: string, values: JsonValue, prepareFollow?: LspPrepare, onCancel?: LspConnectContext["onCancel"]) => {
                 let interrupted = false, unsubscribe: (() => void) | undefined;
                 const check = () => {
-                    if (interrupted) throw cancelled();
+                    if (interrupted) throw cancelledRequest();
                     validate(op);
-                    if (!isCurrent()) throw stale();
+                    if (!isCurrent()) throw staleRequest();
                 };
                 const send = async () => {
                     check();
@@ -196,7 +194,7 @@ export function createLspClient<Method extends LspDocumentFeature>(owner: LspWor
                 return wait(op, () => {
                     if (!onCancel) return send();
                     return new Promise<JsonValue>((resolve, reject) => {
-                        unsubscribe = onCancel(() => { interrupted = true; reject(cancelled()); followWire.dispose(); });
+                        unsubscribe = onCancel(() => { interrupted = true; reject(cancelledRequest()); followWire.dispose(); });
                         if (!interrupted) void send().then(resolve, reject);
                     });
                 }, () => interrupted).finally(() => {

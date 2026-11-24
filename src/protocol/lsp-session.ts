@@ -15,6 +15,7 @@ import type { RpcCall, RpcOptions, RpcRequestContext, RpcScheduler, RpcTransport
 import type { JsonValue } from "./wire.ts";
 import { cooperateDuringScan, LspLineIndex, lspTextChanges } from "./lsp-positions.ts";
 import type { LspChangeHint, LspTextChange } from "./lsp-positions.ts";
+import { commandArguments } from "./lsp-command-value.ts";
 import { compileLspSelector } from "./lsp-selector.ts";
 import type { LspSelector, LspSelectorDocument, LspUriPath } from "./lsp-selector.ts";
 
@@ -79,8 +80,6 @@ function commandOptions(value: unknown): readonly string[] {
     return value.commands as readonly string[];
 }
 const closed = () => closedConnection("LSP session is not ready.");
-const stale = () => staleRequest("Document, capability or session capture changed.");
-const cancelError = () => cancelledRequest("Request cancelled.");
 const syncMethods = [didOpenMethod, didChangeMethod, didCloseMethod];
 const reserved = (method: string) => ["initialize", "initialized", "shutdown", "exit", registerCapabilityMethod, unregisterCapabilityMethod].includes(method) || method.startsWith("$/") || method.startsWith("textDocument/");
 const reservedIncoming = (method: string) => ["initialize", "initialized", "shutdown", "exit", registerCapabilityMethod, unregisterCapabilityMethod, ...syncMethods].includes(method) || method.startsWith("$/");
@@ -361,7 +360,7 @@ export class LspSession {
     /** Explicit caller policy/confirmation is required; commands are never replayed across a session. */
     requestCommand(command: string, args: readonly JsonValue[] = [], timeoutMs = this.options.rpc?.timeoutMs ?? wireLimits.timeoutMs, authorization?: LspCommandAuthorization): LspCommandCall<JsonValue> {
         this.writable();
-        const argumentsValue = jsonSnapshot(args); if (!Array.isArray(argumentsValue) || JSON.stringify(argumentsValue).length > wireLimits.commandArgumentUnits) throw new RangeError("LSP command arguments exceed their limit.");
+        const argumentsValue = commandArguments(args);
         if (authorization && (authorization.command !== command || !jsonEqual(authorization.arguments, argumentsValue))) throw new RpcError(rpcCodes.methodNotFound, "Host command authorization does not match this invocation.");
         const permitted = authorization?.isCurrent ?? (() => this.commandNames().includes(command));
         if (!this.features.has(executeCommandMethod) || !permitted()) throw new RpcError(rpcCodes.methodNotFound, "LSP command is neither advertised nor authorized by the host.");
@@ -369,9 +368,9 @@ export class LspSession {
         const isCurrent = () => this.current(epoch) && this.store.get().phase === "ready"
             && this.store.get().registrationVersion(method) === version && permitted();
         const call = this.ready(epoch).request(executeCommandMethod, { command, arguments: argumentsValue }, timeoutMs);
-        return Object.freeze({ id: call.id, cancel: call.cancel, isCurrent, result: call.result.then(result => { if (!isCurrent()) throw stale(); return result; }) });
+        return Object.freeze({ id: call.id, cancel: call.cancel, isCurrent, result: call.result.then(result => { if (!isCurrent()) throw staleRequest(); return result; }) });
     }
-    private entry(handle: LspDocument): Entry { const entry = this.handles.get(handle); if (!entry || this.documents.get(entry.snapshot.uri) !== entry) throw stale(); return entry; }
+    private entry(handle: LspDocument): Entry { const entry = this.handles.get(handle); if (!entry || this.documents.get(entry.snapshot.uri) !== entry) throw staleRequest(); return entry; }
     private size(length: number, previous: number): void {
         if (!isNonNegativeInteger(length) || length > this.maxDocumentUnits || this.totalUnits - previous + length > this.maxTotalUnits) throw new RangeError("LSP document size limit exceeded.");
     }
@@ -382,7 +381,7 @@ export class LspSession {
         const entry: Entry = { snapshot: Object.freeze({ uri, languageId, resourceId, documentId, revision, buffer }), handle: undefined! };
         const handle: LspDocument = Object.freeze({ getSnapshot: () => entry.snapshot,
             update: (expectedRevision, nextRevision, nextBuffer, edits) => {
-                this.writable(); this.entry(handle); if (entry.snapshot.revision !== expectedRevision || !isNonNegativeInteger(nextRevision) || nextRevision <= expectedRevision) throw stale(); this.size(nextBuffer.length, entry.snapshot.buffer.length);
+                this.writable(); this.entry(handle); if (entry.snapshot.revision !== expectedRevision || !isNonNegativeInteger(nextRevision) || nextRevision <= expectedRevision) throw staleRequest(); this.size(nextBuffer.length, entry.snapshot.buffer.length);
                 if (edits) entry.change = { before: entry.snapshot.buffer, edits: edits.map(({ from, to, insert }) => ({ from, to, insert })) };
                 else delete entry.change;
                 this.totalUnits += nextBuffer.length - entry.snapshot.buffer.length; entry.snapshot = Object.freeze({ ...entry.snapshot, revision: nextRevision, buffer: nextBuffer }); delete entry.failure; this.kick(uri);
@@ -499,7 +498,7 @@ export class LspSession {
         const ready = captures ? () => {
             let synchronized = true;
             for (const { entry, snapshot } of captures) {
-                if (generation !== this.syncGeneration || this.documents.get(snapshot.uri) !== entry || entry.snapshot !== snapshot) throw stale();
+                if (generation !== this.syncGeneration || this.documents.get(snapshot.uri) !== entry || entry.snapshot !== snapshot) throw staleRequest();
                 const failure = this.failed(entry); if (failure) throw failure;
                 if (this.remote.get(snapshot.uri)?.snapshot !== snapshot && this.syncs(entry)) synchronized = false;
             }
@@ -511,7 +510,7 @@ export class LspSession {
         if (this.waiters.size >= wireLimits.synchronizationWaits) throw new RpcError(rpcCodes.pendingLimit, "Too many pending synchronization waits.");
         let waiter!: SyncWaiter;
         const result = new Promise<void>((resolve, reject) => { waiter = { resolve, reject, ready }; this.waiters.add(waiter); });
-        return { result, cancel: () => { if (this.waiters.delete(waiter)) waiter.reject(cancelError()); } };
+        return { result, cancel: () => { if (this.waiters.delete(waiter)) waiter.reject(cancelledRequest()); } };
     }
     /** With documents, wait only for those exact captures; otherwise drain all synchronization work. */
     flush(documents?: readonly LspDocument[]): Promise<void> { this.scope.assertWritable(); return this.waitForSync(documents?.map(document => this.entry(document))).result; }
@@ -532,13 +531,13 @@ export class LspSession {
         this.writable(); this.ready(); if (this.documentCalls.size >= (this.options.rpc?.maxPending ?? wireLimits.pendingRequests)) throw new RpcError(rpcCodes.pendingLimit, "Too many pending document requests.");
         const feature = method === "textDocument/prepareRename" ? renameMethod : method;
         const entry = this.entry(document), snapshot = entry.snapshot, epoch = this.epoch, generation = this.store.get().registrationVersion(feature), waiting = this.waitForSync([entry]); let cancelled = false, call: RpcCall<JsonValue> | undefined;
-        const guard = () => { if (cancelled) throw cancelError(); this.ready(epoch); if (this.documents.get(snapshot.uri) !== entry || entry.snapshot !== snapshot || generation !== this.store.get().registrationVersion(feature)) throw stale(); };
+        const guard = () => { if (cancelled) throw cancelledRequest(); this.ready(epoch); if (this.documents.get(snapshot.uri) !== entry || entry.snapshot !== snapshot || generation !== this.store.get().registrationVersion(feature)) throw staleRequest(); };
         const result = (async () => { await waiting.result; guard(); const failure = this.failed(entry); if (failure) throw failure;
             const supported = method === "textDocument/prepareRename"
                 ? this.featureOptions(renameMethod, document).some(options => options.prepareProvider === true)
                 : this.canRequest(method, document);
             if (!supported) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable for this document.");
-            const capture = this.synchronized(document, feature); if (capture?.document !== snapshot) throw stale();
+            const capture = this.synchronized(document, feature); if (capture?.document !== snapshot) throw staleRequest();
             const value = params(capture.index, snapshot, capture); guard(); call = this.ready(epoch).request(method, { ...value, textDocument: { uri: snapshot.uri } }); const response = await call.result; guard(); return response;
         })();
         const handle = Object.freeze({ result, cancel: () => { cancelled = true; waiting.cancel(); call?.cancel(); } }); this.documentCalls.add(handle);

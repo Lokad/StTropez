@@ -198,7 +198,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
             lease: workspace.acquire(resource.id), choice: previous?.choice ?? 0, pendingList: true, requestGeneration: 0, visible: provisionalVisible ?? emptyList, ...(provisional ? { choices: provisional } : {}), ...(previous?.batch ? { batch: previous.batch } : {}) };
         job = captured; counters.posted++; publish("LSP completion pending.");
         void (async () => {
-            if (connecting) await connecting; if (captured.requestGeneration !== 0) return; if (!current(captured)) throw staleRequest("Completion capture changed.");
+            if (connecting) await connecting; if (captured.requestGeneration !== 0) return; if (!current(captured)) throw staleRequest();
             captured.call = completion.run({
                 document, offset: caret,
                 context: invocation.kind === 2 ? { triggerKind: 2, triggerCharacter: invocation.character! } : { triggerKind: invocation.kind },
@@ -210,12 +210,12 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
                 ...(previous?.batch ? { retain: previous.batch } : {}),
                 prepare: async scope => {
                     if (options.prepareCompletion) await options.prepareCompletion(scope);
-                    if (captured.requestGeneration !== 0 || !current(captured)) throw staleRequest("Completion capture changed.");
+                    if (captured.requestGeneration !== 0 || !current(captured)) throw staleRequest();
                 },
             });
             const choices = await captured.call.result;
             if (captured.requestGeneration !== 0) return;
-            if (!current(captured) || !choices.isCurrent()) throw staleRequest("Completion capture changed.");
+            if (!current(captured) || !choices.isCurrent()) throw staleRequest();
             captured.batch = choices; captured.choices = choices;
             captured.pendingList = false; filter(captured, invocation.automatic === true || options.filterManualCompletions === true);
             if (!captured.visible.length) {

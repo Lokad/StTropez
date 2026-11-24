@@ -1,5 +1,5 @@
 import { executeCommandMethod } from "./lsp-methods.ts";
-import { cancelledRequest, staleRequest, wireLimits, jsonSnapshot } from "./wire.ts";
+import { cancelledRequest, staleRequest, jsonSnapshot } from "./wire.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
 import type { JsonValue } from "./wire.ts";
 import { decodeLspApplyEdit, lspApplyEditUris } from "./lsp-features.ts";
@@ -7,7 +7,7 @@ import { createLspTargets } from "./lsp-targets.ts";
 import type { LspApplyEdit, LspApplyEditResult } from "./lsp-features.ts";
 import type { LspCommandCall, LspDocument, LspRequestContext } from "./lsp-session.ts";
 import type { LspPrepare, LspWorkspaceScope } from "./lsp-workspace.ts";
-import type { LspCommand } from "./lsp-command-value.ts";
+import { commandArguments, type LspCommand } from "./lsp-command-value.ts";
 
 export type LspCommandScope = Readonly<{ snapshots: () => readonly DocumentSnapshot[]; isCurrent: () => boolean;
     prepare?: () => void; review: (request: LspApplyEdit, context: LspRequestContext) => Promise<LspApplyEditResult> }>;
@@ -64,7 +64,7 @@ export function commandRunner(session: LspWorkspaceScope, notify: () => void = (
         const check = () => {
             const now = session.getSnapshot();
             if (disposed || !scope.isCurrent() || start.phase === "ready" && (now.phase !== "ready" || now.epoch !== start.epoch))
-                throw staleRequest("Captured project changed.");
+                throw staleRequest();
         };
         check();
         const documents = Array.from(bind(scope.snapshots()).values());
@@ -96,10 +96,8 @@ export function commandRunner(session: LspWorkspaceScope, notify: () => void = (
     };
     const stopState = session.subscribe(changed);
     const run = async (invocation: LspCommand, scope: LspCommandScope, route: LspCommandRoute, allowEdits: boolean): Promise<LspCommandReceipt> => {
-        if (disposed || active || !scope.isCurrent() || !(route.isCurrent?.() ?? true)) throw staleRequest("Captured command is unavailable or changed.");
-        const argumentsValue = jsonSnapshot(invocation.arguments);
-        if (!Array.isArray(argumentsValue) || JSON.stringify(argumentsValue).length > wireLimits.commandArgumentUnits) throw new RangeError("LSP command arguments exceed their limit.");
-        const captured = Object.freeze({ ...invocation, arguments: argumentsValue as readonly JsonValue[] });
+        if (disposed || active || !scope.isCurrent() || !(route.isCurrent?.() ?? true)) throw staleRequest();
+        const captured = Object.freeze({ ...invocation, arguments: commandArguments(invocation.arguments) });
         const state = session.getSnapshot();
         const op: Active = { scope, documents: [], route, allowEdits, epoch: state.epoch, generation: state.registrationVersion(executeCommandMethod) };
         const reservation = session.reserveCommand(route.kind === "server" ? (value, context) => apply(op, value, context) : undefined);
@@ -108,7 +106,7 @@ export function commandRunner(session: LspWorkspaceScope, notify: () => void = (
         try {
             scope.prepare?.();
             op.documents = await synchronize(scope);
-            if (!capturedProject(op) || !reservation.isCurrent()) throw staleRequest("Captured command intent changed.");
+            if (!capturedProject(op) || !reservation.isCurrent()) throw staleRequest();
             let value: JsonValue;
             if (route.kind === "server") {
                 op.call = reservation.requestCommand(captured.command, captured.arguments, 120000, { command: captured.command, arguments: captured.arguments,
@@ -118,14 +116,14 @@ export function commandRunner(session: LspWorkspaceScope, notify: () => void = (
                 const isCurrent = () => capturedProject(op) && reservation.isCurrent();
                 const context = requestContext("host-command", op.epoch, isCurrent);
                 const { onCancel } = context;
-                const cancelled = new Promise<never>((_resolve, reject) => { stopCancel = onCancel(() => reject(cancelledRequest("Host command cancelled."))); });
+                const cancelled = new Promise<never>((_resolve, reject) => { stopCancel = onCancel(() => reject(cancelledRequest())); });
                 value = jsonSnapshot(await Promise.race([Promise.resolve().then(() => {
-                    if (!isCurrent()) throw staleRequest("Captured host command changed.");
+                    if (!isCurrent()) throw staleRequest();
                     return route.run(captured, Object.freeze({ snapshots: () => Object.freeze([...scope.snapshots()]), isCurrent, onCancel,
                         applyEdit: request => apply(op, request, context) }));
                 }), cancelled]));
             }
-            if (!capturedProject(op)) throw staleRequest("Captured command intent changed.");
+            if (!capturedProject(op)) throw staleRequest();
             return Object.freeze({ value, decision: op.decision });
         } finally { stopCancel(); op.call?.cancel(); reservation.release(); if (active === op) active = undefined; changed(); }
     };

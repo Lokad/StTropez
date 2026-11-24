@@ -12,7 +12,6 @@ export type LspTargetResolver = (uri: string, context: LspTargetContext) => Prom
 export type LspResolvedTarget = Readonly<{ target: LspEditTarget; release: () => void }>;
 export type ResolveRetainedTarget = (uri: string, context: LspTargetContext) => Promise<LspResolvedTarget | undefined>;
 type Lifetime = Omit<LspTargetContext, "purpose"> & Readonly<{ reportError: (error: unknown) => void }>;
-const stale = () => staleRequest("Captured LSP target loading expired.");
 
 /** Shared by read results, text edits and server edit requests. No URI I/O occurs here. */
 export function createLspTargets(captured: ReadonlyMap<string, LspEditTarget>, resolve: ResolveRetainedTarget, lifetime: Lifetime) {
@@ -31,14 +30,14 @@ export function createLspTargets(captured: ReadonlyMap<string, LspEditTarget>, r
     // A host release may update Workspace retention, which cannot run inside commit observers.
     const release = (lease: LspResolvedTarget) => { void Promise.resolve().then(lease.release).catch(lifetime.reportError); };
     const dispose = () => {
-        if (disposed) return; disposed = true; stop(); reject(cancelledRequest("LSP target loading cancelled."));
+        if (disposed) return; disposed = true; stop(); reject(cancelledRequest());
         for (const listener of [...listeners]) { try { void Promise.resolve(listener()).catch(lifetime.reportError); } catch (error) { lifetime.reportError(error); } } listeners.clear();
         for (const lease of leases) release(lease); leases.clear();
     };
     stop = lifetime.onCancel(dispose); if (disposed) stop();
     return Object.freeze({ isCurrent, dispose, get: (uri: string) => targets.get(uri),
         resolve: async (uris: readonly string[], purpose: LspTargetContext["purpose"]) => {
-            if (!isCurrent()) throw stale();
+            if (!isCurrent()) throw staleRequest();
             const missing = [...new Set(uris)].filter(uri => !targets.has(uri));
             if (!missing.length) return;
             // A host can use this source/provider guard without recursively validating its own target.
@@ -52,14 +51,14 @@ export function createLspTargets(captured: ReadonlyMap<string, LspEditTarget>, r
             async function load() {
                 try {
                     for (const uri of pending) {
-                        if (failed || !isCurrent()) throw stale();
+                        if (failed || !isCurrent()) throw staleRequest();
                         const lease = await resolve(uri, context);
                         if (!lease) throw new TypeError(`LSP target is unavailable: ${uri}`);
                         // Own the lease before validating it so a failed or cancelled batch releases it.
-                        if (disposed || failed) { release(lease); throw stale(); }
+                        if (disposed || failed) { release(lease); throw staleRequest(); }
                         leases.add(lease);
                         const target = lease.target;
-                        if (!isCurrent() || !target.isCurrent()) throw stale();
+                        if (!isCurrent() || !target.isCurrent()) throw staleRequest();
                         if (target.document.uri !== uri || target.index.buffer !== target.document.buffer) throw new TypeError("Resolved LSP target does not match its URI and buffer.");
                         resolved.set(uri, target);
                         targets.set(uri, Object.freeze({ ...target, isCurrent: () => live() && target.isCurrent() }));
@@ -70,7 +69,7 @@ export function createLspTargets(captured: ReadonlyMap<string, LspEditTarget>, r
             const count = purpose === "navigation" ? Math.min(4, missing.length) : 1;
             try {
                 await Promise.race([Promise.all(Array.from({ length: count }, () => Promise.resolve().then(load))), cancellation]);
-                if (!isCurrent()) throw stale();
+                if (!isCurrent()) throw staleRequest();
             } catch (error) { dispose(); throw error; }
         } });
 }

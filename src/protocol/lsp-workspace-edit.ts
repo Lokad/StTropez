@@ -25,14 +25,14 @@ export type LspWorkspaceEditOptions = Readonly<{
  * Returns updated snapshots only for documents whose buffers changed; an empty edit succeeds.
  */
 export function applyLspWorkspaceEdit(workspace: Workspace, edit: LspWorkspaceEdit, options: LspWorkspaceEditOptions): readonly DocumentSnapshot[] {
-    if (!edit.isCurrent()) throw staleRequest("LSP workspace edit capture expired.");
+    if (!edit.isCurrent()) throw staleRequest();
     if (options.view && !workspace.ownsDocumentView(options.view)) throw new Error("LSP edit view does not belong to this workspace.");
     const identities = new Set<DocumentId>(), before: DocumentSnapshot[] = [], requests: EditRequest[] = [];
     for (const change of edit.documents) {
         const target = change.target, captured = target.document, document = workspace.document(captured.documentId as DocumentId);
         if (!target.isCurrent() || target.index.buffer !== captured.buffer || document.resourceId !== captured.resourceId
             || document.revision !== captured.revision || document.buffer !== captured.buffer) {
-            throw staleRequest("LSP edit target differs from its captured working resource.");
+            throw staleRequest();
         }
         if (identities.has(document.id)) throw new TypeError("An LSP edit must name each document once.");
         identities.add(document.id);

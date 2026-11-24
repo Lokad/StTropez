@@ -16,7 +16,7 @@ function fixture(t: TestContext) {
     const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "source");
     const view = workspace.createDocumentView(source.documentId);
     const editor = { workspace, tab: workspace.tabs.capture(tab), view, ...editorState(), signal: new AbortController().signal,
-        activity: () => ({ disposed: false }),
+        activity: () => ({ disposed: false }), viewport: { revealOffset() {} }, focus() {},
         element: Object.assign(new EventTarget(), { isConnected: true, ownerDocument: { defaultView: globalThis } }) } as unknown as TextEditor;
     const host = new HostProjectTools({ workspace, canCapture: () => true, present: () => editor }, undefined, provider);
     let detach = host.attach("source", tab, editor);
@@ -67,6 +67,27 @@ test("a command acknowledges a batch with a newly resolved companion and undoes 
     }
     await settled();
     assert.equal(workspace.diagnostics().leases, 0);
+});
+
+test("an advertised direct command leaves a pending action preview usable when it makes no edits", async t => {
+    const f = fixture(t);
+    const at = { line: 0, character: 0 };
+    const uri = f.document().language!.uri;
+    f.peer.onRequest("textDocument/codeAction", () => [{ title: "Insert", edit: {
+        changes: { [uri]: [{ range: { start: at, end: at }, newText: "inserted " }] }
+    } }]);
+    const language = attachEditorLanguage(f.editor, f.provider, { commands: {}, codeActions: {} });
+    try {
+        await language.codeActions.request();
+        const preview = language.codeActions.getSnapshot().preview!;
+        assert.deepEqual(await language.commands.run("fixture.command"), { status: "done", value: [] });
+        assert.equal(language.codeActions.getSnapshot().preview, preview);
+        assert.equal((await preview.apply()).status, "done");
+        assert.equal(f.document().buffer.slice(0, 9), "inserted ");
+    } finally {
+        language.dispose();
+        f.dispose();
+    }
 });
 
 test("closing the editor refuses a server edit while host approval is still unanswered", { timeout: 3000 }, async t => {

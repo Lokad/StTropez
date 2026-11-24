@@ -46,7 +46,7 @@ export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspa
                 const policy = { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) };
                 return input.kind === "register" || input.kind === "unregister"
                     ? session.request("fixture/reviewRegistration", { registered: input.kind === "register", _fixture: policy }).result
-                    : connection.prepareCommand(session, input.kind === "review" ? "fixture.review" : "fixture.status", policy);
+                    : connection.prepareCommand(session, "fixture.status", policy);
             } }, changed),
     });
 }

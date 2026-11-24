@@ -6,7 +6,7 @@ files and decides which edits to apply. [Connect a provider](language-server.md)
 
 ## Use
 
-Use `attachEditorLanguage` to enable completion, diagnostics, hover, signature help, occurrences, code actions, links or colors. Give each
+Use `attachEditorLanguage` to enable completion, diagnostics, hover, signature help, occurrences, commands, code actions, links or colors. Give each
 feature you want an options object. They share one provider scope and document binding. Hover
 uses the diagnostics painted in that view unless you supply another source.
 
@@ -39,6 +39,7 @@ Use `features` to restrict methods,
 | Signature help | `attachEditorLanguage` with `signature`, `createLspSignatureClient` | `textDocument/signatureHelp` |
 | Definition / references | `createLspNavigationClient` | `textDocument/definition` / `textDocument/references` |
 | Rename | `createRenameController`, `createLspRenameClient` | `textDocument/rename` |
+| Server commands | `attachEditorLanguage` with `commands` | `workspace/executeCommand` |
 | Code actions | `attachEditorLanguage` with `codeActions`, `createLspActionClient` | `textDocument/codeAction` |
 | Document links | `createDocumentLinkController`, `createLspLinkClient` | `textDocument/documentLink` |
 | Document colors | `createDocumentColorController`, `createLspColorClient` | `textDocument/documentColor` and `textDocument/colorPresentation` |
@@ -614,7 +615,7 @@ declare function renderFixes(choices: { title: string; select(): void }[], edits
 A change to the captured selection, fold projection, document revision or edit authority expires
 the preview. Replacing the editor disposes its controller. Old choices and confirmation buttons
 cannot edit the replacement. For a direct fix, an explicit choice button can pass a predicate to
-`select` that checks the resolved action before confirming it. Enable commands with `reviewCommandEdit(request, context)`. Return a boolean or a promise for the decision.
+`select` that checks the resolved action before confirming it. Approve incoming edits with `reviewCommandEdit(request, context, writable)`. Use `writable` to disable Apply when a file is locked or read-only.
 For a dialog, use `context.onCancel` to close it when the request expires. The attachment applies
 the action’s initial edit before sending the command. It validates each approved edit against the
 originating view and captured documents. Each changed batch has one Undo step across its files.
@@ -623,6 +624,14 @@ originating view and captured documents. Each changed batch has one Undo step ac
 expired, `refused` for a denied action or edit, or `failed` for an error. Earlier edits stay undoable
 if a later step fails. Use `canRunCommand` to withhold execution while another host operation is
 active. A busy command returns `refused("command-unavailable")` and leaves the preview available.
+
+`commands.run(name, args)` runs an advertised command on a connected provider. Supply
+`commands.documents` for additional project files and `commands.reviewCommandEdit` to approve
+edits. The command keeps its originating view through approval and returns the same outcomes as
+`preview.apply()`. Its snapshot lists the files changed by the running or last command, including
+edits committed before a lost acknowledgement. A command that makes no edits preserves an open
+action preview. After cancellation, check `provider.getSnapshot().commandRequiresReconnect`
+before offering another command.
 
 `createLspActionClient(provider, options).run({ document, project, from, to }).result` resolves to
 validated `actions`, currentness guards, `supports(command)`, `resolve(action)` and

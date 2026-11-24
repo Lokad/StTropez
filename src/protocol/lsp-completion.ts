@@ -27,7 +27,6 @@ export type LspCompletionClient = LspFeatureClient<"textDocument/completion", Ls
 type Batch = { binding: LspBindingCapture; value: LspCompletionBatch; requestedAt: number };
 const same = (left: DocumentSnapshot | undefined, right: DocumentSnapshot) => !!left && left.id === right.id
     && left.resourceId === right.resourceId && left.revision === right.revision && left.buffer === right.buffer;
-const stale = () => staleRequest("LSP completion batch expired.");
 
 /** One current choice batch and one request/resolve intent; host view and acceptance policy stay outside. */
 export const createLspCompletionClient: (provider: LspWorkspace) => LspCompletionClient = completionClient;
@@ -39,7 +38,7 @@ export function completionClient(provider: LspWorkspace | LspDocumentOwner): Lsp
     const cancelPending = () => { sequence++; const old = pending; pending = undefined; old?.cancel(); };
     const current = (batch: Batch) => !disposed && active === batch && same(batch.binding.getSnapshot(), batch.value.document);
     const requireBatch = (value: LspCompletionBatch) => {
-        const batch = batches.get(value); if (!batch || !current(batch)) throw stale(); return batch;
+        const batch = batches.get(value); if (!batch || !current(batch)) throw staleRequest(); return batch;
     };
     const publish = (binding: LspBindingCapture, document: DocumentSnapshot, offset: number, choices: LspCompletions, requestedAt = offset): LspCompletionBatch => {
         const batch: Batch = { binding, value: undefined!, requestedAt };
@@ -50,7 +49,7 @@ export function completionClient(provider: LspWorkspace | LspDocumentOwner): Lsp
     const own = <T>(call: LspCall<T>): LspCall<T> => {
         const serial = sequence; pending = call; let finished = false;
         const result = call.result.then(value => {
-            if (disposed || serial !== sequence) throw cancelledRequest("LSP completion request cancelled.");
+            if (disposed || serial !== sequence) throw cancelledRequest();
             return value;
         }).catch(error => { if (serial === sequence) active = undefined; throw error; }).finally(() => {
             finished = true; if (pending === call) pending = undefined;
@@ -69,13 +68,13 @@ export function completionClient(provider: LspWorkspace | LspDocumentOwner): Lsp
                 fallback = options.fallback && (typeof options.fallback === "function" ? options.fallback : Object.freeze({ ...options.fallback }));
             if (options.retain) {
                 requireBatch(options.retain);
-                if (!same(document, options.retain.document) || offset !== options.retain.offset) throw stale();
+                if (!same(document, options.retain.document) || offset !== options.retain.offset) throw staleRequest();
             } else active = undefined;
             cancelPending();
             const call = client.request(options, completionMethod, capture => ({ position: capture.index.at(offset), context }), value => value.decode(() => {
                 received++;
                 const binding = client.scope.captureBinding(value.target, completionMethod), local = binding?.getSnapshot();
-                if (!binding || !local || !same(local, document)) throw stale();
+                if (!binding || !local || !same(local, document)) throw staleRequest();
                 const configuration = client.options(document, completionMethod),
                     commitCharacters = configuration.flatMap(option => Array.isArray(option.allCommitCharacters) ? option.allCommitCharacters.filter((value): value is string => typeof value === "string") : []);
                 const choices = decodeLspCompletions(value.response, value.capture, offset, fallback, {
@@ -102,9 +101,9 @@ export function completionClient(provider: LspWorkspace | LspDocumentOwner): Lsp
             if (!value.items.includes(item) || !item.resolve) throw new TypeError("Choose a captured unresolved completion.");
             cancelPending();
             const call = client.request({ document: value.document, prepare }, completionMethod, () => {
-                if (!current(batch)) throw stale(); return item.resolve as Record<string, JsonValue>;
+                if (!current(batch)) throw staleRequest(); return item.resolve as Record<string, JsonValue>;
             }, response => response.decode(() => {
-                if (!current(batch)) throw stale();
+                if (!current(batch)) throw staleRequest();
                 let resolved: LspCompletion | null, reason: string | null = null;
                 try { resolved = decodeLspResolvedCompletion(response.response, item, response.capture); }
                 catch (error) { if (!(error instanceof UnsupportedLspSnippetError)) throw error; resolved = null; reason = error.message; }
