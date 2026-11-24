@@ -1138,12 +1138,11 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         if (!Number.isSafeInteger(line) || line < 0 || line >= document.buffer.lineCount || !Number.isFinite(column)) throw new RangeError("Invalid navigation column.");
         if (!renderedIndex.hiddenBy(line)) return withRow(line, columnScroll(column), undefined, work);
     }
-    function completeLine(buffer: TextBuffer, line: number) {
-        const span = buffer.line(line);
-        if (span.to - span.from <= 512 || rows.get(line)?.dataset.complete === "true") return span;
+    function isCompleteLine(buffer: TextBuffer, line: number, span = buffer.line(line)): boolean {
+        if (span.to - span.from <= 512 || rows.get(line)?.dataset.complete === "true") return true;
         // Rows just above the short-line limit can fit in a wide viewport.
         const end = line + 1 === buffer.lineCount ? buffer.length : buffer.offsetAt(line + 1);
-        if (end - span.from <= 514 && row(buffer, line).complete) return span;
+        return end - span.from <= 514 && row(buffer, line).complete;
     }
     const navigation = Object.freeze<ViewportNavigation>({
         prepareNavigationRows,
@@ -1154,17 +1153,18 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             let offset = range.head;
             if (collapse) offset = leftward ? low : Math.max(range.anchor, range.head);
             const line = buffer.lineAt(offset);
-            const span = completeLine(buffer, line);
-            if (!span) return;
-            if (collapse && !leftward && low < span.from && !completeLine(buffer, buffer.lineAt(low))) return;
+            const span = buffer.line(line);
             const affinity = leftward ? "after" : "before";
             if (!collapse && (leftward ? offset === span.from : offset >= span.to)) {
                 const index = view.folding.getSnapshot().index;
                 const next = index.rowAt(line) + direction;
                 if (next < 0 || next >= index.visibleLineCount) return { offset: leftward ? span.from : span.to, affinity };
-                const neighbor = completeLine(buffer, index.lineAt(next));
-                return neighbor && { offset: leftward ? neighbor.to : neighbor.from, affinity: leftward ? "before" : "after" };
+                const neighbor = index.lineAt(next);
+                return { offset: leftward ? lineContentEnd(buffer, neighbor) : buffer.offsetAt(neighbor),
+                    affinity: leftward ? "before" : "after" };
             }
+            if (!isCompleteLine(buffer, line, span)) return;
+            if (collapse && !leftward && low < span.from && !isCompleteLine(buffer, buffer.lineAt(low))) return;
             // The interior CRLF position paints at the content end.
             if (offset > span.to) return { offset: span.to, affinity };
             const local = localAsciiGraphemePoint(buffer, offset);

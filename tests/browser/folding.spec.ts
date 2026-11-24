@@ -99,7 +99,7 @@ test("inserting beside a collapsed header and deleting its line keep typing on v
 test("collapsing from a body caret moves it to the header for navigation and typing", async ({ page }) => {
     await page.goto("/editing/");
     await page.evaluate(() => {
-        const f = window.editingFixture; f.setText("head\r\nbody\r\nlast\r\ntail");
+        const f = window.editingFixture; f.setText("head\r\nbody\r\nlast\r\n" + "tail".repeat(1000));
         f.discoverFolds(() => [{ from: 0, to: 18, group: "block" }]);
         f.select("primary", { anchor: 8, head: 8 }); f.select("secondary", { anchor: 13, head: 13 });
     });
@@ -108,6 +108,13 @@ test("collapsing from a body caret moves it to the header for navigation and typ
     await expect(fold).toHaveAttribute("aria-expanded", "false"); await expect(source).toBeFocused();
     const current = () => page.evaluate(() => window.editingFixture.selectionSet().ranges[0]);
     expect(await current()).toMatchObject({ anchor: 4, head: 4 });
+    await source.press("ArrowRight");
+    await ready(page);
+    expect(await current()).toMatchObject({ anchor: 18, head: 18, headAffinity: "after" });
+    await source.press("ArrowLeft");
+    await ready(page);
+    expect(await current()).toMatchObject({ anchor: 4, head: 4, headAffinity: "before" });
+    await expect(fold).toHaveAttribute("aria-expanded", "false");
     await source.press("ArrowDown"); await ready(page); expect(await current()).toMatchObject({ anchor: 22, head: 22 });
     await expect(fold).toHaveAttribute("aria-expanded", "false");
     expect((await page.evaluate(() => window.editingFixture.snapshot())).secondary.selection).toMatchObject({ anchor: 13, head: 13 });
