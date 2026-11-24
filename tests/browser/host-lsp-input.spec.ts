@@ -198,6 +198,7 @@ test(`plain LSP captures wait for movement, composition and table input before f
     expect(final.bindings.navigation).toMatchObject({ sessions: [], subscriptions: 0, pending: false, results: 0 });
     expect(final.bindings.rename).toMatchObject({ sessions: 0, subscriptions: 0, disposed: true });
     expect(final.bindings.actions).toMatchObject({ sessions: 0, subscriptions: 0, disposed: true });
+    expect(final.bindings.project).toMatchObject({ pending: false, transport: null, disposed: true });
     expect(final.bindings.signature).toMatchObject({ sessions: 0, subscriptions: 0, pending: false });
     expect(final.bindings.links).toMatchObject({ sessions: 0, subscriptions: 0, disposed: true });
     expect(final.bindings.colors).toMatchObject({ sessions: 0, subscriptions: 0, disposed: true, decoratedViews: 0 });

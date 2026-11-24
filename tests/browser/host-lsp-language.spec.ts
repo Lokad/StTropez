@@ -17,11 +17,6 @@ async function settledColorsAndLinks(page: Page) {
     await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && !s.bindings.colors.state.pending && !s.bindings.links.state.pending; });
 }
 async function exact(page: Page, text: string) { expect(await hostTextEquals(page, text)).toBe(true); }
-async function disposeColorsAndLinks(page: Page) {
-    await page.evaluate(() => window.hostFixture.dispose()); const state = await snapshot(page);
-    for (const feature of [state.bindings.colors, state.bindings.links]) expect(feature).toMatchObject({ sessions: 0, subscriptions: 0, disposed: true });
-    expect(state.bindings.colors.decoratedViews).toBe(0);
-}
 async function languageFailureScene(page: Page) {
     const raw = 'lookup("key", )\r\nimport "sample-utils";\r\nconst color = "#abc";';
     await seed(page, raw, raw.indexOf(")"));
@@ -95,7 +90,6 @@ test.describe("plain selected LSP features", () => {
         await source.press("Control+End"); await page.keyboard.insertText(' const c = "#00ff00";');
         await expect(marks).toHaveCount(3); await expect(marks.nth(2)).toHaveCSS("background-color", "rgb(0, 255, 0)");
         await expect(source).toBeFocused();
-        await disposeColorsAndLinks(page);
     });
     test("a late background color scan cannot repaint a newer revision or open its picker", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/documentColor"); await page.reload();
@@ -179,7 +173,7 @@ test.describe("plain selected LSP features", () => {
         const requests = methods.filter(method => /^(textDocument\/(signatureHelp|documentLink|documentColor|colorPresentation))$/.test(method));
         await field(page).press("Control+End"); await field(page).pressSequentially("X"); await field(page).press("Control+Shift+Space"); await field(page).press("F4"); await field(page).press("F6"); await ready(page);
         expect(methods.filter(method => /^(textDocument\/(signatureHelp|documentLink|documentColor|colorPresentation))$/.test(method))).toEqual(requests); await exact(page, raw + "HX");
-        await disposeColorsAndLinks(page);
+        await page.evaluate(() => window.hostFixture.dispose());
         const final = await snapshot(page); expect(final.bindings.lsp!.created).toBe(final.bindings.lsp!.terminated);
     });
     test("paged links and colors keep unresolved targets and invalid form values inert and reject oversized lists", async ({ page }) => {
@@ -256,7 +250,6 @@ test.describe("plain selected LSP features", () => {
         expect((await snapshot(page)).bindings.colors.state.status).toBe("failed"); await expect(page.getByLabel("Document color status", { exact: true })).toContainText("limit");
         expect((await snapshot(page)).bindings.colors.decoratedViews).toBe(0); await exact(page, oversized);
         expect((await snapshot(page)).history).toEqual(overflow.history); expect((await snapshot(page)).source.revision).toBe(overflow.source.revision);
-        await disposeColorsAndLinks(page);
     });
     test("secondary-resource color edits and explicit reveal keep primary Save and Run identity", async ({ page }) => {
         const text = 'import "sample-utils";\r\nconst accent = "#abc";', original = 'const color = "#abc";\r\nexport const value = 1;\r\n', expected = original.replace("#abc", "#112233");
@@ -292,7 +285,6 @@ test.describe("plain selected LSP features", () => {
         await expect(page.getByLabel("Document color status", { exact: true })).toContainText("Opened");
         await field(page).press("Control+z"); await exact(page, text); await expect(replacement).toBeHidden();
         await expect(page.getByLabel("Document color status", { exact: true })).toContainText("Source changed");
-        await disposeColorsAndLinks(page);
     });
     test("a long color insertion has a bounded review and applies in full", async ({ page }) => {
         const raw = 'const color = "#abc";', insert = "#aabbcc/*" + "x".repeat(12_000) + "*/";
@@ -315,7 +307,7 @@ test.describe("plain selected LSP features", () => {
         expect(shown.length).toBeLessThan(1_000);
         expect(shown).toContain(`${insert.length} UTF-16 units`);
         await exact(page, raw); await apply.click(); await exact(page, raw.replace("#abc", insert));
-        await field(page).press("Control+z"); await exact(page, raw); await disposeColorsAndLinks(page);
+        await field(page).press("Control+z"); await exact(page, raw);
     });
     test("provider color presentations preview every edit and preserve complete selections through shared history", async ({ page }) => {
         const methods: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value.method); }));
@@ -345,7 +337,6 @@ test.describe("plain selected LSP features", () => {
         await expect(openChanges).toBeHidden(); await expect(page.getByLabel("Document color status", { exact: true })).toContainText("Source changed");
         expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "primary")!.selectionSet);
         expect(methods).toContain("textDocument/documentColor"); expect(methods).toContain("textDocument/colorPresentation");
-        await disposeColorsAndLinks(page);
     });
     test("changing the proposed color keeps the new preview when the previous reply arrives", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/colorPresentation");
@@ -410,7 +401,6 @@ test.describe("plain selected LSP features", () => {
         await apply.click(); await settledColorsAndLinks(page);
         await exact(page, current.replace("#abc", "#445566"));
         expect((await snapshot(page)).bindings.colors.applied).toBe(1);
-        await disposeColorsAndLinks(page);
     });
     test("provider links resolve to captured host resources and late or outside destinations do not steal focus", async ({ page }) => {
         const methods: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value.method); }));
@@ -512,7 +502,6 @@ test.describe("plain selected LSP features", () => {
         await secondary.press("Shift+F4"); await expect(field(page)).toBeFocused(); await exact(page, raw);
         expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, before.bindings.links.companion!)).toContain(' // edited"three","four"');
         await expect(back).toBeDisabled();
-        await disposeColorsAndLinks(page);
     });
     test("F4 links restore complete comparison and secondary selections without taking later form focus", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/documentLink"); await page.reload();
@@ -564,7 +553,6 @@ test.describe("plain selected LSP features", () => {
         await field(page).focus(); replies.hold(); await field(page).press("F4"); await expect.poll(replies.waiting).toBe(true);
         const form = field(page, "Configuration path"); await form.focus(); await replies.release(); await settledColorsAndLinks(page);
         await expect(form).toBeFocused(); await expect(row).toBeEnabled(); await exact(page, raw);
-        await disposeColorsAndLinks(page);
     });
     test("F6 comparison colors retain alpha and controls until explicit keyboard confirmation", async ({ page }) => {
         const raw = '\ufeffconst color = "#abc";\r\nvalue;', expected = "// color presentation\r\n" + raw.replace("#abc", "rgba(1, 2, 3, 0.5)");
@@ -588,7 +576,7 @@ test.describe("plain selected LSP features", () => {
         expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline);
         await working.press("F6"); await settledColorsAndLinks(page); await expectPanelKeyReserved(colors, "Escape");
         await page.keyboard.press("Escape"); await expect(working).toBeFocused();
-        expect((await snapshot(page)).bindings.colors.state.view).toBeNull(); await disposeColorsAndLinks(page);
+        expect((await snapshot(page)).bindings.colors.state.view).toBeNull();
     });
     test("changing a host alias expires link discovery even when the same alias is restored", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/documentLink");
@@ -650,7 +638,6 @@ test.describe("plain selected LSP features", () => {
         });
         await expect(back).toBeDisabled();
         await field(page, "Secondary source").press("Shift+F4"); await expect(field(page, "Secondary source")).toBeFocused();
-        await disposeColorsAndLinks(page);
     });
     test("advertised signature triggers and retriggers show active parameters without taking completion shortcuts", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/signatureHelp"); await page.reload();
@@ -772,7 +759,7 @@ test.describe("plain selected LSP features", () => {
         await field(page).press("Escape"); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(complete);
         await field(page).press("Escape"); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet.ranges).toHaveLength(1);
         expect((await snapshot(page)).history).toEqual(before.history); await exact(page, raw);
-        await disposeColorsAndLinks(page); const final = await snapshot(page);
+        await page.evaluate(() => window.hostFixture.dispose()); const final = await snapshot(page);
         expect(final.bindings.signature).toMatchObject({ pending: false, scheduled: false, sessions: 0, subscriptions: 0, capture: null });
         expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
     });

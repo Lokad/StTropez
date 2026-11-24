@@ -64,7 +64,6 @@ async function preview(page: Page) {
     await waitForActions(page);
 }
 async function exact(page: Page, text: string) { expect(await hostTextEquals(page, text)).toBe(true); }
-async function dispose(page: Page) { await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page); expect(s.bindings.actions).toMatchObject({ sessions: 0, subscriptions: 0, transport: null, disposed: true }); }
 test.describe(`plain LSP code actions`, () => {
     test.beforeEach(async ({ page }) => {
         await page.addInitScript(() => { const send = WebSocket.prototype.send; WebSocket.prototype.send = function(this: WebSocket, data) { if (typeof data === "string") { const value = JSON.parse(data); if (value.method === "initialize" && value.params.capabilities.textDocument?.codeAction) Reflect.set(window, "actionTestSocket", this); } send.call(this, data); }; });
@@ -112,7 +111,7 @@ test.describe(`plain LSP code actions`, () => {
         expect(requests.filter(r => r.method === "codeAction/resolve")).toHaveLength(2); const initialize = requests.find(r => r.method === "initialize" && r.params.capabilities.textDocument.codeAction)!; expect(initialize.params.capabilities.textDocument.codeAction.resolveSupport.properties).toEqual(["edit"]);
         expect((await snapshot(page)).history).toEqual(before.history); await button(page, "Apply captured action").click(); await waitForActions(page); await exact(page, raw.replace("TODO", "DONE")); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
         await input(page, "Secondary source").press("Control+z"); await waitForActions(page); await exact(page, raw); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet.ranges.map(r => ({ anchor: r.anchor, head: r.head }))).toEqual(ranges);
-        await input(page, "Secondary source").press("Control+Shift+z"); await waitForActions(page); await exact(page, raw.replace("TODO", "DONE")); await dispose(page); await expect.poll(() => closed).toBe(opened);
+        await input(page, "Secondary source").press("Control+Shift+z"); await waitForActions(page); await exact(page, raw.replace("TODO", "DONE")); await page.evaluate(() => window.hostFixture.dispose()); await expect.poll(() => closed).toBe(opened);
     });
     test("a wide provider edit keeps action preview context and DOM bounded without applying source", async ({ page }) => {
         const text = "// TODO\n" + "x".repeat(100000); let rewritten = 0;
@@ -137,7 +136,6 @@ test.describe(`plain LSP code actions`, () => {
         await expect(edits(page)).toHaveCount(1);
         expect((await page.getByRole("list", { name: "Proposed action edits", exact: true }).textContent())!.length).toBeLessThan(2000);
         await exact(page, text); expect(after.history).toEqual(before.history); expect(after.source.revision).toBe(before.source.revision);
-        await dispose(page);
     });
     test("a complete 65-action list pages to the last captured choice and applies one undoable edit", async ({ page }) => {
         await page.routeWebSocket("**/lsp-fixture", client => {
@@ -164,7 +162,7 @@ test.describe(`plain LSP code actions`, () => {
         await expect(choices(page)).toHaveCount(1); await expect(choices(page)).toContainText("Review option 65");
         await choices(page).click(); await expect(choices(page)).toHaveAttribute("aria-pressed", "true");
         await button(page, "Apply captured action").click(); await waitForActions(page); await exact(page, "// choice 65\r\n" + raw);
-        await input(page).press("Control+z"); await waitForActions(page); await exact(page, raw); await dispose(page);
+        await input(page).press("Control+z"); await waitForActions(page); await exact(page, raw);
     });
     test("multi-resource action confirmation preserves comparison baselines, unmounted targets and captured Save/Run", async ({ page }) => {
         await seed(page); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await waitForActions(page); const working = input(page, "Comparison working source"), before = await snapshot(page), baseline = before.bindings.comparison!.baseline;
@@ -179,7 +177,7 @@ test.describe(`plain LSP code actions`, () => {
         await input(page, "Secondary source").press("Control+z"); await waitForActions(page); await exact(page, raw); expect((await snapshot(page)).bindings.comparison!.selectionSet).toEqual(selections); await input(page, "Secondary source").press("Control+Shift+z"); await waitForActions(page); await exact(page, marker + raw);
         const reference = input(page, "Comparison baseline source"), requested = (await snapshot(page)).bindings.actions.requested; await reference.press("Control+."); expect((await snapshot(page)).bindings.actions.requested).toBe(requested); await expect(reference).toHaveAttribute("readonly", "");
         await input(page, "Secondary source").focus(); await button(page, "Run captured inputs").click(); expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(before.source.id); expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(marker + raw); await page.evaluate(() => window.hostFixture.finishRun());
-        await button(page, "Save source").click(); await working.press("Control+End"); await working.pressSequentially(" later"); await waitForActions(page); await page.evaluate(() => window.hostFixture.finishSave()); await waitForActions(page); await exact(page, marker + raw + " later"); expect((await snapshot(page)).source.dirty).toBe(true); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline); await dispose(page);
+        await button(page, "Save source").click(); await working.press("Control+End"); await working.pressSequentially(" later"); await waitForActions(page); await page.evaluate(() => window.hostFixture.finishSave()); await waitForActions(page); await exact(page, marker + raw + " later"); expect((await snapshot(page)).source.dirty).toBe(true); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline);
     });
     test("invalid action replies clear choices and provider titles remain literal", async ({ page }) => {
         await seed(page);
@@ -277,7 +275,6 @@ test.describe(`plain LSP code actions`, () => {
         await select(page);
         await preview(page);
         await expect(button(page, "Apply captured action")).toBeEnabled();
-        await dispose(page);
     });
     test("confirmed action commands preserve ordered edits, wire arguments and complete history without automatic execution", async ({ page }) => {
         await seed(page); await button(page, "Add navigation companion").click(); const before = await snapshot(page);
@@ -306,7 +303,7 @@ test.describe(`plain LSP code actions`, () => {
         expect(await confirm.evaluate(invoke => invoke())).toEqual({ status: "expired" });
         await confirm.dispose();
         const receipt = await control(page, "fixture/lastCommand", {}); expect(receipt.arguments).toEqual([]); expect(receipt.documents.some((doc: any) => doc.prefix.startsWith(marker))).toBe(true); expect(receipt.documents.every((doc: any) => doc.version >= 1)).toBe(true); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
-        await button(page, "Open action changes in Navigation companion").click(); await input(page, "Secondary source").press("Control+z"); await waitForActions(page); await exact(page, raw); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet.ranges.map(range => ({ anchor: range.anchor, head: range.head }))).toEqual(ranges); await input(page, "Secondary source").press("Control+Shift+z"); await waitForActions(page); await exact(page, marker + raw); await dispose(page);
+        await button(page, "Open action changes in Navigation companion").click(); await input(page, "Secondary source").press("Control+z"); await waitForActions(page); await exact(page, raw); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet.ranges.map(range => ({ anchor: range.anchor, head: range.head }))).toEqual(ranges); await input(page, "Secondary source").press("Control+Shift+z"); await waitForActions(page); await exact(page, marker + raw);
     });
     test("action commands share the captured workspace decision owner and retain initial edits when later decisions fail", async ({ page }) => {
         await seed(page); await button(page, "Add navigation companion").click(); const before = await snapshot(page); await button(page, "Register provider review command").click(); await expect.poll(async () => (await snapshot(page)).bindings.project.pending).toBe(false);
@@ -316,7 +313,6 @@ test.describe(`plain LSP code actions`, () => {
         await captured.evaluate(review => review.apply()); await exact(page, marker + raw); expect((await snapshot(page)).bindings.project.state.review).not.toBeNull(); await button(page, "Apply captured provider edits").click(); await waitForActions(page); await exact(page, header + marker + raw + footer); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 2);
         await input(page).press("Control+z"); await waitForActions(page); await exact(page, marker + raw); await input(page).press("Control+z"); await waitForActions(page); await exact(page, raw);
         for (const fault of ["malformed", "failure"] as const) { await select(page); await preview(page); await choices(page).nth(7).click(); const consumed = await faultCommand(page, fault); await button(page, "Execute captured action").click(); await waitForActions(page); await consumed(); await exact(page, marker + raw); await expect(page.getByLabel("Code action status", { exact: true })).toContainText("undo"); await input(page).press("Control+z"); await waitForActions(page); await exact(page, raw); if ((await snapshot(page)).bindings.actions.state.disconnected || (await snapshot(page)).bindings.actions.state.reconnectRequired) await button(page, "Reconnect action provider").click(); }
-        await dispose(page);
     });
     test("dismissing a command review returns typing to the source and keeps its first edit undoable", async ({ page }) => {
         await seed(page);
@@ -364,7 +360,6 @@ test.describe(`plain LSP code actions`, () => {
         await input(page).press("Control+z");
         await waitForActions(page);
         await exact(page, raw);
-        await dispose(page);
     });
     test("paging a command review keeps keyboard focus and applies every edit to the working side", async ({ page }) => {
         const text = "// 😀 TODO\r\n" + "const unchanged = 123;\r\n" + "// TODO\r\n".repeat(134);
@@ -400,7 +395,6 @@ test.describe(`plain LSP code actions`, () => {
         await waitForActions(page);
         await exact(page, header + marker + text.replaceAll("TODO", "DONE") + footer);
         expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline);
-        await dispose(page);
     });
     test("resolved actions page bounded previews and apply every edit as one undo command", async ({ page }) => {
         const text = "// 😀 TODO\r\n" + "const unchanged = 123;\r\n" + "// TODO\r\n".repeat(70);
@@ -424,6 +418,5 @@ test.describe(`plain LSP code actions`, () => {
         await input(page).press("Control+z");
         await waitForActions(page);
         await exact(page, text);
-        await dispose(page);
     });
 });

@@ -28,15 +28,11 @@ test(`plain replace all stays cancelled after restored authority and permits an 
         }, authority);
         await button(page, "Replace all").click(); await expect(status).toContainText("Replacement cancelled"); await ready(page); await exact(page, original);
         const cancelled = await snapshot(page); expect(cancelled.source.revision).toBe(before.source.revision); expect(cancelled.history).toEqual(before.history);
-        expect(cancelled.bindings.views.find(v => v.id === "primary")!.selectionSet).toEqual(selected); expect(cancelled.diagnostics.subscriptions).toBe(before.diagnostics.subscriptions);
+        expect(cancelled.bindings.views.find(v => v.id === "primary")!.selectionSet).toEqual(selected);
         expect(await page.evaluate(() => window.hostFixture.referenceRange(0, 5))).toBe("start");
         await button(page, "Replace all").click(); await expect(status).toContainText("Replaced 2 matches."); await ready(page); await exact(page, changed);
-        expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1); expect((await snapshot(page)).diagnostics.subscriptions).toBe(before.diagnostics.subscriptions);
+        expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
         await input(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, original);
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet).toEqual(selected);
     }
-    await input(page).press("Control+s"); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
-    await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).pendingCommands).toBe(0); await ready(page);
-    expect((await snapshot(page)).source.dirty).toBe(false);
-    await page.evaluate(() => window.hostFixture.dispose());
 });

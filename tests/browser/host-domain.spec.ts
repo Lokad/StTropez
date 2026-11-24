@@ -14,10 +14,6 @@ async function setup(page: Page, host: string, text: string): Promise<void> {
      await page.goto(`/hosts/${host}/`);
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text); await waitForDomain(page); await input(page).focus();
 }
-async function dispose(page: Page): Promise<void> {
-    await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page);
-    expect(s.bindings.domain).toMatchObject({ sessions: [], pending: false, subscriptions: 0 }); await expect.poll(() => page.workers().length).toBe(0);
-}
 const region = "// #region root <b>東京 😀</b>\r\nconst one\r\n// #region child Child\r\nconst two\r\n// #endregion child\r\n// #endregion root\r\n";
 test(`plain 1000 indexed annotations stay bounded with inactive documents and typing`, async ({ page }) => {
     test.setTimeout(120000);
@@ -69,7 +65,10 @@ test(`plain 1000 indexed annotations stay bounded with inactive documents and ty
     const retained = await snapshot(page); await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); }); await waitForDomain(page);
     const remounted = await snapshot(page); expect(remounted.history).toEqual(retained.history);
     expect(await page.evaluate(() => window.hostFixture.inactiveDocuments())).toEqual(inactive);
-    await dispose(page); const stopped = await snapshot(page); expect(await page.evaluate(() => window.hostFixture.inactiveDocuments())).toEqual([]);
+    await page.evaluate(() => window.hostFixture.dispose());
+    await expect.poll(() => page.workers().length).toBe(0);
+    const stopped = await snapshot(page);
+    expect(stopped.bindings.domain).toMatchObject({ sessions: [], pending: false, subscriptions: 0 }); expect(await page.evaluate(() => window.hostFixture.inactiveDocuments())).toEqual([]);
     expect(stopped.diagnostics.documents).toBe(initial.diagnostics.documents); expect(stopped.diagnostics.tabs).toBe(initial.diagnostics.tabs);
 });
 test(`plain actual domain discovery preserves manual folds, independent views and remount`, async ({ page }) => {
@@ -126,7 +125,7 @@ test(`plain actual domain discovery preserves manual folds, independent views an
     await expect.poll(async () => (await painted.allTextContents()).join("")).toBe("const two");
     await expect(input(page)).toBeFocused();
     await input(page).pressSequentially("X"); await waitForDomain(page); await expect(page.getByRole("list", { name: "Domain annotations", exact: true }).getByRole("button")).toHaveCount(0);
-    await input(page, "Secondary source").press("Control+z"); await waitForDomain(page); await exact(page, text); await dispose(page);
+    await input(page, "Secondary source").press("Control+z"); await waitForDomain(page); await exact(page, text);
 });
 test(`plain captured comparison import is one shared undo step and preserves later Save/Run and reference identity`, async ({ page }) => {
     const text = "\ufeff" + region + "tail"; await setup(page, "plain", text); await button(page, "Open source review").click(); await waitForDomain(page);
@@ -147,7 +146,7 @@ test(`plain captured comparison import is one shared undo step and preserves lat
     await input(page).press("Control+z"); await waitForDomain(page); await exact(page, imported + " later"); expect((await snapshot(page)).source.dirty).toBe(false);
     await button(page, "Run captured inputs").click(); await expect.poll(async () => (await snapshot(page)).pendingRuns.length).toBe(1);
     expect(await page.evaluate(text => window.hostFixture.runCapture(0)!.source === text, imported + " later")).toBe(true); await page.evaluate(() => window.hostFixture.finishRun());
-    expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline); await dispose(page);
+    expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline);
 });
 test(`plain domain results reject stale revision, authority, fold, selection, composition and remount captures`, async ({ page }) => {
     await setup(page, "plain", region + "tail"); await page.evaluate(() => window.hostFixture.setDomainDelay(1000));
@@ -191,7 +190,6 @@ test(`plain domain results reject stale revision, authority, fold, selection, co
     expect(await page.evaluate(() => window.hostFixture.transferSnapshot().text)).toBe("unrelated target");
     await input(page).focus(); await page.evaluate(() => window.hostFixture.setSourceReadOnly(true)); await expect(button(page, "Insert catalogue import")).toBeDisabled();
     await page.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await expect(button(page, "Insert catalogue import")).toBeEnabled();
-    await dispose(page);
 });
 test(`plain malformed, failed, late and conflicting domain replies preserve prior results and allow explicit retry`, async ({ page }) => {
     await setup(page, "plain", region + "tail"); await button(page, "Discover domain regions").click(); await waitForDomain(page); const baseline = await snapshot(page);
@@ -208,5 +206,4 @@ test(`plain malformed, failed, late and conflicting domain replies preserve prio
     await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: 40 }]); }); await button(page, "Fold selected lines").click(); await waitForDomain(page);
     const prior = await snapshot(page); await button(page, "Discover domain regions").click(); await waitForDomain(page); await expect(status(page)).toContainText("one identity");
     expect((await snapshot(page)).bindings.domain.applied).toBe(prior.bindings.domain.applied); expect((await snapshot(page)).source.revision).toBe(prior.source.revision);
-    await dispose(page);
 });

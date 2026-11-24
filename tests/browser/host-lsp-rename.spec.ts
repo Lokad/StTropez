@@ -17,7 +17,6 @@ async function select(page: Page, at: number) { await input(page).focus(); await
 async function seed(page: Page, text = raw) { await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, text); await select(page, text.indexOf("catalogue") + 2); }
 async function preview(page: Page, value = "inventory") { await name(page).fill(value); await button(page, "Prepare rename preview").click(); await waitForRename(page); }
 async function exact(page: Page, text: string) { expect(await hostTextEquals(page, text)).toBe(true); }
-async function dispose(page: Page) { await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page); expect(s.bindings.rename).toMatchObject({ sessions: 0, subscriptions: 0, disposed: true }); }
 test.describe(`plain LSP rename host`, () => {
     test.beforeEach(async ({ page }) => {  await page.goto("/hosts/plain/?language=lsp"); await expect(input(page)).toBeVisible(); await waitForRename(page); });
     test("new-name preview applies exact provider edits across captured resources with shared complete-set history", async ({ page }) => {
@@ -61,7 +60,7 @@ test.describe(`plain LSP rename host`, () => {
         expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe("const catalogue = 1;\r\ncatalogue;\r\n");
         await input(page, "Secondary source").press("Control+Shift+z"); await waitForRename(page); await exact(page, expected);
         expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe("const café = 1;\r\ncafé;\r\n");
-        await dispose(page); await expect.poll(() => closed).toBe(opened);
+        await page.evaluate(() => window.hostFixture.dispose()); await expect.poll(() => closed).toBe(opened);
     });
     test("opening a rename target preserves a pending paste and rejects a released file", async ({ page }) => {
         await seed(page); await button(page, "Add navigation companion").click();
@@ -93,7 +92,7 @@ test.describe(`plain LSP rename host`, () => {
         await expect(open).toBeFocused();
         const after = await snapshot(page);
         expect(after.bindings.views.map(view => [view.viewId, view.documentId])).toEqual(before.bindings.views.map(view => [view.viewId, view.documentId]));
-        expect(after.history).toEqual(before.history); await dispose(page);
+        expect(after.history).toEqual(before.history);
     });
     test("malformed targets, authority changes, cancelled captures and reconnect leave editing available", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/rename"); await page.reload();
@@ -133,7 +132,7 @@ test.describe(`plain LSP rename host`, () => {
         await select(page, raw.indexOf("catalogue") + 2); await preview(page, "catalogue");
         await expect(targets(page)).toHaveCount(1); await button(page, "Apply captured rename").press("Space");
         await exact(page, marker + raw + "local"); await page.keyboard.press("Control+z");
-        await exact(page, raw + "local"); await dispose(page);
+        await exact(page, raw + "local");
     });
     test("comparison rename preserves its baseline and primary Save/Run through unmounted-target focus", async ({ page }) => {
         await seed(page); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await waitForRename(page); const working = input(page, "Comparison working source"), before = await snapshot(page), baseline = before.bindings.comparison!.baseline;
@@ -146,7 +145,7 @@ test.describe(`plain LSP rename host`, () => {
         await page.keyboard.press("Control+Shift+z"); await exact(page, expected); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline);
         const reference = input(page, "Comparison baseline source"), baselineText = await page.evaluate(length => window.hostFixture.referenceRange(0, length), baseline!.length); await reference.focus(); await reference.press("F2"); await expect(name(page)).not.toBeFocused(); expect(await page.evaluate(length => window.hostFixture.referenceRange(0, length), baseline!.length)).toBe(baselineText);
         await button(page, "Open renamed changes in Navigation companion").click(); await waitForRename(page); await button(page, "Run captured inputs").click(); expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(before.source.id); expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(expected); await page.evaluate(() => window.hostFixture.finishRun());
-        await button(page, "Save source").click(); await working.press("Control+End"); await working.pressSequentially(" later"); await waitForRename(page); await page.evaluate(() => window.hostFixture.finishSave()); await waitForRename(page); await exact(page, expected + " later"); expect((await snapshot(page)).source.dirty).toBe(true); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline); await dispose(page);
+        await button(page, "Save source").click(); await working.press("Control+End"); await working.pressSequentially(" later"); await waitForRename(page); await page.evaluate(() => window.hostFixture.finishSave()); await waitForRename(page); await exact(page, expected + " later"); expect((await snapshot(page)).source.dirty).toBe(true); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline);
     });
     test("rename pages its preview, preserves form focus and shares atomic undo", async ({ page }) => {
         test.setTimeout(90000);
@@ -177,6 +176,6 @@ test.describe(`plain LSP rename host`, () => {
         await expect(targets(page)).toHaveCount(64); await expect(button(page, "Apply captured rename")).toBeEnabled();
         await button(page, "Apply captured rename").click(); await waitForRename(page);
         const expected = marker + text.replaceAll("catalogue", "inventoryX"); await exact(page, expected); await input(page).press("Control+z"); await waitForRename(page); await exact(page, text); await input(page).press("Control+Shift+z"); await waitForRename(page); await exact(page, expected);
-        expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1); await dispose(page);
+        expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
     });
 });

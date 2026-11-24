@@ -17,7 +17,6 @@ async function register(page: Page) { if ((await snapshot(page)).bindings.projec
 async function request(page: Page) { await button(page, "Request provider review edits").click(); await expect.poll(async () => !!(await snapshot(page)).bindings.project.state.review).toBe(true); await editors(page); }
 async function control(page: Page, method: string, params?: unknown) { await page.evaluate(({ method, params }) => (Reflect.get(window, "projectTestSocket") as WebSocket).send(JSON.stringify({ jsonrpc: "2.0", ...(params === undefined ? {} : { id: "control-" + method, params }), method })), { method, params }); }
 async function exact(page: Page, text: string) { expect(await hostTextEquals(page, text)).toBe(true); }
-async function dispose(page: Page) { await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page); expect(s.bindings.project).toMatchObject({ pending: false, transport: null, sessions: 0, subscriptions: 0, disposed: true }); }
 test.describe(`plain LSP server edits`, () => {
     test.beforeEach(async ({ page }) => {
          await page.addInitScript(() => { const send = WebSocket.prototype.send; WebSocket.prototype.send = function(this: WebSocket, data) { if (typeof data === "string") { const value = JSON.parse(data); if (value.method === "initialize" && value.params.capabilities.workspace?.applyEdit) Reflect.set(window, "projectTestSocket", this); } send.call(this, data); }; });
@@ -34,7 +33,7 @@ test.describe(`plain LSP server edits`, () => {
         await button(page, "Open provider changes in Navigation companion").evaluate(node => { node.dataset.retained = "changed-resource"; });
         await button(page, "Open provider changes in Navigation companion").click(); await editors(page); await input(page, "Secondary source").press("Control+z"); await editors(page); await exact(page, raw); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet.ranges.map(r => ({ anchor: r.anchor, head: r.head }))).toEqual(ranges); await input(page, "Secondary source").press("Control+Shift+z"); await editors(page); await exact(page, header + raw + footer);
         await expect(button(page, "Open provider changes in Navigation companion")).toHaveAttribute("data-retained", "changed-resource");
-        const depth = (await snapshot(page)).history.undoDepth; await button(page, "Request provider review edits").click(); await done(page); expect((await snapshot(page)).history.undoDepth).toBe(depth); await button(page, "Unregister provider review command").click(); await done(page); await expect(button(page, "Request provider review edits")).toBeDisabled(); await dispose(page); await expect.poll(() => closed).toBe(opened);
+        const depth = (await snapshot(page)).history.undoDepth; await button(page, "Request provider review edits").click(); await done(page); expect((await snapshot(page)).history.undoDepth).toBe(depth); await button(page, "Unregister provider review command").click(); await done(page); await expect(button(page, "Request provider review edits")).toBeDisabled(); await page.evaluate(() => window.hostFixture.dispose()); await expect.poll(() => closed).toBe(opened);
     });
     test("edits to only an unmounted companion preserve primary revision, review, Save and Run", async ({ page }) => {
         await seed(page); await button(page, "Open source review").click(); await register(page); await request(page);
@@ -62,7 +61,7 @@ test.describe(`plain LSP server edits`, () => {
         await button(page, "Run captured inputs").click(); expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(before.source.id);
         expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(expected); await page.evaluate(() => window.hostFixture.finishRun());
         await button(page, "Save source").click(); await page.evaluate(() => window.hostFixture.finishSave()); await done(page);
-        expect((await snapshot(page)).source.dirty).toBe(false); await exact(page, expected);  await dispose(page);
+        expect((await snapshot(page)).source.dirty).toBe(false); await exact(page, expected);
     });
     test("a held Apply, stale review handles and authority changes cannot apply a replacement batch", async ({ page }) => {
         await seed(page); await button(page, "Add navigation companion").click(); await register(page); const before = await snapshot(page), companion = before.bindings.navigation.companion!;
@@ -91,7 +90,7 @@ test.describe(`plain LSP server edits`, () => {
             if (mode === "selection") await select(page, 8); else if (mode === "typing") { await input(page).press("Control+End"); await input(page).pressSequentially("x"); await editors(page); await input(page).press("Control+z"); } else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
             await done(page); await captured.evaluate(review => review.apply()); await exact(page, raw);
         }
-        expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth); await dispose(page);
+        expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth);
     });
     test("request cancellation, capability withdrawal, disconnect and lost acknowledgement never replay edits", async ({ page }) => {
         let executions = 0; const incoming: any[] = []; page.on("websocket", socket => {
@@ -115,7 +114,7 @@ test.describe(`plain LSP server edits`, () => {
         await request(page); await control(page, "fixture/reviewRegistration", { registered: false }); await done(page); await exact(page, raw); expect((await snapshot(page)).bindings.project.registered).toBe(false); await button(page, "Reconnect workspace provider").click(); await select(page); const count = executions; await register(page); expect(executions).toBe(count);
         await request(page); await control(page, "fixture/disconnect"); await done(page); await exact(page, raw); await button(page, "Reconnect workspace provider").click(); await select(page); await register(page);
         await page.evaluate(() => window.hostFixture.faultProjectNext("ack")); await request(page); await button(page, "Apply captured provider edits").click(); await done(page); await exact(page, header + raw + footer); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1); await expect(page.getByLabel("Workspace provider status", { exact: true })).toContainText("undo");
-        const sent = executions; await button(page, "Reconnect workspace provider").click(); await select(page); await register(page); expect(executions).toBe(sent); await button(page, "Request provider review edits").click(); await done(page); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1); await input(page).press("Control+z"); await editors(page); await exact(page, raw); await dispose(page);
+        const sent = executions; await button(page, "Reconnect workspace provider").click(); await select(page); await register(page); expect(executions).toBe(sent); await button(page, "Request provider review edits").click(); await done(page); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1); await input(page).press("Control+z"); await editors(page); await exact(page, raw);
     });
     test("held server requests cannot revive interrupted command captures and fresh reviews retain form focus", async ({ page }) => {
         test.setTimeout(60000);
@@ -160,15 +159,14 @@ test.describe(`plain LSP server edits`, () => {
         await deliver(); await expect.poll(async () => !!(await snapshot(page)).bindings.project.state.review).toBe(true); await expect(form).toBeFocused(); await exact(page, current);
         expect((await snapshot(page)).history).toEqual(before.history); await button(page, "Apply captured provider edits").click(); await done(page);
         await exact(page, header + current + footer); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
-         await dispose(page);
     });
     test("comparison review decisions keep immutable baselines and primary Save/Run despite companion focus", async ({ page }) => {
         await seed(page); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await editors(page); const working = input(page, "Comparison working source"), before = await snapshot(page), baseline = before.bindings.comparison!.baseline; await working.focus(); await register(page); await request(page); await button(page, "Apply captured provider edits").click(); await done(page); const expected = header + raw + footer; await exact(page, expected); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline);
         await button(page, "Open provider changes in Navigation companion").click(); await editors(page); await button(page, "Run captured inputs").click(); expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(before.source.id); expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(expected); await page.evaluate(() => window.hostFixture.finishRun());
-        await button(page, "Save source").click(); await working.press("Control+End"); await working.pressSequentially(" later"); await editors(page); await page.evaluate(() => window.hostFixture.finishSave()); await editors(page); await exact(page, expected + " later"); expect((await snapshot(page)).source.dirty).toBe(true); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline); await dispose(page);
+        await button(page, "Save source").click(); await working.press("Control+End"); await working.pressSequentially(" later"); await editors(page); await page.evaluate(() => window.hostFixture.finishSave()); await editors(page); await exact(page, expected + " later"); expect((await snapshot(page)).source.dirty).toBe(true); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline);
     });
     test("server reviews page every edit and bound wide deletion previews without applying declines", async ({ page }) => {
         test.setTimeout(90000); const text = "// 😀 TODO\r\n" + "const unchanged = 123;\r\n" + "// TODO\r\n".repeat(70); await seed(page, text); await register(page); const before = await snapshot(page); await control(page, "fixture/projectStyle", { style: "many" }); await request(page); expect((await snapshot(page)).bindings.project.state.review!.count).toBe(73); await expect(notes(page)).toHaveCount(64); await button(page, "Next provider edits").click(); await expect(notes(page)).toHaveCount(9); await button(page, "Apply captured provider edits").click(); await done(page); await exact(page, header + text.replaceAll("TODO", "DONE") + footer); await input(page).press("Control+z"); await editors(page); await exact(page, text);
-        await control(page, "fixture/projectStyle", { style: "wide" }); await request(page); await expect(notes(page)).toHaveCount(1); expect((await snapshot(page)).bindings.project.state.review!.notes[0]!.context.length).toBeLessThan(200); expect((await page.getByRole("list", { name: "Captured provider edits" }).textContent())!.length).toBeLessThan(2000); await button(page, "Decline captured provider edits").click(); await done(page); await exact(page, text); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth); await dispose(page);
+        await control(page, "fixture/projectStyle", { style: "wide" }); await request(page); await expect(notes(page)).toHaveCount(1); expect((await snapshot(page)).bindings.project.state.review!.notes[0]!.context.length).toBeLessThan(200); expect((await page.getByRole("list", { name: "Captured provider edits" }).textContent())!.length).toBeLessThan(2000); await button(page, "Decline captured provider edits").click(); await done(page); await exact(page, text); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth);
     });
 });
