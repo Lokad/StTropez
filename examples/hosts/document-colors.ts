@@ -7,7 +7,7 @@ import { attachPlainPane, focusSourceCaret, onSourceFocus, type PlainPane } from
 import { openChangedFile, type ChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, DocumentSnapshot, TabId } from "../../src/index.ts";
 import { attachEditorLanguage } from "../../src/browser/index.ts";
-import type { ColorPresentationChoice, DocumentColorChoice, DocumentColorController, ReviewEditResult, TextEditor } from "../../src/browser/index.ts";
+import type { ColorPresentationChoice, DocumentColorChoice, DocumentColorController, ColorPresentationReview, TextEditor } from "../../src/browser/index.ts";
 import type { LspDocumentColor, LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import { colorLimits, parseColor, rgbaColor, sameColor } from "../../fixtures/language/colors.ts";
 import type { ColorFault, ColorReference } from "../../fixtures/language/colors.ts";
@@ -25,7 +25,7 @@ function colorReference(document: DocumentSnapshot, { from, to, color }: LspDocu
 export type DocumentColorsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; view: string | null;
     status: "idle" | "scan" | "colors" | "presentations" | "applied" | "expired" | "failed"; message: string; count: number; page: number; paging: PanelPaging | null; colors: readonly ColorNote[];
     selected: number; value: string; css: string | null; presentation: string; choices: readonly ColorPresentationChoice[];
-    edits: readonly string[]; canPreview: boolean; canApply: boolean; reviewKey: number | null; apply: (() => ReviewEditResult) | null; changed: ChangedFile | null }>;
+    edits: readonly string[]; canPreview: boolean; canApply: boolean; reviewKey: number | null; apply: ColorPresentationReview["apply"] | null; changed: ChangedFile | null }>;
 const initial: DocumentColorsSnapshot = { available: false, connected: false, disconnected: false, pending: false, view: null,
     status: "idle", message: "Focus a source to discover colors.", count: 0, page: 0, paging: null, colors: [], selected: -1, value: "", css: null,
     presentation: "", choices: Object.freeze([]), edits: Object.freeze([]), canPreview: false, canApply: false, reviewKey: null, apply: null, changed: null };
@@ -110,7 +110,7 @@ export class HostDocumentColors {
             presentation: review ? `provider-${choices.indexOf(review.choice)}` : "", edits, canPreview: !!reference && !!proposed && !pending,
             canApply: review?.canApply ?? false, reviewKey, apply: review ? () => {
                 const result = review.apply();
-                if (result.applied && this.sessions.has(s)) focusSourceCaret(s.editor);
+                if (result.status === "done" && this.sessions.has(s)) focusSourceCaret(s.editor);
                 return result;
             } : null });
     }
@@ -181,7 +181,7 @@ export class HostDocumentColors {
         const s = this.active;
         if (!s || this.disconnected || !this.host.canCapture(s.editor.view.documentId) || this.host.workspace.document(s.editor.view.documentId).key.variant !== "working") return;
         const state = s.controller.getSnapshot();
-        if (swatch && this.owner === s && (state.status === "ready" || state.status === "review")) {
+        if (swatch && this.owner === s && (state.status === "ready" || state.status === "presentations" || state.status === "review")) {
             const index = state.colors.findIndex(c => c.from === swatch.from && c.to === swatch.to && sameColor(c.color, swatch.color));
             if (index >= 0) { this.inspect(s, index, state.colors[index]!); return; }
         }
@@ -197,7 +197,12 @@ export class HostDocumentColors {
     readonly preview = () => {
         const s = this.owner, state = this.cell.get(), proposed = parseColor(state.value), reference = s?.controller.getSnapshot().colors[state.selected];
         if (!s || !reference || !proposed || state.pending || !this.host.canCapture(s.editor.view.documentId)) return;
-        this.metrics.previews++; void reference.preview(proposed);
+        this.metrics.previews++;
+        void reference.presentations(proposed).then(result => {
+            if (result.status === "done" && this.owner === s && !s.controller.getSnapshot().review) {
+                result.value[0]?.select({ review: true });
+            }
+        });
     };
     readonly openChanged = (id: DocumentId) => {
         if (this.disposed || this.owner || this.cell.get().changed?.document !== id) return;

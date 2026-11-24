@@ -14,6 +14,11 @@ import { controllerObservable } from "./controller-observable.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 export type ChangedDocument = Readonly<{ document: DocumentId; title: string }>;
+
+export function changedDocument(doc: DocumentSnapshot): ChangedDocument {
+    return Object.freeze({ document: doc.id, title: doc.title });
+}
+
 export type LanguageCommandOptions = Readonly<{
     documents?: () => readonly DocumentSnapshot[];
     canCapture?: (id: DocumentId) => boolean;
@@ -94,7 +99,7 @@ export function commandTransaction(editor: TextEditor, captured: CapturedCommand
             });
             for (const doc of documents) {
                 captured.project.documents.set(doc.id, doc);
-                changes.set(doc.id, Object.freeze({ document: doc.id, title: doc.title }));
+                changes.set(doc.id, changedDocument(doc));
             }
             if (renew && documents.some(doc => doc.id === view.documentId)) captured.renew();
             if (documents.length) changed?.(Object.freeze([...changes.values()]));

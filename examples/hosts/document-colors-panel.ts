@@ -23,7 +23,7 @@ export function documentColorsPanelModel(tools: DocumentColorsPanelTools, s: Doc
         value: { label: "Proposed color ", value: s.value, maxLength: 96, bind: tools.bindValue, css: s.css ?? "transparent", change: (value: string) => tools.setValue(value) },
         preview: { label: "Preview color presentations", disabled: !s.canPreview || s.pending, invoke: tools.preview },
         presentation: { label: "Color presentation ", value: s.presentation, disabled: !s.choices.length || s.pending,
-            choices: s.choices, change: (index: number) => s.choices[index]?.select() },
+            choices: s.choices, change: (index: number) => s.choices[index]?.select({ review: true }) },
         apply: { label: "Apply captured color", reviewKey: s.reviewKey, disabled: !s.canApply || s.pending, invoke: () => s.apply?.() },
         edits: { label: "Proposed color edits", items: s.edits },
         changed: { visible: s.changed !== null, reviewKey: s.changed?.document, label: s.changed ? `Open color changes in ${s.changed.title}` : "Open color changes", disabled: s.pending || s.view !== null,

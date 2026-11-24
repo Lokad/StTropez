@@ -120,10 +120,10 @@ test("color controls keep the reference and reviewed Apply from the displayed sn
     const tools: Parameters<typeof documentColorsPanelModel>[0] = { discover: noop, cancel: noop, disconnect: noop, reconnect: noop,
         bindList: noop, bindValue: noop, setValue: noop, preview: noop, openChanged: noop };
     const state: DocumentColorsSnapshot = { available: true, connected: true, disconnected: false, pending: false, view: "primary", status: "presentations", message: "",
-        count: 1, page: 0, paging: null, selected: 0, value: "#abc", css: "#abc", presentation: "hex", canPreview: true, canApply: true, reviewKey: 1, apply: () => { calls.push("apply first"); return { applied: true } as const; },
+        count: 1, page: 0, paging: null, selected: 0, value: "#abc", css: "#abc", presentation: "hex", canPreview: true, canApply: true, reviewKey: 1, apply: () => { calls.push("apply first"); return { status: "done", value: [] } as const; },
         colors: [{ from: 1, to: 5, text: "#abc", label: "#abc", color: { red: 1, green: 1, blue: 1, alpha: 1 }, ordinal: 0, line: 1, column: 2, css: "#abc", inspect: () => calls.push("inspect first") }],
-        choices: [{ label: "Hex", select: () => { calls.push("hex"); return undefined; } }], edits: [], changed: null };
-    const first = documentColorsPanelModel(tools, state), newer = documentColorsPanelModel(tools, { ...state, apply: () => { calls.push("apply next"); return { applied: true } as const; } });
+        choices: [{ label: "Hex", select: () => { calls.push("hex"); return { status: "stale" } as const; } }], edits: [], changed: null };
+    const first = documentColorsPanelModel(tools, state), newer = documentColorsPanelModel(tools, { ...state, apply: () => { calls.push("apply next"); return { status: "done", value: [] } as const; } });
     assert.equal(first.results.identity, newer.results.identity); first.results.items()[0]!.invoke(); first.presentation.change(0);
     newer.apply.invoke(); first.apply.invoke(); assert.deepEqual(calls, ["inspect first", "hex", "apply next", "apply first"]);
 });

@@ -2,7 +2,7 @@ import { emptyList } from "../core/empty-list.ts";
 import { languageReview } from "./language-review.ts";
 import { changedTextEdits } from "../core/changes.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
-import type { ChangedDocument } from "./language-command.ts";
+import { changedDocument, type ChangedDocument } from "./language-command.ts";
 import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
 import { renameClient, type LspRenameClient } from "../protocol/lsp-rename.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
@@ -73,7 +73,7 @@ export function mountRename(editor: TextEditor, owner: LspDocumentOwner, options
                 const changed = applyLspWorkspaceEdit(workspace, edit, {
                     origin: "host", requiredOrigins: ["human"], source: "rename", historyKind: "refactor", view
                 });
-                changes = Object.freeze(changed.map(doc => Object.freeze({ document: doc.id, title: doc.title })));
+                changes = Object.freeze(changed.map(changedDocument));
                 return true;
             })) {
                 expire(j);

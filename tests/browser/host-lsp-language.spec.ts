@@ -375,7 +375,7 @@ test.describe("plain selected LSP features", () => {
         const old = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.colors.state.apply!);
         await expect(apply).toBeEnabled();
         await preview("#445566"); const beforeOld = await snapshot(page);
-        expect(await old.evaluate(apply => apply())).toEqual({ applied: false, reason: "expired" }); await old.dispose();
+        expect(await old.evaluate(apply => apply())).toEqual({ status: "stale" }); await old.dispose();
         const format = page.getByRole("combobox", { name: "Color presentation", exact: true });
         const option = format.getByRole("option").first();
         await option.evaluate(node => { node.dataset.retained = "color-format"; });
@@ -388,7 +388,7 @@ test.describe("plain selected LSP features", () => {
         await expect(option).toHaveAttribute("data-retained", "color-format");
         await format.selectOption("provider-0"); await expect(edits).toHaveText(firstEdits);
         await apply.hover(); await page.mouse.up();
-        expect(await first.evaluate(apply => apply())).toEqual({ applied: false, reason: "expired" }); await first.dispose();
+        expect(await first.evaluate(apply => apply())).toEqual({ status: "stale" }); await first.dispose();
         await exact(page, current);
         expect((await snapshot(page)).history).toEqual(beforeOld.history);
         await expect(apply).toBeEnabled();
@@ -398,7 +398,7 @@ test.describe("plain selected LSP features", () => {
         await discover();
         await preview("#445566"); const beforeReadOnly = await snapshot(page);
         await expect(apply).toBeDisabled();
-        expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.colors.state.apply!())).toEqual({ applied: false, reason: "not-writable" });
+        expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.colors.state.apply!())).toEqual({ status: "refused", reason: "not-writable" });
         await exact(page, current);
         expect((await snapshot(page)).history).toEqual(beforeReadOnly.history);
         await page.evaluate(() => window.hostFixture.setSourceReadOnly(false));

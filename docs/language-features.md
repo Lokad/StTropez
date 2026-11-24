@@ -734,7 +734,7 @@ a new target and tooltip while requiring the original range and identity.
 ### Document colors
 
 With `colors: {}` on the attachment, `await language.colors.request()` returns an `Outcome` containing the
-captured color choices on success. Await a choice's `preview(rgba)` for its presentation choices.
+captured color choices on success. Call `choice.presentations(rgba)` for the provider's list of formats.
 An empty list is a successful reply. Invalid RGBA channels return `refused` with reason `invalid-color`.
 A superseded request returns `stale`.
 
@@ -744,9 +744,10 @@ are pending. `colorAt(offset)` returns a color only for the current revision. To
 without moving the caret, pass an activation callback as `swatches`. Use `setSwatches(false)`
 to hide the marks and `setSwatches(true)` to resume scanning.
 
-The first presentation is selected automatically. Call a presentation's `select()` to get its
-review, or `undefined` if the choice has expired. Bind Apply to that review's `apply()`. It returns
-`{ applied: true }` on success, or a `ReviewEditResult` with reason `expired`, `not-writable` or `failed`.
+Call a format's `select()` to apply its edits. For a picker with an Apply button, call
+`select({ review: true })` and bind the button to the returned review's `apply()`. Both edit
+paths return `done` with the changed file, or an empty list when its text already matches.
+An expired choice returns `stale`. A read-only or locked target returns `refused("not-writable")`.
 
 Use `review.notes` to display the proposed edits. Each note gives the captured range, nearby text,
 the first 256 UTF-16 units of the insertion and its full length in `insertUnits`.

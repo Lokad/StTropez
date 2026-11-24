@@ -1,7 +1,7 @@
 import { emptyList } from "../core/empty-list.ts";
 import { colorPresentationMethod } from "../protocol/lsp-methods.ts";
 import { languageReview } from "./language-review.ts";
-import { reviewApplied, reviewFailed, reviewRefused, type ReviewEditResult } from "./review-edit.ts";
+import { changedDocument, type ChangedDocument } from "./language-command.ts";
 import type { Observable } from "../core/observable.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import { mapReplacementSelections } from "../core/selections.ts";
@@ -20,15 +20,16 @@ import type { TextEditor } from "./text-editor.ts";
 
 export type DocumentColorChoice = LspDocumentColor & Readonly<{
     revision: number;
-    preview: (color: LspColor) => Promise<Outcome<readonly ColorPresentationChoice[]>>;
+    presentations: (color: LspColor) => Promise<Outcome<readonly ColorPresentationChoice[]>>;
 }>;
-export type ColorPresentationChoice = Readonly<{ label: string; select: () => ColorPresentationReview | undefined }>;
+type Changes = readonly ChangedDocument[];
+export type ColorPresentationChoice = ReturnType<typeof colorChoice>;
 export type ColorPresentationReview = Readonly<{
     reference: DocumentColorChoice; proposed: LspColor; choice: ColorPresentationChoice;
-    edits: LspColorPresentation["edits"]; notes: readonly LspWorkspaceEditNote[]; canApply: boolean; apply: () => ReviewEditResult;
+    edits: LspColorPresentation["edits"]; notes: readonly LspWorkspaceEditNote[]; canApply: boolean; apply: () => Outcome<Changes>;
 }>;
 export type DocumentColorSnapshot = Readonly<{
-    status: "idle" | "discovering" | "ready" | "previewing" | "review" | "applied" | "expired" | "failed" | "disposed";
+    status: "idle" | "discovering" | "ready" | "previewing" | "presentations" | "review" | "applied" | "expired" | "failed" | "disposed";
     colors: readonly DocumentColorChoice[]; presentations: readonly ColorPresentationChoice[]; review: ColorPresentationReview | null;
     message: string; changed: boolean;
 }>;
@@ -48,6 +49,18 @@ type Preview = TimedRequest & { capture: Capture; reference: DocumentColorChoice
 type Job = TimedRequest & { client: LspColorClient; project: ReturnType<typeof retainDocuments>; source: Capture; invalid: boolean; timer?: number;
     reply?: Awaited<ReturnType<LspColorClient["run"]>["result"]>; registration?: number; preview?: Preview };
 const idle: DocumentColorSnapshot = Object.freeze({ status: "idle", colors: emptyList, presentations: emptyList, review: null, message: "", changed: false });
+
+function colorChoice(label: string, index: number,
+    choose: (choice: ColorPresentationChoice, index: number, review: boolean) => Outcome<ColorPresentationReview | Changes>) {
+    function select(options: Readonly<{ review: true }>): Outcome<ColorPresentationReview>;
+    function select(options?: Readonly<{ review?: false }>): Outcome<Changes>;
+    function select(options: Readonly<{ review?: boolean }>): Outcome<ColorPresentationReview | Changes>;
+    function select(options?: Readonly<{ review?: boolean }>) {
+        return choose(choice, index, options?.review === true);
+    }
+    const choice = Object.freeze({ label, select });
+    return choice;
+}
 
 /** Review one provider color presentation and apply all its edits as one undo command. */
 export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner, options: DocumentColorControllerOptions): DocumentColorController {
@@ -98,43 +111,45 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
         if (current(j)) publish("ready", { colors: state.get().colors });
         else expire(j);
     }
-    function apply(review: ColorPresentationReview): ReviewEditResult {
-        scope.assertWritable();
-        const j = active.job, p = j?.preview;
-        if (state.get().review !== review || !j || !p || !current(j)) return reviewRefused("expired");
-        if (!review.canApply || !writable()) return reviewRefused("not-writable");
+    function apply(p: Preview, edits: LspColorPresentation["edits"]): Outcome<Changes> {
+        if (!writable()) return refused("not-writable");
         const { document, selectionSet } = p.capture;
-        try {
-            if (!p.capture.commit(() => {
-                const result = workspace.edit({ documentId: document.id, expectedRevision: document.revision, edits: review.edits,
-                    origin: "host", source: "color-presentation", history: { kind: "refactor" }, view,
-                    selectionSet: mapReplacementSelections(document.buffer.length, selectionSet, review.edits) });
-                if (!result.applied) throw new Error(result.reason);
-                return true;
-            })) return reviewRefused("expired");
-            const changed = workspace.document(document.id).revision !== document.revision;
-            release(); publish("applied", { changed }); return reviewApplied;
-        } catch (error) {
-            if (active.job !== j || j.invalid) return reviewRefused("expired");
-            fail(error);
-            return reviewFailed(state.get().message);
-        }
+        if (!p.capture.commit(() => {
+            const result = workspace.edit({ documentId: document.id, expectedRevision: document.revision, edits,
+                origin: "host", source: "color-presentation", history: { kind: "refactor" }, view,
+                selectionSet: mapReplacementSelections(document.buffer.length, selectionSet, edits) });
+            if (!result.applied) throw new Error(result.reason);
+            return true;
+        })) return stale;
+        const updated = workspace.document(document.id);
+        const changed = updated.revision !== document.revision;
+        release();
+        publish("applied", { changed });
+        return done(changed ? Object.freeze([changedDocument(updated)]) : emptyList);
     }
-    function select(choice: ColorPresentationChoice, index: number, presentations = state.get().presentations) {
+    function choose(choice: ColorPresentationChoice, index: number, review: false, expected: ColorPresentationReview): Outcome<Changes>;
+    function choose(choice: ColorPresentationChoice, index: number, review: boolean): Outcome<ColorPresentationReview | Changes>;
+    function choose(choice: ColorPresentationChoice, index: number, review: boolean,
+        expected?: ColorPresentationReview): Outcome<ColorPresentationReview | Changes> {
         scope.assertWritable();
-        const j = active.job, p = j?.preview, result = p?.result?.[index];
-        if (!j || !p || !result || presentations[index] !== choice || !current(j) || !p.capture.isCurrent()) return;
-        const selected = state.get().review;
-        if (selected?.choice === choice) return selected;
-        const doc = p.capture.document;
-        const notes = Object.freeze(result.edits.map(edit => describeLspEdit(doc, doc.id, doc.title, edit)));
-        const review: ColorPresentationReview = Object.freeze({ reference: p.reference, proposed: p.proposed, choice,
-            edits: result.edits, notes, canApply: writable(), apply: () => apply(review) });
-        publish("review", { colors: state.get().colors, presentations, review });
-        return review;
-    }
-    function presentation(raw: LspColorPresentation, index: number): ColorPresentationChoice {
-        const choice: ColorPresentationChoice = Object.freeze({ label: raw.label, select: () => select(choice, index) }); return choice;
+        const j = active.job;
+        try {
+            const p = j?.preview, result = p?.result?.[index];
+            const snapshot = state.get();
+            if (!j || !p || !result || snapshot.presentations[index] !== choice || !current(j) || !p.capture.isCurrent()) return stale;
+            if (expected && snapshot.review !== expected) return stale;
+            if (expected?.canApply === false) return refused("not-writable");
+            if (!review) return apply(p, result.edits);
+            if (snapshot.review?.choice === choice) return done(snapshot.review);
+            const doc = p.capture.document;
+            const notes = Object.freeze(result.edits.map(edit => describeLspEdit(doc, doc.id, doc.title, edit)));
+            const selected: ColorPresentationReview = Object.freeze({ reference: p.reference, proposed: p.proposed, choice,
+                edits: result.edits, notes, canApply: writable(), apply: () => choose(choice, index, false, selected) });
+            publish("review", { colors: snapshot.colors, presentations: snapshot.presentations, review: selected });
+            return done(selected);
+        } catch (error) {
+            return j && active.job === j && !j.invalid ? fail(error) : stale;
+        }
     }
     async function preview(reference: DocumentColorChoice, index: number, value: LspColor): Promise<Outcome<readonly ColorPresentationChoice[]>> {
         scope.assertWritable();
@@ -175,9 +190,8 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
                 return stale;
             }
             win.clearTimeout(j.timer);
-            const choices = Object.freeze(p.result.map(presentation));
-            if (choices.length) select(choices[0]!, 0, choices);
-            else publish("review", { colors, presentations: choices });
+            const choices = Object.freeze(p.result.map((item, index) => colorChoice(item.label, index, choose)));
+            publish("presentations", { colors, presentations: choices });
             return done(choices);
         } catch (error) {
             if (p?.timeout) return p.timeout;
@@ -190,7 +204,7 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
         }
     }
     function reference(raw: LspDocumentColor, index: number, revision: number): DocumentColorChoice {
-        const item: DocumentColorChoice = Object.freeze({ ...raw, revision, preview: color => preview(item, index, color) }); return item;
+        const item: DocumentColorChoice = Object.freeze({ ...raw, revision, presentations: color => preview(item, index, color) }); return item;
     }
     async function request(): Promise<Outcome<readonly DocumentColorChoice[]>> {
         scope.assertWritable();
