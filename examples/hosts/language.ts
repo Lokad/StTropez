@@ -1,6 +1,6 @@
 import { onSourceFocus } from "./source-focus.ts";
 import { bindFindCommands } from "../shared/find-commands.ts";
-import { scopedCommands } from "../shared/editor-attachment.ts";
+import { captureEditorCommand, scopedCommands } from "../shared/editor-attachment.ts";
 import { createFindController, createRegexFindBackend } from "../../src/browser/index.ts";
 import type { TextEditor, FindController, FindSnapshot } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, DocumentId, FoldRange, FoldRegion, FoldingSnapshot, TabId, TabTarget, Workspace } from "../../src/index.ts";
@@ -162,36 +162,49 @@ export class HostLanguageTools {
         const sourceFocused = editor.getSnapshot().focused;
         const origin = sourceFocused ? editor.element : editor.element.querySelector<HTMLElement>(":focus") ?? this.toolsElement?.querySelector<HTMLElement>(":focus");
         if (!origin) return;
-        const intent = new AbortController();
+        const source = captureEditorCommand(editor, command.kind === "replace" ? "human" : undefined);
+        if (!source) return;
         const stop = () => {
-            if (this.pendingFind?.stop === stop) this.pendingFind = undefined;
-            intent.abort();
+            if (this.pendingFind?.stop !== stop) return;
+            this.pendingFind = undefined;
+            // A workspace observer can withdraw the command before it may release its lease.
+            queueMicrotask(source.cancel);
         };
         this.pendingFind = { kind: command.kind, session, stop };
-        void editor.operation({ write: command.kind === "replace", signal: intent.signal }, op => {
-            const events = { signal: op.signal };
-            origin.addEventListener(sourceFocused ? "focusout" : "blur", stop, events);
-            origin.addEventListener("input", stop, events);
-            origin.addEventListener("compositionstart", stop, events);
-            clock.addEventListener("blur", stop, events);
-            // A control can be disabled and reenabled before the browser sends blur.
-            const disabled = new clock.MutationObserver(stop);
-            for (let node: HTMLElement | null = origin; node; node = node.parentElement) disabled.observe(node, { attributes: true, attributeFilter: ["disabled"] });
-            op.signal.addEventListener("abort", () => disabled.disconnect(), { once: true });
-            const ready = new Promise<boolean>(resolve => {
-                const changed = () => {
-                    const { status } = find.getSnapshot();
-                    if (status !== "searching") resolve(status === "ready");
-                };
-                op.signal.addEventListener("abort", find.subscribe(changed), { once: true });
-                changed();
+        const events = { signal: source.signal };
+        origin.addEventListener(sourceFocused ? "focusout" : "blur", stop, events);
+        origin.addEventListener("input", stop, events);
+        origin.addEventListener("compositionstart", stop, events);
+        clock.addEventListener("blur", stop, events);
+        // A control can be disabled and reenabled before the browser sends blur.
+        const disabled = new clock.MutationObserver(stop);
+        for (let node: HTMLElement | null = origin; node; node = node.parentElement) {
+            disabled.observe(node, { attributes: true, attributeFilter: ["disabled"] });
+        }
+        const changed = () => {
+            const { status } = find.getSnapshot();
+            if (status === "searching") return;
+            if (status !== "ready") { stop(); return; }
+            queueMicrotask(() => {
+                if (this.pendingFind?.stop !== stop) return;
+                try {
+                    if (find.getSnapshot().status === "ready" && this.ownsSession(session)
+                        && !disabled.takeRecords().length && origin.isConnected
+                        && (sourceFocused ? editor.getSnapshot().focused : origin.matches(":focus"))
+                        && !(origin.closest("button,input,select,textarea") ?? origin).matches(":disabled")) {
+                        source.commit(execute);
+                    }
+                } catch (error) { reportError(error); }
+                finally { stop(); }
             });
-            return op.step(ready, found => {
-                if (found && this.ownsSession(session) && !disabled.takeRecords().length && origin.isConnected
-                    && (sourceFocused ? editor.getSnapshot().focused : origin.matches(":focus"))
-                    && !(origin.closest("button,input,select,textarea") ?? origin).matches(":disabled")) execute();
-            });
-        }).finally(stop).catch(reportError);
+        };
+        const unsubscribe = find.subscribe(changed);
+        source.signal.addEventListener("abort", () => {
+            disabled.disconnect();
+            unsubscribe();
+            stop();
+        }, { once: true });
+        changed();
     }
     private toolsSession(event: KeyboardEvent): Session | undefined {
         const root = this.toolsElement, target = event.target, realm = root?.ownerDocument.defaultView, session = this.active;

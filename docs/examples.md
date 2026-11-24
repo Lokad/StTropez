@@ -524,8 +524,8 @@ annotations show up to 64 indexed entries plus the total. Refresh keeps collapse
 independent manual folds. Conflicting ranges reject the entire refresh. Change a provider fold’s
 bounds to make it manual. Collapsing domain regions preserves selected text. An insertion caret
 hidden by the collapse moves to the end of the visible header. **Expand all folds** opens manual
-and provider folds in the active view. Text edits map folds and clear stale notes. Import insertion uses
-`editor.operation` to bind the edit to the requesting view and selection. A source edit,
+and provider folds in the active view. Text edits map folds and clear stale notes. Import insertion
+captures the requesting view and commits the provider's edits against its original revision. A source edit,
 read-only transition or remount cancels a pending import. A successful insertion adds one shared
 undo step.
 

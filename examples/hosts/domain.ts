@@ -1,4 +1,5 @@
 import { onSourceFocus } from "./source-focus.ts";
+import { captureEditorCommand } from "../shared/editor-attachment.ts";
 import { createFoldRegions } from "../../src/index.ts";
 import type { DocumentId, DocumentView, FoldRange, FoldingSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import type { DecorationLayer, TextEditor } from "../../src/browser/index.ts";
@@ -138,16 +139,26 @@ export class HostDomainTools {
         };
         try {
             if (!analysis) {
-                const outcome = await session.editor.operation({ write: true, signal: job.abort.signal }, async op => {
-                    const { edits } = read(await op.step(run(op.signal)));
-                    if (this.current(job) && op.apply({ edits, source: "import", history: { kind: "refactor" } })) return edits.length;
-                });
+                const source = captureEditorCommand(session.editor, "human");
+                if (!source) { this.cancel(); return; }
+                const expire = () => {
+                    if (this.job === job) { this.metrics.stale++; this.cancel(); }
+                };
+                job.abort.signal.addEventListener("abort", source.cancel, { once: true, signal: source.signal });
+                source.signal.addEventListener("abort", expire, { once: true });
+                const value = await run(source.signal);
                 if (this.job !== job) return;
-                if (outcome.status === "stale" || outcome.value === undefined) { this.metrics.stale++; this.cancel(); return; }
+                if (!this.current(job) || !source.isCurrent()) { expire(); return; }
+                const { edits } = read(value);
+                source.signal.removeEventListener("abort", expire);
+                const applied = source.commit(() => this.workspace.edit({ documentId: source.document.id,
+                    expectedRevision: source.document.revision, view: source.view, origin: "human",
+                    edits, source: "import", history: { kind: "refactor" } }).applied);
+                if (!applied) { expire(); return; }
                 this.metrics.applied++; this.release(job);
                 for (const attached of this.sessions.values()) if (attached.editor.view.documentId === document.id) this.sync(attached);
                 session.editor.viewport.revealOffset(session.editor.view.getSnapshot().selection.head);
-                this.publish({ status: "applied", message: outcome.value ? `Inserted the captured import in ${session.id}.` : "The requested import is already present; source and history are unchanged." });
+                this.publish({ status: "applied", message: edits.length ? `Inserted the captured import in ${session.id}.` : "The requested import is already present; source and history are unchanged." });
             } else {
                 const value = await run(job.abort.signal);
                 if (!this.current(job)) { this.metrics.stale++; if (this.job === job) this.cancel(); return; }

@@ -1,5 +1,23 @@
-import type { TextEditor } from "../../src/browser/index.ts";
+import { captureViewRequest, type TextEditor } from "../../src/browser/index.ts";
 import { CleanupScope } from "./cleanup-scope.ts";
+
+/** A pending host command belongs to one mounted editor and expires when composition starts. */
+export function captureEditorCommand(editor: TextEditor, editOrigin?: "human") {
+    const source = captureViewRequest(editor.workspace, editor.tab, editor.view, {
+        ...(editOrigin && { editOrigin }),
+        available: () => {
+            const activity = editor.activity(), state = editor.getSnapshot();
+            return !editor.signal.aborted && editor.element.isConnected && !state.disabled
+                && !activity.disposed && !activity.composing && !activity.pendingInput && !activity.pendingCommand
+                && (!editOrigin || state.readOnlyReason === null);
+        },
+    });
+    if (source) {
+        editor.signal.addEventListener("abort", source.cancel, { once: true, signal: source.signal });
+        editor.onEditIntent(kind => { if (kind === "compositionstart") source.cancel(); }, source.signal);
+    }
+    return source;
+}
 
 /** Use the same teardown when the pane closes before its host feature. */
 export function detachWithEditor(editor: TextEditor, signal: AbortSignal, detach: () => void) {
