@@ -7,3 +7,6 @@ export type Outcome<T> = Readonly<
 >;
 
 export const stale = Object.freeze({ status: "stale" } as const);
+export const done = <T>(value: T) => Object.freeze({ status: "done" as const, value });
+export const refused = (reason: string) => Object.freeze({ status: "refused" as const, reason });
+export const failed = (error: unknown) => Object.freeze({ status: "failed" as const, error });

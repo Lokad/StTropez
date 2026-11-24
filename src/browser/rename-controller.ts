@@ -1,6 +1,6 @@
 import { Store } from "../core/observable.ts";
 import { changedTextEdits } from "../core/changes.ts";
-import { stale, type Outcome } from "../core/outcome.ts";
+import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import { reviewApplied, reviewFailed, reviewRefused, type ReviewEditResult } from "./review-edit.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
@@ -102,7 +102,7 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
         release();
         if (!name.length) {
             publish({ name, message: "Enter a new name." });
-            return Object.freeze({ status: "refused", reason: "empty-name" });
+            return refused("empty-name");
         }
         let source: Job["source"] | undefined;
         let pending: Job | undefined;
@@ -111,7 +111,7 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
             source = captureViewRequest(workspace, tab, view, { available: () => available(view.documentId) });
             if (!source) {
                 publish({ name, status: "expired", message: "Finish pending input before requesting a rename." });
-                return Object.freeze({ status: "refused", reason: "unavailable-view" });
+                return refused("unavailable-view");
             }
             const client = createLspRenameClient(provider);
             const j: Job = { source, client, project: retainEditProject(editor, available, () => expire(j)), invalid: false };
@@ -143,7 +143,7 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
             publish({ name, status: "ready", preview,
                 message: !count ? "No edits for this name." : !canApply ? "A rename target is read-only or locked."
                     : `Review ${count} ${count === 1 ? "change" : "changes"}.` });
-            return Object.freeze({ status: "done", value: preview });
+            return done(preview);
         } catch (cause) {
             if (pending && pending !== job) return stale;
             let error = timedOut ? new Error("Rename request timed out.") : cause;
@@ -157,7 +157,7 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
             }
             if (!pending) source?.cancel();
             reportFailure(name, error);
-            return Object.freeze({ status: "failed", error });
+            return failed(error);
         }
     }
     function request(name = cell.get().name) {

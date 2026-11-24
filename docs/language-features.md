@@ -676,7 +676,9 @@ after commit, report the uncertain delivery and leave the edit in history.
 
 `createDocumentLinkController(editor, provider, { documents })` discovers links in the mounted
 document. Include any project documents whose revision or edit permissions affect your URI mapping.
-Call `request()` and render `getSnapshot().links`. Each link carries its range, literal tooltip,
+`await links.request()` returns `done` with the list published to `getSnapshot().links`,
+`stale` if the request expires, `refused` for an unavailable view, or `failed` with the error.
+Each link carries its range, literal tooltip,
 optional target and an `open` action. `linkAt(offset)` returns the first current provider choice
 whose range contains the offset, including its start and excluding its end. It returns `undefined`
 while discovery or resolution is pending. A button and the editor can open the same choice.
@@ -694,15 +696,15 @@ export function linkButton(link: DocumentLinkChoice, visit: (uri: string) => voi
 }
 ```
 
-`open(visit)` resolves a missing target when the provider supports resolution. Its result has
-status `presented` when it calls `visit`, `no-target` when no URI is available, or `resolving`
-when a lookup is already running. A provider failure returns `failed` with a message.
+`open(visit)` resolves a missing target when the provider supports resolution. After `visit(uri)`
+returns, the outcome is `done` with that URI. A refusal gives the reason `no-target`, `resolving`
+or `unavailable-view`. A provider or presentation error returns `failed` with the error.
 The host decides which URIs to open, where to show them and how to return. If the user clicks elsewhere during resolution, keep focus there. Read the updated
 link from the snapshot for a fresh click.
 
 Caret movement cancels a pending lookup. After discovery, the list survives caret movement.
 An edit or authority change in a captured document, a new request, cancellation or editor
-disposal invalidates its actions. An expired action returns `{ status: "expired" }`. The protocol client
+disposal invalidates its actions. An expired action returns `stale`. The protocol client
 `createLspLinkClient` exposes the list and its `resolve` operation. `decodeLspDocumentLinks`
 checks ranges and bounds the URI, tooltip and opaque data. `decodeLspResolvedDocumentLink` allows
 a new target and tooltip while requiring the original range and identity.

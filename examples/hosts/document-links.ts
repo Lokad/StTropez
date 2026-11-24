@@ -190,15 +190,14 @@ export class HostDocumentLinks {
         const origin = this.active, route = origin && this.begin(origin, returning);
         if (!origin || !route) return;
         if (keyboard && origin.editor.getSnapshot().focused) route.focusResults = mayFocus;
-        void origin.controller.request().then(() => {
-            const state = origin.controller.getSnapshot();
-            if (this.route !== route || state.status !== "ready") return;
+        void origin.controller.request().then(result => {
+            if (this.route !== route || result.status !== "done") return;
             const head = route.returnPoint.viewState.head;
-            const index = state.links.findIndex(link => link.from <= head && head <= link.to);
+            const index = result.value.findIndex(link => link.from <= head && head <= link.to);
             if (index >= 0) this.render(route, Math.floor(index / linkLimits.page));
             if (route.focusResults) origin.editor.element.ownerDocument.defaultView!.requestAnimationFrame(() => {
                 if (this.route === route && route.focusResults?.() && origin.editor.getSnapshot().focused
-                    && origin.controller.getSnapshot().links === state.links) focusResult(this.linkList.element, Math.max(0, index) % linkLimits.page);
+                    && origin.controller.getSnapshot().links === result.value) focusResult(this.linkList.element, Math.max(0, index) % linkLimits.page);
             });
         });
     }
@@ -269,11 +268,11 @@ export class HostDocumentLinks {
             let item: DocumentLinkChoice | undefined;
             if ("open" in selected) item = selected;
             else {
-                await route.origin.controller.request();
-                if (this.route !== route || !follow || !mayFocus() || owner.activeElement !== focused) return;
-                item = route.origin.controller.linkAt(selected.from);
-                if (!item || item.from !== selected.from || item.to !== selected.to) {
-                    if (route.origin.controller.getSnapshot().status === "ready") this.publish({ message: `No destination for ${module}.` });
+                const result = await route.origin.controller.request();
+                if (result.status !== "done" || this.route !== route || !follow || !mayFocus() || owner.activeElement !== focused) return;
+                item = result.value.find(link => link.from === selected.from && link.to === selected.to);
+                if (!item) {
+                    this.publish({ message: `No destination for ${module}.` });
                     return;
                 }
             }
@@ -293,7 +292,7 @@ export class HostDocumentLinks {
                     ...(this.sessions.has(origin) && returnPoint.recorded() ? { returnPoint } : {}) }; this.metrics.opened++;
                 this.publish({ message: `Opened ${doc.title}.`, ...(!this.sessions.has(route.origin) ? { status: "away" as const } : {}) });
             });
-            if (result.status === "no-target" && this.route === route && this.cell.get().status === "ready") {
+            if (result.status === "refused" && result.reason === "no-target" && this.route === route && this.cell.get().status === "ready") {
                 this.publish({ message: `No destination for ${module}.` });
             }
         } finally { events.abort(); }

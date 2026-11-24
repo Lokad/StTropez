@@ -283,15 +283,42 @@ for (const [cause, interrupt] of Object.entries(linkChanges)) {
         const pending = links.request();
         await held.received;
         interrupt(f);
-        await settled();
+        assert.deepEqual(await pending, { status: "stale" });
         assert.equal(f.sent("$/cancelRequest").length, 1);
         held.send();
-        await pending;
         await f.flush();
         assert.deepEqual(links.getSnapshot().links, []);
         assert.equal(links.linkAt(1), undefined);
     });
 }
+
+test("a captured link cannot open a replacement at the same range", { timeout: 5000 }, async t => {
+    const f = await fixture(t);
+    const links = createDocumentLinkController(f.editor, f.provider);
+    const lazy = { range, data: 1 };
+    f.peer.onRequest("textDocument/documentLink", () => [lazy]);
+    const first = await links.request();
+    assert.equal(first.status, "done");
+    const original = first.value[0]!;
+    const visits: string[] = [];
+    const visit = (uri: string) => { visits.push(uri); };
+    const held = holdReply(f, "documentLink/resolve", { ...lazy, target: "generic:old" });
+    const opening = original.open(visit);
+    await held.received;
+    assert.deepEqual(await original.open(visit), { status: "refused", reason: "resolving" });
+
+    f.peer.onRequest("textDocument/documentLink", () => [{ range, target: "generic:new" }]);
+    const next = await links.request();
+    assert.equal(next.status, "done");
+    assert.equal(next.value, links.getSnapshot().links);
+    assert.deepEqual(await opening, { status: "stale" });
+    assert.deepEqual(await original.open(visit), { status: "stale" });
+    held.send();
+    await f.flush();
+    assert.deepEqual(visits, []);
+    assert.deepEqual(await next.value[0]!.open(visit), { status: "done", value: "generic:new" });
+    assert.deepEqual(visits, ["generic:new"]);
+});
 
 test("a diagnostic tracks its text through an edit and a fresh push replaces the selectable range", async t => {
     const f = await fixture(t);

@@ -1,6 +1,6 @@
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
-import { stale, type Outcome } from "../core/outcome.ts";
+import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import type { DocumentId, DocumentSnapshot, TabTarget } from "../core/workspace.ts";
 import { applyLspWorkspaceEdit, createLspActionClient, type LspActionResult, previewLspWorkspaceEdit } from "../protocol/index.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
@@ -105,7 +105,7 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
                 return stale;
             }
         } catch (captureError) { error = captureError; }
-        j.failure = Object.freeze({ status: "failed", error });
+        j.failure = failed(error);
         fail(j, error);
         return j.failure;
     };
@@ -222,7 +222,7 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
             const capture = captureViewRequest(workspace, tab, view, { available: () => available(view.documentId) });
             if (!capture) {
                 publish({ ...empty, status: "expired", message: "Finish the current editor operation before requesting actions." });
-                return Object.freeze({ status: "refused", reason: "unavailable-view" });
+                return refused("unavailable-view");
             }
             const id = workspace.allocateIdentity();
             const j: Job = { id, capture, project: retainEditProject(editor, available, () => expire(j)), invalid: false };
@@ -248,11 +248,11 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
                 needsResolve: action.resolve !== null, select: applyWhen => choose(id, index, applyWhen) })));
             publish({ ...empty, status: "ready", choices, message: choices.length ? "Choose an action to review." : "No actions for this range." });
             if (batch.actions[0]?.edit && !choices[0]!.disabled) choices[0]!.select();
-            return Object.freeze({ status: "done", value: choices });
+            return done(choices);
         } catch (error) {
             if (pending) return requestFailed(pending, error);
             reportFailure(error);
-            return Object.freeze({ status: "failed", error });
+            return failed(error);
         }
     }
     function request() {
