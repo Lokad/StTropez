@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
-import { createDocumentColorController, createDocumentLinkController, type TextEditor } from "../src/browser/index.ts";
+import {
+    createCodeActionController, createDocumentColorController, createDocumentLinkController, createRenameController,
+    type TextEditor,
+} from "../src/browser/index.ts";
 import { editorState } from "./helpers/editor-state.ts";
 import { latch } from "./helpers/latch.ts";
 import { clientFixture, settled } from "./helpers/lsp-client.ts";
@@ -44,6 +47,56 @@ const sourceChanges = {
     typing: (f: Fixture) => f.edit(),
     "tab replacement": (f: Fixture) => f.replace(),
 };
+
+for (const [cause, interrupt] of Object.entries(sourceChanges)) {
+    test(`a delayed code action cannot edit its former source after ${cause}`, async t => {
+        const f = await fixture(t);
+        const actions = createCodeActionController(f.editor, f.provider);
+        const lazy = { title: "Replace word", data: { id: 1 } };
+        const resolved = { ...lazy, edit: { changes: { "generic:source": [{ range, newText: "late" }] } } };
+        const held = latch<typeof resolved>();
+        f.peer.onRequest("textDocument/codeAction", () => [lazy]);
+        f.peer.onRequest("codeAction/resolve", () => held.promise);
+        actions.request();
+        await settled();
+        const choice = actions.getSnapshot().choices[0];
+        assert.ok(choice?.needsResolve);
+        choice.select(() => true);
+        await settled();
+        assert.equal(f.sent("codeAction/resolve").length, 1);
+        interrupt(f);
+        if (cause === "typing") {
+            const { id, revision } = f.document();
+            assert.ok(f.workspace.undo({ documentId: id, expectedRevision: revision }).applied);
+        }
+        await settled();
+        const source = f.document();
+        assert.equal(f.sent("$/cancelRequest").length, 1);
+        held.resolve(resolved);
+        await settled();
+        assert.equal(actions.getSnapshot().preview, null);
+        assert.equal(f.document(), source);
+    });
+
+    test(`a delayed rename cannot offer an edit after ${cause}`, async t => {
+        const f = await fixture(t);
+        const rename = createRenameController(f.editor, f.provider);
+        const edit = { changes: { "generic:source": [{ range, newText: "replacement" }] } };
+        const held = latch<typeof edit>();
+        f.peer.onRequest("textDocument/rename", () => held.promise);
+        rename.request("replacement");
+        await settled();
+        assert.equal(f.sent("textDocument/rename").length, 1);
+        interrupt(f);
+        await settled();
+        assert.equal(f.sent("$/cancelRequest").length, 1);
+        const source = f.document();
+        held.resolve(edit);
+        await settled();
+        assert.equal(rename.getSnapshot().preview, null);
+        assert.equal(f.document(), source);
+    });
+}
 
 const colorChanges = {
     ...sourceChanges,

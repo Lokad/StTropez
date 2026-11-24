@@ -229,36 +229,17 @@ test.describe(`plain LSP code actions`, () => {
         expect((await snapshot(page)).history).toEqual(before.history);
         await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
     });
-    for (const mode of ["selection", "typing", "remount"] as const) test(`pending action resolution expires after ${mode}`, async ({ page }) => {
-        const replies = await holdLspReplies(page, "codeAction/resolve"); await page.reload();
-        await seed(page);
-        await button(page, "Add navigation companion").click();
-        await select(page);
-        await preview(page);
-        replies.hold();
-        await choices(page).nth(2).click();
-        await expect.poll(replies.waiting).toBe(true);
-        expect((await snapshot(page)).bindings.actions.state.resolving).toBe(true);
-        if (mode === "selection") await select(page, raw.indexOf("TODO") + 2);
-        else if (mode === "typing") {
-            await input(page).press("Control+End");
-            await input(page).pressSequentially("x");
-            await waitForActions(page);
-            await input(page).press("Control+z");
-        } else {
-            const module = input(page, "Action module"), current = await module.inputValue();
-            await module.evaluate(retiring => {
-                if (!(retiring instanceof HTMLInputElement)) throw new Error("Missing module field.");
-                window.hostFixture.unmount(); window.hostFixture.mount();
-                retiring.value = "retired-module";
-                retiring.dispatchEvent(new Event("input", { bubbles: true }));
-            });
-            await expect(module).toHaveValue(current);
-        }
-        await expect.poll(replies.cancelled).toBe(true); await replies.release();
-        await waitForActions(page);
-        await expect(button(page, "Apply captured action")).toBeDisabled();
-        await exact(page, raw);
+    test("a detached action module field cannot change the replacement form", async ({ page }) => {
+        const module = input(page, "Action module");
+        const current = await module.inputValue();
+        await module.evaluate(retiring => {
+            if (!(retiring instanceof HTMLInputElement)) throw new Error("Missing module field.");
+            window.hostFixture.unmount();
+            window.hostFixture.mount();
+            retiring.value = "retired-module";
+            retiring.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        await expect(module).toHaveValue(current);
     });
     test("action disconnect and idle faults require explicit provider recovery", async ({ page }) => {
         const replies = await holdLspReplies(page, "codeAction/resolve");

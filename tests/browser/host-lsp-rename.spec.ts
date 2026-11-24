@@ -116,16 +116,16 @@ test.describe(`plain LSP rename host`, () => {
         await select(page, raw.indexOf("catalogue") + 2); await preview(page); await expect(button(page, "Apply captured rename")).toBeEnabled();
         expect(await retired.evaluate(p => [p.confirm(), p.readPage() === undefined])).toEqual([{ applied: false, reason: "expired" }, true]); await retired.dispose();
         await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
-        for (const mode of ["selection", "typing", "remount"] as const) {
-            await select(page, raw.indexOf("catalogue") + 2); await name(page).fill("inventory"); replies.hold(); await button(page, "Prepare rename preview").click(); await expect.poll(replies.waiting).toBe(true); expect((await snapshot(page)).bindings.rename.state.pending).toBe(true);
-            const pendingRequests = requests;
-            await name(page).press("Enter"); expect(requests).toBe(pendingRequests);
-            if (mode === "selection") await select(page, raw.indexOf("catalogue") + 3);
-            else if (mode === "typing") { await input(page).press("Control+End"); await input(page).pressSequentially("x"); await waitForRename(page); await input(page).press("Control+z"); }
-            else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
-            await expect.poll(replies.cancelled).toBe(true); await replies.release();
-            await waitForRename(page); await expect(button(page, "Apply captured rename")).toBeDisabled(); await exact(page, raw);
-        }
+        await name(page).fill("inventory");
+        replies.hold();
+        await button(page, "Prepare rename preview").click();
+        await expect.poll(replies.waiting).toBe(true);
+        const pendingRequests = requests;
+        await name(page).press("Enter");
+        await replies.release();
+        await waitForRename(page);
+        expect(requests).toBe(pendingRequests);
+        await expect(button(page, "Apply captured rename")).toBeEnabled();
         await select(page, raw.indexOf("catalogue") + 2); await preview(page); await page.evaluate(() => window.hostFixture.faultIdleRename()); await waitForRename(page); await expect(button(page, "Apply captured rename")).toBeDisabled();
         await button(page, "Reconnect rename provider").click(); await select(page, raw.indexOf("catalogue") + 2); await preview(page); await button(page, "Disconnect rename provider").click(); await input(page).press("Control+End"); await input(page).pressSequentially("local"); await waitForRename(page); await exact(page, raw + "local"); await button(page, "Reconnect rename provider").click(); await select(page, raw.indexOf("catalogue") + 2); await preview(page); await expect(button(page, "Apply captured rename")).toBeEnabled();
         const count = requests; await select(page, raw.indexOf(";") + 1); await preview(page); expect(requests).toBe(count + 1); expect(lastPosition).toEqual({ line: 1, character: "const catalogue = 1;".length }); expect((await snapshot(page)).bindings.rename.state.count).toBe(0);
