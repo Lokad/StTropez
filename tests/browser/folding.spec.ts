@@ -147,10 +147,12 @@ test("a pointer fold returns to typing while keyboard activation keeps the discl
     await page.evaluate(() => window.editingFixture.edit([{ from: 17, to: 17, insert: "!" }]));
     await ready(page); await page.mouse.up();
     await expect(button).toHaveAttribute("aria-expanded", "false");
-    await summary.click(); await expect(button).toHaveAttribute("aria-expanded", "true");
+    await summary.dblclick(); await expect(button).toHaveAttribute("aria-expanded", "true");
     await expect(input(page)).toBeFocused();
     expect(await page.evaluate(() => window.editingFixture.selectionSet().ranges[0])).toMatchObject({ anchor: 3, head: 1 });
     await page.keyboard.type("Q"); await expect(page.locator("#primary .st-viewport-row").first()).toHaveText("hQZder");
+    await page.locator("#primary .st-viewport-row").first().dblclick({ position: { x: 6, y: 8 } });
+    expect(await page.evaluate(() => window.editingFixture.selectionSet().ranges[0])).toMatchObject({ anchor: 0, head: 6 });
 });
 
 test("horizontal scrolling keeps fold controls clear of the first visible text column", async ({ page }) => {

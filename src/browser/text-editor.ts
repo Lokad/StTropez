@@ -1306,7 +1306,11 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (painted.revision !== revision || painted.foldGeneration !== view.folding.getSnapshot().generation) viewport.flush();
         return viewport.hitTest(event.clientX, event.clientY);
     }
-    let draggedWord = false;
+    let draggedWord = false, foldSummaryClick = false;
+    // Expansion removes the label before the next press in the browser's click sequence.
+    root.addEventListener("click", event => {
+        if (event.detail === 1) foldSummaryClick = (event.target as HTMLElement).dataset?.ornament === "fold";
+    }, { capture: true, signal: listeners.signal });
     root.addEventListener("dblclick", event => {
         const began = win.performance.now();
         try {
@@ -1314,7 +1318,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (event.button !== 0 || disposed || composing || input.disabled || !live()
             || (event.target as Element | null)?.closest(".st-viewport-gutter")) return;
         const point = pointerHit(event, viewport.getSnapshot().gutterWidth); if (!point) return;
-        event.preventDefault(); if (!draggedWord) selectWord(point.offset, event.altKey);
+        event.preventDefault(); if (!draggedWord && !foldSummaryClick) selectWord(point.offset, event.altKey);
         } finally { lastWordSelectionMs = win.performance.now() - began; maxWordSelectionTurnMs = Math.max(maxWordSelectionTurnMs, lastWordSelectionMs); }
     }, { signal: listeners.signal });
     const textDrag = mountTextDragDrop({ workspace, tab: target, view, viewport, input,
@@ -1343,6 +1347,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     root.addEventListener("mousedown", event => {
         const press = mousePress; mousePress = undefined;
         if (!press || event.button !== 0 || event.defaultPrevented) return;
+        if (foldSummaryClick && event.detail > 1) { textDrag.disarm(); event.preventDefault(); return; }
         if (press.revision !== revision || press.selectionSet !== view.getSnapshot().selectionSet) { textDrag.disarm(); return; }
         if (press.armed && event.detail < 2) return;
         if (press.armed) textDrag.disarm();
