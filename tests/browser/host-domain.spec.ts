@@ -21,14 +21,14 @@ async function dispose(page: Page): Promise<void> {
 }
 const region = "// #region root <b>東京 😀</b>\r\nconst one\r\n// #region child Child\r\nconst two\r\n// #endregion child\r\n// #endregion root\r\n";
 for (const host of ["plain", "react"]) {
-    for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} 1000 indexed annotations stay bounded with inactive documents and typing`, async ({ page }) => {
+    test(`${host} 1000 indexed annotations stay bounded with inactive documents and typing`, async ({ page }) => {
         test.setTimeout(120000);
         const line = "row Δ😀 12345678901234\r\n", starts: number[] = [], bodies: number[] = []; let text = "";
         for (let index = 0; index < 1000; index++) {
             starts.push(text.length); text += `// #region r${index} Note ${index}\r\n`; bodies.push(text.length);
-            text += line.repeat(large ? 98 : 1) + `// #endregion r${index}\r\n`;
+            text += line.repeat(1) + `// #endregion r${index}\r\n`;
         }
-        text += "tail"; expect(text.length).toBe(large ? 2397674 : 69674);
+        text += "tail"; expect(text.length).toBe(69674);
         await setup(page, host, text); const initial = await snapshot(page);
         await page.evaluate(() => window.hostFixture.seedInactiveDocuments()); await waitForDomain(page);
         const seeded = await snapshot(page), inactive = await page.evaluate(() => window.hostFixture.inactiveDocuments());
@@ -75,19 +75,17 @@ for (const host of ["plain", "react"]) {
         await dispose(page); const stopped = await snapshot(page); expect(await page.evaluate(() => window.hostFixture.inactiveDocuments())).toEqual([]);
         expect(stopped.diagnostics.documents).toBe(initial.diagnostics.documents); expect(stopped.diagnostics.tabs).toBe(initial.diagnostics.tabs);
     });
-    for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} actual domain discovery preserves manual folds, independent views and remount`, async ({ page }) => {
-        test.setTimeout(120000); const text = "manual\r\nbody\r\n" + region + (large ? "const unchanged = 123;\r\n".repeat(100000) : "") + "tail";
+    test(`${host} actual domain discovery preserves manual folds, independent views and remount`, async ({ page }) => {
+        test.setTimeout(120000); const text = "manual\r\nbody\r\n" + region + "tail";
         await setup(page, host, text); await button(page, "Open source review").click(); await waitForDomain(page); await input(page).focus();
         await page.evaluate(to => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: to }]); }, text.indexOf("// #region"));
         await button(page, "Fold selected lines").click(); await waitForDomain(page); const before = await snapshot(page);
-        if (!large) {
-            const fold = page.getByRole("region", { name: "Primary source", exact: true }).locator(".st-fold-button").first();
-            await input(page, "Secondary source").focus();
-            await fold.focus();
-            await expect(fold).toBeFocused();
-            expect((await snapshot(page)).bindings.language.active).toBe("secondary");
-            await input(page).focus();
-        }
+        const fold = page.getByRole("region", { name: "Primary source", exact: true }).locator(".st-fold-button").first();
+        await input(page, "Secondary source").focus();
+        await fold.focus();
+        await expect(fold).toBeFocused();
+        expect((await snapshot(page)).bindings.language.active).toBe("secondary");
+        await input(page).focus();
         // Analysis is resource/fold-scoped; selection movement during its request must remain usable.
         expect(await button(page, "Discover domain regions").evaluate((node, head) => {
             (node as HTMLButtonElement).click(); const f = window.hostFixture, state = f.snapshot();

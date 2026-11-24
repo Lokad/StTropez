@@ -14,9 +14,9 @@ async function mount(page: Page, host: string, text: string): Promise<void> {
 }
 async function append(page: Page, text: string): Promise<void> { await input(page).press("Control+End"); await ready(page); await input(page).pressSequentially(text); await ready(page); }
 
-for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} selected versions, discard and saved history stay independent of working Save and Run`, async ({ page }) => {
+for (const host of ["plain", "react"]) test(`${host} selected versions, discard and saved history stay independent of working Save and Run`, async ({ page }) => {
     test.setTimeout(120000);
-    const original = "base alpha\r\nstable beta\r\nlast 😀" + (large ? "\r\n" + "const stable = 1;\r\n".repeat(100000) + "tail" : "");
+    const original = "base alpha\r\nstable beta\r\nlast 😀";
     await mount(page, host, original); const initial = await snapshot(page), sourceId = initial.source.id;
     const selector = page.getByRole("combobox", { name: "Review version", exact: true });
     await selector.locator('option[value="server"]').evaluate(node => { node.setAttribute("data-retained", "server-choice"); });

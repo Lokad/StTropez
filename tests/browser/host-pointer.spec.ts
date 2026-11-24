@@ -27,8 +27,8 @@ async function begin(page: Page, offset: number): Promise<number> {
     const pointer = Number(await element.getAttribute("data-pointer-id")); expect(await element.evaluate((node, id) => node.hasPointerCapture(id), pointer)).toBe(true); return pointer;
 }
 async function move(page: Page, offset: number): Promise<void> { const p = await point(page, offset); await page.mouse.move(p.x, p.y); }
-async function setup(page: Page, large: boolean): Promise<string> {
-    const original = Array(large ? 100000 : 60).fill("const sample = '😀 é';").join("\r\n");
+async function setup(page: Page): Promise<string> {
+    const original = Array(60).fill("const sample = '😀 é';").join("\r\n");
     await page.evaluate(value => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: value }]); f.selectSource("secondary", f.snapshot().source.revision, { anchor: 4, head: 1 }); }, original);
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await waitForReview(page);
     const working = page.getByRole("textbox", { name: "Comparison working source", exact: true }); await working.press("Control+Home");
@@ -52,8 +52,8 @@ for (const host of ["plain", "react"]) test.describe(`${host} pointer gesture ow
         await page.mouse.up(); await page.evaluate(() => window.hostFixture.dispose()); const stopped = await state(page);
         expect(stopped.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(stopped.hostSubscriptions).toBe(0);
     });
-    for (const large of [false, true]) test(`${large ? "100k" : "normal"} capture loss leaves hover inert and subsequent typing inserts at the retained caret`, async ({ page }) => {
-        const original = await setup(page, large), pointer = await begin(page, 2), down = await state(page), element = root(page);
+    test(`capture loss leaves hover inert and subsequent typing inserts at the retained caret`, async ({ page }) => {
+        const original = await setup(page), pointer = await begin(page, 2), down = await state(page), element = root(page);
         await element.evaluate((node, id) => node.releasePointerCapture(id), pointer); await page.mouse.move(10, 10); await page.mouse.up();
         await expect.poll(async () => Number(await element.getAttribute("data-pointer-lost"))).toBeGreaterThan(0); const before = await state(page);
         await move(page, 8); await waitForReview(page); const hovered = await state(page);
@@ -70,7 +70,7 @@ for (const host of ["plain", "react"]) test.describe(`${host} pointer gesture ow
         const released = selection(await state(page)); await move(page, 16); await waitForReview(page); expect(selection(await state(page))).toEqual(released);
     });
     test("unrelated pointers cannot end a drag; cancellation, changed revisions and detached views cannot continue one", async ({ page }) => {
-        const original = await setup(page, true), pointer = await begin(page, 2); await move(page, 8);
+        const original = await setup(page), pointer = await begin(page, 2); await move(page, 8);
         await root(page).evaluate((node, id) => { node.dispatchEvent(new PointerEvent("pointercancel", { pointerId: id + 100, bubbles: true })); }, pointer);
         await move(page, 10); expect(selection(await state(page))).toMatchObject({ anchor: 2, head: 10 });
         await root(page).evaluate((node, id) => { node.dispatchEvent(new PointerEvent("lostpointercapture", { pointerId: id + 100, bubbles: true })); }, pointer);

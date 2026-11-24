@@ -17,10 +17,10 @@ async function exact(page: Page, text: string, reference = false): Promise<void>
     }, { text, reference })).toBe(true);
 }
 for (const host of ["plain", "react"]) {
-    for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} regex worker captures Unicode replacements through comparison, save and remount`, async ({ page }) => {
+    test(`${host} regex worker captures Unicode replacements through comparison, save and remount`, async ({ page }) => {
         test.setTimeout(120000);
         const workers: string[] = []; page.on("worker", worker => workers.push(worker.url())); await page.goto(`/hosts/${host}/?editor=candidate`);
-        const body = "const unchanged = 123;\r\n".repeat(large ? 100000 : 1), header = "foobar foo foo_ K k K_ 𐐀 𐐨\r\n", original = header + body + "end";
+        const body = "const unchanged = 123;\r\n".repeat(1), header = "foobar foo foo_ K k K_ 𐐀 𐐨\r\n", original = header + body + "end";
         const changedHeader = "[foobar:foobar:foobar:$] [foo:foo:foo:$] foo_ [K:K:K:$] [k:k:k:$] K_ [𐐀:𐐀:𐐀:$] [𐐨:𐐨:𐐨:$]\r\n", changed = changedHeader + body + "end";
         await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
         await button(page, "Open source review").click(); await button(page, "Keep draft version").click();

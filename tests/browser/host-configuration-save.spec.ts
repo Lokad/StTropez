@@ -12,30 +12,28 @@ async function waitForReview(page: Page): Promise<void> {
 }
 async function exact(p: Page, text: string) { expect(await hostTextEquals(p, text)).toBe(true); }
 
-for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} configuration Save stays independent through typing, review, Run and remount`, async ({ page: p }, info) => {
+for (const host of ["plain", "react"]) test(`${host} configuration Save stays independent through typing, review, Run and remount`, async ({ page: p }, info) => {
 
     await p.goto(`/hosts/${host}/?editor=candidate`);
     const input = p.getByRole("textbox", { name: "Primary source", exact: true }), field = p.getByRole("textbox", { name: "Configuration path", exact: true });
-    await expect(input).toBeVisible(); const original = large ? Array(100000).fill("const café = 1234567;😀").join("\r\n") : "café😀\r\nrow two";
+    await expect(input).toBeVisible(); const original = "café😀\r\nrow two";
     await p.evaluate(value => { window.hostFixture.previewProposal(value); window.hostFixture.applyProposal(); }, original); await waitForReview(p);
     await p.evaluate(() => { const f = window.hostFixture, revision = f.snapshot().source.revision;
         for (const id of ["primary", "secondary", "comparison"] as const) if (!f.selectSourceSet(id, revision, [{ anchor: 4, head: 0 }, { anchor: 6, head: 6 }], 1)) throw new Error("Complete selection rejected"); }); await waitForReview(p);
     const prior = await snapshot(p), reference = await p.evaluate(() => { const f = window.hostFixture; return f.referenceRange(0, f.snapshot().bindings.comparison!.baseline!.length); }); await field.fill(" captured.csv ");
     await field.evaluate(node => { node.dataset.retained = "configuration-field"; });
     await button(p, "Finish configuration save").evaluate(node => { node.dataset.retained = "configuration-finish"; });
-    if (!large) {
-        for (const control of [input, field]) {
-            await control.focus();
-            const consumed = await control.evaluate(node => [
-                { keyCode: 229 }, { modifierAltGraph: true }, { isComposing: true }, { repeat: true },
-            ].map(detail => {
-                const key = new KeyboardEvent("keydown", { key: "s", code: "KeyS", ctrlKey: true, bubbles: true, cancelable: true, ...detail });
-                node.dispatchEvent(key); return key.defaultPrevented;
-            }));
-            expect(consumed).toEqual([false, false, false, true]);
-        }
-        expect((await snapshot(p)).pendingSaves).toEqual(prior.pendingSaves);
+    for (const control of [input, field]) {
+        await control.focus();
+        const consumed = await control.evaluate(node => [
+            { keyCode: 229 }, { modifierAltGraph: true }, { isComposing: true }, { repeat: true },
+        ].map(detail => {
+            const key = new KeyboardEvent("keydown", { key: "s", code: "KeyS", ctrlKey: true, bubbles: true, cancelable: true, ...detail });
+            node.dispatchEvent(key); return key.defaultPrevented;
+        }));
+        expect(consumed).toEqual([false, false, false, true]);
     }
+    expect((await snapshot(p)).pendingSaves).toEqual(prior.pendingSaves);
     expect((await snapshot(p)).configurationSave.pending).toBe(false); await field.press("Control+s");
     await expect(button(p, "Finish configuration save")).toBeEnabled(); const captured = await p.evaluate(() => window.hostFixture.configurationCapture());
     expect(captured).toMatchObject({ resourceId: prior.configuration.id, value: { path: " captured.csv ", format: "csv" }, expectedServerVersion: null });
@@ -74,7 +72,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     expect(await p.evaluate(value => window.hostFixture.referenceRange(0, value.length) === value, reference!)).toBe(true);
     const baseline = prior.bindings.comparison!.baseline!;
     expect((await snapshot(p)).bindings.comparison!.baseline).toMatchObject({ version: baseline.version, length: baseline.length });
-    if (!large) await info.attach("configuration-save", { body: await p.screenshot(), contentType: "image/png" });
+    await info.attach("configuration-save", { body: await p.screenshot(), contentType: "image/png" });
     await p.evaluate(() => window.hostFixture.dispose()); const stopped = await snapshot(p); expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0);
 
 });

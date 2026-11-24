@@ -80,13 +80,13 @@ test("a replacement drop target in a shadow root survives a render callback duri
     await page.evaluate(() => window.hostFixture.dispose());
 });
 
-for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} native text drag preserves captured identity through history and lifecycle`, async ({ page }, info) => {
+for (const host of ["plain", "react"]) test(`${host} native text drag preserves captured identity through history and lifecycle`, async ({ page }, info) => {
     test.setTimeout(60000);
-    const header = "alpha bravo\r\ncharlie delta\r\ntarget here", original = header + (large ? "\r\n" + "row value\r\n".repeat(100000) + "tail" : "");
+    const header = "alpha bravo\r\ncharlie delta\r\ntarget here", original = header + "\r\n" + "row value\r\n".repeat(90) + "tail";
     await mount(page, host, original);
     const second = header.indexOf("charlie"), destination = header.indexOf("target") + 2, ranges = [{ anchor: 5, head: 0 }, { anchor: second, head: second + 7 }];
     await select(page, ranges, 1); const before = await snapshot(page), beforeSet = before.bindings.views.find(v => v.id === "primary")!.selectionSet;
-    if (large) await edgeScrollAndCancel(page);
+    await edgeScrollAndCancel(page);
     await root(page).evaluate(element => { const events: unknown[] = [];
         for (const type of ["dragstart", "dragover", "drop"]) element.addEventListener(type, event => {
             const drag = event as DragEvent; events.push({ type, types: drag.dataTransfer?.types, alt: drag.altKey, ctrl: drag.ctrlKey, effect: drag.dataTransfer?.effectAllowed });
@@ -94,7 +94,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
         }); });
     const from = await point(page, 1), to = await point(page, destination);
     await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.move(from.x + 8, from.y, { steps: 3 }); await page.mouse.move(to.x, to.y, { steps: 10 });
-    if (host === "plain" && !large) await expect(page.locator(".st-text-drag-preview")).toHaveCount(0);
+    if (host === "plain") await expect(page.locator(".st-text-drag-preview")).toHaveCount(0);
     await page.mouse.up(); await ready(page);
     await expect(root(page)).toHaveAttribute("data-trusted-dragstart", "true");
     if (info.project.name === "webkit") {

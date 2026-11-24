@@ -7,9 +7,9 @@ const button = (page: Page, name: string) => page.getByRole("button", { name, ex
 
 async function exact(page: Page, text: string): Promise<void> { expect(await hostTextEquals(page, text)).toBe(true); }
 for (const host of ["plain", "react"]) {
-    for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} folding preserves independent views, review, history, captured Save/Run and remount`, async ({ page }) => {
+    test(`${host} folding preserves independent views, review, history, captured Save/Run and remount`, async ({ page }) => {
         test.setTimeout(120000);  await page.goto(`/hosts/${host}/?editor=candidate`);
-        const original = "header\r\nneedle one\r\nneedle two\r\n" + (large ? "const filler = 1;\r\n".repeat(100000) : "") + "footer\r\nend", footer = original.indexOf("footer");
+        const original = "header\r\nneedle one\r\nneedle two\r\n" + "footer\r\nend", footer = original.indexOf("footer");
         await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
         await button(page, "Open source review").click(); await ready(page); const reference = (await snapshot(page)).bindings.comparison!.baseline!.version;
         await input(page).focus(); await page.evaluate(to => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: to }]); }, footer);

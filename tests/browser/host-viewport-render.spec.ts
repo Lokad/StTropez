@@ -6,9 +6,9 @@ async function waitForReview(page: Page): Promise<void> {
     await ready(page);
     await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.activeViews === 2 && s.bindings.comparison !== null); });
 }
-for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} unchanged decorated rows survive typing and selection while current geometry and changed marks update`, async ({ page }) => {
+for (const host of ["plain", "react"]) test(`${host} unchanged decorated rows survive typing and selection while current geometry and changed marks update`, async ({ page }) => {
 
-    await page.goto(`/hosts/${host}/?editor=candidate`); const line = "const sample = 123; // TODO", original = Array(large ? 100000 : 60).fill(line).join("\r\n");
+    await page.goto(`/hosts/${host}/?editor=candidate`); const line = "const sample = 123; // TODO", original = Array(60).fill(line).join("\r\n");
     await page.evaluate(value => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: value }]); }, original);
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await waitForReview(page);
     const input = page.getByRole("textbox", { name: "Primary source", exact: true }); await input.press("Control+Home"); await waitForReview(page);

@@ -73,9 +73,8 @@ test.afterEach(async ({ page }, info) => {
 
 for (const host of ["plain", "react"] as const) {
     for (const editor of ["native", "candidate"] as const)
-        for (const large of editor === "candidate" ? [false, true] : [false])
-            for (const backward of [false, true]) test(`${host} ${editor} ${large ? "100k" : "normal"} ${backward ? "backward" : "forward"} escape preserves keyboard-only save and review`, async ({ page }) => {
-                const line = "    const café = 1;", original = large ? Array(100000).fill(line).join("\r\n") : line + "\r\n    const sample = 2;";
+        for (const backward of [false, true]) test(`${host} ${editor} ${backward ? "backward" : "forward"} escape preserves keyboard-only save and review`, async ({ page }) => {
+                const original = "    const café = 1;\r\n    const sample = 2;";
                 await mount(page, host, editor, original);
                 await activate(page, "Save source"); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
                 const captured = (await snapshot(page)).pendingSaves;

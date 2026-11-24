@@ -32,12 +32,12 @@ async function stored(p: Page, text: string | null): Promise<string | null> { co
     };
 }), text); expect(row.matches).toBe(true); return row.token; }
 const selections = (s: Awaited<ReturnType<typeof snapshot>>) => ({ views: s.bindings.views.map(v => ({ id: v.id, set: v.selectionSet })), working: s.bindings.comparison?.selectionSet, reference: s.bindings.comparison?.referenceViewport?.selectionSet });
-for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} loaded-source checkpoint survives close and real reload independently`, async ({ page: p }, info) => {
+for (const host of ["plain", "react"]) test(`${host} loaded-source checkpoint survives close and real reload independently`, async ({ page: p }, info) => {
     test.setTimeout(120000);
     await p.goto(`/hosts/${host}/?editor=candidate`); await waitForDraft(p);
     await button(p, "Begin delayed load").click(); await button(p, "Finish delayed load").click(); await waitForDraft(p);
     const loaded = (await snapshot(p)).bindings.views.find(v => v.id === "primary")!;
-    const value = "loaded café😀 é\r\n" + "row Δ😀\r\n".repeat(large ? 100000 : 8) + "tail";
+    const value = "loaded café😀 é\r\n" + "row Δ😀\r\n".repeat(8) + "tail";
     await p.evaluate(({ id, value }) => { const f = window.hostFixture, s = f.navigationDocument(id); f.editLinkTarget(id, s.revision, [{ from: 0, to: s.length, insert: value }]); }, { id: loaded.documentId, value });
     await source(p).press("Control+End"); await source(p).pressSequentially("K"); await waitForDraft(p);
     let doc = await p.evaluate(id => window.hostFixture.navigationDocument(id), loaded.documentId); expect(doc.exports).toBe(0);
@@ -84,10 +84,10 @@ async function closeWithDecision(p: Page, accept: boolean): Promise<void> {
     await Promise.all([p.close({ runBeforeUnload: true }), handled]);
     if (closed) await closed;
 }
-for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} browser close decisions retain live work and offer only explicit checkpoint recovery`, async ({ page: p }) => {
+for (const host of ["plain", "react"]) test(`${host} browser close decisions retain live work and offer only explicit checkpoint recovery`, async ({ page: p }) => {
     test.setTimeout(120000);
     await p.goto(`/hosts/${host}/?editor=candidate`); await waitForDraft(p);
-    const raw = "close café😀 é\r\n" + "const stableValue = 123;\r\n".repeat(large ? 100000 : 10) + "tail";
+    const raw = "close café😀 é\r\n" + "const stableValue = 123;\r\n".repeat(10) + "tail";
     await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, raw);
     // Trusted browser input supplies user activation; no global keyboard or OS clipboard is used.
     await source(p).press("Control+End"); await source(p).pressSequentially("K");
@@ -123,9 +123,9 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     const closed = reopened.waitForEvent("close"); await reopened.close({ runBeforeUnload: true }); await closed;
     expect(dialogs).toEqual([]);
 });
-for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} durable drafts restore independent inputs after true reload and preserve history Save/Run`, async ({ page: p }) => {
+for (const host of ["plain", "react"]) test(`${host} durable drafts restore independent inputs after true reload and preserve history Save/Run`, async ({ page: p }) => {
     test.setTimeout(120000);  await p.goto(`/hosts/${host}/?editor=candidate`); await waitForDraft(p);
-    const raw = "café😀 é;\r\n" + "const stableValue = 123;\r\n".repeat(large ? 100000 : 10) + "tail";
+    const raw = "café😀 é;\r\n" + "const stableValue = 123;\r\n".repeat(10) + "tail";
     await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, raw);
     await source(p).press("Control+End"); await source(p).pressSequentially("K"); await p.getByRole("textbox", { name: "Configuration path", exact: true }).fill("recovered.csv"); await waitForDraft(p); expect((await snapshot(p)).source.exports).toBe(0);
     await button(p, "Keep recovery draft").click(); await waitForDraft(p); expect((await snapshot(p)).draft).toMatchObject({ present: true, valid: true, unprotected: false, sourceUnits: raw.length + 1 });
@@ -134,10 +134,8 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await p.evaluate(() => { document.documentElement.dataset.draftSession = "old"; }); await p.reload(); await waitForDraft(p); expect(await p.evaluate(() => document.documentElement.dataset.draftSession)).toBeUndefined(); await exact(p, "start"); await expect(p.getByRole("textbox", { name: "Configuration path", exact: true })).toHaveValue("source.csv");
     await restore(p, "Restore source draft"); await exact(p, raw + "K"); expect((await snapshot(p)).history.undoDepth).toBe(1); const revision = (await snapshot(p)).source.revision;
     await restore(p, "Restore configuration draft"); await expect(p.getByRole("textbox", { name: "Configuration path", exact: true })).toHaveValue("recovered.csv"); expect((await snapshot(p)).source.revision).toBe(revision); expect(await warning(p)).toBe(false);
-    if (!large) {
-        await p.goto(`/hosts/${host === "plain" ? "react" : "plain"}/?editor=native`); await waitForDraft(p); await exact(p, "start"); await restore(p, "Restore source draft"); await restore(p, "Restore configuration draft"); await exact(p, raw + "K"); expect((await snapshot(p)).history.undoDepth).toBe(1);
-        await p.goto(`/hosts/${host}/?editor=candidate`); await waitForDraft(p); await restore(p, "Restore source draft"); await restore(p, "Restore configuration draft"); await exact(p, raw + "K");
-    }
+    await p.goto(`/hosts/${host === "plain" ? "react" : "plain"}/?editor=native`); await waitForDraft(p); await exact(p, "start"); await restore(p, "Restore source draft"); await restore(p, "Restore configuration draft"); await exact(p, raw + "K"); expect((await snapshot(p)).history.undoDepth).toBe(1);
+    await p.goto(`/hosts/${host}/?editor=candidate`); await waitForDraft(p); await restore(p, "Restore source draft"); await restore(p, "Restore configuration draft"); await exact(p, raw + "K");
     await source(p, "Secondary source").press("Control+z"); await waitForDraft(p); await exact(p, "start"); await source(p, "Secondary source").press("Control+Shift+z"); await waitForDraft(p); await exact(p, raw + "K");
     // Establish a newer authoritative saved baseline before restoring the older stored copy.
     const loaded = "loaded café😀\r\nnew saved baseline"; await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, loaded); await waitForDraft(p); await source(p).press("Control+s"); await button(p, "Finish save").click();

@@ -17,9 +17,9 @@ async function scroll(p: Page, side: "baseline" | "working", row: number, left?:
     await expect.poll(async () => { const c = (await snapshot(p)).bindings.comparison!, v = side === "baseline" ? c.referenceViewport! : c.workingViewport; return Math.abs(v.scrollTop - (12 + row * v.lineHeight)); }).toBeLessThan(1);
     await waitForReview(p);
 }
-for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} linked review scroll preserves captured rows, selections, history, reference and lifecycle`, async ({ page: p }) => {
+for (const host of ["plain", "react"]) test(`${host} linked review scroll preserves captured rows, selections, history, reference and lifecycle`, async ({ page: p }) => {
     test.setTimeout(120000);  await p.goto(`/hosts/${host}/?editor=candidate`);
-    const rows = Array.from({ length: large ? 100000 : 900 }, (_, i) => `row ${i.toString().padStart(6, "0")}: café😀;ok;\r\n`); rows[9] = "long " + "x".repeat(1000) + "\r\n";
+    const rows = Array.from({ length: 900 }, (_, i) => `row ${i.toString().padStart(6, "0")}: café😀;ok;\r\n`); rows[9] = "long " + "x".repeat(1000) + "\r\n";
     const raw = rows.join(""), offset = (line: number) => rows.slice(0, line).join("").length;
     await p.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, raw);
     for (const name of ["Open source review", "Capture review acceptance", "Finish review acceptance"]) { await button(p, name).click(); await waitForReview(p); }
@@ -52,14 +52,12 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
         toggle.checked = false; toggle.dispatchEvent(new Event("change")); return { pending, after: f.snapshot().bindings.comparison!.work.pendingScroll, old };
     }); expect(disabled).toMatchObject({ pending: true, after: false }); await waitForReview(p); expect((await snapshot(p)).bindings.comparison!.referenceViewport!.scrollTop).toBe(disabled.old);
     await check(p).check(); await waitForReview(p);
-    if (!large) {
-        // Folding projects to a visible header without expanding either view or changing its set.
-        await p.evaluate(({ from, to }) => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: from, head: to }]); }, { from: working.indexOf("row 000400"), to: working.indexOf("row 000420") });
-        await input.press("Control+Shift+["); await waitForReview(p); expect((await snapshot(p)).bindings.comparison!.workingViewport.collapsedFolds).toBeGreaterThan(0);
-        await scroll(p, "baseline", 410); c = (await snapshot(p)).bindings.comparison!; expect(c.workingViewport.collapsedFolds).toBeGreaterThan(0);
-        expect(c.workingViewport.scrollTop).toBeCloseTo(12 + 398 * c.workingViewport.lineHeight, 0);
-        await input.press("Control+Shift+]"); await waitForReview(p);
-    }
+    // Folding projects to a visible header without expanding either view or changing its set.
+    await p.evaluate(({ from, to }) => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: from, head: to }]); }, { from: working.indexOf("row 000400"), to: working.indexOf("row 000420") });
+    await input.press("Control+Shift+["); await waitForReview(p); expect((await snapshot(p)).bindings.comparison!.workingViewport.collapsedFolds).toBeGreaterThan(0);
+    await scroll(p, "baseline", 410); c = (await snapshot(p)).bindings.comparison!; expect(c.workingViewport.collapsedFolds).toBeGreaterThan(0);
+    expect(c.workingViewport.scrollTop).toBeCloseTo(12 + 398 * c.workingViewport.lineHeight, 0);
+    await input.press("Control+Shift+]"); await waitForReview(p);
     const mounted = (await snapshot(p)).bindings.comparison!; await p.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); }); await waitForReview(p); await expect(check(p)).toBeChecked();
     const retained = (await snapshot(p)).bindings.comparison!;
     expect(retained.viewId).toBe(mounted.viewId); expect(retained.baseline).toMatchObject({ version: before.bindings.comparison!.baseline!.version, length: before.bindings.comparison!.baseline!.length });

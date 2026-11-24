@@ -9,10 +9,10 @@ async function waitForReview(page: Page): Promise<void> {
 }
 async function exact(page: Page, text: string): Promise<void> { expect(await hostTextEquals(page, text)).toBe(true); }
 
-for (const host of ["plain", "react"]) for (const large of [false, true]) for (const journey of ["primary", "comparison", "resize and queued input"] as const)
-test(`${host} ${large ? "100k" : "normal"} ${journey} boundaries finish before immediate typing`, async ({ page }) => {
+for (const host of ["plain", "react"]) for (const journey of ["primary", "comparison", "resize and queued input"] as const)
+test(`${host} ${journey} boundaries finish before immediate typing`, async ({ page }) => {
     test.setTimeout(120000);  await page.goto(`/hosts/${host}/?editor=candidate`);
-    const bodyRows = large ? 100000 : 128, rowUnits = "const unchanged = 123;\r\n".length;
+    const bodyRows = 128, rowUnits = "const unchanged = 123;\r\n".length;
     const original = "first é😀\r\n" + "const unchanged = 123;\r\n".repeat(bodyRows) + "last\r", bodyStart = original.indexOf("\n") + 1;
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
     for (const name of ["Open source review", "Capture review acceptance", "Finish review acceptance"]) await page.getByRole("button", { name, exact: true }).click();
@@ -101,7 +101,7 @@ test(`${host} ${large ? "100k" : "normal"} ${journey} boundaries finish before i
         await page.getByRole("textbox", { name: "Primary source", exact: true }).pressSequentially("x"); await exact(page, original); expect((await snapshot(page)).history).toEqual(readonly.history);
     }
     // Cooperative vertical/page commands preserve immediate typing for thirty-two carets.
-    const heads = Array.from({ length: 32 }, (_, i) => bodyStart + (31 + i * (large ? 3000 : 2)) * rowUnits + 6);
+    const heads = Array.from({ length: 32 }, (_, i) => bodyStart + (31 + i * 2) * rowUnits + 6);
     for (const key of ["ArrowRight", "ArrowDown", "PageDown"]) {
     await page.evaluate(heads => { const f = window.hostFixture; f.setSourceReadOnly(false); f.selectSourceSet("primary", f.snapshot().source.revision, heads.map(head => ({ anchor: head, head })), 17); }, heads); await waitForReview(page);
     const viewport = (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport;

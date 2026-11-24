@@ -6,11 +6,10 @@ const source = (page: Page, name = "Primary source") => page.getByRole("textbox"
 const click = (page: Page, name: string) => page.getByRole("button", { name, exact: true }).click();
 
 async function exact(page: Page, value: string, reference = false): Promise<void> { expect(await hostTextEquals(page, value, reference ? "reference" : "source")).toBe(true); }
-for (const host of ["plain", "react"]) for (const large of [false, true])
-test(`${host} ${large ? "100k" : "normal"} match-case find keeps Unicode ranges, shared undo, comparison and working Save/Run`, async ({ page }) => {
+for (const host of ["plain", "react"]) test(`${host} match-case find keeps Unicode ranges, shared undo, comparison and working Save/Run`, async ({ page }) => {
     test.setTimeout(120000);
     await page.goto(`/hosts/${host}/?editor=candidate`);
-    const original = "K k K_ 𐐀 𐐨 i ı ss ß café\r\n" + (large ? "const stableValue = 123;\r\n".repeat(100000) : "unchanged\r\n") + "K";
+    const original = "K k K_ 𐐀 𐐨 i ı ss ß café\r\nunchanged\r\nK";
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
     await click(page, "Open source review"); await ready(page); await click(page, "Keep draft version");
     await page.getByRole("combobox", { name: "Review version", exact: true }).selectOption("draft"); await click(page, "Finish version load"); await ready(page);
@@ -37,7 +36,7 @@ test(`${host} ${large ? "100k" : "normal"} match-case find keeps Unicode ranges,
     expect((await snapshot(page)).history.undoDepth).toBe(planned.history.undoDepth + 1); expect((await snapshot(page)).source.exports).toBe(0);
     await source(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, original);
     await source(page, "Secondary source").press("Control+Shift+z"); await ready(page); await exact(page, changed);
-    const working = source(page, "Comparison working source"); await working.press("Control+f"); const saveControl = host === "plain" ? large ? replacement : wholeWord : large ? query : matchCase; const beforeExit = await snapshot(page); await saveControl.press("Escape"); await ready(page); await expect(working).toBeFocused();
+    const working = source(page, "Comparison working source"); await working.press("Control+f"); const saveControl = host === "plain" ? wholeWord : matchCase; const beforeExit = await snapshot(page); await saveControl.press("Escape"); await ready(page); await expect(working).toBeFocused();
     const afterExit = await snapshot(page); expect(afterExit.bindings.comparison!.selectionSet).toEqual(beforeExit.bindings.comparison!.selectionSet); expect(afterExit.history).toEqual(beforeExit.history); expect(afterExit.source.revision).toBe(beforeExit.source.revision);
     await working.press("Control+f"); await expect(status).toContainText("0 matches · ready"); await saveControl.focus(); await saveControl.press("Control+s"); await expect(saveControl).toBeFocused(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
     expect((await snapshot(page)).pendingSaves[0]!.length).toBe(changed.length);

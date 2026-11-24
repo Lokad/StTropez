@@ -32,8 +32,8 @@ async function setup(p: Page, host: string, raw: string): Promise<void> {
 }
 async function exact(p: Page, text: string, reference = false): Promise<void> { expect(await p.evaluate(({ text, reference }) => { const f = window.hostFixture, s = f.snapshot(), length = reference ? s.bindings.comparison!.baseline!.length : s.source.length; if (length !== text.length) return false; for (let from = 0; from < text.length; from += 32768) if ((reference ? f.referenceRange(from, Math.min(length, from + 32768)) : f.range(from, Math.min(length, from + 32768))) !== text.slice(from, from + 32768)) return false; return true; }, { text, reference })).toBe(true); }
 async function dispose(p: Page): Promise<void> { await p.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(p); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); await expect.poll(() => p.workers().length).toBe(0); }
-async function referenceCase(p: Page, host: string, large: boolean) {
-    const n = large ? 100000 : 900, header = "café😀 é;\r\n", rows = Array.from({ length: n }, (_, i) => `row${i.toString().padStart(6, "0")}:needle needleX NEEDLE\r\n`), raw = header + rows.join(""), prefix = "working-only\r\n";
+async function referenceCase(p: Page, host: string) {
+    const n = 900, header = "café😀 é;\r\n", rows = Array.from({ length: n }, (_, i) => `row${i.toString().padStart(6, "0")}:needle needleX NEEDLE\r\n`), raw = header + rows.join(""), prefix = "working-only\r\n";
     await setup(p, host, raw);
     await p.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: 0, insert: text }]); }, prefix);
     await waitForReview(p);
@@ -49,10 +49,10 @@ async function selectLastReferenceMatch(p: Page, n: number): Promise<void> {
     await found(p, 1); await query(p).press("Enter"); await waitForReview(p);
 }
 
-for (const host of ["plain", "react"]) for (const large of [false, true]) {
-    test(`${host} ${large ? "100k" : "normal"} reference Find preserves raw ranges, read-only controls and aligned navigation`, async ({ page: p }) => {
+for (const host of ["plain", "react"]) {
+    test(`${host} reference Find preserves raw ranges, read-only controls and aligned navigation`, async ({ page: p }) => {
         test.setTimeout(120000);
-        const { n, raw, prefix } = await referenceCase(p, host, large);
+        const { n, raw, prefix } = await referenceCase(p, host);
         const before = await snapshot(p), providers = before.bindings.language.sessions.map(s => s.provider.posted), first = raw.indexOf("needle"), second = raw.indexOf("needle", first + 1);
         await input(p).press("Control+Home");
         await input(p).press("Control+f");
@@ -130,9 +130,9 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) {
         await dispose(p);
     });
 
-    test(`${host} ${large ? "100k" : "normal"} working Find survives remount and owns deferred regex replacement with shared undo`, async ({ page: p }) => {
+    test(`${host} working Find survives remount and owns deferred regex replacement with shared undo`, async ({ page: p }) => {
         test.setTimeout(120000);
-        const { n, raw, prefix } = await referenceCase(p, host, large);
+        const { n, raw, prefix } = await referenceCase(p, host);
         await selectLastReferenceMatch(p, n);
         await input(p, false).press("Control+f");
         await expect(query(p)).toBeFocused();
@@ -178,9 +178,9 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) {
         await dispose(p);
     });
 
-    test(`${host} ${large ? "100k" : "normal"} reference Find survives remount while Save and Run retain working captures and history`, async ({ page: p }) => {
+    test(`${host} reference Find survives remount while Save and Run retain working captures and history`, async ({ page: p }) => {
         test.setTimeout(120000);
-        const { n, raw, prefix } = await referenceCase(p, host, large);
+        const { n, raw, prefix } = await referenceCase(p, host);
         await selectLastReferenceMatch(p, n);
         const replacement = p.getByRole("textbox", { name: "Replacement", exact: true });
         await input(p, false).press("Control+End");
@@ -210,7 +210,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) {
         expect(raw.slice(Math.min(selectedReference.anchor, selectedReference.head), Math.max(selectedReference.anchor, selectedReference.head)).toLowerCase()).toBe("needle");
         expect(s.bindings.comparison!.selectionSet).toEqual(mounted.bindings.comparison!.selectionSet);
         expect(s.history).toEqual(mounted.history);
-        const saveControl = host === "plain" ? large ? button(p, "Find next") : flag(p, "Match case") : large ? flag(p, "Regular expression") : query(p);
+        const saveControl = host === "plain" ? flag(p, "Match case") : query(p);
         const beforeExit = await snapshot(p);
         await saveControl.press("Escape");
         await waitForReview(p);

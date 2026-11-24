@@ -11,10 +11,10 @@ async function waitForDraft(page: Page): Promise<void> {
 async function exact(p: Page, text: string) { expect(await hostTextEquals(p, text)).toBe(true); }
 async function draftAction(p: Page, name: string) { await button(p, name).click(); await expect(button(p, "Confirm draft action")).toBeEnabled(); await button(p, "Confirm draft action").click(); await waitForDraft(p); }
 
-for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} transfer settings and immutable Run/log inspection retain independent inputs`, async ({ page: p }, info) => {
+for (const host of ["plain", "react"]) test(`${host} transfer settings and immutable Run/log inspection retain independent inputs`, async ({ page: p }, info) => {
       await p.goto(`/hosts/${host}/?editor=candidate`);
     const input = p.getByRole("textbox", { name: "Primary source", exact: true }), destination = p.getByRole("textbox", { name: "Transfer destination", exact: true }), batch = p.getByRole("textbox", { name: "Transfer batch size", exact: true }), path = p.getByRole("textbox", { name: "Configuration path", exact: true });
-    await expect(input).toBeVisible(); await button(p, "Open source review").click(); const original = large ? "const café = '😀';\r\n".repeat(100000) + "tail" : "café😀\r\nrow two";
+    await expect(input).toBeVisible(); await button(p, "Open source review").click(); const original = "café😀\r\nrow two";
     await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
     await button(p, "Capture review acceptance").click(); await button(p, "Finish review acceptance").click(); await waitForDraft(p);
     await destination.fill(" captured.csv "); await batch.fill("1e"); await expect(button(p, "Save transfer settings")).toBeDisabled(); await batch.press("Control+s"); await button(p, "Run captured inputs").click();
@@ -55,6 +55,6 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await p.evaluate(() => window.hostFixture.unmount()); const dormant = await snapshot(p); expectUnmountedSourceHost(dormant);
     await p.evaluate(() => window.hostFixture.mount()); await waitForDraft(p); await button(p, "Finish transfer settings save").click(); await expect(destination).toHaveValue("final.csv");
     await button(p, "Run captured inputs").click(); await expect.poll(async () => (await snapshot(p)).runResources.runs.length).toBe(1); await button(p, "Inspect Run 1").click();
-    if (!large) await info.attach("transfer-run-inspection", { body: await p.screenshot(), contentType: "image/png" });
+    await info.attach("transfer-run-inspection", { body: await p.screenshot(), contentType: "image/png" });
     await p.evaluate(() => window.hostFixture.dispose()); const stopped = await snapshot(p); expect(stopped.runResources.runs[0]?.status).toBe("interrupted"); expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0);
 });

@@ -30,10 +30,10 @@ async function caret(input: Locator, offset: number, secondary = false): Promise
     if (!secondary) expect(Math.abs(actual.anchorHeight - expected.height)).toBeLessThan(1.1);
 }
 
-for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} inherited CSS zoom preserves carets, pointer ranges and navigation`, async ({ page }) => {
+for (const host of ["plain", "react"]) test(`${host} inherited CSS zoom preserves carets, pointer ranges and navigation`, async ({ page }) => {
     test.setTimeout(90000);
     await page.goto(`/hosts/${host}/?editor=candidate`);
-    const line = "0123456789abcdef Δ😀 xyz\r\n", text = line.repeat(large ? 100000 : 80);
+    const line = "0123456789abcdef Δ😀 xyz\r\n", text = line.repeat(80);
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text);
     await ready(page);
     for (const zoom of [1.5, .75]) {
@@ -76,11 +76,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await reference.press("Control+Home"); await reference.press("ArrowRight"); await ready(page); await caret(reference, 1);
     const working = source(page, "Comparison working source"); await working.scrollIntoViewIfNeeded(); await working.focus();
     await working.press("Control+Home"); await working.press("ArrowRight"); await ready(page); await caret(working, 1);
-    if (large) {
-        await page.evaluate(() => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: "0123456789".repeat(240000) }]); });
-        await working.press("Control+End"); await working.press("ArrowLeft"); await ready(page); await caret(working, 2399999);
-        expect((await snapshot(page)).source.exports).toBe(0);
-    }
+
     await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
 });
 

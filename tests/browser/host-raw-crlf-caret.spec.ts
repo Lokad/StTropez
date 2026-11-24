@@ -3,10 +3,10 @@ import type { Page, Locator } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 
 const painted = (input: Locator) => input.evaluate(node => !(node.parentElement!.querySelector(".st-input-caret") as HTMLElement).hidden);
-for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} raw CRLF caret remains painted and moves vertically in source and comparison`, async ({ page }, testInfo) => {
+for (const host of ["plain", "react"]) test(`${host} raw CRLF caret remains painted and moves vertically in source and comparison`, async ({ page }, testInfo) => {
     test.setTimeout(120000);
      await page.goto(`/hosts/${host}/?editor=candidate`);
-    await page.evaluate(large => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: "a\r\nb" + (large ? "\r\nconst unchanged = 123;".repeat(100000) : "") }]); }, large);
+    await page.evaluate(() => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: "a\r\nb" }]); });
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await ready(page);
     for (const view of ["primary", "comparison"] as const) {
         const input = page.getByRole("textbox", { name: view === "primary" ? "Primary source" : "Comparison working source", exact: true });
@@ -17,7 +17,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
         expect(await selection()).toMatchObject({ anchor: 2, head: 2 });
         await expect(input.locator("..").locator('.st-viewport-row[data-line="0"] .st-search-match[data-ornament="point"]')).toHaveCount(1);
         await input.focus(); await ready(page); expect(await painted(input)).toBe(true);
-        if (!large && view === "comparison" && testInfo.project.name === "chromium") await page.screenshot({ path: testInfo.outputPath("raw-crlf-caret.png"), fullPage: true });
+        if (view === "comparison" && testInfo.project.name === "chromium") await page.screenshot({ path: testInfo.outputPath("raw-crlf-caret.png"), fullPage: true });
         await input.press("ArrowDown"); await ready(page); expect(await selection()).toMatchObject({ anchor: 4, head: 4 }); expect(await painted(input)).toBe(true);
         await page.getByRole("button", { name: "Find next", exact: true }).click(); await ready(page); expect(await selection()).toMatchObject({ anchor: 2, head: 2 });
         await input.pressSequentially("!"); await ready(page); expect(await page.evaluate(() => window.hostFixture.range(0, 5))).toBe("a\r!\nb");

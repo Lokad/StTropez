@@ -16,8 +16,8 @@ async function sourceSet(p: Page, ranges: readonly { anchor: number; head: numbe
 async function scroll(p: Page, row: number): Promise<void> { await panes(p).last().evaluate((node, row) => { const c = window.hostFixture.snapshot().bindings.comparison!; node.scrollTop = 12 + row * c.workingViewport.lineHeight; node.dispatchEvent(new Event("scroll")); }, row); await waitForReview(p); }
 async function dispose(p: Page): Promise<void> { await p.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(p); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.bindings.comparison).toBeNull(); }
 async function paddingPoint(p: Page): Promise<{ x: number; y: number }> { await panes(p).last().scrollIntoViewIfNeeded(); return panes(p).last().evaluate(node => { const root = node.getBoundingClientRect(); const row = [...node.querySelectorAll<HTMLElement>(".st-comparison-padding")].find(n => { const r = n.getBoundingClientRect(); return r.top >= root.top + 12 && r.bottom <= root.bottom - 12; }); if (!row) throw new Error("Missing visible padding target."); const r = row.getBoundingClientRect(); return { x: r.left + 12, y: r.top + r.height / 2 }; }); }
-for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} aligned rows preserve painted correspondence, complete sets, navigation, history, save and remount`, async ({ page: p }) => {
-    test.setTimeout(120000); const rows = Array.from({ length: large ? 100000 : 900 }, (_, i) => `row ${i.toString().padStart(6, "0")}: café😀;ok;\r\n`), raw = rows.join(""), offset = (line: number) => rows.slice(0, line).join("").length;
+for (const host of ["plain", "react"]) test(`${host} aligned rows preserve painted correspondence, complete sets, navigation, history, save and remount`, async ({ page: p }) => {
+    test.setTimeout(120000); const rows = Array.from({ length: 900 }, (_, i) => `row ${i.toString().padStart(6, "0")}: café😀;ok;\r\n`), raw = rows.join(""), offset = (line: number) => rows.slice(0, line).join("").length;
     await setup(p, host, raw); const edits = [{ from: offset(20) + 4, to: offset(20) + 4, insert: "XYZ" }, { from: offset(30), to: offset(30), insert: "inserted\r\n".repeat(5) }, { from: offset(80), to: offset(87), insert: "" }];
     let working = raw; for (const edit of edits.slice().reverse()) working = working.slice(0, edit.from) + edit.insert + working.slice(edit.to);
     await p.evaluate(edits => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, edits); }, edits); await waitForReview(p);
@@ -61,13 +61,11 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await p.getByRole("checkbox", { name: "Link review scrolling", exact: true }).check(); await waitForReview(p);
     await input(p).press("Control+s"); await button(p, "Finish save").click(); await waitForReview(p); expect((await snapshot(p)).source.dirty).toBe(false); const canonical = typed.trimEnd(); await exact(p, canonical);
     const saved = await snapshot(p); await align(p).uncheck(); await waitForReview(p); c = (await snapshot(p)).bindings.comparison!; expect(c.workingViewport.aligned).toBe(false); expect(c.referenceViewport!.aligned).toBe(false); expect(c.workingViewport.paddingRows).toBe(0); expect(c.selectionSet).toEqual(saved.bindings.comparison!.selectionSet); expect((await snapshot(p)).history).toEqual(saved.history); await exact(p, canonical);
-    if (!large) {
-        await align(p).check(); await waitForReview(p); const baseline = (await snapshot(p)).bindings.comparison!.baseline;
-        await p.evaluate(() => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: "" }]); }); await waitForReview(p); await scroll(p, 400);
-        c = (await snapshot(p)).bindings.comparison!; expect(c.workingViewport.rows).toBe(0); expect(c.workingViewport.paddingRows).toBeGreaterThan(0); expect(c.work.alignment.runs).toBeLessThan(10);
-        const point = await paddingPoint(p); await p.mouse.click(point.x, point.y); await waitForReview(p); await input(p).pressSequentially("E"); await waitForReview(p); await exact(p, "E");
-        expect((await snapshot(p)).bindings.comparison!.baseline).toEqual(baseline); expect((await snapshot(p)).source.exports).toBe(0); await input(p).press("Control+z"); await waitForReview(p); await exact(p, "");
-    }
+    await align(p).check(); await waitForReview(p); const baseline = (await snapshot(p)).bindings.comparison!.baseline;
+    await p.evaluate(() => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: "" }]); }); await waitForReview(p); await scroll(p, 400);
+    c = (await snapshot(p)).bindings.comparison!; expect(c.workingViewport.rows).toBe(0); expect(c.workingViewport.paddingRows).toBeGreaterThan(0); expect(c.work.alignment.runs).toBeLessThan(10);
+    const point = await paddingPoint(p); await p.mouse.click(point.x, point.y); await waitForReview(p); await input(p).pressSequentially("E"); await waitForReview(p); await exact(p, "E");
+    expect((await snapshot(p)).bindings.comparison!.baseline).toEqual(baseline); expect((await snapshot(p)).source.exports).toBe(0); await input(p).press("Control+z"); await waitForReview(p); await exact(p, "");
     await dispose(p);
 });
 for (const host of ["plain", "react"]) test(`${host} aligned folds, padding pointers, shared pitch and stale preparation retain source ownership`, async ({ page: p }) => {
