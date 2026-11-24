@@ -247,18 +247,28 @@ function* lineComments(buffer: TextBuffer, selections: SelectionSet, command: "l
     marker: string, tabSize: number, read: (from: number, to: number) => string, state: MutablePlanning): Generator<void, SelectionEditPlan> {
     const edits: TextEdit[] = [];
     const intervals = yield* lineGroups(buffer, selections, false, state), scan = lineColumnScanner(read, tabSize);
+    const remove = (from: number) => {
+        const end = from + marker.length;
+        const space = read(end, Math.min(buffer.length, end + 1)) === " ";
+        edits.push({ from, to: end + Number(space), insert: "" });
+    };
     for (const interval of intervals) {
-        const lines: { start: number; offset: number; column: number; commented: boolean; blank: boolean }[] = [];
-        let minimum = Infinity, allCommented = true;
+        const lines: { start: number; offset: number; column: number; blank: boolean }[] = [];
+        let minimum = Infinity, allCommented = true, start = buffer.offsetAt(interval.first);
         for (let line = interval.first; line <= interval.last; line++) {
-            const start = buffer.offsetAt(line), end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
+            const end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
             const { offset, column } = yield* scan(start, end, true), next = read(offset, Math.min(end, offset + marker.length));
             const blank = !next || /^[\r\n]/.test(next), commented = next === marker;
-            if (!blank) { minimum = Math.min(minimum, column); allCommented &&= commented; }
-            lines.push({ start, offset, column, commented, blank });
+            if (command === "remove-line-comment") {
+                if (commented) remove(offset);
+            } else {
+                if (!blank) { minimum = Math.min(minimum, column); allCommented &&= commented; }
+                lines.push({ start, offset, column, blank });
+            }
+            start = end;
             state.workUnits++; if (checkpoint(state)) yield;
         }
-        const uncomment = command === "remove-line-comment" || command === "line-comment" && minimum !== Infinity && allCommented;
+        const uncomment = command === "line-comment" && minimum !== Infinity && allCommented;
         let common = minimum;
         if (!uncomment && minimum > 0 && minimum !== Infinity) for (const line of lines) {
             state.workUnits++; if (checkpoint(state)) yield;
@@ -272,11 +282,8 @@ function* lineComments(buffer: TextBuffer, selections: SelectionSet, command: "l
         for (const line of lines) {
             state.workUnits++; if (checkpoint(state)) yield;
             if (line.blank && minimum !== Infinity) continue;
-            if (uncomment) {
-                if (!line.commented) continue;
-                const end = line.offset + marker.length, space = read(end, Math.min(buffer.length, end + 1)) === " ";
-                edits.push({ from: line.offset, to: end + Number(space), insert: "" });
-            } else {
+            if (uncomment) remove(line.offset);
+            else {
                 // If a tab straddled the minimum, every column back to its start lies
                 // in this same tab stop. Only literal spaces need to be stepped over.
                 const from = common === 0 ? line.start : common === Infinity ? line.offset : line.offset - (line.column - common);
