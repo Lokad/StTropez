@@ -16,6 +16,12 @@ export function validDecorationClass(name: string): boolean {
     classes.add(name); return true;
 }
 
+function validInlineClasses(name: string): boolean {
+    if (validDecorationClass(name)) return true;
+    return typeof name === "string" && name.length <= 256
+        && name.includes(" ") && name.split(" ").every(validDecorationClass);
+}
+
 /** Sweep intersecting boundaries; selections are already clipped to this row fragment.
  * Active ids retain host class order and duplicates, with selection styling last. */
 export function decorationParts(text: string, from: number, to: number, length: number,
@@ -31,7 +37,7 @@ export function decorationParts(text: string, from: number, to: number, length: 
     for (const range of decorations ?? []) {
         const start = range.from, end = range.to;
         if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end > length || start > end) continue;
-        const name = range.className; if (!validDecorationClass(name)) continue;
+        const name = range.className; if (!validInlineClasses(name)) continue;
         if (range.afterLine && lineStart !== undefined && end >= lineStart && end <= to) annotations.push({
             text: "", className: name, ornament: "afterLine", label: range.afterLine, properties: range.properties });
         if (start >= from && start <= to) {

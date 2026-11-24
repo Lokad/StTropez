@@ -8,10 +8,11 @@ import type { InlineDecoration } from "../src/browser/viewport.ts";
 // Deliberately scan individual UTF-16 units and every range. This oracle shares neither
 // sorted events nor an active-set merge with the production sweep.
 function oracle(text: string, from: number, to: number, length: number, decorations: readonly InlineDecoration[], selections: readonly { from: number; to: number }[]): RowPart[] {
+    const validName = (name: string) => name.length <= 256 && /^[a-zA-Z][\w-]{0,63}( [a-zA-Z][\w-]{0,63})*$/.test(name);
     const valid = decorations.filter(r => Number.isSafeInteger(r.from) && Number.isSafeInteger(r.to) && r.from >= 0 && r.to <= length && r.from < r.to
-        && r.from < to && r.to > from && /^[a-zA-Z][\w-]{0,63}$/.test(r.className));
+        && r.from < to && r.to > from && validName(r.className));
     const points = decorations.filter(r => Number.isSafeInteger(r.from) && r.from === r.to && r.from >= from && r.from <= to
-        && /^[a-zA-Z][\w-]{0,63}$/.test(r.className));
+        && validName(r.className));
     const parts: { text: string; className: string; ornament?: "point"; properties?: InlineDecoration["properties"] }[] = [];
     for (let at = from; at <= to; at++) {
         const here = points.filter(r => r.from === at);
@@ -27,7 +28,8 @@ function oracle(text: string, from: number, to: number, length: number, decorati
 
 test("decoration sweep agrees with a per-unit oracle for clipped overlaps, host order, duplicate classes and selection layering", () => {
     let seed = 71529; const random = (n: number) => { seed = nextSeed(seed) | 0; return (seed >>> 0) % n; };
-    const source = "ab😀é␍cd\ud800xy".repeat(3), names = ["first", "second", "first", "-bad", "with space", "st-viewport-selected", "x".repeat(65)];
+    const source = "ab😀é␍cd\ud800xy".repeat(3);
+    const names = ["first", "second", "first", "-bad", "with space", "valid .invalid", "st-viewport-selected", "x".repeat(65)];
     for (let trial = 0; trial < 500; trial++) {
         const from = random(source.length), to = from + 1 + random(source.length - from), text = source.slice(from, to);
         const decorations = Array.from({ length: 1 + random(24) }, () => ({ from: random(source.length + 6) - 3, to: random(source.length + 6), className: names[random(names.length)]! }));

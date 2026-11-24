@@ -1,10 +1,24 @@
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DecorationLayer } from "./decoration-layers.ts";
-import type { LspDiagnostics, LspDiagnosticState, LspWorkspace } from "../protocol/index.ts";
+import type { LspDiagnostic, LspDiagnostics, LspDiagnosticState, LspWorkspace } from "../protocol/index.ts";
+import type { InlineDecoration } from "./viewport.ts";
 import type { TextEditor } from "./text-editor.ts";
 
-export type EditorDiagnostic = Readonly<{ from: number; to: number; message: string; select: () => boolean }>;
+export type EditorDiagnostic = Pick<LspDiagnostic, "message" | "severity" | "source" | "code" | "tags"> &
+    Readonly<{ from: number; to: number; select: () => boolean }>;
+
+const severities = ["error", "warning", "information", "hint"] as const;
+
+/** The same marks serve provider pushes and host-supplied diagnostics. */
+export function diagnosticDecoration(
+    { from, to, severity, tags }: Pick<EditorDiagnostic, "from" | "to"> & Partial<Pick<LspDiagnostic, "severity" | "tags">>
+): InlineDecoration {
+    const level = severities[(severity ?? 1) - 1] ?? "error";
+    const deprecated = tags?.includes(2) ? " st-deprecated" : "";
+    return { from, to, className: `st-diagnostic st-diagnostic-${level}${deprecated}` };
+}
+
 export type DiagnosticSnapshot = Readonly<{
     diagnostics: readonly EditorDiagnostic[]; diagnosticRevision: number; diagnosticsPending: boolean;
     unversionedDiagnostics: readonly string[];
@@ -45,7 +59,7 @@ export function createDiagnosticController(editor: TextEditor, provider: LspWork
         displayed = result;
         const diagnostics: EditorDiagnostic[] = [], messages: string[] = [];
         for (const item of result.items) {
-            const { from, to, message } = item;
+            const { from, to, message, severity, code, tags } = item;
             if (from === null || to === null) { messages.push(message + " (range outside the current snapshot)"); continue; }
             if (result.freshness === "unversioned") messages.push(message + " (provider version unknown)");
             const select = (): boolean => {
@@ -55,10 +69,12 @@ export function createDiagnosticController(editor: TextEditor, provider: LspWork
                     || cell.get().diagnostics !== diagnostics || options.canCapture?.() === false) return false;
                 return !!editor.reveal({ from, to }, { expectedRevision: result.snapshotRevision, select: true, focus: true });
             };
-            const entry: EditorDiagnostic = Object.freeze({ from, to, message, select });
-            diagnostics.push(entry);
+            diagnostics.push(Object.freeze({
+                from, to, message, severity, source: item.source, select,
+                ...(code !== undefined && { code }), ...(tags && { tags })
+            }));
         }
-        layer.set(result.snapshotRevision, diagnostics.map(({ from, to }) => ({ from, to, className: "st-diagnostic" })));
+        layer.set(result.snapshotRevision, diagnostics.map(diagnosticDecoration));
         notifications.publish(cell, Object.freeze({ diagnostics: Object.freeze(diagnostics), diagnosticRevision: result.snapshotRevision,
             diagnosticsPending: state.status === "pending", unversionedDiagnostics: Object.freeze(messages) }));
     };

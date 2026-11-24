@@ -200,23 +200,28 @@ test("a diagnostic tracks its text through an edit and a fresh push replaces the
             from: 0, to: doc.buffer.length, text: doc.text() };
         return layers.present(line).map(({ from, to, className }) => ({ from, to, className }));
     };
-    async function publish(message: string, from: number, to: number) {
+    async function publish(message: string, from: number, to: number,
+        metadata: { source?: string; severity?: number; code?: number; tags?: number[] } = {}) {
         f.peer.sendNotification("textDocument/publishDiagnostics", {
             uri: "generic:source", version: await f.synchronizedVersion(),
-            diagnostics: [{ message, range: { start: { line: 0, character: from }, end: { line: 0, character: to } } }],
+            diagnostics: [{ message, ...metadata, range: { start: { line: 0, character: from }, end: { line: 0, character: to } } }],
         });
         await f.flush();
     }
-    await publish("Check beta", 6, 10);
+    const metadata = { severity: 2, code: 0, source: "example", tags: [2, 97] };
+    await publish("Check beta", 6, 10, metadata);
     const original = controller.getSnapshot().diagnostics[0]!;
-    assert.deepEqual(marks(), [{ from: 6, to: 10, className: "st-diagnostic" }]);
+    const warning = "st-diagnostic st-diagnostic-warning st-deprecated";
+    assert.deepEqual(marks(), [{ from: 6, to: 10, className: warning }]);
     assert.ok(f.edit().applied);
     await f.flush();
     const pending = controller.getSnapshot();
     assert.ok(pending.diagnosticsPending);
     assert.equal(original.select(), false);
-    assert.deepEqual(marks(), [{ from: 13, to: 17, className: "st-diagnostic" }]);
+    assert.deepEqual(marks(), [{ from: 13, to: 17, className: warning }]);
     const mapped = pending.diagnostics[0]!;
+    assert.deepEqual({ severity: mapped.severity, code: mapped.code, source: mapped.source, tags: mapped.tags }, metadata);
+    assert.ok(Object.isFrozen(mapped.tags));
     assert.ok(mapped.select());
     await publish("Check alpha", 7, 12);
     const fresh = controller.getSnapshot();
@@ -226,7 +231,7 @@ test("a diagnostic tracks its text through an edit and a fresh push replaces the
     assert.ok(fresh.diagnostics[0]!.select());
     const options = { expectedRevision: f.document().revision, select: true, focus: true };
     assert.deepEqual(reveals, [[{ from: 13, to: 17 }, options], [{ from: 7, to: 12 }, options]]);
-    assert.deepEqual(marks(), [{ from: 7, to: 12, className: "st-diagnostic" }]);
+    assert.deepEqual(marks(), [{ from: 7, to: 12, className: "st-diagnostic st-diagnostic-error" }]);
     f.replace();
     assert.equal(fresh.diagnostics[0]!.select(), false);
     assert.deepEqual(marks(), []);

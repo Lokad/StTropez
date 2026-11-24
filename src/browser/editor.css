@@ -53,11 +53,16 @@
 .st-viewport-row [data-ornament] { pointer-events: none; user-select: none; }
 .st-viewport-row [data-ornament="point"] { position: relative; }
 .st-viewport-row [data-ornament="point"]::after { content: ""; position: absolute; bottom: 0; left: 0; width: .35em; border-bottom: 2px solid currentColor; }
-.st-viewport-row .st-diagnostic { text-decoration: underline wavy var(--st-diagnostic-color, #da8550); text-underline-offset: 3px; }
+.st-viewport-row .st-diagnostic { text-decoration: underline wavy var(--st-diagnostic-color, #ed8585); text-underline-offset: 3px; }
+.st-diagnostic-warning { --st-diagnostic-color: var(--st-diagnostic-warning-color, #e5b858); }
+.st-diagnostic-information { --st-diagnostic-color: var(--st-diagnostic-information-color, #73b7ef); }
+.st-diagnostic-hint { --st-diagnostic-color: var(--st-diagnostic-hint-color, #9caabb); }
+.st-viewport-row :is(.st-diagnostic-information, .st-diagnostic-hint) { text-decoration-style: dotted; }
+.st-viewport-row .st-diagnostic.st-deprecated { text-decoration-line: underline line-through; text-decoration-style: solid; }
 .st-viewport-row .st-definition-link { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; color: var(--st-definition-link-color, currentColor); }
 .st-viewport-row .st-diagnostic[data-ornament="point"]::after {
     width: .6em; height: .35em; bottom: -.15em; border: 0;
-    clip-path: polygon(0 100%, 50% 0, 100% 100%); background: var(--st-diagnostic-color, #da8550);
+    clip-path: polygon(0 100%, 50% 0, 100% 100%); background: var(--st-diagnostic-color, #ed8585);
 }
 .st-viewport-row [data-ornament="before"] { display: inline-block; }
 .st-viewport-row [data-ornament="afterLine"]::after { content: attr(data-label); margin-left: .75em; }

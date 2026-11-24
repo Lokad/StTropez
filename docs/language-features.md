@@ -113,10 +113,11 @@ integer tags. Open related files only when the host requests them. For a code ac
 forwards overlapping, placed diagnostics only when their provider version is current. A pending or
 unversioned diagnostic cannot supply that context.
 
-Use `createDiagnosticController(editor, provider)` to paint diagnostics. The controller underlines
-ranges and marks an empty range with a small triangle beneath its insertion point. Read `diagnostics`, `diagnosticsPending`,
-`diagnosticRevision` and `unversionedDiagnostics` from its snapshot. Each placed diagnostic has a
-`select()` method that reveals its range. An expired item returns `false`.
+Use `createDiagnosticController(editor, provider)` to paint pushed diagnostics. Hosts that fetch
+diagnostics themselves can map their placed ranges through `diagnosticDecoration` and set a decoration
+layer. Both paths color marks by severity, strike through deprecated text and draw a triangle for an
+empty range. An omitted severity uses the error color. Snapshot items retain the provider's severity,
+source, code and tags. Call an item's `select()` to reveal it. An expired item returns `false`.
 
 `cancel()` clears the marks and pauses observation. `request()` resumes with the latest push.
 Pass `{ autoConnect: false }` if the host opens the connection. Render messages as text. Your host

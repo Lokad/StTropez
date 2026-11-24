@@ -18,7 +18,7 @@ export type { FoldDiscovery, FoldDiscoveryBatch, FoldDiscoveryResult, FoldDiscov
 export { openWebSocketTransport } from "./lsp-websocket.ts";
 export { BrowserLspWorkspace, type BrowserLspWorkspaceOptions } from "./lsp-workspace.ts";
 export type { WebSocketTransportOptions } from "./lsp-websocket.ts";
-export { createDiagnosticController } from "./diagnostic-controller.ts";
+export { createDiagnosticController, diagnosticDecoration } from "./diagnostic-controller.ts";
 export { createCodeActionController } from "./code-action-controller.ts";
 export { createHoverController } from "./hover-controller.ts";
 export { createNavigationController } from "./navigation-controller.ts";

@@ -268,6 +268,12 @@ export async function runDemoDocumentation(page: Page, url = "/") {
     const problems = page.locator(".demo-problems"), error = problems.locator(".demo-problem").filter({ hasText: "TS2322:" });
     const warning = problems.locator(".demo-problem").filter({ hasText: "legacy-price:" });
     await expect(error).toContainText("Error · typescript"); await expect(warning).toContainText("Warning · Demo host · Deprecated");
+    const errorMark = page.locator("#editor .st-diagnostic-error"), warningMark = page.locator("#editor .st-diagnostic-warning");
+    await expect(errorMark).toHaveText("price");
+    await expect(warningMark).toHaveText("legacyPrice");
+    await expect(warningMark).toHaveCSS("text-decoration-line", /line-through/);
+    const errorInk = await errorMark.evaluate(mark => getComputedStyle(mark).textDecorationColor);
+    await expect(warningMark).not.toHaveCSS("text-decoration-color", errorInk);
     await error.locator("summary").click(); await error.getByRole("button", { name: /types.ts:2:3/ }).click();
     const types = page.getByRole("textbox", { name: "types.ts", exact: true }); await expect(types).toBeFocused();
     await expect(page.locator("#cursor")).toHaveText("Ln 2, Col 8");

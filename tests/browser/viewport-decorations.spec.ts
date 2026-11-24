@@ -23,7 +23,7 @@ test("decorated viewport bounds endpoint reads and preserves overlap order, sele
         host.style.cssText = "height:200px;width:1000px"; style.textContent = ".paint-first { color: rgb(200, 20, 30) } .paint-second { background-color: rgb(10, 30, 60) }"; document.body.append(host, style);
         let reads = 0, overlap = false;
         const disjoint = Array.from({ length: 256 }, (_, i) => ({ get from() { reads++; return i * 2; }, get to() { reads++; return i * 2 + 1; }, className: "paint-first" }));
-        const combined = [{ from: 4, to: 8, className: "paint-first" }, { from: 0, to: 6, className: "paint-second" }, { from: 4, to: 5, className: "paint-first" }, { from: 0, to: 512, className: "invalid class" }];
+        const combined = [{ from: 4, to: 8, className: "paint-first" }, { from: 0, to: 6, className: "paint-second" }, { from: 4, to: 5, className: "paint-first" }, { from: 0, to: 512, className: "invalid .class" }];
         const viewport = mountTextViewport(host, workspace, tab);
         const tokens = viewport.decorations.addProvider({ name: "tokens", order: 0, provide: () => overlap ? combined : disjoint });
         try {

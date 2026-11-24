@@ -1,5 +1,5 @@
 import { isSaveKey, isUnmodifiedShortcut } from "../shared/host-shortcuts.ts";
-import { mountTextEditor, mountTextComparison, createFindController, createRegexFindBackend, createFoldingController, editRefusedEvent } from "../../src/browser/index.ts";
+import { mountTextEditor, mountTextComparison, createFindController, createRegexFindBackend, createFoldingController, diagnosticDecoration, editRefusedEvent } from "../../src/browser/index.ts";
 import type { EditRefusedDetail, TextEditor, FindController, TextComparison, FoldingController, DecorationLayer, DecorationProvider } from "../../src/browser/index.ts";
 import { discoverIndentationFolds } from "../../src/index.ts";
 import { DemoProject } from "./project.ts";
@@ -192,7 +192,7 @@ function renderLanguage(): void {
     if (active && diagnosticsLayer && paintedDiagnostics !== state.diagnostics) {
         const revision = project.workspace.document(active.resource.documentId).revision;
         const ranges = state.diagnostics.filter(problem => problem.documentId === active!.resource.documentId && problem.revision === revision);
-        diagnosticsLayer.set(revision, ranges.map(({ from, to }) => ({ from, to, className: "st-diagnostic" })));
+        diagnosticsLayer.set(revision, ranges.map(diagnosticDecoration));
         paintedDiagnostics = state.diagnostics;
     }
     renderProblems();

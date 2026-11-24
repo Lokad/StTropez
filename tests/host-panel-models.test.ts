@@ -94,14 +94,14 @@ test("language result callbacks cannot follow a newer view or diagnostic batch w
             diagnosticsPending: false, unversionedDiagnostics: [],
             completionAt: (index: number) => ({ label: "sample", select: () => { chosen.push(index); return true; },
                 accept: (mode: "insert" | "replace") => { inserted.push(mode); return true; } }),
-            diagnostics: Object.freeze([Object.freeze({ from: 5, to: 9, message: "First diagnostic", select: () => { diagnostics.push(5); return true; } })]), diagnosticRevision: 1 }) });
+            diagnostics: Object.freeze([Object.freeze({ from: 5, to: 9, message: "First diagnostic", severity: null, source: null, select: () => { diagnostics.push(5); return true; } })]), diagnosticRevision: 1 }) });
     let current = state, reads = 0;
     const tools: Parameters<typeof languagePanelModel>[0] = { state: { getSnapshot: () => { reads++; return current; }, subscribe: () => noop }, toolsRef: noop, queryRef: noop, replacementRef: noop, keyFromTools: noop,
         request: noop, cancel: noop, disconnect: noop, reconnect: noop, next: noop, previous: noop, replaceCurrent: noop, replaceAll: noop, cancelFind: noop, foldSelection: noop, expandFolds: noop, focusEditor: noop,
         setQuery: noop, setReplacement: noop, setWholeWord: noop, setMatchCase: noop, setRegularExpression: noop };
     const first = languagePanelModel(tools, state), oldChoice = first.choices.items()[0]!, oldDiagnostic = first.diagnostics.items()[0]!;
     assert.equal(reads, 0); assert.equal(first.folds.text, "Captured folds");
-    current = { ...state, view: "secondary", provider: { ...state.provider!, diagnostics: [{ from: 10, to: 14, message: "Second diagnostic", select: () => { diagnostics.push(10); return true; } }] } };
+    current = { ...state, view: "secondary", provider: { ...state.provider!, diagnostics: [{ from: 10, to: 14, message: "Second diagnostic", severity: null, source: null, select: () => { diagnostics.push(10); return true; } }] } };
     const newer = languagePanelModel(tools, current);
     oldChoice.invoke(); oldDiagnostic.invoke(); first.actions.find(action => action.label === "Insert completion")!.invoke();
     assert.deepEqual(chosen, []); assert.deepEqual(diagnostics, []); assert.deepEqual(inserted, []);
