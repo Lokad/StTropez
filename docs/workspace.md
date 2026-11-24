@@ -478,7 +478,7 @@ for the whole inventory.
 
 Each `subscribe` call has its own lifetime, even with the same callback. Delivery uses the listener
 list captured at publication. Listener changes apply to later publications. Exceptions go to
-`WorkspaceOptions.onListenerError`, if supplied. Neither listeners nor the error reporter can
+`WorkspaceOptions.onListenerError`, which defaults to reporting through `console.error`. Neither listeners nor the error reporter can
 interrupt delivery or undo a committed edit.
 
 Use `createNotificationScope(onListenerError?)` to notify your controller’s listeners under the

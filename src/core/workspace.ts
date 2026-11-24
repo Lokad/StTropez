@@ -218,7 +218,7 @@ export class Workspace {
 
     constructor(options: WorkspaceOptions = {}) {
         this.history = new TextHistory(options.history);
-        this.scope = new NotificationScope(options.onListenerError ?? (() => {}));
+        this.scope = new NotificationScope(options.onListenerError);
         this.state = new Store(0, this.scope);
         this.getSnapshot = () => {
             if (!this.snapshot) {

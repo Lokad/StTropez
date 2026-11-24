@@ -2,6 +2,8 @@
 export type Observable<T> = Readonly<{ getSnapshot: () => T; subscribe: (listener: () => void) => () => void }>;
 type Deliveries = Map<() => void, (error: unknown) => void>;
 type AfterDelivery = (work: () => void) => void;
+// Browsers and headless hosts both provide a console without importing platform types.
+declare const console: { error: (error: unknown) => void };
 const queueFollowUp = Symbol("subscription follow-up");
 const maxFollowUpsPerChain = 256;
 type FollowUpChain = { scheduled: number; reported: boolean };
@@ -19,7 +21,7 @@ export class NotificationScope {
     private subscriptions = 0;
     private readonly onListenerError: (error: unknown) => void;
     constructor(onListenerError?: (error: unknown) => void, parent?: NotificationScope) {
-        this.onListenerError = onListenerError ?? parent?.onListenerError ?? (() => {});
+        this.onListenerError = onListenerError ?? parent?.onListenerError ?? (error => console.error(error));
         this.delivery = parent?.delivery ?? { depth: 0, batches: 0, pending: new Map(), following: [], draining: false, activeChain: undefined };
     }
     assertWritable(): void {

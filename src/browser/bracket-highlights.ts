@@ -61,7 +61,10 @@ export function mountBracketHighlights(workspace: Workspace, target: TabTarget |
             const work = captured.cursor.snapshot().workUnits;
             progress = runner.slice(() => captured.cursor.next(256),
                 next => job === captured && next.status === "running" && next.workUnits - work < 4096, 16);
-        } catch { progress = captured.cursor.snapshot(); }
+        } catch (error) {
+            progress = { ...captured.cursor.snapshot(), status: "failed", result: null,
+                failure: error instanceof Error ? error.message : String(error) };
+        }
         finally { captured.running = false; }
         if (job !== captured || !captured.current()) {
             captured.cursor.dispose(); if (job === captured) refresh(); return;

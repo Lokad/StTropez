@@ -3,6 +3,18 @@ import assert from "node:assert/strict";
 import { NotificationScope, Store } from "../src/core/observable.ts";
 import { Workspace } from "../src/index.ts";
 
+test("a workspace reports listener exceptions by default and finishes delivery", t => {
+    const report = t.mock.method(console, "error", () => {});
+    const scope = new Workspace().createNotificationScope(), store = new Store(0, scope);
+    const problem = new Error("observer failed");
+    store.observable.subscribe(() => { throw problem; });
+    let observed = 0;
+    store.observable.subscribe(() => { observed = store.get(); });
+    scope.publish(store, 1);
+    assert.equal(observed, 1);
+    assert.deepEqual(report.mock.calls.map(call => call.arguments), [[problem]]);
+});
+
 test("single-store publication preserves snapshot identity and SameValue suppression", () => {
     const scope = new NotificationScope(), initial = Object.freeze({ value: 1 }), store = new Store<unknown>(initial, scope);
     const seen: unknown[] = [], stop = store.observable.subscribe(() => seen.push(store.get()));

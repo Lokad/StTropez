@@ -33,7 +33,10 @@ export function createRegexClient(host: Readonly<{ clock: Pick<Window, "setTimeo
             // the cached lane. A worker failure must also invalidate that idle source.
             if (worker === created) terminate();
         };
-        created.addEventListener("error", event => { event.preventDefault(); failed(new Error("Regex worker failed; editing remains available.")); }, { signal: listeners.signal });
+        created.addEventListener("error", event => {
+            event.preventDefault();
+            failed(event.error instanceof Error ? event.error : new Error(event.message || "Regex worker failed to load or run."));
+        }, { signal: listeners.signal });
         created.addEventListener("messageerror", () => failed(new Error("Regex worker response could not be decoded.")), { signal: listeners.signal });
         created.addEventListener("message", (event: MessageEvent<unknown>) => { if (worker === created) active?.receive(event.data); }, { signal: listeners.signal });
     };
@@ -75,7 +78,11 @@ export function createRegexClient(host: Readonly<{ clock: Pick<Window, "setTimeo
             try {
                 sent = true; connect(); pending = { resolve, reject: no, timer: host.clock.setTimeout(() => reject(new Error("Regex search timed out; narrow the expression.")), timeout) };
                 const request: RegexRequest = { id, revision, ...command }; worker!.postMessage(JSON.stringify(request));
-            } catch { const error = new Error("Regex worker is unavailable; editing remains available."); reject(error); no(error); }
+            } catch (cause) {
+                const error = cause instanceof Error ? cause : new Error(String(cause));
+                reject(error);
+                no(error);
+            }
         });
         const step = (finished: boolean, readUnits: number, matches: readonly SearchMatch[] = empty, edits: readonly TextEdit[] = noEdits): RegexCursorStep => Object.freeze({ done: finished, scanned, readUnits, matches, edits });
         const next = async (): Promise<RegexCursorStep> => {

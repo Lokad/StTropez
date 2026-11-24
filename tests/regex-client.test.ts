@@ -205,6 +205,15 @@ test("regex wire bounds apply to current replies after identity routing and rele
     assert.equal(owner.timers.size, 0); assert.equal(owner.workers[0]!.terminated, true);
 });
 
+test("a worker construction failure reaches the search caller intact", async t => {
+    const denied = new Error("Worker URL rejected");
+    const f = workerFixture(), client = createRegexClient({ ...f.options, createWorker: () => { throw denied; } });
+    t.after(client.dispose);
+    const cursor = client.createCursor({ documentId: "a" as DocumentId, revision: 0, buffer: TextBuffer.from("a") }, "a", true);
+    await assert.rejects(cursor.next(), error => error === denied);
+    assert.equal(f.timers.size, 0);
+});
+
 test("regex client cancellation, timeout and malformed responses release the lane without continuing transfer", async () => {
     for (const action of ["cancel", "timeout", "malformed", "error"] as const) {
         const f = fixture(TextBuffer.from("text"), "x", false), pending = f.cursor.next(), worker = f.workers[0]!;
