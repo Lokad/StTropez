@@ -432,6 +432,15 @@ test("a rejected oversized update expires associations but preserves unrelated d
     assert.equal(a.synchronized(doc), undefined); assert.equal(f.provider.snapshot().documents, 1); assert.equal(f.provider.getSnapshot().phase, "ready");
     assert.equal(f.workspace.document(f.source.documentId).buffer.length, "a😀\r\nsource".length + 32); assert.equal(f.errors.length, 1);
     assert.deepEqual(await b.requestDocument("textDocument/definition", b.attachDocument(f.companion.documentId), index => ({ position: index.at(0) })).result, []);
+    const resource = f.source.documentId;
+    const ownership = f.workspace.diagnostics();
+    assert.throws(() => a.attachDocument(resource), /document size limit/);
+    assert.equal(f.workspace.diagnostics().leases, ownership.leases);
+    assert.ok(f.workspace.undo({ documentId: resource, expectedRevision: f.workspace.document(resource).revision }).applied);
+    const retry = a.attachDocument(resource);
+    await a.flush([retry]);
+    const reply = await a.requestDocument("textDocument/hover", retry, index => ({ position: index.at(0) })).result;
+    assert.deepEqual(reply, { contents: "shared provider" });
 });
 
 test("shared diagnostic placement preserves unknown freshness and expires on reconnect and URI reuse", async t => {
