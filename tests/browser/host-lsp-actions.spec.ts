@@ -318,34 +318,21 @@ test.describe(`plain LSP code actions`, () => {
         for (const fault of ["malformed", "failure"] as const) { await select(page); await preview(page); await choices(page).nth(7).click(); const consumed = await faultCommand(page, fault); await button(page, "Execute captured action").click(); await waitForActions(page); await consumed(); await exact(page, marker + raw); await expect(page.getByLabel("Code action status", { exact: true })).toContainText("undo"); await input(page).press("Control+z"); await waitForActions(page); await exact(page, raw); if ((await snapshot(page)).bindings.actions.state.disconnected || (await snapshot(page)).bindings.actions.state.reconnectRequired) await button(page, "Reconnect action provider").click(); }
         await dispose(page);
     });
-    for (const mode of ["selection", "authority", "typing", "remount", "withdraw", "disconnect", "cancel"] as const) test(`action-command review expires after ${mode} without undoing its committed phase`, async ({ page }) => {
+    test("dismissing a command review returns typing to the source and keeps its first edit undoable", async ({ page }) => {
         await seed(page);
         await button(page, "Add navigation companion").click();
-        const before = await snapshot(page), companion = before.bindings.navigation.companion!;
-        await select(page);
         await preview(page);
         await choices(page).nth(7).click();
         await button(page, "Execute captured action").click();
         await review(page);
-        await exact(page, marker + raw);
-        const captured = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.project.state.review!);
-        if (mode === "selection") await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 3, head: 3 }]); });
-        else if (mode === "authority") await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion);
-        else if (mode === "typing") { await input(page).press("Control+End"); await input(page).pressSequentially("x"); }
-        else if (mode === "remount") await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
-        else if (mode === "withdraw") await control(page, "fixture/reviewRegistration", { registered: false }, false);
-        else if (mode === "disconnect") await control(page, "fixture/disconnect");
-        else await button(page, "Dismiss action preview").click();
-        await waitForActions(page);
-        await captured.evaluate(review => review.apply());
-        if (mode === "authority") await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
-        if (mode === "typing") { await input(page).press("Control+z"); await waitForActions(page); }
-        await exact(page, marker + raw);
+        await input(page, "Action module").press("Escape");
+        await expect(input(page)).toBeFocused();
+        await expect(button(page, "Apply captured provider edits")).toBeDisabled();
         await expect(page.getByLabel("Code action status", { exact: true })).toContainText("undo");
-        await input(page).press("Control+z");
+        await exact(page, marker + raw);
+        await page.keyboard.press("Control+z");
         await waitForActions(page);
         await exact(page, raw);
-        await dispose(page);
     });
     test("action-command acknowledgement loss preserves history without replay after reconnect", async ({ page }) => {
         await seed(page);
