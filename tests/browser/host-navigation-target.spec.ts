@@ -72,6 +72,11 @@ test("links and definitions retry a failed presentation and keep the requesting 
             return loaded !== undefined && loaded.getSnapshot() === undefined;
         };
     }, path);
+    const findDefinition = page.getByRole("button", { name: "Find definition", exact: true });
+    await page.getByRole("textbox", { name: "Notes", exact: true }).focus();
+    await expect(findDefinition).toBeDisabled();
+    await page.getByRole("textbox", { name: "Main", exact: true }).focus();
+    await expect(findDefinition).toBeEnabled();
     await page.getByRole("button", { name: "Discover module links", exact: true }).click();
     const link = page.getByRole("list", { name: "Module link results" }).getByRole("button");
     await link.click();
@@ -81,7 +86,7 @@ test("links and definitions retry a failed presentation and keep the requesting 
     await expect(page.getByRole("textbox", { name: "Module", exact: true })).toBeFocused();
     await page.getByRole("button", { name: "Return to link origin" }).click();
     await expect(page.getByRole("textbox", { name: "Main", exact: true })).toBeFocused();
-    await page.getByRole("button", { name: "Find definition", exact: true }).click();
+    await findDefinition.click();
     const row = page.getByRole("button", { name: "library:types:2:6 · declaration", exact: true });
     await expect(page.getByRole("textbox", { name: "Notes", exact: true })).toHaveCount(0);
     await expect(row).toBeVisible(); await row.click();

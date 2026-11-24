@@ -17,8 +17,9 @@ import { HostCell } from "../shared/observable.ts";
 type Kind = LspNavigationRequest["kind"];
 export type NavigationHostOptions = Readonly<{ provider: LspWorkspace; prepare: (kind: Kind, policy: FixturePolicy<NavigationFault>) => LspPrepare;
     linkAt?: (editor: TextEditor, offset: number) => NavigationPointerLink | undefined }>;
-type Session = { id: string; target: TabTarget; editor: TextEditor; controller: NavigationController };
-type Job = { kind: Kind; symbol: string; origin: Session; returnPoint: NavigationOrigin; sources: Set<DocumentId>; targets: Map<DocumentId, Session>;
+type Session = { id: string; target: TabTarget; editor: TextEditor; controller: NavigationController | undefined };
+type Source = Session & { controller: NavigationController };
+type Job = { kind: Kind; symbol: string; origin: Source; returnPoint: NavigationOrigin; sources: Set<DocumentId>; targets: Map<DocumentId, Session>;
     timer: number; page: NavigationPage | undefined; mayFocus?: () => boolean };
 export type NavigationNote = Readonly<{ ordinal: number; title: string; line: number; column: number; excerpt: string; declaration: boolean; open: () => void }>;
 export type NavigationSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; canCancel: boolean; status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired" | "disconnected";
@@ -51,8 +52,9 @@ export class HostNavigationTools {
         this.stopHistory = this.history.subscribe(() => this.publish());
         this.queryKey = createReviewKey(host.workspace);
     }
-    private available(session: Session): boolean {
-        return !this.disposed && this.sessions.has(session) && isMountedEditor(this.host.workspace, session.editor, session.target);
+    private available(session: Session): session is Source {
+        return !!session.controller && !this.disposed && this.sessions.has(session)
+            && isMountedEditor(this.host.workspace, session.editor, session.target);
     }
     private showPage(job: Job, page: NavigationPage | undefined, patch: Partial<NavigationSnapshot> = {}): readonly NavigationNote[] {
         const titles = new Map(this.host.workspace.getSnapshot().documents.map(doc => [doc.id, doc.title]));
@@ -105,13 +107,22 @@ export class HostNavigationTools {
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
         if (this.disposed) throw new Error("Navigation panel is disposed.");
         const target = this.host.workspace.tabs.capture(tab);
-        const { navigation: controller, dispose } = attachEditorLanguage(editor, this.options.provider, { navigation: { documents: () => this.host.workspace.getSnapshot().documents.filter(doc => doc.language !== null),
+        const document = this.host.workspace.document(editor.view.documentId);
+        const attachment = document.language && attachEditorLanguage(editor, this.options.provider, { navigation: {
+            documents: () => this.host.workspace.getSnapshot().documents.filter(doc => doc.language !== null),
             canCapture: () => !this.disconnected && !this.disposed && this.host.canCapture(editor.view.documentId),
             linkAt: offset => this.options.linkAt?.(editor, offset),
             prepareRequest: kind => this.options.prepare(kind, this.fixture.take()),
             onDefinition: offset => { this.active = session; editor.focus(); this.start("definition", true, offset); } } });
+        const controller = attachment?.navigation;
         const session: Session = { id, target, editor, controller };
         return attachPanelSession(this.sessions, session, (signal, register) => {
+            onSourceFocus(editor, signal, () => { this.active = session; this.publish(); });
+            // Plain-text panes can return to a previous location without a language provider.
+            const apple = /Mac|iPhone|iPad|iPod/.test(editor.element.ownerDocument.defaultView!.navigator.platform);
+            register({ id: "navigation.back", label: "Back to previous location", enabled: () => this.history.getSnapshot() > 0,
+                run: () => { this.active = session; this.returnToOrigin(); } }, { keys: apple ? [] : ["Alt+ArrowLeft"], repeat: false });
+            if (!controller) return;
             const stop = controller.subscribe(() => {
                 const job = this.job, state = controller.getSnapshot();
                 if (job?.origin === session) {
@@ -120,7 +131,6 @@ export class HostNavigationTools {
                 this.publish();
             });
             signal.addEventListener("abort", stop, { once: true });
-            onSourceFocus(editor, signal, () => { this.active = session; this.publish(); });
             const leaveSource = () => { if (this.job?.origin === session) delete this.job.mayFocus; };
             editor.element.addEventListener("focusout", leaveSource, { signal });
             editor.element.ownerDocument.defaultView!.addEventListener("blur", leaveSource, { signal });
@@ -133,10 +143,6 @@ export class HostNavigationTools {
             }
             const ownsList = () => this.job?.origin === session && this.resultList.focused;
             registerResultArrows(register, "navigation", 5, () => this.resultList.element, ownsList);
-            // Option+Left moves by word on Apple keyboards. Return remains available in the panel.
-            const apple = /Mac|iPhone|iPad|iPod/.test(editor.element.ownerDocument.defaultView!.navigator.platform);
-            register({ id: "navigation.back", label: "Back to previous location", enabled: () => this.history.getSnapshot() > 0,
-                run: () => { this.active = session; this.returnToOrigin(); } }, { keys: apple ? [] : ["Alt+ArrowLeft"], repeat: false });
             register({ id: "navigation.dismiss", label: "Cancel symbol navigation",
                 enabled: () => this.job?.origin === session && (editor.getSnapshot().focused || ownsList()),
                 run: () => { const restore = ownsList(); this.cancel(); if (restore) focusSource(editor); } }, { keys: ["Escape"], shared: true, priority: 5 });
@@ -144,7 +150,7 @@ export class HostNavigationTools {
             if (this.active === session) this.active = undefined;
             if (!this.presenting && this.job?.targets.get(editor.view.documentId) === session) this.cancel();
             this.publish();
-        }, dispose);
+        }, attachment?.dispose);
     }
     private requestFromPanel(kind: Kind): void {
         if (!this.active?.editor.commands.run("navigation." + kind, "panel"))

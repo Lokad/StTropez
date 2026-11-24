@@ -6,7 +6,8 @@ files and decides which edits to apply. [Connect a provider](language-server.md)
 
 ## Use
 
-Pass the features your editor needs to `attachEditorLanguage`. Each accepts an options object.
+Set the document's language ID and URI before calling `attachEditorLanguage`. A plain-text pane
+can use the editor and navigation history on their own. Pass an options object for each language feature you need.
 Panels attached to the same editor and provider share one scope and document binding. The last
 attachment to close releases both. Hover uses diagnostics from its attachment unless you supply
 another source.
