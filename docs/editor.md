@@ -325,7 +325,8 @@ Dragging painted selected text captures source fragments, the whole selection se
 and tab/view identity. Editable sources in the same workspace move by default; Control
 (Option on Apple platforms) requests a copy. Read-only sources and other workspaces copy.
 Drop validates an opaque token and the last accepted target revision/model offset independently
-of focus. An active internal drag that loses its token is refused without deleting the source.
+of focus. If the browser strips the token, the drop leaves the text unchanged. Closing or
+remounting the source pane cancels the transfer, even if the browser delivers the drop afterward.
 
 The destination selects the dropped text, including all fragments of a multiline drop.
 Same-document moves use one original-coordinate plan; cross-document moves use shared atomic

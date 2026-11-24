@@ -9,8 +9,27 @@ import type { TextViewport } from "./viewport.ts";
 import { createEdgeAutoscroll, edgeVelocity } from "./edge-autoscroll.ts";
 
 const transferType = "application/x-sttropez-text";
-type ActiveDrag = { token: string; owner: symbol; source?: TextTransferCapture };
+type ActiveDrag = { token: string; owner: symbol; source?: TextTransferCapture; end: () => void };
 const activeDrags = new WeakMap<Document, ActiveDrag>();
+
+function beginDrag(root: HTMLElement, owner: symbol, source: TextTransferCapture): ActiveDrag {
+    const document = root.ownerDocument, win = document.defaultView!;
+    activeDrags.get(document)?.end();
+    const events = new AbortController(), options = { signal: events.signal };
+    function end(): void {
+        events.abort();
+        if (activeDrags.get(document) === drag) activeDrags.delete(document);
+        delete drag.source;
+    }
+    const drag: ActiveDrag = { token: win.crypto.randomUUID(), owner, source, end };
+    activeDrags.set(document, drag);
+    // The browser can deliver dragend directly to a detached source after its editor is gone.
+    root.addEventListener("dragend", drag.end, options);
+    document.addEventListener("drop", drag.end, options);
+    document.addEventListener("dragstart", drag.end, { ...options, capture: true });
+    win.addEventListener("pagehide", drag.end, options);
+    return drag;
+}
 
 /** Native data-store bridge. Payloads are read at drop, never during protected dragover. */
 export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab: TabTarget | undefined; view: DocumentView; viewport: TextViewport;
@@ -53,7 +72,8 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
         if (aim && (!state || input.readOnly || state.revision !== aim.revision)) { expired = true; clearAim(); }
     }
     function finish(): void {
-        if (activeDrags.get(document)?.owner === owner) activeDrags.delete(document);
+        const active = activeDrags.get(document);
+        if (active?.owner === owner) delete active.source;
         const returnFocus = root.draggable && isFocused(root) && current();
         clearArm(); clearAim(); expired = false; clearPreview();
         if (returnFocus) input.focus({ preventScroll: true });
@@ -94,7 +114,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
         options.beforeStart(); const captured = captureTextTransfer(workspace, tab, view);
         const source = captured && input.readOnly ? Object.freeze({ ...captured, moveAllowed: false }) : captured;
         if (!source || source.revision !== intent.revision || source.selectionSet !== intent.selectionSet) { event.preventDefault(); clearArm(); return; }
-        const token = win.crypto.randomUUID(); activeDrags.set(document, { token, owner, source }); armed = undefined;
+        const { token } = beginDrag(root, owner, source); armed = undefined;
         event.dataTransfer.setData("text/plain", source.text); event.dataTransfer.setData(transferType, token);
         event.dataTransfer.effectAllowed = source.moveAllowed ? "copyMove" : "copy";
         preview.textContent = source.text.slice(0, 160) + (source.text.length > 160 ? "…" : ""); root.append(preview);
@@ -128,11 +148,11 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
     root.addEventListener("drop", event => {
         // Refuse default text-control insertion and file/URL navigation, even for unsupported data.
         event.preventDefault(); const captured = aim, data = event.dataTransfer, state = current();
+        const active = activeDrags.get(document);
         let source: TextTransferCapture | undefined;
         try {
             if (!captured || !accepts(data) || !state || input.readOnly || expired || state.revision !== captured.revision) return;
             if (captured.token !== null || data.types.includes(transferType)) {
-                const active = activeDrags.get(document);
                 if (!active?.source || active.token !== captured.token || data.getData(transferType) !== captured.token) { options.rejected("stale-drag-source"); return; }
                 source = active.source;
             }
@@ -142,7 +162,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
             if (!result.applied) options.rejected(result.reason);
             else if (result.offset !== null) options.afterDrop(result.offset);
         } finally {
-            activeDrags.delete(document); finish();
+            active?.end(); finish();
             document.dispatchEvent(new Event("sttropez-text-drag-end"));
         }
     }, { signal: listeners.signal });
@@ -169,6 +189,6 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
             if (!point || !set.ranges.some(range => range.anchor !== range.head && point.offset >= Math.min(range.anchor, range.head) && point.offset <= Math.max(range.anchor, range.head))) return false;
             armed = { revision: state.revision, selectionSet: set, pointer: event.pointerId, offset: point.offset, affinity: point.affinity }; root.draggable = true; return true;
         },
-        dispose: () => { if (disposed) return; disposed = true; invalidateSource(); finish(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); },
+        dispose: () => { if (disposed) return; disposed = true; finish(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); },
     });
 }

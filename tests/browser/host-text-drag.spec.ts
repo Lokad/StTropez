@@ -155,6 +155,27 @@ async function over(page: Page, offset: number, name = "Primary source", copy = 
 async function drop(page: Page, name = "Primary source"): Promise<void> {
     await root(page, name).evaluate(element => element.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: window.textDragStore }))); await ready(page);
 }
+test("a native drag cannot insert into a remounted editor when the transport strips its token", async ({ page, browserName }) => {
+    test.skip(browserName !== "webkit", "This transport strips the internal type on dragover.");
+    const original = "alpha bravo\r\ncharlie delta\r\ntarget here";
+    await mount(page, "plain", original); await select(page, [{ anchor: 0, head: 5 }]);
+    const before = await snapshot(page), from = await point(page, 1), to = await point(page, original.indexOf("target") + 3);
+    await root(page).evaluate(node => node.addEventListener("dragstart", event => { node.dataset.started = String(event.isTrusted); }, { once: true }));
+    await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.move(from.x + 12, from.y, { steps: 4 });
+    await expect(root(page)).toHaveAttribute("data-started", "true");
+    await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); }); await ready(page);
+    await root(page).evaluate(node => node.addEventListener("dragover", event => { node.dataset.dragOver = String(event.isTrusted); }, { once: true }));
+    await page.mouse.move(to.x, to.y, { steps: 10 }); await page.mouse.move(to.x + 1, to.y); await page.mouse.up(); await ready(page);
+    await expect(root(page)).toHaveAttribute("data-drag-over", "true");
+    await exact(page, original); expect((await snapshot(page)).history).toEqual(before.history);
+
+    await page.evaluate(() => {
+        window.textDragStore = new DataTransfer(); window.textDragStore.setData("text/plain", "next");
+        Object.defineProperty(window.textDragStore, "effectAllowed", { value: "copy" });
+    });
+    await over(page, 15); await drop(page);
+    await exact(page, original.slice(0, 15) + "next" + original.slice(15));
+});
 for (const host of ["plain", "react"]) {
     test(`${host} cross-document native move, copy and expired target preserve linked history`, async ({ page }, info) => {
         test.setTimeout(60000); const original = "alpha bravo\r\ncharlie delta\r\nsource tail", target = "target here";
