@@ -9,7 +9,7 @@ import { mountFindUI } from "./find-ui.ts";
 import type { CorpusId } from "../../fixtures/workloads.ts";
 import "./style.css";
 
-const workspace = new Workspace(), source = workspace.createTextResource({ scope: "editing", resource: "source", variant: "working" }, "Source", { value: corpus("lines-100000") });
+const workspace = new Workspace(), source = workspace.createTextResource({ scope: "editing", resource: "source", variant: "working" }, "Source", { value: corpus("lines-10000") });
 const primaryTab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left"), secondaryTab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "right");
 const pane = (id: string) => document.getElementById(id)!;
 const presentation = { primary: new EditingPresentation(), secondary: new EditingPresentation() };

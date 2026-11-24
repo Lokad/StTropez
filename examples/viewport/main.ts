@@ -9,7 +9,7 @@ import type { CorpusId } from "../../fixtures/workloads.ts";
 import { viewportSettled } from "../shared/readiness.ts";
 import "./style.css";
 
-const workspace = new Workspace(), source = workspace.createTextResource({ scope: "viewport", resource: "source", variant: "working" }, "Source", { value: corpus("lines-100000") });
+const workspace = new Workspace(), source = workspace.createTextResource({ scope: "viewport", resource: "source", variant: "working" }, "Source", { value: corpus("lines-10000") });
 const progress = workspace.createResource({ scope: "viewport", resource: "progress", variant: "working" }, "Progress", { value: 0 });
 const primaryTab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left"), secondaryTab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "right");
 const pane = (name: string) => document.getElementById(name)!;

@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Indexed text viewport</title><link rel="stylesheet" href="/viewport.css"></head>
 <body><h1>Indexed text viewport</h1><p>Read-only rendering layer. Editing input and native input qualification remain separate work.</p>
-<div id="commands"><label>Workload <select id="workload"><option value="normal">Normal source</option><option value="lines-100000" selected>100,000 lines</option><option value="single-line">Huge single line</option><option value="unicode">Unicode</option></select></label>
+<div id="commands"><label>Workload <select id="workload"><option value="normal">Normal source</option><option value="lines-10000" selected>10,000 lines</option><option value="single-line">Long single line</option><option value="unicode">Unicode</option></select></label>
 <button id="start">Start</button><button id="middle">Middle</button><button id="end">End</button><button id="prepend">Prepend line</button><button id="undo">Undo</button><button id="redo">Redo</button><button id="native">Toggle native control</button></div>
 <main><section><h2>Primary view</h2><div class="pane" id="primary"></div></section><section><h2>Independent view</h2><div class="pane" id="secondary"></div></section></main>
 <section><h2>Native control</h2><div class="pane" id="native-host" hidden></div></section><output id="status"></output>

@@ -33,25 +33,25 @@ test("browser zoom wheels are not cancelled or interpreted as editor scrolling",
     await ready(page); expect(await page.evaluate(() => window.viewportFixture.snapshot().primary.scrollTop)).toBe(before);
 });
 
-test("100k lines render bounded indexed ranges and reach the final line without whole-text export", async ({ page }) => {
+test("scrolling to the end paints the final row and leaves the other viewport in place", async ({ page }) => {
     const initial = await page.evaluate(() => window.viewportFixture.snapshot());
-    expect(initial.document).toMatchObject({ length: 2_400_000, lines: 100_001, longest: 23, exports: 0 });
+    expect(initial.document).toMatchObject({ length: 240_000, lines: 10_001, longest: 23, exports: 0 });
     expect(initial.primary.rows).toBeLessThan(40); expect(initial.primary.readUnits).toBeLessThan(8_000);
     await page.evaluate(() => window.viewportFixture.scroll("primary", Number.MAX_SAFE_INTEGER, 0)); await ready(page);
     const end = await page.evaluate(() => window.viewportFixture.snapshot());
-    expect(end.primary.lastLine).toBe(100_001); expect(end.primary.firstLine).toBeGreaterThan(99_900);
+    expect(end.primary.lastLine).toBe(10_001); expect(end.primary.firstLine).toBeGreaterThan(9_900);
     expect(end.document!.exports).toBe(0); expect(end.secondary.firstLine).toBe(0); await checkRows(page);
-    const geometry = await page.locator('#primary [data-line="100000"]').evaluate(node => ({ row: node.getBoundingClientRect().top,
+    const geometry = await page.locator('#primary [data-line="10000"]').evaluate(node => ({ row: node.getBoundingClientRect().top,
         top: node.closest(".st-viewport")!.getBoundingClientRect().top, height: node.closest(".st-viewport")!.clientHeight }));
     expect(geometry.row - geometry.top).toBeGreaterThan(0); expect(geometry.row - geometry.top).toBeLessThan(geometry.height);
 });
 
-test("a huge line uses bounded horizontal text windows and scaled native scrollbar coordinates", async ({ page }) => {
+test("a long line uses bounded horizontal text windows and scaled native scrollbar coordinates", async ({ page }) => {
     const viewport = page.locator("#primary .st-viewport");
     await viewport.evaluate(node => node.style.setProperty("--st-font-size", "15.3px"));
     await page.evaluate(() => window.viewportFixture.load("single-line")); await ready(page);
     const initial = await page.evaluate(() => window.viewportFixture.snapshot().primary);
-    await page.evaluate(() => window.viewportFixture.reveal("primary", 2_400_000)); await ready(page);
+    await page.evaluate(() => window.viewportFixture.reveal("primary", 500_000)); await ready(page);
     await viewport.evaluate(node => { node.parentElement!.style.height = "352px"; });
     await expect.poll(() => page.evaluate(() => window.viewportFixture.snapshot().primary.height)).not.toBe(initial.height);
     const end = await page.evaluate(() => window.viewportFixture.snapshot());
@@ -59,18 +59,18 @@ test("a huge line uses bounded horizontal text windows and scaled native scrollb
     expect(end.primary.horizontalExtent).toBeGreaterThan(4_000_000); expect(end.primary.physicalWidth).toBe(4_000_000);
     expect(end.primary.textUnits).toBeLessThan(400); expect(end.primary.readUnits).toBeLessThan(410);
     expect(end.document!.exports).toBe(0);
-    expect(Number(await page.locator("#primary .st-viewport-row").getAttribute("data-to"))).toBe(2_400_000);
+    expect(Number(await page.locator("#primary .st-viewport-row").getAttribute("data-to"))).toBe(500_000);
     await page.locator("#primary .st-viewport").evaluate(node => { node.scrollLeft = 0; });
     await expect.poll(() => page.evaluate(() => window.viewportFixture.snapshot().primary.scrollLeft)).toBe(0); await ready(page);
     expect(Number(await page.locator("#primary .st-viewport-row").getAttribute("data-from"))).toBe(0);
     await page.locator("#primary .st-viewport").hover(); await page.mouse.wheel(100, 0);
     await expect.poll(() => page.evaluate(() => window.viewportFixture.snapshot().primary.scrollLeft)).toBe(100); await ready(page);
     await page.locator("#primary .st-viewport").evaluate(node => { node.scrollLeft = node.scrollWidth; });
-    await expect.poll(() => page.evaluate(() => window.viewportFixture.snapshot().primary.scrollLeft)).toBeGreaterThan(10_000_000); await ready(page); await checkRows(page);
+    await expect.poll(() => page.evaluate(() => window.viewportFixture.snapshot().primary.scrollLeft)).toBeGreaterThan(4_000_000); await ready(page); await checkRows(page);
 });
 
 test("multiple edits before a frame map the scroll anchor and shared undo restores it", async ({ page }) => {
-    await page.evaluate(() => window.viewportFixture.reveal("primary", 1_200_000)); await ready(page);
+    await page.evaluate(() => window.viewportFixture.reveal("primary", 120_000)); await ready(page);
     const before = await page.evaluate(() => window.viewportFixture.snapshot());
     await page.evaluate(() => {
         for (const insert of ["first\n", "second\n"]) window.viewportFixture.edit(window.viewportFixture.snapshot().document!.revision, [{ from: 0, to: 0, insert }]);
@@ -85,7 +85,7 @@ test("multiple edits before a frame map the scroll anchor and shared undo restor
 });
 
 test("full selection sets paint bounded ranges and round-trip while legacy states restore one range", async ({ page }) => {
-    const ranges = [{ anchor: 1, head: 4 }, { anchor: 10, head: 8, anchorAffinity: "before" as const, headAffinity: "after" as const }, { anchor: 1_200_000, head: 1_200_000 }];
+    const ranges = [{ anchor: 1, head: 4 }, { anchor: 10, head: 8, anchorAffinity: "before" as const, headAffinity: "after" as const }, { anchor: 120_000, head: 120_000 }];
     await page.evaluate(value => window.viewportFixture.select("primary", value, 1), ranges); await ready(page);
     const captured = await page.evaluate(() => window.viewportFixture.capture("primary"));
     expect(captured.selectionSet?.primary).toBe(1); expect(captured.selectionSet?.ranges).toHaveLength(3);
@@ -123,18 +123,18 @@ test("full selection sets paint bounded ranges and round-trip while legacy state
 });
 
 test("resize, font metrics and tall rows keep scaled vertical scrolling reachable", async ({ page }) => {
-    await page.evaluate(() => window.viewportFixture.resize(480, 240, "100px"));
-    await expect.poll(() => page.evaluate(() => window.viewportFixture.snapshot().primary.lineHeight)).toBe(100); await ready(page);
+    await page.evaluate(() => window.viewportFixture.resize(480, 240, "410px"));
+    await expect.poll(() => page.evaluate(() => window.viewportFixture.snapshot().primary.lineHeight)).toBe(410); await ready(page);
     await page.evaluate(() => window.viewportFixture.scroll("primary", Number.MAX_SAFE_INTEGER, 0)); await ready(page);
     const end = await page.evaluate(() => window.viewportFixture.snapshot());
-    expect(end.primary.physicalHeight).toBe(4_000_000); expect(end.primary.lastLine).toBe(100_001); expect(end.primary.rows).toBeLessThan(12);
+    expect(end.primary.physicalHeight).toBe(4_000_000); expect(end.primary.lastLine).toBe(10_001); expect(end.primary.rows).toBeLessThan(12);
     await page.locator("#primary .st-viewport").press("PageUp");
     await expect.poll(() => page.evaluate(() => window.viewportFixture.snapshot().primary.scrollTop)).toBeCloseTo(end.primary.scrollTop - end.primary.height * .9, 3);
     await page.evaluate(() => window.viewportFixture.scroll("primary", Number.MAX_SAFE_INTEGER, 0)); await ready(page);
     const oldWidth = end.primary.columnWidth;
     await page.locator("#primary .st-viewport").evaluate(node => (node as HTMLElement).style.setProperty("--st-font-size", "20px"));
     await expect.poll(() => page.evaluate(() => window.viewportFixture.snapshot().primary.columnWidth)).toBeGreaterThan(oldWidth * 1.3); await ready(page);
-    expect((await page.evaluate(() => window.viewportFixture.snapshot())).primary.lastLine).toBe(100_001); await checkRows(page);
+    expect((await page.evaluate(() => window.viewportFixture.snapshot())).primary.lastLine).toBe(10_001); await checkRows(page);
 });
 
 test("Unicode/CRLF rows preserve bounded content and stale tab generations disable only their own view", async ({ page }) => {

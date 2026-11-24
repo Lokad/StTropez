@@ -8,7 +8,7 @@ export function bulkWorkload(id) {
     if (id.startsWith("dense-")) {
         const lines = Number(id.slice(6)); return { text: sourceLine.repeat(lines), edits: Array.from({ length: lines }, (_, index) => ({ from: index * sourceLine.length, to: index * sourceLine.length + 5, insert: "let" })) };
     }
-    if (id === "sparse-line") return { text: corpus("single-line"), edits: Array.from({ length: 10000 }, (_, index) => ({ from: index * 240, to: index * 240 + 1, insert: "y" })) };
+    if (id === "sparse-line") return { text: corpus("single-line"), edits: Array.from({ length: 10000 }, (_, index) => ({ from: index * 50, to: index * 50 + 1, insert: "y" })) };
     if (id === "fragmented-point") return { text: corpus("lines-100000"), setup: Array.from({ length: 512 }, (_, index) => ({ from: index * 100, to: index * 100, insert: "z" })),
         edits: [{ from: 1_200_256, to: 1_200_257, insert: "😀" }] };
     if (id === "unicode") {

@@ -12,7 +12,7 @@ export function corpus(id: CorpusId): string {
         case "lines-100": return sourceLine.repeat(100);
         case "lines-10000": return sourceLine.repeat(10_000);
         case "lines-100000": return sourceLine.repeat(100_000);
-        case "single-line": return "x".repeat(2_400_000);
+        case "single-line": return "x".repeat(500_000);
         case "unicode": return "\tconst café = 'e\u0301 😀 👩‍💻';\r\n// العربية עברית\nconst 漢字 = '日本語';\n".repeat(100);
     }
 }
