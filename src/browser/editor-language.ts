@@ -7,11 +7,13 @@ import { mountHover, type HoverController, type HoverControllerOptions } from ".
 import { mountDocumentColors, type DocumentColorController, type DocumentColorControllerOptions } from "./document-color-controller.ts";
 import { mountDocumentLinks, type DocumentLinkController, type DocumentLinkControllerOptions } from "./document-link-controller.ts";
 import type { TextEditor } from "./text-editor.ts";
+import { mountSignature, type SignatureController, type SignatureControllerOptions } from "./signature-controller.ts";
 
 type Options = {
     completion?: CompletionControllerOptions;
     diagnostics?: DiagnosticControllerOptions;
     hover?: HoverControllerOptions;
+    signature?: SignatureControllerOptions;
     colors?: DocumentColorControllerOptions;
     links?: DocumentLinkControllerOptions;
 };
@@ -19,6 +21,7 @@ type Features = {
     completion: CompletionController;
     diagnostics: DiagnosticController;
     hover: HoverController;
+    signature: SignatureController;
     colors: DocumentColorController;
     links: DocumentLinkController;
 };
@@ -40,9 +43,10 @@ export function attachEditorLanguage<O extends Options>(editor: TextEditor, prov
         if (options.hover) {
             const hover = features.diagnostics && !options.hover.diagnostics
                 ? { ...options.hover, diagnostics: features.diagnostics } : options.hover;
-            features.hover = mountHover(editor, provider, hover, owner);
+            features.hover = mountHover(editor, owner, hover);
         }
         if (options.completion) features.completion = mountCompletion(editor, provider, options.completion, owner);
+        if (options.signature) features.signature = mountSignature(editor, owner, options.signature);
         if (options.colors) features.colors = mountDocumentColors(editor, provider, options.colors, owner);
         if (options.links) features.links = mountDocumentLinks(editor, provider, options.links, owner);
         editor.signal.addEventListener("abort", dispose, { once: true });

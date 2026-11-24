@@ -6,7 +6,7 @@ files and decides which edits to apply. [Connect a provider](language-server.md)
 
 ## Use
 
-Use `attachEditorLanguage` when completion, diagnostics, hover, links or colors share an editor. Give each
+Use `attachEditorLanguage` when completion, diagnostics, hover, signature help, links or colors share an editor. Give each
 feature you want an options object. They share one provider scope and document binding. Hover
 uses the diagnostics painted in that view unless you supply another source.
 
@@ -35,8 +35,8 @@ Use `features` to restrict methods,
 | --- | --- | --- |
 | Completion | `createLspCompletionClient`; browser `createCompletionController` | `textDocument/completion` |
 | Diagnostics | `createDiagnosticController` | `textDocument/publishDiagnostics` |
-| Hover | `createHoverController`, `createLspHoverClient` | `textDocument/hover` |
-| Signature help | `createSignatureController`, `createLspSignatureClient` | `textDocument/signatureHelp` |
+| Hover | `attachEditorLanguage` with `hover`, `createLspHoverClient` | `textDocument/hover` |
+| Signature help | `attachEditorLanguage` with `signature`, `createLspSignatureClient` | `textDocument/signatureHelp` |
 | Definition / references | `createLspNavigationClient` | `textDocument/definition` / `textDocument/references` |
 | Rename | `createRenameController`, `createLspRenameClient` | `textDocument/rename` |
 | Code actions | `createCodeActionController`, `createLspActionClient` | `textDocument/codeAction` |
@@ -307,7 +307,7 @@ commit-character acceptance inserts expanded text plus the character without sta
 
 ### Hover and documentation
 
-`createHoverController(editor, provider)` inspects the caret with `request()` or accepts a
+Enable `hover: {}` on the language attachment. Call `hover.request()` to inspect the caret or pass a
 captured `{ revision, offset }` from the [pointer dwell observer](editor.md#pointer-dwell). It shows diagnostics at that offset as soon as
 they are available. Symbol documentation joins them when the hover request completes. Messages
 remain plain text. A mapped diagnostic reads “Awaiting recheck” until fresh analysis arrives.
@@ -371,7 +371,7 @@ HTML tags. Otherwise the client requests plaintext. Completion documentation alw
 
 ### Signature help
 
-`createSignatureController(editor, provider)` follows the primary caret in one editor.
+Enable `signature: {}` on the language attachment. Its `signature` controller follows the primary caret.
 Call `request()` or press Ctrl/Cmd+Shift+Space to show parameter help, including in a read-only
 view. In a focused editor, an explicit request brings the caret into view. If the caret is
 already visible, the page keeps its scroll position. An accepted trigger such as `(` requests

@@ -19,10 +19,8 @@ export { BrowserLspWorkspace, type BrowserLspWorkspaceOptions } from "./lsp-work
 export type { WebSocketTransportOptions } from "./lsp-websocket.ts";
 export { createDiagnosticController, diagnosticDecoration } from "./diagnostic-controller.ts";
 export { createCodeActionController } from "./code-action-controller.ts";
-export { createHoverController } from "./hover-controller.ts";
 export { createNavigationController } from "./navigation-controller.ts";
 export { createNavigationHistory, type NavigationHistory, type NavigationOrigin } from "./navigation-history.ts";
-export { createSignatureController } from "./signature-controller.ts";
 export { createRenameController } from "./rename-controller.ts";
 export type { Outcome } from "../core/outcome.ts";
 export { createDocumentLinkController } from "./document-link-controller.ts";

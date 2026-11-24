@@ -83,9 +83,14 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
         const attach = (provider: LspWorkspace) => {
             if (!valid()) return;
             try {
+                const closeProjectPopups = () => { symbols?.dismiss(); actions?.dismiss(); };
                 const tools = attachEditorLanguage(editor, provider, {
                     completion: { autoConnect: false, filterManualCompletions: true, canCapture: valid,
                         getPageSize: () => completionPageSize(choices) },
+                    signature: { canCapture: valid, beforeRequest: () => {
+                        inspection?.dismissHover();
+                        closeProjectPopups();
+                    } },
                     hover: { canCapture: valid, diagnostics: { subscribe: language.state.subscribe, getSnapshot() {
                         const state = language.state.getSnapshot(), doc = workspace.document(file.resource.documentId);
                         return { diagnosticRevision: doc.revision, diagnosticsPending: state.checking,
@@ -108,8 +113,8 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
                     })));
                     else occurrences.clear();
                 }));
-                inspection = mountDemoInspection(scope, editor, provider, tools.hover, valid, () => !!controller?.getSnapshot().choices.length || !!symbols?.isOpen() || !!actions?.isOpen(),
-                    () => controller?.cancel(), () => { symbols?.dismiss(); actions?.dismiss(); },
+                inspection = mountDemoInspection(scope, editor, tools, valid, () => !!controller?.getSnapshot().choices.length || !!symbols?.isOpen() || !!actions?.isOpen(),
+                    () => controller?.cancel(), closeProjectPopups,
                     state => {
                         if (state.status === "empty" || state.status === "failed") commands.feedback("signature", state.message, true);
                         else if (state.status === "ready") commands.feedback("signature", "", true);

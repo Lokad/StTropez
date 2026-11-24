@@ -21,7 +21,9 @@ export type LspColorClient = LspFeatureClient<"textDocument/documentColor" | "te
     presentations: (item: LspDocumentColor, color: LspColor, prepare?: LspPrepare, onCancel?: LspConnectContext["onCancel"]) => Promise<readonly LspColorPresentation[]>;
 }>>;
 
-export function createLspSignatureClient(provider: LspWorkspace): LspSignatureClient {
+export const createLspSignatureClient: (provider: LspWorkspace) => LspSignatureClient = signatureClient;
+
+export function signatureClient(provider: LspWorkspace | LspDocumentOwner): LspSignatureClient {
     const lane = createLspClient(provider, signatureHelpMethod);
     // Prior wire context is not fresh range/edit authority. Keep only its binding identities,
     // never the old buffer/capture, and compare them after the next request has synchronized.

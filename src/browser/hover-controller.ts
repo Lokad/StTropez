@@ -1,7 +1,7 @@
 import { isOffset } from "../core/bounds.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
-import { requireLanguageView, captureViewRequest, editorReadyForRequest, observeViewSource, type CapturedViewRequest } from "./captured-view.ts";
+import { captureViewRequest, editorReadyForRequest, observeViewSource, type CapturedViewRequest } from "./captured-view.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DocumentationContent } from "../core/documentation.ts";
 import type { FoldIndex } from "../core/folding.ts";
@@ -9,7 +9,7 @@ import type { SelectionSet } from "../core/selections.ts";
 import { hoverClient } from "../protocol/lsp-hover.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
-import type { LspHoverResult, LspDiagnostic, LspPrepare, LspWorkspace } from "../protocol/index.ts";
+import type { LspHoverResult, LspDiagnostic, LspPrepare } from "../protocol/index.ts";
 import type { OverlayPosition } from "./anchored-overlay.ts";
 import type { TextEditor } from "./text-editor.ts";
 
@@ -35,32 +35,23 @@ type Inspection = { revision: number; selection: SelectionSet; folds: FoldIndex;
     stops: (() => void)[]; timer?: number; capture?: CapturedViewRequest<TextEditor["tab"]>; symbol?: LspHoverResult; failure?: string };
 
 /** A mounted view owns the range, provider reply and diagnostic messages displayed together. */
-export const createHoverController: (editor: TextEditor, provider: LspWorkspace,
-    options?: HoverControllerOptions) => HoverController = mountHover;
-
-export function mountHover(editor: TextEditor, provider: LspWorkspace, options: HoverControllerOptions = {},
-    shared?: LspDocumentOwner): HoverController {
+export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options: HoverControllerOptions): HoverController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
-    requireLanguageView(editor);
     const notifications = workspace.createNotificationScope(options.onError), cell = new Store(idle, notifications);
-    const client = hoverClient(shared ?? provider);
+    const client = hoverClient(owner);
     let inspection: Inspection | undefined, disposed = false;
-    let providerScope: ReturnType<LspWorkspace["createScope"]> | undefined, defaultSource: HoverDiagnostics | undefined;
+    let diagnostics = options.diagnostics;
     const counts = { posted: 0, received: 0, stale: 0, invalid: 0, failed: 0, cancelled: 0 };
     const publish = (next: HoverSnapshot) => notifications.publish(cell, Object.freeze(next));
     function diagnosticSource(): HoverDiagnostics {
-        if (options.diagnostics) return options.diagnostics;
-        if (defaultSource) return defaultSource;
-        const scope = shared?.scope ?? provider.createScope();
-        try {
-            const source = scope.observeDiagnostics(shared?.binding ?? scope.attachDocument(view.documentId));
-            defaultSource = { subscribe: source.subscribe, getSnapshot() {
-                const state = source.getSnapshot(), result = state.isPlacementCurrent() ? state.result : null;
-                return { diagnosticRevision: result?.snapshotRevision ?? -1, diagnostics: result?.items ?? [], diagnosticsPending: state.status === "pending" };
-            } };
-            if (!shared) providerScope = scope;
-            return defaultSource;
-        } catch (error) { if (!shared) scope.dispose(); throw error; }
+        if (diagnostics) return diagnostics;
+        const source = owner.scope.observeDiagnostics(owner.binding);
+        diagnostics = { subscribe: source.subscribe, getSnapshot() {
+            const state = source.getSnapshot();
+            const result = state.isPlacementCurrent() ? state.result : null;
+            return { diagnosticRevision: result?.snapshotRevision ?? -1, diagnostics: result?.items ?? [], diagnosticsPending: state.status === "pending" };
+        } };
+        return diagnostics;
     }
     function finish(current: Inspection): void {
         const capture = current.capture;
@@ -194,11 +185,14 @@ export function mountHover(editor: TextEditor, provider: LspWorkspace, options: 
     const intent = editor.onEditIntent(kind => { if (kind === "compositionstart") cancel(); });
     function dispose(): void {
         if (disposed) return;
-        notifications.assertWritable(); disposed = true; release(); stopClient(); client.dispose(); providerScope?.dispose();
-        intent.dispose(); editor.signal.removeEventListener("abort", dispose);
+        notifications.assertWritable();
+        disposed = true;
+        release();
+        stopClient();
+        client.dispose();
+        intent.dispose();
         publish({ ...idle, status: "disposed" });
         cell.clearSnapshotListeners();
     }
-    editor.signal.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ request, cancel, dispose, ...controllerObservable(cell, "Hover", () => disposed, notifications), getDiagnostics: () => Object.freeze({ ...counts, connected: client.getSnapshot().phase === "ready", pending: !!inspection?.capture, disposed }) });
 }

@@ -233,9 +233,9 @@ export class ViewBindings {
         this.colors = new HostDocumentColors(languageHost, lsp.colors);
         this.actions = new HostActionsTools(languageHost, lsp.actions, this.project);
         this.rename = new HostRenameTools(languageHost, lsp.rename);
-        this.signature = new HostSignatureTools(canCapture, () => this.hover.dismiss(), lsp.signature, reconnectProvider);
-        this.tools = [this.language, this.hover, this.tablePaste, this.domain, this.navigation, this.project,
-            this.signature, this.rename, this.actions, this.links, this.colors];
+        this.signature = new HostSignatureTools(canCapture, this.hover, lsp.signature, reconnectProvider);
+        this.tools = [this.language, this.signature, this.tablePaste, this.domain, this.navigation, this.project,
+            this.rename, this.actions, this.links, this.colors];
         this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.instructionMount?.hasPendingInput() && !this.tablePaste.hasPendingInput(controller.source.documentId) && !this.review?.panes.working.activity().pendingInput
             && ![...this.mounted.values()].some(value => value.editor.activity().pendingInput),
             documentId => this.selections.get("primary")?.get(documentId) ?? this.selections.get("comparison")?.get(documentId) ?? this.selections.get("secondary")?.get(documentId));

@@ -39,9 +39,10 @@ export function scopedCommands(editor: TextEditor, signal: AbortSignal) {
 export function attachPanelSession<S extends { editor: TextEditor; controller: { dispose(): void } }>(
     sessions: Map<S, () => void>, session: S,
     bind: (signal: AbortSignal, register: ReturnType<typeof scopedCommands>) => void, retire: () => void,
+    dispose = session.controller.dispose,
 ) {
     const scope = new CleanupScope(), events = new AbortController();
-    scope.defer(session.controller.dispose);
+    scope.defer(dispose);
     scope.defer(retire);
     scope.defer(() => { sessions.delete(session); events.abort(); });
     sessions.set(session, scope.dispose);

@@ -31,7 +31,7 @@ export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspa
                 { replacePending: kind === "presentation" }) },
         provider: (editor, options) => createLspProviderController(editor, { ...options, provider: connection,
             beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/completion", configuration, { replacePending: true }) }),
-        hover: { provider: connection, beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/hover", configuration) },
+        hover: { beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/hover", configuration) },
         navigation: { provider: connection, prepare: (kind, policy) => session => connection.prepareRequest(session,
             kind === "definition" ? "textDocument/definition" : "textDocument/references", policy) },
         rename: { provider: connection, prepare: policy => session => connection.prepareRequest(session, "textDocument/rename", policy) },

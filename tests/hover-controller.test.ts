@@ -2,7 +2,7 @@ import { editorState } from "./helpers/editor-state.ts";
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { createHoverController } from "../src/browser/index.ts";
+import { attachEditorLanguage } from "../src/browser/index.ts";
 import type { TextEditor } from "../src/browser/index.ts";
 import { latch } from "./helpers/latch.ts";
 import { clientFixture, settled } from "./helpers/lsp-client.ts";
@@ -16,8 +16,10 @@ async function fixture(t: TestContext, text: string) {
     const editor = { workspace, tab: workspace.tabs.capture(tab), view, signal: new AbortController().signal,
         element: { ownerDocument: owner, isConnected: true }, ...editorState(),
         activity: () => ({ composing: false, disposed: false }), focus: () => { throw new Error("Hover moved focus."); } } as unknown as TextEditor;
-    const scope = provider.createScope(); scope.attachDocument(documentId); await provider.connect(); await settled();
-    const hover = createHoverController(editor, provider), leases = workspace.diagnostics().leases;
+    const language = attachEditorLanguage(editor, provider, { hover: {} });
+    await provider.connect();
+    await settled();
+    const hover = language.hover, leases = workspace.diagnostics().leases;
     const request = (offset: number) => hover.request({ revision: f.document().revision, offset });
     function hold() {
         const entered = latch<void>(), answer = latch<unknown>();
@@ -25,7 +27,7 @@ async function fixture(t: TestContext, text: string) {
         return { entered: entered.promise, reply: answer.resolve };
     }
     const finish = async () => {
-        hover.dispose(); scope.dispose(); view.dispose(); workspace.tabs.close(tab); await settled();
+        language.dispose(); view.dispose(); workspace.tabs.close(tab); await settled();
         assert.equal(timers.size, 0); assert.equal(workspace.diagnostics().leases, 0);
         assert.equal(provider.snapshot().scopes, 0);
     };

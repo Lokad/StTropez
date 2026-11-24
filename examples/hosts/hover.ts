@@ -1,14 +1,14 @@
-import type { Affinity, TabId } from "../../src/index.ts";
+import type { Affinity } from "../../src/index.ts";
 import { detachWithEditor, scopedCommands } from "../shared/editor-attachment.ts";
-import { createHoverController, observePointerDwell } from "../../src/browser/index.ts";
-import type { DocumentationContent, HoverController, HoverDiagnostics, HoverSnapshot, TextEditor } from "../../src/browser/index.ts";
-import type { LspScopeAccess, LspWorkspace } from "../../src/protocol/index.ts";
+import { observePointerDwell } from "../../src/browser/index.ts";
+import type { DocumentationContent, HoverController, HoverControllerOptions, HoverSnapshot, TextEditor } from "../../src/browser/index.ts";
+import type { LspScopeAccess } from "../../src/protocol/index.ts";
 import { HostCell } from "../shared/observable.ts";
 type Settings = { delay: number; fault?: "malformed" | "failure" | "markup" };
 type Session = { id: string; editor: TextEditor; controller: HoverController; settings: Settings;
     revision: number; affinity: Affinity; offset: number; overTarget: boolean; cancelTimers: () => void };
 export type HoverPresentation = Readonly<{ visible: boolean; view: string | null; status: HoverSnapshot["status"]; text: string; message: string; content?: DocumentationContent }>;
-export type HoverHostOptions = Readonly<{ provider: LspWorkspace; diagnostics?: HoverDiagnostics;
+export type HoverHostOptions = Readonly<{
     beforeRequest?: (session: LspScopeAccess, config: Settings) => Promise<unknown>;
     canCapture?: (document: TextEditor["view"]["documentId"]) => boolean }>;
 
@@ -79,16 +79,17 @@ export class HostHoverTools {
         editor.viewport.flush(); editor.element.scrollIntoView({ block: "nearest", inline: "nearest" });
         return this.inspect(session, selected.revision, selected.selection.head, selected.selection.headAffinity ?? "after", "keyboard");
     }
-    attach(id: string, _tab: TabId, editor: TextEditor): () => void {
-        return this.bind(id, editor);
+    controllerOptions(editor: TextEditor, settings: Settings): HoverControllerOptions {
+        const { beforeRequest } = this.options;
+        return { canCapture: () => this.canCapture(editor.view.documentId),
+            ...(beforeRequest && { prepareRequest: access => {
+                const config = { ...settings };
+                delete settings.fault;
+                return beforeRequest(access, config);
+            } }) };
     }
-    bind(id: string, editor: TextEditor, mounted?: HoverController): () => void {
+    bind(id: string, editor: TextEditor, controller: HoverController, settings: Settings = { delay: 0 }): () => void {
         if (this.sessions.has(id)) throw new Error("Hover view already mounted.");
-        const settings: Settings = { delay: 0 }, { provider, diagnostics, beforeRequest } = this.options;
-        const controller = mounted ?? createHoverController(editor, provider, { canCapture: () => this.canCapture(editor.view.documentId),
-            ...(diagnostics && { diagnostics }), ...(beforeRequest && { prepareRequest: session => {
-                const config = { ...settings }; delete settings.fault; return beforeRequest(session, config);
-            } }) });
         const listeners = new AbortController(), win = editor.element.ownerDocument.defaultView!;
         const session: Session = { id, editor, controller, settings, revision: -1, affinity: "after", offset: 0, overTarget: false, cancelTimers: () => {} };
         const dwell = observePointerDwell(editor, point => this.inspect(session, point.revision, point.offset, point.affinity, "pointer"), {

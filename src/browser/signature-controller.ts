@@ -3,11 +3,12 @@ import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DocumentViewSnapshot } from "../core/workspace.ts";
-import { createLspSignatureClient, type LspSignatureClient } from "../protocol/lsp-language.ts";
+import { signatureClient, type LspSignatureClient } from "../protocol/lsp-language.ts";
+import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import type { LspSignatureContext } from "../protocol/lsp-language.ts";
 import type { LspSignature } from "../protocol/lsp-features.ts";
-import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
-import { requireLanguageView, captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
+import type { LspPrepare } from "../protocol/lsp-workspace.ts";
+import { captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import type { TextEditor } from "./text-editor.ts";
 import { revealCaretInPage } from "./input-caret.ts";
@@ -31,11 +32,12 @@ const manual = Object.freeze({ triggerKind: 1, isRetrigger: false } as const);
 const changed = Object.freeze({ triggerKind: 3, isRetrigger: true } as const);
 
 /** Manual and advertised signature triggers on a single mounted editing surface. */
-export function createSignatureController(editor: TextEditor, provider: LspWorkspace, options: SignatureControllerOptions = {}): SignatureController {
+export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, options: SignatureControllerOptions): SignatureController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
-    requireLanguageView(editor);
+    const { provider } = owner;
+    const client = signatureClient(owner);
     const events = new AbortController(), notifications = workspace.createNotificationScope(), cell = new Store(idle, notifications);
-    let client: LspSignatureClient | undefined, job: Request | undefined, armed = false, requested = 0, applied = 0;
+    let job: Request | undefined, armed = false, requested = 0, applied = 0;
     let queued: { timer: number; context: LspSignatureContext } | undefined;
     const publish = (next: SignatureSnapshot) => notifications.publish(cell, Object.freeze(next));
     const available = () => !events.signal.aborted && editorReadyForRequest(editor)
@@ -48,14 +50,14 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         const previous = job; job = undefined; releaseRequest(previous);
     }
     function end(afterBlur = false) {
-        const previous = job, owned = client;
+        const previous = job;
         armed = false; stopTimer(); job = undefined;
         const close = () => {
             releaseRequest(previous);
-            if (client === owned && !armed) { owned?.dispose(); client = undefined; }
+            if (!armed) client.cancel();
         };
         // A host can move focus from a read-only subscriber. Release its leases after delivery.
-        if (afterBlur && (previous || owned)) queueMicrotask(close); else close();
+        if (afterBlur && previous) queueMicrotask(close); else close();
     }
     function dismiss(afterBlur = false) {
         end(afterBlur);
@@ -119,7 +121,7 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         const { capture } = current;
         const doc = capture.document, offset = capture.selectionSet.ranges[capture.selectionSet.primary]!.head;
         try {
-            client ??= createLspSignatureClient(provider); requested++;
+            requested++;
             current.call = client.run({ document: doc, offset, context, prepare: options.prepareRequest });
             current.timer = win.setTimeout(() => fail(current, new Error("Signature help timed out.")), 30000);
             if (!retained) publish({ ...idle, status: "pending", message: "Reading signature help.", anchor: Object.freeze({ revision: doc.revision, offset }) });
@@ -215,7 +217,11 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         bind("signature.previous", "Previous signature", ["ArrowUp"], canCycle, () => cycle(-1));
         bind("signature.next", "Next signature", ["ArrowDown"], canCycle, () => cycle(1));
         bind("signature.dismiss", "Dismiss signature help", ["Escape"], () => armed, () => { const visible = !!cell.get().anchor; cancel(); return visible; });
-    } catch (error) { events.abort(); throw error; }
+    } catch (error) {
+        events.abort();
+        client.dispose();
+        throw error;
+    }
     editor.element.addEventListener(typedTextEvent, typed, { signal: events.signal });
     editor.element.addEventListener("keydown", event => {
         if (!job) return;
@@ -232,10 +238,12 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
     }, events.signal);
     function dispose() {
         if (events.signal.aborted) return;
-        notifications.assertWritable(); events.abort(); cancel(); editor.signal.removeEventListener("abort", dispose);
+        notifications.assertWritable();
+        events.abort();
+        dismiss();
+        client.dispose();
         publish({ ...idle, status: "disposed" });
         cell.clearSnapshotListeners();
     }
-    editor.signal.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ request: () => request(), cancel, dispose, ...controllerObservable(cell, "Signature", () => events.signal.aborted), getDiagnostics: () => Object.freeze({ requested, applied, scheduled: !!queued }) });
 }

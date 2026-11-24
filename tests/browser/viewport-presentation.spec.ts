@@ -80,7 +80,7 @@ test("signature help can release focus to a host field and recover from a refuse
     const fixture = await page.evaluateHandle(async () => {
         const path = "/presentation-fixture/";
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
-        const { BrowserLspWorkspace, createSignatureController, mountTextEditor, openWebSocketTransport } =
+        const { BrowserLspWorkspace, attachEditorLanguage, mountTextEditor, openWebSocketTransport } =
             await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const workspace = new Workspace(), text = 'lookup("key", )';
         const source = workspace.createTextResource({ scope: "test", resource: "source", variant: "working" }, "Source",
@@ -91,17 +91,22 @@ test("signature help can release focus to a host field and recover from a refuse
         const caret = text.indexOf(")"); editor.view.setSelection(0, { anchor: caret, head: caret }); editor.focus();
         const connect = (signal: AbortSignal) => openWebSocketTransport("ws://" + location.host + "/lsp-fixture", { signal });
         const provider = new BrowserLspWorkspace(workspace, { connect, maxScopes: 1 });
-        let signature = createSignatureController(editor, provider);
-        signature.subscribe(() => { if (signature.getSnapshot().status === "ready") field.focus(); });
-        return { status: () => signature.getSnapshot().status,
+        const mount = () => attachEditorLanguage(editor, provider, { signature: {}, hover: {} });
+        let tools = mount();
+        tools.signature.subscribe(() => { if (tools.signature.getSnapshot().status === "ready") field.focus(); });
+        return { status: () => tools.signature.getSnapshot().status,
             tryRetired() {
-                signature.dispose();
+                tools.dispose();
                 const retired = new BrowserLspWorkspace(workspace, { connect }); retired.dispose();
-                try { createSignatureController(editor, retired); } catch (error) { return String(error); }
+                try { attachEditorLanguage(editor, retired, { signature: {} }); } catch (error) { return String(error); }
             },
             registered: () => editor.commands.list().filter(command => command.id.startsWith("signature.")).map(command => command.id),
-            remount() { signature = createSignatureController(editor, provider); editor.focus(); },
-            requestAfterBlur() { field.focus(); editor.focus(); signature.request(); },
+            remount() { tools = mount(); editor.focus(); },
+            requestAfterBlur() { field.focus(); editor.focus(); tools.signature.request(); },
+            hover() { tools.hover.request({ revision: editor.view.getSnapshot().revision, offset: 2 }); },
+            inspection() { return tools.hover.getSnapshot().status; },
+            overload() { return tools.signature.getSnapshot().activeSignature; },
+            binding() { const { scopes, documentParticipants } = provider.snapshot(); return [scopes, documentParticipants]; },
             finish() { editor.dispose(); provider.dispose(); },
             owners() { const { views, subscriptions, leases } = workspace.diagnostics(); return { views, subscriptions, leases }; } };
     });
@@ -117,6 +122,16 @@ test("signature help can release focus to a host field and recover from a refuse
     await expect.poll(() => fixture.evaluate(f => f.status())).toBe("ready");
     await fixture.evaluate(f => f.requestAfterBlur());
     await expect.poll(() => fixture.evaluate(f => f.status())).toBe("ready");
+    await source.pressSequentially("x");
+    await expect.poll(() => fixture.evaluate(f => f.status())).toBe("ready");
+    await fixture.evaluate(f => f.hover());
+    await expect.poll(() => fixture.evaluate(f => f.inspection())).toBe("ready");
+    const overload = await fixture.evaluate(f => f.overload());
+    await source.press("ArrowDown");
+    expect(await fixture.evaluate(f => f.overload())).not.toBe(overload);
+    await source.press("Escape");
+    expect(await fixture.evaluate(f => f.inspection())).toBe("ready");
+    expect(await fixture.evaluate(f => f.binding())).toEqual([1, 1]);
     await fixture.evaluate(f => f.finish());
     expect(await fixture.evaluate(f => f.owners())).toEqual({ views: 0, subscriptions: 0, leases: 0 });
 });

@@ -31,19 +31,19 @@ test("failed host attachments unwind acquired owners and can mount and edit agai
                 const mount = bindings[id];
                 // Warm retained view state belongs to the bindings, independently of mounted UI.
                 mount(host); mount(null); await Promise.resolve();
-                const before = ownership(), colors = bindings.colors.attach, reference = bindings.language.attachReferenceFind, hover = bindings.hover.attach;
+                const before = ownership(), colors = bindings.colors.attach, reference = bindings.language.attachReferenceFind, hover = bindings.hover.bind;
                 const attachError = new Error("Attachment refused"), cleanupError = new Error("Cleanup reported failure");
                 let retiredInput: HTMLTextAreaElement | undefined;
                 const fail = () => { retiredInput = host.querySelector<HTMLTextAreaElement>("textarea")!; throw attachError; };
                 if (id === "comparison") bindings.language.attachReferenceFind = fail;
                 else bindings.colors.attach = fail;
-                if (id === "primary") bindings.hover.attach = (...args) => {
+                if (id === "primary") bindings.hover.bind = (...args) => {
                     const stop = hover.call(bindings.hover, ...args);
                     return () => { stop(); throw cleanupError; };
                 };
                 let failure: string[] = [];
                 try { mount(host); } catch (error) { failure = messages(error); }
-                finally { bindings.colors.attach = colors; bindings.language.attachReferenceFind = reference; bindings.hover.attach = hover; }
+                finally { bindings.colors.attach = colors; bindings.language.attachReferenceFind = reference; bindings.hover.bind = hover; }
                 await Promise.resolve();
                 // Detached listeners must not reactivate a retired language/hover session.
                 retiredInput?.dispatchEvent(new FocusEvent("focus"));
@@ -101,10 +101,11 @@ test("language shortcuts follow their panel and editor through attachment failur
             for (const [feature, discover, shortcut, priority] of [
                 ["links", "links.discover", "F4", 7], ["colors", "colors.discover", "F6", 8],
                 ["navigation", "navigation.definition", "F12", 5], ["rename", "rename.start", "F2", 9],
-                ["actions", "actions.request", "Ctrl+.", 6], ["signature", "signature.request", "Ctrl+Shift+Space", 10],
-                ["hover", "hover.inspect", "Ctrl+k Ctrl+i", 20],
+                ["actions", "actions.request", "Ctrl+.", 6], ["hover", "hover.inspect", "Ctrl+k Ctrl+i", 20],
+                ["signature", "signature.request", "Ctrl+Shift+Space", 10],
             ] as const) {
-                const panel = bindings[feature], first = mountTextEditor(host, controller.workspace, tab);
+                const panel = feature === "hover" ? bindings.signature : bindings[feature];
+                const first = mountTextEditor(host, controller.workspace, tab);
                 const conflict = first.commands.register({ id: "host.escape", label: "Host Escape", run() {} }, { keys: ["Escape"], priority });
                 const owned = (editor: typeof first) => editor.commands.list().filter(c => c.id.startsWith(feature + ".")).map(c => c.id);
                 const sessions = () => { const active = panel.debug().sessions; return typeof active === "number" ? active : active.length; };
@@ -128,7 +129,7 @@ test("language shortcuts follow their panel and editor through attachment failur
                     const detachNext = panel.attach("primary", tab, next); detach();
                     const remounted = next.keymap.getShortcuts(discover);
                     let reattached = false;
-                    if ("dispose" in panel) {
+                    if (feature !== "hover") {
                         panel.dispose();
                         try { panel.attach("primary", tab, next); reattached = true; } catch (error) {
                             if (!String(error).includes("panel is disposed")) throw error;
