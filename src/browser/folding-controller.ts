@@ -129,8 +129,8 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
                 run: group => runCommand(id, group) }));
         }
         for (const mod of ["Ctrl", "Meta"]) {
-            editor.keymap.bind(mod + "+Shift+Code:BracketLeft", "fold.collapse", { shared: true });
-            editor.keymap.bind(mod + "+Shift+Code:BracketRight", "fold.expand", { shared: true });
+            editor.keymap.bind(mod + "+Shift+[", "fold.collapse", { shared: true });
+            editor.keymap.bind(mod + "+Shift+]", "fold.expand", { shared: true });
         }
     } catch (error) {
         for (const registration of registrations) registration.dispose();

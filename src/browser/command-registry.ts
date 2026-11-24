@@ -26,6 +26,35 @@ function stroke(text: string, apple: boolean): string {
     return [...modifiers.filter(name => names.includes(name)), key].join("+");
 }
 
+// Resolve punctuation shortcuts from the position and legend together. The same position
+// can carry different shortcut keys on French and US keyboards. Shift remains a modifier.
+function shortcutPunctuation({ code, key }: KeyboardEvent): string | undefined {
+    switch (code) {
+        case "Comma":
+            if (key === ";" || key === ".") return ".";
+            break;
+        case "Period":
+            if (key === ":" || key === "/") return "/";
+            if (key === "." || key === ">") return ".";
+            break;
+        case "Slash":
+            if (key === "/" || key === "?") return "/";
+            break;
+        case "Minus":
+            if (key === ")" || key === "°") return "[";
+            break;
+        case "BracketLeft":
+            if (key === "[" || key === "{") return "[";
+            if (key === "Dead" || key === "^" || key === "¨") return "]";
+            break;
+        case "BracketRight":
+            if (key === "]" || key === "}") return "]";
+            break;
+        case "Backslash":
+            if (key === "\\" || key === "|" || key === "*" || key === "µ") return "\\";
+    }
+}
+
 type Binding = Readonly<{ id: string; keys: string; shared: boolean; priority: number; repeat: boolean }>;
 type Strokes = Map<string, readonly Binding[]>;
 // A shadow-tree key event can expose a different target after dispatch finishes.
@@ -89,10 +118,11 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
         const modifiers = (event.ctrlKey ? "ctrl+" : "") + (event.metaKey ? "meta+" : "") + (event.altKey ? "alt+" : "");
         const mods = modifiers + (event.shiftKey ? "shift+" : "");
         const character = event.key === " " ? "space" : event.key === "+" ? "plus" : event.key.toLowerCase();
-        const key = mods + character;
+        const punctuation = (event.ctrlKey || event.metaKey) && !event.altKey ? shortcutPunctuation(event) : undefined;
+        const key = mods + (punctuation ?? character);
         const physical = mods + "code:" + event.code.toLowerCase();
-        // Shift can produce the bound character, for example a period or digit on French AZERTY.
-        const shiftedCharacter = event.shiftKey && /^[\p{P}\p{S}0-9]$/u.test(event.key);
+        // Other symbols and digits can require Shift to produce their binding.
+        const shiftedCharacter = punctuation === undefined && event.shiftKey && /^[\p{P}\p{S}0-9]$/u.test(event.key);
         function match(table: ReadonlyMap<string, unknown>): string {
             if (table.has(key)) return key;
             if (shiftedCharacter && !table.has(physical)) return modifiers + character;

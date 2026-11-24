@@ -263,14 +263,14 @@ test("disposing fold discovery releases its shortcuts and a conflicting remount 
         const invalid = f.commands.run(id, {}); f.stopFoldDiscovery();
         let hostCalls = 0;
         const host = f.commands.register({ id: "host.bracket", label: "Host bracket", run: () => { hostCalls++; } });
-        f.keymap.bind("Ctrl+Shift+Code:BracketRight", "host.bracket");
+        f.keymap.bind("Ctrl+Shift+]", "host.bracket");
         let conflict = "";
         try { f.discoverFolds(() => []); } catch (error) { conflict = String(error); }
         const partial = f.commands.list().filter(entry => entry.id.startsWith("fold."));
         const retired = f.commands.run(id);
-        // A keyboard layout can produce a different character at this physical key.
+        // The remaining host binding handles the French dead-key position.
         const node = document.querySelector<HTMLTextAreaElement>("#primary textarea")!;
-        node.dispatchEvent(new KeyboardEvent("keydown", { key: "Å", code: "BracketRight", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+        node.dispatchEvent(new KeyboardEvent("keydown", { key: "Dead", code: "BracketLeft", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
         host.dispose();
         f.discoverFolds(() => [{ from: 0, to: 15, group: "blocks" }]);
         return { block, unknown: unknown?.enabled, invalid, conflict, partial, retired, hostCalls };

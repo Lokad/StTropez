@@ -107,7 +107,7 @@ test("provider restart expires pending fixes and a fresh request fixes current c
 test("a clean position offers no fabricated fix and Escape preserves source and focus", async ({ page }) => {
     await openDemo(page); const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+Home");
-    await source.dispatchEvent("keydown", { key: ".", code: "Comma", ctrlKey: true, shiftKey: true });
+    await source.dispatchEvent("keydown", { key: ";", code: "Comma", ctrlKey: true });
     const popup = page.getByRole("region", { name: "Quick fixes", exact: true });
     await expect(popup).toContainText("No quick fix at this position."); await expect(popup.getByRole("button", { name: "Apply fix", exact: true })).toBeDisabled();
     await popup.getByRole("button", { name: "Cancel fix" }).press("Escape");

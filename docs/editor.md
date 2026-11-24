@@ -423,10 +423,11 @@ Disposing a registration removes its bindings. Disposing the editor retires the 
 `editor.keymap.bind("Mod+k Mod+i", id)` binds a two-stroke chord. A single stroke uses the
 same API. `Mod` means Meta on Apple platforms and Ctrl elsewhere. `Ctrl`, `Meta`, `Shift`
 and `Alt` name modifiers on `KeyboardEvent.key`. Use `Space` or `Plus` for those keys.
-For a physical key, use its code, as in `Ctrl+Shift+Code:BracketLeft`. A binding for the
-character produced by the event takes precedence over a physical binding for the same stroke.
-If neither matches, a shifted digit, punctuation mark or symbol can trigger its character binding
-without an explicit Shift. For example, Ctrl+Shift on the French period key runs `Ctrl+.`.
+On French AZERTY, Ctrl+: toggles line comments and Ctrl+; requests a quick fix. The bracket
+shortcuts use the `)` and `^` keys, and bracket jump uses `*`. Shift distinguishes folding from indentation.
+Use a physical binding such as `Ctrl+Shift+Code:BracketLeft` when the position matters.
+A matching logical shortcut takes precedence. Other symbols and digits can use Shift to produce
+the character in a binding.
 AltGr stays available for text entry. On Apple keyboards, Option+Shift on the physical US A key
 can toggle a block comment even when the key produces an accented letter.
 Both strokes must come from the same control, including inside a shadow root. A chord expires
