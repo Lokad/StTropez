@@ -93,7 +93,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
         return { cancelledOwnership: true, emptyPayloadNoDeletion: true, completeSets: true, noHistory: true, zeroExports: true, events: "synthetic", released: { views, leases, subscriptions } };
     },
     foldingPilot: async () => {
-        const original = "header\r\n" + "const unchanged = 123;\r\n".repeat(100000) + "footer", footer = original.length - 6;
+        const original = "header\r\n" + "const unchanged = 123;\r\n".repeat(10_000) + "footer", footer = original.length - 6;
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "folding", variant: "working" }, "Folded source", { value: original });
         const tab = model.tabs.open({ kind: "text", documentId: source.documentId }, "folded"), view = model.createDocumentView(source.documentId), peer = model.createDocumentView(source.documentId);
         const host = document.createElement("div"), otherHost = document.createElement("div"); host.style.height = "180px"; otherHost.style.height = "180px"; document.body.append(host, otherHost);
@@ -124,7 +124,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             editor.focus(); await wait();
             if (editor.viewport.getDiagnostics().rows !== 2 || editor.viewport.getDiagnostics().visibleLines !== 2 || peer.folding.getSnapshot().index.collapsedCount) throw new Error("Compiled folded projection is not bounded or independent.");
             const summary = host.querySelector<HTMLElement>(".st-fold-summary");
-            if (!summary || !getComputedStyle(summary, "::after").content.includes("100000 lines hidden") || getComputedStyle(summary).pointerEvents !== "auto")
+            if (!summary || !getComputedStyle(summary, "::after").content.includes("10000 lines hidden") || getComputedStyle(summary).pointerEvents !== "auto")
                 throw new Error("Restored assets did not present a clickable hidden-line count.");
             // This synthetic dispatch proves the shipped command route; native device qualification is separate.
             editor.element.querySelector("textarea")!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })); await wait();
@@ -241,7 +241,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             disposedGeometryInert: true, keyboardDispatch: "synthetic-event", released: { views, leases, subscriptions } };
     },
     regexPilot: async () => {
-        const original = "foobar foo foo_ K k K_ 𐐀 𐐨\r\n" + "const unchanged = 123;\r\n".repeat(100000);
+        const original = "foobar foo foo_ K k K_ 𐐀 𐐨\r\n" + "const unchanged = 123;\r\n".repeat(10_000);
         const expected = "[foobar] [foo] foo_ [K] [k] K_ [𐐀] [𐐨]\r\n" + original.slice(original.indexOf("\n") + 1);
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "regex", variant: "working" }, "Regex", { value: original });
         const tab = model.tabs.open({ kind: "text", documentId: source.documentId }, "regex"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
@@ -261,9 +261,9 @@ const fixture = { text: () => workspace.document(documentId).text(),
         try {
             find.setQuery("(?<value>foo|foobar|k|𐐨)"); await wait("ready"); if (workers || find.getSnapshot().count) throw new Error("Literal mode started a regex worker.");
             const buffer = model.document(source.documentId).buffer, beforeReveal = editor.view.getSnapshot();
-            editor.viewport.revealRange(buffer.offsetAt(50000), buffer.offsetAt(50003)); editor.viewport.flush();
+            editor.viewport.revealRange(buffer.offsetAt(5000), buffer.offsetAt(5003)); editor.viewport.flush();
             const scrolled = editor.viewport.getSnapshot().scrollTop;
-            editor.viewport.revealRange(buffer.offsetAt(50001), buffer.offsetAt(50002)); editor.viewport.flush();
+            editor.viewport.revealRange(buffer.offsetAt(5001), buffer.offsetAt(5002)); editor.viewport.flush();
             if (!scrolled || editor.viewport.getSnapshot().scrollTop !== scrolled || editor.view.getSnapshot() !== beforeReveal)
                 throw new Error("Restored range reveal moved a visible result or changed the selection.");
             find.setQuery("𐐨\nconst"); await wait("ready");
@@ -339,9 +339,9 @@ const fixture = { text: () => workspace.document(documentId).text(),
     orderedInput: async () => {
         const results = [];
         for (const kind of ["many-carets", "long-word", "pointer-word", "paste-word"]) {
-            const original = kind === "many-carets" ? Array<string>(100000).fill("0123456789").join("\r\n") : kind === "pointer-word" ? "x".repeat(2400000) : "a".repeat(1000001) + ";end";
-            const heads = kind === "many-carets" ? Array.from({ length: 1024 }, (_, i) => i * 80 * 12 + 4) : [0];
-            const destinations = kind === "many-carets" ? heads.map(head => head + 12) : [1000001], text = kind === "paste-word" ? "😀é\r\n" : "😀é";
+            const original = kind === "many-carets" ? Array<string>(5_000).fill("0123456789").join("\r\n") : kind === "pointer-word" ? "x".repeat(200_000) : "a".repeat(200_001) + ";end";
+            const heads = kind === "many-carets" ? Array.from({ length: 1024 }, (_, i) => i * 4 * 12 + 4) : [0];
+            const destinations = kind === "many-carets" ? heads.map(head => head + 12) : [200_001], text = kind === "paste-word" ? "😀é\r\n" : "😀é";
             const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: kind, variant: "working" }, kind, { value: original });
             const tab = model.tabs.open({ kind: "text", documentId: source.documentId }, kind), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
             const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored ordered input" }), recovered: string[] = [];

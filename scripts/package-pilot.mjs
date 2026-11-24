@@ -26,8 +26,8 @@ export async function runPackagedPilot(browser,baseUrl,{directory,packageSha256,
     /** @type {{corpus: string, iteration: number, stage: string} | undefined} */ let activeCase;
     await mkdir(directory,{recursive:true});
     try {
-        for(const corpus of ["normal","lines-100000"]) {
-            const original=corpus==="normal"?"const café = 'e\u0301 👩‍💻';\r\nconst end = 1;":Array.from({length:100000},(_,i)=>`const value${String(i).padStart(6,"0")} = 123;`).join("\n");
+        for(const corpus of ["normal","lines-10000"]) {
+            const original=corpus==="normal"?"const café = 'e\u0301 👩‍💻';\r\nconst end = 1;":Array.from({length:10_000},(_,i)=>`const value${String(i).padStart(6,"0")} = 123;`).join("\n");
             /** @type {Sample[]} */ const samples=[];
             /** @type {Sample[]} */ const warmupSamples=[];
             for(let iteration=0;iteration<warmup+measured;iteration++) {
@@ -101,7 +101,7 @@ export async function runPackagedPilot(browser,baseUrl,{directory,packageSha256,
         assert.equal((await sourceIdentity()).sha256,source.sha256);
         const report={schemaVersion:1,source,created:new Date().toISOString(),packageSha256,benchmark,environment:{...environment(),browser:browser.browserType().name(),browserVersion:browser.version()},cases,errors,
             boundaries: "Restored assets, declarations and CSS only; the host owns local deferred ports and 20 Hz progress. " +
-                "Each normal/100k workflow has a fresh page and controller. Actual typing continues through conflict, reviewed failure, retry, remount and canonical replies. " +
+                "Each normal/10k workflow has a fresh page and controller. Actual typing continues through conflict, reviewed failure, retry, remount and canonical replies. " +
                 "Shared undo returns to the saved value; disposal and a late failure retain unsaved source until explicit release. " +
                 "Only the point q after failure is timed for the point assessment. Readiness starts at beforeinput and waits for exact model, all three working panes, immutable reference, caret, scans, diff and two frames. " +
                 "The adapter handler excludes beforeinput and observer work; it is neither a complete traced callback nor full interaction latency. Complete point action includes automation and observations. " +

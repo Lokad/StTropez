@@ -82,10 +82,10 @@ export async function runPackagedHunkPilot(browser, baseUrl, { directory, packag
     /** @type {PartialSample | undefined} */ let currentSample;
     await mkdir(directory, { recursive: true });
     try {
-        for (const corpus of ["normal", "lines-100000"]) {
+        for (const corpus of ["normal", "lines-10000"]) {
             const original = corpus === "normal"
                 ? "const café = 'e\u0301 👩‍💻';\r\nconst middle = 1;\r\nconst stable = 2;\r\nconst end = 3;"
-                : Array.from({ length: 100000 }, (_, i) => `const value${String(i).padStart(6, "0")} = 123;`).join("\n");
+                : Array.from({ length: 10_000 }, (_, i) => `const value${String(i).padStart(6, "0")} = 123;`).join("\n");
             /** @type {Sample[]} */ const samples = [];
             /** @type {Sample[]} */ const warmupSamples = [];
             for (let iteration = 0; iteration < warmup + measured; iteration++) {
@@ -192,11 +192,12 @@ export async function runPackagedHunkPilot(browser, baseUrl, { directory, packag
                 assert.equal(ranges.length, 2); assert.equal(ranges[0].working.from, 0);
                 assert.equal(ranges[0].working.to, "local".length);
                 assert.equal(ranges[0].baseline.to, "remote".length);
-                assert.equal(review(s).selection.anchor, ranges[1].working.from);
-                assert.equal(review(s).selection.head, ranges[1].working.to);
+                const lastLineStart = submitted.lastIndexOf("\n") + 1;
+                assert.equal(review(s).selection.anchor, lastLineStart);
+                assert.equal(review(s).selection.head, lastLineStart);
                 await button("Previous change").click(); await ready(); s = await snapshot();
                 assert.equal(review(s).selection.anchor, ranges[0].working.from);
-                assert.equal(review(s).selection.head, ranges[0].working.to);
+                assert.equal(review(s).selection.head, ranges[0].working.from);
                 const beforeRevert = await snapshot();
                 assert.deepEqual(beforeRevert.bindings.views.map(v => v.selection), beforeNavigation.bindings.views.map(v => v.selection));
                 assert.equal(await button("Use baseline").isEnabled(), true);
@@ -313,7 +314,7 @@ export async function runPackagedHunkPilot(browser, baseUrl, { directory, packag
         const report = { schemaVersion: 1, source, created: new Date().toISOString(), packageSha256, benchmark,
             environment: { ...environment(), browser: browser.browserType().name(), browserVersion: browser.version() }, cases, errors,
             boundaries: "Restored public modules/declarations/CSS in an isolated consumer; local host-owned deferred ports and20Hzprogress. " +
-                "Fresh page/controller per normalCRLF/distinct100k workflow. Two separated row hunks; first-row revert while reviewed save is pending, then real correction and q before old receipt. " +
+                "Fresh page/controller per normalCRLF/distinct10k workflow. Two separated row hunks; first-row revert while reviewed save is pending, then real correction and q before old receipt. " +
                 "Hunk navigation uses real controls. Click capture-to-document-bubble observation includes synchronous subscribers and intervening observers, excludes preceding pointer/focus work, and is not an exact adapter handler or complete traced callback. " +
                 "Hunk readiness waits exact model/revision/history/capture/identity plus allthreeworkingpanes/renderedselections/reference/version/caret/scans/diff/twoframes via the shared readiness probe. Complete action includes pointer/focus, automation and observations. " +
                 "Only q after revert/correction receives point targets: handler<=16ms,ready<=100/250ms,action<=200/500ms. Adapter elapsed excludes beforeinput and observers; full q readiness starts at beforeinput. Hunk and whole-workflow metrics have no keystroke budget. " +

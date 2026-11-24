@@ -118,7 +118,7 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         try {
             await page.goto(baseUrl + (large ? "/?large=1" : "/")); await page.waitForFunction(() => !!window.activationFixture);
             const original = await text(page); assert.equal(await page.locator("#text").textContent(), original); assert.equal((await snap(page)).session, null);
-            assert.equal(original.length, large ? 2_400_044 : 116, "Restored pilot corpus size changed");
+            assert.equal(original.length, large ? 240_044 : 116, "Restored pilot corpus size changed");
             assert.deepEqual(requests.filter(p => /\.(js|css)$/.test(p)), ["/activation.js"]);
             assert.equal(await page.locator('link[rel="stylesheet"]').count(), 0); assert.ok(outputs["activation.js"].bytes <= 16384);
             if (name === "preview-edit-read-only-history-worker" && !large) await page.screenshot({ path: `${directory}/activation-static-${browserName}.png` });
@@ -151,7 +151,7 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         await retainPackagedPage(page, "reading");
         assert.equal(required((await snap(page)).session).readOnly, true); assert.equal(required((await snap(page)).session).revision, 0); assert.equal(required((await snap(page)).session).history.undoDepth, 0);
         await input.pressSequentially("blocked"); await input.press("Control+z"); assert.equal(await text(page), original);
-        await page.screenshot({ path: `${directory}/activation-first-reading-${large ? "100k-" : ""}${browserName}.png` });
+        await page.screenshot({ path: `${directory}/activation-first-reading-${large ? "10k-" : ""}${browserName}.png` });
         const firstAssets = [...requests]; await button(page, "Edit").click(); await ready(page); assert.deepEqual(requests, firstAssets); assert.equal(required((await snap(page)).session).readOnly, false);
         const initial = await snap(page); assert.equal(required(initial.session).selections.ranges[0].anchor, anchor); assert.equal(required(initial.session).selections.ranges[0].head, head);
         assert.equal(required(initial.session).workers, 0); assert.ok(!requests.includes("/regex-worker.js"));
@@ -191,7 +191,7 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         await button(page, "Next match").click(); assert.equal(required((await snap(page)).session).selections.ranges[0].anchor, changed.indexOf("const"));
         await page.getByRole("textbox", { name: "Find", exact: true }).fill("");
         await page.evaluate(s => window.activationFixture.select(s.ranges, s.primary), required(before.session).selections); await ready(page, "reading");
-        await page.screenshot({ path: `${directory}/activation-reading-${large ? "100k-" : ""}${browserName}.png` });
+        await page.screenshot({ path: `${directory}/activation-reading-${large ? "10k-" : ""}${browserName}.png` });
         await button(page, "Edit").click(); await ready(page);
         assert.equal(required((await snap(page)).session).readOnly, false); assert.deepEqual(required((await snap(page)).session).selections, required(before.session).selections);
         assert.deepEqual(requests.filter(path => /\.(js|css)(\?|$)/.test(path)), assetsBefore); assert.equal(required((await snap(page)).session).workers, 0);

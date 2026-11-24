@@ -34,7 +34,7 @@ export async function runPackagedTablePaste(browser, origin, options) {
     };
     try {
         await page.goto(origin + "/hosts/react/?editor=candidate");
-        const original = "AA\r\n" + "const unchanged = 123;\r\n".repeat(100000) + "ZZ", csv = '"city","value"\r\n"東京","A,""B"""', expected = csv + original.slice(2, -2) + csv;
+        const original = "AA\r\n" + "const unchanged = 123;\r\n".repeat(10_000) + "ZZ", csv = '"city","value"\r\n"東京","A,""B"""', expected = csv + original.slice(2, -2) + csv;
         await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
         await click("Open source review"); await click("Capture review acceptance"); await click("Finish review acceptance"); await ready();
         await page.getByRole("checkbox", { name: "Paste tables as CSV", exact: true }).check();

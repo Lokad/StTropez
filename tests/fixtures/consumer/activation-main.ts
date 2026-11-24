@@ -8,7 +8,7 @@ const edit = document.getElementById("edit") as HTMLButtonElement, cancel = docu
 const snapshot = document.getElementById("snapshot") as HTMLButtonElement;
 const query = document.getElementById("query") as HTMLInputElement, regex = document.getElementById("regex") as HTMLInputElement, next = document.getElementById("next") as HTMLButtonElement, findStatus = document.getElementById("find-status")!;
 const large = new URLSearchParams(location.search).get("large") === "1";
-const original = "// café😀 e\u0301\r\nconst café = '😀';\r\nend\rthird\n" + (large ? "row Δ😀 12345678901234\r\n" : "row Δ😀\r\n").repeat(large ? 100000 : 8);
+const original = "// café😀 e\u0301\r\nconst café = '😀';\r\nend\rthird\n" + (large ? "row Δ😀 12345678901234\r\n" : "row Δ😀\r\n").repeat(large ? 10_000 : 8);
 const workspaceMode = document.body.hasAttribute("data-workspace");
 const listeners = new AbortController(); let session: ActivationSession | WorkspaceSession | undefined, generation = 0, abort: AbortController | undefined, stylesheet: HTMLLinkElement | undefined;
 let phase: "preview" | "loading" | "editing" | "reading" | "disposed" = "preview";

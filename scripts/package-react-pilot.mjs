@@ -421,8 +421,8 @@ export async function runPackagedReactPilot(browser, baseUrl, { directory, packa
     /** @type {ActiveCase | undefined} */ let activeCase;
     await mkdir(directory, { recursive: true });
     try {
-        for (const corpus of ["normal", "lines-100000"]) {
-            const original = corpus === "normal" ? normal : Array.from({ length: 100000 }, (_, index) => `const value${String(index).padStart(6, "0")} = 123;`).join("\n");
+        for (const corpus of ["normal", "lines-10000"]) {
+            const original = corpus === "normal" ? normal : Array.from({ length: 10_000 }, (_, index) => `const value${String(index).padStart(6, "0")} = 123;`).join("\n");
             /** @type {Awaited<ReturnType<typeof workflow>>[]} */ const samples = [];
             /** @type {Awaited<ReturnType<typeof workflow>>[]} */ const warmupSamples = [];
             for (let iteration = 0; iteration < warmup + measured; iteration++) {

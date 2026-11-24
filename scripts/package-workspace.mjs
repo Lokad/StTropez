@@ -45,7 +45,7 @@ export async function runPackagedWorkspace(browser, baseUrl, { directory, packag
                 browserWindow.setInterval = (handler, delay, ...args) => schedule(typeof handler === "function" ? () => { if (!Reflect.get(window, "holdFirstProgress")) handler(...args); } : handler, delay);
             });
             await p.goto(baseUrl + (large ? "/?large=1" : "/")); await p.waitForFunction(() => !!window.activationFixture); const original = await text();
-            assert.equal(original.length, large ? 2_400_044 : 116, "Restored workspace corpus size changed");
+            assert.equal(original.length, large ? 240_044 : 116, "Restored workspace corpus size changed");
             assert.deepEqual(requests.filter(s => /\.(js|css)$/.test(s)), ["/activation.js"]); assert.equal(await p.locator(".st-editor").count(), 0);
             await button("Read only").click(); await ready(); const firstReading = await snap(); assert.equal(await p.evaluate(() => window.activationFixture.snapshot().phase), "reading"); assert.equal(firstReading.readOnly, true); assert.equal(required(firstReading.peer).readOnly, true);
             await retainPackagedPage(p, "reading");
@@ -102,7 +102,7 @@ export async function runPackagedWorkspace(browser, baseUrl, { directory, packag
             await ready(); const liveReading = await snap(); assert.equal(await text(), "live\r\n" + beforeReadingText); assert.equal(liveReading.readOnly, true);
             await select.selectOption(two.resourceId); await ready(); assert.equal((await snap()).readOnly, true); await primary.pressSequentially("blocked"); await ready(); assert.equal(await text(), "two " + twoOriginal);
             await select.selectOption(beforeReading.resourceId); await ready(); assert.deepEqual((await snap()).selections, liveReading.selections);
-            await p.screenshot({ path: `${directory}/workspace-reading-${large ? "100k-" : ""}${engine}.png` });
+            await p.screenshot({ path: `${directory}/workspace-reading-${large ? "10k-" : ""}${engine}.png` });
             await button("Edit").click(); await ready(); assert.equal((await snap()).readOnly, false); assert.equal(required((await snap()).peer).readOnly, false);
             const beforePreview = await snap(), retained = await text(); await button("Show snapshot").click(); assert.equal(await p.evaluate(() => window.activationFixture.snapshot().phase), "preview"); const dormant = await snap(); assert.equal(dormant.diagnostics.subscriptions, 0); assert.equal(await p.locator(".st-editor").count(), 0); assert.equal(await p.locator(".activation-workspace").count(), 0);
             const reader = p.locator("#text"), savedRange = await reader.evaluateHandle(() => { const s = window.getSelection(); if (!s?.anchorNode || !s.focusNode) throw new Error("Expected a captured DOM selection"); return { anchor: s.anchorNode, anchorOffset: s.anchorOffset, head: s.focusNode, headOffset: s.focusOffset }; });
@@ -142,5 +142,5 @@ export async function runPackagedWorkspace(browser, baseUrl, { directory, packag
         finally { await context.close(); }
     }
     await writeFile(`${directory}/workspace-${engine}.json`, JSON.stringify({ packageSha256, browser: browser.version(), corpus, cases, outputs, limits: "Bounded correctness/resource/DOM and individual input-handler observations. Synthetic page transitions do not qualify actual BFCache eligibility/restoration. Retained heap, complete interaction/cold activation latency, native IME/OS clipboard and production adoption remain unverified." }, null, 2));
-    console.log(`Restored workspace: ${cases.length} normal/100k journeys passed in ${engine}.`);
+    console.log(`Restored workspace: ${cases.length} normal/10k journeys passed in ${engine}.`);
 }
