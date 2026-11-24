@@ -72,6 +72,51 @@ test("definition lookup releases its source when the provider has no free scope"
     expect(await fixture.evaluate(f => f.ownership())).toEqual({ leases: 0, subscriptions: 0 });
 });
 
+test("signature help can release focus to a host field and recover from a refused mount", async ({ page }) => {
+    const fixture = await page.evaluateHandle(async () => {
+        const path = "/presentation-fixture/";
+        const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { BrowserLspWorkspace, createSignatureController, mountTextEditor, openWebSocketTransport } =
+            await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const workspace = new Workspace(), text = 'lookup("key", )';
+        const source = workspace.createTextResource({ scope: "test", resource: "source", variant: "working" }, "Source",
+            { value: text }, undefined, { language: { uri: "fixture:/source", languageId: "generic" } });
+        const host = document.createElement("main"), field = document.createElement("input");
+        host.style.height = "240px"; field.setAttribute("aria-label", "Host field"); document.body.append(host, field);
+        const editor = mountTextEditor(host, workspace, source.documentId, { ariaLabel: "Source" });
+        const caret = text.indexOf(")"); editor.view.setSelection(0, { anchor: caret, head: caret }); editor.focus();
+        const connect = (signal: AbortSignal) => openWebSocketTransport("ws://" + location.host + "/lsp-fixture", { signal });
+        const provider = new BrowserLspWorkspace(workspace, { connect, maxScopes: 1 });
+        let signature = createSignatureController(editor, provider);
+        signature.subscribe(() => { if (signature.getSnapshot().status === "ready") field.focus(); });
+        return { status: () => signature.getSnapshot().status,
+            tryRetired() {
+                signature.dispose();
+                const retired = new BrowserLspWorkspace(workspace, { connect }); retired.dispose();
+                try { createSignatureController(editor, retired); } catch (error) { return String(error); }
+            },
+            registered: () => editor.commands.list().filter(command => command.id.startsWith("signature.")).map(command => command.id),
+            remount() { signature = createSignatureController(editor, provider); editor.focus(); },
+            requestAfterBlur() { field.focus(); editor.focus(); signature.request(); },
+            finish() { editor.dispose(); provider.dispose(); },
+            owners() { const { views, subscriptions, leases } = workspace.diagnostics(); return { views, subscriptions, leases }; } };
+    });
+    const source = page.getByRole("textbox", { name: "Source" }), field = page.getByRole("textbox", { name: "Host field" });
+    await source.press("Control+Shift+Space");
+    await expect(field).toBeFocused();
+    await page.keyboard.type("ok"); await expect(field).toHaveValue("ok");
+    expect(await fixture.evaluate(f => f.status())).toBe("idle");
+    expect(await fixture.evaluate(f => f.tryRetired())).toContain("disposed");
+    expect(await fixture.evaluate(f => f.registered())).toEqual([]);
+    await fixture.evaluate(f => f.remount());
+    await source.press("Control+Shift+Space");
+    await expect.poll(() => fixture.evaluate(f => f.status())).toBe("ready");
+    await fixture.evaluate(f => f.requestAfterBlur());
+    await expect.poll(() => fixture.evaluate(f => f.status())).toBe("ready");
+    await fixture.evaluate(f => f.finish());
+    expect(await fixture.evaluate(f => f.owners())).toEqual({ views: 0, subscriptions: 0, leases: 0 });
+});
+
 test("document mounts own Find, fold discovery and pending insertions across a remount", async ({ page }) => {
     const fixture = await page.evaluateHandle(async () => {
         const path = "/presentation-fixture/";

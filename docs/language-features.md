@@ -359,8 +359,9 @@ describe the highlighted text. Use the snapshot's `anchor` to position the popup
 an argument expression such as `item.price` at the same caret, a `pending` snapshot keeps the last
 signature at the new position. A comma clears the previous parameter highlight until the provider
 identifies the next one. Moving the caret or opening a nested call clears the previous
-signature and requests fresh information. Blur, composition and `cancel()` dismiss help.
-Disposing the editor also disposes its controller.
+signature and requests fresh information. Blur, composition and `cancel()` dismiss help. A host
+can move focus to its own field while rendering a signature. Disposing the editor also disposes
+the controller. If attachment fails, the host can retry with a live provider on the same editor.
 
 `createLspSignatureClient(provider).run({ document, offset, context })` returns a cancellable
 call. Read `options(document)` for [provider triggers](language-server.md#feature-capability-queries).

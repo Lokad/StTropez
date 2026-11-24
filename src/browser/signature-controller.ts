@@ -41,17 +41,27 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
             && !activity.pendingInput && !activity.pendingCommand && workspace.ownsDocumentView(view, tab) && (options.canCapture?.() ?? true);
     };
     function stopTimer() { win.clearTimeout(queued?.timer); queued = undefined; }
-    function release() {
-        const previous = job; job = undefined;
+    function releaseRequest(previous: Request | undefined) {
         if (previous) { win.clearTimeout(previous.timer); previous.call?.cancel(); previous.capture.cancel(); }
     }
-    function end() {
-        armed = false; stopTimer(); release(); client?.dispose(); client = undefined;
+    function release() {
+        const previous = job; job = undefined; releaseRequest(previous);
     }
-    function cancel() {
-        notifications.assertWritable(); end();
+    function end(afterBlur = false) {
+        const previous = job, owned = client;
+        armed = false; stopTimer(); job = undefined;
+        const close = () => {
+            releaseRequest(previous);
+            if (client === owned && !armed) { owned?.dispose(); client = undefined; }
+        };
+        // A host can move focus from a read-only subscriber. Release its leases after delivery.
+        if (afterBlur && (previous || owned)) queueMicrotask(close); else close();
+    }
+    function dismiss(afterBlur = false) {
+        end(afterBlur);
         if (!events.signal.aborted && cell.get() !== idle) publish(idle);
     }
+    function cancel() { notifications.assertWritable(); dismiss(); }
     function schedule(context: LspSignatureContext, afterTyping?: DocumentViewSnapshot) {
         stopTimer();
         const deadline = win.performance.now() + 5000;
@@ -165,18 +175,6 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         const registration = editor.commands.register({ id, label, enabled, run }, { keys, priority: 10 });
         events.signal.addEventListener("abort", registration.dispose, { once: true });
     }
-    try {
-        bind("signature.request", "Show signature help", ["Ctrl+Shift+Space", "Meta+Shift+Space"], available, () => request());
-        bind("signature.previous", "Previous signature", ["ArrowUp"], canCycle, () => cycle(-1));
-        bind("signature.next", "Next signature", ["ArrowDown"], canCycle, () => cycle(1));
-        bind("signature.dismiss", "Dismiss signature help", ["Escape"], () => armed, () => { const visible = !!cell.get().anchor; cancel(); return visible; });
-    } catch (error) { events.abort(); throw error; }
-    editor.element.addEventListener(typedTextEvent, typed, { signal: events.signal });
-    editor.element.addEventListener("focusout", cancel, { signal: events.signal });
-    editor.onEditIntent(kind => {
-        if (kind !== "beforeinput") cancel();
-        else if (job) job.typing = job.capture.isCurrent() && (!job.help || job.help.isCurrent());
-    }, events.signal);
     let providerState = provider.getSnapshot();
     const stopProvider = provider.subscribe(() => {
         const current = job, next = provider.getSnapshot();
@@ -184,9 +182,22 @@ export function createSignatureController(editor: TextEditor, provider: LspWorks
         providerState = next;
         if (current && (current.help && !current.help.isCurrent() || cell.get().signature && changedProvider)) queueMicrotask(() => expire(current));
     });
+    events.signal.addEventListener("abort", stopProvider, { once: true });
+    try {
+        bind("signature.request", "Show signature help", ["Ctrl+Shift+Space", "Meta+Shift+Space"], available, () => request());
+        bind("signature.previous", "Previous signature", ["ArrowUp"], canCycle, () => cycle(-1));
+        bind("signature.next", "Next signature", ["ArrowDown"], canCycle, () => cycle(1));
+        bind("signature.dismiss", "Dismiss signature help", ["Escape"], () => armed, () => { const visible = !!cell.get().anchor; cancel(); return visible; });
+    } catch (error) { events.abort(); throw error; }
+    editor.element.addEventListener(typedTextEvent, typed, { signal: events.signal });
+    editor.element.addEventListener("focusout", () => dismiss(true), { signal: events.signal });
+    editor.onEditIntent(kind => {
+        if (kind !== "beforeinput") cancel();
+        else if (job) job.typing = job.capture.isCurrent() && (!job.help || job.help.isCurrent());
+    }, events.signal);
     function dispose() {
         if (events.signal.aborted) return;
-        notifications.assertWritable(); events.abort(); stopProvider(); cancel(); editor.signal.removeEventListener("abort", dispose);
+        notifications.assertWritable(); events.abort(); cancel(); editor.signal.removeEventListener("abort", dispose);
         publish({ ...idle, status: "disposed" }); for (const stop of stops) stop();
     }
     editor.signal.addEventListener("abort", dispose, { once: true });
