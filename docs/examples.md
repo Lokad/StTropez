@@ -13,8 +13,8 @@ npm ci
 npm run demo
 ```
 
-Open `http://127.0.0.1:4173/`. `npm run dev` starts the same loopback server and source watcher;
-neither command opens a browser. `STTROPEZ_PORT` selects another port. The
+Open `http://127.0.0.1:4173/` in your browser. The loopback server watches the source files.
+Set `STTROPEZ_PORT` to use another port. The
 [published demo](https://lokad.github.io/StTropez/) needs no local server.
 
 Use `?sample=host` to open the paste example directly, or choose another ID from the

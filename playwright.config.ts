@@ -16,5 +16,5 @@ export default defineConfig({
     use: { baseURL, headless: true, viewport: { width: 1440, height: 900 },
         trace: "retain-on-failure", screenshot: "only-on-failure" },
     projects: [{ name: "chromium", use: { browserName: "chromium" } }],
-    webServer: { command: "npm run dev", env: { STTROPEZ_PORT: port }, url: baseURL, reuseExistingServer: false, timeout: 30_000 },
+    webServer: { command: "npm run demo", env: { STTROPEZ_PORT: port }, url: baseURL, reuseExistingServer: false, timeout: 30_000 },
 });

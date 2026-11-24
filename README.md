@@ -30,7 +30,6 @@ belong to the example and are excluded from the editor package.
 
 The [example guide](docs/examples.md) describes the samples, providers and development hosts;
 [static hosting](docs/examples.md#static-build-and-deployment) describes the deployment build.
-`npm run dev` starts the same server, including the additional development fixtures.
 Use `STTROPEZ_PORT` for a different source-server port and `STTROPEZ_DEMO_PORT` for static preview.
 
 ## Commands

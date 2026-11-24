@@ -33,7 +33,6 @@
   },
   "scripts": {
     "demo": "node scripts/serve.mjs",
-    "dev": "node scripts/serve.mjs",
     "build:demo": "npm run build && node scripts/build-demo.mjs",
     "preview:demo": "node scripts/serve-demo.mjs",
     "test:demo": "playwright test --config playwright.demo.config.ts",
