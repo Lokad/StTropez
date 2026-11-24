@@ -298,8 +298,9 @@ scrollbar or clicking its track keeps the selection. Typing brings the edited li
 even during a track-click animation.
 
 A column drag measures both horizontal positions on each line. Short lines stop at their ends.
-Dragging straight down creates carets. Folded bodies and blank comparison padding contribute
-no ranges. The line under the moving corner has the primary range. Typing replaces all ranges
+Dragging straight down creates carets. Folded bodies and comparison padding contribute no ranges.
+If you release in padding, the rectangle ends on the last source line crossed. The line at
+the moving corner has the primary range. Typing replaces all ranges
 in one undo step. Read-only panes allow the same selection gesture.
 
 `--st-selection` paints above token and occurrence backgrounds. A selection drag ends

@@ -1446,10 +1446,11 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     function dragColumn(x: number, bounds: ReturnType<typeof dragBounds>): number {
         return viewport.getSnapshot().scrollLeft + (Math.max(bounds.left, Math.min(bounds.right - 1, x)) - bounds.left) / bounds.zoom;
     }
-    function updateColumnDrag(unit: ColumnDrag, offset: number, column: number): void {
+    function updateColumnDrag(unit: ColumnDrag, localY: number, column: number): void {
         if (inputQueue.pending) return;
         const capture = commandCapture(false), folds = view.folding.getSnapshot().index;
-        const row = folds.rowAt(capture.buffer.lineAt(offset)), direction = row < unit.originRow ? -1 : 1;
+        const line = navigation.columnDragLine(localY, folds.lineAt(unit.originRow));
+        const row = folds.rowAt(line), direction = row < unit.originRow ? -1 : 1;
         if (!unit.projection && row === unit.originRow && Math.abs(unit.anchorColumn - column) < 2) return;
         const count = Math.abs(row - unit.originRow) + 1, layout = navigationLayout();
         let projection = unit.projection;
@@ -1488,13 +1489,13 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     }
     function updateDragHead(): void {
         const current = drag; if (!current) return; const bounds = dragBounds();
-        const point = viewport.hitTest(Math.max(bounds.left, Math.min(bounds.right - 1, current.x)), Math.max(bounds.top, Math.min(bounds.bottom - 1, current.y)));
-        if (!point || drag !== current) return;
-        const unit = current.unit;
+        const unit = current.unit, y = Math.max(bounds.top, Math.min(bounds.bottom - 1, current.y));
         if (unit?.kind === "column") {
-            if (!point.padding) updateColumnDrag(unit, point.offset, dragColumn(current.x, bounds));
+            updateColumnDrag(unit, (y - bounds.top) / bounds.zoom, dragColumn(current.x, bounds));
             return;
         }
+        const point = viewport.hitTest(Math.max(bounds.left, Math.min(bounds.right - 1, current.x)), y);
+        if (!point || drag !== current) return;
         if (unit) {
             if (unit.lastHit === point.offset) return;
             unit.lastHit = point.offset;

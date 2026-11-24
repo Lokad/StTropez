@@ -51,6 +51,7 @@ export type ViewportInputBinding = Readonly<{ setComposing: (active: boolean) =>
 
 type ViewportNavigation = Readonly<{
     visualRowAt: (line: number) => number;
+    columnDragLine: (localY: number, originLine: number) => number;
     navigationLine: (line: number, direction: -1 | 1, count: number, page: boolean) => number;
     moveVisual: (offset: number, direction: -1 | 1) => CaretRectangle | undefined;
     collapseVisual: (from: number, to: number, direction: -1 | 1) => CaretRectangle | undefined;
@@ -326,6 +327,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     const flush = () => { if (disposed) return; const scheduled = frame !== undefined; if (scheduled) win.cancelAnimationFrame(frame!); render(scheduled); };
     const position = (axis: ScrollAxis, value: number): number => Math.min(axis.maximum, Math.max(0, value));
     const gapAt = (index: RowIndex, row: number) => "gapAt" in index ? index.gapAt(row) : undefined;
+    const visualRowAtY = (localY: number) => Math.max(0, Math.min(renderedIndex.visibleLineCount - 1, Math.floor((localY + top - padding) / lineHeight)));
     function verticalAnchor(): ViewState["verticalAnchor"] {
         if (!previous || previous.revision !== workspace.observeDocument(documentId).getSnapshot()?.revision) return;
         const at = Math.min(renderedIndex.visibleLineCount - 1, Math.max(0, Math.floor((top - padding) / lineHeight))), gap = gapAt(renderedIndex, at);
@@ -1027,7 +1029,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
                 || workspace.observeDocument(documentId).getSnapshot()?.revision !== renderedRevision) return undefined;
             const rectangle = clientBox(root, !!minimap, gutterWidth);
             if (minimap && clientX >= rectangle.right) return undefined;
-            const at = Math.max(0, Math.min(renderedIndex.visibleLineCount - 1, Math.floor(((clientY - rectangle.top) / rectangle.zoom + top - padding) / lineHeight))), gap = gapAt(renderedIndex, at);
+            const at = visualRowAtY((clientY - rectangle.top) / rectangle.zoom), gap = gapAt(renderedIndex, at);
             if (gap) return Object.freeze({ offset: gap.offset, affinity: "after", left: rectangle.left + (padding - left) * rectangle.zoom, top: rectangle.top + (padding + at * lineHeight - top) * rectangle.zoom, height: lineHeight * rectangle.zoom, revision: renderedRevision!, padding: true });
             let element: HTMLDivElement | undefined, distance = Infinity;
             for (const candidate of rows.values()) {
@@ -1165,6 +1167,11 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             return end && { anchor: start.offset, anchorAffinity: start.affinity, head: end.offset, headAffinity: end.affinity };
         }),
         visualRowAt: line => renderedIndex.rowAt(line),
+        columnDragLine: (localY, originLine) => {
+            const row = visualRowAtY(localY);
+            // In comparison padding, stop at the last source row crossed from the origin.
+            return "nextLine" in renderedIndex ? renderedIndex.nextLine(row, row < renderedIndex.rowAt(originLine) ? 1 : -1) : renderedIndex.lineAt(row);
+        },
         navigationLine: (line, direction, count, page) => {
             if (!Number.isSafeInteger(count) || count < 1) throw new RangeError("Invalid row navigation.");
             const index = page ? renderedIndex : view.folding.getSnapshot().index, at = Math.max(0, Math.min(index.visibleLineCount - 1, index.rowAt(line) + direction * count));

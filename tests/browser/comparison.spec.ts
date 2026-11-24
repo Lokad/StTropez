@@ -184,6 +184,32 @@ test("forced colors distinguish changed rows, characters, empty changes and the 
     expect(paint).toEqual({ bar: true, currentLine: true });
 });
 
+test("a column drag released in comparison padding ends on the last source row crossed", async ({ page }) => {
+    await page.evaluate(() => {
+        const f = window.comparisonFixture;
+        f.setText("a12\nb12\nc12\nd12"); f.begin("accept"); f.finish("accept");
+        f.setText("a12\nb12\nextra\nc12\nd12");
+        f.review.setRowsAligned(true);
+    }); await ready(page);
+    const reference = page.locator(".st-comparison-panes > section").first();
+    const gap = (await reference.locator(".st-comparison-padding").boundingBox())!;
+    for (const offset of [1, 13]) {
+        const [start, end] = await page.evaluate(offset => {
+            const { viewport } = window.comparisonFixture.review.panes.reference;
+            const point = (at: number) => { const r = viewport.coordsAt(at)!; return { x: r.left + 1, y: r.top + r.height / 2 }; };
+            return [point(offset), point(offset + 1)] as const;
+        }, offset);
+        await page.keyboard.down("Shift"); await page.keyboard.down("Alt"); await page.mouse.move(start.x, start.y);
+        await page.mouse.down(); await page.mouse.move(end.x, gap.y + gap.height / 2); await page.mouse.up();
+        await page.keyboard.up("Alt"); await page.keyboard.up("Shift"); await ready(page);
+        const result = await page.evaluate(() => {
+            const { ranges, primary } = window.comparisonFixture.review.panes.reference.view.getSnapshot().selectionSet;
+            return { ranges: ranges.map(s => [s.anchor, s.head]), primary };
+        });
+        expect(result).toEqual(offset === 1 ? { ranges: [[1, 2], [5, 6]], primary: 1 } : { ranges: [[9, 10], [13, 14]], primary: 0 });
+    }
+});
+
 test("a one-sided change marks the empty range without tinting its unchanged neighbour", async ({ page }) => {
     const tail = "shared long line ".repeat(32);
     const original = "first\nmiddle\nlast\n" + tail;
