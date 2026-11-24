@@ -1,3 +1,5 @@
+import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
+import { isStaleRequest } from "../protocol/wire.ts";
 import { signatureHelpMethod } from "../protocol/lsp-methods.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
@@ -12,7 +14,7 @@ import { canInspectView, captureViewRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import type { TextEditor } from "./text-editor.ts";
 import { revealCaretInPage } from "./input-caret.ts";
-import { typedTextEvent, type TypedTextDetail } from "./input-events.ts";
+import { acceptedTypedText, typedTextEvent } from "./input-events.ts";
 
 export type SignatureControllerOptions = Readonly<{ canCapture?: () => boolean; beforeRequest?: () => void; prepareRequest?: LspPrepare }>;
 export type SignatureSnapshot = Readonly<{
@@ -21,7 +23,7 @@ export type SignatureSnapshot = Readonly<{
     signature: LspSignature | null; activeSignature: number; signatureCount: number;
 }>;
 export type SignatureController = Observable<SignatureSnapshot> & Readonly<{
-    request: () => void; cancel: () => void; dispose: () => void;
+    request: () => Promise<Outcome<SignatureSnapshot>>; cancel: () => void; dispose: () => void;
     getDiagnostics: () => Readonly<{ requested: number; applied: number; scheduled: boolean }>;
 }>;
 type Call = ReturnType<LspSignatureClient["run"]>;
@@ -39,7 +41,10 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
     const events = new AbortController(), notifications = workspace.createNotificationScope(), cell = new Store(idle, notifications);
     let job: Request | undefined, armed = false, requested = 0, applied = 0;
     let queued: { timer: number; context: LspSignatureContext } | undefined;
-    const publish = (next: SignatureSnapshot) => notifications.publish(cell, Object.freeze(next));
+    function publish(next: SignatureSnapshot) {
+        notifications.publish(cell, Object.freeze(next));
+        return next;
+    }
     const available = () => !events.signal.aborted && canInspectView(editor, options.canCapture);
     function stopTimer() { win.clearTimeout(queued?.timer); queued = undefined; }
     function releaseRequest(previous: Request | undefined) {
@@ -78,25 +83,20 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
         };
         queued = { context, timer: win.setTimeout(poll, 50) };
     }
-    function expire(current: Request) {
+    function expire(current: Request, followCaret = true) {
         if (current !== job) return;
-        if (current.argumentKey && editor.getSnapshot().focused && available()) {
+        if (followCaret && current.argumentKey && editor.getSnapshot().focused && available()) {
             const after = view.getSnapshot(), text = crossedArgument(current, after);
             if (text && transferLabel(after, text)) { schedule(changed, after); return; }
         }
         release(); publish({ ...idle, status: "expired", message: "Signature context changed." });
-        if (armed && provider.getSnapshot().phase === "ready" && editor.getSnapshot().focused) {
+        if (followCaret && armed && provider.getSnapshot().phase === "ready" && editor.getSnapshot().focused) {
             if (!queued) schedule(changed);
         } else end();
     }
-    function fail(current: Request, error: unknown) {
-        if (current !== job) return;
-        end(); publish({ ...idle, status: "failed", message: error instanceof Error ? error.message : "Signature help failed." });
-    }
-    function show(index: number) {
-        const help = job?.help, signature = help?.signatures[index]; if (!help || !signature) return;
-        publish({ status: "ready", message: `Signature ${index + 1} of ${help.signatures.length}.`, anchor: cell.get().anchor,
-            signature, activeSignature: index, signatureCount: help.signatures.length });
+    function show(help: NonNullable<Request["help"]>, index: number) {
+        return publish({ status: "ready", message: `Signature ${index + 1} of ${help.signatures.length}.`, anchor: cell.get().anchor,
+            signature: help.signatures[index]!, activeSignature: index, signatureCount: help.signatures.length });
     }
     function captureRequest(): Request | undefined {
         const capture = captureViewRequest(workspace, tab, view, { available });
@@ -105,41 +105,67 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
         capture.signal.addEventListener("abort", () => expire(current), { once: true });
         return current;
     }
-    function request(context: LspSignatureContext = manual) {
-        notifications.assertWritable(); if (!available()) return;
-        options.beforeRequest?.(); stopTimer();
-        const retained = context.isRetrigger && job && !job.call && job.capture.isCurrent() ? job : undefined;
-        if (!retained) release();
-        if (context === manual) {
-            const caret = view.getSnapshot().selection;
-            editor.viewport.revealOffset(caret.head, { horizontal: "nearest", vertical: "nearest", affinity: caret.headAffinity ?? "after" });
-            if (editor.getSnapshot().focused) revealCaretInPage(editor.element);
-        }
-        const current = retained ?? captureRequest();
-        if (!current) { cancel(); return; }
-        const { capture } = current;
-        const doc = capture.document, offset = capture.selectionSet.ranges[capture.selectionSet.primary]!.head;
+    async function request(context: LspSignatureContext = manual): Promise<Outcome<SignatureSnapshot>> {
+        notifications.assertWritable();
+        let current: Request | undefined;
+        let timedOut = false;
         try {
+            if (!available()) return refused("unavailable-view");
+            options.beforeRequest?.();
+            stopTimer();
+            const retained = context.isRetrigger && job && !job.call && job.capture.isCurrent() ? job : undefined;
+            if (!retained) release();
+            if (context === manual) {
+                const caret = view.getSnapshot().selection;
+                editor.viewport.revealOffset(caret.head, { horizontal: "nearest", vertical: "nearest", affinity: caret.headAffinity ?? "after" });
+                if (editor.getSnapshot().focused) revealCaretInPage(editor.element);
+            }
+            current = retained ?? captureRequest();
+            if (!current) {
+                cancel();
+                return refused("unavailable-view");
+            }
+            const { capture } = current;
+            const doc = capture.document, offset = capture.selectionSet.ranges[capture.selectionSet.primary]!.head;
             requested++;
-            current.call = client.run({ document: doc, offset, context, prepare: options.prepareRequest });
-            current.timer = win.setTimeout(() => fail(current, new Error("Signature help timed out.")), 30000);
+            const call = client.run({ document: doc, offset, context, prepare: options.prepareRequest });
+            current.call = call;
+            current.timer = win.setTimeout(() => {
+                timedOut = true;
+                call.cancel();
+            }, 30000);
             if (!retained) publish({ ...idle, status: "pending", message: "Reading signature help.", anchor: Object.freeze({ revision: doc.revision, offset }) });
-            void current.call.result.then(help => {
-                if (current !== job) return;
-                if (!capture.isCurrent() || help && !help.isCurrent()) { expire(current); return; }
-                applied++; win.clearTimeout(current.timer);
-                if (!help?.signatures.length) {
-                    end(); publish({ ...idle, status: "empty", message: "No signature at this position." }); return;
-                }
-                current.help = help; show(help.activeSignature);
-            }, error => fail(current, error));
-        } catch (error) { fail(current, error); }
+            const help = await call.result;
+            if (current !== job) return stale;
+            if (!capture.isCurrent() || help?.isCurrent() === false) {
+                expire(current);
+                return stale;
+            }
+            applied++;
+            win.clearTimeout(current.timer);
+            if (!help?.signatures.length) {
+                end();
+                return done(publish({ ...idle, status: "empty", message: "No signature at this position." }));
+            }
+            current.help = help;
+            return done(show(help, help.activeSignature));
+        } catch (error) {
+            if (current && current !== job) return stale;
+            if (timedOut) error = new Error("Signature help timed out.");
+            if (current && (isStaleRequest(error) || !current.capture.isCurrent())) {
+                expire(current, !current.capture.isCurrent());
+                return stale;
+            }
+            end();
+            publish({ ...idle, status: "failed", message: error instanceof Error ? error.message : "Signature help failed." });
+            return failed(error);
+        }
     }
     function canCycle() { return !!job?.help && job.help.signatures.length > 1 && job.capture.isCurrent() && job.help.isCurrent(); }
     function cycle(delta: number) {
         const help = job?.help; if (!help || !canCycle()) return;
         const index = (cell.get().activeSignature + delta + help.signatures.length) % help.signatures.length;
-        if (help.selectOverload(help.signatures[index]!)) show(index);
+        if (help.selectOverload(help.signatures[index]!)) show(help, index);
     }
     function crossedArgument(current: Request, after: DocumentViewSnapshot) {
         const { document, selectionSet } = current.capture, before = selectionSet.ranges[0]!, caret = after.selection.head;
@@ -177,15 +203,15 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
         return true;
     }
     function typed(event: Event) {
-        const detail = (event as CustomEvent<TypedTextDetail>).detail, after = view.getSnapshot();
-        if (event.target !== editor.element || detail?.documentId !== view.documentId || detail.revision !== after.revision
-            || detail.selectionSet !== after.selectionSet || typeof detail.text !== "string" || !workspace.ownsDocumentView(view, tab)) return;
+        const after = view.getSnapshot();
+        const text = acceptedTypedText(event, editor.element, after);
+        if (text === undefined || !workspace.ownsDocumentView(view, tab)) return;
         const doc = workspace.document(view.documentId);
         let trigger = "";
         for (const option of provider.queryFeatureOptions(signatureHelpMethod, doc)) {
             for (const list of [option.triggerCharacters, armed && option.retriggerCharacters]) {
                 if (Array.isArray(list)) for (const value of list) {
-                    if (typeof value === "string" && value.length > trigger.length && value.length <= 8 && detail.text.endsWith(value)) trigger = value;
+                    if (typeof value === "string" && value.length > trigger.length && value.length <= 8 && text.endsWith(value)) trigger = value;
                 }
             }
         }
@@ -194,7 +220,7 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
         if (!trigger && !armed) return;
         const prior = queued?.context;
         const context = trigger ? { triggerKind: 2 as const, triggerCharacter: trigger, isRetrigger: prior?.isRetrigger ?? armed } : prior ?? changed;
-        if (!trigger || trigger === ",") followArgument(detail.text, after);
+        if (!trigger || trigger === ",") followArgument(text, after);
         armed = true; schedule(context, after);
     }
     function bind(id: string, label: string, keys: string[], enabled: () => boolean, run: () => void | boolean) {
@@ -212,7 +238,7 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
     });
     events.signal.addEventListener("abort", stopProvider, { once: true });
     try {
-        bind("signature.request", "Show signature help", ["Ctrl+Shift+Space", "Meta+Shift+Space"], available, () => request());
+        bind("signature.request", "Show signature help", ["Ctrl+Shift+Space", "Meta+Shift+Space"], available, () => { void request(); });
         bind("signature.previous", "Previous signature", ["ArrowUp"], canCycle, () => cycle(-1));
         bind("signature.next", "Next signature", ["ArrowDown"], canCycle, () => cycle(1));
         bind("signature.dismiss", "Dismiss signature help", ["Escape"], () => armed, () => { const visible = !!cell.get().anchor; cancel(); return visible; });

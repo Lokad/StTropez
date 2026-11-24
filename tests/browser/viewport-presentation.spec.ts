@@ -103,7 +103,13 @@ test("signature help can release focus to a host field and recover from a refuse
             },
             registered: () => editor.commands.list().filter(command => command.id.startsWith("signature.")).map(command => command.id),
             remount() { tools = mount(); editor.focus(); },
-            requestAfterBlur() { field.focus(); editor.focus(); tools.signature.request(); },
+            async requestAfterBlur() {
+                const prior = tools.signature.request();
+                field.focus();
+                editor.focus();
+                const next = await tools.signature.request();
+                return [(await prior).status, next.status === "done" ? next.value.status : next.status];
+            },
             hover() { tools.hover.request({ revision: editor.view.getSnapshot().revision, offset: 2 }); },
             inspection() { return tools.hover.getSnapshot().status; },
             overload() { return tools.signature.getSnapshot().activeSignature; },
@@ -121,8 +127,7 @@ test("signature help can release focus to a host field and recover from a refuse
     await fixture.evaluate(f => f.remount());
     await source.press("Control+Shift+Space");
     await expect.poll(() => fixture.evaluate(f => f.status())).toBe("ready");
-    await fixture.evaluate(f => f.requestAfterBlur());
-    await expect.poll(() => fixture.evaluate(f => f.status())).toBe("ready");
+    expect(await fixture.evaluate(f => f.requestAfterBlur())).toEqual(["stale", "ready"]);
     await source.pressSequentially("x");
     await expect.poll(() => fixture.evaluate(f => f.status())).toBe("ready");
     await fixture.evaluate(f => f.hover());

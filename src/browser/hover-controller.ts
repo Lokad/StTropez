@@ -163,31 +163,33 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
     }
     async function request(anchor?: OverlayPosition, mode: "refresh" | "reuse" = "refresh"): Promise<Outcome<HoverSnapshot>> {
         notifications.assertWritable();
-        if (!available()) return refused("unavailable-view");
-        const selected = view.getSnapshot(), offset = anchor?.offset ?? selected.selection.head;
-        if (anchor && anchor.revision !== selected.revision) return stale;
-        const doc = workspace.document(view.documentId);
-        if (!isOffset(offset, doc.buffer.length) || view.folding.getSnapshot().index.hiddenBy(doc.buffer.lineAt(offset))) {
-            return refused("unavailable-position");
-        }
-        const previous = inspection;
-        if (mode === "reuse" && previous && valid(previous)) {
-            const range = previous.symbol?.range;
-            if (previous.offset === offset) return pending ?? previous.failure ?? done(cell.get());
-            if (range && range.from <= offset && offset < range.to) {
-                previous.offset = offset;
-                const shown = cell.get().range;
-                if (!shown || offset < shown.from || offset >= shown.to) render(previous);
-                return done(cell.get());
-            }
-        }
-        release();
+        let owned = inspection;
         try {
+            if (!available()) return refused("unavailable-view");
+            const selected = view.getSnapshot(), offset = anchor?.offset ?? selected.selection.head;
+            if (anchor && anchor.revision !== selected.revision) return stale;
+            const doc = workspace.document(view.documentId);
+            if (!isOffset(offset, doc.buffer.length) || view.folding.getSnapshot().index.hiddenBy(doc.buffer.lineAt(offset))) {
+                return refused("unavailable-position");
+            }
+            const previous = inspection;
+            if (mode === "reuse" && previous && valid(previous)) {
+                const range = previous.symbol?.range;
+                if (previous.offset === offset) return pending ?? previous.failure ?? done(cell.get());
+                if (range && range.from <= offset && offset < range.to) {
+                    previous.offset = offset;
+                    const shown = cell.get().range;
+                    if (!shown || offset < shown.from || offset >= shown.to) render(previous);
+                    return done(cell.get());
+                }
+            }
+            release();
+            owned = undefined;
             const capture = captureViewRequest(workspace, tab, view, { available });
             if (!capture) return refused("unavailable-view");
             const current: Inspection = { revision: capture.document.revision, selection: capture.selectionSet,
                 folds: capture.folding.index, offset, capture, stops: [] };
-            inspection = current;
+            owned = inspection = current;
             capture.signal.addEventListener("abort", () => { if (current.capture) expire(current); }, { once: true });
             current.stops.push(diagnosticSource().subscribe(() => queueMicrotask(() => render(current))));
             const result = read(current, capture);
@@ -197,6 +199,7 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
             }
             return await result;
         } catch (error) {
+            if (owned !== inspection) return stale;
             release();
             status("failed", String(error));
             return failed(error);

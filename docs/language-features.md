@@ -217,6 +217,11 @@ Automatic completion follows one caret or the linked carets in a snippet field. 
 works with a single-line selection or multiple collapsed carets. For a selection, the request uses
 its higher offset in either direction. Accepting uses the provider's edit range when supplied and
 otherwise replaces the selected text. Undo restores the original selection.
+
+`await completion.request()` returns `done` with the list snapshot, including an empty list.
+Choosing an item can trigger a separate request for its details. A cancelled or superseded list returns `stale`.
+An unavailable view, unsupported selection or disconnected provider returns `refused`.
+A provider or preparation error returns `failed`.
 Typing decimal digits alone keeps automatic completion closed. Digits in an identifier can
 request suggestions, and a provider's advertised trigger character always takes precedence.
 Up and Down select one choice. PageUp and PageDown move a page and stop at the first or last choice.
@@ -379,6 +384,9 @@ HTML tags. Otherwise the client requests plaintext. Completion documentation alw
 ### Signature help
 
 Enable `signature: {}` on the language attachment. Its `signature` controller follows the primary caret.
+Await `signature.request()` for a `done` result with the displayed signature or an `empty`
+snapshot. A dismissed or superseded request returns `stale`, an unavailable view returns
+`refused`, and a provider error or timeout returns `failed`.
 Call `request()` or press Ctrl/Cmd+Shift+Space to show parameter help, including in a read-only
 view. In a focused editor, an explicit request brings the caret into view. If the caret is
 already visible, the page keeps its scroll position. An accepted trigger such as `(` requests

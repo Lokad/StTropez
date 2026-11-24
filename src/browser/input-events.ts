@@ -10,6 +10,12 @@ export function dispatchTypedText(root: HTMLElement, { documentId, revision, sel
         detail: Object.freeze({ documentId, revision, selectionSet, text }) }));
 }
 
+export function acceptedTypedText(event: Event, root: HTMLElement, view: DocumentViewSnapshot): string | undefined {
+    const detail = (event as CustomEvent<TypedTextDetail>).detail;
+    if (event.target === root && detail?.documentId === view.documentId && detail.revision === view.revision
+        && detail.selectionSet === view.selectionSet && typeof detail.text === "string") return detail.text;
+}
+
 /** Dispatched on the editor's input. Bubbles within its root; does not cross shadow boundaries. */
 export const inputConflictEvent = "sttropez-conflict";
 
