@@ -23,6 +23,7 @@ for (const host of ["plain", "react"]) for (const editor of ["native", "candidat
             f.editSource(s.source.revision, [{ from: 10000, to: 10001, insert: "CHANGED" }]);
         }); await waitForReview(page);
         await click("Next change");
+        await page.getByRole("textbox", { name: "Comparison baseline source", exact: true }).press("Shift+ArrowRight");
         const input = page.getByRole("textbox", { name: "Comparison working source", exact: true });
         await input.press("Control+End"); await input.press("Shift+Home"); await waitForReview(page);
         await page.locator(".st-comparison-panes .st-viewport").evaluateAll(nodes => nodes.forEach((node, i) => {

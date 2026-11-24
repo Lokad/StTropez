@@ -165,6 +165,9 @@ for (const host of ["plain", "react"]) {
         expect((await snapshot(p)).source.revision).toBe(beforeReplacement.source.revision);
         await p.evaluate(() => { window.holdReferenceMatches = false; for (const { worker, data } of window.heldReferenceMatches!)
             worker.dispatchEvent(new MessageEvent("message", { data })); window.heldReferenceMatches = []; });
+        await expect.poll(async () => (await snapshot(p)).bindings.language.findCommandPending).toBeNull();
+        expect((await snapshot(p)).source.revision).toBe(beforeReplacement.source.revision);
+        await replacement.press("Enter");
         await expect.poll(() => p.evaluate(() => window.hostFixture.range(0, 12))).toBe("changed-only");
         await waitForReview(p);
         expect((await snapshot(p)).history.undoDepth).toBe(beforeReplacement.history.undoDepth + 1);

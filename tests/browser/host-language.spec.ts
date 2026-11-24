@@ -31,6 +31,9 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
         const next = await selection(); await query.press("Shift+Enter"); await expect.poll(selection).not.toEqual(next);
         const middle = original.indexOf("cat\r"), embedded = original.indexOf("scatter") + 1, before = await snapshot(page);
         await page.evaluate(from => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: from, head: from + 3 }); }, embedded); await ready(page);
+        await replacement.press("Enter");
+        await expect.poll(selection).toMatchObject({ anchor: middle, head: middle + 3 });
+        expect(await text(page)).toBe(original);
         await replacement.press("Enter"); await expect(status).toHaveText("Replaced 1 match.");
         const changed = original.slice(0, middle) + "dog" + original.slice(middle + 3);
         expect(await text(page)).toBe(changed); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
