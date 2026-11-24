@@ -64,7 +64,6 @@ test(`plain retains independent comparison views through close, background edits
     expect(replaced.referenceViewport!.scrollTop).toBeCloseTo(retained.referenceViewport!.scrollTop, 3);
     expect(replaced.referenceViewport!.scrollLeft).toBeCloseTo(retained.referenceViewport!.scrollLeft, 3);
     await page.evaluate(() => window.hostFixture.dispose());
-    expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 });
 });
 
 

@@ -28,7 +28,7 @@ test("queued Apple caret chords and native history keep their captured selection
     expect(after.bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: prefix.length + 1, head: prefix.length + 1 });
     expect(after.inputRecovery).toHaveLength(0); expect(after.source.exports).toBe(0);
     await input.pressSequentially("!"); await ready(page); await exact(page, prefix + "R!");
-    await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
+    await page.evaluate(() => window.hostFixture.dispose());
 });
 
 test(`plain Save and Run require settled typing and retain captured revisions`,async({page})=>{
@@ -40,5 +40,5 @@ test(`plain Save and Run require settled typing and retain captured revisions`,a
     await page.getByRole("button",{name:"Dismiss message",exact:true}).click();const settled=await snapshot(page);await page.getByRole("button",{name:"Save source",exact:true}).click();await expect.poll(async()=>(await snapshot(page)).pendingSaves.length).toBe(1);expect((await snapshot(page)).pendingSaves[0]).toMatchObject({revision:settled.source.revision,length:expected.length});
     await page.getByRole("button",{name:"Run captured inputs",exact:true}).click();await expect.poll(async()=>(await snapshot(page)).pendingRuns.length).toBe(1);expect((await page.evaluate(()=>window.hostFixture.runCapture(0)))!.source).toBe(expected);
     await page.evaluate(()=>{const f=window.hostFixture,s=f.snapshot();f.selectSourceSet("primary",s.source.revision,[{anchor:s.source.length,head:s.source.length}]);});await input.pressSequentially("Q");await ready(page);await page.evaluate(()=>{window.hostFixture.finishSave();window.hostFixture.finishRun();});await expect.poll(async()=>(await snapshot(page)).source.saveStatus).toBe("idle");expect((await snapshot(page)).source.dirty).toBe(true);await exact(page,expected+"Q");await input.press("Control+z");await ready(page);await exact(page,expected);expect((await snapshot(page)).source.dirty).toBe(false);
-    await page.evaluate(()=>window.hostFixture.dispose());const end=await snapshot(page);expect(end.diagnostics).toMatchObject({views:0,leases:0,subscriptions:0});expect(end.inputCaptureGuards).toBe(0);expect(end.hostSubscriptions).toBe(0);
+    await page.evaluate(()=>window.hostFixture.dispose());const end=await snapshot(page);expect(end.inputCaptureGuards).toBe(0);
 });

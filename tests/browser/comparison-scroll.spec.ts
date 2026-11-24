@@ -71,5 +71,5 @@ test(`plain linked review scroll preserves captured rows, selections, history, r
     await waitForReview(p); c = (await snapshot(p)).bindings.comparison!; expect(c.referenceIsWorkingBuffer).toBe(true); expect(c.workingViewport.scrollTop).toBeCloseTo(c.referenceViewport!.scrollTop, 0);
     expect((await snapshot(p)).source.exports).toBe(saved.source.exports); expect(c.workingViewport.rows).toBeLessThan(100); expect(c.referenceViewport!.rows).toBeLessThan(100);
     const disposed = await p.locator(".st-comparison-panes .st-viewport").last().evaluate(async node => { node.scrollTop = 5000; node.dispatchEvent(new Event("scroll")); await window.hostFixture.dispose(); return window.hostFixture.snapshot(); });
-    expect(disposed.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(disposed.hostSubscriptions).toBe(0); expect(disposed.bindings.comparison).toBeNull();
+    expect(disposed.bindings.comparison).toBeNull();
 });

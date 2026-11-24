@@ -95,9 +95,8 @@ Use the plain host for shared editing, language and review workflows. Use React 
 Strict Mode, render isolation and root-error recovery. Keep separate cases for light- and shadow-DOM
 event paths when a focus or input transition depends on the event target.
 
-`expectUnmountedSourceHost` checks that views detached while the source-provider scope, recovery
-subscriptions and project-review observer survived. Declare extra service subscriptions in the
-caller. After full disposal, expect zero views, leases and subscriptions.
+The host disposal test checks for leaked views, leases and subscriptions. In a save or recovery
+test, check the pending write or draft after the editor remounts.
 
 Use `tests/helpers/lsp-replies.ts` to hold a completed reply by connection and request ID. Interrupt
 the operation, release the reply, then wait for another reply on that stream to confirm delivery. A

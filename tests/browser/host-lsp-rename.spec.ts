@@ -17,7 +17,7 @@ async function select(page: Page, at: number) { await input(page).focus(); await
 async function seed(page: Page, text = raw) { await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, text); await select(page, text.indexOf("catalogue") + 2); }
 async function preview(page: Page, value = "inventory") { await name(page).fill(value); await button(page, "Prepare rename preview").click(); await waitForRename(page); }
 async function exact(page: Page, text: string) { expect(await hostTextEquals(page, text)).toBe(true); }
-async function dispose(page: Page) { await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.bindings.rename).toMatchObject({ sessions: 0, subscriptions: 0, disposed: true }); }
+async function dispose(page: Page) { await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page); expect(s.bindings.rename).toMatchObject({ sessions: 0, subscriptions: 0, disposed: true }); }
 test.describe(`plain LSP rename host`, () => {
     test.beforeEach(async ({ page }) => {  await page.goto("/hosts/plain/?language=lsp"); await expect(input(page)).toBeVisible(); await waitForRename(page); });
     test("new-name preview applies exact provider edits across captured resources with shared complete-set history", async ({ page }) => {

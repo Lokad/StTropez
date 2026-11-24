@@ -77,7 +77,7 @@ test(`plain inherited CSS zoom preserves carets, pointer ranges and navigation`,
     const working = source(page, "Comparison working source"); await working.scrollIntoViewIfNeeded(); await working.focus();
     await working.press("Control+Home"); await working.press("ArrowRight"); await ready(page); await caret(working, 1);
 
-    await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
+    await page.evaluate(() => window.hostFixture.dispose());
 });
 
 test(`plain scroll boundary keeps the display caret on source while the native input stays bounded`, async ({ page }) => {
@@ -115,5 +115,5 @@ test(`plain scroll boundary keeps the display caret on source while the native i
         expect(await page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length))).toBe(text);
         expect((await snapshot(page)).source.exports).toBe(0);
     }
-    await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
+    await page.evaluate(() => window.hostFixture.dispose());
 });

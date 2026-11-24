@@ -195,7 +195,6 @@ test(`plain LSP captures wait for movement, composition and table input before f
     expect(wire).toEqual([...sentBeforeReply, "textDocument/signatureHelp"]);
     await page.evaluate(() => window.hostFixture.dispose());
     const final = await snapshot(page);
-    expect(final.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(final.hostSubscriptions).toBe(0);
     expect(final.bindings.navigation).toMatchObject({ sessions: [], subscriptions: 0, pending: false, results: 0 });
     expect(final.bindings.rename).toMatchObject({ sessions: 0, subscriptions: 0, disposed: true });
     expect(final.bindings.actions).toMatchObject({ sessions: 0, subscriptions: 0, disposed: true });

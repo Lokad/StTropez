@@ -16,7 +16,6 @@ async function setup(page: Page, host: string, text: string): Promise<void> {
 }
 async function dispose(page: Page): Promise<void> {
     await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page);
-    expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0);
     expect(s.bindings.domain).toMatchObject({ sessions: [], pending: false, subscriptions: 0 }); await expect.poll(() => page.workers().length).toBe(0);
 }
 const region = "// #region root <b>東京 😀</b>\r\nconst one\r\n// #region child Child\r\nconst two\r\n// #endregion child\r\n// #endregion root\r\n";

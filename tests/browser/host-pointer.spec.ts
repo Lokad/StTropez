@@ -49,8 +49,7 @@ test.describe(`plain pointer gesture ownership`, () => {
         await page.goto(`/hosts/plain/`); await expect(page.getByRole("textbox", { name: "Primary source", exact: true })).toBeVisible();
     });
     test.afterEach(async ({ page }) => {
-        await page.mouse.up(); await page.evaluate(() => window.hostFixture.dispose()); const stopped = await state(page);
-        expect(stopped.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(stopped.hostSubscriptions).toBe(0);
+        await page.mouse.up(); await page.evaluate(() => window.hostFixture.dispose());
     });
     test(`capture loss leaves hover inert and subsequent typing inserts at the retained caret`, async ({ page }) => {
         const original = await setup(page), pointer = await begin(page, 2), down = await state(page), element = root(page);

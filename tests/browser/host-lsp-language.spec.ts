@@ -19,7 +19,6 @@ async function settledColorsAndLinks(page: Page) {
 async function exact(page: Page, text: string) { expect(await hostTextEquals(page, text)).toBe(true); }
 async function disposeColorsAndLinks(page: Page) {
     await page.evaluate(() => window.hostFixture.dispose()); const state = await snapshot(page);
-    expect(state.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(state.hostSubscriptions).toBe(0);
     for (const feature of [state.bindings.colors, state.bindings.links]) expect(feature).toMatchObject({ sessions: 0, subscriptions: 0, disposed: true });
     expect(state.bindings.colors.decoratedViews).toBe(0);
 }

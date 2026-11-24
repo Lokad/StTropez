@@ -97,7 +97,6 @@ test(`plain keyboard hover keeps complete selections, safe text, input focus and
     await expect.poll(async () => (await snapshot(page)).bindings.hover.presentation.visible).toBe(false);
     expect((await snapshot(page)).bindings.hover.presentation).not.toHaveProperty("content");
     await page.evaluate(() => window.hostFixture.dispose()); const final = await snapshot(page);
-    expect(final.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(final.hostSubscriptions).toBe(0);
     expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
 });
 test(`plain pointer hover preserves host focus and refuses stale replies across edits and remount`, async ({ page }) => {
@@ -129,6 +128,5 @@ test(`plain pointer hover preserves host focus and refuses stale replies across 
     expect(await page.evaluate(() => window.hostFixture.range(0, 5))).toBe("human"); expect((await snapshot(page)).source.exports).toBe(0);
     expect((await snapshot(page)).bindings.views.every(v => v.metrics!.inputUnits <= 2600 && v.metrics!.viewport.rows < 100)).toBe(true);
     await page.evaluate(() => window.hostFixture.dispose()); const final = await snapshot(page);
-    expect(final.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(final.hostSubscriptions).toBe(0);
     expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
 });

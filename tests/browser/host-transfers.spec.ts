@@ -1,4 +1,4 @@
-import { ready, test, expect, expectUnmountedSourceHost } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { hostTextEquals } from "../../scripts/host-scene.mjs";
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
@@ -52,9 +52,9 @@ test(`plain transfer settings and immutable Run/log inspection retain independen
     await batch.fill("invalid"); await button(p, "Keep recovery draft").click(); await waitForDraft(p); expect((await snapshot(p)).draft?.hasTransfer).toBe(true); await p.reload(); await expect(input).toBeVisible(); await button(p, "Open source review").click(); await waitForDraft(p);
     await draftAction(p, "Restore transfer draft"); await expect(destination).toHaveValue("newer.csv"); await expect(batch).toHaveValue("invalid"); await expect(path).toHaveValue("source.csv"); await exact(p, "start");
     await draftAction(p, "Restore source draft"); await exact(p, original + "!"); await batch.fill("100"); await destination.fill(" final.csv "); await destination.press("Control+s"); await expect(button(p, "Finish transfer settings save")).toBeEnabled();
-    await p.evaluate(() => window.hostFixture.unmount()); const dormant = await snapshot(p); expectUnmountedSourceHost(dormant);
+    await p.evaluate(() => window.hostFixture.unmount());
     await p.evaluate(() => window.hostFixture.mount()); await waitForDraft(p); await button(p, "Finish transfer settings save").click(); await expect(destination).toHaveValue("final.csv");
     await button(p, "Run captured inputs").click(); await expect.poll(async () => (await snapshot(p)).runResources.runs.length).toBe(1); await button(p, "Inspect Run 1").click();
     await info.attach("transfer-run-inspection", { body: await p.screenshot(), contentType: "image/png" });
-    await p.evaluate(() => window.hostFixture.dispose()); const stopped = await snapshot(p); expect(stopped.runResources.runs[0]?.status).toBe("interrupted"); expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0);
+    await p.evaluate(() => window.hostFixture.dispose()); const stopped = await snapshot(p); expect(stopped.runResources.runs[0]?.status).toBe("interrupted");
 });

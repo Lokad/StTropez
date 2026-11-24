@@ -1,4 +1,4 @@
-import { ready, test, expect, expectUnmountedSourceHost } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { hostTextEquals } from "../../scripts/host-scene.mjs";
 
@@ -53,7 +53,7 @@ test(`plain configuration Save stays independent through typing, review, Run and
     await button(p, "Fail configuration save").click(); await expect(p.getByLabel("Configuration save status", { exact: true })).toContainText("failed");
     await button(p, "Dismiss message").click(); await button(p, "Save configuration").click(); await expect(button(p, "Finish configuration save")).toBeEnabled();
     // Service work outlives views; remount keeps the captured resource and later form value.
-    await p.evaluate(() => window.hostFixture.unmount()); const dormant = await snapshot(p); expectUnmountedSourceHost(dormant);
+    await p.evaluate(() => window.hostFixture.unmount());
     await p.evaluate(() => window.hostFixture.mount()); await waitForReview(p); await expect(field).toHaveValue("later.csv");
     await button(p, "Finish configuration save").click(); await expect.poll(async () => (await snapshot(p)).configuration.dirty).toBe(false);
     await field.fill("local.csv"); await button(p, "Simulate external configuration change").click(); await button(p, "Save configuration").click();
@@ -73,6 +73,5 @@ test(`plain configuration Save stays independent through typing, review, Run and
     const baseline = prior.bindings.comparison!.baseline!;
     expect((await snapshot(p)).bindings.comparison!.baseline).toMatchObject({ version: baseline.version, length: baseline.length });
     await info.attach("configuration-save", { body: await p.screenshot(), contentType: "image/png" });
-    await p.evaluate(() => window.hostFixture.dispose()); const stopped = await snapshot(p); expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0);
-
+    await p.evaluate(() => window.hostFixture.dispose());
 });

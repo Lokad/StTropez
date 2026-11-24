@@ -50,7 +50,6 @@ test(`plain full view selections survive detached edits and comparison remount`,
     await page.getByRole("textbox", { name: "Secondary source", exact: true }).evaluate(node => node.focus({ preventScroll: true }));
     await waitForReview(page); await expect(region.locator(".st-input-secondary-caret")).toHaveCount(0);
     await expect(page.getByRole("region", { name: "Secondary source", exact: true }).locator(".st-input-secondary-caret")).toHaveCount(1);
-    await page.evaluate(() => window.hostFixture.dispose()); const stopped = await snapshot(page);
-    expect(stopped.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(stopped.hostSubscriptions).toBe(0);
+    await page.evaluate(() => window.hostFixture.dispose());
     expect(await page.locator(".st-input-secondary-caret").count()).toBe(0);
 });

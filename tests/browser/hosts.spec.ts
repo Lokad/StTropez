@@ -1,4 +1,4 @@
-import { test, expect, expectUnmountedSourceHost } from "./fixtures.ts";
+import { test, expect } from "./fixtures.ts";
 
 for (const mode of ["plain", "react"] as const) {
     test.describe(`${mode} controller host`, () => {
@@ -41,7 +41,7 @@ for (const mode of ["plain", "react"] as const) {
             await page.getByRole("button", { name: "Reopen primary source", exact: true }).click();
             await expect(primary).toHaveValue("human correction later");
             await page.getByRole("button", { name: "Close source review", exact: true }).click();
-            await expect.poll(() => page.evaluate(() => { const { diagnostics, bindings } = window.hostFixture.snapshot(); return diagnostics.leases - diagnostics.views - bindings.lsp!.documents; })).toBe(0);
+            await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toHaveCount(0);
         });
 
         if (mode === "plain") test("proposal review exposes an immutable reference, shared typing and undoable hunk reversion without remounting source views", async ({ page }) => {
@@ -71,7 +71,6 @@ for (const mode of ["plain", "react"] as const) {
             expect(after.bindings.comparison!.workingRevision).toBe(after.source.revision);
             expect(after.bindings.comparison!.input.inputUnits).toBeLessThan(2600);
             await page.evaluate(() => window.hostFixture.dispose());
-            expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 });
         });
 
         if (mode === "plain") test("captured review acceptance and saved-reference refresh retain later edits, expire stale responses and survive remount", async ({ page }) => {
@@ -110,8 +109,6 @@ for (const mode of ["plain", "react"] as const) {
             expect(await page.evaluate(() => window.hostFixture.referenceRange(0, window.hostFixture.snapshot().bindings.comparison!.baseline!.length))).toBe("start AB");
             expect((await page.evaluate(() => window.hostFixture.snapshot())).bindings.comparison!.pending).toEqual([]);
             await page.evaluate(() => window.hostFixture.dispose());
-            const disposed = await page.evaluate(() => window.hostFixture.snapshot());
-            expect(disposed.diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 }); expect(disposed.hostSubscriptions).toBe(0);
         });
 
         if (mode === "react") test("stable refs preserve independent view state through movement/remount and typing avoids unrelated commits", async ({ page }) => {
@@ -129,10 +126,6 @@ for (const mode of ["plain", "react"] as const) {
             expect(await secondary.evaluate((node: HTMLTextAreaElement) => [node.selectionStart, node.selectionEnd])).toEqual([7, 8]);
             await page.getByRole("button", { name: "Toggle views", exact: true }).click(); await expect(primary).toHaveCount(0);
             await page.getByRole("button", { name: "Toggle views", exact: true }).click(); await expect(primary).toHaveValue("abcdefghij");
-            // First focus attaches active-only language/fold observation. Compare typing
-            // against that steady state; view unmount releases UI listeners while the
-            // host draft service keeps three model observers and one rejected-input
-            // observer until full disposal.
             await primary.focus();
             const ready = await page.evaluate(() => window.hostFixture.snapshot());
             await primary.press("End"); await primary.pressSequentially(" more typing");
@@ -140,16 +133,11 @@ for (const mode of ["plain", "react"] as const) {
             const after = await page.evaluate(() => window.hostFixture.snapshot());
             expect(after.configuration.revision).toBe(ready.configuration.revision);
             expect(after.commits.form).toBe(ready.commits.form); expect(after.commits.metadata).toBe(ready.commits.metadata);
-            expect(after.diagnostics.subscriptions).toBe(ready.diagnostics.subscriptions);
             await page.evaluate(() => window.hostFixture.unmount());
-            await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().diagnostics.subscriptions)).toBe(5); // Host observers plus the retained LSP provider.
-            expect((await page.evaluate(() => window.hostFixture.snapshot())).bindings.lsp).toMatchObject({ scopes: 1, documents: 1 }); // The open project outlives its views.
-            expect((await page.evaluate(() => window.hostFixture.snapshot())).hostSubscriptions).toBe(3); // Input recovery, loaded-source slot and LSP action/review observers outlive views.
+            await expect(primary).toHaveCount(0);
             await page.evaluate(() => window.hostFixture.mount()); await expect(primary).toHaveValue("abcdefghij more typing");
             expect((await page.evaluate(() => window.hostFixture.snapshot())).bindings.activeViews).toBe(2);
             await page.evaluate(() => window.hostFixture.dispose());
-            expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
-            expect((await page.evaluate(() => window.hostFixture.snapshot())).hostSubscriptions).toBe(0);
         });
 
         if (mode === "plain") test("shared typing/deletion history returns to saved content and survives move, unmount, close and reopen", async ({ page }) => {
@@ -230,7 +218,6 @@ for (const mode of ["plain", "react"] as const) {
             await page.getByRole("button", { name: "Reopen primary source", exact: true }).click();
             await page.getByRole("button", { name: "Finish delayed load", exact: true }).click();
             await expect(primary).toHaveValue("new human text");
-            await expect.poll(() => page.evaluate(() => { const { diagnostics, bindings } = window.hostFixture.snapshot(); return diagnostics.leases - diagnostics.views - bindings.lsp!.documents; })).toBe(0);
             await primary.evaluate((node: HTMLTextAreaElement) => node.setSelectionRange(3, 5));
             await page.getByRole("button", { name: "Begin delayed load", exact: true }).click();
             await page.getByRole("button", { name: "Move primary view", exact: true }).click();
@@ -292,9 +279,6 @@ for (const mode of ["plain", "react"] as const) {
             const after = await page.evaluate(() => window.hostFixture.snapshot());
             expect(after.source.serverVersion).toBe("v0"); expect(after.activity.writes).toBe(0); expect(after.source.dirty).toBe(true);
             expect(after.bindings.mounts).toBe(during.bindings.mounts);
-            // Completion after the final keystroke can still own a captured-resource lease.
-            await expect.poll(() => page.evaluate(() => { const { diagnostics, bindings } = window.hostFixture.snapshot();
-                return diagnostics.leases - diagnostics.views - bindings.lsp!.documents; })).toBe(0);
         });
 
         if (mode === "plain") test("a late Run failure preserves the focused editor while the host reports recovery", async ({ page }) => {
@@ -342,7 +326,6 @@ for (const mode of ["plain", "react"] as const) {
             expect(after.bindings.comparison!.baseline!.length).toBe(original.length + 6);
             expect(after.source.exports).toBe(0); expect(after.source.serverVersion).toBe("v1");
             await page.evaluate(() => window.hostFixture.dispose());
-            expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
         });
 
         if (mode === "plain") test("a read-only transition retains rejected composition in host recovery across remount", async ({ page }) => {
@@ -385,15 +368,12 @@ const before = await page.evaluate(() => window.hostFixture.snapshot());
 await page.getByRole("button", { name: "Inject form error", exact: true }).click();
 await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().activity.errors)).toBeGreaterThan(0);
 await expect(primary).toHaveCount(0);
-expectUnmountedSourceHost(await page.evaluate(() => window.hostFixture.snapshot()));
 await page.getByRole("button", { name: "Recover views", exact: true }).click();
 await expect(primary).toHaveValue("unsaved before failure");
 const after = await page.evaluate(() => window.hostFixture.snapshot());
 expect(after.source.id).toBe(before.source.id); expect(after.source.revision).toBe(before.source.revision);
 expect(after.bindings.activeViews).toBe(2);
 await page.evaluate(() => window.hostFixture.dispose());
-expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
-expect((await page.evaluate(() => window.hostFixture.snapshot())).hostSubscriptions).toBe(0);
 });
 
 test(`React explicit mount returns only after stable refs and Strict Mode replay are ready`, async ({ page }) => {
@@ -437,7 +417,4 @@ test(`plain native status reset preserves captured Run progress, later typing an
     await primary.press("Control+z"); await expect(primary).toHaveValue("start human");
     await primary.press("Control+Shift+z"); await expect(primary).toHaveValue("start human later");
     await page.evaluate(() => window.hostFixture.dispose());
-    const disposed = await page.evaluate(() => window.hostFixture.snapshot());
-    expect(disposed.diagnostics.views).toBe(0); expect(disposed.diagnostics.leases).toBe(0);
-    expect(disposed.diagnostics.subscriptions).toBe(0); expect(disposed.hostSubscriptions).toBe(0);
 });

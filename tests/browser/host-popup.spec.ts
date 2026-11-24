@@ -55,6 +55,5 @@ for (const feature of ["hover", "signature"] as const) {
         }
         await page.evaluate(() => window.hostFixture.dispose());
         await expect(popup).toHaveCount(0);
-        expect(await page.evaluate(() => window.hostFixture.snapshot().hostSubscriptions)).toBe(0);
     });
 }

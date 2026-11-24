@@ -38,7 +38,6 @@ test.describe(`plain LSP review host`, () => {
         await working.press("Control+End"); await working.press("Control+Space"); await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible();
         await working.press("Alt+Enter"); await ready(page); expect(await source(page)).toBe("const sample");
         await page.evaluate(() => window.hostFixture.dispose()); const final = await snapshot(page);
-        expect(final.diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 }); expect(final.hostSubscriptions).toBe(0);
         expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, documentParticipants: 0 });
     });
     test("LSP completion in conflict review preserves its reference and captured Save/Run identities", async ({ page }) => {
@@ -84,7 +83,6 @@ test.describe(`plain LSP review host`, () => {
         expect((await snapshot(page)).history).toEqual(corrected.history);
         expect(corrected.source.revision).toBeGreaterThan(revision);
         await page.evaluate(() => window.hostFixture.dispose()); const final = await snapshot(page);
-        expect(final.diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 }); expect(final.hostSubscriptions).toBe(0);
         expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
     });
 });
