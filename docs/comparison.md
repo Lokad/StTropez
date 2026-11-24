@@ -32,8 +32,9 @@ export function showChanges(
 }
 ```
 
-The toolbar lets you navigate changes, revert one, link scrolling and align rows. The
-`ariaLabel` option defaults to `"Text comparison"`. Pass your working `DocumentView` through `view` to keep
+The toolbar lets you navigate changes, revert one, link scrolling and align rows. It shows the
+current change and total using the browser’s number format. The `ariaLabel` option defaults to
+`"Text comparison"`. Pass your working `DocumentView` through `view` to keep
 its selection and folds when you close the comparison. The mount disposes only views it creates.
 
 For your own toolbar, set `controls: false`. This gives you just the two panes. Put your controls

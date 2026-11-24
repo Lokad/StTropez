@@ -50,9 +50,11 @@ export function mountComparisonControls(
         rendered = current;
         const { comparison: state, selectedHunk: selected, canNavigate, canRevert, scrollLinked, alignment: layout, disposed } = current;
         const count = state.hunks.length, hunk = selected === null ? undefined : state.hunks[selected];
+        const total = count.toLocaleString();
+        const position = selected === null ? undefined : `${(selected + 1).toLocaleString()} of ${total}`;
         link.checked = scrollLinked; align.checked = layout.enabled; link.disabled = align.disabled = disposed || !state.baseline || !state.working;
         previous.disabled = next.disabled = !canNavigate; revert.disabled = !canRevert;
-        revert.title = selected === null ? "Place the caret in a change" : `Restore change ${selected + 1} of ${count} from the baseline`;
+        revert.title = position ? `Restore change ${position} from the baseline` : "Place the caret in a change";
         setText(referenceHeading, state.baseline ? `Baseline · ${state.baseline.version}` : "Baseline unavailable");
         setText(workingHeading, state.working ? `Working · revision ${state.working.revision}` : "Working unavailable");
         // A new reference or a break in the edit history cannot reuse the previous preview.
@@ -70,7 +72,8 @@ export function mountComparisonControls(
         hasCompletedResult = state.status === "ready";
         const described = hunk ?? (count === 1 ? state.hunks[0] : undefined);
         const detail = described?.lineEndingOnly ? " · line endings only" : described?.whitespaceOnly ? " · whitespace only" : "";
-        const result = state.status === "ready" ? count ? (hunk ? `Change ${selected! + 1} of ${count}` : count === 1 ? "1 change" : `${count} changes`) + detail : "No changes" : state.failure ?? `Comparison ${state.status}`;
+        const summary = position ? `Change ${position}` : count ? `${total} ${count === 1 ? "change" : "changes"}` : "No changes";
+        const result = state.status === "ready" ? summary + detail : state.failure ?? `Comparison ${state.status}`;
         setText(message, result + (layout.status === "failed" ? " · row alignment unavailable" : ""));
         preview.hidden = state.status !== "ready" || count === 0;
         previewHint.hidden = !!hunk; referencePreview.hidden = workingPreview.hidden = !hunk;

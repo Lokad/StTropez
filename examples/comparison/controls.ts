@@ -10,11 +10,12 @@ export function mountReviewControls(host: HTMLElement, comparison: TextCompariso
     controls.append(status); host.append(controls);
     function render(): void {
         const state = comparison.getSnapshot(), selected = state.selectedHunk;
+        const position = selected === null ? undefined : `${(selected + 1).toLocaleString()} of ${state.comparison.hunks.length.toLocaleString()}`;
         previous.disabled = next.disabled = !state.canNavigate; revert.disabled = !state.canRevert;
-        revert.title = selected === null ? "Place the caret in a change" : `Restore change ${selected + 1} of ${state.comparison.hunks.length}`;
+        revert.title = position ? `Restore change ${position}` : "Place the caret in a change";
         alignment.disabled = linking.disabled = state.disposed || !state.comparison.baseline || !state.comparison.working;
         alignment.setAttribute("aria-pressed", String(state.alignment.enabled)); linking.setAttribute("aria-pressed", String(state.scrollLinked));
-        status.textContent = `${state.comparison.status}: ${selected === null ? "no change selected" : `change ${selected + 1} of ${state.comparison.hunks.length}`} · alignment ${state.alignment.status}`;
+        status.textContent = `${state.comparison.status}: ${position ? `change ${position}` : "no change selected"} · alignment ${state.alignment.status}`;
     }
     previous.addEventListener("click", () => comparison.navigateHunk(-1), { signal: listeners.signal });
     next.addEventListener("click", () => comparison.navigateHunk(1), { signal: listeners.signal });

@@ -456,11 +456,16 @@ for (const kind of ["long", "unique", "repeated", "unbalanced"] as const)
             const edits = () => page.evaluate(() => window.comparisonFixture.review.controller.getSnapshot().progress!.lineEdits);
             if (kind === "unbalanced") expect(await edits()).toBe(2500);
             else expect(state.hunks.length).toBe(1001);
+            if (kind === "unique") {
+                await expect(page.locator(".st-comparison-controls output")).toHaveText("Change 1,001 of 1,001");
+                await expect(page.getByRole("button", { name: "Use baseline" })).toHaveAttribute("title", "Restore change 1,001 of 1,001 from the baseline");
+            }
             await page.keyboard.press("Control+z"); await ready(page);
             const undone = await page.evaluate(() => window.comparisonFixture.snapshot());
             expect(undone.working.length).toBe(length);
             if (kind === "unbalanced") expect(await edits()).toBe(2500);
             else expect(undone.hunks.length).toBe(1000);
+            if (kind === "unique") await expect(page.locator(".st-comparison-controls output")).toHaveText("1,000 changes");
             await page.keyboard.press("Control+Shift+z"); await ready(page);
             if (kind === "unbalanced") expect(await edits()).toBe(2500);
             else expect((await page.evaluate(() => window.comparisonFixture.snapshot())).hunks.length).toBe(1001);
