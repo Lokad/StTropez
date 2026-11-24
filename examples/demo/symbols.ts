@@ -1,13 +1,13 @@
 import type { DocumentId } from "../../src/index.ts";
 import { captureViewRequest, createNavigationController, mountAnchoredOverlay } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, NavigationChoice, NavigationOrigin, NavigationPage, TextEditor } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, NavigationChoice, NavigationOrigin, TextEditor } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import { HostRenameTools } from "../hosts/rename.ts";
 import { pageActions, renderPanelActions, renderPanelButton } from "../hosts/panel-actions.ts";
 import type { DemoFile, DemoProject } from "./project.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 import { bindPopupCommands } from "./language-commands.ts";
-import { locationExcerpt } from "../shared/location-excerpt.ts";
+import { locationExcerpt, locationPage, type NavigationPage } from "../shared/location-excerpt.ts";
 import { prepareRenameTarget } from "./rename-target.ts";
 
 export type DemoSymbolTarget = Readonly<{ documentId: DocumentId; revision: number; from: number; to: number }>;
@@ -111,7 +111,7 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
             }
             const result = outcome.value;
             if (kind === "definition" && result.count === 1) { choose(captured, result.locationAt(0)!); return; }
-            captured.page = result.pageFor();
+            captured.page = locationPage(result);
             showNavigation(captured, result.count ? `Choose a ${kind === "definition" ? "definition" : "reference"}.` : `No ${kind} in this sample.`);
         }).catch(reportError);
     }
@@ -229,12 +229,12 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
         const result = navigation.getSnapshot().result;
         if (!query?.page || !result) return false;
         const focused = popup.querySelector<HTMLElement>("[data-location]:focus")?.dataset.location;
-        const current = focused === undefined ? query.page : result.pageFor(Number(focused));
+        const current = focused === undefined ? query.page : locationPage(result, Number(focused));
         if (!current) return false;
         let moved: NavigationPage | undefined;
         if (!byPage) moved = current.moveSelection(direction);
-        else if (direction < 0) moved = current.previousPage?.() ?? result.pageFor(0);
-        else moved = current.nextPage?.() ?? result.pageFor(result.count - 1);
+        else if (direction < 0) moved = current.previousPage?.() ?? locationPage(result, 0);
+        else moved = current.nextPage?.() ?? locationPage(result, result.count - 1);
         if (!moved) return false;
         editor.focus();
         const first = query.page.first;

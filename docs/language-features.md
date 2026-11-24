@@ -439,16 +439,9 @@ A host that opens tabs or shows a chooser handles
 callback. This reuses the hover reply. F12 and reference commands can call the same controller
 at the caret. A completed request returns `done` with the published result, even when it has zero
 locations. A cancelled or superseded request returns `stale`. An unavailable view returns
-`refused` with reason `unavailable-view`. For a single destination use `result.locationAt(index)`. For a list,
-`result.pageFor(index)` selects that location and returns its page of up to 64 choices.
-The index defaults to zero. An empty result or an invalid index yields `undefined`.
-
-Render `page.locations` and highlight `page.selected`. Each choice has a zero-based result index.
-`moveSelection(-1 | 1)` moves one row and wraps at either end. `previousPage` and `nextPage`
-are actions, or `null` at the boundary. They keep the selected row within the page. A short last
-page selects the nearest available row, and paging back restores the preferred row.
-Each move returns a new page. Keep a choice in its row's click handler so later paging preserves
-that button's destination. Its `open(present)` calls the host with the captured
+`refused` with reason `unavailable-view`. Use `result.count` to size your list and
+`result.locationAt(index)` to read a visible row. An invalid zero-based index yields `undefined`.
+Keep each choice in its row's click handler. Its `open(present)` calls the host with the captured
 document and range while the choice is current. It returns false after cancellation, replacement,
 a change to the captured documents or a provider restart. The host opens the destination.
 A result list can open several choices as the caret moves. Set

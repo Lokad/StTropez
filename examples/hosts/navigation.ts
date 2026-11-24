@@ -5,10 +5,10 @@ import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
 import { createPanelKeyBinding, focusResult, registerResultArrows } from "./panel-keys.ts";
 import { createWorkingSource } from "./working-source.ts";
-import { locationExcerpt } from "../shared/location-excerpt.ts";
+import { locationExcerpt, locationPage, type NavigationPage } from "../shared/location-excerpt.ts";
 import type { DocumentId, TabId, TabTarget } from "../../src/index.ts";
 import { createNavigationController } from "../../src/browser/index.ts";
-import type { NavigationChoice, NavigationController, NavigationDestination, NavigationOrigin, NavigationPage, NavigationPointerLink, NavigationResult, TextEditor } from "../../src/browser/index.ts";
+import type { NavigationChoice, NavigationController, NavigationDestination, NavigationOrigin, NavigationPointerLink, NavigationResult, TextEditor } from "../../src/browser/index.ts";
 import type { LspNavigationRequest, LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import { navigationSymbol, validateNavigationDocuments } from "../../fixtures/language/navigation.ts";
 import type { NavigationFault } from "../../fixtures/language/navigation.ts";
@@ -74,7 +74,7 @@ export class HostNavigationTools {
         editor.element.ownerDocument.defaultView!.clearTimeout(job.timer);
         this.queries.completed++; this.metrics.applied++;
         const label = job.kind === "definition" ? "definition" : "reference";
-        const locations = this.showPage(job, result.pageFor(), { status: result.count ? "ready" : "empty",
+        const locations = this.showPage(job, locationPage(result), { status: result.count ? "ready" : "empty",
             message: `${result.count} ${label} locations for ${job.symbol}.` });
         if (!job.mayFocus || !locations.length) return;
         const mayFocus = () => this.job === job && this.cell.get().locations === locations && job.mayFocus?.() && editor.getSnapshot().focused;
