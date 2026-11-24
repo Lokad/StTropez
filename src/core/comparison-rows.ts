@@ -29,6 +29,11 @@ class ComparisonRowIndex {
         Object.freeze(this);
     }
     matches(buffer: TextBuffer, folds: FoldIndex): boolean { return this.#buffer === buffer && this.#folds === folds; }
+    /** Reuse line runs while a new diff is pending. Gap offsets and fold headers use the new document. */
+    rebind(buffer: TextBuffer, folds: FoldIndex): ComparisonRowIndex | undefined {
+        if (buffer.lineCount !== this.lineCount || !this.#folds.sameProjection(folds)) return;
+        return new ComparisonRowIndex(buffer, folds, this.#runs, this.#real, this.#side, this.visibleLineCount);
+    }
     hiddenBy(line: number): FoldRegion | undefined { return this.#folds.hiddenBy(line); }
     headerAt(line: number): FoldRegion | undefined { return this.#folds.headerAt(line); }
     #run(row: number): Run {

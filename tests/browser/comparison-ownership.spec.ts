@@ -175,6 +175,55 @@ test("browser comparison work yields with large requested budgets and cancels it
 });
 declare global { interface Window { comparisonPresentation: Presentation } }
 
+test("typing below an aligned gap keeps the scrolled row in place on every paint", async ({ page }) => {
+    const positions = await page.evaluate(async () => {
+        const path = "/comparison-ownership/";
+        const { Workspace, TextBuffer } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { mountTextComparison } = await import(path + "comparison.js") as typeof import("../../src/browser/comparison.ts");
+        const rows = Array.from({ length: 120 }, (_, i) => "row " + i);
+        const workspace = new Workspace(), source = workspace.createTextResource(
+            { scope: "test", resource: "aligned", variant: "working" }, "Aligned", { value: rows.slice(12).join("\n") });
+        const host = document.createElement("section");
+        host.style.cssText = "height:300px;width:800px;position:fixed;inset:0";
+        document.body.append(host);
+        const comparison = mountTextComparison(host, workspace, source.documentId,
+            { buffer: TextBuffer.from(rows.join("\n")), version: "saved" }, { rowsAligned: true, controls: false });
+        const editor = comparison.panes.working, viewport = editor.viewport, line = 40;
+        const settle = async () => {
+            for (let frame = 0; frame < 120; frame++) {
+                await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+                if (comparison.getSnapshot().alignment.status === "ready" && !viewport.activity().pending) return;
+            }
+            throw new Error("Alignment did not settle");
+        };
+        try {
+            await settle();
+            editor.reveal({ line, column: 1 }, { select: true, focus: true, align: "center" });
+            await settle();
+            const position = () => [
+                viewport.element.querySelector(`.st-viewport-row[data-line="${line}"]`)?.getBoundingClientRect().top,
+                viewport.element.scrollTop
+            ];
+            const before = position(), frames: (typeof before)[] = [];
+            const stop = viewport.onRender(() => frames.push(position()));
+            document.execCommand("insertText", false, "x");
+            viewport.flush();
+            await settle();
+            stop();
+            return { before, frames, text: workspace.document(source.documentId).buffer.line(line).text };
+        } finally {
+            comparison.dispose();
+            workspace.releaseResource(source.id, true);
+            host.remove();
+        }
+    });
+    expect(positions.text).toContain("x");
+    expect(positions.before[0]).toEqual(expect.any(Number));
+    expect(positions.before[1]).toBeGreaterThan(0);
+    expect(positions.frames.length).toBeGreaterThan(0);
+    for (const frame of positions.frames) expect(frame).toEqual(positions.before);
+});
+
 test("review highlights survive every typing paint while exact comparison work is held", async ({ page }) => {
     await page.evaluate(async () => {
         const path = "/comparison-ownership/";

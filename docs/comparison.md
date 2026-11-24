@@ -280,7 +280,8 @@ Click it to select an adjacent source boundary. Arrows skip it and Page commands
 Alignment charges one work unit per collapsed-fold boundary, comparison hunk or processed
 span. Unchanged and padded spans stay compact regardless of their row count; expanded folds
 and hidden nested folds require no alignment traversal. Progress exposes cumulative work.
-Both panes use the completed grid; partial row indexes are not installed.
+Both panes use the completed grid. While typing leaves the visible line structure intact,
+they keep that grid until the next diff supplies its replacement.
 
 Both features wait for current comparison/view captures and settled input/navigation. Alignment
 also waits for pointer gestures. Edits, baseline/fold changes, disable and disposal cancel stale

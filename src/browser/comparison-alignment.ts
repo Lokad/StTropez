@@ -20,7 +20,8 @@ export function createComparisonAlignment(win: Window, panes: ComparisonPanes,
     const stableInput = () => { const s = working.activity(); return !s.composing && !s.pendingCommand && !s.pendingInput && !s.pendingDragScroll && !pointers.size && !referenceBusy(); };
     const cancel = () => { runner.cancel(); scheduled = false; cursor?.dispose(); cursor = undefined; };
     const schedule = () => { if (!disposed && enabled && !scheduled) { runner.schedule(step); scheduled = true; } };
-    const clear = () => { workingMount.setComparisonRows(undefined); reference()?.setComparisonRows(undefined); };
+    let installed: Capture | undefined;
+    const clear = () => { installed = undefined; workingMount.setComparisonRows(undefined); reference()?.setComparisonRows(undefined); };
     const current = (c: Capture) => getComparison() === c.state && reference() === c.reference && working.view.folding.getSnapshot() === c.b && c.reference.editor.view.folding.getSnapshot() === c.a;
     const pitch = (c: Capture) => Math.max(working.viewport.getSnapshot().naturalLineHeight, c.reference.editor.viewport.getSnapshot().naturalLineHeight);
     function listen(): void {
@@ -42,13 +43,17 @@ export function createComparisonAlignment(win: Window, panes: ComparisonPanes,
     function update(): void {
         if (disposed || !enabled) return;
         const next = reference(), state = getComparison();
+        if (installed && (state.baseline !== installed.state.baseline || next !== installed.reference
+            || !installed.a.index.sameProjection(next.editor.view.folding.getSnapshot().index)
+            || !installed.b.index.sameProjection(working.view.folding.getSnapshot().index))) clear();
         if (state.status !== "ready" || !state.baseline || !state.working || !next) {
-            cancel(); clear(); capture = undefined; result = undefined; installedPitch = 0;
+            cancel(); if (state.status !== "running") clear();
+            capture = undefined; result = undefined; installedPitch = 0;
             const nextStatus = state.status === "running" ? "building" : "idle";
             if (status !== nextStatus) { status = nextStatus; changed(); } return;
         }
         if (!capture || !current(capture)) {
-            cancel(); clear(); result = undefined; installedPitch = 0; work = 0; failure = undefined;
+            cancel(); result = undefined; installedPitch = 0; work = 0; failure = undefined;
             capture = { state, reference: next, a: next.editor.view.folding.getSnapshot(), b: working.view.folding.getSnapshot() };
             cursor = new ComparisonRowsCursor(state.baseline.buffer, state.working.buffer, state.hunks, capture.a.index, capture.b.index);
             status = "building"; schedule(); changed();
@@ -62,7 +67,7 @@ export function createComparisonAlignment(win: Window, panes: ComparisonPanes,
         const baseline = c.reference.setComparisonRows({ documentId: c.reference.editor.view.documentId, revision: a.revision, foldGeneration: c.a.generation, id, lineHeight, index: result.baseline });
         const source = workingMount.setComparisonRows({ documentId: working.view.documentId, revision: c.state.working.revision, foldGeneration: c.b.generation, id, lineHeight, index: result.working });
         if (!baseline || !source) { clear(); capture = undefined; result = undefined; schedule(); return; }
-        installedPitch = lineHeight; status = "ready"; changed();
+        installed = c; installedPitch = lineHeight; status = "ready"; changed();
     }
     function step(): void {
         scheduled = false; if (disposed || !enabled) return;

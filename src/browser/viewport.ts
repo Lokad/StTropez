@@ -627,7 +627,11 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             publishGeometry(emptyViewport); return;
         }
         const folds = view.folding.getSnapshot();
-        if (comparisonRows && (comparisonRows.revision !== document.revision || comparisonRows.foldGeneration !== folds.generation || !comparisonRows.index.matches(document.buffer, folds.index))) { comparisonRows = undefined; rowGeneration++; }
+        if (comparisonRows && !comparisonRows.index.matches(document.buffer, folds.index)) {
+            const index = comparisonRows.index.rebind(document.buffer, folds.index);
+            comparisonRows = index && { ...comparisonRows, revision: document.revision, foldGeneration: folds.generation, index };
+            rowGeneration++;
+        }
         const index: RowIndex = comparisonRows?.index ?? folds.index;
         if (comparisonRows) lineHeight = Math.max(naturalLineHeight, comparisonRows.lineHeight);
         if (measuredRevision !== document.revision) { measuredWidth = 0; measuredRevision = document.revision; }
