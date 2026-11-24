@@ -84,7 +84,7 @@ export class HostController {
     registerDetachedDocumentCleanup(cleanup: (documentId: DocumentId) => void): () => void {
         return this.disposed ? () => {} : this.loadedSlot.registerDetachedCleanup(cleanup);
     }
-    collectLoadedDocument(): void { this.loadedSlot.collect(); }
+    collectLoadedDocument(): void { if (!this.disposed) this.loadedSlot.collect(); }
     private sourceInputReady(): boolean {
         if ([...this.inputCaptureGuards.keys()].every(ready => ready())) return true;
         this.presentation.error("Wait for pending typing to finish, then try the source command again."); return false;

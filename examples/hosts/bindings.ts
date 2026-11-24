@@ -371,7 +371,11 @@ export class ViewBindings {
         const mounted = this.mounted.get(id); if (!mounted) return;
         this.retainState(id, mounted.documentId, mounted.editor.captureView());
         try { mounted.editor.dispose(); }
-        finally { this.mounted.delete(id); this.destroys++; this.controller.collectLoadedDocument(); }
+        finally {
+            this.mounted.delete(id); this.destroys++;
+            // The language binding releases its document lease after observer delivery.
+            queueMicrotask(() => this.controller.collectLoadedDocument());
+        }
     }
     readonly anchorInstruction = (): void => {
         const current = this.mounted.get("primary"); if (!current?.candidate || current.documentId !== this.controller.source.documentId || !this.controller.canCaptureRecovery()) return;
