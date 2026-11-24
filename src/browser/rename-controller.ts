@@ -5,12 +5,13 @@ import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import { reviewApplied, reviewFailed, reviewRefused, type ReviewEditResult } from "./review-edit.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
-import { createLspRenameClient, type LspRenameClient } from "../protocol/lsp-rename.ts";
+import { renameClient, type LspRenameClient } from "../protocol/lsp-rename.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
 import type { LspWorkspaceEdit } from "../protocol/lsp-features.ts";
 import { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../protocol/lsp-workspace-edit.ts";
 import type { LspWorkspaceEditPreview } from "../protocol/lsp-workspace-edit.ts";
-import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
+import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
+import type { LspPrepare } from "../protocol/lsp-workspace.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainEditProject, writableEdit } from "./edit-project.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -37,7 +38,7 @@ type Job = { source: CapturedViewRequest<TextEditor["tab"]>; project: ReturnType
 const idle: RenameSnapshot = Object.freeze({ name: "", status: "idle", message: "", preview: null, changes: emptyList });
 
 /** Review and confirm one provider rename from the captured caret and project. */
-export function createRenameController(editor: TextEditor, provider: LspWorkspace, options: RenameControllerOptions = {}): RenameController {
+export function mountRename(editor: TextEditor, owner: LspDocumentOwner, options: RenameControllerOptions): RenameController {
     const { workspace, view } = editor, win = editor.element.ownerDocument.defaultView!;
     const { scope, state: cell, signal, active, available, capture, release, expire, mount } =
         languageReview<Job, RenameSnapshot>(editor, "Rename", idle, options.canCapture,
@@ -100,7 +101,7 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
                 publish({ name, status: "expired", message: "Finish pending input before requesting a rename." });
                 return refused("unavailable-view");
             }
-            const client = createLspRenameClient(provider);
+            const client = renameClient(owner);
             const j: Job = { source, client, project: retainEditProject(editor, available, () => expire(j)), invalid: false };
             active.job = pending = j;
             j.project.include(source.document);
@@ -151,7 +152,7 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
         scope.assertWritable();
         return prepare(name);
     }
-    const stop = provider.subscribe(() => { const j = active.job; if (j?.edit && !j.edit.isCurrent()) expire(j); });
+    const stop = owner.provider.subscribe(() => { const j = active.job; if (j?.edit && !j.edit.isCurrent()) expire(j); });
     const controls = mount(stop);
     return Object.freeze({ ...controls, request, setName });
 }

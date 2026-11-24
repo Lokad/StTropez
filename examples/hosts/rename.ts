@@ -6,7 +6,7 @@ import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { focusSourceCaret, onSourceFocus } from "./source-focus.ts";
 import { isMountedEditor, openChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, TabId } from "../../src/index.ts";
-import { createRenameController } from "../../src/browser/index.ts";
+import { attachEditorLanguage } from "../../src/browser/index.ts";
 import type { RenameController, RenamePreview, RenameSnapshot, TextEditor } from "../../src/browser/index.ts";
 import type { LspPrepare, LspWorkspace, LspWorkspaceEditNote } from "../../src/protocol/index.ts";
 import { navigationSymbol } from "../../fixtures/language/navigation.ts";
@@ -75,13 +75,13 @@ export class HostRenameTools {
     readonly bindName = this.nameField.bind;
     attach(id: string, _tab: TabId, editor: TextEditor): () => void {
         if (this.disposed) throw new Error("Rename panel is disposed.");
-        const controller = createRenameController(editor, this.options.provider, {
+        const { rename: controller, dispose } = attachEditorLanguage(editor, this.options.provider, { rename: {
             documents: () => this.host.workspace.getSnapshot().documents.filter(doc => doc.language !== null),
             canCapture: this.host.canCapture, prepareRequest: () => {
                 const policy = this.fixture.take();
                 return this.options.prepare?.(policy);
             },
-        });
+        } });
         const session = { id, editor, controller };
         return attachPanelSession(this.sessions, session, (signal, register) => {
             controller.subscribe(() => { if (this.owner === session) {
@@ -113,7 +113,7 @@ export class HostRenameTools {
             if (this.active === session) this.active = undefined;
             if (this.owner === session) this.cancel();
             else this.publish();
-        });
+        }, dispose);
     }
     private hint(session: Session) { return navigationSymbol(this.host.workspace.document(session.editor.view.documentId).buffer, session.editor.view.getSnapshot().selection.head); }
     private prompt(session: Session, name = this.hint(session) ?? "") {

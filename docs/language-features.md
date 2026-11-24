@@ -6,9 +6,10 @@ files and decides which edits to apply. [Connect a provider](language-server.md)
 
 ## Use
 
-Use `attachEditorLanguage` to enable completion, diagnostics, hover, signature help, occurrences, commands, code actions, links or colors. Give each
-feature you want an options object. They share one provider scope and document binding. Hover
-uses the diagnostics painted in that view unless you supply another source.
+Pass the features your editor needs to `attachEditorLanguage`. Each accepts an options object.
+Panels attached to the same editor and provider share one scope and document binding. The last
+attachment to close releases both. Hover uses diagnostics from its attachment unless you supply
+another source.
 
 ```ts
 import { attachEditorLanguage, type TextEditor } from "sttropez/browser";
@@ -37,8 +38,8 @@ Use `features` to restrict methods,
 | Diagnostics | `attachEditorLanguage` with `diagnostics` | `textDocument/publishDiagnostics` |
 | Hover | `attachEditorLanguage` with `hover`, `createLspHoverClient` | `textDocument/hover` |
 | Signature help | `attachEditorLanguage` with `signature`, `createLspSignatureClient` | `textDocument/signatureHelp` |
-| Definition / references | `createLspNavigationClient` | `textDocument/definition` / `textDocument/references` |
-| Rename | `createRenameController`, `createLspRenameClient` | `textDocument/rename` |
+| Definition / references | `attachEditorLanguage` with `navigation`, `createLspNavigationClient` | `textDocument/definition` / `textDocument/references` |
+| Rename | `attachEditorLanguage` with `rename`, `createLspRenameClient` | `textDocument/rename` |
 | Server commands | `attachEditorLanguage` with `commands` | `workspace/executeCommand` |
 | Code actions | `attachEditorLanguage` with `codeActions`, `createLspActionClient` | `textDocument/codeAction` |
 | Document links | `createDocumentLinkController`, `createLspLinkClient` | `textDocument/documentLink` |
@@ -419,16 +420,16 @@ the caret in the editor.
 
 ### Navigation and target loading
 
-`createNavigationController(editor, provider, options)` handles definition links for one mounted
+`attachEditorLanguage(editor, provider, { navigation: options })` handles definition links for one mounted
 view. Hold Ctrl or Cmd over a symbol to underline it, including when the editor is mounted in a
 shadow root. Hover preserves focus, selections and open tabs. Releasing the modifier clears the
 underline. A primary click while the modifier is held resolves the target even if the lookup
 is pending. A drag starting inside selected text uses the editor’s text transfer.
 Editing or remounting the source expires the gesture. Alt+click stays available for multiple carets.
 
-If the provider has reached its scope limit, hovering leaves the symbol unmarked. An explicit
-lookup returns `failed` with the error. Both release the captured view, so
-the host can retry the lookup when a scope becomes available.
+The first attachment for an editor reserves its provider scope at mount. If the provider has
+reached its limit, mounting throws and the host can retry after a scope is released. Hover and
+explicit lookups use that reserved scope.
 
 Use `options.linkAt(offset)` to handle a document link under the pointer. Return its UTF-16
 range and an `open()` action. Ctrl/Cmd hover underlines the whole range, including punctuation.
@@ -437,7 +438,8 @@ Return `undefined` to use symbol lookup. Keep `linkAt` synchronous and defer ope
 
 Supply the project with `options.documents`. Moving between symbols with the modifier held keeps
 unchanged project files open on the server. A new request on the same controller also reuses
-those files and checks the current project list. Dismissing the lookup releases its files.
+those files and checks the current project list. Dismissing the lookup releases its project files.
+The attached source stays bound until the last panel for that editor and provider closes.
 A host that opens tabs or shows a chooser handles
 `options.onDefinition(offset)` by calling `controller.request("definition", offset)` during the
 callback. This reuses the hover reply. F12 and reference commands can call the same controller
@@ -516,8 +518,8 @@ Dispose the history with its host.
 
 ### Rename and workspace edits
 
-Use `createRenameController(editor, provider, { documents })` for an editor with a rename form.
-Call `setName(value)` as the form changes. Await `request(name)` to preview that name at the
+For an editor with a rename form, mount `const language = attachEditorLanguage(editor, provider, { rename: { documents } })`.
+Call `language.rename.setName(value)` as the form changes. Await `language.rename.request(name)` to preview that name at the
 primary caret, or omit the argument to preview the current name.
 
 The request resolves to an `Outcome<RenamePreview>` from `sttropez/browser`. For `done`,

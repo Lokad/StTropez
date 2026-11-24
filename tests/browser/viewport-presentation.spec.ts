@@ -26,11 +26,11 @@ test.beforeEach(async ({ page }) => {
     await page.addStyleTag({ content: css });
 });
 
-test("definition lookup releases its source when the provider has no free scope", async ({ page }) => {
+test("definition lookup uses its attached scope and recovers from a refused mount", async ({ page }) => {
     const fixture = await page.evaluateHandle(async () => {
         const path = "/presentation-fixture/";
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
-        const { BrowserLspWorkspace, createNavigationController, mountTextEditor, openWebSocketTransport } =
+        const { BrowserLspWorkspace, attachEditorLanguage, mountTextEditor, openWebSocketTransport } =
             await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const workspace = new Workspace();
         const source = workspace.createTextResource({ scope: "test", resource: "source", variant: "working" }, "Source",
@@ -39,38 +39,39 @@ test("definition lookup releases its source when the provider has no free scope"
         const editor = mountTextEditor(host, workspace, source.documentId);
         const connect = (signal: AbortSignal) => openWebSocketTransport("ws://" + location.host + "/lsp-fixture", { signal });
         const provider = new BrowserLspWorkspace(workspace, { maxScopes: 1, connect });
-        const occupied = provider.createScope();
-        let pointerHits = 0;
-        const navigation = createNavigationController(editor, provider, { linkAt() { pointerHits++; return undefined; } });
         const ownership = () => { const { leases, subscriptions } = workspace.diagnostics(); return { leases, subscriptions }; };
-        const retired = new BrowserLspWorkspace(workspace, { connect });
-        retired.dispose();
-        let refused = false, retiredHits = 0;
-        try { createNavigationController(editor, retired, { linkAt() { retiredHits++; return undefined; } }); }
-        catch { refused = true; }
-        return { ownership, pointerHits: () => pointerHits, status: () => navigation.getSnapshot().status,
-            retiredMount: () => ({ refused, retiredHits }),
+        const occupied = provider.createScope();
+        const before = ownership();
+        let refusal = "", retiredHits = 0, pointerHits = 0;
+        try {
+            attachEditorLanguage(editor, provider, { navigation: { linkAt() { retiredHits++; return undefined; } } });
+        } catch (error) { refusal = String(error); }
+        const after = ownership();
+        occupied.dispose();
+        const language = attachEditorLanguage(editor, provider, {
+            navigation: { linkAt() { pointerHits++; return undefined; } },
+        });
+        const sibling = attachEditorLanguage(editor, provider, { rename: {} });
+        sibling.dispose();
+        sibling.dispose();
+        const { navigation } = language;
+        return { ownership, pointerHits: () => pointerHits, before, after, refusal, retiredHits: () => retiredHits,
             lookup: async () => {
                 const result = await navigation.request("definition", 23);
                 if (result.status === "done") return result.value.locationAt(0)?.from;
                 return result.status === "failed" && result.error instanceof Error ? result.error.message : result.status;
             },
-            freeScope: occupied.dispose,
-            finish() { navigation.dispose(); provider.dispose(); editor.dispose(); } };
+            finish() { language.dispose(); provider.dispose(); editor.dispose(); } };
     });
-    const before = await fixture.evaluate(f => f.ownership());
+    expect(await fixture.evaluate(f => f.refusal)).toContain("scope limit");
+    expect(await fixture.evaluate(f => f.after)).toEqual(await fixture.evaluate(f => f.before));
     const row = page.locator(".st-viewport-row").filter({ hasText: "const catalogue" });
     await expect(row).toBeVisible();
     const point = await paintedCharacter(row, "catalogue", 2);
     await page.keyboard.down("Control"); await page.mouse.move(point.x, point.y);
     await expect.poll(() => fixture.evaluate(f => f.pointerHits())).toBeGreaterThan(0);
     await page.keyboard.up("Control");
-    expect(await fixture.evaluate(f => f.retiredMount())).toEqual({ refused: true, retiredHits: 0 });
-    expect(await fixture.evaluate(f => f.ownership())).toEqual(before);
-    expect(await fixture.evaluate(f => f.lookup())).toContain("scope limit");
-    expect(await fixture.evaluate(f => f.status())).toBe("failed");
-    expect(await fixture.evaluate(f => f.ownership())).toEqual(before);
-    await fixture.evaluate(f => f.freeScope());
+    expect(await fixture.evaluate(f => f.retiredHits())).toBe(0);
     expect(await fixture.evaluate(f => f.lookup())).toBe(6);
     await fixture.evaluate(f => f.finish());
     expect(await fixture.evaluate(f => f.ownership())).toEqual({ leases: 0, subscriptions: 0 });

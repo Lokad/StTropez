@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import {
     attachEditorLanguage, createDocumentColorController,
-    createDocumentLinkController, createRenameController,
+    createDocumentLinkController,
     type TextEditor,
 } from "../src/browser/index.ts";
 import { createDecorationLayers } from "../src/browser/decoration-layers.ts";
@@ -102,7 +102,7 @@ for (const [cause, interrupt] of Object.entries(sourceChanges)) {
 
     test(`a delayed rename cannot offer an edit after ${cause}`, { timeout: 5000 }, async t => {
         const f = await fixture(t);
-        const rename = createRenameController(f.editor, f.provider);
+        const rename = attachEditorLanguage(f.editor, f.provider, { rename: {} }).rename;
         const edit = { changes: { "generic:source": [{ range, newText: "replacement" }] } };
         const held = holdReply(f, "textDocument/rename", edit);
         const pending = rename.request("replacement");
@@ -151,7 +151,7 @@ test("code action discovery settles before a cancelled or superseded provider re
 
 test("a rename request returns its preview, refusal or provider error", async t => {
     const f = await fixture(t);
-    const rename = createRenameController(f.editor, f.provider);
+    const rename = attachEditorLanguage(f.editor, f.provider, { rename: {} }).rename;
     assert.deepEqual(await rename.request(""), { status: "refused", reason: "empty-name" });
     assert.equal(f.sent("textDocument/rename").length, 0);
     const before = f.document();
@@ -196,7 +196,7 @@ for (const method of ["textDocument/codeAction", "textDocument/rename", "textDoc
         };
         const before = f.workspace.diagnostics().leases;
         const controller = method === "textDocument/codeAction" ? attachEditorLanguage(f.editor, f.provider, { codeActions: { prepareRequest: prepare } }).codeActions
-            : method === "textDocument/rename" ? createRenameController(f.editor, f.provider, { prepareRequest: () => prepare })
+            : method === "textDocument/rename" ? attachEditorLanguage(f.editor, f.provider, { rename: { prepareRequest: () => prepare } }).rename
             : createDocumentColorController(f.editor, f.provider, {
                 prepareRequest: kind => (kind === "discovery") === (method === "textDocument/documentColor") ? prepare : undefined,
             });
@@ -231,7 +231,7 @@ for (const method of ["textDocument/codeAction", "textDocument/rename", "textDoc
 test("rename rejects an obsolete project capture before sending it to the provider", async t => {
     const f = await fixture(t);
     const other = f.workspace.document(f.other.documentId);
-    const rename = createRenameController(f.editor, f.provider, { documents: () => [other] });
+    const rename = attachEditorLanguage(f.editor, f.provider, { rename: { documents: () => [other] } }).rename;
     f.workspace.edit({ documentId: other.id, expectedRevision: other.revision,
         edits: [{ from: 0, to: 0, insert: "new " }], origin: "human" });
     assert.deepEqual(await rename.request("next"), { status: "stale" });

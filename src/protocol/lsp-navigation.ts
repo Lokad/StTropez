@@ -1,5 +1,5 @@
 import { definitionMethod, referencesMethod } from "./lsp-methods.ts";
-import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspProjectRequest } from "./lsp-client.ts";
+import { createLspClient, lspFeatureHandle, type LspDocumentOwner, type LspFeatureClient, type LspProjectRequest } from "./lsp-client.ts";
 import { decodeLspLocations, definitionOriginRange, lspLocationUris } from "./lsp-features.ts";
 import type { LspCall } from "./lsp-session.ts";
 import type { LspWorkspace } from "./lsp-workspace.ts";
@@ -16,7 +16,9 @@ export type LspNavigationClient = LspFeatureClient<"textDocument/definition" | "
 }>;
 
 /** Captured read-only queries; the host chooses how to present each validated target. */
-export function createLspNavigationClient(provider: LspWorkspace): LspNavigationClient {
+export const createLspNavigationClient: (provider: LspWorkspace) => LspNavigationClient = navigationClient;
+
+export function navigationClient(provider: LspWorkspace | LspDocumentOwner): LspNavigationClient {
     const client = createLspClient(provider, definitionMethod, referencesMethod);
     type Reply = Parameters<Parameters<typeof client.request>[3]>[0];
     function lookup<T>(request: LspNavigationRequest,

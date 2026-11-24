@@ -1,5 +1,5 @@
 import { requireLanguageView } from "./captured-view.ts";
-import { retainLspDocument } from "../protocol/lsp-client.ts";
+import { retainLspDocument, type LspDocumentOwner } from "../protocol/lsp-client.ts";
 import type { LspWorkspace } from "../protocol/lsp-workspace.ts";
 import { mountCompletion, type CompletionController, type CompletionControllerOptions } from "./completion-controller.ts";
 import { mountDiagnostic, type DiagnosticController, type DiagnosticControllerOptions } from "./diagnostic-controller.ts";
@@ -11,8 +11,12 @@ import { mountSignature, type SignatureController, type SignatureControllerOptio
 import { mountOccurrences, type LspHighlightController } from "./lsp-highlights.ts";
 import { mountCodeActions, type CodeActionController, type CodeActionControllerOptions } from "./code-action-controller.ts";
 import { mountLanguageCommands, type LanguageCommands, type LanguageCommandOptions } from "./language-command.ts";
+import { mountNavigation, type NavigationController, type NavigationControllerOptions } from "./navigation-controller.ts";
+import { mountRename, type RenameController, type RenameControllerOptions } from "./rename-controller.ts";
 
 type Options = {
+    navigation?: NavigationControllerOptions;
+    rename?: RenameControllerOptions;
     commands?: LanguageCommandOptions;
     codeActions?: CodeActionControllerOptions;
     completion?: CompletionControllerOptions;
@@ -24,6 +28,8 @@ type Options = {
     links?: DocumentLinkControllerOptions;
 };
 type Features = {
+    navigation: NavigationController;
+    rename: RenameController;
     commands: LanguageCommands;
     codeActions: CodeActionController;
     completion: CompletionController;
@@ -37,30 +43,57 @@ type Features = {
 type Attachment<O extends Options> = Readonly<{ [K in keyof O]: K extends keyof Features ? Features[K] : never }>
     & Readonly<{ dispose: () => void }>;
 
-/** Mount the selected features on one provider scope for this editor. */
+type Mounts = {
+    [K in keyof Features]: (editor: TextEditor, owner: LspDocumentOwner, options: NonNullable<Options[K]>,
+        features: Partial<Features>) => Features[K];
+};
+const mounts: Mounts = {
+    commands: mountLanguageCommands,
+    codeActions: mountCodeActions,
+    navigation: mountNavigation,
+    rename: mountRename,
+    diagnostics: mountDiagnostic,
+    hover: (editor, owner, options, features) => mountHover(editor, owner, features.diagnostics && !options.diagnostics
+        ? { ...options, diagnostics: features.diagnostics } : options),
+    completion: mountCompletion,
+    signature: mountSignature,
+    occurrences: mountOccurrences,
+    colors: (editor, owner, options) => mountDocumentColors(editor, owner.provider, options, owner),
+    links: (editor, owner, options) => mountDocumentLinks(editor, owner.provider, options, owner),
+};
+
+type Binding = { owner: LspDocumentOwner; users: number };
+const bindings = new WeakMap<TextEditor, Map<LspWorkspace, Binding>>();
+
+/** Independently mounted panels on the same editor and provider share its source binding. */
 export function attachEditorLanguage<O extends Options>(editor: TextEditor, provider: LspWorkspace, options: O): Attachment<O> {
     requireLanguageView(editor);
-    const owner = retainLspDocument(provider, editor.view.documentId);
+    const scope = editor.workspace.createNotificationScope();
+    scope.assertWritable();
+    const providers = bindings.get(editor) ?? new Map<LspWorkspace, Binding>();
+    const binding = providers.get(provider) ?? { owner: retainLspDocument(provider, editor.view.documentId), users: 0 };
+    bindings.set(editor, providers);
+    providers.set(provider, binding);
+    binding.users++;
+    let disposed = false;
     const features: Partial<Features> = {};
+    function mount<K extends keyof Features>(key: K) {
+        const settings = options[key];
+        if (settings) features[key] = mounts[key](editor, binding.owner, settings, features);
+    }
     function dispose() {
+        if (disposed) return;
+        scope.assertWritable();
+        disposed = true;
         for (const feature of Object.values(features).reverse()) feature.dispose();
-        owner.dispose();
+        if (!--binding.users) {
+            providers.delete(provider);
+            binding.owner.dispose();
+        }
         editor.signal.removeEventListener("abort", dispose);
     }
     try {
-        if (options.commands) features.commands = mountLanguageCommands(editor, owner, options.commands);
-        if (options.codeActions) features.codeActions = mountCodeActions(editor, owner, options.codeActions);
-        if (options.diagnostics) features.diagnostics = mountDiagnostic(editor, owner, options.diagnostics);
-        if (options.hover) {
-            const hover = features.diagnostics && !options.hover.diagnostics
-                ? { ...options.hover, diagnostics: features.diagnostics } : options.hover;
-            features.hover = mountHover(editor, owner, hover);
-        }
-        if (options.completion) features.completion = mountCompletion(editor, owner, options.completion);
-        if (options.signature) features.signature = mountSignature(editor, owner, options.signature);
-        if (options.occurrences) features.occurrences = mountOccurrences(editor, owner, options.occurrences.delayMs);
-        if (options.colors) features.colors = mountDocumentColors(editor, provider, options.colors, owner);
-        if (options.links) features.links = mountDocumentLinks(editor, provider, options.links, owner);
+        for (const key of Object.keys(mounts) as (keyof Features)[]) mount(key);
         editor.signal.addEventListener("abort", dispose, { once: true });
         return Object.freeze({ ...features, dispose }) as Attachment<O>;
     } catch (error) {

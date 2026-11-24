@@ -18,7 +18,8 @@ export type LspHighlightController = Observable<LspHighlightSnapshot> & Readonly
 const identifier = new RegExp(`^(?:\\$|${codeWordConstituentPattern})+$`, "u");
 
 /** Advisory occurrences for one captured view. Never changes text, selection, focus or connection policy. */
-export function mountOccurrences(editor: TextEditor, owner: LspDocumentOwner, delay = 150): LspHighlightController {
+export function mountOccurrences(editor: TextEditor, owner: LspDocumentOwner,
+    { delayMs: delay = 150 }: Readonly<{ delayMs?: number }>): LspHighlightController {
     const { workspace, tab: target, view } = editor, documentId = view.documentId, win = editor.element.ownerDocument.defaultView!;
     if (!Number.isFinite(delay) || delay < 0) throw new RangeError("Invalid highlight delay.");
     const { provider } = owner;

@@ -1,5 +1,5 @@
 import type { DocumentId } from "../../src/index.ts";
-import { captureViewRequest, createNavigationController, mountAnchoredOverlay } from "../../src/browser/index.ts";
+import { attachEditorLanguage, captureViewRequest, mountAnchoredOverlay } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, NavigationChoice, NavigationOrigin, TextEditor } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import { HostRenameTools } from "../hosts/rename.ts";
@@ -42,9 +42,10 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
         origin: NavigationOrigin; page: NavigationPage | undefined };
     let query: Query | undefined;
     const idle = () => { const s = editor.activity(); return !disposed && valid() && !s.composing && !s.pendingInput && !s.pendingCommand; };
-    const navigation = createNavigationController(editor, provider, { canCapture: idle, resultLifetime: "view", documents: () => project.files.map(file => workspace.document(file.resource.documentId)),
-        onDefinition: offset => request("definition", offset) });
-    scope.defer(navigation.dispose);
+    const language = attachEditorLanguage(editor, provider, { navigation: { canCapture: idle, resultLifetime: "view", documents: () => project.files.map(file => workspace.document(file.resource.documentId)),
+        onDefinition: offset => request("definition", offset) } });
+    const { navigation } = language;
+    scope.defer(language.dispose);
     const target = workspace.tabs.capture(file.tab);
     const hideLocations = () => { query = undefined; locationsOverlay.hide(); };
     const cancelNavigation = () => { hideLocations(); navigation.cancel(); };

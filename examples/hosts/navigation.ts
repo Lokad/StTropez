@@ -7,7 +7,7 @@ import { createPanelKeyBinding, focusResult, registerResultArrows } from "./pane
 import { createWorkingSource } from "./working-source.ts";
 import { locationExcerpt, locationPage, type NavigationPage } from "../shared/location-excerpt.ts";
 import type { DocumentId, TabId, TabTarget } from "../../src/index.ts";
-import { createNavigationController } from "../../src/browser/index.ts";
+import { attachEditorLanguage } from "../../src/browser/index.ts";
 import type { NavigationChoice, NavigationController, NavigationDestination, NavigationOrigin, NavigationPointerLink, NavigationResult, TextEditor } from "../../src/browser/index.ts";
 import type { LspNavigationRequest, LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import { navigationSymbol, validateNavigationDocuments } from "../../fixtures/language/navigation.ts";
@@ -105,11 +105,11 @@ export class HostNavigationTools {
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
         if (this.disposed) throw new Error("Navigation panel is disposed.");
         const target = this.host.workspace.tabs.capture(tab);
-        const controller = createNavigationController(editor, this.options.provider, { documents: () => this.host.workspace.getSnapshot().documents.filter(doc => doc.language !== null),
+        const { navigation: controller, dispose } = attachEditorLanguage(editor, this.options.provider, { navigation: { documents: () => this.host.workspace.getSnapshot().documents.filter(doc => doc.language !== null),
             canCapture: () => !this.disconnected && !this.disposed && this.host.canCapture(editor.view.documentId),
             linkAt: offset => this.options.linkAt?.(editor, offset),
             prepareRequest: kind => this.options.prepare(kind, this.fixture.take()),
-            onDefinition: offset => { this.active = session; editor.focus(); this.start("definition", true, offset); } });
+            onDefinition: offset => { this.active = session; editor.focus(); this.start("definition", true, offset); } } });
         const session: Session = { id, target, editor, controller };
         return attachPanelSession(this.sessions, session, (signal, register) => {
             const stop = controller.subscribe(() => {
@@ -144,7 +144,7 @@ export class HostNavigationTools {
             if (this.active === session) this.active = undefined;
             if (!this.presenting && this.job?.targets.get(editor.view.documentId) === session) this.cancel();
             this.publish();
-        });
+        }, dispose);
     }
     private requestFromPanel(kind: Kind): void {
         if (!this.active?.editor.commands.run("navigation." + kind, "panel"))

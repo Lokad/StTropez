@@ -3,11 +3,12 @@ import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
-import { createLspNavigationClient, type LspNavigationClient, type LspNavigationResult, type LspDefinitionPreview } from "../protocol/lsp-navigation.ts";
+import { navigationClient, type LspNavigationClient, type LspNavigationResult, type LspDefinitionPreview } from "../protocol/lsp-navigation.ts";
 import type { LspLocation } from "../protocol/lsp-features.ts";
-import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
+import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
+import type { LspPrepare } from "../protocol/lsp-workspace.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
-import { requireLanguageView, captureViewRequest, editorReadyForRequest, sameEditAuthority } from "./captured-view.ts";
+import { captureViewRequest, editorReadyForRequest, sameEditAuthority } from "./captured-view.ts";
 import { bindDefinitionPointer } from "./definition-pointer.ts";
 import type { DefinitionHit } from "./definition-pointer.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -51,9 +52,8 @@ function navigationResult(reply: LspNavigationResult, canOpen: () => boolean): N
 }
 
 /** A passive definition lookup can paint a link. Only an explicit request resolves its target URIs. */
-export function createNavigationController(editor: TextEditor, provider: LspWorkspace, options: NavigationControllerOptions = {}): NavigationController {
+export function mountNavigation(editor: TextEditor, owner: LspDocumentOwner, options: NavigationControllerOptions): NavigationController {
     const { workspace, view, tab } = editor;
-    requireLanguageView(editor);
     const notifications = workspace.createNotificationScope(), state = new Store(idle, notifications);
     const events = new AbortController();
     const available = () => !events.signal.aborted && editorReadyForRequest(editor) && (options.canCapture?.() ?? true);
@@ -104,7 +104,7 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
         let client = hover?.client;
         leave(client);
         try {
-            client ??= createLspNavigationClient(provider);
+            client ??= navigationClient(owner);
             const reply = client.prepareDefinition({ document: source.document, project: project(source), offset: hit.offset, prepare: options.prepareRequest?.("definition") }).result;
             const job: Hover = { hit, client, source, reply }; hover = job;
             source.signal.addEventListener("abort", () => { if (hover === job) leave(); }, { once: true });
@@ -134,7 +134,7 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
                 publish("expired");
                 return prepared ? stale : refused("unavailable-view");
             }
-            client = prepared?.client ?? explicit?.client ?? hover?.client ?? createLspNavigationClient(provider);
+            client = prepared?.client ?? explicit?.client ?? hover?.client ?? navigationClient(owner);
         } catch (error) {
             source?.cancel();
             leave();
@@ -197,7 +197,7 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
             return failed(error);
         }
     }
-    const stop = provider.subscribe(() => {
+    const stop = owner.provider.subscribe(() => {
         const job = hover, request = explicit;
         if (job?.result && !job.result.isCurrent()) queueMicrotask(() => { if (hover === job) leave(); });
         if (request?.reply && !request.reply.isCurrent()) expire(request);
@@ -220,10 +220,9 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
     editor.onEditIntent(kind => { if (kind === "compositionstart") cancel(); else if (markedLink) leave(); }, events.signal);
     function dispose() {
         if (events.signal.aborted) return;
-        events.abort(); stop(); leave(); clearExplicit(); layer.dispose(); editor.signal.removeEventListener("abort", dispose);
+        events.abort(); stop(); leave(); clearExplicit(); layer.dispose();
         publish("disposed");
         state.clearSnapshotListeners();
     }
-    editor.signal.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ request, cancel, dispose, ...controllerObservable(state, "Navigation", () => events.signal.aborted) });
 }
