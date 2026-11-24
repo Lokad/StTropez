@@ -60,7 +60,7 @@ export class FixtureLspWorkspace extends BrowserLspWorkspace {
         extra?: (take: (method: string) => JsonValue | undefined, clear: () => void) => Partial<T>): T {
         let pending: { method: string; policy: JsonValue } | undefined;
         const take = (method: string) => { if (pending?.method !== method) return undefined; const policy = pending.policy; pending = undefined; return policy; };
-        const wrapped = Object.freeze({ ...scope, ...extra?.(take, () => { pending = undefined; }),
+        const wrapped: T = Object.freeze({ ...scope, ...extra?.(take, () => { pending = undefined; }),
             requestDocument: (...[method, document, params]: Parameters<LspReadRequest["requestDocument"]>) => {
                 // Take the policy before synchronization can yield to another request.
                 const policy = take(method);
@@ -73,7 +73,11 @@ export class FixtureLspWorkspace extends BrowserLspWorkspace {
                 if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("Fixture policy requires named request parameters.");
                 return scope.request(method, { ...params, _fixture: policy });
             },
-            dispose: () => { pending = undefined; this.preparations.delete(wrapped); scope.dispose(); },
+            dispose: (): void => {
+                pending = undefined;
+                this.preparations.delete(wrapped);
+                scope.dispose();
+            },
         });
         this.preparations.set(wrapped, (method, policy, replacePending) => {
             // Only the latest-intent owner may replace an abandoned policy for the same method.
