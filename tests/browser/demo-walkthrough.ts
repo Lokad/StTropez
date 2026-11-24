@@ -596,7 +596,8 @@ export async function runDemoEditingRules(page: Page, url = "/") {
     await comment.evaluate(node => (node as HTMLButtonElement).click());
     await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toHaveValue(block);
     await expect(comment).toBeDisabled(); await code.press("ArrowDown"); await expect(page.locator("#go-to-line")).toBeFocused();
-    await page.keyboard.press("Escape"); await expect(code).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("textbox", { name: "Comparison baseline source", exact: true })).toBeFocused();
     await page.getByRole("button", { name: "JavaScript", exact: true }).click();
     const generated = page.getByRole("textbox", { name: "JavaScript output", exact: true });
     await generated.focus(); await menu("Go to line");
