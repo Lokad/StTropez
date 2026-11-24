@@ -8,7 +8,7 @@ export function typingRun(text: string): "word" | "space" | "mixed" {
     return !text.includes(" ") ? "word" : /^ +$/.test(text) ? "space" : "mixed";
 }
 export type InputIntent = InputKey | { kind: "text"; text: string; type: string; literal?: true; wholeLines?: boolean; run?: ReturnType<typeof typingRun> };
-type Command<C> = Readonly<{ capture: C; purpose: "word" | "grapheme" }>;
+type Command<C> = Readonly<{ capture: C; purpose: "word" | "grapheme" | "column" }>;
 export type OrderedInput<C> = { capture: C; purpose: Command<C>["purpose"]; actions: InputIntent[]; units: number;
     edit: boolean; native: boolean; running?: InputIntent; cancelled?: boolean };
 

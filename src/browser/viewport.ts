@@ -56,6 +56,7 @@ type ViewportNavigation = Readonly<{
     collapseVisual: (from: number, to: number, direction: -1 | 1) => CaretRectangle | undefined;
     columnAt: (offset: number, affinity?: Affinity) => number | undefined;
     caretAtColumn: (line: number, column: number) => Readonly<Pick<CaretRectangle, "offset" | "affinity" | "revision">> | undefined;
+    selectionAtColumns: (line: number, anchor: number, head: number) => Selection | undefined;
     prepareNavigationRows: (lines: readonly number[]) => () => void;
 }>;
 export type TextViewport = Observable<ViewportSnapshot> & Readonly<{ element: HTMLDivElement; view: DocumentView; decorations: DecorationLayers;
@@ -1125,6 +1126,14 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             if (!options.view) view.dispose();
         }
     });
+    const columnScroll = (column: number) => column < left || column > left + width ? Math.max(0, column - width / 2) : left;
+    function withColumnRow<T>(line: number, column: number, work: (row: MeasuredRow) => T): T | undefined {
+        if (disposed || !live()) return;
+        const document = workspace.observeDocument(documentId).getSnapshot();
+        if (document?.revision !== renderedRevision || view.folding.getSnapshot().generation !== renderedFoldGeneration) return;
+        if (!Number.isSafeInteger(line) || line < 0 || line >= document.buffer.lineCount || !Number.isFinite(column)) throw new RangeError("Invalid navigation column.");
+        if (!renderedIndex.hiddenBy(line)) return withRow(line, columnScroll(column), undefined, false, work);
+    }
     const navigation: ViewportNavigation = Object.freeze({
         prepareNavigationRows,
         moveVisual: (offset: number, direction: -1 | 1) => rowForOffset(offset, measured => {
@@ -1148,16 +1157,13 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             const projected = hidden ? row(document.buffer, line).to : offset, scroll = Math.max(0, padding + (projected - document.buffer.offsetAt(line)) * columnWidth - width / 2);
             return withRow(line, scroll, projected, false, measured => { const point = measured.point(projected, affinity); return point && (point.left - rectangle.left) / rectangle.zoom + left; });
         },
-        caretAtColumn: (line: number, column: number) => {
-            if (disposed || !live()) return;
-            const document = workspace.observeDocument(documentId).getSnapshot();
-            if (document?.revision !== renderedRevision || view.folding.getSnapshot().generation !== renderedFoldGeneration) return;
-            if (!Number.isSafeInteger(line) || line < 0 || line >= document.buffer.lineCount || !Number.isFinite(column)) throw new RangeError("Invalid navigation column.");
-            if (renderedIndex.hiddenBy(line)) return;
-            const scroll = column < left || column > left + width ? Math.max(0, column - width / 2) : left;
-            return withRow(line, scroll, undefined, false, measured => { const point = measured.nearest(column);
-                return Object.freeze({ offset: point.offset, affinity: point.affinity, revision: point.revision }); });
-        },
+        caretAtColumn: (line, column) => withColumnRow(line, column, row => row.nearest(column)),
+        selectionAtColumns: (line, anchor, head) => withColumnRow(line, anchor, row => {
+            const start = row.nearest(anchor);
+            const sameFragment = row.complete || columnScroll(anchor) === columnScroll(head);
+            const end = anchor === head ? start : sameFragment ? row.nearest(head) : withColumnRow(line, head, other => other.nearest(head));
+            return end && { anchor: start.offset, anchorAffinity: start.affinity, head: end.offset, headAffinity: end.affinity };
+        }),
         visualRowAt: line => renderedIndex.rowAt(line),
         navigationLine: (line, direction, count, page) => {
             if (!Number.isSafeInteger(count) || count < 1) throw new RangeError("Invalid row navigation.");

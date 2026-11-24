@@ -185,7 +185,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     let graphemeScanSteps = 0, maxGraphemeScanStepMs = 0;
     let visualMoves = 0;
     let group: Readonly<{ type: string; revision: number; selectionSet: SelectionSet; tail: ReturnType<typeof typingRun> | "spaces" | undefined; key: string }> | undefined;
-    type DragUnit = ({ kind: "line"; range: Selection } | { kind: "word"; origin: number; range?: Selection }) & { lastHit?: number };
+    type ColumnDrag = { kind: "column"; middle: boolean; originRow: number; anchorColumn: number;
+        projection?: { layout: string; column: number; direction: -1 | 1; count: number; ranges: Selection[] } };
+    type DragUnit = ColumnDrag | (({ kind: "line"; range: Selection } | { kind: "word"; origin: number; range?: Selection }) & { lastHit?: number });
     let drag: Readonly<{ pointer: number; anchor: number; anchorAffinity: Affinity; revision: number; x: number; y: number; selectionSet: SelectionSet; baseRanges: readonly Selection[]; padding: boolean; unit?: DragUnit }> | undefined;
     let dragCaretRecorded = false;
     let clickedWord: { range: Selection; selections: SelectionSet } | undefined;
@@ -205,7 +207,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     let pendingDeletion: Readonly<{ revision: number; selectionSet: SelectionSet; command: DeletionCommand }> | undefined;
     let insertion: InputCapture | undefined, composition: InputCapture | undefined;
     let projectedSet = view.getSnapshot().selectionSet;
-    let rangeCommand: Readonly<{ capture: CommandCapture; purpose: "word" | "grapheme"; release: () => void }> | undefined, cancelRangeTask: (() => void) | undefined;
+    let rangeCommand: Readonly<{ capture: CommandCapture; purpose: OrderedInput<CommandCapture>["purpose"]; release: () => void }> | undefined, cancelRangeTask: (() => void) | undefined;
     let nativeOrder: { order: OrderedInput<CommandCapture>; capture: InputCapture; type: string; data: string | null; action?: InputKey; invalid: boolean; reported: boolean } | undefined;
     const inputQueue = createOrderedInputQueue<CommandCapture>(win.performance, commandRunner, {
         command: () => rangeCommand, capture: () => commandCapture(false), disposed: () => disposed,
@@ -1014,9 +1016,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 cancelWord(); syncSelection(); group = undefined; preferred = undefined;
                 const previous = caretHistory.pop();
                 if (previous) {
-                    restoringCaret = true;
+                    skipCaretHistory = true;
                     try { view.setSelections(revision, previous.ranges, previous.primary); revealCaret(); }
-                    finally { restoringCaret = false; }
+                    finally { skipCaretHistory = false; }
                 }
                 return true;
             }
@@ -1367,17 +1369,21 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const point = pointerHit(event); if (!point) return;
         native.preventDefault(); stopDrag(); cancelWord(); preferred = undefined; focus(); group = undefined;
         const state = view.getSnapshot();
+        const columns = !gutter && event.pointerType === "mouse" && !point.padding
+            && (event.button === 1 || event.button === 0 && event.shiftKey && event.altKey && !event.ctrlKey && !event.metaKey);
+        let keepSelection = false;
         if (event.button !== 0) {
-            const inside = state.selectionSet.ranges.some(({ anchor, head }) =>
+            keepSelection = state.selectionSet.ranges.some(({ anchor, head }) =>
                 point.offset >= Math.min(anchor, head) && point.offset <= Math.max(anchor, head));
-            if (!inside) {
+            if (!columns && !keepSelection) {
                 view.setSelection(revision, { anchor: point.offset, head: point.offset, anchorAffinity: point.affinity, headAffinity: point.affinity });
                 refresh();
             }
-            return;
+            if (!columns) return;
         }
-        const extending = event.shiftKey && !event.altKey;
-        if (!gutter && event.altKey && clicks < 2) {
+        const extending = !columns && event.shiftKey && !event.altKey;
+        const additive = !columns && !gutter && event.altKey;
+        if (additive && clicks < 2) {
             const { ranges, primary } = state.selectionSet;
             const hit = ranges.findIndex(range => point.offset >= Math.min(range.anchor, range.head) && point.offset <= Math.max(range.anchor, range.head));
             if (hit >= 0) {
@@ -1398,12 +1404,15 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             anchorAffinity = backward ? "before" : "after";
             if (!backward) head = Math.max(head, word.head);
         }
-        const baseRanges = !gutter && event.altKey ? state.selectionSet.ranges : extending ? state.selectionSet.ranges.filter((_, index) => index !== state.selectionSet.primary) : [];
+        const baseRanges = additive ? state.selectionSet.ranges : extending ? state.selectionSet.ranges.filter((_, index) => index !== state.selectionSet.primary) : [];
         let unit: DragUnit | undefined;
-        if (clicks >= 4) {
+        if (columns) {
+            const line = workspace.document(documentId).buffer.lineAt(point.offset);
+            unit = { kind: "column", middle: event.button === 1, originRow: view.folding.getSnapshot().index.rowAt(line),
+                anchorColumn: dragColumn(event.clientX, dragBounds()) };
+        } else if (clicks >= 4) {
             view.setSelection(revision, { anchor: 0, head: workspace.document(documentId).buffer.length }); refresh(); return;
-        }
-        if (gutter || clicks === 3) {
+        } else if (gutter || clicks === 3) {
             const buffer = workspace.document(documentId).buffer, target = wholeLine(buffer, point.offset);
             let range = target;
             if (gutter && extending) {
@@ -1414,7 +1423,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             unit = { kind: "line", range };
             ({ anchor, head } = lineSelection(range, target));
         } else if (clicks === 2) unit = { kind: "word", origin: point.offset };
-        view.setSelections(revision, [...baseRanges, { anchor, head, anchorAffinity, headAffinity: point.affinity }], baseRanges.length); refresh();
+        if (!keepSelection) view.setSelections(revision, [...baseRanges, { anchor, head, anchorAffinity, headAffinity: point.affinity }], baseRanges.length);
+        refresh();
         if (word) clickedWord = { range: word, selections: view.getSnapshot().selectionSet };
         dragCaretRecorded = state.selectionSet !== view.getSnapshot().selectionSet;
         if (point.padding) viewport.revealOffset(point.offset, { horizontal: "nearest", vertical: "nearest", affinity: point.affinity });
@@ -1422,7 +1432,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     }
     root.addEventListener("pointermove", event => {
         if (drag?.pointer !== event.pointerId) return;
-        if (!(event.buttons & 1) || !validDrag()) { stopDrag(); return; }
+        const buttonMask = drag.unit?.kind === "column" && drag.unit.middle ? 4 : 1;
+        if (!(event.buttons & buttonMask) || !validDrag()) { stopDrag(); return; }
         drag = { ...drag, x: event.clientX, y: event.clientY }; updateDragHead(); dragScrolling.schedule();
     }, { signal: listeners.signal });
     function validDrag(): boolean {
@@ -1432,11 +1443,58 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     function dragBounds() {
         return clientBox(root, viewport.settings().minimap, viewport.getSnapshot().gutterWidth);
     }
+    function dragColumn(x: number, bounds: ReturnType<typeof dragBounds>): number {
+        return viewport.getSnapshot().scrollLeft + (Math.max(bounds.left, Math.min(bounds.right - 1, x)) - bounds.left) / bounds.zoom;
+    }
+    function updateColumnDrag(unit: ColumnDrag, offset: number, column: number): void {
+        if (inputQueue.pending) return;
+        const capture = commandCapture(false), folds = view.folding.getSnapshot().index;
+        const row = folds.rowAt(capture.buffer.lineAt(offset)), direction = row < unit.originRow ? -1 : 1;
+        if (!unit.projection && row === unit.originRow && Math.abs(unit.anchorColumn - column) < 2) return;
+        const count = Math.abs(row - unit.originRow) + 1, layout = navigationLayout();
+        let projection = unit.projection;
+        if (!projection || projection.layout !== layout || projection.direction !== direction || projection.column !== column) {
+            projection = { layout, direction, column, ranges: [], count: 0 }; unit.projection = projection;
+        }
+        if (projection.count === count) return;
+        cancelWord(); projection.count = count;
+        // Extending down the same columns only measures newly crossed rows.
+        const ranges = projection.ranges;
+        const job = { capture, purpose: "column" as const, release: () => {} }; rangeCommand = job;
+        const step = () => commandTurn(() => {
+            if (rangeCommand !== job) return;
+            if (!validCommand(capture) || !root.isConnected || navigationLayout() !== layout) { cancelWord(); return; }
+            const more = commandRunner.slice(() => {
+                if (ranges.length >= count) return false;
+                const line = folds.lineAt(unit.originRow + direction * ranges.length);
+                const range = navigation.selectionAtColumns(line, unit.anchorColumn, column);
+                if (!range) { cancelWord(); return false; }
+                ranges.push(range);
+                return ranges.length < count;
+            }, pending => pending, commandBudget.rangeCalls);
+            if (rangeCommand !== job) return;
+            if (more) { cancelRangeTask = commandRunner.schedule(step); return; }
+            cancelRangeTask = undefined; rangeCommand = undefined;
+            completeCaptured(capture, () => {
+                // A long drag can finish after pointerup. It still has one caret-history entry.
+                skipCaretHistory = dragCaretRecorded;
+                try { view.setSelections(capture.revision, ranges.slice(0, count), count - 1); }
+                finally { skipCaretHistory = false; }
+                if (drag?.unit === unit) drag = { ...drag, selectionSet: view.getSnapshot().selectionSet };
+                refresh(); return true;
+            });
+        });
+        step();
+    }
     function updateDragHead(): void {
         const current = drag; if (!current) return; const bounds = dragBounds();
         const point = viewport.hitTest(Math.max(bounds.left, Math.min(bounds.right - 1, current.x)), Math.max(bounds.top, Math.min(bounds.bottom - 1, current.y)));
         if (!point || drag !== current) return;
         const unit = current.unit;
+        if (unit?.kind === "column") {
+            if (!point.padding) updateColumnDrag(unit, point.offset, dragColumn(current.x, bounds));
+            return;
+        }
         if (unit) {
             if (unit.lastHit === point.offset) return;
             unit.lastHit = point.offset;
@@ -1479,6 +1537,11 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     const stopDrag = (event?: PointerEvent) => {
         if (event && event.pointerId === mousePress?.event.pointerId) mousePress = undefined;
         if (event && event.pointerId !== drag?.pointer) return;
+        if (drag?.unit?.kind === "column") {
+            if (event?.type === "pointerup" && validDrag()) {
+                drag = { ...drag, x: event.clientX, y: event.clientY }; updateDragHead();
+            } else if (event?.type !== "pointerup" && rangeCommand?.purpose === "column") cancelWord();
+        }
         if (drag?.unit?.kind === "word" && (event?.type === "pointercancel" || event?.type === "lostpointercapture")) cancelWord();
         dragScrolling.stop();
         const pointer = drag?.pointer, padding = drag?.padding; drag = undefined;
@@ -1540,13 +1603,13 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     }, { signal: listeners.signal });
     let observedFoldRevision = view.folding.getSnapshot().revision;
     const caretHistory: SelectionSet[] = [];
-    let lastCaret = view.getSnapshot(), restoringCaret = false;
+    let lastCaret = view.getSnapshot(), skipCaretHistory = false;
     const observeCaret = () => {
         const next = view.getSnapshot();
         clickedWord = undefined;
         inferredOccurrence = undefined;
         if (next.revision !== lastCaret.revision) caretHistory.length = 0;
-        else if (!restoringCaret && (!drag || !dragCaretRecorded) && next.selectionSet !== lastCaret.selectionSet) {
+        else if (!skipCaretHistory && (!drag || !dragCaretRecorded) && next.selectionSet !== lastCaret.selectionSet) {
             if (caretHistory.length === 50) caretHistory.shift();
             caretHistory.push(lastCaret.selectionSet);
             if (drag) dragCaretRecorded = true;

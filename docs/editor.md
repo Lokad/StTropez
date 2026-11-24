@@ -262,6 +262,7 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Escape then Tab / Shift+Tab | With a single range, leave the editor for the next/previous host control. |
 | Click / Shift+click | One caret / extend the primary range while retaining secondary ranges |
 | Alt+click / Alt+drag / Alt+double-click | Add a caret / range / code-word selection. With several ranges, Alt+click removes the one under the pointer. |
+| Shift+Alt+drag / middle-button drag | Select a column of text from the press to the release point, with one range on each visible source line. |
 | Double-click | Select the code-word, symbol or whitespace run within the clicked logical line |
 | Double-click and drag | Extend the selection by whole words in either direction |
 | Triple-click / triple-click and drag | Select a line including its ending / extend by whole lines |
@@ -295,6 +296,12 @@ It selects source text even where the transparent input overlaps it. Right- or m
 places the caret at the pointer, or keeps the selections when you click inside one. Dragging a
 scrollbar or clicking its track keeps the selection. Typing brings the edited line back into view,
 even during a track-click animation.
+
+A column drag measures both horizontal positions on each line. Short lines stop at their ends.
+Dragging straight down creates carets. Folded bodies and blank comparison padding contribute
+no ranges. The line under the moving corner has the primary range. Typing replaces all ranges
+in one undo step. Read-only panes allow the same selection gesture.
+
 `--st-selection` paints above token and occurrence backgrounds. A selection drag ends
 on pointer release, lost capture, cancellation or a source/view change. Hold a drag outside an edge to
 scroll, up to three viewport lengths per second per axis. Each callback advances at most 32 ms of
