@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import { libraryModules, libraryCss, regexWorker } from "./library-entries.mjs";
 
-const runtimeByteBudget = 583_496;
+const runtimeByteBudget = 583_451;
 
 export async function buildLibrary() {
     const output = fileURLToPath(new URL("../dist", import.meta.url));

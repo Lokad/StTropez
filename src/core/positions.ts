@@ -43,13 +43,22 @@ class ChangePositionMap implements PositionMapping {
     readonly newLength: number;
     private readonly changes: readonly IndexedChange[];
     #compiled: GeometryPair | undefined;
-    constructor(oldLength: number, changes: readonly Change[]) {
+    constructor(oldLength: number, batch: readonly Change[] | { edits: readonly TextEdit[] }) {
         this.oldLength = oldLength;
         let delta = 0;
-        const indexed = changes.map(change => {
-            const result = { ...change, deltaBefore: delta, coveredTo: change.to };
-            delta += change.insertedLength - (change.to - change.from); return result;
-        });
+        const indexed: (Change & { deltaBefore: number; coveredTo: number })[] = [];
+        const append = (from: number, to: number, insertedLength: number, change?: Change) => {
+            indexed.push({ ...change, from, to, insertedLength, deltaBefore: delta, coveredTo: to });
+            delta += insertedLength - (to - from);
+        };
+        if ("edits" in batch) {
+            validateTextEdits(oldLength, batch.edits);
+            for (const { from, to, insert } of batch.edits) {
+                if (from !== to || insert.length) append(from, to, insert.length);
+            }
+        } else {
+            for (const change of batch) append(change.from, change.to, change.insertedLength, change);
+        }
         // Adjacent consumed intervals cover an original range even if insertions lie between them.
         for (let index = indexed.length - 1; index >= 0; index--) {
             const change = indexed[index]!, next = indexed[index + 1];
@@ -125,8 +134,8 @@ class ChangePositionMap implements PositionMapping {
         const changes = this.changes.map(change => {
             const from = change.from + delta;
             delta += change.insertedLength - (change.to - change.from);
-            return Object.freeze({ from, to: from + change.insertedLength, insertedLength: change.to - change.from,
-                unitDeletion: change.inverseUnitDeletion === true, inverseUnitDeletion: change.unitDeletion === true });
+            return { from, to: from + change.insertedLength, insertedLength: change.to - change.from,
+                unitDeletion: change.inverseUnitDeletion === true, inverseUnitDeletion: change.unitDeletion === true };
         });
         return new ChangePositionMap(this.newLength, changes);
     }
@@ -229,10 +238,7 @@ export function replacementMap(oldLength: number, span: Pick<Change, "from" | "t
 /** An immutable indexed map for one batch. Offsets are UTF-16; a replacement consumes its interior. */
 export class PositionMap extends ChangePositionMap {
     constructor(oldLength: number, edits: readonly TextEdit[]) {
-        if (!Number.isSafeInteger(oldLength) || oldLength < 0) throw new RangeError("Invalid document length.");
-        validateTextEdits(oldLength, edits);
-        super(oldLength, edits.filter(edit => edit.from !== edit.to || edit.insert.length !== 0)
-            .map(edit => ({ from: edit.from, to: edit.to, insertedLength: edit.insert.length })));
+        super(oldLength, { edits });
     }
 }
 
