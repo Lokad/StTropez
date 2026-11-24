@@ -78,7 +78,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspe
         page.on("websocket", socket => { socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value); });
             socket.on("framereceived", frame => { const value = JSON.parse(frame.payload.toString()); if (Array.isArray(value.result) && value.result[0]?.targetUri) linkedResponses++; }); });
         const text = "catalogue;\r\nconst local = 1;\r\n"; await seed(page, text, 3); await button(page, "Add navigation companion").click();
-        await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 3, head: 3 }, { anchor: 22, head: 22 }]); });
+        await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 9, head: 0 }, { anchor: 22, head: 22 }]); });
         await moveEditorIntoShadow(field(page));
         await field(page).focus();
         const row = page.locator('.st-editor:has(> textarea[aria-label="Primary source"]) .st-viewport-row[data-line="0"]');

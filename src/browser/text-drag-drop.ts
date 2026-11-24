@@ -1,4 +1,4 @@
-import { clientBox, hitTestRoot } from "./dom-coordinates.ts";
+import { clientBox, hitTestRoot, onPaintedSelection } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
 import type { Affinity } from "../core/positions.ts";
 import type { DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
@@ -168,7 +168,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
     }, { signal: listeners.signal });
     document.addEventListener("pointerup", event => {
         const intent = armed; if (!intent || intent.pointer !== event.pointerId) return; clearArm();
-        if (current()?.revision !== intent.revision || view.getSnapshot().selectionSet !== intent.selectionSet) return;
+        if (event.defaultPrevented || current()?.revision !== intent.revision || view.getSnapshot().selectionSet !== intent.selectionSet) return;
         options.beforeStart(); view.setSelection(intent.revision, { anchor: intent.offset, head: intent.offset, anchorAffinity: intent.affinity, headAffinity: intent.affinity }); input.focus({ preventScroll: true });
     }, { signal: listeners.signal });
     document.addEventListener("pointercancel", event => { if (armed?.pointer === event.pointerId) clearArm(); }, { signal: listeners.signal });
@@ -183,8 +183,8 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
         disarm: clearArm,
         arm: (event: PointerEvent): boolean => {
             clearArm(); const state = current();
-            if (!state || event.button !== 0 || event.pointerType && event.pointerType !== "mouse" || event.altKey || event.shiftKey || event.target === input || !(event.target instanceof win.Element)
-                || !event.target.closest(".st-viewport-selected, .st-selection-run")) return false;
+            if (!state || event.button !== 0 || event.pointerType && event.pointerType !== "mouse" || event.altKey || event.shiftKey || event.target === input
+                || !onPaintedSelection(root, event.target)) return false;
             const point = viewport.hitTest(event.clientX, event.clientY), set = view.getSnapshot().selectionSet;
             if (!point || !set.ranges.some(range => range.anchor !== range.head && point.offset >= Math.min(range.anchor, range.head) && point.offset <= Math.max(range.anchor, range.head))) return false;
             armed = { revision: state.revision, selectionSet: set, pointer: event.pointerId, offset: point.offset, affinity: point.affinity }; root.draggable = true; return true;

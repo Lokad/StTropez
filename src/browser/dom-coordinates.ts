@@ -1,3 +1,7 @@
+export function onPaintedSelection(root: HTMLElement, target: EventTarget | null): boolean {
+    return target instanceof root.ownerDocument.defaultView!.Element && !!target.closest(".st-viewport-selected, .st-selection-run");
+}
+
 /** Resolve at hit time because hosts can move a mounted editor between trees. */
 export function hitTestRoot(element: Element): DocumentOrShadowRoot {
     return element.isConnected ? element.getRootNode() as Document | ShadowRoot : element.ownerDocument;

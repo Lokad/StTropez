@@ -1,5 +1,5 @@
 import { codeWordConstituentPattern } from "../core/words.ts";
-import { hitTestRoot } from "./dom-coordinates.ts";
+import { hitTestRoot, onPaintedSelection } from "./dom-coordinates.ts";
 import { editorInput } from "./editor-input.ts";
 import type { TextEditor } from "./text-editor.ts";
 import type { NavigationPointerLink } from "./navigation-controller.ts";
@@ -60,7 +60,11 @@ export function bindDefinitionPointer(editor: TextEditor, inspect: (hit: Definit
         if (event.button !== 0 || !event.isPrimary || !modified(event)) { clear(); return; }
         const hit = hitAt(event.clientX, event.clientY); if (!hit) { clear(); return; }
         stopTimer(); press = { hit, id: event.pointerId, x: event.clientX, y: event.clientY };
-        event.preventDefault(); event.stopPropagation(); inspect(hit);
+        // A press in selected text can become a copy drag. Only a click opens the definition.
+        if (event.pointerType !== "mouse" || !onPaintedSelection(root, event.target)) {
+            event.preventDefault(); event.stopPropagation();
+        }
+        inspect(hit);
     }, { signal, capture: true });
     root.addEventListener("pointerup", event => {
         const pressed = press; press = undefined;
@@ -68,7 +72,9 @@ export function bindDefinitionPointer(editor: TextEditor, inspect: (hit: Definit
         const hit = hitAt(event.clientX, event.clientY);
         if (!hit || hit.revision !== pressed.hit.revision || hit.from !== pressed.hit.from || hit.to !== pressed.hit.to || !!hit.open !== !!pressed.hit.open
             || Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) > 4) { clear(); return; }
-        event.preventDefault(); event.stopPropagation(); activate(pressed.hit.open ? pressed.hit : hit);
+        event.preventDefault();
+        if (!root.draggable) event.stopPropagation();
+        activate(pressed.hit.open ? pressed.hit : hit);
     }, { signal, capture: true });
     root.addEventListener("pointercancel", clear, { signal });
     editor.viewport.element.addEventListener("scroll", clear, { signal });

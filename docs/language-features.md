@@ -397,8 +397,8 @@ the caret in the editor.
 view. Hold Ctrl or Cmd over a symbol to underline it, including when the editor is mounted in a
 shadow root. Hover preserves focus, selections and open tabs. Releasing the modifier clears the
 underline. A primary click while the modifier is held resolves the target even if the lookup
-is pending. Editing or remounting the source expires
-the gesture. Alt+click stays available for multiple carets.
+is pending. A drag starting inside selected text uses the editor’s text transfer.
+Editing or remounting the source expires the gesture. Alt+click stays available for multiple carets.
 
 If the provider has reached its scope limit, hovering leaves the symbol unmarked. An explicit
 lookup rejects and sets the controller status to `failed`. Both release the captured view, so
