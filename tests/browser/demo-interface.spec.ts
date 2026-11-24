@@ -245,7 +245,13 @@ test("Go to line returns typing to the chosen row and cancels when the source vi
     await page.goto(browserDemo(baseURL!)); await page.locator("#sample").selectOption("results");
     const source = page.getByRole("textbox", { name: "uses.ts", exact: true });
     await source.press("Control+g");
-    const dialog = page.getByRole("dialog", { name: "Go to line" }), line = dialog.getByRole("spinbutton");
+    const dialog = page.getByRole("dialog", { name: "Go to line" }), line = dialog.getByRole("textbox");
+    await line.pressSequentially("12:5");
+    await line.press("Enter");
+    await expect(line).toHaveValue("12:5");
+    await expect(line).toBeFocused();
+    expect(await line.evaluate(node => (node as HTMLInputElement).validity.customError)).toBe(true);
+    await expect(page.locator("#cursor")).toHaveText("Ln 1, Col 1");
     await line.fill("501"); await line.press("Enter"); await expect(source).toBeFocused();
     const viewport = source.locator("..");
     await expect.poll(() => visibleContext(viewport, 500)).toBeGreaterThan(.35);
@@ -287,7 +293,7 @@ test("off-screen Undo and Redo reveal surrounding code and retain the typing tar
         const pane = mode === "source" ? page.locator("#editor") : page.locator(".st-comparison-panes > section").last();
         const source = pane.getByRole("textbox"), viewport = pane.locator(".st-viewport");
         const row = pane.locator('.st-viewport-row[data-line="499"]'), cursor = page.locator("#cursor");
-        await source.press("Control+g"); const line = page.getByRole("dialog", { name: "Go to line" }).getByRole("spinbutton");
+        await source.press("Control+g"); const line = page.getByRole("dialog", { name: "Go to line" }).getByRole("textbox");
         await line.fill("500"); await line.press("Enter");
         await page.keyboard.insertText("X"); await expect(row).toContainText("Xconst use");
         for (const [jump, history, column] of [["Home", "z", 1], ["End", "y", 2]] as const) {

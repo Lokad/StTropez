@@ -10,7 +10,8 @@ export function linePrompt(owner: Document): LinePrompt {
         dialog.className = "host-line-prompt"; dialog.setAttribute("aria-label", "Go to line");
         dialog.setAttribute("closedby", "any");
         label.textContent = `Line (1–${lineCount})`;
-        input.type = "number"; input.required = true; input.min = "1"; input.max = String(lineCount);
+        input.inputMode = "numeric";
+        input.required = true;
         input.value = String(currentLine); label.append(input);
         go.textContent = "Go"; cancel.textContent = "Cancel"; cancel.type = "button";
         form.append(label, go, cancel); dialog.append(form);
@@ -19,7 +20,18 @@ export function linePrompt(owner: Document): LinePrompt {
             dialog.close(); dialog.remove(); resolve(line);
         };
         const dismiss = () => finish();
-        form.addEventListener("submit", event => { event.preventDefault(); finish(input.valueAsNumber); });
+        input.addEventListener("input", () => input.setCustomValidity(""));
+        form.addEventListener("submit", event => {
+            event.preventDefault();
+            const value = input.value.trim();
+            const line = Number(value);
+            if (!/^\d+$/.test(value) || line < 1 || line > lineCount) {
+                input.setCustomValidity(`Enter a whole line number from 1 to ${lineCount}.`);
+                input.reportValidity();
+                return;
+            }
+            finish(line);
+        });
         cancel.addEventListener("click", dismiss);
         dialog.addEventListener("cancel", event => { event.preventDefault(); dismiss(); });
         dialog.addEventListener("keydown", event => {

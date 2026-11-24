@@ -99,7 +99,8 @@ The Code menu follows the last focused editor. The saved copy and generated Java
 offer **Go to line**. Editing commands are disabled in both read-only panes.
 Open **Code** to see the shortcut beside each bound command. Up and Down move between available
 controls. Inside a select box they change its value. Escape returns to the menu button.
-In **Go to line**, Ctrl/Cmd+G selects the number again. Escape or a click outside the prompt
+**Go to line** accepts a whole line number from 1 to the last line. Invalid input stays in the
+prompt for correction. Ctrl/Cmd+G selects the entry again. Escape or a click outside the prompt
 returns to the original caret.
 
 | Action | Workflow |

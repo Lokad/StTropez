@@ -598,7 +598,7 @@ export async function runDemoEditingRules(page: Page, url = "/") {
     await page.getByRole("button", { name: "JavaScript", exact: true }).click();
     const generated = page.getByRole("textbox", { name: "JavaScript output", exact: true });
     await generated.focus(); await menu("Go to line");
-    const line = page.getByRole("dialog", { name: "Go to line" }).getByRole("spinbutton");
+    const line = page.getByRole("dialog", { name: "Go to line" }).getByRole("textbox");
     await line.fill("2"); await line.press("Enter");
     await expect(generated).toBeFocused(); await expect(page.locator("#cursor")).toHaveText("Ln 2, Col 1");
     // Reading and removing the outer comment on every row takes several planning turns.
