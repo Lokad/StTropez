@@ -19,6 +19,8 @@ export async function runDemoActions(page: Page, url = "/") {
     await source.press("Control+Home"); await source.press("Control+.");
     await actions.getByRole("button", { name: "Demo refactor: rename exampleRate across files", exact: true }).click();
     const confirm = actions.getByRole("button", { name: "Apply fix", exact: true });
+    await expect(confirm).toBeInViewport({ ratio: 1 });
+    await expect(actions.getByRole("button", { name: "Cancel fix" })).toBeInViewport({ ratio: 1 });
     await confirm.focus(); await viewport.evaluate(el => { el.scrollTop = el.scrollHeight / 2; });
     await expect(actions).toBeHidden(); await expect(source).toBeFocused();
     await viewport.evaluate(el => { el.scrollTop = 0; }); await expect(confirm).toBeEnabled();
@@ -65,8 +67,8 @@ export async function runDemoActions(page: Page, url = "/") {
     await expect(apply).toBeEnabled();
     await expect(page.locator("#editor")).toContainText("import { exampleRate }");
     await source.press("Control+End");
-    await expect(actions.getByRole("button", { name: "Apply fix", exact: true })).toBeDisabled();
-    await expect(actions).toContainText("The code or selection changed");
+    await expect(actions).toBeHidden();
+    await expect(source).toBeFocused();
     await page.keyboard.insertText("// Keep this later edit");
     await expect(actions).toBeHidden(); await expect(source).toBeFocused();
     await source.press("Enter");

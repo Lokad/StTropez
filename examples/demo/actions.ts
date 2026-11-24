@@ -28,7 +28,14 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     const pages = document.createElement("div"), choicePages = document.createElement("div"), choiceCount = document.createElement("span");
     let previousChoices = document.createElement("button"), nextChoices = document.createElement("button");
     choicePages.append(previousChoices, choiceCount, nextChoices);
-    popup.append(heading, status, choices, choicePages, edits, pages, apply, close); document.body.append(popup);
+    const body = document.createElement("div");
+    body.className = "demo-action-body";
+    body.append(status, choices, choicePages, edits, pages);
+    const footer = document.createElement("div");
+    footer.className = "demo-action-footer";
+    footer.append(apply, close);
+    popup.append(heading, body, footer);
+    document.body.append(popup);
     scope.defer(() => { apply.onclick = null; });
     const idle = () => { const state = editor.activity(); return !disposed && valid() && !state.composing && !state.pendingInput && !state.pendingCommand; };
     const present = (id: string) => id === file.resource.documentId && valid() ? editor : undefined;
@@ -71,10 +78,15 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     let oldChoices: unknown, oldChoicePage = -1;
     function render(): void {
         const state = tools.getSnapshot(), preview = state.preview;
+        if (state.status === "expired") {
+            const hadFocus = popup.contains(document.activeElement);
+            hide();
+            if (hadFocus) editor.focus();
+            return;
+        }
         const { choicePage, choicePaging, editPaging, edits: page } = readPages();
         if (state.status === "ready") commandAction = !!preview?.command;
-        status.textContent = state.status === "expired" ? "The code or selection changed. Request fixes again."
-            : state.status === "ready" ? state.choices.length ? preview?.command ? state.message : "Choose a small fix to apply it. Broader changes stay here for review before Apply." : "No quick fix at this position."
+        status.textContent = state.status === "ready" ? state.choices.length ? preview?.command ? state.message : "Choose a small fix to apply it. Broader changes stay here for review before Apply." : "No quick fix at this position."
                 : state.message;
         if (oldChoices !== state.choices || oldChoicePage !== choicePage) {
             oldChoices = state.choices; oldChoicePage = choicePage; choices.replaceChildren(...state.choices.slice(choicePage * actionChoicePageSize, (choicePage + 1) * actionChoicePageSize).map(choice => {
@@ -101,7 +113,8 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     }
     scope.defer(tools.subscribe(render));
     scope.defer(commands.state.subscribe(() => { if (tools.getSnapshot().preview?.command) render(); }));
-    scope.defer(editor.view.subscribe(anchor));
+    // Commands can edit their own target while reporting the result to the user.
+    scope.defer(editor.view.subscribe(() => { if (commandAction) anchor(); }));
     scope.defer(workspace.onDocumentChange(file.resource.documentId, change => {
         if (open && change.origin === "human") hide();
     }));
