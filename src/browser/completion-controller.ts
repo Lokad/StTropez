@@ -1,9 +1,9 @@
 import { emptyList } from "../core/empty-list.ts";
 import { isIndex, isPositiveInteger } from "../core/bounds.ts";
 import { completionMethod } from "../protocol/lsp-methods.ts";
-import { retainLspDocument, type LspDocumentOwner } from "../protocol/lsp-client.ts";
+import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { completionClient } from "../protocol/lsp-completion.ts";
-import { beginReadRequest, type LspReadRequest } from "../protocol/lsp-workspace.ts";
+import { beginReadRequest } from "../protocol/lsp-workspace.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import { ProtocolDecodeError, rpcCodes, staleRequest } from "../protocol/wire.ts";
 import { dispatchTypedText, typedTextEvent, type TypedTextDetail } from "./input-events.ts";
@@ -18,7 +18,7 @@ import type { FoldIndex } from "../core/folding.ts";
 import type { TextEditor } from "./text-editor.ts";
 import { editorInput } from "./editor-input.ts";
 import type { DecorationLayer } from "./decoration-layers.ts";
-import { requireLanguageView, sameEditAuthority } from "./captured-view.ts";
+import { sameEditAuthority } from "./captured-view.ts";
 import { RpcError, lspCompletionPlan } from "../protocol/index.ts";
 import type { LspCall, LspCompletion, LspCompletionBatch, LspCompletionResolution, LspCompletions, LspCompletionFallback, LspScopeAccess, LspWorkspace, LspWorkspaceSnapshot, JsonValue } from "../protocol/index.ts";
 import { Store } from "../core/observable.ts";
@@ -61,31 +61,17 @@ function connectionMessage(phase: LspWorkspaceSnapshot["phase"]): string {
 }
 
 /** Captured editor coordination; hosts render controls and supply provider/custom-message policy. */
-export const createCompletionController: (editor: TextEditor, provider: LspWorkspace,
-    options?: CompletionControllerOptions) => CompletionController = mountCompletion;
-
-export function mountCompletion(editor: TextEditor, provider: LspWorkspace, options: CompletionControllerOptions = {},
-    shared?: LspDocumentOwner): CompletionController {
+export function mountCompletion(editor: TextEditor, ownerConnection: LspDocumentOwner,
+    options: CompletionControllerOptions): CompletionController {
     const input = editorInput(editor);
     const { workspace, tab: target, view } = editor, documentId = view.documentId, resource = workspace.resourceForDocument(documentId);
-    requireLanguageView(editor);
     const listeners = new AbortController();
-    const ownerConnection = shared ?? retainLspDocument(provider, documentId);
-    const { scope, binding } = ownerConnection;
-    let custom: LspReadRequest | undefined;
-    let completion: ReturnType<typeof completionClient>;
-    try {
-        custom = scope[beginReadRequest](() => {}, () => [binding]);
-        completion = completionClient(ownerConnection);
-    } catch (error) {
-        custom?.dispose();
-        if (!shared) ownerConnection.dispose();
-        throw error;
-    }
+    const { scope, binding, provider } = ownerConnection;
+    const custom = scope[beginReadRequest](() => {}, () => [binding]);
+    const completion = completionClient(ownerConnection);
     function releaseConnection() {
-        custom!.dispose();
+        custom.dispose();
         completion.dispose();
-        if (!shared) ownerConnection.dispose();
     }
     const counters = { posted: 0, applied: 0, stale: 0, cancelled: 0, invalid: 0, failed: 0, resolved: 0,
         lastCompletionBeforeInputMs: 0, lastCompletionCommandMs: 0 };
@@ -559,7 +545,6 @@ export function mountCompletion(editor: TextEditor, provider: LspWorkspace, opti
                 mode === "insert" ? ["Tab"] : ["Enter", "Alt+Enter"], visible, () => { if (!accept(mode) && job) expire("Completion expired."); });
         }
     } catch (error) { dispose(); throw error; }
-    editor.signal.addEventListener("abort", dispose, { once: true, signal: listeners.signal });
     if (options.autoConnect !== false) connect();
     return Object.freeze({ ...controllerObservable(cell, "Completion", () => disposed, notifications), request: () => { notifications.assertWritable(); if (!disposed) request(); },
         cancel: () => { notifications.assertWritable(); if (!disposed) cancel(); }, connect: () => { notifications.assertWritable(); connect(); },

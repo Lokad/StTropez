@@ -1,6 +1,6 @@
 import type { Workspace } from "../../src/index.ts";
-import { createCodeActionController, mountAnchoredOverlay } from "../../src/browser/index.ts";
-import type { CodeActionPreview, TextEditor } from "../../src/browser/index.ts";
+import { mountAnchoredOverlay } from "../../src/browser/index.ts";
+import type { CodeActionController, CodeActionControllerOptions, CodeActionPreview, TextEditor } from "../../src/browser/index.ts";
 import type { LspCodeAction, LspWorkspace } from "../../src/protocol/index.ts";
 import { HostProjectTools } from "../hosts/project.ts";
 import { createReviewKey, pageActions, renderPanelActions, renderPanelButton } from "../hosts/panel-actions.ts";
@@ -13,9 +13,28 @@ import type { DemoLanguage } from "./language.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 import { bindPopupCommands } from "./language-commands.ts";
 
+export function demoActionPolicy(scope: CleanupScope, workspace: Workspace, file: DemoFile, editor: TextEditor,
+    provider: LspWorkspace, language: DemoLanguage, valid: () => boolean) {
+    const idle = () => { const state = editor.activity(); return valid() && !state.composing && !state.pendingInput && !state.pendingCommand; };
+    const present = (id: string) => id === file.resource.documentId && valid() ? editor : undefined;
+    const commands = new HostProjectTools({ workspace, canCapture: idle, present }, undefined, provider, request =>
+        request.edit.documents.length === 1 && request.edit.documents[0]!.target.document.documentId === file.resource.documentId
+        && request.edit.documents[0]!.edits.length === 1 && request.edit.documents[0]!.edits.every(edit => edit.insert === projectReviewNote
+            && edit.from === edit.to && edit.from === request.edit.documents[0]!.target.document.buffer.length) ? "apply" : "decline");
+    scope.defer(() => commands.dispose());
+    const options: CodeActionControllerOptions = {
+        documents: () => workspace.getSnapshot().documents.filter(doc => doc.language !== null), canCapture: idle,
+        commandPolicy: demoCommandPolicy(file, () => workspace.document(file.resource.documentId).language?.uri, idle),
+        prepareRequest: session => language.prepareActions(session, file),
+        runCommand: command => commands.beginAction({ ...command, editor })
+    };
+    scope.defer(commands.attach("source", file.tab, editor));
+    return { options, commands, idle };
+}
+
 /** Contextual presentation; the existing action controller owns captures, validation and history. */
-export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file: DemoFile, editor: TextEditor, provider: LspWorkspace,
-    language: DemoLanguage, valid: () => boolean, dismissOther: () => void) {
+export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file: DemoFile, editor: TextEditor, tools: CodeActionController,
+    { commands, idle }: ReturnType<typeof demoActionPolicy>, dismissOther: () => void) {
     const events = new AbortController(); let disposed = false, commandAction = false;
     scope.defer(() => { disposed = true; events.abort(); });
     const popup = document.createElement("section"); scope.defer(() => popup.remove());
@@ -37,20 +56,6 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     popup.append(heading, body, footer);
     document.body.append(popup);
     scope.defer(() => { apply.onclick = null; });
-    const idle = () => { const state = editor.activity(); return !disposed && valid() && !state.composing && !state.pendingInput && !state.pendingCommand; };
-    const present = (id: string) => id === file.resource.documentId && valid() ? editor : undefined;
-    const commands = new HostProjectTools({ workspace, canCapture: idle, present }, undefined, provider, request =>
-        request.edit.documents.length === 1 && request.edit.documents[0]!.target.document.documentId === file.resource.documentId
-        && request.edit.documents[0]!.edits.length === 1 && request.edit.documents[0]!.edits.every(edit => edit.insert === projectReviewNote
-            && edit.from === edit.to && edit.from === request.edit.documents[0]!.target.document.buffer.length) ? "apply" : "decline");
-    scope.defer(() => commands.dispose());
-    const tools = createCodeActionController(editor, provider, {
-        documents: () => workspace.getSnapshot().documents.filter(doc => doc.language !== null), canCapture: idle,
-        commandPolicy: demoCommandPolicy(file, () => workspace.document(file.resource.documentId).language?.uri, idle),
-        prepareRequest: session => language.prepareActions(session, file),
-        runCommand: command => commands.beginAction({ ...command, editor })
-    });
-    scope.defer(() => tools.dispose());
     // Host interaction policy only; all captures, permissions and history still pass through tools.
     const direct = (action: LspCodeAction) => {
         const changes = action.edit?.documents.filter(change => change.edits.length) ?? [];
@@ -145,6 +150,5 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     };
     bind("quickfix.previous", "Previous quick fix", "ArrowUp", () => move(-1));
     bind("quickfix.next", "Next quick fix", "ArrowDown", () => move(1));
-    scope.defer(commands.attach("source", file.tab, editor));
     return Object.freeze({ request, dismiss, isOpen: () => !popup.hidden });
 }

@@ -17,8 +17,7 @@ export type { FoldDiscovery, FoldDiscoveryBatch, FoldDiscoveryResult, FoldDiscov
 export { openWebSocketTransport } from "./lsp-websocket.ts";
 export { BrowserLspWorkspace, type BrowserLspWorkspaceOptions } from "./lsp-workspace.ts";
 export type { WebSocketTransportOptions } from "./lsp-websocket.ts";
-export { createDiagnosticController, diagnosticDecoration } from "./diagnostic-controller.ts";
-export { createCodeActionController } from "./code-action-controller.ts";
+export { diagnosticDecoration } from "./diagnostic-controller.ts";
 export { createNavigationController } from "./navigation-controller.ts";
 export { createNavigationHistory, type NavigationHistory, type NavigationOrigin } from "./navigation-history.ts";
 export { createRenameController } from "./rename-controller.ts";
@@ -34,7 +33,6 @@ export type { NavigationController, NavigationControllerOptions, NavigationPoint
 export type { HoverController, HoverControllerOptions, HoverDiagnostics, HoverSnapshot } from "./hover-controller.ts";
 export type { CodeActionController, CodeActionControllerOptions, CodeActionSnapshot, CodeActionChoice, CodeActionPreview, CodeActionConfirmation, CodeActionCommand, CodeActionExecution } from "./code-action-controller.ts";
 export type { DiagnosticController, DiagnosticControllerOptions, DiagnosticSnapshot, EditorDiagnostic } from "./diagnostic-controller.ts";
-export { createCompletionController } from "./completion-controller.ts";
 export { attachEditorLanguage } from "./editor-language.ts";
 export { mountDocumentation } from "./documentation.ts";
 export type { DocumentationOptions, DocumentationView } from "./documentation.ts";

@@ -9,6 +9,7 @@ import type { LspWorkspace } from "../../src/protocol/index.ts";
 
 type Fixture = { workspace: Workspace; source: TextResourceHandle; tab: TabId; editor: TextEditor;
     provider?: LspWorkspace; completion?: CompletionController; highlights?: LspHighlightController;
+    prepareCompletion?: () => Promise<void>;
     errors: string[]; cancellations: string[]; dispose: () => Promise<void> };
 declare global { interface Window { shadowFocus: Fixture } }
 let modules: Map<string, string>, css: string;
@@ -47,7 +48,7 @@ async function mount(page: Page, language: boolean) {
             const endpoint = new URL("/lsp-fixture", location.href); endpoint.protocol = "ws:";
             f.provider = new BrowserLspWorkspace(workspace, {
                 connect: signal => openWebSocketTransport(endpoint.href, { signal }), onError: report });
-            const language = attachEditorLanguage(editor, f.provider, { completion: { onError: report }, occurrences: { delayMs: 0 } });
+            const language = attachEditorLanguage(editor, f.provider, { completion: { onError: report, prepareCompletion: async () => f.prepareCompletion?.() }, occurrences: { delayMs: 0 } });
             f.completion = language.completion;
             f.highlights = language.occurrences;
         }
@@ -124,21 +125,17 @@ test("completion distinguishes host preparation failures from malformed provider
     const input = await mount(page, true);
     try {
         await expect.poll(async () => (await completion(page)).connected).toBe(true);
-        for (const failure of ["type", "range", "none"] as const) {
+        for (const [failure, failed, invalid] of [["type", 1, 0], ["range", 2, 0], ["none", 2, 1]] as const) {
             await page.evaluate(async failure => {
-                const path = "/shadow-focus/", { createCompletionController } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
-                const f = window.shadowFocus; f.completion!.dispose();
-                f.completion = createCompletionController(f.editor, f.provider!, { autoConnect: false, automatic: false,
-                    prepareCompletion: async () => {
-                        if (failure === "type") throw new TypeError("Host preparation failed.");
-                        if (failure === "range") throw new RangeError("Host preparation failed.");
-                    } });
+                window.shadowFocus.prepareCompletion = async () => {
+                    if (failure === "type") throw new TypeError("Host preparation failed.");
+                    if (failure === "range") throw new RangeError("Host preparation failed.");
+                };
             }, failure);
             await input.focus(); await input.press("Control+Space");
-            const expected = failure === "none" ? { failed: 0, invalid: 1, received: 1 } : { failed: 1, invalid: 0, received: 0 };
             await expect.poll(() => page.evaluate(() => {
                 const { failed, invalid, received } = window.shadowFocus.completion!.getDiagnostics(); return { failed, invalid, received };
-            })).toEqual(expected);
+            })).toEqual({ failed, invalid, received: invalid });
             expect((await completion(page)).choices).toEqual([]);
         }
         const before = await text(page); await input.press("Control+End"); await input.press(";");

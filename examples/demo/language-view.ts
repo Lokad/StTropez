@@ -6,7 +6,7 @@ import type { DemoLanguage } from "./language.ts";
 import { mountDemoInspection } from "./inspect.ts";
 import { mountDemoSymbols } from "./symbols.ts";
 import type { DemoSymbolTarget } from "./symbols.ts";
-import { mountDemoActions } from "./actions.ts";
+import { demoActionPolicy, mountDemoActions } from "./actions.ts";
 import { mountLanguageCommands } from "./language-commands.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
 import { completionPageSize } from "../shared/language/completion-list.ts";
@@ -83,8 +83,9 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
             if (!valid()) return;
             try {
                 const closeProjectPopups = () => { symbols?.dismiss(); actions?.dismiss(); };
+                const policy = demoActionPolicy(scope, workspace, file, editor, provider, language, valid);
                 const tools = attachEditorLanguage(editor, provider, {
-                    occurrences: {},
+                    codeActions: policy.options, occurrences: {},
                     completion: { autoConnect: false, filterManualCompletions: true, canCapture: valid,
                         getPageSize: () => completionPageSize(choices) },
                     signature: { canCapture: valid, beforeRequest: () => {
@@ -106,7 +107,7 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
                         else if (state.status === "ready") commands.feedback("signature", "", true);
                     });
                 symbols = mountDemoSymbols(scope, project, file, editor, provider, valid, () => { controller?.cancel(); inspection?.dismiss(); actions?.dismiss(); }, open, commands.notice);
-                actions = mountDemoActions(scope, workspace, file, editor, provider, language, valid, () => { controller?.cancel(); inspection?.dismiss(); symbols?.dismiss(); });
+                actions = mountDemoActions(scope, workspace, file, editor, tools.codeActions, policy, () => { controller?.cancel(); inspection?.dismiss(); symbols?.dismiss(); });
                 scope.defer(controller.subscribe(render));
                 const ready = () => { if (valid()) { controller!.connect(); render(); commands.ready(); } };
                 if (provider.getSnapshot().phase === "ready") ready();

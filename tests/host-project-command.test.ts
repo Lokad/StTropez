@@ -1,7 +1,7 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import type { DocumentSnapshot } from "../src/index.ts";
-import { createCodeActionController, type TextEditor } from "../src/browser/index.ts";
+import { attachEditorLanguage, type TextEditor } from "../src/browser/index.ts";
 import { createLspCommandRunner } from "../src/protocol/index.ts";
 import { HostProjectTools, type ProjectActionEditPolicy } from "../examples/hosts/project.ts";
 import { waitForState } from "./helpers/latch.ts";
@@ -88,17 +88,17 @@ const interruptions = {
 for (const [cause, interrupt] of Object.entries(interruptions)) {
     test(`an expired command review preserves the initial undo after ${cause}`, { timeout: 5000 }, async t => {
         const f = fixture(t, () => "review");
-        const actions = createCodeActionController(f.editor, f.provider, {
+        const { codeActions: actions, dispose } = attachEditorLanguage(f.editor, f.provider, { codeActions: {
             documents: () => [f.document(), f.companion],
             runCommand: command => f.host.beginAction({ ...command, editor: f.editor }),
-        });
+        } });
         const origin = f.document();
         const at = { line: 0, character: 0 };
         const insert = (text: string) => [{ range: { start: at, end: at }, newText: text }];
         const sourceUri = origin.language!.uri;
         const otherUri = f.companion.language!.uri;
         t.after(() => {
-            actions.dispose();
+            dispose();
             f.dispose();
         });
         await f.provider.connect();

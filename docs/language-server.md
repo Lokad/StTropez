@@ -40,7 +40,7 @@ export function createLanguageProvider(
 Mount the controllers your host uses, then connect. This example advertises completion.
 
 ```ts
-import { createCompletionController, type TextEditor } from "sttropez/browser";
+import { attachEditorLanguage, type TextEditor } from "sttropez/browser";
 import type { LspWorkspace } from "sttropez/protocol";
 
 export function attachLanguage(
@@ -48,13 +48,13 @@ export function attachLanguage(
     provider: LspWorkspace,
     onError: (error: unknown) => void
 ) {
-    const language = createCompletionController(editor, provider, { autoConnect: false, onError });
-    language.connect();
+    const language = attachEditorLanguage(editor, provider, { completion: { autoConnect: false, onError } });
+    language.completion.connect();
     return language;
 }
 ```
 
-Subscribe with `language.subscribe()` and read `language.getSnapshot()` to update your UI. Wire Retry
+Subscribe with `language.completion.subscribe()` and read `language.completion.getSnapshot()` to update your UI. Wire Retry
 to `provider.connect()` or `provider.reconnect()` and handle a rejected promise. On detach, call
 `language.dispose()`. Dispose the editor separately. Release the clients before their provider.
 [Feature commands](language-features.md) · [Embedding an editor](getting-started.md)
@@ -316,6 +316,8 @@ lane. A competing command or a lane waiting for reconnect cannot apply a prepara
 active server command receives incoming edit requests. The runner refuses unsolicited or overlapping
 requests. Host command handlers use their captured `applyEdit` callback under the same checks. Before
 each approval, recheck the request, target identities and revisions, and host permissions.
+An edit outside the command’s captured project requires host target resolution, even if another
+feature has the file open.
 
 `scope.requestCommand` also reserves this session-wide lane. To handle edits on a raw command,
 call `scope.reserveCommand(handler)`, send through its `requestCommand`, and `release()` it in

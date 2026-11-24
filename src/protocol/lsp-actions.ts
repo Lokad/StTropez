@@ -1,11 +1,11 @@
 import { codeActionMethod } from "./lsp-methods.ts";
 import { staleRequest, type JsonValue } from "./wire.ts";
-import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspProjectRequest } from "./lsp-client.ts";
+import { createLspClient, lspFeatureHandle, type LspDocumentOwner, type LspFeatureClient, type LspProjectRequest } from "./lsp-client.ts";
 import { decodeLspCodeActions, decodeLspResolvedCodeAction, lspCodeActionUris } from "./lsp-code-actions.ts";
 import type { LspCodeAction, LspCodeActions } from "./lsp-code-actions.ts";
 import type { LspCommand } from "./lsp-command-value.ts";
 import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
-import { createLspCommandRunner, type LspCommandRunner } from "./lsp-command.ts";
+import { commandRunner, type LspCommandRunner } from "./lsp-command.ts";
 import type { LspCommandReceipt, LspCommandPolicy, LspCommandRoute, LspCommandScope } from "./lsp-command.ts";
 
 export type LspActionRequest = LspProjectRequest & Readonly<{ from: number; to: number }>;
@@ -20,12 +20,14 @@ export type LspActionResult = Readonly<{
 export type LspActionClient = LspFeatureClient<"textDocument/codeAction", LspActionRequest, LspActionResult>;
 
 /** Reads share capture policy; confirmed commands retain their distinct mutation policy. */
-export function createLspActionClient(provider: LspWorkspace, options: LspActionOptions = {}): LspActionClient {
-    const client = createLspClient(provider, codeActionMethod), session = client.scope;
+export const createLspActionClient: (provider: LspWorkspace, options?: LspActionOptions) => LspActionClient = actionClient;
+
+export function actionClient(owner: LspWorkspace | LspDocumentOwner, options: LspActionOptions = {}): LspActionClient {
+    const client = createLspClient(owner, codeActionMethod), session = client.scope;
     let executing = false, runner: LspCommandRunner | undefined;
     let resolver: ReturnType<typeof createLspClient<"textDocument/codeAction">> | undefined;
     const releaseResolve = () => { const previous = resolver; resolver = undefined; previous?.dispose(); };
-    const commands = () => runner ??= createLspCommandRunner(session, client.notify);
+    const commands = () => runner ??= commandRunner(session, client.notify, client.setDocuments);
     const busy = () => executing || client.isBusy() || !!resolver?.isBusy();
     return Object.freeze({ ...lspFeatureHandle(client, { isBusy: busy,
         cancel: () => { releaseResolve(); runner?.cancel(); client.cancel(); }, dispose: () => { releaseResolve(); runner?.dispose(); client.dispose(); } }),
@@ -62,7 +64,7 @@ export function createLspActionClient(provider: LspWorkspace, options: LspAction
                     execute: async (action: LspCodeAction, scope: LspCommandScope) => {
                         const route = action.command && routes.get(action.command);
                         if (!value.isCurrent() || busy() || !actions.includes(action) || !action.command || action.disabled
-                            || !route || !(route.isCurrent?.() ?? true) || !provider.getSnapshot().commandAvailable) throw staleRequest("Captured action command is unavailable or changed.");
+                            || !route || !(route.isCurrent?.() ?? true) || !session.getSnapshot().commandAvailable) throw staleRequest("Captured action command is unavailable or changed.");
                         executing = true;
                         try { return await commands().runAuthorized(action.command, scope, route); }
                         finally { executing = false; client.notify(); }
@@ -72,7 +74,7 @@ export function createLspActionClient(provider: LspWorkspace, options: LspAction
                         if (!value.isCurrent() || executing || !actions.includes(action) || !action.resolve) throw staleRequest("Captured action cannot be resolved.");
                         releaseResolve();
                         // The choice owns its wire request, host target loads and leases. The list keeps its original capture.
-                        const lane = resolver = createLspClient(provider, codeActionMethod);
+                        const lane = resolver = createLspClient(owner, codeActionMethod);
                         lane.subscribe(client.notify);
                         try {
                             return await lane.request({ ...captured, prepare }, codeActionMethod,

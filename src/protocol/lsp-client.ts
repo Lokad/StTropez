@@ -63,6 +63,10 @@ export function createLspClient<Method extends LspDocumentFeature>(owner: LspWor
     const scope = shared?.scope ?? provider.createScope(), listeners = new Set<() => void>();
     let disposed = false, latest: Request | undefined, notificationQueued = false;
     let documents: ReadonlyMap<string, LspDocument> = new Map();
+    function setDocuments(snapshots: readonly DocumentSnapshot[]) {
+        documents = shared ? shared.replace(documents, snapshots) : scope.setDocuments(snapshots);
+        return documents;
+    }
     const notify = () => {
         notificationQueued = false;
         for (const listener of [...listeners]) {
@@ -118,8 +122,7 @@ export function createLspClient<Method extends LspDocumentFeature>(owner: LspWor
     async function receive(op: Request, { document, project, prepare }: LspProjectRequest, method: LspDocumentFeature,
         params: Params, wireMethod?: "completionItem/resolve" | "codeAction/resolve" | "documentLink/resolve") {
         if (project && !sameDocument(project.find(snapshot => snapshot.id === document.id), document)) throw stale();
-        const snapshots = project ?? [document];
-        documents = shared ? shared.replace(documents, snapshots) : scope.setDocuments(snapshots);
+        setDocuments(project ?? [document]);
         op.identities = new Map([...documents.values()].map(document => [document, document.getSnapshot()]));
         const target = documents.get(document.id);
         if (!target) throw new Error("LSP source is outside the captured project.");
@@ -235,7 +238,7 @@ export function createLspClient<Method extends LspDocumentFeature>(owner: LspWor
             if (!finished && current(op)) invalidate(false);
         } });
     }
-    return Object.freeze({ methods, scope, request, notify, getSnapshot: scope.getSnapshot,
+    return Object.freeze({ methods, scope, request, notify, setDocuments, getSnapshot: scope.getSnapshot,
         subscribe: (listener: () => void) => {
             if (disposed) throw new Error("LSP feature client is disposed.");
             listeners.add(listener);

@@ -6,7 +6,7 @@ files and decides which edits to apply. [Connect a provider](language-server.md)
 
 ## Use
 
-Use `attachEditorLanguage` to enable completion, diagnostics, hover, signature help, occurrences, links or colors. Give each
+Use `attachEditorLanguage` to enable completion, diagnostics, hover, signature help, occurrences, code actions, links or colors. Give each
 feature you want an options object. They share one provider scope and document binding. Hover
 uses the diagnostics painted in that view unless you supply another source.
 
@@ -33,13 +33,13 @@ Use `features` to restrict methods,
 
 | Feature | Client or controller | LSP method |
 | --- | --- | --- |
-| Completion | `createLspCompletionClient`; browser `createCompletionController` | `textDocument/completion` |
-| Diagnostics | `createDiagnosticController` | `textDocument/publishDiagnostics` |
+| Completion | `attachEditorLanguage` with `completion`, `createLspCompletionClient` | `textDocument/completion` |
+| Diagnostics | `attachEditorLanguage` with `diagnostics` | `textDocument/publishDiagnostics` |
 | Hover | `attachEditorLanguage` with `hover`, `createLspHoverClient` | `textDocument/hover` |
 | Signature help | `attachEditorLanguage` with `signature`, `createLspSignatureClient` | `textDocument/signatureHelp` |
 | Definition / references | `createLspNavigationClient` | `textDocument/definition` / `textDocument/references` |
 | Rename | `createRenameController`, `createLspRenameClient` | `textDocument/rename` |
-| Code actions | `createCodeActionController`, `createLspActionClient` | `textDocument/codeAction` |
+| Code actions | `attachEditorLanguage` with `codeActions`, `createLspActionClient` | `textDocument/codeAction` |
 | Document links | `createDocumentLinkController`, `createLspLinkClient` | `textDocument/documentLink` |
 | Document colors | `createDocumentColorController`, `createLspColorClient` | `textDocument/documentColor` and `textDocument/colorPresentation` |
 | Occurrences | `attachEditorLanguage` with `occurrences`, `createLspHighlightClient` | `textDocument/documentHighlight` |
@@ -133,7 +133,7 @@ integer tags. Open related files only when the host requests them. For a code ac
 forwards overlapping, placed diagnostics only when their provider version is current. A pending or
 unversioned diagnostic cannot supply that context.
 
-Use `createDiagnosticController(editor, provider)` to paint pushed diagnostics. Hosts that fetch
+Enable `diagnostics` on the attachment to paint pushed diagnostics. Hosts that fetch
 diagnostics themselves can map their placed ranges through `diagnosticDecoration` and set a decoration
 layer. Both paths color marks by severity, strike through deprecated text and draw a triangle for an
 empty range. An omitted severity uses the error color. Snapshot items retain the provider's severity,
@@ -192,7 +192,7 @@ export async function completionLabels(
 }
 ```
 
-`createCompletionController(editor, provider, options?)` attaches completion and snippets to one view.
+Enable `completion` on the attachment for suggestions and snippets in that view.
 The controller handles input, selection checks and acceptance. The host renders choices and status.
 When the shared provider disconnects, completion clears its choices and reports the loss of service.
 Local editing stays available. Reconnecting from another feature updates completion in the same view.
@@ -580,7 +580,7 @@ The browser controller owns these lifetimes for a mounted editor.
 
 ### Code actions and commands
 
-`createCodeActionController(editor, provider, options?)` requests actions for the editor’s primary
+Enable `codeActions` on the attachment to request actions for the editor’s primary
 selection. The origin document is always included. Supply `documents` to include other project files.
 `await actions.request()` returns `done` with the same choices as `getSnapshot().choices`.
 An empty list means the provider found no actions. Cancellation, supersession and a changed
@@ -594,18 +594,18 @@ to 64 edits. For an edit-only action, `confirm()` applies the full edit across a
 one undo step and returns `{ status: "applied" }`.
 
 ```ts
-import { createCodeActionController, type TextEditor } from "sttropez/browser";
+import { attachEditorLanguage, type TextEditor } from "sttropez/browser";
 import type { LspWorkspace } from "sttropez/protocol";
 
 export function attachFixes(editor: TextEditor, provider: LspWorkspace) {
-    const actions = createCodeActionController(editor, provider);
+    const { codeActions: actions, dispose } = attachEditorLanguage(editor, provider, { codeActions: {} });
     const stop = actions.subscribe(() => {
         const { choices, preview } = actions.getSnapshot();
         // Bind each button to this choice or preview, including across a later render.
         renderFixes(choices.map(choice => ({ title: choice.title, select: () => choice.select() })),
             preview?.readPage()?.count ?? 0, preview?.canApply ? preview.confirm : undefined);
     });
-    return { request: actions.request, dispose() { stop(); actions.dispose(); } };
+    return { request: actions.request, dispose() { stop(); dispose(); } };
 }
 
 declare function renderFixes(choices: { title: string; select(): void }[], edits: number, confirm?: () => void): void;

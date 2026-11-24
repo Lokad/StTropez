@@ -6,7 +6,7 @@ import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { focusSourceCaret, onSourceFocus } from "./source-focus.ts";
 import { isMountedEditor, openChangedFile, type ChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, TabId, TabTarget } from "../../src/index.ts";
-import { createCodeActionController } from "../../src/browser/index.ts";
+import { attachEditorLanguage } from "../../src/browser/index.ts";
 import type { CodeActionChoice, CodeActionController, CodeActionPreview, TextEditor } from "../../src/browser/index.ts";
 import type { LspCommandPolicy, LspScopeAccess, LspWorkspace, LspWorkspaceEditNote } from "../../src/protocol/index.ts";
 import { validDomainModule } from "../../fixtures/language/domain.ts";
@@ -88,11 +88,18 @@ export class HostActionsTools {
             if (panel?.source.editor !== editor) throw new Error("The action panel has closed.");
             return panel.settings;
         };
-        const controller = createCodeActionController(editor, provider, { documents: this.documents, canCapture: this.host.canCapture,
-            ...(commandPolicy && { commandPolicy }), ...(beforeRequest && { prepareRequest: session => beforeRequest(session, settings()) }),
-            ...(beforeResolve && { prepareResolve: session => {
-                return beforeResolve(session, { module: settings().module, ...this.fixture.take() });
-            } }), ...(review && { runCommand: command => review.beginAction({ ...command, editor }) }) });
+        const { codeActions: controller, dispose } = attachEditorLanguage(editor, provider, {
+            codeActions: {
+                documents: this.documents,
+                canCapture: this.host.canCapture,
+                ...(commandPolicy && { commandPolicy }),
+                ...(beforeRequest && { prepareRequest: session => beforeRequest(session, settings()) }),
+                ...(beforeResolve && {
+                    prepareResolve: session => beforeResolve(session, { module: settings().module, ...this.fixture.take() })
+                }),
+                ...(review && { runCommand: command => review.beginAction({ ...command, editor }) })
+            }
+        });
         const s = { id, target, editor, controller };
         const ownsModule = () => this.moduleField.focused && this.moduleSource === s;
         return attachPanelSession(this.sessions, s, (signal, register) => {
@@ -114,7 +121,7 @@ export class HostActionsTools {
                 else { this.panel.stop(); this.panel = undefined; }
             }
             this.publish();
-        });
+        }, dispose);
     }
     readonly request = (): void => {
         if (!this.moduleSource?.editor.commands.run("actions.request", "panel"))

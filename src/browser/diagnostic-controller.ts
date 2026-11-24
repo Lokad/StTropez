@@ -1,11 +1,9 @@
 import { emptyList } from "../core/empty-list.ts";
-import { requireLanguageView } from "./captured-view.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
-import type { DecorationLayer } from "./decoration-layers.ts";
-import type { LspDiagnostic, LspDiagnostics, LspDiagnosticState, LspWorkspace } from "../protocol/index.ts";
+import type { LspDiagnostic, LspDiagnostics } from "../protocol/index.ts";
 import type { InlineDecoration } from "./viewport.ts";
 import type { TextEditor } from "./text-editor.ts";
 
@@ -39,19 +37,11 @@ const empty: DiagnosticSnapshot = Object.freeze({ diagnostics: emptyList, diagno
     diagnosticsPending: false, unversionedDiagnostics: emptyList });
 
 /** Displays pushed diagnostics for one view, including positions mapped while analysis is pending. */
-export const createDiagnosticController: (editor: TextEditor, provider: LspWorkspace,
-    options?: DiagnosticControllerOptions) => DiagnosticController = mountDiagnostic;
-
-export function mountDiagnostic(editor: TextEditor, provider: LspWorkspace, options: DiagnosticControllerOptions = {},
-    shared?: LspDocumentOwner): DiagnosticController {
-    const { workspace, view, tab } = editor, documentId = view.documentId;
-    requireLanguageView(editor);
-    const scope = shared?.scope ?? provider.createScope();
-    let source: Observable<LspDiagnosticState>, layer: DecorationLayer;
-    try {
-        source = scope.observeDiagnostics(shared?.binding ?? scope.attachDocument(documentId));
-        layer = editor.decorations.add({ name: "diagnostics", order: 40 });
-    } catch (error) { if (!shared) scope.dispose(); throw error; }
+export function mountDiagnostic(editor: TextEditor, { scope, binding }: LspDocumentOwner,
+    options: DiagnosticControllerOptions): DiagnosticController {
+    const { workspace, view, tab } = editor;
+    const source = scope.observeDiagnostics(binding);
+    const layer = editor.decorations.add({ name: "diagnostics", order: 40 });
     const notifications = workspace.createNotificationScope(options.onError);
     const cell = new Store<DiagnosticSnapshot>(empty, notifications);
     let displayed: LspDiagnostics | null = null, disposed = false, stop: (() => void) | undefined;
@@ -100,12 +90,12 @@ export function mountDiagnostic(editor: TextEditor, provider: LspWorkspace, opti
     const dispose = () => {
         if (disposed) return;
         notifications.assertWritable(); disposed = true;
-        editor.signal.removeEventListener("abort", dispose);
-        cancel(); stopTabs?.(); layer.dispose(); if (!shared) scope.dispose();
+        cancel();
+        stopTabs?.();
+        layer.dispose();
         cell.clearSnapshotListeners();
     };
     try { request(); } catch (error) { dispose(); throw error; }
-    editor.signal.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ ...controllerObservable(cell, "Diagnostic", () => disposed, notifications), request, cancel, dispose, getDiagnostics: () => {
         const { received, stale, invalid } = source.getSnapshot();
         return Object.freeze({ received, stale, invalid });

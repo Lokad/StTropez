@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { LspCommandScope, LspHostCommandContext } from "../src/protocol/index.ts";
+import { retainLspDocument } from "../src/protocol/lsp-client.ts";
+import { actionClient } from "../src/protocol/lsp-actions.ts";
 import { clientFixture, protocol, settled } from "./helpers/lsp-client.ts";
 import { latch } from "./helpers/latch.ts";
 const { createLspActionClient, RpcError } = protocol;
@@ -61,6 +63,40 @@ test("explicit server route retains captured applyEdit ownership and does not au
     assert.equal(receipt.decision?.applied, true); assert.equal(f.document().buffer.slice(0, 7), "changed");
     assert.equal((await f.peer.sendRequest("workspace/applyEdit", edit) as { applied: boolean }).applied, false);
     assert.equal(f.provider.getSnapshot().commandAvailable, true);
+});
+
+test("an action command cannot borrow a sibling feature's edit targets on the same scope", async t => {
+    const f = clientFixture(t, undefined, undefined, { maxScopes: 1 });
+    const owner = retainLspDocument(f.provider, f.source.documentId);
+    const other = f.workspace.document(f.other.documentId);
+    const sibling = owner.replace(new Map(), [other]);
+    const client = actionClient(owner);
+    t.after(() => {
+        client.dispose();
+        owner.release(sibling);
+        owner.dispose();
+    });
+    f.peer.onRequest("textDocument/codeAction", () => [{ title: "Run", command: "fixture.command" }]);
+    const batch = await run(client, f);
+    const at = { line: 0, character: 0 };
+    const edit = { changes: { [other.language!.uri]: [{ range: { start: at, end: at }, newText: "outside" }] } };
+    f.peer.onRequest("workspace/executeCommand", async () => {
+        const decision = await f.peer.sendRequest<{ applied: boolean }>("workspace/applyEdit", { edit });
+        assert.equal(decision.applied, false);
+        return null;
+    });
+    let reviewed = false;
+    const receipt = await batch.execute(batch.actions[0]!, {
+        ...scopeFor(f), review: async () => {
+            reviewed = true;
+            return { applied: true };
+        }
+    });
+    assert.equal(reviewed, false);
+    assert.equal(receipt.decision?.applied, false);
+    assert.equal(f.workspace.document(other.id), other);
+    const handle = sibling.get(other.id)!;
+    assert.equal(owner.scope.synchronized(handle)?.document.uri, other.language!.uri);
 });
 
 test("host handlers see initial edits, reuse captured edit validation, and release the lane after a known failure", async t => {

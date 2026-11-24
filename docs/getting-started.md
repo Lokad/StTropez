@@ -345,7 +345,7 @@ language server at the same origin’s `/lsp` WebSocket endpoint. It must speak 
 UTF-16 positions and recognize the URI assigned to the checklist resource.
 
 ```js
-import { BrowserLspWorkspace, createCompletionController, createDiagnosticController, openWebSocketTransport } from "sttropez/browser";
+import { BrowserLspWorkspace, attachEditorLanguage, openWebSocketTransport } from "sttropez/browser";
 
 const endpoint = new URL("/lsp", location.href);
 endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -358,15 +358,17 @@ Attach the provider to the first pane. Use **Connect**, then Ctrl+Space in the e
 completion. Arrow keys choose a suggestion and Enter accepts it.
 
 ```js
-const language = createCompletionController(editor, provider, { autoConnect: false });
-const diagnostics = createDiagnosticController(editor, provider, { autoConnect: false });
+const language = attachEditorLanguage(editor, provider, {
+    completion: { autoConnect: false }, diagnostics: { autoConnect: false }
+});
+const { completion, diagnostics } = language;
 function showLanguage() {
-    const state = language.getSnapshot();
+    const state = completion.getSnapshot();
     output.textContent = state.offerText ?? diagnostics.getSnapshot().diagnostics[0]?.message ?? state.message;
 }
-const stopLanguage = language.subscribe(showLanguage);
+const stopLanguage = completion.subscribe(showLanguage);
 const stopDiagnostics = diagnostics.subscribe(showLanguage);
-button("Connect", language.connect);
+button("Connect", completion.connect);
 ```
 
 For cross-file rename, set `workspaceEdits: true` and pass the project’s document snapshots to
@@ -397,7 +399,6 @@ button("Close", () => {
     stopLanguage();
     stopDiagnostics();
     language.dispose();
-    diagnostics.dispose();
     provider.dispose();
     review?.dispose();
     split.dispose();

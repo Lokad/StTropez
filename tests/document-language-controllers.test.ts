@@ -2,7 +2,7 @@ import { mountSwatches } from "../src/browser/document-color-swatches.ts";
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import {
-    attachEditorLanguage, createCodeActionController, createDocumentColorController,
+    attachEditorLanguage, createDocumentColorController,
     createDocumentLinkController, createRenameController,
     type TextEditor,
 } from "../src/browser/index.ts";
@@ -72,7 +72,8 @@ const sourceChanges = {
 for (const [cause, interrupt] of Object.entries(sourceChanges)) {
     test(`a delayed code action cannot edit its former source after ${cause}`, { timeout: 5000 }, async t => {
         const f = await fixture(t);
-        const actions = createCodeActionController(f.editor, f.provider);
+        const actions = attachEditorLanguage(f.editor, f.provider, { codeActions: {} }).codeActions;
+        const scopes = f.provider.snapshot().scopes;
         const lazy = { title: "Replace word", data: { id: 1 } };
         const resolved = { ...lazy, edit: { changes: { "generic:source": [{ range, newText: "late" }] } } };
         f.peer.onRequest("textDocument/codeAction", () => [lazy]);
@@ -84,6 +85,7 @@ for (const [cause, interrupt] of Object.entries(sourceChanges)) {
         assert.ok(choice?.needsResolve);
         choice.select(() => true);
         await held.received;
+        assert.equal(f.provider.snapshot().scopes, scopes);
         interrupt(f);
         if (cause === "typing") {
             const { id, revision } = f.document();
@@ -119,7 +121,7 @@ for (const [cause, interrupt] of Object.entries(sourceChanges)) {
 test("code action discovery settles before a cancelled or superseded provider replies", { timeout: 5000 }, async t => {
     const f = await fixture(t);
     let available = false;
-    const actions = createCodeActionController(f.editor, f.provider, { canCapture: () => available });
+    const actions = attachEditorLanguage(f.editor, f.provider, { codeActions: { canCapture: () => available } }).codeActions;
     assert.deepEqual(await actions.request(), { status: "refused", reason: "unavailable-view" });
     available = true;
     const held = holdReply(f, "textDocument/codeAction", [{ title: "Retired" }]);
@@ -193,7 +195,7 @@ for (const method of ["textDocument/codeAction", "textDocument/rename", "textDoc
             await finish.promise;
         };
         const before = f.workspace.diagnostics().leases;
-        const controller = method === "textDocument/codeAction" ? createCodeActionController(f.editor, f.provider, { prepareRequest: prepare })
+        const controller = method === "textDocument/codeAction" ? attachEditorLanguage(f.editor, f.provider, { codeActions: { prepareRequest: prepare } }).codeActions
             : method === "textDocument/rename" ? createRenameController(f.editor, f.provider, { prepareRequest: () => prepare })
             : createDocumentColorController(f.editor, f.provider, {
                 prepareRequest: kind => (kind === "discovery") === (method === "textDocument/documentColor") ? prepare : undefined,

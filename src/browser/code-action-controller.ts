@@ -4,10 +4,12 @@ import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import type { DocumentId, DocumentSnapshot, TabTarget } from "../core/workspace.ts";
-import { applyLspWorkspaceEdit, createLspActionClient, type LspActionResult, previewLspWorkspaceEdit } from "../protocol/index.ts";
+import { applyLspWorkspaceEdit, type LspActionResult, previewLspWorkspaceEdit } from "../protocol/index.ts";
+import { actionClient } from "../protocol/lsp-actions.ts";
+import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
-import type { LspCodeAction, LspCommandPolicy, LspCommandReceipt, LspCommandScope, LspPrepare, LspWorkspace, LspWorkspaceEdit, LspWorkspaceEditPreview } from "../protocol/index.ts";
-import { requireLanguageView, captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
+import type { LspCodeAction, LspCommandPolicy, LspCommandReceipt, LspCommandScope, LspPrepare, LspWorkspaceEdit, LspWorkspaceEditPreview } from "../protocol/index.ts";
+import { captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainEditProject, writableEdit } from "./edit-project.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -57,11 +59,10 @@ export type CodeActionController = Observable<CodeActionSnapshot> & Readonly<{
 }>;
 
 /** One editor owns the request, lazy resolution and confirmation of its displayed preview. */
-export function createCodeActionController(editor: TextEditor, provider: LspWorkspace, options: CodeActionControllerOptions = {}): CodeActionController {
+export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, options: CodeActionControllerOptions): CodeActionController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
-    requireLanguageView(editor);
     const scope = workspace.createNotificationScope(options.onError), cell = new Store(empty, scope);
-    const client = createLspActionClient(provider, options), events = new AbortController();
+    const client = actionClient(owner, options), events = new AbortController();
     let job: Job | undefined, execution: CodeActionExecution | undefined, disposed = false;
     const available = (id: DocumentId) => {
         const activity = editor.activity();
@@ -262,7 +263,7 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
         return discover();
     }
     const stopClient = client.subscribe(() => {
-        if (job?.batch && (provider.getSnapshot().phase !== "ready" || cell.get().status !== "resolving" && !job.batch.isCurrent())) expire(job);
+        if (job?.batch && (client.getSnapshot().phase !== "ready" || cell.get().status !== "resolving" && !job.batch.isCurrent())) expire(job);
     });
     editor.onEditIntent(() => { if (job) cancel(); }, events.signal);
     function dispose(): void {
@@ -270,6 +271,5 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
         scope.assertWritable(); cancel(); disposed = true; events.abort(); stopClient(); client.dispose();
         cell.clearSnapshotListeners();
     }
-    editor.signal.addEventListener("abort", dispose, { once: true, signal: events.signal });
     return Object.freeze({ request, cancel, dispose, ...controllerObservable(cell, "Code action", () => disposed, scope) });
 }
