@@ -50,7 +50,7 @@ test(`plain aligned rows preserve painted correspondence, complete sets, navigat
     const navigation = await snapshot(p); await input(p).pressSequentially("H"); await waitForReview(p); const typed = working.slice(0, target) + "H" + working.slice(target); await exact(p, typed);
     expect((await snapshot(p)).history.undoDepth).toBe(navigation.history.undoDepth + 1); expect((await snapshot(p)).bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline);
     await p.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await waitForReview(p); await exact(p, working); expect((await snapshot(p)).bindings.comparison!.selectionSet).toEqual(navigation.bindings.comparison!.selectionSet);
-    await input(p).press("Control+Shift+z"); await waitForReview(p); await exact(p, typed); expect((await snapshot(p)).source.exports).toBe(0);
+    await input(p).press("Control+Shift+z"); await waitForReview(p); await exact(p, typed);
     await p.getByRole("checkbox", { name: "Link review scrolling", exact: true }).uncheck(); await waitForReview(p);
     await scroll(p, 87.25); // Pin the top inside deleted-block padding, independent of native scroll-event timing.
     expect(await panes(p).last().evaluate(node => { const top = node.getBoundingClientRect().top + 20; return [...node.querySelectorAll(".st-comparison-padding")].some(row => { const r = row.getBoundingClientRect(); return r.top <= top && r.bottom > top; }); })).toBe(true);
@@ -65,7 +65,7 @@ test(`plain aligned rows preserve painted correspondence, complete sets, navigat
     await p.evaluate(() => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: "" }]); }); await waitForReview(p); await scroll(p, 400);
     c = (await snapshot(p)).bindings.comparison!; expect(c.workingViewport.rows).toBe(0); expect(c.workingViewport.paddingRows).toBeGreaterThan(0); expect(c.work.alignment.runs).toBeLessThan(10);
     const point = await paddingPoint(p); await p.mouse.click(point.x, point.y); await waitForReview(p); await input(p).pressSequentially("E"); await waitForReview(p); await exact(p, "E");
-    expect((await snapshot(p)).bindings.comparison!.baseline).toEqual(baseline); expect((await snapshot(p)).source.exports).toBe(0); await input(p).press("Control+z"); await waitForReview(p); await exact(p, "");
+    expect((await snapshot(p)).bindings.comparison!.baseline).toEqual(baseline); await input(p).press("Control+z"); await waitForReview(p); await exact(p, "");
     await dispose(p);
 });
 test(`plain aligned folds, padding pointers, shared pitch and stale preparation retain source ownership`, async ({ page: p }) => {
@@ -110,7 +110,7 @@ test(`plain queued row preparation cancels without partial publication and expir
         const event = new InputEvent("beforeinput", { inputType: "insertText", data: "H", bubbles: true, cancelable: true }); if (input.dispatchEvent(event)) { input.setRangeText("H", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "H", bubbles: true })); }
         return { pending: a.pending, current: f.snapshot().bindings.comparison!.work.alignment.pending };
     }); expect(pending).toEqual({ pending: true, current: true }); await waitForReview(p); await exact(p, "H" + working); expect((await snapshot(p)).bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline);
-    await input(p).press("Control+End"); await input(p).pressSequentially("K"); await waitForReview(p); await exact(p, "H" + working + "K"); expect((await snapshot(p)).source.exports).toBe(0);
+    await input(p).press("Control+End"); await input(p).pressSequentially("K"); await waitForReview(p); await exact(p, "H" + working + "K");
     await input(p).press("Control+z"); await waitForReview(p); await exact(p, "H" + working); await input(p).press("Control+z"); await waitForReview(p); await exact(p, working);
     expect((await snapshot(p)).bindings.comparison!.work.alignment.runs).toBeLessThan(10000); await dispose(p);
 });

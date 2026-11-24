@@ -385,7 +385,7 @@ export class ViewBindings {
             progress: comparison.progress && { work: comparison.progress.work, readUnits: comparison.progress.readUnits,
                 lineEdits: comparison.progress.lineEdits },
             viewId: this.review!.panes.working.view.id, foldGeneration: this.review!.panes.working.view.folding.getSnapshot().generation, selection: this.review!.panes.working.view.getSnapshot().selection, selectionSet: this.review!.panes.working.view.getSnapshot().selectionSet,
-            baseline: comparison.baseline && { version: comparison.baseline.version, epoch: comparison.baseline.epoch, length: comparison.baseline.buffer.length, exports: comparison.baseline.buffer.readMetrics().textExports },
+            baseline: comparison.baseline && { version: comparison.baseline.version, epoch: comparison.baseline.epoch, length: comparison.baseline.buffer.length },
             hunks: comparison.hunks.length, pending: this.reviewTickets.map(ticket => ({ kind: ticket.kind, revision: ticket.capture.working.revision, current: ticket.isCurrent() })),
             result: this.reviewResult, work: this.review!.getDiagnostics(), input: this.review!.panes.working.getDiagnostics(), referenceInput: this.review!.panes.reference.getDiagnostics(),
             discards: this.discardTickets.map(({ ticket, variantGeneration }) => ({ revision: ticket.capture.working.revision, current: ticket.isCurrent() && this.controller.variants.state.getSnapshot().generation === variantGeneration })),

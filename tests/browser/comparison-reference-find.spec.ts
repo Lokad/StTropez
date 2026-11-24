@@ -121,8 +121,6 @@ test(`plain reference Find preserves raw ranges, read-only controls and aligned 
     expect(s.bindings.comparison!.selectionSet).toEqual(before.bindings.comparison!.selectionSet);
     expect(Math.abs(s.bindings.comparison!.referenceViewport!.scrollTop - s.bindings.comparison!.workingViewport.scrollTop)).toBeLessThan(1);
     expect(s.history).toEqual(before.history);
-    expect(s.source.exports).toBe(0);
-    expect(s.bindings.comparison!.baseline!.exports).toBe(0);
     expect(s.bindings.comparison!.referenceViewport!.rows).toBeLessThan(100);
     await exact(p, raw, true);
     await exact(p, prefix + raw);

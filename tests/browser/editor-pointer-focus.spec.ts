@@ -334,7 +334,6 @@ test("a scrolled column drag replaces graphemes on every crossed row and undoes 
     }, { once: true }), last * row.length + 5));
     await page.keyboard.type("!"); await ready(page);
     expect(await read(original.length + 1)).toBe(row.repeat(last - first + 1) + "A\t🍎A!Z\n" + row);
-    expect(await page.evaluate(() => window.editingFixture.snapshot().document!.exports)).toBe(0);
 });
 
 test("right-click targets the word under the pointer and preserves a selection clicked inside", async ({ page }) => {

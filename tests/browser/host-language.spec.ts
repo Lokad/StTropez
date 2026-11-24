@@ -48,7 +48,6 @@ test.describe(`plain integrated find host`, () => {
         const last = changed.lastIndexOf("cat!"), tailChanged = changed.slice(0, last) + "$&" + changed.slice(last + 3), expected = "$&" + tailChanged.slice(3);
         await expect.poll(() => text(page)).toBe(expected);
         expect((await snapshot(page)).history.undoDepth).toBe(planned.history.undoDepth + 1);
-        expect((await snapshot(page)).source.exports).toBe(0);
         await working.press("Control+z"); expect(await text(page)).toBe(changed);
         await working.press("Control+Shift+z"); expect(await text(page)).toBe(expected);
         await working.press("Control+s"); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);

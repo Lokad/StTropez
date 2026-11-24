@@ -46,7 +46,6 @@ test(`plain full view selections survive detached edits and comparison remount`,
     expect(after.bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline);
     expect(after.history).toEqual(detached.history);
     await expect(region.locator(".st-input-secondary-caret")).toHaveCount(3);
-    expect(after.source.exports).toBe(0);
     await page.getByRole("textbox", { name: "Secondary source", exact: true }).evaluate(node => node.focus({ preventScroll: true }));
     await waitForReview(page); await expect(region.locator(".st-input-secondary-caret")).toHaveCount(0);
     await expect(page.getByRole("region", { name: "Secondary source", exact: true }).locator(".st-input-secondary-caret")).toHaveCount(1);

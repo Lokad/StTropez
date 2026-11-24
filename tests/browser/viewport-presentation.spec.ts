@@ -457,11 +457,11 @@ test.describe("scrolling beyond the last line", () => {
             const caret = viewport.coordsAt(end)!, layer = f.host.querySelector(".st-viewport-layer")!.getBoundingClientRect();
             const below = viewport.hitTest(caret.left, layer.bottom - 20);
             return { s, topError: Math.abs((viewport.rowBounds(110000)!.top - layer.top) / 1.25 - 12), hit: below?.offset, end,
-                horizontalOverflow: viewport.element.scrollWidth - viewport.element.clientWidth, exports: current.buffer.readMetrics().textExports };
+                horizontalOverflow: viewport.element.scrollWidth - viewport.element.clientWidth };
         });
         expect(scaled.s.verticalExtent).toBeGreaterThan(4_000_000); expect(scaled.s.physicalHeight).toBe(4_000_000);
         expect(scaled.s.rows).toBeLessThan(16); expect(scaled.s.textUnits).toBeLessThan(40); expect(scaled.topError).toBeLessThan(1.01);
-        expect(scaled.hit).toBe(scaled.end); expect(scaled.horizontalOverflow).toBe(0); expect(scaled.exports).toBe(0);
+        expect(scaled.hit).toBe(scaled.end); expect(scaled.horizontalOverflow).toBe(0);
         const source = page.getByRole("textbox", { name: "Trailing source", exact: true });
         const before = await page.evaluate(() => window.presentationFixture.editor.viewport.getSnapshot().scrollTop);
         await source.press("A"); await expect(page.locator('.st-viewport-layer .st-viewport-row[data-line="110000"]')).toHaveText("endA");
@@ -683,12 +683,12 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
         viewport.configure({ columnRulers: [] }); settle();
         return { rows, retainedNode, scaledError, scaled: s.horizontalExtent > s.physicalWidth, scaledUnits: s.textUnits, noGuides: !f.host.querySelector(".st-column-rulers"),
             samePoint: JSON.stringify(markedPoint) === JSON.stringify(viewport.coordsAt(450000)), sameSelections: selected === f.editor.view.getSnapshot().selectionSet,
-            extent, emptyExtent: [viewport.element.scrollWidth, viewport.element.scrollHeight], exports: f.workspace.document(f.editor.view.documentId).buffer.readMetrics().textExports };
+            extent, emptyExtent: [viewport.element.scrollWidth, viewport.element.scrollHeight] };
     });
     await info.attach("changed-ruler-geometry", { body: JSON.stringify(changes), contentType: "application/json" });
     expect(changes.rows.every(row => row.error < 1.01 && row.inside && row.textUnits <= row.rows * 512)).toBe(true);
     expect(changes.rows[2]!.columnWidth).toBeGreaterThan(changes.rows[1]!.columnWidth);
-    expect(changes).toMatchObject({ retainedNode: true, scaled: true, noGuides: true, samePoint: true, sameSelections: true, exports: 0 });
+    expect(changes).toMatchObject({ retainedNode: true, scaled: true, noGuides: true, samePoint: true, sameSelections: true });
     expect(changes.scaledError).toBeLessThan(.5); expect(changes.scaledUnits).toBeLessThan(1000); expect(changes.emptyExtent).toEqual(changes.extent);
     const end = await page.evaluate(() => { const f = window.presentationFixture, viewport = f.editor.viewport;
         viewport.configure({ columnRulers: [20] }); f.workspace.tabs.close(f.tab); viewport.flush(); const closed = !f.host.querySelector(".st-column-rulers");

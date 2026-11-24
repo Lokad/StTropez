@@ -35,12 +35,12 @@ test("browser zoom wheels are not cancelled or interpreted as editor scrolling",
 
 test("scrolling to the end paints the final row and leaves the other viewport in place", async ({ page }) => {
     const initial = await page.evaluate(() => window.viewportFixture.snapshot());
-    expect(initial.document).toMatchObject({ length: 240_000, lines: 10_001, longest: 23, exports: 0 });
+    expect(initial.document).toMatchObject({ length: 240_000, lines: 10_001, longest: 23 });
     expect(initial.primary.rows).toBeLessThan(40); expect(initial.primary.readUnits).toBeLessThan(8_000);
     await page.evaluate(() => window.viewportFixture.scroll("primary", Number.MAX_SAFE_INTEGER, 0)); await ready(page);
     const end = await page.evaluate(() => window.viewportFixture.snapshot());
     expect(end.primary.lastLine).toBe(10_001); expect(end.primary.firstLine).toBeGreaterThan(9_900);
-    expect(end.document!.exports).toBe(0); expect(end.secondary.firstLine).toBe(0); await checkRows(page);
+    expect(end.secondary.firstLine).toBe(0); await checkRows(page);
     const geometry = await page.locator('#primary [data-line="10000"]').evaluate(node => ({ row: node.getBoundingClientRect().top,
         top: node.closest(".st-viewport")!.getBoundingClientRect().top, height: node.closest(".st-viewport")!.clientHeight }));
     expect(geometry.row - geometry.top).toBeGreaterThan(0); expect(geometry.row - geometry.top).toBeLessThan(geometry.height);
@@ -58,7 +58,6 @@ test("a long line uses bounded horizontal text windows and scaled native scrollb
     expect(end.primary.columnWidth).toBe(initial.columnWidth);
     expect(end.primary.horizontalExtent).toBeGreaterThan(4_000_000); expect(end.primary.physicalWidth).toBe(4_000_000);
     expect(end.primary.textUnits).toBeLessThan(400); expect(end.primary.readUnits).toBeLessThan(410);
-    expect(end.document!.exports).toBe(0);
     expect(Number(await page.locator("#primary .st-viewport-row").getAttribute("data-to"))).toBe(500_000);
     await page.locator("#primary .st-viewport").evaluate(node => { node.scrollLeft = 0; });
     await expect.poll(() => page.evaluate(() => window.viewportFixture.snapshot().primary.scrollLeft)).toBe(0); await ready(page);
@@ -78,7 +77,7 @@ test("multiple edits before a frame map the scroll anchor and shared undo restor
     }); await ready(page);
     const after = await page.evaluate(() => window.viewportFixture.snapshot());
     expect(after.primary.scrollTop).toBeCloseTo(before.primary.scrollTop + before.primary.lineHeight * 2, 3);
-    expect(after.document!.exports).toBe(0); expect(after.secondary.scrollTop).toBe(0);
+    expect(after.secondary.scrollTop).toBe(0);
     await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready(page);
     await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready(page);
     expect((await page.evaluate(() => window.viewportFixture.snapshot())).primary.scrollTop).toBeCloseTo(before.primary.scrollTop, 3); await checkRows(page);
@@ -118,7 +117,7 @@ test("full selection sets paint bounded ranges and round-trip while legacy state
         window.viewportFixture.restore("primary", { ...legacy, anchor: 12, head: 12 }); }, captured); await ready(page);
     const after = await page.evaluate(() => window.viewportFixture.snapshot());
     expect(after.primary.selectionSet).toMatchObject({ primary: 0, ranges: [{ anchor: 12, head: 12 }] });
-    expect(after.secondary.selectionSet).toEqual(captured.selectionSet); expect(after.document!.exports).toBe(0);
+    expect(after.secondary.selectionSet).toEqual(captured.selectionSet);
     expect(after.primary.rows).toBeLessThan(40); expect(after.primary.readUnits).toBeLessThan(8000);
 });
 
@@ -140,7 +139,6 @@ test("resize, font metrics and tall rows keep scaled vertical scrolling reachabl
 test("Unicode/CRLF rows preserve bounded content and stale tab generations disable only their own view", async ({ page }) => {
     await page.evaluate(() => window.viewportFixture.load("unicode")); await ready(page); await checkRows(page);
     expect(await page.locator("#primary .st-viewport-row").first().textContent()).toContain("👩‍💻");
-    expect((await page.evaluate(() => window.viewportFixture.snapshot())).document!.exports).toBe(0);
     await page.evaluate(() => window.viewportFixture.replacePrimary());
     await expect(page.locator("#primary .st-viewport")).toHaveAttribute("aria-disabled", "true");
     expect(await page.locator("#primary .st-viewport-row").count()).toBe(0);

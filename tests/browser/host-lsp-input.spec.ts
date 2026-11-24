@@ -165,7 +165,7 @@ test(`plain LSP captures wait for movement, composition and table input before f
     await settled(page); await exact(page, expected); expect(wire).toEqual([...initialMethods, ...methods]);
     const pasted = await snapshot(page);
     expect(pasted.bindings.tablePaste.status).toBe("applied"); expect(pasted.history.undoDepth).toBe(before.history.undoDepth + 1);
-    expect(pasted.source.exports).toBe(0); expect(pasted.inputRecovery).toEqual([]);
+    expect(pasted.inputRecovery).toEqual([]);
     await button(page, "Dismiss message").click(); await button(page, "Save source").click();
     await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
     expect((await snapshot(page)).pendingSaves[0]).toMatchObject({ revision: pasted.source.revision, length: expected.length });

@@ -54,7 +54,6 @@ async function canonicalSave(page: Page, text: string): Promise<void> {
     expect(await peerText(page, uri, canonical, redoneVersion)).toBe(redoneVersion + 1);
     const saved = await snapshot(page);
     expect(saved.source.revision).toBeGreaterThan(submitted.source.revision); expect(saved.source.length).toBe(canonical.length);
-    expect(saved.source.exports).toBe(0);
     expect(saved.bindings.comparison!.baseline).toEqual(baseline);
     expect(await page.evaluate(text => {
         const f = window.hostFixture;
@@ -65,7 +64,6 @@ async function canonicalSave(page: Page, text: string): Promise<void> {
     expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(before.source.id);
     expect(await page.evaluate(text => window.hostFixture.runCapture(0)!.source === text, canonical)).toBe(true);
     await page.evaluate(() => window.hostFixture.finishRun());
-    expect((await snapshot(page)).bindings.views.every(view => view.metrics!.viewport.rows < 100 && view.metrics!.inputUnits <= 4096)).toBe(true);
     await button(page, "Close source review").click(); await ready(page);
 }
 

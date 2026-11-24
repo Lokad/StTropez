@@ -32,7 +32,7 @@ test(`plain transfer settings and immutable Run/log inspection retain independen
     await button(p, "Inspect current source").evaluate(node => { node.dataset.retained = "inspection-link"; });
     await button(p, "Refresh resource inspection").click();
     await expect(button(p, "Inspect current source")).toHaveAttribute("data-retained", "inspection-link");
-    expect(sets(await snapshot(p))).toEqual(sets(edited)); expect((await snapshot(p)).history).toEqual(edited.history); expect((await snapshot(p)).source.exports).toBe(edited.source.exports);
+    expect(sets(await snapshot(p))).toEqual(sets(edited)); expect((await snapshot(p)).history).toEqual(edited.history);
     await button(p, "Inspect Run 1 log 2").click(); await expect(inspector).toContainText("30%"); await button(p, "Inspect captured Run").click(); await expect(inspector).toContainText("captured.csv");
     await button(p, "Finish transfer settings save").click(); await expect.poll(async () => (await snapshot(p)).transfer.serverVersion).toBe("transfer-v1"); await expect(destination).toHaveValue("newer.csv"); expect((await snapshot(p)).transfer.dirty).toBe(true);
     await expect(destination).toHaveAttribute("data-retained", "transfer-field");

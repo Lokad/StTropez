@@ -42,7 +42,6 @@ test(`react review typing retains unchanged labels and controls while new refere
     try {
         await input.pressSequentially("x".repeat(32)); await waitForReview(page);
         expect(await page.evaluate(text => { const f = window.hostFixture; return f.range(0, text.length) === text; }, original + "x".repeat(32))).toBe(true);
-        expect((await snapshot(page)).source.exports).toBe(0);
         const observed = await probe.evaluate(p => p.read());
         expect(observed.duplicates).toEqual({ reference: 0, language: 0, find: 0, host: 0 }); expect(observed.referenceRetained).toBe(true);
     } finally { await probe.evaluate(p => p.stop()); await probe.dispose(); }

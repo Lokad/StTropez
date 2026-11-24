@@ -107,7 +107,7 @@ test("viewport maps retained source rows through newline edits without stale con
             const insertion = row(0) !== empty && row(1) === empty && row(2) === sameA && row(3) === sameB && row(4) === eof;
             edit([{ from: doc().buffer.length - 1, to: doc().buffer.length, insert: "" }]); settle();
             const joinedEnd = row(3) === sameB && !eof.isConnected;
-            return { work, selected, refreshed, fragment, deletion, insertion, joinedEnd, exact: exact(), exports: doc().buffer.readMetrics().textExports };
+            return { work, selected, refreshed, fragment, deletion, insertion, joinedEnd, exact: exact() };
         } finally { stopEarly(); viewport.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
     });
     await testInfo.attach("row-retention", { body: JSON.stringify(result), contentType: "application/json" });
@@ -116,6 +116,6 @@ test("viewport maps retained source rows through newline edits without stale con
         expect(work.nodes, work.name).toBe(work.eligible); expect(work.children, work.name).toBe(work.eligible);
         expect(work.exact, work.name).toBe(true); expect(work.error, work.name).toBeLessThan(1.1);
     }
-    expect(result).toMatchObject({ selected: "row_5", refreshed: true, deletion: true, insertion: true, joinedEnd: true, exact: true, exports: 0 });
+    expect(result).toMatchObject({ selected: "row_5", refreshed: true, deletion: true, insertion: true, joinedEnd: true, exact: true });
     expect(result.fragment).toMatchObject({ partial: true, retained: true, neighbor: true, exact: true }); expect(result.fragment.error).toBeLessThan(1.1);
 });

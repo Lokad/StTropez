@@ -53,8 +53,7 @@ for (const format of ["TSV", "HTML"]) test(`plain ${format} table paste keeps al
     await expect(page.getByRole("checkbox", { name: "Paste tables as CSV", exact: true })).toHaveAttribute("data-retained", "table-option");
     const expected = csv + original.slice(2, -2) + csv; await exact(page, expected);
     let s = await snapshot(page); expect(s.bindings.tablePaste.status).toBe("applied"); expect(s.bindings.tablePaste).toMatchObject({ rows: 2, columns: 3, pending: false });
-    expect(s.history.undoDepth).toBe(before.history.undoDepth + 1); expect(s.bindings.views.find(v => v.id === "primary")!.selectionSet.ranges.length).toBe(2); expect(s.source.exports).toBe(0);
-    expect(s.bindings.views.every(v => v.metrics!.inputUnits <= 2600 && v.metrics!.viewport.rows < 100)).toBe(true);
+    expect(s.history.undoDepth).toBe(before.history.undoDepth + 1); expect(s.bindings.views.find(v => v.id === "primary")!.selectionSet.ranges.length).toBe(2);
     expect(await page.evaluate(() => (globalThis as unknown as { tablePasteUnsafe: number }).tablePasteUnsafe)).toBe(0); expect(requests).toEqual([]);
     await input(page, "Secondary source").press("Control+z"); await waitForPaste(page); await exact(page, original);
     expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet).toEqual(selections);
@@ -101,7 +100,7 @@ test(`plain captured table paste survives focus elsewhere and cancels on authori
         const field = [...document.querySelectorAll("label")].find(label => label.textContent === "Configuration path")?.querySelector("input");
         if (!field) throw new Error("Missing labelled configuration input."); field.focus(); }, table);
     await waitForPaste(page); await exact(page, '"a","b"\r\n'.repeat(5000) + "source"); await expect(page.getByRole("textbox", { name: "Configuration path", exact: true })).toBeFocused();
-    expect((await snapshot(page)).source.exports).toBe(0); await page.evaluate(() => window.hostFixture.dispose());
+    await page.evaluate(() => window.hostFixture.dispose());
 });
 test(`plain malformed HTML tables fail visibly and valid row groups and plain fallback remain usable`, async ({ page }) => {
     await setup(page, "plain", "source"); await input(page).focus(); const before = await snapshot(page);

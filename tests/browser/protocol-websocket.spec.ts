@@ -102,7 +102,7 @@ test("disposing a session during a held WebSocket handshake releases pending own
 for (const large of [false, true]) test(`LSP session synchronizes ${large ? "sparse-edit" : "mixed-newline"} documents and owns registration/reconnect`, async ({ page }, testInfo) => {
     const state = await page.evaluate(large => window.protocolFixture.sessionJourney(large), large);
     expect(state.remote).toEqual({ uri: state.uri, version: 2, length: state.length, text: state.expectedSample, syncFailures: [] });
-    expect(state.boundedReads.exports).toBe(0); expect(state.boundedReads.before).toBeLessThan(128); expect(state.boundedReads.after).toBeLessThan(128);
+    expect(state.boundedReads.before).toBeLessThan(128); expect(state.boundedReads.after).toBeLessThan(128);
     expect(state.sent).toHaveLength(1); expect(state.sent[0]!.count).toBe(large ? 2 : 1); expect(state.sent[0]!.units).toBeLessThan(32);
     if (large) expect(state.tail).toMatchObject({ text: state.expectedTail, version: 2, syncFailures: [] });
     expect(state.available).toBe(true); expect(state.withdrawn).toBe(true); expect(state.fresh).toBe(true);

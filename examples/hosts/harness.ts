@@ -6,7 +6,7 @@ import type { HostLifecycle } from "./lifecycle.ts";
 import type { DocumentId, HistorySnapshot, ResourceId, Selection, TabTarget, TextEdit, TextResourceHandle } from "../../src/index.ts";
 import type { JsonValue } from "../../src/protocol/index.ts";
 
-type TransferTargetSnapshot = Readonly<{ documentId: DocumentId; revision: number; text: string; exports: number; history: HistorySnapshot }>;
+type TransferTargetSnapshot = Readonly<{ documentId: DocumentId; revision: number; text: string; history: HistorySnapshot }>;
 
 export function installHostHarness(controller: HostController, bindings: ViewBindings, mode: "plain" | "react",
     lifecycle: HostLifecycle, commits: () => Readonly<{ form: number; metadata: number }>, draft?: HostDraftRecovery): void {
@@ -30,13 +30,12 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         }
     };
     const inactiveDocuments = () => Object.freeze(inactive.map(({ resource, tab }) => Object.freeze({ id: resource.id,
-        revision: resource.getSnapshot().revision, dirty: resource.metadata.getSnapshot().dirty, current: !!controller.workspace.tabs.resolve(tab),
-        exports: controller.workspace.document(resource.documentId).buffer.readMetrics().textExports })));
+        revision: resource.getSnapshot().revision, dirty: resource.metadata.getSnapshot().dirty, current: !!controller.workspace.tabs.resolve(tab) })));
     const transferSnapshot = (): TransferTargetSnapshot => {
         if (!transferTarget) throw new Error("No transfer target is mounted.");
         const current = controller.workspace.document(transferTarget.documentId);
         return { documentId: transferTarget.documentId, revision: current.revision, text: current.buffer.slice(0, current.buffer.length),
-            exports: current.buffer.readMetrics().textExports, history: controller.workspace.observeHistory(transferTarget.documentId).getSnapshot() };
+            history: controller.workspace.observeHistory(transferTarget.documentId).getSnapshot() };
     };
     const fixture = Object.freeze({ ready: true, get settled() { return !lifecycle.disposed && bindings.settled(); }, mode, snapshot: () => { const state = controller.debug(), views = bindings.debug();
         return { ...state, hostSubscriptions: state.hostSubscriptions + views.language.subscriptions + views.hover.subscriptions + views.tablePaste.subscriptions + views.domain.subscriptions + views.navigation.subscriptions + views.project.subscriptions + views.signature.subscriptions + views.rename.subscriptions + views.actions.subscriptions + views.links.subscriptions + views.colors.subscriptions + (draft?.debug().subscriptions ?? 0), draft: draft?.debug() ?? null, bindings: views, commits: commits() }; },
@@ -91,7 +90,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         faultIdleProject: () => bindings.project.faultIdle(),
         setProjectTargetReadOnly: (id: DocumentId, value: boolean) => { const resource = controller.workspace.resourceForDocument(id), metadata = resource.metadata.getSnapshot();
             controller.workspace.setCapabilities(resource.id, { ...metadata.capabilities, edit: value ? ["host"] : ["human", "host", "agent"] }); },
-        navigationDocument: (id: DocumentId) => { const doc = controller.workspace.document(id); return { revision: doc.revision, length: doc.buffer.length, text: doc.buffer.slice(0, Math.min(4096, doc.buffer.length)), exports: doc.buffer.readMetrics().textExports }; },
+        navigationDocument: (id: DocumentId) => { const doc = controller.workspace.document(id); return { revision: doc.revision, length: doc.buffer.length, text: doc.buffer.slice(0, Math.min(4096, doc.buffer.length)) }; },
         inspectSymbol: (id: "primary" | "secondary" | "comparison") => bindings.hover.inspectCaret(id),
         setHoverDelay: (id: string, value: number) => bindings.hover.setDelay(id, value),
         faultHoverNext: (id: string, value: "malformed" | "failure" | "markup") => bindings.hover.faultNext(id, value),
@@ -102,7 +101,7 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; sett
     { bindings: ReturnType<ViewBindings["debug"]>; commits: Readonly<{ form: number; metadata: number }>; draft: ReturnType<HostDraftRecovery["debug"]> | null };
     editSource: (expectedRevision: number, edits: readonly TextEdit[]) => ReturnType<HostController["workspace"]["edit"]>;
     seedInactiveDocuments: () => void;
-    inactiveDocuments: () => readonly Readonly<{ id: ResourceId; revision: number; dirty: boolean; current: boolean; exports: number }>[];
+    inactiveDocuments: () => readonly Readonly<{ id: ResourceId; revision: number; dirty: boolean; current: boolean }>[];
     previewProposal: (text: string) => void; applyProposal: () => void; runCapture: (index: number) => ReturnType<HostController["runCapture"]>; setPath: (path: string) => void;
     recoveryText: () => string | null;
     finishRun: () => void; failRun: () => void; finishSave: () => void; failSave: () => void; range: (from: number, to: number) => string;
@@ -135,7 +134,7 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; sett
     setRenameDelay: (value: number) => void; faultRenameNext: (value: "malformed" | "failure") => void; faultIdleRename: () => boolean;
     faultIdleProject: () => boolean;
     setProjectTargetReadOnly: (id: DocumentId, value: boolean) => void;
-    navigationDocument: (id: DocumentId) => Readonly<{ revision: number; length: number; text: string; exports: number }>;
+    navigationDocument: (id: DocumentId) => Readonly<{ revision: number; length: number; text: string }>;
     inspectSymbol: (id: "primary" | "secondary" | "comparison") => boolean;
     setHoverDelay: (id: string, value: number) => void;
     faultHoverNext: (id: string, value: "malformed" | "failure" | "markup") => void;

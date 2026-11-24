@@ -54,7 +54,7 @@ for (const arm of ["stay", "form", "interrupt"] as const)
         await expect(status).toHaveText(arm === "interrupt" ? "50000 matches · ready" : "Replaced 50000 matches."); await ready(page);
         const expected = arm === "interrupt" ? "!" + original : changed, settled = await snapshot(page);
         await exact(page, expected); expect(settled.history.undoDepth).toBe(before.history.undoDepth + 1);
-        expect(settled.pendingSaves).toEqual(before.pendingSaves); expect(settled.source.exports).toBe(0);
+        expect(settled.pendingSaves).toEqual(before.pendingSaves);
         expect(settled.bindings.comparison!.baseline!.version).toBe(reference.baseline!.version);
         expect(await page.evaluate(text => window.hostFixture.referenceRange(0, text.length) === text, original)).toBe(true);
         if (arm === "form") {
@@ -72,6 +72,6 @@ for (const arm of ["stay", "form", "interrupt"] as const)
         await page.getByRole("textbox", { name: "Secondary source", exact: true }).focus(); await page.keyboard.press("Control+z");
         await ready(page); await exact(page, original); expect((await snapshot(page)).source.dirty).toBe(false);
         await page.keyboard.press("Control+Shift+z"); await ready(page); await exact(page, expected);
-        expect((await snapshot(page)).source.dirty).toBe(true); expect((await snapshot(page)).source.exports).toBe(0);
+        expect((await snapshot(page)).source.dirty).toBe(true);
         await page.evaluate(() => window.hostFixture.dispose());
     });

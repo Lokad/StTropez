@@ -22,13 +22,11 @@ test(`plain folding preserves independent views, review, history, captured Save/
     expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.collapsedFolds).toBe(1);
     await input(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, original);
     await input(page).press("Control+Shift+z"); await ready(page); await exact(page, "X" + original);
-    await input(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, original); expect((await snapshot(page)).source.exports).toBe(0);
+    await input(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, original);
     await input(page).press("Control+s"); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
     await input(page).press("Control+End"); await ready(page); await input(page).pressSequentially(" later"); await ready(page); await page.evaluate(() => window.hostFixture.finishSave());
     await expect.poll(async () => (await snapshot(page)).pendingCommands).toBe(0); await ready(page); await exact(page, original + " later");
     await input(page).press("Control+z"); await ready(page); await exact(page, original); expect((await snapshot(page)).source.dirty).toBe(false);
-    // Save explicitly exports its captured revision; ordinary folding/input above did not.
-    const exports = (await snapshot(page)).source.exports;
     const working = input(page, "Comparison working source"); await working.focus();
     await page.evaluate(to => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: 0, head: to }]); }, footer);
     await button(page, "Fold selected lines").click(); await ready(page); expect((await snapshot(page)).bindings.comparison!.workingViewport.collapsedFolds).toBe(1);
@@ -39,7 +37,6 @@ test(`plain folding preserves independent views, review, history, captured Save/
     await working.press("Control+Shift+["); await ready(page); expect((await snapshot(page)).bindings.comparison!.workingViewport.collapsedFolds).toBe(1);
     await button(page, "Next change").click(); await ready(page); expect((await snapshot(page)).bindings.comparison!.workingViewport.collapsedFolds).toBe(0);
     expect((await snapshot(page)).bindings.comparison!.baseline!.version).toBe(reference); expect(await page.evaluate(() => window.hostFixture.referenceRange(0, 5))).toBe("start");
-    expect((await snapshot(page)).source.exports).toBe(exports);
     const viewId = (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.viewId;
     await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); }); await ready(page);
     s = await snapshot(page); expect(s.bindings.views.find(v => v.id === "primary")!.viewId).toBe(viewId); expect(s.bindings.views.find(v => v.id === "primary")!.metrics!.viewport.collapsedFolds).toBe(1);
@@ -63,6 +60,6 @@ test(`plain disclosure rejects old DOM captures, expires hover and respects comp
     expect((await snapshot(page)).source.revision).toBe(staged.source.revision); expect((await snapshot(page)).history).toEqual(staged.history);
     await expect(button(page, "Expand line 2")).toBeDisabled();
     await input(page).evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }))); await ready(page); await expect(button(page, "Expand line 2")).toBeEnabled();
-    await input(page).press("Control+End"); await input(page).pressSequentially("!"); await ready(page); await exact(page, "X" + text + "!"); expect((await snapshot(page)).source.exports).toBe(0);
+    await input(page).press("Control+End"); await input(page).pressSequentially("!"); await ready(page); await exact(page, "X" + text + "!");
     await page.evaluate(() => window.hostFixture.dispose());
 });

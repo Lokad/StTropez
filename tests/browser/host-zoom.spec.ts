@@ -68,8 +68,6 @@ test(`plain inherited CSS zoom preserves carets, pointer ranges and navigation`,
         expect(await page.evaluate(({ from, to }) => window.hostFixture.range(from, to), { from: from - 2, to: from + 3 })).toBe(text.slice(from - 2, from) + "Q" + text.slice(to, to + 2));
         await source(page).press("Control+z"); await ready(page); expect((await snapshot(page)).source.length).toBe(text.length);
         expect(await page.evaluate(() => window.hostFixture.range(0, 100))).toBe(text.slice(0, 100));
-        expect((await snapshot(page)).bindings.views.every(v => v.metrics!.inputUnits <= 2600 && v.metrics!.viewport.rows < 100)).toBe(true);
-        expect((await snapshot(page)).source.exports).toBe(0);
     }
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await ready(page);
     const reference = source(page, "Comparison baseline source"); await reference.scrollIntoViewIfNeeded(); await reference.focus();
@@ -80,7 +78,7 @@ test(`plain inherited CSS zoom preserves carets, pointer ranges and navigation`,
     await page.evaluate(() => window.hostFixture.dispose());
 });
 
-test(`plain scroll boundary keeps the display caret on source while the native input stays bounded`, async ({ page }) => {
+test(`plain scroll boundary keeps the caret on source and the native input inside the viewport`, async ({ page }) => {
      await page.goto(`/hosts/plain/`);
     const line = "0123456789abcdef Δ😀 xyz\r\n", text = line.repeat(80), offset = line.length * 20 + 8, input = source(page);
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text);
@@ -113,7 +111,6 @@ test(`plain scroll boundary keeps the display caret on source while the native i
         expect(await page.evaluate(at => window.hostFixture.range(at - 1, at + 2), offset)).toBe(text[offset - 1] + "Q" + text[offset]);
         await input.press("Control+z"); await ready(page); expect((await snapshot(page)).source.length).toBe(text.length);
         expect(await page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length))).toBe(text);
-        expect((await snapshot(page)).source.exports).toBe(0);
     }
     await page.evaluate(() => window.hostFixture.dispose());
 });

@@ -95,6 +95,8 @@ Use the plain host for shared editing, language and review workflows. Use React 
 Strict Mode, render isolation and root-error recovery. Keep separate cases for light- and shadow-DOM
 event paths when a focus or input transition depends on the event target.
 
+The editor fixture checks the native textarea's actual value during editing. Viewport tests check
+painted rows and selection geometry. The model and benchmarks count full-text exports.
 The host disposal test checks for leaked views, leases and subscriptions. In a save or recovery
 test, check the pending write or draft after the editor remounts.
 

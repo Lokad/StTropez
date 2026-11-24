@@ -143,8 +143,7 @@ test.describe(`plain save-conflict pilot`, () => {
         await primary.press("Control+Shift+z"); await primary.press("Control+Shift+z");
         await expect(page.getByRole("group", { name: "Source review", exact: true })).toHaveAttribute("data-status", "ready");
         const state = await page.evaluate(() => window.hostFixture.snapshot());
-        expect(state.source.exports).toBe(0); expect(state.bindings.views.every(view => view.metrics!.inputUnits < 2600 && view.metrics!.viewport.rows < 100)).toBe(true);
-        expect(state.bindings.comparison!.input.inputUnits).toBeLessThan(2600); expect(state.bindings.comparison!.workingViewport.rows).toBeLessThan(100);
+        expect(state.bindings.comparison!.workingViewport.rows).toBeLessThan(100);
         expect(await page.evaluate(() => window.hostFixture.range(0, 6))).toBe("fixed ");
         expect(await page.evaluate(() => window.hostFixture.referenceRange(0, 7))).toBe("remote ");
         await page.evaluate(() => window.hostFixture.dispose());

@@ -40,7 +40,7 @@ test(`plain loaded-source checkpoint survives close and real reload independentl
     const value = "loaded café😀 é\r\n" + "row Δ😀\r\n".repeat(8) + "tail";
     await p.evaluate(({ id, value }) => { const f = window.hostFixture, s = f.navigationDocument(id); f.editLinkTarget(id, s.revision, [{ from: 0, to: s.length, insert: value }]); }, { id: loaded.documentId, value });
     await source(p).press("Control+End"); await source(p).pressSequentially("K"); await waitForDraft(p);
-    let doc = await p.evaluate(id => window.hostFixture.navigationDocument(id), loaded.documentId); expect(doc.exports).toBe(0);
+    let doc = await p.evaluate(id => window.hostFixture.navigationDocument(id), loaded.documentId);
     await p.evaluate(revision => window.hostFixture.selectSourceSet("primary", revision, [{ anchor: 4, head: 1 }, { anchor: 12, head: 8 }], 1), doc.revision); await waitForDraft(p);
     const beforeClose = (await snapshot(p)).bindings.views.find(v => v.id === "primary")!;
     await button(p, "Prompt close").click(); await button(p, "Confirm close").click(); await button(p, "Reopen loaded source").click(); await waitForDraft(p);
@@ -54,7 +54,7 @@ test(`plain loaded-source checkpoint survives close and real reload independentl
     expect((await snapshot(p)).bindings.views.find(v => v.id === "primary")!.documentId).toBe(originalDocument);
     await button(p, "Reopen loaded source").click(); await waitForDraft(p); const restored = (await snapshot(p)).bindings.views.find(v => v.id === "primary")!;
     expect(restored.documentId).not.toBe(originalDocument); expect((await snapshot(p)).pendingSaves).toEqual(pending.pendingSaves); expect((await snapshot(p)).pendingRuns).toEqual(pending.pendingRuns);
-    doc = await p.evaluate(id => window.hostFixture.navigationDocument(id), restored.documentId); expect(doc.length).toBe(value.length + 1); expect(doc.text).toBe((value + "K").slice(0, 4096)); expect(doc.exports).toBe(0);
+    doc = await p.evaluate(id => window.hostFixture.navigationDocument(id), restored.documentId); expect(doc.length).toBe(value.length + 1); expect(doc.text).toBe((value + "K").slice(0, 4096));
     await source(p).press("Control+z"); await waitForDraft(p); expect(await p.evaluate(id => window.hostFixture.navigationDocument(id).text, restored.documentId)).toBe("loaded resource");
     await source(p).press("Control+Shift+z"); await waitForDraft(p); expect((await snapshot(p)).history).toEqual(original.history);
     await button(p, "Finish save").click(); await button(p, "Finish run").click(); await expect.poll(async () => (await snapshot(p)).pendingCommands).toBe(0);
@@ -103,7 +103,7 @@ test(`plain browser close decisions retain live work and offer only explicit che
     expect(after.bindings.comparison!.baseline).toEqual(pending.bindings.comparison!.baseline); expect(after.draft!.disposed).toBe(false);
     await button(p, "Finish save").click(); await expect.poll(async () => (await snapshot(p)).pendingCommands).toBe(0);
     await source(p).press("Control+End"); await source(p).pressSequentially("L"); await waitForDraft(p);
-    const later = await snapshot(p); expect(later.draft!.unprotected).toBe(true); expect(later.source.exports).toBe(0);
+    const later = await snapshot(p); expect(later.draft!.unprotected).toBe(true);
     await closeWithDecision(p, false); await waitForDraft(p); await preserved(p, later, raw + "KL");
     // A cancelled close did not dispose handlers or history in either view.
     await source(p, "Secondary source").press("Control+z"); await waitForDraft(p); await exact(p, raw + "K");
@@ -117,7 +117,7 @@ test(`plain browser close decisions retain live work and offer only explicit che
     const restored = await snapshot(reopened); await restore(reopened, "Restore configuration draft");
     await expect(reopened.getByRole("textbox", { name: "Configuration path", exact: true })).toHaveValue("checkpoint.csv");
     after = await snapshot(reopened); expect(after.source).toEqual(restored.source); expect(after.history).toEqual(restored.history);
-    expect(after.source.exports).toBe(0); expect(after.pendingSaves).toEqual([]); expect(after.pendingRuns).toEqual([]);
+    expect(after.pendingSaves).toEqual([]); expect(after.pendingRuns).toEqual([]);
     // Covered, settled inputs can really close without showing a confirmation.
     const dialogs: string[] = []; reopened.on("dialog", async dialog => { dialogs.push(dialog.type()); await dialog.accept(); });
     const closed = reopened.waitForEvent("close"); await reopened.close({ runBeforeUnload: true }); await closed;
@@ -127,9 +127,9 @@ test(`plain durable drafts restore independent inputs after true reload and pres
     test.setTimeout(120000);  await p.goto(`/hosts/plain/`); await waitForDraft(p);
     const raw = "café😀 é;\r\n" + "const stableValue = 123;\r\n".repeat(10) + "tail";
     await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, raw);
-    await source(p).press("Control+End"); await source(p).pressSequentially("K"); await p.getByRole("textbox", { name: "Configuration path", exact: true }).fill("recovered.csv"); await waitForDraft(p); expect((await snapshot(p)).source.exports).toBe(0);
+    await source(p).press("Control+End"); await source(p).pressSequentially("K"); await p.getByRole("textbox", { name: "Configuration path", exact: true }).fill("recovered.csv"); await waitForDraft(p);
     await button(p, "Keep recovery draft").click(); await waitForDraft(p); expect((await snapshot(p)).draft).toMatchObject({ present: true, valid: true, unprotected: false, sourceUnits: raw.length + 1 });
-    await source(p).press("Control+End"); await source(p).pressSequentially("L"); await waitForDraft(p); expect((await snapshot(p)).source.exports).toBe(0); expect((await snapshot(p)).draft!.sourceUnits).toBe(raw.length + 1); expect(await warning(p)).toBe(true);
+    await source(p).press("Control+End"); await source(p).pressSequentially("L"); await waitForDraft(p); expect((await snapshot(p)).draft!.sourceUnits).toBe(raw.length + 1); expect(await warning(p)).toBe(true);
     await source(p).press("Control+z"); await waitForDraft(p); await exact(p, raw + "K"); expect(await warning(p)).toBe(false);
     await p.evaluate(() => { document.documentElement.dataset.draftSession = "old"; }); await p.reload(); await waitForDraft(p); expect(await p.evaluate(() => document.documentElement.dataset.draftSession)).toBeUndefined(); await exact(p, "start"); await expect(p.getByRole("textbox", { name: "Configuration path", exact: true })).toHaveValue("source.csv");
     await restore(p, "Restore source draft"); await exact(p, raw + "K"); expect((await snapshot(p)).history.undoDepth).toBe(1); const revision = (await snapshot(p)).source.revision;

@@ -51,7 +51,6 @@ test(`plain host form reset preserves source projections, captured save and shar
     expect(typed.bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: offset + 1, head: offset + 1 });
     expect(typed.bindings.views.find(view => view.id === "secondary")!.selection).toEqual(before.bindings.views.find(view => view.id === "secondary")!.selection);
     // Export counters belong to each immutable buffer; the new revision starts at zero.
-    expect(typed.source.exports).toBe(0);
     await page.evaluate(() => window.hostFixture.finishSave());
     await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1"); await waitForViews(page);
     expect(await exact(page, expected)).toBe(true); expect((await snapshot(page)).source.dirty).toBe(true);

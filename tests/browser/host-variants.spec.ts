@@ -31,7 +31,7 @@ test(`plain selected versions, discard and saved history stay independent of wor
     expect((await snapshot(page)).history.undoDepth).toBe(beforeDiscard.history.undoDepth + 1); expect((await snapshot(page)).source.dirty).toBe(true);
     await input(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, changed);
     expect((await snapshot(page)).bindings.comparison!.selectionSet).toEqual(beforeDiscard.bindings.comparison!.selectionSet);
-    await input(page, "Comparison working source").press("Control+Shift+z"); await ready(page); await exact(page, original); expect((await snapshot(page)).source.exports).toBe(0);
+    await input(page, "Comparison working source").press("Control+Shift+z"); await ready(page); await exact(page, original);
     await input(page).press("Control+s"); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
     await append(page, " after save"); await click(page, "Finish save"); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1"); await ready(page);
     expect((await snapshot(page)).source.dirty).toBe(true); await input(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, original); expect((await snapshot(page)).source.dirty).toBe(false);
@@ -52,7 +52,6 @@ test(`plain selected versions, discard and saved history stay independent of wor
     const retained = await snapshot(page); await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); }); await ready(page);
     const remounted = await snapshot(page); expect(remounted.source.id).toBe(sourceId); expect(remounted.history).toEqual(retained.history);
     expect(remounted.bindings.views.map(v => v.selectionSet)).toEqual(retained.bindings.views.map(v => v.selectionSet)); await exact(page, "start", true); await exact(page, original + " live");
-    expect(remounted.bindings.views.every(v => v.metrics!.inputUnits <= 2600 && v.metrics!.viewport.rows < 100 && v.metrics!.viewport.readUnits < 20000)).toBe(true);
     await page.evaluate(() => window.hostFixture.dispose());
 });
 

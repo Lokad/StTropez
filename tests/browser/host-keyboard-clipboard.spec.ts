@@ -175,7 +175,6 @@ test(`plain trusted clipboard preserves selections, captured save and shared his
         expect(afterPaste.history.undoDepth).toBe(cutState.history.undoDepth + 1);
         expect(sourceSelection(afterPaste, "primary")).toMatchObject({ anchor: from + inserted.length, head: from + inserted.length });
         expect(sourceSelection(afterPaste, "secondary")).toEqual(sourceSelection(beforePaste, "secondary")); expect(afterPaste.pendingSaves).toEqual(captured.pendingSaves);
-        expect(afterPaste.source.exports).toBe(0); expect(afterPaste.bindings.views.every(view => view.metrics && view.metrics.inputUnits <= 2600)).toBe(true);
         await select(page, pasted.length); await primary(page).pressSequentially("q"); await waitForReview(page); await exact(page, pasted + "q");
         expect((await snapshot(page)).pendingSaves).toEqual(captured.pendingSaves);
         await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1"); await waitForReview(page);
@@ -205,7 +204,7 @@ test(`plain trusted read-only clipboard preserves source and history until permi
         }
         await primary(page).pressSequentially("q"); await waitForReview(page);
         const after = await snapshot(page); await exact(page, normal);
-        expect(after.source.revision).toBe(before.source.revision); expect(after.source.exports).toBe(before.source.exports);
+        expect(after.source.revision).toBe(before.source.revision);
         expect(after.history).toEqual(before.history); expect(after.pendingSaves).toEqual(before.pendingSaves); expect(selections(after)).toEqual(selections(before));
         await page.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await expect(primary(page)).not.toHaveAttribute("readonly", ""); await primary(page).focus(); await waitForReview(page);
         expect(sourceSelection(await snapshot(page), "primary")).toEqual(sourceSelection(before, "primary"));

@@ -64,12 +64,12 @@ test(`plain linked review scroll preserves captured rows, selections, history, r
     await input.press("Control+End"); await input.pressSequentially("H"); await waitForReview(p); await exact(p, working + "H");
     expect((await snapshot(p)).bindings.comparison!.baseline).toEqual(retained.baseline);
     await p.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await waitForReview(p); await exact(p, working);
-    await input.press("Control+Shift+z"); await waitForReview(p); await exact(p, working + "H"); expect((await snapshot(p)).source.exports).toBe(0);
+    await input.press("Control+Shift+z"); await waitForReview(p); await exact(p, working + "H");
     await input.press("Control+s"); await button(p, "Finish save").click(); await waitForReview(p); const saved = await snapshot(p); expect(saved.source.dirty).toBe(false);
     await button(p, "Capture review acceptance").click();
     await p.locator(".st-comparison-panes .st-viewport").first().evaluate(node => { node.scrollTop = 3000; node.dispatchEvent(new Event("scroll")); const buttons = [...node.ownerDocument.querySelectorAll<HTMLButtonElement>("button")]; buttons.find(b => b.textContent === "Finish review acceptance")!.click(); });
     await waitForReview(p); c = (await snapshot(p)).bindings.comparison!; expect(c.referenceIsWorkingBuffer).toBe(true); expect(c.workingViewport.scrollTop).toBeCloseTo(c.referenceViewport!.scrollTop, 0);
-    expect((await snapshot(p)).source.exports).toBe(saved.source.exports); expect(c.workingViewport.rows).toBeLessThan(100); expect(c.referenceViewport!.rows).toBeLessThan(100);
+    expect(c.workingViewport.rows).toBeLessThan(100); expect(c.referenceViewport!.rows).toBeLessThan(100);
     const disposed = await p.locator(".st-comparison-panes .st-viewport").last().evaluate(async node => { node.scrollTop = 5000; node.dispatchEvent(new Event("scroll")); await window.hostFixture.dispose(); return window.hostFixture.snapshot(); });
     expect(disposed.bindings.comparison).toBeNull();
 });

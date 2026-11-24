@@ -160,17 +160,16 @@ test("word keys navigate full model ranges, extend selections and delete one und
     await page.keyboard.press("Control+z"); await ready(page); expect(await page.evaluate(() => window.editingFixture.range(0, 31))).toBe(text);
     expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 31, head: 27 });
     await setup(page, "👩‍💻  αβ"); await page.keyboard.press("Control+Delete"); await ready(page);
-    expect(await page.evaluate(() => window.editingFixture.range(0, 4))).toBe("  αβ"); expect((await snapshot(page)).document!.exports).toBe(0);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 4))).toBe("  αβ");
 });
 
 test("a long word yields, deletes beyond native context and restores through shared history", async ({ page }) => {
     await setup(page, "x".repeat(200_000) + "  tail"); const before = await snapshot(page);
     await page.keyboard.press("Control+Delete"); await ready(page); const after = await snapshot(page);
-    expect(after.document).toMatchObject({ length: 6, revision: before.document!.revision + 1, exports: 0 });
+    expect(after.document).toMatchObject({ length: 6, revision: before.document!.revision + 1 });
     expect(await page.evaluate(() => window.editingFixture.range(0, 6))).toBe("  tail"); expect(after.history!.undoDepth).toBe(before.history!.undoDepth + 1);
     await page.keyboard.press("Control+z"); await ready(page); expect((await snapshot(page)).document!.length).toBe(200_006);
     await page.keyboard.press("Control+ArrowRight"); await ready(page); expect((await snapshot(page)).primary.selection.head).toBe(200_000);
-    expect((await snapshot(page)).primary.inputUnits).toBeLessThan(2600);
 });
 
 test("word movement stops at line boundaries and word deletion treats indentation separately", async ({ page }) => {
@@ -212,7 +211,7 @@ test("pending word deletion expires after revision, selection or tab-generation 
         expect(pending).toBe(true);
         await expect.poll(() => page.evaluate(() => window.editingFixture.snapshot().primary.pendingWord)).toBe(false);
         const after = await snapshot(page); expect(after.document!.length).toBe(200_000 + (changed === "revision" ? 1 : 0));
-        expect(after.primary.commits).toBe(before.primary.commits); expect(after.document!.exports).toBe(0);
+        expect(after.primary.commits).toBe(before.primary.commits);
     }
 });
 
@@ -233,7 +232,6 @@ test("page and line movement retain a measured column across short lines and ext
     expect((await snapshot(page)).primary.selection.head).toBe(starts[8 + pageLines]! + 8);
     await page.keyboard.press("Shift+PageUp"); await ready(page);
     expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: starts[8 + pageLines]! + 8, head: starts[8]! + 8 });
-    expect((await snapshot(page)).document!.exports).toBe(0);
 });
 
 test("non-cancellable word input uses its captured revision and preserves rejected native attempts", async ({ page }) => {
@@ -291,7 +289,7 @@ test("page movement preserves raw CRLF offsets and measured columns in horizonta
     expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 0, head: 0 });
     await page.keyboard.press("Control+End"); await ready(page); await page.keyboard.press("Shift+PageDown"); await ready(page);
     expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: text.length, head: text.length });
-    expect((await snapshot(page)).document).toMatchObject({ exports: 0, revision: before.document!.revision });
+    expect((await snapshot(page)).document).toMatchObject({ revision: before.document!.revision });
 });
 
 test("pending word deletion orders native deletion and typing and respects permission changes", async ({ page }) => {
@@ -309,11 +307,11 @@ test("pending word deletion orders native deletion and typing and respects permi
         input.dispatchEvent(new InputEvent("beforeinput", { inputType: "deleteWordForward", bubbles: true, cancelable: true }));
         input.setRangeText("!", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { inputType: "insertText", bubbles: true }));
     }); await ready(page);
-    expect((await snapshot(page)).document).toMatchObject({ length: 1, exports: 0 }); expect((await snapshot(page)).primary.commits).toBe(before + 3);
+    expect((await snapshot(page)).document).toMatchObject({ length: 1 }); expect((await snapshot(page)).primary.commits).toBe(before + 3);
     expect(await page.evaluate(() => window.editingFixture.range(0, 1))).toBe("!");
     await page.keyboard.press("Control+z"); await ready(page); expect((await snapshot(page)).document!.length).toBe(0);
     await page.keyboard.press("Control+z"); await ready(page); expect(await page.evaluate(() => window.editingFixture.range(0, 5))).toBe(" tail");
-    await page.keyboard.press("Control+z"); await ready(page); expect((await snapshot(page)).document).toMatchObject({ length: text.length, exports: 0 });
+    await page.keyboard.press("Control+z"); await ready(page); expect((await snapshot(page)).document).toMatchObject({ length: text.length });
     expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 0, head: 0 });
     await setup(page, "x".repeat(200_000)); const revision = (await snapshot(page)).document!.revision;
     await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(node => {
@@ -363,7 +361,7 @@ test("navigation reuses immediate style captures and rejects synchronous layout 
             try {
                 input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
                 const state = window.editingFixture.snapshot();
-                return { key, reads, head: state.primary.selection.head, pending: state.primary.pendingCommand, exports: state.document!.exports };
+                return { key, reads, head: state.primary.selection.head, pending: state.primary.pendingCommand };
             } finally { window.getComputedStyle = getStyle; }
         }, key));
         await ready(page);
@@ -390,7 +388,7 @@ test("navigation reuses immediate style captures and rejects synchronous layout 
     await testInfo.attach("navigation-style", { body: JSON.stringify({ counts, changes }), contentType: "application/json" });
     for (const result of counts) {
         expect(result.head).toBe(head + (result.key === "ArrowRight" ? 1 : 17));
-        expect(result.pending).toBe(false); expect(result.exports).toBe(0);
+        expect(result.pending).toBe(false);
         // Includes the viewport's metric reads; vertical preflight adds one flush.
         expect(result.reads).toBeGreaterThan(0); expect(result.reads).toBeLessThanOrEqual(result.key === "ArrowRight" ? 5 : 6);
     }

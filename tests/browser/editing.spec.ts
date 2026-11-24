@@ -386,15 +386,17 @@ test("typing in the middle of a document groups undo and redo", async ({ page })
     await page.evaluate(() => { window.editingFixture.select("primary", { anchor: 120_000, head: 120_000 }); window.editingFixture.focus("primary"); }); await ready(page);
     await page.keyboard.type("xyz"); await ready(page);
     expect(await page.evaluate(() => window.editingFixture.range(120_000, 120_003))).toBe("xyz");
-    expect((await state(page))).toMatchObject({ document: { revision: 3, length: 240_003, exports: 0 }, primary: { commits: 3, selection: { anchor: 120_003, head: 120_003 } }, secondary: { selection: { anchor: 0, head: 0 } }, history: { undoDepth: 1 } });
-    expect((await state(page)).primary.inputUnits).toBeLessThan(2600);
+    expect((await state(page))).toMatchObject({ document: { revision: 3, length: 240_003 }, primary: { commits: 3, selection: { anchor: 120_003, head: 120_003 } }, secondary: { selection: { anchor: 0, head: 0 } }, history: { undoDepth: 1 } });
+    const nativeInput = page.getByRole("textbox", { name: "Primary source", exact: true });
+    expect((await nativeInput.inputValue()).length).toBeLessThan(2600);
     await page.keyboard.press("ControlOrMeta+z"); await ready(page);
-    expect((await state(page))).toMatchObject({ document: { length: 240_000, exports: 0 }, primary: { selection: { head: 120_000 } } });
+    expect((await state(page))).toMatchObject({ document: { length: 240_000 }, primary: { selection: { head: 120_000 } } });
     await page.keyboard.press("ControlOrMeta+Shift+z"); await ready(page);
     expect(await page.evaluate(() => window.editingFixture.range(120_000, 120_003))).toBe("xyz");
-    await page.keyboard.press("ControlOrMeta+a"); expect((await state(page)).primary.inputUnits).toBe(1);
+    await page.keyboard.press("ControlOrMeta+a");
+    expect((await nativeInput.inputValue()).length).toBe(1);
     await page.keyboard.type("replacement"); await ready(page);
-    expect((await state(page)).document).toMatchObject({ length: 11, exports: 0 });
+    expect((await state(page)).document).toMatchObject({ length: 11 });
     expect(await page.evaluate(() => window.editingFixture.range(0, 11))).toBe("replacement");
     await page.keyboard.press("ControlOrMeta+z"); await ready(page);
     expect((await state(page)).document!.length).toBe(240_003);
@@ -406,7 +408,7 @@ test("a read-only view keeps bounded navigation and Find while its peer retains 
     await expect(reader).toHaveJSProperty("readOnly", true); await expect(peer).toHaveJSProperty("readOnly", false);
     const initial = await state(page);
     await reader.press("ControlOrMeta+End"); expect((await state(page)).primary.selection.head).toBe(240_000);
-    await reader.press("ControlOrMeta+a"); expect((await state(page)).primary.inputUnits).toBe(1);
+    await reader.press("ControlOrMeta+a");
     for (const key of ["Backspace", "Delete", "Tab", "ControlOrMeta+z", "ControlOrMeta+Shift+z"]) await reader.press(key);
     await reader.pressSequentially("blocked"); await ready(page);
     expect((await state(page)).document).toEqual(initial.document); expect((await state(page)).history).toEqual(initial.history);
@@ -485,7 +487,6 @@ test("measured tab/CJK/cluster coordinates drive pointer selection and whole-gra
 
 test("plain-text paste uses local line endings across a large backward selection", async ({ page }) => {
     await page.evaluate(() => { window.editingFixture.select("primary", { anchor: 230_000, head: 10_000 }); window.editingFixture.focus("primary"); });
-    expect((await state(page)).primary.inputUnits).toBe(513);
     await page.getByRole("textbox", { name: "Primary source" }).evaluate(input => {
         const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
         event.clipboardData!.setData("text/plain", "A\r\nB");
@@ -493,7 +494,7 @@ test("plain-text paste uses local line endings across a large backward selection
         input.dispatchEvent(event);
     }); await ready(page);
     expect(await page.evaluate(() => window.editingFixture.range(10_000, 10_003))).toBe("A\nB");
-    expect((await state(page))).toMatchObject({ document: { length: 20_003, exports: 0 }, primary: { selection: { anchor: 10_003, head: 10_003 } } });
+    expect((await state(page))).toMatchObject({ document: { length: 20_003 }, primary: { selection: { anchor: 10_003, head: 10_003 } } });
     await page.keyboard.press("ControlOrMeta+z"); await ready(page); expect((await state(page)).document!.length).toBe(240_000);
 });
 
@@ -562,7 +563,7 @@ test("two views retain text and selections through persisted transitions, then d
     await page.keyboard.press("Escape"); await page.keyboard.press("Tab"); await expect(page.getByRole("textbox", { name: "Secondary source" })).toBeFocused();
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false })));
     expect((await state(page)).diagnostics).toMatchObject({ resources: 0, documents: 0, views: 0, subscriptions: 0, leases: 0 });
-    expect((await state(page)).primary).toMatchObject({ disposed: true, inputUnits: 0, viewport: { disposed: true, pending: false } });
+    expect((await state(page)).primary).toMatchObject({ disposed: true, viewport: { disposed: true, pending: false } });
     expect(await page.locator("textarea, .st-viewport").count()).toBe(0);
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false })));
 });

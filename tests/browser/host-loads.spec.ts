@@ -33,7 +33,7 @@ test(`plain repeated loads release clean documents and preserve reachable drafts
         else { await command(p, "Finish delayed load"); await expect(primary(p)).toBeVisible(); await command(p, "Reopen primary source"); }
         await waitForLoad(p); await restored();
         const after = await snap(p); expect(after.pendingSaves).toEqual(before.pendingSaves); expect(after.pendingRuns).toEqual(before.pendingRuns); expect(after.history).toEqual(before.history);
-        expect(selections(after)).toEqual(selections(before)); expect(after.source.revision).toBe(before.source.revision); expect(after.source.exports).toBe(before.source.exports);
+        expect(selections(after)).toEqual(selections(before)); expect(after.source.revision).toBe(before.source.revision);
         await expect(field).toHaveValue("target.csv"); expect(await field.evaluate(node => { const f = node as HTMLTextAreaElement; return [f.selectionStart, f.selectionEnd, f.selectionDirection]; })).toEqual([1, 4, "backward"]); expect(after.bindings.views.every(v => v.metrics.viewport.rows < 100)).toBe(true);
     }
     await exact(p, text); await command(p, "Begin delayed load"); await command(p, "Finish delayed load"); await expect(primary(p)).toBeVisible(); await primary(p).press("Control+End"); await primary(p).pressSequentially(" draft café😀"); await primary(p).press("Shift+Home"); await waitForLoad(p);

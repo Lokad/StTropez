@@ -57,8 +57,7 @@ test(`plain ${journey} boundaries finish before immediate typing`, async ({ page
         for (const range of destinations.slice().reverse()) { const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head); expected = expected.slice(0, from) + "!" + expected.slice(to); }
         await waitForReview(page); await exact(page, expected);
         const after = await snapshot(page); expect(after.source.revision).toBe(before.source.revision + 1); expect(after.history.undoDepth).toBe(before.history.undoDepth + 1);
-        expect(after.source.exports).toBe(0); expect(after.bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline);
-        expect(after.bindings.views.every(v => v.metrics!.inputUnits <= 2600 && v.metrics!.viewport.rows < 100)).toBe(true);
+        expect(after.bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline);
         await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await waitForReview(page); await exact(page, original);
         const undone = await snapshot(page), set = view === "primary" ? undone.bindings.views.find(v => v.id === view)!.selectionSet : undone.bindings.comparison!.selectionSet!;
         expect(set).toEqual(result.selectionSet);

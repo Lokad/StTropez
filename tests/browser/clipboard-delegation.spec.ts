@@ -51,10 +51,10 @@ test("host-cancelled copy/cut/paste preserve captured text, clipboard ownership 
             const data = new DataTransfer(), event = new ClipboardEvent(type, { clipboardData: data, bubbles: true, cancelable: true }); input.dispatchEvent(event);
             events.push({ type, text: f.range(0, f.snapshot().document!.length), clipboard: event.clipboardData!.getData("text/plain"), prevented: event.defaultPrevented });
         }
-        return { events, before: original.primary.selection, after: f.snapshot().primary.selection, revisionBefore: original.document!.revision, revisionAfter: f.snapshot().document!.revision, exports: f.snapshot().document!.exports };
+        return { events, before: original.primary.selection, after: f.snapshot().primary.selection, revisionBefore: original.document!.revision, revisionAfter: f.snapshot().document!.revision };
     });
     expect(result.events).toEqual(["copy", "cut", "paste"].map(type => ({ type, text: "before\r\nend", clipboard: "host-owned", prevented: true })));
-    expect(result.after).toEqual(result.before); expect(result.revisionAfter).toBe(result.revisionBefore); expect(result.exports).toBe(0);
+    expect(result.after).toEqual(result.before); expect(result.revisionAfter).toBe(result.revisionBefore);
     await page.evaluate(() => window.editingFixture.dispose()); expect((await page.evaluate(() => window.editingFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
 });
 
@@ -89,9 +89,9 @@ test("empty or nontext clipboard payloads cannot turn a selected range into a de
             if (kind === "file") data.items.add(new File(["bytes"], "sample.bin", { type: "application/octet-stream" }));
             input.dispatchEvent(event);
         }
-        return { text: f.range(0, f.snapshot().document!.length), revisionBefore: before.document!.revision, revisionAfter: f.snapshot().document!.revision, before: before.primary.selection, after: f.snapshot().primary.selection, exports: f.snapshot().document!.exports };
+        return { text: f.range(0, f.snapshot().document!.length), revisionBefore: before.document!.revision, revisionAfter: f.snapshot().document!.revision, before: before.primary.selection, after: f.snapshot().primary.selection };
     });
-    expect(result.text).toBe("before\r\nend"); expect(result.revisionAfter).toBe(result.revisionBefore); expect(result.after).toEqual(result.before); expect(result.exports).toBe(0);
+    expect(result.text).toBe("before\r\nend"); expect(result.revisionAfter).toBe(result.revisionBefore); expect(result.after).toEqual(result.before);
     const delayed = await page.evaluate(() => {
         const f = window.editingFixture, text = "a".repeat(200_001) + ";end";
         f.setText(text); f.select("primary", { anchor: 0, head: 0 }); f.focus("primary");
@@ -110,7 +110,7 @@ test("empty or nontext clipboard payloads cannot turn a selected range into a de
     });
     await expect.poll(() => page.evaluate(() => window.editingFixture.snapshot().primary.pendingWord)).toBe(false);
     const after = await page.evaluate(() => window.editingFixture.snapshot());
-    expect(after.document).toMatchObject({ revision: delayed, length: 200_005, exports: 0 });
+    expect(after.document).toMatchObject({ revision: delayed, length: 200_005 });
     expect(after.primary.selection).toMatchObject({ anchor: 200_001, head: 200_001 });
     await page.evaluate(() => window.editingFixture.dispose());
 });

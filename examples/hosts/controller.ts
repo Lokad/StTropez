@@ -234,7 +234,6 @@ export class HostController {
         const source = this.source.getSnapshot(), form = this.connection.getSnapshot();
         return { diagnostics: this.workspace.diagnostics(), layout: this.layout.getSnapshot(), activity: this.activity.getSnapshot(),
             source: { id: this.source.id, uri: this.workspace.document(this.source.documentId).language!.uri, revision: source.revision, length: source.state === "ready" ? this.workspace.document(this.source.documentId).buffer.length : 0,
-                exports: source.state === "ready" ? this.workspace.document(this.source.documentId).buffer.readMetrics().textExports : 0,
                 serverVersion: source.metadata.serverVersion, dirty: source.metadata.dirty, saveStatus: source.metadata.saveStatus },
             ...this.sourceReview.debug(),
             transfer: { id: this.transfer.resource.id, revision: this.transfer.resource.getSnapshot().revision, dirty: this.transfer.resource.metadata.getSnapshot().dirty, saveStatus: this.transfer.resource.metadata.getSnapshot().saveStatus, serverVersion: this.transfer.resource.metadata.getSnapshot().serverVersion }, transferSave: this.transfer.save.debug(), runResources: this.runResources.debug(), instruction: this.instruction.debug(),

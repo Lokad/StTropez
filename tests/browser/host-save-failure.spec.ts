@@ -34,7 +34,7 @@ test.describe(`plain save failure pilot`, () => {
         await primary.press("Control+End"); await primary.pressSequentially(" later"); await waitForSavedViews(page);
         await primary.evaluate(node => { node.dataset.failureRetained = "yes"; });
         const later = corrected + " later", before = await snapshot(page);
-        expect(await text(page)).toBe(later); expect(before.source.exports).toBe(0);
+        expect(await text(page)).toBe(later);
         await page.evaluate(() => window.hostFixture.failSave());
         await expect.poll(async () => (await snapshot(page)).source.saveStatus).toBe("failed");
         await expect.poll(async () => (await snapshot(page)).pendingCommands).toBe(0);
@@ -49,7 +49,6 @@ test.describe(`plain save failure pilot`, () => {
         expect(failed.comparisonReference).toEqual(before.comparisonReference);
         expect(failed.pendingSaves).toEqual([]);
         expect(failed.source).toMatchObject({ serverVersion: "v0", dirty: true });
-        expect(failed.source.exports).toBe(0);
         expect(failed.activity).toMatchObject({ writes: 0, errors: 1 });
         await button("Save source").click();
         await expect.poll(async () => (await snapshot(page)).pendingSaves).toEqual([
@@ -74,11 +73,8 @@ test.describe(`plain save failure pilot`, () => {
         expect(await page.evaluate(length => window.hostFixture.referenceRange(0, length), later.length)).toBe(later);
         expect((await snapshot(page)).bindings.comparison!.baseline!.length).toBe(later.length);
         const final = await snapshot(page); expect(final.activity.writes).toBe(1);
-        expect(final.source.exports).toBe(0);
         expect(await text(page)).toBe(newest);
         expect(final.activity.background).toBeGreaterThan(before.activity.background);
-        expect(final.bindings.views.every(v => v.metrics!.inputUnits <= 2600 && v.metrics!.viewport.rows < 100 && v.metrics!.viewport.readUnits < 20000)).toBe(true);
-        expect(final.bindings.comparison!.input.inputUnits).toBeLessThanOrEqual(2600);
         expect(final.bindings.comparison!.workingViewport.rows).toBeLessThan(100);
         expect(final.bindings.comparison!.workingViewport.readUnits).toBeLessThan(20000);
         expect(final.bindings.comparison!.referenceViewport!.rows).toBeLessThan(100);

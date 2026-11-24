@@ -179,7 +179,7 @@ test.describe("plain selected LSP features", () => {
         const requests = methods.filter(method => /^(textDocument\/(signatureHelp|documentLink|documentColor|colorPresentation))$/.test(method));
         await field(page).press("Control+End"); await field(page).pressSequentially("X"); await field(page).press("Control+Shift+Space"); await field(page).press("F4"); await field(page).press("F6"); await ready(page);
         expect(methods.filter(method => /^(textDocument\/(signatureHelp|documentLink|documentColor|colorPresentation))$/.test(method))).toEqual(requests); await exact(page, raw + "HX");
-        expect((await snapshot(page)).source.exports).toBe(0); await disposeColorsAndLinks(page);
+        await disposeColorsAndLinks(page);
         const final = await snapshot(page); expect(final.bindings.lsp!.created).toBe(final.bindings.lsp!.terminated);
     });
     test("paged links and colors keep unresolved targets and invalid form values inert and reject oversized lists", async ({ page }) => {
@@ -256,7 +256,7 @@ test.describe("plain selected LSP features", () => {
         expect((await snapshot(page)).bindings.colors.state.status).toBe("failed"); await expect(page.getByLabel("Document color status", { exact: true })).toContainText("limit");
         expect((await snapshot(page)).bindings.colors.decoratedViews).toBe(0); await exact(page, oversized);
         expect((await snapshot(page)).history).toEqual(overflow.history); expect((await snapshot(page)).source.revision).toBe(overflow.source.revision);
-        expect((await snapshot(page)).source.exports).toBe(0); await disposeColorsAndLinks(page);
+        await disposeColorsAndLinks(page);
     });
     test("secondary-resource color edits and explicit reveal keep primary Save and Run identity", async ({ page }) => {
         const text = 'import "sample-utils";\r\nconst accent = "#abc";', original = 'const color = "#abc";\r\nexport const value = 1;\r\n', expected = original.replace("#abc", "#112233");
@@ -345,7 +345,7 @@ test.describe("plain selected LSP features", () => {
         await expect(openChanges).toBeHidden(); await expect(page.getByLabel("Document color status", { exact: true })).toContainText("Source changed");
         expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "primary")!.selectionSet);
         expect(methods).toContain("textDocument/documentColor"); expect(methods).toContain("textDocument/colorPresentation");
-        expect((await snapshot(page)).source.exports).toBe(0); await disposeColorsAndLinks(page);
+        await disposeColorsAndLinks(page);
     });
     test("changing the proposed color keeps the new preview when the previous reply arrives", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/colorPresentation");
@@ -410,7 +410,6 @@ test.describe("plain selected LSP features", () => {
         await apply.click(); await settledColorsAndLinks(page);
         await exact(page, current.replace("#abc", "#445566"));
         expect((await snapshot(page)).bindings.colors.applied).toBe(1);
-        expect((await snapshot(page)).source.exports).toBe(0);
         await disposeColorsAndLinks(page);
     });
     test("provider links resolve to captured host resources and late or outside destinations do not steal focus", async ({ page }) => {
@@ -460,7 +459,7 @@ test.describe("plain selected LSP features", () => {
         }
         await list.getByRole("button").click(); await expect(field(page, "Secondary source")).toBeFocused();
         expect((await snapshot(page)).bindings.links.opened).toBe(2); expect((await snapshot(page)).history).toEqual(history);
-        expect(methods).toContain("textDocument/documentLink"); expect(methods).toContain("documentLink/resolve"); expect((await snapshot(page)).source.exports).toBe(0);
+        expect(methods).toContain("textDocument/documentLink"); expect(methods).toContain("documentLink/resolve");
     });
     test("a link waits for the secondary pane's paste and opens on a fresh click", async ({ page }) => {
         const replies = await holdLspReplies(page, "documentLink/resolve"); await page.reload();
@@ -565,7 +564,7 @@ test.describe("plain selected LSP features", () => {
         await field(page).focus(); replies.hold(); await field(page).press("F4"); await expect.poll(replies.waiting).toBe(true);
         const form = field(page, "Configuration path"); await form.focus(); await replies.release(); await settledColorsAndLinks(page);
         await expect(form).toBeFocused(); await expect(row).toBeEnabled(); await exact(page, raw);
-        expect((await snapshot(page)).source.exports).toBe(0); await disposeColorsAndLinks(page);
+        await disposeColorsAndLinks(page);
     });
     test("F6 comparison colors retain alpha and controls until explicit keyboard confirmation", async ({ page }) => {
         const raw = '\ufeffconst color = "#abc";\r\nvalue;', expected = "// color presentation\r\n" + raw.replace("#abc", "rgba(1, 2, 3, 0.5)");
@@ -589,7 +588,7 @@ test.describe("plain selected LSP features", () => {
         expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline);
         await working.press("F6"); await settledColorsAndLinks(page); await expectPanelKeyReserved(colors, "Escape");
         await page.keyboard.press("Escape"); await expect(working).toBeFocused();
-        expect((await snapshot(page)).bindings.colors.state.view).toBeNull(); expect((await snapshot(page)).source.exports).toBe(0); await disposeColorsAndLinks(page);
+        expect((await snapshot(page)).bindings.colors.state.view).toBeNull(); await disposeColorsAndLinks(page);
     });
     test("changing a host alias expires link discovery even when the same alias is restored", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/documentLink");
@@ -703,7 +702,7 @@ test.describe("plain selected LSP features", () => {
         replies.hold(); await field(page).press("Control+Shift+Space"); await expect.poll(replies.waiting).toBe(true); await expect.poll(async () => (await snapshot(page)).bindings.signature.pending).toBe(true);
         await field(page, "Configuration path").fill("while-signature.csv"); await expect.poll(async () => (await snapshot(page)).bindings.signature.pending).toBe(false);
         await expect.poll(replies.cancelled).toBe(true); await replies.release();
-        await expect(field(page, "Configuration path")).toBeFocused(); expect((await snapshot(page)).source.exports).toBe(0);
+        await expect(field(page, "Configuration path")).toBeFocused();
     });
     test("a nested call and a moved caret discard earlier signature text while replies wait", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/signatureHelp"); await page.reload();
@@ -772,7 +771,7 @@ test.describe("plain selected LSP features", () => {
         await expect(popup).toContainText("<b>Literal signature documentation</b>"); await expect(popup.locator("b,img,script")).toHaveCount(0);
         await field(page).press("Escape"); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(complete);
         await field(page).press("Escape"); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet.ranges).toHaveLength(1);
-        expect((await snapshot(page)).history).toEqual(before.history); expect((await snapshot(page)).source.exports).toBe(0); await exact(page, raw);
+        expect((await snapshot(page)).history).toEqual(before.history); await exact(page, raw);
         await disposeColorsAndLinks(page); const final = await snapshot(page);
         expect(final.bindings.signature).toMatchObject({ pending: false, scheduled: false, sessions: 0, subscriptions: 0, capture: null });
         expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
@@ -816,8 +815,7 @@ test.describe("react selected LSP features", () => {
         const depth = (await snapshot(page)).history.undoDepth; await button(page, "Apply captured color").click();
         await expect(viewport.locator(".st-viewport-row").filter({ hasText: 'const color = "#112233";' })).toBeInViewport();
         expect(await page.evaluate(from => { const f = window.hostFixture; return f.range(from, f.snapshot().source.length); }, prefix.length)).toBe(tail.replace("#abc", "#112233"));
-        const state = await snapshot(page); expect(state.history.undoDepth).toBe(depth + 1); expect(state.source.exports).toBe(0);
-        for (const view of state.bindings.views) { expect(view.metrics!.inputUnits).toBeLessThanOrEqual(4096); expect(view.metrics!.viewport.rows).toBeLessThan(100); }
+        const state = await snapshot(page); expect(state.history.undoDepth).toBe(depth + 1);
         await field(page).press("Control+z"); expect(await page.evaluate(from => { const f = window.hostFixture; return f.range(from, f.snapshot().source.length); }, prefix.length)).toBe(tail);
     });
 });

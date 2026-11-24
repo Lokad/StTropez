@@ -22,7 +22,7 @@ test(`plain raw CRLF caret remains painted and moves vertically in source and co
         await page.getByRole("button", { name: "Find next", exact: true }).click(); await ready(page); expect(await selection()).toMatchObject({ anchor: 2, head: 2 });
         await input.pressSequentially("!"); await ready(page); expect(await page.evaluate(() => window.hostFixture.range(0, 5))).toBe("a\r!\nb");
         await input.press("Control+z"); await ready(page); expect(await page.evaluate(() => window.hostFixture.range(0, 4))).toBe("a\r\nb");
-        expect(await selection()).toMatchObject({ anchor: 2, head: 2 }); expect(await painted(input)).toBe(true); expect((await snapshot(page)).source.exports).toBe(0);
+        expect(await selection()).toMatchObject({ anchor: 2, head: 2 }); expect(await painted(input)).toBe(true);
     }
     await page.evaluate(() => window.hostFixture.dispose());
 });

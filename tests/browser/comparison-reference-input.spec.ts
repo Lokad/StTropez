@@ -25,7 +25,7 @@ test(`plain immutable reference supports source selection, copy, pointer navigat
     await pane(p).focus(); await reference(p).press("Control+Home"); await reference(p).press("Control+Shift+End"); await waitForReview(p);
     let state = (await snapshot(p)).bindings.comparison!; expect(state.referenceViewport!.selection).toMatchObject({ anchor: 0, head: raw.length }); expect(state.selectionSet).toEqual(c.selectionSet);
     expect(Math.abs(state.referenceViewport!.scrollTop - state.workingViewport.scrollTop)).toBeLessThan(1);
-    expect(state.referenceInput!.inputUnits).toBeLessThanOrEqual(257); await copy(p, raw);
+    expect((await reference(p).inputValue()).length).toBeLessThanOrEqual(257); await copy(p, raw);
     for (const key of ["H", "Backspace", "Delete", "Enter", "Control+z", "Control+Shift+z"]) { await reference(p).press(key); await waitForReview(p); }
     await reference(p).evaluate(node => { for (const type of ["cut", "paste"] as const) { const data = new DataTransfer(); data.setData("text/plain", "attempt"); node.dispatchEvent(new ClipboardEvent(type, { clipboardData: data, bubbles: true, cancelable: true })); } }); await waitForReview(p);
     await reference(p).evaluate(node => { const input = node as HTMLTextAreaElement; input.value = "attempt"; input.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "attempt", bubbles: true })); }); await waitForReview(p);
@@ -38,10 +38,9 @@ test(`plain immutable reference supports source selection, copy, pointer navigat
     await reference(p).press("Control+Home"); await reference(p).press("Shift+PageDown"); await waitForReview(p); expect((await snapshot(p)).bindings.comparison!.referenceViewport!.selection!.head).toBeGreaterThan(rows[0]!.length);
     await reference(p).press("Control+Home"); await reference(p).press("Control+Shift+End"); await waitForReview(p); const mounted = (await snapshot(p)).bindings.comparison!;
     await p.evaluate(() => { const f = window.hostFixture; f.unmount(); f.mount(); f.unmount(); f.mount(); }); await waitForReview(p); state = (await snapshot(p)).bindings.comparison!;
-    expect(state.referenceViewport!.selectionSet).toEqual(mounted.referenceViewport!.selectionSet); expect(state.selectionSet).toEqual(mounted.selectionSet); expect(state.baseline).toMatchObject({ version: mounted.baseline!.version, length: mounted.baseline!.length, exports: 0 }); await copy(p, raw);
+    expect(state.referenceViewport!.selectionSet).toEqual(mounted.referenceViewport!.selectionSet); expect(state.selectionSet).toEqual(mounted.selectionSet); expect(state.baseline).toMatchObject({ version: mounted.baseline!.version, length: mounted.baseline!.length }); await copy(p, raw);
     await button(p, "Next change").click(); await waitForReview(p); expect((await snapshot(p)).bindings.comparison!.referenceViewport!.selection).toMatchObject({ anchor: 0, head: 0 });
     await working(p).press("Control+End"); await working(p).pressSequentially("K"); await waitForReview(p); await exactWorking(p, prefix + raw + "K"); await p.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await waitForReview(p); await exactWorking(p, prefix + raw); await working(p).press("Control+Shift+z"); await waitForReview(p); await exactWorking(p, prefix + raw + "K");
-    expect((await snapshot(p)).source.exports).toBe(0); expect((await snapshot(p)).bindings.comparison!.baseline!.exports).toBe(0);
     await reference(p).press("Control+s"); let saved = await snapshot(p); expect(saved.pendingSaves).toHaveLength(1); expect(saved.pendingSaves[0]!.revision).toBe(saved.source.revision); expect(saved.pendingSaves[0]!.length).toBe(prefix.length + raw.length + 1);
     await button(p, "Run captured inputs").click(); expect((await snapshot(p)).activity.lastRun!.sourceRevision).toBe(saved.source.revision); await button(p, "Finish run").click(); await button(p, "Finish save").click(); await waitForReview(p); saved = await snapshot(p); expect(saved.source.dirty).toBe(false); expect(saved.bindings.comparison!.baseline!.version).toBe(c.baseline!.version); await exactWorking(p, prefix + raw + "K"); await dispose(p);
 });

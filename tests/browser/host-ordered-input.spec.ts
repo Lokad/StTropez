@@ -26,7 +26,7 @@ test("queued Apple caret chords and native history keep their captured selection
     await ready(page, 30000); await exact(page, prefix + "R"); const after = await snapshot(page);
     expect(after.source.revision).toBe(before.source.revision + 3); expect(after.history.undoDepth).toBe(before.history.undoDepth + 1);
     expect(after.bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: prefix.length + 1, head: prefix.length + 1 });
-    expect(after.inputRecovery).toHaveLength(0); expect(after.source.exports).toBe(0);
+    expect(after.inputRecovery).toHaveLength(0);
     await input.pressSequentially("!"); await ready(page); await exact(page, prefix + "R!");
     await page.evaluate(() => window.hostFixture.dispose());
 });
@@ -36,7 +36,7 @@ test(`plain Save and Run require settled typing and retain captured revisions`,a
     await page.evaluate(original=>{const f=window.hostFixture;f.editSource(f.snapshot().source.revision,[{from:0,to:f.snapshot().source.length,insert:original}]);f.selectSourceSet("primary",f.snapshot().source.revision,[{anchor:0,head:0}]);},original);await ready(page);
     const input=page.getByRole("textbox",{name:"Primary source",exact:true});await input.focus();
     const blocked=await input.evaluate(node=>{const input=node as HTMLTextAreaElement;input.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",ctrlKey:true,bubbles:true,cancelable:true}));input.dispatchEvent(new InputEvent("beforeinput",{inputType:"insertText",data:"typed",bubbles:true,cancelable:true}));for(const name of ["Save source","Run captured inputs"])([...document.querySelectorAll("button")].find(button=>button.textContent===name) as HTMLButtonElement).click();const s=window.hostFixture.snapshot();return{saves:s.pendingSaves.length,runs:s.pendingRuns.length,modal:s.layout.modal};});
-    expect(blocked.saves).toBe(0);expect(blocked.runs).toBe(0);expect(JSON.stringify(blocked.modal)).toContain("pending typing");await ready(page);await exact(page,expected);expect((await snapshot(page)).source.exports).toBe(0);
+    expect(blocked.saves).toBe(0);expect(blocked.runs).toBe(0);expect(JSON.stringify(blocked.modal)).toContain("pending typing");await ready(page);await exact(page,expected);
     await page.getByRole("button",{name:"Dismiss message",exact:true}).click();const settled=await snapshot(page);await page.getByRole("button",{name:"Save source",exact:true}).click();await expect.poll(async()=>(await snapshot(page)).pendingSaves.length).toBe(1);expect((await snapshot(page)).pendingSaves[0]).toMatchObject({revision:settled.source.revision,length:expected.length});
     await page.getByRole("button",{name:"Run captured inputs",exact:true}).click();await expect.poll(async()=>(await snapshot(page)).pendingRuns.length).toBe(1);expect((await page.evaluate(()=>window.hostFixture.runCapture(0)))!.source).toBe(expected);
     await page.evaluate(()=>{const f=window.hostFixture,s=f.snapshot();f.selectSourceSet("primary",s.source.revision,[{anchor:s.source.length,head:s.source.length}]);});await input.pressSequentially("Q");await ready(page);await page.evaluate(()=>{window.hostFixture.finishSave();window.hostFixture.finishRun();});await expect.poll(async()=>(await snapshot(page)).source.saveStatus).toBe("idle");expect((await snapshot(page)).source.dirty).toBe(true);await exact(page,expected+"Q");await input.press("Control+z");await ready(page);await exact(page,expected);expect((await snapshot(page)).source.dirty).toBe(false);

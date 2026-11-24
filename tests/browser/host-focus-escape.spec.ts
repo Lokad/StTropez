@@ -79,7 +79,7 @@ for (const backward of [false, true]) test(`plain ${backward ? "backward" : "for
             const edited = original + "!"; await exact(page, edited); await page.keyboard.press("Control+Home");
             const before = await snapshot(page); await exit(page, backward); await waitForViews(page); const after = await snapshot(page);
             await exact(page, edited); expect(after.source.revision).toBe(before.source.revision); expect(after.history).toEqual(before.history);
-            expect(selections(after)).toEqual(selections(before)); expect(after.pendingSaves).toEqual(captured); expect(after.source.exports).toBe(before.source.exports);
+            expect(selections(after)).toEqual(selections(before)); expect(after.pendingSaves).toEqual(captured);
 
             if (!backward) {
                 await page.keyboard.press("End"); await page.keyboard.type(".kbd"); const form = await snapshot(page);
@@ -111,7 +111,6 @@ for (const backward of [false, true]) test(`plain ${backward ? "backward" : "for
             expect((await snapshot(page)).bindings.comparison?.baseline?.version).toBe(baseline);
             await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+z"); await exact(page, edited); await waitForViews(page);
             expect((await snapshot(page)).bindings.comparison?.hunks).toBe(0);
-            expect((await snapshot(page)).source.exports).toBe(accepted.source.exports);
             await dispose(page);
         });
 
@@ -123,7 +122,7 @@ for (const backward of [false, true]) test(`plain read-only ${backward ? "backwa
     await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+Home"); await page.keyboard.type("!");
     const before = await snapshot(page); await exit(page, backward); await waitForViews(page); const after = await snapshot(page);
     await exact(page, original); expect(after.source.revision).toBe(before.source.revision); expect(after.history).toEqual(before.history);
-    expect(selections(after)).toEqual(selections(before)); expect(after.source.exports).toBe(before.source.exports);
+    expect(selections(after)).toEqual(selections(before));
     await page.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await keyboardFocus(page, primary(page)); await expect(primary(page)).not.toHaveAttribute("readonly", "");
     await page.keyboard.press("Control+End"); await page.keyboard.type("!"); await exact(page, original + "!");
     await page.keyboard.press("Control+z"); await exact(page, original); expect((await snapshot(page)).source.dirty).toBe(false);

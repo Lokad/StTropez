@@ -89,7 +89,7 @@ async function sessionJourney(large: boolean) {
         const next = buffer.apply(edits).buffer, started = performance.now(); document.update(100, 107, next, edits); const enqueueMs = performance.now() - started;
         await session.flush();
         const remote = await session.request("fixture/document", { uri, from: Math.max(0, from - 8), to: from + 14 }).result, syncMs = performance.now() - started;
-        const boundedReads = { before: buffer.readMetrics().sliceUnits - before, after: next.readMetrics().sliceUnits, exports: buffer.readMetrics().textExports + next.readMetrics().textExports };
+        const boundedReads = { before: buffer.readMetrics().sliceUnits - before, after: next.readMetrics().sliceUnits };
         const tail = large ? await session.request("fixture/document", { uri, from: far + 3, to: far + 20 }).result : null;
         await register(); const available = session.canRequest("textDocument/hover", document);
         const hover = await session.requestDocument("textDocument/hover", document, index => ({ position: index.at(from) })).result;

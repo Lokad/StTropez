@@ -112,7 +112,7 @@ test.describe(`plain LSP code actions`, () => {
         expect(requests.filter(r => r.method === "codeAction/resolve")).toHaveLength(2); const initialize = requests.find(r => r.method === "initialize" && r.params.capabilities.textDocument.codeAction)!; expect(initialize.params.capabilities.textDocument.codeAction.resolveSupport.properties).toEqual(["edit"]);
         expect((await snapshot(page)).history).toEqual(before.history); await button(page, "Apply captured action").click(); await waitForActions(page); await exact(page, raw.replace("TODO", "DONE")); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
         await input(page, "Secondary source").press("Control+z"); await waitForActions(page); await exact(page, raw); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet.ranges.map(r => ({ anchor: r.anchor, head: r.head }))).toEqual(ranges);
-        await input(page, "Secondary source").press("Control+Shift+z"); await waitForActions(page); await exact(page, raw.replace("TODO", "DONE")); expect((await snapshot(page)).source.exports).toBe(0); await dispose(page); await expect.poll(() => closed).toBe(opened);
+        await input(page, "Secondary source").press("Control+Shift+z"); await waitForActions(page); await exact(page, raw.replace("TODO", "DONE")); await dispose(page); await expect.poll(() => closed).toBe(opened);
     });
     test("a wide provider edit keeps action preview context and DOM bounded without applying source", async ({ page }) => {
         const text = "// TODO\n" + "x".repeat(100000); let rewritten = 0;
@@ -137,7 +137,7 @@ test.describe(`plain LSP code actions`, () => {
         await expect(edits(page)).toHaveCount(1);
         expect((await page.getByRole("list", { name: "Proposed action edits", exact: true }).textContent())!.length).toBeLessThan(2000);
         await exact(page, text); expect(after.history).toEqual(before.history); expect(after.source.revision).toBe(before.source.revision);
-        expect(after.source.exports).toBe(0); await dispose(page);
+        await dispose(page);
     });
     test("a complete 65-action list pages to the last captured choice and applies one undoable edit", async ({ page }) => {
         await page.routeWebSocket("**/lsp-fixture", client => {

@@ -79,7 +79,6 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
             changes.push(work("composition controls", () => { input.setComposing(true); }));
             const disabledFold = host.querySelector<HTMLButtonElement>(".st-fold-button")!.disabled;
             changes.push(work("scroll", () => viewport.scrollTo({ top: viewport.getSnapshot().scrollTop + 100 })));
-            const initialExports = buffer.readMetrics().textExports;
             workspace.edit({ documentId: source.documentId, expectedRevision: 1, edits: [{ from: 0, to: buffer.length, insert: "\t".repeat(100) }], origin: "host" });
             viewport.scrollTo({ top: 0, left: 0 }); viewport.flush();
             const correcting = viewport.activity().pending, beforeCorrection = viewport.getDiagnostics().renders;
@@ -96,8 +95,7 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
             return { idle, queued, afterSelection, preserved, selected, changes, revision, text, decorated, folded, alignment, wider, resized, disabledFold,
                 exactBounds, stableGeometry, resizePublished, released,
                 correcting, correctionPaints: corrected.renders - beforeCorrection, extentError: Math.abs(corrected.horizontalExtent - measured - 24),
-                idleAfterCorrection, partialIdle, partialAnchor: capture.horizontalAnchor !== undefined, restoredError: Math.abs(point.left - restored.left),
-                initialExports, exports: documentState().buffer.readMetrics().textExports };
+                idleAfterCorrection, partialIdle, partialAnchor: capture.horizontalAnchor !== undefined, restoredError: Math.abs(point.left - restored.left) };
         } finally { observer.disconnect(); viewport.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
     });
     await testInfo.attach("paint-work", { body: JSON.stringify(result), contentType: "application/json" });
@@ -106,7 +104,7 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
     expect(result.queued).toMatchObject({ renders: 0, read: 0, decorated: 0, mutations: 0, notices: 1, pending: false });
     for (const work of result.changes) { expect(work.renders, work.name).toBeGreaterThan(0); expect(work.decorated, work.name).toBeGreaterThan(0); }
     expect(result).toMatchObject({ preserved: true, selected: "const", revision: 1, text: "//const sample = 123;", decorated: true,
-        folded: 1, alignment: 1, wider: true, resized: true, disabledFold: true, correcting: true, partialAnchor: true, initialExports: 0, exports: 0,
+        folded: 1, alignment: 1, wider: true, resized: true, disabledFold: true, correcting: true, partialAnchor: true,
         exactBounds: true, stableGeometry: true, resizePublished: true, released: true });
     expect(result.correctionPaints).toBeGreaterThan(0); expect(result.extentError).toBeLessThan(.1); expect(result.restoredError).toBeLessThan(1.5);
 });

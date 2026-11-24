@@ -83,7 +83,6 @@ test("literal find wraps Unicode ranges and replacement is one shared undoable t
     await page.getByRole("button", { name: "Next match", exact: true }).click();
     await page.getByRole("textbox", { name: "Replace with", exact: true }).fill("sample");
     await page.getByRole("button", { name: "Replace match", exact: true }).click(); await found(page, 1);
-    expect((await snapshot(page)).document!.exports).toBe(0);
 });
 
 test("visible search highlights follow scrolling, equal-count queries and edits beyond 200 matches", async ({ page }) => {
@@ -138,7 +137,7 @@ test("keyboard find routing, read-only replacement and a pilot-sized replace-all
     expect((await snapshot(page)).find.reason).toBe("editing-unavailable");
     await page.evaluate(() => window.editingFixture.readOnly(false)); const before = await snapshot(page);
     await page.getByRole("button", { name: "Replace all", exact: true }).click(); await found(page, 0); await ready(page);
-    expect((await snapshot(page)).document).toMatchObject({ revision: before.document!.revision + 1, length: 220_000, exports: 0 });
+    expect((await snapshot(page)).document).toMatchObject({ revision: before.document!.revision + 1, length: 220_000 });
     expect((await snapshot(page)).history!.undoDepth).toBe(before.history!.undoDepth + 1);
     expect(await page.evaluate(() => window.editingFixture.range(0, 22))).toBe("let sample = 1234567;\n");
     await page.keyboard.press("ControlOrMeta+z"); await found(page, 10_000); expect((await snapshot(page)).document!.length).toBe(240_000);

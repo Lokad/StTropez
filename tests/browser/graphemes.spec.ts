@@ -36,7 +36,6 @@ test("editing deletes whole long, emoji, Indic and CRLF clusters and restores th
         await page.keyboard.press("ControlOrMeta+z"); await ready(page); expect(await page.evaluate(n => window.editingFixture.range(0, n), text.length)).toBe(text);
         await page.evaluate(() => window.editingFixture.select("primary", { anchor: 2, head: 2 }));
         await page.keyboard.press("Delete"); await ready(page); expect((await state(page)).document!.length).toBe(3);
-        expect((await state(page)).document!.exports).toBe(0);
     }
     await setup(page, "a" + "\u0301".repeat(5000) + "!", 2300); await page.keyboard.press("Delete"); await ready(page);
     expect(await page.evaluate(() => window.editingFixture.range(0, 1))).toBe("!");
@@ -58,7 +57,7 @@ test("local ASCII deletion avoids whole-line indexing while nearby Unicode and C
     await setup(page, text, offset); const before = await state(page);
     await page.keyboard.press("Delete"); await ready(page);
     const after = await state(page);
-    expect(after.document).toMatchObject({ length: text.length - 1, revision: before.document!.revision + 1, exports: 0 });
+    expect(after.document).toMatchObject({ length: text.length - 1, revision: before.document!.revision + 1 });
     expect(after.primary.graphemeScanSteps).toBe(0);
     expect(after.primary.selection).toMatchObject({ anchor: offset, head: offset });
     expect(await page.evaluate(() => window.editingFixture.range(119_998, 120_002))).toBe("xxxx");
@@ -104,7 +103,7 @@ test("a pending whole-line deletion expires when its captured input changes", as
         expect(pending).toBe(true);
         await expect.poll(async () => (await state(page)).primary.pendingGrapheme).toBe(false);
         const after = await state(page); expect(after.primary.commits).toBe(before.primary.commits);
-        if (changed !== "dispose") { expect(after.document!.length).toBe(100_001 + (changed === "revision" || changed === "secondary" ? 1 : 0)); expect(after.document!.exports).toBe(0); }
+        if (changed !== "dispose") { expect(after.document!.length).toBe(100_001 + (changed === "revision" || changed === "secondary" ? 1 : 0)); }
         else expect(after.diagnostics.resources).toBe(0);
     }
 });

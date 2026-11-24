@@ -61,7 +61,6 @@ test("viewport retains valid native geometry and expires changed captures withou
             document.fonts.dispatchEvent(new Event("loadingdone")); viewport.flush(); measure("font completion");
             viewport.scrollTo({ top: 2000 }); viewport.flush(); const removed = !originalRow.isConnected;
             viewport.scrollTo({ top: 12 }); viewport.flush(); measure("remounted row");
-            const exports = buffer().readMetrics().textExports;
             workspace.edit({ documentId: source.documentId, expectedRevision: 1, edits: [{ from: 0, to: buffer().length, insert: "ab\r\ncd\n" }], origin: "host" });
             viewport.scrollTo({ top: 0, left: 0 }); viewport.flush();
             const boundaries = [0, 2, 3, 4, 6, 7].map(offset => viewport.coordsAt(offset)!);
@@ -69,14 +68,14 @@ test("viewport retains valid native geometry and expires changed captures withou
             const staleFold = viewport.coordsAt(4) === undefined; viewport.flush();
             const folded = viewport.coordsAt(4)!, header = viewport.coordsAt(2)!;
             viewport.dispose(); const disposed = viewport.coordsAt(0) === undefined && !originalRow.isConnected && !host.firstChild;
-            return { steps, stale, retainedNodes, movedBy: initial.top - moved.top, sameWidth, removed, exports, boundaries,
+            return { steps, stale, retainedNodes, movedBy: initial.top - moved.top, sameWidth, removed, boundaries,
                 staleFold, folded: folded.offset === 4 && folded.left === header.left && folded.top === header.top, disposed };
         } finally {
             document.createRange = createRange; Range.prototype.getClientRects = getClientRects;
             viewport.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); style.remove();
         }
     });
-    expect(result).toMatchObject({ stale: true, retainedNodes: true, movedBy: 12, sameWidth: true, removed: true, exports: 0, staleFold: true, folded: true, disposed: true });
+    expect(result).toMatchObject({ stale: true, retainedNodes: true, movedBy: 12, sameWidth: true, removed: true, staleFold: true, folded: true, disposed: true });
     await testInfo.attach("geometry-work", { body: JSON.stringify(result), contentType: "application/json" });
     expect(result.steps.map(({ name, allocations }) => ({ name, allocations }))).toEqual([
         { name: "initial", allocations: 1 },

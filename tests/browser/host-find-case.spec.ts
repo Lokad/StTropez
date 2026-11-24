@@ -33,7 +33,7 @@ test(`plain match-case find keeps Unicode ranges, shared undo, comparison and wo
     await query.fill("k"); await expect(status).toContainText("3 matches · ready"); await replacement.fill("dog"); const planned = await snapshot(page);
     await click(page, "Replace all"); await expect(status).toContainText("Replaced 3 matches."); await ready(page);
     const changed = "dog dog" + original.slice(3, -1) + "dog"; await exact(page, changed); await exact(page, original, true);
-    expect((await snapshot(page)).history.undoDepth).toBe(planned.history.undoDepth + 1); expect((await snapshot(page)).source.exports).toBe(0);
+    expect((await snapshot(page)).history.undoDepth).toBe(planned.history.undoDepth + 1);
     await source(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, original);
     await source(page, "Secondary source").press("Control+Shift+z"); await ready(page); await exact(page, changed);
     const working = source(page, "Comparison working source");

@@ -126,7 +126,7 @@ test("large documents and horizontal fragments keep warning work local and sourc
         viewport.scrollTo({ top: viewport.getSnapshot().lineHeight * 500 }); viewport.flush();
         const rows = [...f.host.querySelectorAll<HTMLElement>(".st-viewport-layer .st-viewport-row")], before = buffer.readMetrics();
         const capture = f.editor.characterWarnings.query(3001, 5000, { maxUnits: 64, maxWarnings: 8 })!, after = buffer.readMetrics();
-        const bounded = { read: after.sliceUnits - before.sliceUnits, exports: after.textExports, units: capture.scannedUnits, complete: capture.complete };
+        const bounded = { read: after.sliceUnits - before.sliceUnits, units: capture.scannedUnits, complete: capture.complete };
         const expected = rows.map(r => r.textContent), count = f.host.querySelectorAll(".st-viewport-layer .st-character-warning").length;
         // A long row must not hide warnings when its horizontal window moves or splits a surrogate pair.
         f.set("x".repeat(100000) + "\u{e0100}\u200by"); viewport.revealOffset(100002); viewport.flush();
@@ -137,7 +137,7 @@ test("large documents and horizontal fragments keep warning work local and sourc
     expect(result.rows).toBeLessThan(100); expect(result.count).toBe(result.rows * 2);
     expect(result.expected.every(row => row === "a\u200bb\u00a0c")).toBe(true);
     expect(result.bounded.complete).toBe(false); expect(result.bounded.units).toBeLessThanOrEqual(64);
-    expect(result.bounded.read).toBeLessThanOrEqual(69); expect(result.bounded.exports).toBe(0);
+    expect(result.bounded.read).toBeLessThanOrEqual(69);
     expect(result.fragmentUnits).toBeLessThan(1000); expect(result.fragmentText).toBe("\u{e0100}\u200by");
     expect(result.marks.join("")).toBe("x\u{e0100}\u200b");
     await settled(page);
