@@ -25,6 +25,7 @@ export { createNavigationController } from "./navigation-controller.ts";
 export { createNavigationHistory, type NavigationHistory, type NavigationOrigin } from "./navigation-history.ts";
 export { createSignatureController } from "./signature-controller.ts";
 export { createRenameController } from "./rename-controller.ts";
+export type { Outcome } from "../core/outcome.ts";
 export { createDocumentLinkController } from "./document-link-controller.ts";
 export { createDocumentColorController } from "./document-color-controller.ts";
 export type { DocumentColorChoice, ColorPresentationChoice, ColorPresentationReview, DocumentColorSnapshot, DocumentColorController, DocumentColorControllerOptions } from "./document-color-controller.ts";

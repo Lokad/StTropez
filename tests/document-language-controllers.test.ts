@@ -9,6 +9,7 @@ import { createDecorationLayers } from "../src/browser/decoration-layers.ts";
 import { editorState } from "./helpers/editor-state.ts";
 import { latch, waitForState } from "./helpers/latch.ts";
 import { clientFixture, settled } from "./helpers/lsp-client.ts";
+import { ResponseError } from "vscode-languageserver-protocol/node.js";
 
 const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 4 } };
 
@@ -100,10 +101,10 @@ for (const [cause, interrupt] of Object.entries(sourceChanges)) {
         const rename = createRenameController(f.editor, f.provider);
         const edit = { changes: { "generic:source": [{ range, newText: "replacement" }] } };
         const held = holdReply(f, "textDocument/rename", edit);
-        rename.request("replacement");
+        const pending = rename.request("replacement");
         await held.received;
         interrupt(f);
-        await settled();
+        assert.deepEqual(await pending, { status: "stale" });
         assert.equal(f.sent("$/cancelRequest").length, 1);
         const source = f.document();
         held.send();
@@ -112,6 +113,79 @@ for (const [cause, interrupt] of Object.entries(sourceChanges)) {
         assert.equal(f.document(), source);
     });
 }
+
+test("a rename request returns its preview, refusal or provider error", async t => {
+    const f = await fixture(t);
+    const rename = createRenameController(f.editor, f.provider);
+    assert.deepEqual(await rename.request(""), { status: "refused", reason: "empty-name" });
+    assert.equal(f.sent("textDocument/rename").length, 0);
+    const before = f.document();
+    f.peer.onRequest("textDocument/rename", () => {
+        throw new Error("Rename provider failed");
+    });
+    const failure = await rename.request("next");
+    assert.equal(failure.status, "failed");
+    assert.ok(failure.error instanceof Error);
+    assert.match(failure.error.message, /Rename provider failed/);
+    assert.equal(rename.getSnapshot().status, "failed");
+    f.peer.onRequest("textDocument/rename", () => { throw new ResponseError(-32801, "Content changed"); });
+    assert.deepEqual(await rename.request("next"), { status: "stale" });
+    const held = holdReply(f, "textDocument/rename", null);
+    const previous = rename.request("earlier");
+    await held.received;
+    f.peer.onRequest("textDocument/rename", () => ({ changes: { "generic:source": [{ range, newText: "next" }] } }));
+    const latest = rename.request("next");
+    assert.deepEqual(await previous, { status: "stale" });
+    held.send();
+    const done = await latest;
+    assert.equal(done.status, "done");
+    assert.equal(done.value, rename.getSnapshot().preview);
+    assert.equal(done.value.count, 1);
+    assert.equal(f.document(), before);
+    assert.deepEqual(done.value.confirm(), { applied: true });
+    assert.equal(f.document().buffer.slice(0, 4), "next");
+});
+
+test("a rename deadline settles during host preparation and releases its capture", { timeout: 5000 }, async t => {
+    const f = await fixture(t);
+    const started = latch<void>();
+    const finish = latch<void>();
+    const clock = f.editor.element.ownerDocument.defaultView!;
+    let deadline: (() => void) | undefined;
+    t.mock.method(clock, "setTimeout", (callback: () => void) => { deadline = callback; return 1; });
+    t.mock.method(clock, "clearTimeout", () => { deadline = undefined; });
+    const rename = createRenameController(f.editor, f.provider, {
+        prepareRequest: () => async () => { started.resolve(); await finish.promise; },
+    });
+    const before = f.workspace.diagnostics().leases;
+    try {
+        const pending = rename.request("next");
+        await started.promise;
+        assert.ok(deadline);
+        deadline();
+        const result = await pending;
+        assert.equal(result.status, "failed");
+        assert.ok(result.error instanceof Error);
+        assert.match(result.error.message, /timed out/);
+        assert.equal(rename.getSnapshot().status, "failed");
+        assert.equal(f.workspace.diagnostics().leases, before);
+    } finally {
+        finish.resolve();
+    }
+    await f.flush();
+    assert.equal(f.sent("textDocument/rename").length, 0);
+});
+
+test("rename rejects an obsolete project capture before sending it to the provider", async t => {
+    const f = await fixture(t);
+    const other = f.workspace.document(f.other.documentId);
+    const rename = createRenameController(f.editor, f.provider, { documents: () => [other] });
+    f.workspace.edit({ documentId: other.id, expectedRevision: other.revision,
+        edits: [{ from: 0, to: 0, insert: "new " }], origin: "human" });
+    assert.deepEqual(await rename.request("next"), { status: "stale" });
+    assert.equal(rename.getSnapshot().status, "expired");
+    assert.equal(f.sent("textDocument/rename").length, 0);
+});
 
 const colorChanges = {
     ...sourceChanges,

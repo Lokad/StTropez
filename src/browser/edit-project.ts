@@ -1,6 +1,7 @@
 import type { DocumentId } from "../core/workspace.ts";
 import type { LspWorkspaceEdit } from "../protocol/lsp-features.ts";
 import { retainDocuments } from "./retained-documents.ts";
+import { staleRequest } from "../protocol/wire.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 /** The view capture retains the origin. A preview also retains its project and any loaded edit targets. */
@@ -8,11 +9,8 @@ export function retainEditProject(editor: TextEditor, available: (id: DocumentId
     const { workspace, view } = editor, project = retainDocuments(workspace, available, expire, view.documentId);
     function includeEdit(edit: LspWorkspaceEdit) {
         for (const change of edit.documents) {
-            const target = change.target.document, doc = workspace.document(target.documentId as DocumentId);
-            if (doc.resourceId !== target.resourceId || doc.revision !== target.revision || doc.buffer !== target.buffer || !change.target.isCurrent()) {
-                throw new Error("A resolved edit target changed.");
-            }
-            project.include(doc);
+            if (!change.target.isCurrent()) throw staleRequest("A resolved edit target changed.");
+            project.include(change.target.document);
         }
     }
     return { ...project, includeEdit };

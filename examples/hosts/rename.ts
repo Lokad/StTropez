@@ -140,7 +140,8 @@ export class HostRenameTools {
         if (!s || this.disconnected || !this.host.canCapture(s.editor.view.documentId)) return;
         if (!name || /[\u0000-\u001f\u007f]/.test(name)) { this.prompt(s); return; }
         if (this.owner !== s) this.cancel();
-        this.owner = s; s.controller.request(name);
+        this.owner = s;
+        void s.controller.request(name);
     }
     openChanged(document: DocumentId) {
         const s = this.cell.get();

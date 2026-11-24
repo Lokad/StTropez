@@ -1,5 +1,6 @@
 import type { DocumentSnapshot, EditRequest } from "../core/workspace.ts";
 import type { SelectionSet } from "../core/selections.ts";
+import { stale } from "../core/outcome.ts";
 import { captureViewRequest } from "./captured-view.ts";
 import type { TextEditor } from "./text-editor.ts";
 
@@ -14,7 +15,6 @@ export type EditorOperation = Readonly<{
 export type EditorOperationOptions = Readonly<{ write?: boolean; signal?: AbortSignal }>;
 export type EditorOperationOutcome<T> = Readonly<{ status: "completed"; value: T } | { status: "stale" }>;
 export type EditorOperationLane = Readonly<{ run: TextEditor["operation"]; cancel: () => void; dispose: () => void }>;
-const stale = Object.freeze({ status: "stale" } as const);
 
 /** One host feature can replace its pending request without cancelling another feature. */
 export function createOperationLane(editor: TextEditor): EditorOperationLane {

@@ -1,7 +1,8 @@
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DocumentId, DocumentSnapshot, TabTarget } from "../core/workspace.ts";
-import { RpcError, applyLspWorkspaceEdit, createLspActionClient, type LspActionResult, previewLspWorkspaceEdit } from "../protocol/index.ts";
+import { applyLspWorkspaceEdit, createLspActionClient, type LspActionResult, previewLspWorkspaceEdit } from "../protocol/index.ts";
+import { isStaleRequest } from "../protocol/wire.ts";
 import type { LspCodeAction, LspCommandPolicy, LspCommandReceipt, LspCommandScope, LspPrepare, LspWorkspace, LspWorkspaceEdit, LspWorkspaceEditPreview } from "../protocol/index.ts";
 import { captureViewRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
@@ -91,7 +92,7 @@ export function createCodeActionController(editor: TextEditor, provider: LspWork
         return Object.freeze({ status: "failed", message });
     };
     const requestFailed = (j: Job, error: unknown) => {
-        if (j.invalid || !j.capture.isCurrent() || error instanceof RpcError && (error.code === -32800 || error.code === -32801)) expire(j);
+        if (j.invalid || !j.capture.isCurrent() || isStaleRequest(error)) expire(j);
         else fail(j, error);
     };
     const timeout = (j: Job) => {

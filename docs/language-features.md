@@ -501,9 +501,14 @@ Dispose the history with its host.
 ### Rename and workspace edits
 
 Use `createRenameController(editor, provider, { documents })` for an editor with a rename form.
-Pass `setName(value)` each time the name changes and call `request()` to preview it at the primary
-caret. Alternatively, `request(name)` sets the name and requests its preview in one call. F2 opens
-the example form. Enter previews a name, then confirms the reviewed edit on the next press.
+Call `setName(value)` as the form changes. Await `request(name)` to preview that name at the
+primary caret, or omit the argument to preview the current name.
+
+The request resolves to an `Outcome<RenamePreview>` from `sttropez/browser`. For `done`,
+`value` is the preview. A cancelled or superseded request resolves to `stale`, including when
+the source view or a captured document changes. A `refused` request gives the reason
+`empty-name` or `unavailable-view`. A `failed` request carries the provider or local error
+in `error`. Confirm the preview to apply its edits.
 
 A ready snapshot contains a `preview` for the captured name and selection. Its `count` and
 `readPage(index)` omit replacements whose text already equals the captured range. Each page
