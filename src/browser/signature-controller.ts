@@ -8,7 +8,7 @@ import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import type { LspSignatureContext } from "../protocol/lsp-language.ts";
 import type { LspSignature } from "../protocol/lsp-features.ts";
 import type { LspPrepare } from "../protocol/lsp-workspace.ts";
-import { captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
+import { canInspectView, captureViewRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import type { TextEditor } from "./text-editor.ts";
 import { revealCaretInPage } from "./input-caret.ts";
@@ -40,8 +40,7 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
     let job: Request | undefined, armed = false, requested = 0, applied = 0;
     let queued: { timer: number; context: LspSignatureContext } | undefined;
     const publish = (next: SignatureSnapshot) => notifications.publish(cell, Object.freeze(next));
-    const available = () => !events.signal.aborted && editorReadyForRequest(editor)
-        && workspace.ownsDocumentView(view, tab) && (options.canCapture?.() ?? true);
+    const available = () => !events.signal.aborted && canInspectView(editor, options.canCapture);
     function stopTimer() { win.clearTimeout(queued?.timer); queued = undefined; }
     function releaseRequest(previous: Request | undefined) {
         if (previous) { win.clearTimeout(previous.timer); previous.call?.cancel(); previous.capture.cancel(); }

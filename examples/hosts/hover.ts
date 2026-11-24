@@ -6,7 +6,7 @@ import type { LspScopeAccess } from "../../src/protocol/index.ts";
 import { HostCell } from "../shared/observable.ts";
 type Settings = { delay: number; fault?: "malformed" | "failure" | "markup" };
 type Session = { id: string; editor: TextEditor; controller: HoverController; settings: Settings;
-    revision: number; affinity: Affinity; offset: number; overTarget: boolean; cancelTimers: () => void };
+    request?: ReturnType<HoverController["request"]>; revision: number; affinity: Affinity; offset: number; overTarget: boolean; cancelTimers: () => void };
 export type HoverPresentation = Readonly<{ visible: boolean; view: string | null; status: HoverSnapshot["status"]; text: string; message: string; content?: DocumentationContent }>;
 export type HoverHostOptions = Readonly<{
     beforeRequest?: (session: LspScopeAccess, config: Settings) => Promise<unknown>;
@@ -68,9 +68,14 @@ export class HostHoverTools {
         const reuse = kind === "pointer" && this.kind === kind && this.current === session;
         if (!reuse) this.dismiss();
         this.current = session; this.kind = kind; session.revision = revision; session.affinity = affinity; session.offset = offset;
-        const accepted = session.controller.request({ revision, offset, affinity }, reuse ? "reuse" : "refresh");
-        if (!accepted) this.dismiss();
-        return accepted;
+        const request = session.controller.request({ revision, offset, affinity }, reuse ? "reuse" : "refresh");
+        session.request = request;
+        void request.then(result => {
+            if (session.request !== request) return;
+            delete session.request;
+            if (this.current === session && (result.status === "refused" || result.status === "stale")) this.dismiss();
+        });
+        return true;
     }
     inspectCaret(id: string): boolean {
         const session = this.sessions.get(id); if (!session) return false;

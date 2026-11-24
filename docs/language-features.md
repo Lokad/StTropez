@@ -311,12 +311,17 @@ commit-character acceptance inserts expanded text plus the character without sta
 
 Enable `hover: {}` on the language attachment. Call `hover.request()` to inspect the caret or pass a
 captured `{ revision, offset }` from the [pointer dwell observer](editor.md#pointer-dwell). It shows diagnostics at that offset as soon as
-they are available. Symbol documentation joins them when the hover request completes. Messages
-remain plain text. A mapped diagnostic reads “Awaiting recheck” until fresh analysis arrives.
+they are available. Symbol documentation joins them when the hover request completes.
+`await hover.request()` returns `done` with the combined snapshot, including `empty` when
+neither source has content. A replaced or cancelled lookup returns `stale`. An unavailable
+view or hidden or invalid position returns `refused`. A provider failure or timeout returns
+`failed`. Overlapping diagnostics stay visible. A mapped diagnostic reads “Awaiting recheck”
+until fresh analysis arrives.
 
 Subscribe to the controller and render the ready snapshot’s `content` with `mountDocumentation`.
 The snapshot’s `range` identifies where the same information applies. A point diagnostic matches
 its exact offset. For pointer dwell, call `request(point, "reuse")` to track the new position.
+Requests for the same pending position in reuse mode share the lookup.
 Inside a current provider range, the controller reuses the symbol reply and shows diagnostics
 for the latest offset as they arrive. The default `request(point)` refreshes the lookup.
 The controller preserves focus and selection. Editing, changing the selection or

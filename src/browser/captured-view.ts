@@ -14,6 +14,11 @@ export function editorReadyForRequest(editor: TextEditor, activity = editor.acti
         && !activity.composing && !activity.pendingInput && !activity.pendingCommand;
 }
 
+export function canInspectView(editor: TextEditor, canCapture?: () => boolean): boolean {
+    return editorReadyForRequest(editor) && editor.workspace.ownsDocumentView(editor.view, editor.tab)
+        && (canCapture?.() ?? true);
+}
+
 /** Changes to the text, selections, fold projection or mounted tab can retire a view request. */
 export function observeViewSource(workspace: Workspace, view: DocumentView, target: TabTarget | undefined, changed: () => void) {
     const stops = [workspace.observeDocument(view.documentId).subscribe(changed), view.subscribe(changed),

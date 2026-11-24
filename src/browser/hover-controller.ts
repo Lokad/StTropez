@@ -1,7 +1,8 @@
+import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import { isOffset } from "../core/bounds.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
-import { captureViewRequest, editorReadyForRequest, observeViewSource, type CapturedViewRequest } from "./captured-view.ts";
+import { canInspectView, captureViewRequest, observeViewSource, type CapturedViewRequest } from "./captured-view.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DocumentationContent } from "../core/documentation.ts";
 import type { FoldIndex } from "../core/folding.ts";
@@ -25,14 +26,15 @@ export type HoverSnapshot = Readonly<{
     message: string; revision: number | null; range: Range | null; text: string; content?: DocumentationContent;
 }>;
 export type HoverController = Observable<HoverSnapshot> & Readonly<{
-    request: (anchor?: OverlayPosition, mode?: "refresh" | "reuse") => boolean; cancel: () => void; dispose: () => void;
+    request: (anchor?: OverlayPosition, mode?: "refresh" | "reuse") => Promise<Outcome<HoverSnapshot>>;
+    cancel: () => void; dispose: () => void;
     getDiagnostics: () => Readonly<{ connected: boolean; pending: boolean; disposed: boolean; posted: number; received: number;
         stale: number; invalid: number; failed: number; cancelled: number }>;
 }>;
 
 const idle: HoverSnapshot = Object.freeze({ status: "idle", message: "", revision: null, range: null, text: "" });
-type Inspection = { revision: number; selection: SelectionSet; folds: FoldIndex; offset: number; source: HoverDiagnostics;
-    stops: (() => void)[]; timer?: number; capture?: CapturedViewRequest<TextEditor["tab"]>; symbol?: LspHoverResult; failure?: string };
+type Inspection = { revision: number; selection: SelectionSet; folds: FoldIndex; offset: number;
+    stops: (() => void)[]; timer?: number; capture?: CapturedViewRequest<TextEditor["tab"]>; symbol?: LspHoverResult; failure?: ReturnType<typeof failed> };
 
 /** A mounted view owns the range, provider reply and diagnostic messages displayed together. */
 export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options: HoverControllerOptions): HoverController {
@@ -41,8 +43,11 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
     const client = hoverClient(owner);
     let inspection: Inspection | undefined, disposed = false;
     let diagnostics = options.diagnostics;
+    let pending: Promise<Outcome<HoverSnapshot>> | undefined;
     const counts = { posted: 0, received: 0, stale: 0, invalid: 0, failed: 0, cancelled: 0 };
     const publish = (next: HoverSnapshot) => notifications.publish(cell, Object.freeze(next));
+    const status = (status: HoverSnapshot["status"], message: string, revision: number | null = null) =>
+        publish({ ...idle, status, message, revision });
     function diagnosticSource(): HoverDiagnostics {
         if (diagnostics) return diagnostics;
         const source = owner.scope.observeDiagnostics(owner.binding);
@@ -56,14 +61,13 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
     function finish(current: Inspection): void {
         const capture = current.capture;
         if (!capture) return;
+        pending = undefined;
         win.clearTimeout(current.timer);
         delete current.capture;
         capture.cancel();
         if (inspection === current) {
             // The displayed card still follows the view after its read lease is released.
-            current.stops.push(...observeViewSource(workspace, view, tab, () => {
-                if (!valid(current)) queueMicrotask(() => expire(current));
-            }));
+            current.stops.push(...observeViewSource(workspace, view, tab, changed));
         }
     }
     function release(): void {
@@ -74,20 +78,25 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
         client.cancel();
     }
     function available(): boolean {
-        return !disposed && editorReadyForRequest(editor) && workspace.ownsDocumentView(view, tab)
-            && (options.canCapture?.() ?? true);
+        return !disposed && canInspectView(editor, options.canCapture);
     }
     const valid = (current: Inspection) => available() && view.getSnapshot().revision === current.revision
         && view.getSnapshot().selectionSet === current.selection && current.folds.sameProjection(view.folding.getSnapshot().index)
         && current.symbol?.isCurrent() !== false;
+    function changed(): void {
+        const current = inspection;
+        if (current && !valid(current)) queueMicrotask(() => expire(current));
+    }
     function expire(current: Inspection): void {
         if (inspection !== current) return;
-        counts.stale++; release(); publish({ ...idle, status: "expired", message: "The inspected source changed." });
+        counts.stale++;
+        release();
+        status("expired", "The inspected source changed.");
     }
     function render(current: Inspection): void {
         if (inspection !== current) return;
         if (!valid(current)) { expire(current); return; }
-        const revision = current.revision, diagnostics = current.source.getSnapshot(), at = current.offset;
+        const revision = current.revision, diagnostics = diagnosticSource().getSnapshot(), at = current.offset;
         const messages: string[] = [];
         let range = current.symbol?.range ?? null;
         let left = 0, right = Infinity;
@@ -106,82 +115,99 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
         else if (range) range = Object.freeze({ from: Math.max(left, range.from), to: Math.min(right, range.to) });
         if (messages.length && diagnostics.diagnosticsPending) messages.push("Awaiting recheck.");
         const symbol = current.symbol;
-        if (messages.length || symbol?.text) {
-            const text = [...messages, ...(symbol?.text ? [symbol.text] : [])].join("\n\n");
+        if (messages.length || symbol) {
             const content: DocumentationContent = Object.freeze([...messages.map(value => Object.freeze({ kind: "plaintext" as const, value })), ...(symbol?.content ?? [])]);
-            publish({ status: "ready", message: "", revision, range, text, content }); return;
+            if (symbol) messages.push(symbol.text);
+            publish({ status: "ready", message: "", revision, range, text: messages.join("\n\n"), content });
+            return;
         }
-        if (current.capture) publish({ ...idle, status: "pending", revision, message: "Reading symbol information." });
-        else if (current.failure) publish({ ...idle, status: "failed", message: current.failure });
-        else { release(); publish({ ...idle, status: "empty", message: "No information at this position." }); }
+        if (current.capture) status("pending", "Reading symbol information.", revision);
+        else if (current.failure) {
+            const { error } = current.failure;
+            status("failed", error instanceof Error ? error.message : String(error));
+        } else {
+            release();
+            status("empty", "No information at this position.");
+        }
     }
-    function request(anchor?: OverlayPosition, mode: "refresh" | "reuse" = "refresh"): boolean {
+    async function read(current: Inspection, capture: NonNullable<Inspection["capture"]>): Promise<Outcome<HoverSnapshot>> {
+        let timedOut = false;
+        let symbol: LspHoverResult | null = null;
+        try {
+            counts.posted++;
+            const result = client.run({ document: capture.document, offset: current.offset, prepare: options.prepareRequest }).result;
+            current.timer = win.setTimeout(() => {
+                timedOut = true;
+                client.cancel();
+            }, 5000);
+            symbol = await result;
+        } catch (error) {
+            current.failure = failed(timedOut ? new Error("Symbol information timed out.") : error);
+        }
+        if (inspection !== current) return stale;
+        const failure = current.failure;
+        if (!capture.isCurrent() || symbol?.isCurrent() === false || isStaleRequest(failure?.error)) {
+            expire(current);
+            return stale;
+        }
+        if (failure) {
+            if (failure.error instanceof TypeError || failure.error instanceof RangeError) counts.invalid++;
+            else counts.failed++;
+        } else {
+            counts.received++;
+            if (symbol) current.symbol = symbol;
+        }
+        finish(current);
+        render(current);
+        return failure ?? done(cell.get());
+    }
+    async function request(anchor?: OverlayPosition, mode: "refresh" | "reuse" = "refresh"): Promise<Outcome<HoverSnapshot>> {
         notifications.assertWritable();
-        if (!available()) return false;
+        if (!available()) return refused("unavailable-view");
         const selected = view.getSnapshot(), offset = anchor?.offset ?? selected.selection.head;
-        const doc = workspace.observeDocument(view.documentId).getSnapshot();
-        if (!doc || (anchor && anchor.revision !== doc.revision) || !isOffset(offset, doc.buffer.length)
-            || view.folding.getSnapshot().index.hiddenBy(doc.buffer.lineAt(offset))) return false;
-        if (mode === "reuse" && inspection && valid(inspection)) {
-            if (inspection.offset === offset) return true;
-            const range = inspection.symbol?.range;
+        if (anchor && anchor.revision !== selected.revision) return stale;
+        const doc = workspace.document(view.documentId);
+        if (!isOffset(offset, doc.buffer.length) || view.folding.getSnapshot().index.hiddenBy(doc.buffer.lineAt(offset))) {
+            return refused("unavailable-position");
+        }
+        const previous = inspection;
+        if (mode === "reuse" && previous && valid(previous)) {
+            const range = previous.symbol?.range;
+            if (previous.offset === offset) return pending ?? previous.failure ?? done(cell.get());
             if (range && range.from <= offset && offset < range.to) {
-                inspection.offset = offset;
-                // Diagnostics can split a provider range today or in a later notification.
+                previous.offset = offset;
                 const shown = cell.get().range;
-                if (!shown || offset < shown.from || offset >= shown.to) render(inspection);
-                return true;
+                if (!shown || offset < shown.from || offset >= shown.to) render(previous);
+                return done(cell.get());
             }
         }
         release();
         try {
-            const source = diagnosticSource();
             const capture = captureViewRequest(workspace, tab, view, { available });
-            if (!capture) {
-                publish({ ...idle, status: "expired", message: "The inspected source changed." });
-                return false;
-            }
+            if (!capture) return refused("unavailable-view");
             const current: Inspection = { revision: capture.document.revision, selection: capture.selectionSet,
-                folds: capture.folding.index, offset, source, capture, stops: [] };
+                folds: capture.folding.index, offset, capture, stops: [] };
             inspection = current;
             capture.signal.addEventListener("abort", () => { if (current.capture) expire(current); }, { once: true });
-            current.stops.push(source.subscribe(() => queueMicrotask(() => render(current))));
-            counts.posted++;
-            const result = client.run({ document: capture.document, offset, prepare: options.prepareRequest }).result;
-            current.timer = win.setTimeout(() => {
-                if (!current.capture) return;
-                finish(current);
-                client.cancel();
-                counts.failed++;
-                current.failure = "Symbol information timed out.";
+            current.stops.push(diagnosticSource().subscribe(() => queueMicrotask(() => render(current))));
+            const result = read(current, capture);
+            if (current.capture) {
+                pending = result;
                 render(current);
-            }, 5000);
-            void result.then(symbol => {
-                if (!current.capture) return;
-                if (!capture.isCurrent() || symbol?.isCurrent() === false) { expire(current); return; }
-                finish(current);
-                counts.received++;
-                if (symbol) current.symbol = symbol;
-                render(current);
-            }, error => {
-                if (!current.capture) return;
-                if (isStaleRequest(error) || !capture.isCurrent()) { expire(current); return; }
-                finish(current);
-                if (error instanceof TypeError || error instanceof RangeError) counts.invalid++; else counts.failed++;
-                current.failure = error instanceof Error ? error.message : "Symbol information failed."; render(current);
-            });
-            render(current); return true;
-        } catch (error) { release(); publish({ ...idle, status: "failed", message: String(error) }); return false; }
+            }
+            return await result;
+        } catch (error) {
+            release();
+            status("failed", String(error));
+            return failed(error);
+        }
     }
     const cancel = () => {
         notifications.assertWritable(); if (disposed) return;
         if (inspection?.capture) counts.cancelled++;
         release(); publish(idle);
     };
-    const stopClient = client.subscribe(() => {
-        const current = inspection;
-        if (current?.symbol && !current.symbol.isCurrent()) queueMicrotask(() => expire(current));
-    });
+    const stopClient = client.subscribe(changed);
     const intent = editor.onEditIntent(kind => { if (kind === "compositionstart") cancel(); });
     function dispose(): void {
         if (disposed) return;
@@ -191,7 +217,7 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
         stopClient();
         client.dispose();
         intent.dispose();
-        publish({ ...idle, status: "disposed" });
+        status("disposed", "");
         cell.clearSnapshotListeners();
     }
     return Object.freeze({ request, cancel, dispose, ...controllerObservable(cell, "Hover", () => disposed, notifications), getDiagnostics: () => Object.freeze({ ...counts, connected: client.getSnapshot().phase === "ready", pending: !!inspection?.capture, disposed }) });
