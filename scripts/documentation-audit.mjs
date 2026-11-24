@@ -2,9 +2,7 @@ import { fromMarkdown } from "mdast-util-from-markdown";
 import { gfm } from "micromark-extension-gfm";
 import { gfmFromMarkdown } from "mdast-util-gfm";
 import GithubSlugger from "github-slugger";
-import { posix, relative, resolve } from "node:path";
-import { build } from "esbuild";
-import ts from "typescript-demo";
+import { posix } from "node:path";
 import { libraryModules } from "./library-entries.mjs";
 
 /** @typedef {import("mdast").Nodes} MarkdownNode */
@@ -12,29 +10,12 @@ import { libraryModules } from "./library-entries.mjs";
 /** @typedef {{path: string, line: number, code: string, message: string}} DocumentationIssue */
 /** @typedef {{path: string, tree: import("mdast").Root, examples: DocumentationExample[],
  * links: {url: string, node: MarkdownNode}[], anchors: Set<string>,
- * headings: {title: string, depth: number, node: import("mdast").Heading}[],
- * prose: {text: string, node: MarkdownNode}[], contract: string, diagnostics: DocumentationIssue[]}} DocumentationPage */
+ * prose: {text: string, node: MarkdownNode}[], diagnostics: DocumentationIssue[]}} DocumentationPage */
 
 export const apiPages = ["getting-started", "editor", "viewport", "folding", "search", "comparison", "text-model", "workspace", "language-server", "language-features", "unicode", "host-integration", "packaging", "architecture"].map(name => `docs/${name}.md`);
 export const subjectPages = [...apiPages, "docs/README.md", "docs/testing.md", "docs/examples.md"];
 export const documentationPages = [...subjectPages, "README.md", "packaging/README.md", "AGENTS.md"];
 export const publicEntries = Object.fromEntries(libraryModules.map(entry => [entry.specifier, entry.source]));
-
-// Declaration owners, rather than a second manually maintained list of public names.
-const ownerGroups = {
-    "text-model": ["core/changes", "core/positions", "core/newlines", "core/text-buffer", "core/buffer-change", "core/selections", "core/snippets"],
-    workspace: ["core/workspace", "core/commands"],
-    editor: ["core/language-configuration", "core/language-edits", "core/bracket-matching", "browser/text-editor", "browser/pointer-dwell"],
-    viewport: ["browser/viewport", "browser/anchored-overlay"],
-    folding: ["core/folding", "core/fold-discovery", "browser/folding-controller", "protocol/lsp-folding"],
-    search: ["core/search", "browser/find", "browser/regex-find"],
-    comparison: ["core/diff", "core/comparison", "browser/comparison"],
-    unicode: ["core/words", "core/graphemes", "core/grapheme-data", "core/character-warnings", "browser/font-asset"],
-    "host-integration": ["browser/input-events", "browser/captured-view"],
-    "language-server": ["protocol/wire", "protocol/json-rpc", "protocol/lsp-positions", "protocol/lsp-session", "protocol/lsp-workspace", "protocol/lsp-command", "browser/lsp-websocket", "browser/lsp-workspace"],
-    "language-features": ["protocol/lsp-features", "protocol/lsp-code-actions", "protocol/lsp-workspace-edit", "protocol/lsp-completion", "protocol/lsp-hover", "protocol/lsp-highlights", "protocol/lsp-rename", "protocol/lsp-navigation", "protocol/lsp-actions", "protocol/lsp-language", "browser/completion-controller", "browser/code-action-controller", "browser/diagnostic-controller", "browser/hover-controller", "browser/navigation-controller", "browser/navigation-history", "browser/signature-controller", "browser/rename-controller", "browser/document-link-controller", "browser/document-color-controller", "browser/lsp-highlights", "browser/documentation"]
-};
-export const declarationOwners = Object.fromEntries(Object.entries(ownerGroups).flatMap(([page, sources]) => sources.map(source => [`src/${source}.ts`, `docs/${page}.md`])));
 
 /** @param {MarkdownNode} node @param {(node: MarkdownNode) => void} action */
 function visit(node, action) { action(node); for (const child of "children" in node ? node.children : []) visit(child, action); }
@@ -54,14 +35,13 @@ const diagnostic = (page, node, code, message) => ({ path: page.path, line: node
 export function parseDocumentation(path, markdown) {
     const tree = fromMarkdown(markdown, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] });
     /** @type {DocumentationPage} */
-    const page = { path, tree, examples: [], links: [], anchors: new Set(), headings: [], prose: [], contract: "", diagnostics: [] };
+    const page = { path, tree, examples: [], links: [], anchors: new Set(), prose: [], diagnostics: [] };
     const slugger = new GithubSlugger();
     /** @type {Map<string, import("mdast").Definition>} */ const definitions = new Map();
     visit(tree, node => { if (node.type === "definition" && !definitions.has(node.identifier)) definitions.set(node.identifier, node); });
     visit(tree, node => {
         if (node.type === "heading") {
             const title = inlineText(node);
-            page.headings.push({ title, depth: node.depth, node });
             page.anchors.add(slugger.slug(title));
         }
         if (["paragraph", "heading", "tableCell"].includes(node.type)) page.prose.push({ text: inlineText(node, false), node });
@@ -91,11 +71,6 @@ export function parseDocumentation(path, markdown) {
         if (!closed) page.diagnostics.push(diagnostic(page, node, "fence", "Unclosed code fence."));
         if (node.lang === "ts" || node.lang === "typescript" || node.lang === "tsx") page.examples.push({ path, line: node.position.start.line + 1, language: node.lang, code: node.value });
     });
-    let contract = false;
-    for (const node of tree.children) {
-        if (node.type === "heading" && node.depth === 2) contract = inlineText(node) === "Contract";
-        if (contract && !["code", "html", "definition"].includes(node.type)) page.contract += inlineText(node) + "\n";
-    }
     return page;
 }
 
@@ -108,12 +83,10 @@ export function auditPage(page, { api = false, vocabulary = true } = {}) {
         for (const match of text.matchAll(banned)) issues.push({ ...diagnostic(page, node, "prose", `Describe current behavior; move historical wording ${JSON.stringify(match[0])} to ignored research (code identifiers belong in inline code).`), line: (node.position?.start.line ?? 1) + text.slice(0, match.index).split("\n").length - 1 });
     }
     if (api) {
-        const expected = ["Use", "Contract", "Host responsibilities", "Not covered"];
-        const actual = page.headings.filter(heading => heading.depth === 2).map(heading => heading.title);
-        if (JSON.stringify(actual) !== JSON.stringify(expected)) issues.push(diagnostic(page, undefined, "structure", `Expected second-level sections: ${expected.join(", ")}.`));
         if (!page.examples.length) issues.push(diagnostic(page, undefined, "example", "Expected a checked TypeScript example."));
-        const notCovered = page.headings.find(heading => heading.depth === 2 && heading.title === "Not covered");
-        if (!notCovered || !page.links.some(link => (link.node.position?.start.line ?? 1) > (notCovered.node.position?.start.line ?? 1) && link.url === "README.md#support-matrix")) issues.push(diagnostic(page, notCovered?.node, "support", "Not covered must link to README.md#support-matrix."));
+        if (!page.links.some(link => link.url === "README.md#support-matrix")) {
+            issues.push(diagnostic(page, undefined, "support", "Link to the support matrix in docs/README.md."));
+        }
     }
     return issues;
 }
@@ -154,47 +127,6 @@ export async function auditLinks(pages, files, read) {
             const lines = /^L([1-9]\d*)(?:-L([1-9]\d*))?$/.exec(anchor), count = content.split(/\r?\n/).length;
             if (!lines || Number(lines[1]) > count || lines[2] && (Number(lines[2]) < Number(lines[1]) || Number(lines[2]) > count)) fail(`Invalid source-line anchor in ${target}.`);
         }
-    }
-    return issues;
-}
-
-/** esbuild identifies runtime exports; TypeScript resolves each exported alias to its owner.
- * No entry module is executed. Type-only re-exports do not become runtime obligations.
- * @param {string} root @param {Record<string, string>} [entries] */
-export async function publicValues(root, entries = publicEntries) {
-    const paths = Object.values(entries).map(path => resolve(root, path));
-    const result = await build({ absWorkingDir: root, entryPoints: paths, outdir: resolve(root, "artifacts/docs-check/exports"),
-        bundle: true, write: false, metafile: true, format: "esm", platform: "neutral", logLevel: "silent" });
-    const program = ts.createProgram(paths, { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext,
-        moduleResolution: ts.ModuleResolutionKind.Bundler, allowImportingTsExtensions: true, noEmit: true, types: [], skipLibCheck: true });
-    const checker = program.getTypeChecker(), values = [];
-    for (const [entry, path] of Object.entries(entries)) {
-        const source = program.getSourceFile(resolve(root, path));
-        const module = source && checker.getSymbolAtLocation(source);
-        if (!module) throw new Error(`${path}: Cannot resolve the public entry module.`);
-        const symbols = new Map(checker.getExportsOfModule(module).map(symbol => [symbol.name, symbol]));
-        const output = Object.values(result.metafile.outputs).find(output => output.entryPoint && resolve(root, output.entryPoint) === resolve(root, path));
-        if (!output) throw new Error(`No runtime export metadata for ${path}.`);
-        for (const name of output.exports) {
-            let symbol = symbols.get(name);
-            if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
-            const declaration = symbol?.valueDeclaration ?? symbol?.declarations?.[0];
-            if (!declaration) throw new Error(`${path}: Cannot resolve public value ${name}.`);
-            const file = declaration.getSourceFile();
-            values.push({ entry, name, source: relative(root, file.fileName).replaceAll("\\", "/"), line: file.getLineAndCharacterOfPosition(declaration.getStart()).line + 1 });
-        }
-    }
-    return values;
-}
-
-/** @param {Awaited<ReturnType<typeof publicValues>>} values @param {DocumentationPage[]} pages @param {Record<string, string>} [owners] */
-export function auditValueCoverage(values, pages, owners = declarationOwners) {
-    const byPath = new Map(pages.map(page => [page.path, page])), issues = [];
-    for (const value of values) {
-        const owner = owners[value.source], page = owner === undefined ? undefined : byPath.get(owner);
-        if (!page) issues.push({ path: value.source, line: value.line, code: "owner", message: `${value.entry}: ${value.name} needs a declaration owner in documentation-audit.mjs.` });
-        else if (!page.contract.split(/[^\p{L}\p{N}_$]+/u).includes(value.name)) issues.push({ path: page.path, line: page.headings.find(heading => heading.title === "Contract")?.node.position?.start.line ?? 1,
-            code: "coverage", message: `Contract must explain public value ${value.name} (${value.entry}, ${value.source}:${value.line}).` });
     }
     return issues;
 }

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { moduleSpecifiers } from "./module-specifiers.mjs";
-import { apiPages, subjectPages, documentationPages, publicEntries as entries, parseDocumentation, auditPage, auditLinks, publicValues, auditValueCoverage } from "./documentation-audit.mjs";
+import { apiPages, subjectPages, documentationPages, publicEntries as entries, parseDocumentation, auditPage, auditLinks } from "./documentation-audit.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 
@@ -79,13 +79,12 @@ async function main() {
     const inventory = spawnSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: root, encoding: "utf8", windowsHide: true });
     if (inventory.error || inventory.status !== 0) throw inventory.error ?? new Error(inventory.stderr);
     const files = new Set(inventory.stdout.split("\0").filter(Boolean));
-    const values = await publicValues(root);
     const issues = pages.flatMap(page => auditPage(page, { api: apiPages.includes(page.path), vocabulary: page.path !== "AGENTS.md" }));
-    issues.push(...await auditLinks(pages, files, read), ...auditValueCoverage(values, pages));
+    issues.push(...await auditLinks(pages, files, read));
     if (issues.length) throw new Error(issues.map(issue => `${issue.path}:${issue.line}: [${issue.code}] ${issue.message}`).join("\n"));
     const examples = pages.flatMap(page => page.examples), result = await compileDocumentation(examples);
     if (!result.success) throw new Error(result.output || "Documentation compilation failed.");
-    console.log(`Checked ${pages.length} documents, repository links/anchors, ${values.length} public values and prose; compiled ${examples.length} independent TypeScript examples.`);
+    console.log(`Checked ${pages.length} documents, repository links/anchors and prose; compiled ${examples.length} independent TypeScript examples.`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

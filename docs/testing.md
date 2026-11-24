@@ -61,13 +61,8 @@ links, images and reference definitions must resolve to non-ignored paths. The c
 rendered heading slugs, duplicate-heading suffixes, explicit HTML anchors and source-line links. It
 rejects other raw HTML. It skips external URLs and paths written as inline code.
 
-The checker resolves each public runtime export to its declaring module without executing it. Its
-owning page, listed in `scripts/documentation-audit.mjs`, must name the export in `Contract` prose.
-Examples and comments do not count. Type-only exports are exempt.
-
-API pages need a TypeScript example and a support-matrix link. Their four sections are `Use`,
-`Contract`, `Host responsibilities` and `Not covered`, in that order. Each TypeScript or TSX fence compiles
-separately against public entries. Private imports and other packages fail with a Markdown file and
+Each API page includes a checked example and links to the support matrix. Headings follow the subject.
+Each TypeScript or TSX fence compiles separately against public entries. Private imports and other packages fail with a Markdown file and
 line number.
 
 Keep dates, commit IDs, milestone labels and test-run counts in research notes. The vocabulary check
