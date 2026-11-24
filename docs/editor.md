@@ -261,6 +261,7 @@ on Apple platforms. Shift extends movement from each selection's anchor.
 | Click / Shift+click | One caret / extend the primary range while retaining secondary ranges |
 | Alt+click / Alt+drag / Alt+double-click | Add a caret / range / code-word selection. With several ranges, Alt+click removes the one under the pointer. |
 | Shift+Alt+drag / middle-button drag | Select a column of text from the press to the release point, with one range on each visible source line. |
+| Shift+Alt+click | Select a column from the primary caret to the click. In comparison padding it ends on the last source line crossed. |
 | Double-click | Select the code-word, symbol or whitespace run within the clicked logical line |
 | Double-click and drag | Extend the selection by whole words in either direction |
 | Triple-click / triple-click and drag | Select a line including its ending / extend by whole lines |

@@ -203,11 +203,17 @@ test("a column drag released in comparison padding ends on the last source row c
         await page.keyboard.down("Shift"); await page.keyboard.down("Alt"); await page.mouse.move(start.x, start.y);
         await page.mouse.down(); await page.mouse.move(end.x, gap.y + gap.height / 2); await page.mouse.up();
         await page.keyboard.up("Alt"); await page.keyboard.up("Shift"); await ready(page);
-        const result = await page.evaluate(() => {
+        const result = () => page.evaluate(() => {
             const { ranges, primary } = window.comparisonFixture.review.panes.reference.view.getSnapshot().selectionSet;
             return { ranges: ranges.map(s => [s.anchor, s.head]), primary };
         });
-        expect(result).toEqual(offset === 1 ? { ranges: [[1, 2], [5, 6]], primary: 1 } : { ranges: [[9, 10], [13, 14]], primary: 0 });
+        const expected = offset === 1 ? { ranges: [[1, 2], [5, 6]], primary: 1 } : { ranges: [[9, 10], [13, 14]], primary: 0 };
+        expect(await result()).toEqual(expected);
+        await page.mouse.click(start.x, start.y);
+        await page.keyboard.down("Shift"); await page.keyboard.down("Alt");
+        await page.mouse.click(end.x, gap.y + gap.height / 2);
+        await page.keyboard.up("Alt"); await page.keyboard.up("Shift");
+        expect(await result()).toEqual(expected);
     }
 });
 

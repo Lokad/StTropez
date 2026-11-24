@@ -65,7 +65,6 @@ export type TextEditorDiagnostics = TextEditorActivity & Readonly<{
     inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number;
     maxQueuedInputTurnMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number;
     navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number;
-    dragScrollFrames: number; maxDragScrollStepMs: number;
     commits: number; conflicts: number; queuedInputUnits: number;
 }>;
 export type TextEditorSnapshot = Readonly<{ focused: boolean; disabled: boolean; composing: boolean;
@@ -186,7 +185,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     let drag: Readonly<{ pointer: number; anchor: number; anchorAffinity: Affinity; revision: number; x: number; y: number; selectionSet: SelectionSet; baseRanges: readonly Selection[]; padding: boolean; unit?: DragUnit }> | undefined;
     let dragCaretRecorded = false;
     let clickedWord: { range: Selection; selections: SelectionSet } | undefined;
-    let dragScrollFrames = 0, maxDragScrollStepMs = 0;
     const commandRunner = createCooperativeRunner(win);
     let wordJob: Readonly<{ cursor: Pick<WordCursor, "next" | "dispose">; revision: number }> | undefined, cancelWordTask: (() => void) | undefined;
     type CommandCapture = Readonly<{ buffer: TextBuffer; revision: number; selection: Selection; selectionSet: SelectionSet; deleting: boolean }>;
@@ -1348,9 +1346,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const point = pointerHit(event); if (!point) return;
         native.preventDefault(); stopDrag(); cancelWord(); preferred = undefined; focus(); group = undefined;
         const state = view.getSnapshot();
-        const columns = !gutter && event.pointerType === "mouse" && !point.padding
-            && (event.button === 1 || event.button === 0 && event.shiftKey && event.altKey && !event.ctrlKey && !event.metaKey);
-        let keepSelection = false;
+        const columns = !gutter && event.pointerType === "mouse"
+            && (event.button === 1 && !point.padding || event.button === 0 && event.shiftKey && event.altKey && !event.ctrlKey && !event.metaKey);
+        // A modified click needs the original caret until release distinguishes it from a drag.
+        let keepSelection = columns;
         if (event.button !== 0) {
             keepSelection = state.selectionSet.ranges.some(({ anchor, head }) =>
                 point.offset >= Math.min(anchor, head) && point.offset <= Math.max(anchor, head));
@@ -1406,8 +1405,11 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         refresh();
         if (word) clickedWord = { range: word, selections: view.getSnapshot().selectionSet };
         dragCaretRecorded = state.selectionSet !== view.getSnapshot().selectionSet;
-        if (point.padding) viewport.revealOffset(point.offset, { horizontal: "nearest", vertical: "nearest", affinity: point.affinity });
-        drag = { pointer: event.pointerId, anchor, anchorAffinity, revision, x: event.clientX, y: event.clientY, selectionSet: view.getSnapshot().selectionSet, baseRanges, padding: point.padding === true, ...(unit ? { unit } : {}) }; root.setPointerCapture(event.pointerId);
+        const padding = point.padding === true && !columns;
+        if (padding) viewport.revealOffset(point.offset, { horizontal: "nearest", vertical: "nearest", affinity: point.affinity });
+        drag = { pointer: event.pointerId, anchor, anchorAffinity, revision, x: event.clientX, y: event.clientY,
+            selectionSet: view.getSnapshot().selectionSet, baseRanges, padding, ...(unit ? { unit } : {}) };
+        root.setPointerCapture(event.pointerId);
     }
     root.addEventListener("pointermove", event => {
         if (drag?.pointer !== event.pointerId) return;
@@ -1425,12 +1427,21 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     function dragColumn(x: number, bounds: ReturnType<typeof dragBounds>): number {
         return viewport.getSnapshot().scrollLeft + (Math.max(bounds.left, Math.min(bounds.right - 1, x)) - bounds.left) / bounds.zoom;
     }
-    function updateColumnDrag(unit: ColumnDrag, localY: number, column: number): void {
+    function updateColumnDrag(unit: ColumnDrag, localY: number, column: number, released: boolean): void {
         if (inputQueue.pending) return;
         const capture = commandCapture(false), folds = view.folding.getSnapshot().index;
-        const line = navigation.columnDragLine(localY, folds.lineAt(unit.originRow));
-        const row = folds.rowAt(line), direction = row < unit.originRow ? -1 : 1;
-        if (!unit.projection && row === unit.originRow && Math.abs(unit.anchorColumn - column) < 2) return;
+        const targetRow = () => folds.rowAt(navigation.columnDragLine(localY, folds.lineAt(unit.originRow)));
+        let row = targetRow();
+        if (!unit.projection && row === unit.originRow && Math.abs(unit.anchorColumn - column) < 2) {
+            if (!released || unit.middle) return;
+            const { head, headAffinity } = capture.selection;
+            const anchorColumn = navigation.columnAt(head, headAffinity);
+            if (anchorColumn === undefined) return;
+            unit.originRow = folds.rowAt(capture.buffer.lineAt(head));
+            unit.anchorColumn = anchorColumn;
+            row = targetRow();
+        }
+        const direction = row < unit.originRow ? -1 : 1;
         const count = Math.abs(row - unit.originRow) + 1, layout = navigationLayout();
         let projection = unit.projection;
         if (!projection || projection.layout !== layout || projection.direction !== direction || projection.column !== column) {
@@ -1468,11 +1479,11 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         });
         step();
     }
-    function updateDragHead(): void {
+    function updateDragHead(released = false): void {
         const current = drag; if (!current) return; const bounds = dragBounds();
         const unit = current.unit, y = Math.max(bounds.top, Math.min(bounds.bottom - 1, current.y));
         if (unit?.kind === "column") {
-            updateColumnDrag(unit, (y - bounds.top) / bounds.zoom, dragColumn(current.x, bounds));
+            updateColumnDrag(unit, (y - bounds.top) / bounds.zoom, dragColumn(current.x, bounds), released);
             return;
         }
         const point = viewport.hitTest(Math.max(bounds.left, Math.min(bounds.right - 1, current.x)), y);
@@ -1512,16 +1523,14 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             const velocity = edgeVelocity(captured, dragBounds(), viewport.getSnapshot(), "outside");
             return captured.unit?.kind === "line" ? { x: 0, y: velocity.y } : velocity;
         },
-        update: () => { updateDragHead(); dragScrollFrames++; }, cancel: () => stopDrag(),
-        turn: work => { const started = win.performance.now();
-            try { work(); } finally { maxDragScrollStepMs = Math.max(maxDragScrollStepMs, win.performance.now() - started); } },
+        update: () => updateDragHead(), cancel: () => stopDrag(),
     });
     const stopDrag = (event?: PointerEvent) => {
         if (event && event.pointerId === mousePress?.event.pointerId) mousePress = undefined;
         if (event && event.pointerId !== drag?.pointer) return;
         if (drag?.unit?.kind === "column") {
             if (event?.type === "pointerup" && validDrag()) {
-                drag = { ...drag, x: event.clientX, y: event.clientY }; updateDragHead();
+                drag = { ...drag, x: event.clientX, y: event.clientY }; updateDragHead(true);
             } else if (event?.type !== "pointerup" && rangeCommand?.purpose === "column") cancelWord();
         }
         if (drag?.unit?.kind === "word" && (event?.type === "pointercancel" || event?.type === "lostpointercapture")) cancelWord();
@@ -1700,7 +1709,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state, options) => { const result = viewport.restoreView(state, options); if (result) refresh(); return result; },
         getDiagnostics: () => Object.freeze({ ...activity(), inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, maxQueuedInputTurnMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs,
-            dragScrollFrames, maxDragScrollStepMs, commits, conflicts, queuedInputUnits: inputQueue.pending?.units ?? 0 }),
+            commits, conflicts, queuedInputUnits: inputQueue.pending?.units ?? 0 }),
         dispose: () => {
             if (disposed) return;
             notifications.assertWritable(); disposed = true; activitySnapshot = undefined; editTransform = undefined;

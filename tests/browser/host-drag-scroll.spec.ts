@@ -52,7 +52,9 @@ for (const axis of ["y", "x"] as const) for (const sign of [1, -1] as const) tes
 
     const first = primary(await snapshot(page)).selection.head;
     await expect.poll(async () => Math.sign(primary(await snapshot(page)).selection.head - first)).toBe(sign);
-    const held = await snapshot(page); expect(primary(held).selection.anchor).toBe(point.offset); expect(held.source.revision).toBe(before.source.revision); expect(primary(held).metrics!.dragScrollFrames).toBeGreaterThan(0);
+    const held = await snapshot(page);
+    expect(primary(held).selection.anchor).toBe(point.offset);
+    expect(held.source.revision).toBe(before.source.revision);
     expect(held.history).toEqual(before.history);
     expect(held.bindings.views.find(v => v.id === "secondary")!.selection).toEqual(before.bindings.views.find(v => v.id === "secondary")!.selection);
     expect(held.bindings.comparison!.selection).toEqual(before.bindings.comparison!.selection);
@@ -86,6 +88,8 @@ for (const cancellation of ["capture-loss", "owned-cancel", "revision", "selecti
     if (cancellation === "selection") expect(stoppedView.selection).toMatchObject({ anchor: 700, head: 700 });
     await frames(page, 12); await page.mouse.up(); await page.mouse.move(point.x, point.y); await frames(page); const later = await snapshot(page);
     expect(primary(later).selection).toEqual(stoppedView.selection); expect(primary(later).metrics!.viewport.scrollTop).toBe(stoppedView.metrics!.viewport.scrollTop);
-    expect(primary(later).metrics!.dragScrollFrames).toBe(stoppedView.metrics!.dragScrollFrames); expect(later.history).toEqual(stopped.history); expect(later.source.revision).toBe(stopped.source.revision); await exact(page, expected);
+    expect(later.history).toEqual(stopped.history);
+    expect(later.source.revision).toBe(stopped.source.revision);
+    await exact(page, expected);
     await page.evaluate(() => window.hostFixture.dispose());
 });
