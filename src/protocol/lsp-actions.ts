@@ -1,6 +1,6 @@
 import { codeActionMethod } from "./lsp-methods.ts";
 import { staleRequest, type JsonValue } from "./wire.ts";
-import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspProjectClientDiagnostics, type LspProjectRequest } from "./lsp-client.ts";
+import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspProjectRequest } from "./lsp-client.ts";
 import { decodeLspCodeActions, decodeLspResolvedCodeAction, lspCodeActionUris } from "./lsp-code-actions.ts";
 import type { LspCodeAction, LspCodeActions } from "./lsp-code-actions.ts";
 import type { LspCommand } from "./lsp-command-value.ts";
@@ -17,7 +17,7 @@ export type LspActionResult = Readonly<{
     resolve: (action: LspCodeAction, prepare?: LspPrepare) => Promise<LspCodeAction>;
     cancelResolve: () => void;
 }>;
-export type LspActionClient = LspFeatureClient<"textDocument/codeAction", LspActionRequest, LspActionResult, LspProjectClientDiagnostics>;
+export type LspActionClient = LspFeatureClient<"textDocument/codeAction", LspActionRequest, LspActionResult>;
 
 /** Reads share capture policy; confirmed commands retain their distinct mutation policy. */
 export function createLspActionClient(provider: LspWorkspace, options: LspActionOptions = {}): LspActionClient {
@@ -91,6 +91,5 @@ export function createLspActionClient(provider: LspWorkspace, options: LspAction
                         }
                     } });
             });
-        },
-        snapshot: () => Object.freeze({ ...client.snapshot(), busy: busy(), version: "LSP3.17" }) });
+        } });
 }

@@ -249,7 +249,7 @@ export class HostNavigationTools {
         try { this.host.workspace.releaseDocument(this.companion); this.companion = undefined; this.publish(); return true; } catch { return false; }
     }
     debug() { return { ...this.metrics, queries: { ...this.queries }, sessions: [...this.sessions.keys()].map(s => ({ id: s.id, documentId: s.editor.view.documentId })), subscriptions: this.cell.count(),
-        pending: this.cell.get().status === "pending", results: this.job?.page?.count ?? 0, scope: this.job?.sources.size ?? 0, companion: this.companion ?? null, transport: this.job?.origin.controller.getDiagnostics() ?? null, disposed: this.disposed }; }
+        pending: this.cell.get().status === "pending", results: this.job?.page?.count ?? 0, scope: this.job?.sources.size ?? 0, companion: this.companion ?? null, disposed: this.disposed }; }
     dispose(): void {
         if (this.disposed) return;
         this.disposed = true; this.stopHistory(); this.cancel(); this.resultList.dispose();

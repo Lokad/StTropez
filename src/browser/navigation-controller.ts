@@ -30,7 +30,7 @@ export type NavigationControllerOptions = Readonly<{
 export type NavigationSnapshot = Readonly<{ status: "idle" | "pending" | "ready" | "empty" | "expired" | "failed" | "disposed"; result: NavigationResult | null }>;
 export type NavigationController = Observable<NavigationSnapshot> & Readonly<{
     request: (kind?: Kind, offset?: number, includeDeclaration?: boolean) => Promise<Outcome<NavigationResult>>;
-    cancel: () => void; dispose: () => void; getDiagnostics: () => ReturnType<LspNavigationClient["snapshot"]> | null;
+    cancel: () => void; dispose: () => void;
 }>;
 const idle: NavigationSnapshot = Object.freeze({ status: "idle", result: null });
 
@@ -225,5 +225,5 @@ export function createNavigationController(editor: TextEditor, provider: LspWork
         state.clearSnapshotListeners();
     }
     editor.signal.addEventListener("abort", dispose, { once: true });
-    return Object.freeze({ request, cancel, dispose, ...controllerObservable(state, "Navigation", () => events.signal.aborted), getDiagnostics: () => explicit?.client.snapshot() ?? null });
+    return Object.freeze({ request, cancel, dispose, ...controllerObservable(state, "Navigation", () => events.signal.aborted) });
 }

@@ -91,7 +91,6 @@ test.describe("plain LSP inspection/navigation", () => {
         await field(page, "Configuration path").focus(); await replies.release(); await waitForNavigation(page);
         await expect(progress).toBeHidden();
         await expect(field(page, "Configuration path")).toBeFocused(); await expect(results(page)).toHaveText(["Navigation companion:1:7 · declaration"]);
-        expect((await snapshot(page)).bindings.navigation.transport?.version).toBe("LSP3.17");
         const companion = (await snapshot(page)).bindings.navigation.companion!; expect((await snapshot(page)).bindings.views.every(view => view.documentId !== companion)).toBe(true);
         replies.hold(); await field(page).press("F12"); await expect.poll(replies.waiting).toBe(true);
         await field(page, "Configuration path").focus(); await field(page).focus();

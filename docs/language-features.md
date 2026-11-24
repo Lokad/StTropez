@@ -20,8 +20,11 @@ export function attachLanguage(editor: TextEditor, provider: LspWorkspace) {
 }
 ```
 
-Each feature cancels its own requests. Disposing the attachment or the editor cancels all three
+Each feature cancels its own requests. Disposing the attachment or the editor cancels pending work
 and releases the binding. Other mounted views keep their requests.
+
+Protocol clients expose pending work through `isBusy()`. Read the connection epoch from
+`getSnapshot().epoch` when you need to distinguish provider connections.
 
 Connect before or after mounting a feature. The client advertises every supported request method by default.
 Use `features` to restrict methods,

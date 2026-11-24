@@ -13,7 +13,6 @@ export type LspProjectRequest = LspDocumentRequest & Readonly<{ project?: readon
 
 export type LspClientDiagnostics = Readonly<{ connected: boolean; disposed: boolean;
     protocol: ReturnType<LspWorkspaceScope["snapshotOwnership"]> }>;
-export type LspProjectClientDiagnostics = LspClientDiagnostics & Readonly<{ busy: boolean; version: "LSP3.17" }>;
 
 type FeatureOptions = readonly Readonly<Record<string, JsonValue>>[];
 type FeatureControls<Method extends LspDocumentFeature, Diagnostics extends LspClientDiagnostics = LspClientDiagnostics> =
@@ -62,7 +61,7 @@ export function createLspClient<Method extends LspDocumentFeature>(owner: LspWor
     const shared = "createScope" in owner ? undefined : owner;
     const provider = "createScope" in owner ? owner : owner.provider;
     const scope = shared?.scope ?? provider.createScope(), listeners = new Set<() => void>();
-    let disposed = false, generation = 0, latest: Request | undefined, notificationQueued = false;
+    let disposed = false, latest: Request | undefined, notificationQueued = false;
     let documents: ReadonlyMap<string, LspDocument> = new Map();
     const notify = () => {
         notificationQueued = false;
@@ -90,7 +89,6 @@ export function createLspClient<Method extends LspDocumentFeature>(owner: LspWor
     const invalidate = (releaseDocuments: boolean, reason: unknown = cancelled()) => {
         const previous = latest;
         latest = undefined;
-        generation++;
         if (previous) {
             previous.reject(reason);
             previous.wire.dispose();
@@ -249,10 +247,6 @@ export function createLspClient<Method extends LspDocumentFeature>(owner: LspWor
         },
         isBusy: () => (latest?.pending ?? 0) > 0,
         snapshot: () => Object.freeze({ connected: scope.getSnapshot().phase === "ready", disposed, protocol: scope.snapshotOwnership() }),
-        inspection: () => Object.freeze({ sequence: generation, documents: Object.freeze([...documents.values()].flatMap(document => {
-                const capture = scope.synchronized(document);
-                return capture ? [Object.freeze({ document: capture.document.documentId, revision: capture.document.revision, length: capture.document.buffer.length })] : [];
-            })) }),
         cancel: () => { if (!disposed) { invalidate(false); notify(); } },
         dispose: () => {
             if (disposed) return;

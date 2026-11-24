@@ -1,5 +1,5 @@
 import { definitionMethod, referencesMethod } from "./lsp-methods.ts";
-import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspProjectClientDiagnostics, type LspProjectRequest } from "./lsp-client.ts";
+import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspProjectRequest } from "./lsp-client.ts";
 import { decodeLspLocations, definitionOriginRange, lspLocationUris } from "./lsp-features.ts";
 import type { LspCall } from "./lsp-session.ts";
 import type { LspWorkspace } from "./lsp-workspace.ts";
@@ -11,8 +11,7 @@ export type LspDefinitionPreview = Readonly<{ hasTargets: boolean; originRange: 
     isCurrent: () => boolean; resolve: () => Promise<LspNavigationResult> }>;
 
 export type LspNavigationClient = LspFeatureClient<"textDocument/definition" | "textDocument/references", LspNavigationRequest,
-    LspNavigationResult, LspProjectClientDiagnostics & Readonly<{ epoch: number; sequence: number;
-        documents: readonly Readonly<{ document: string; revision: number; length: number }>[] }>> & Readonly<{
+    LspNavigationResult> & Readonly<{
     prepareDefinition: (request: LspDefinitionRequest) => LspCall<LspDefinitionPreview>;
 }>;
 
@@ -44,6 +43,5 @@ export function createLspNavigationClient(provider: LspWorkspace): LspNavigation
                 } });
             });
         },
-        run: (request: LspNavigationRequest) => lookup(request, (_reply, _hasTargets, load) => load()),
-        snapshot: () => Object.freeze({ ...client.snapshot(), ...client.inspection(), busy: client.isBusy(), version: "LSP3.17", epoch: provider.getSnapshot().epoch }) });
+        run: (request: LspNavigationRequest) => lookup(request, (_reply, _hasTargets, load) => load()) });
 }

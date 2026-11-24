@@ -1,4 +1,4 @@
-export type { LspClientDiagnostics, LspFeatureClient, LspProjectClientDiagnostics, LspDocumentRequest, LspPositionRequest, LspProjectRequest } from "./lsp-client.ts";
+export type { LspClientDiagnostics, LspFeatureClient, LspDocumentRequest, LspPositionRequest, LspProjectRequest } from "./lsp-client.ts";
 export { RpcError, ProtocolDecodeError } from "./wire.ts";
 export type { JsonValue } from "./wire.ts";
 export type { RpcId, RpcTransport, RpcScheduler, RpcOptions, RpcCall, RpcRequestContext } from "./json-rpc.ts";
