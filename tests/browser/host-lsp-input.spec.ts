@@ -7,7 +7,7 @@ const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
 const source = '// TODO\r\nconst catalogue = 1;\r\ncatalogue;\r\nimport "other-utils";\r\nconst color = "#abc";\r\nlookup("key", )', caret = source.lastIndexOf("catalogue") + 2;
-// Background swatches use documentColor too. blocked() and previews() count explicit color commands at the host.
+// Count explicit commands. Link scans share the discovery method; only routed requests carry the host's aliases.
 const methods = ["textDocument/definition", "textDocument/rename", "textDocument/codeAction", "textDocument/documentLink", "textDocument/colorPresentation", "textDocument/signatureHelp"];
 const signature = (page: Page) => page.getByRole("tooltip", { name: "Signature help", exact: true });
 
@@ -132,7 +132,8 @@ test(`plain LSP captures wait for movement, composition and table input before f
     const replies = await holdLspReplies(page, "textDocument/signatureHelp");
     const wire: string[] = [];
     page.on("websocket", socket => socket.on("framesent", frame => {
-        const message = JSON.parse(frame.payload.toString()); if (methods.includes(message.method)) wire.push(message.method);
+        const { method, params } = JSON.parse(frame.payload.toString());
+        if (methods.includes(method) && (method !== "textDocument/documentLink" || params?._fixture?.aliases)) wire.push(method);
     }));
     await page.goto("/hosts/plain/?language=lsp");
     await expect(input(page)).toBeVisible(); await settled(page);

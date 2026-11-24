@@ -11,7 +11,7 @@ import type { DocumentLinkChoice, DocumentLinkController, DocumentLinkSnapshot, 
 import type { LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import { linkLimits } from "../../fixtures/language/links.ts";
 import type { LinksInput, ModuleLink } from "../../fixtures/language/links.ts";
-import { validDomainModule } from "../../fixtures/language/domain.ts";
+import { domainLimits, importedModule, validDomainModule } from "../../fixtures/language/domain.ts";
 import { HostCell } from "../shared/observable.ts";
 
 type LinkFault = NonNullable<LinksInput["fault"]>;
@@ -24,6 +24,16 @@ type Origin = { origin: Session; source: DocumentSnapshot };
 type Route = Origin & { documents: Map<string, DocumentSnapshot>; targets: Map<DocumentId, Session>; returnPoint: HostLocation; focusResults?: () => boolean };
 type Visit = Origin & { destination: TextEditor; viewState: ViewState; release: () => void; returnPoint?: HostLocation };
 type LinkRange = Pick<DocumentLinkChoice, "from" | "to">;
+
+function pendingImport(source: DocumentSnapshot, offset: number): LinkRange | undefined {
+    const line = source.buffer.line(source.buffer.lineAt(offset));
+    if (line.to - line.from > domainLimits.prefixUnits) return;
+    const raw = line.text;
+    const bom = line.from === 0 && raw.startsWith("\ufeff") ? 1 : 0;
+    const module = importedModule(raw.slice(bom));
+    const from = line.from + bom + 8;
+    if (module && from <= offset && offset < from + module.length) return { from, to: from + module.length };
+}
 export type LinkNote = Omit<ModuleLink, "target"> & Readonly<{ line: number; column: number; targetTitle: string | null; resolvable: boolean; open: () => void }>;
 export type DocumentLinksSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; requestView: string | null;
     status: DocumentLinkSnapshot["status"] | "away"; message: string; count: number; page: number; paging: PanelPaging | null; links: readonly LinkNote[]; canReturn: boolean }>;
@@ -212,7 +222,7 @@ export class HostDocumentLinks {
         if (!origin) return;
         const source = this.host.workspace.document(editor.view.documentId), previous = this.route;
         const current = previous?.origin === origin && origin.controller.getSnapshot().status === "ready";
-        const link = origin.controller.linkAt(offset);
+        const link = origin.controller.linkAt(offset) ?? (current ? undefined : pendingImport(source, offset));
         if (!link) return;
         // A fresh route must supply the host's current aliases before resolving the URI.
         const selected = current ? link : { from: link.from, to: link.to };

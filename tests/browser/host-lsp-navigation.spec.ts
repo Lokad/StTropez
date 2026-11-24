@@ -183,6 +183,25 @@ test.describe("plain LSP inspection/navigation", () => {
         await expect(editor.locator('.st-viewport-row[data-line="2"]')).toHaveText("catalogue;!");
         expect((await snapshot(page)).bindings.links.opened).toBe(2);
     });
+    test("F12 follows a newly typed import while its background link reply is held", async ({ page }) => {
+        const scans = await holdLspReplies(page, "textDocument/documentLink");
+        await page.reload();
+        const source = field(page);
+        const links = source.locator("..").locator(".st-document-link");
+        await seed(page, 'import "prior";', 8);
+        await expect(links).toHaveText("prior");
+        await button(page, "Add module companion").click();
+        scans.hold();
+        const text = 'import "sample-utils";';
+        await seed(page, text, text.indexOf("-"));
+        await expect.poll(scans.waiting).toBe(true);
+        try {
+            await source.press("F12");
+            await expect(field(page, "Secondary source")).toBeFocused();
+        } finally {
+            await scans.release();
+        }
+    });
     test("a pending F4 keeps its results and leaves focus with a newer F12", async ({ page }) => {
         const links = await holdLspReplies(page, "textDocument/documentLink");
         await page.reload();
