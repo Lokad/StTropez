@@ -42,8 +42,12 @@ on("undo", () => workspace.undo({ documentId: source.documentId, expectedRevisio
 on("redo", () => workspace.redo({ documentId: source.documentId, expectedRevision: workspace.document(source.documentId).revision }));
 on("native", toggleNative);
 pane("workload").addEventListener("change", event => load((event.currentTarget as HTMLSelectElement).value as CorpusId), { signal: listeners.signal });
-const status = () => { const current = workspace.document(source.documentId); pane("status").textContent = `${current.buffer.lineCount.toLocaleString()} lines · Revision ${current.revision}`; };
-const unsubscribe = workspace.observeDocument(source.documentId).subscribe(status); status();
+const documentState = workspace.observeDocument(source.documentId);
+const status = () => {
+    const current = documentState.getSnapshot();
+    pane("status").textContent = current ? `${current.buffer.lineCount.toLocaleString()} lines · Revision ${current.revision}` : "Loading";
+};
+const unsubscribe = documentState.subscribe(status); status();
 const fixture = { ready: true, load, edit, background,
     bindLanguage: (uri: string) => workspace.setDocumentLanguage(source.documentId, { uri, languageId: "typescript" }),
     get settled() { return !disposed && viewportSettled(views.primary) && viewportSettled(views.secondary); },

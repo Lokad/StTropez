@@ -18,13 +18,12 @@ test.beforeAll(async () => {
     modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text])); css = await readFile("src/browser/editor.css", "utf8");
 });
 async function mount(page: Page, language: boolean) {
-    await page.route("**/shadow-focus/**", route => {
+    await page.route("**/shadow-focus/*.js", route => {
         const name = new URL(route.request().url()).pathname.split("/").at(-1)!;
-        if (!name) return route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Editor focus</title>" });
         return route.fulfill({ contentType: "text/javascript", body: modules.get(name)! });
     });
     // Keep a real local response as the document origin for native WebSocket policy.
-    await page.goto("/shadow-focus/");
+    await page.goto("/protocol/");
     await page.evaluate(async ({ css, language }) => {
         const path = "/shadow-focus/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { BrowserLspWorkspace, mountTextEditor, createCompletionController, createLspHighlightController, openWebSocketTransport } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
