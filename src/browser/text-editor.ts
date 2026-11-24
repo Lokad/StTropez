@@ -67,7 +67,7 @@ export type TextEditorDiagnostics = TextEditorActivity & Readonly<{
     navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number;
     lastWordSelectionMs: number; maxWordSelectionTurnMs: number; dragScrollFrames: number; maxDragScrollStepMs: number;
     commits: number; conflicts: number; queuedInputUnits: number; wordScanSteps: number; maxWordScanStepMs: number;
-    graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number;
+    graphemeScanSteps: number; maxGraphemeScanStepMs: number;
 }>;
 export type TextEditorSnapshot = Readonly<{ focused: boolean; disabled: boolean; composing: boolean;
     readOnlyReason: EditRefusedDetail["reason"] | null }>;
@@ -183,7 +183,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     let preferred: Readonly<{ selections: SelectionSet; revision: number; layout: string; columns: readonly (VisualColumns | undefined)[] }> | undefined;
     let wordScanSteps = 0, maxWordScanStepMs = 0;
     let graphemeScanSteps = 0, maxGraphemeScanStepMs = 0;
-    let visualMoves = 0;
     let group: Readonly<{ type: string; revision: number; selectionSet: SelectionSet; tail: ReturnType<typeof typingRun> | "spaces" | undefined; key: string }> | undefined;
     type ColumnDrag = { kind: "column"; middle: boolean; originRow: number; anchorColumn: number;
         projection?: { layout: string; column: number; direction: -1 | 1; count: number; ranges: (Selection & { reaches: boolean })[] } };
@@ -756,7 +755,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         }));
     }
     function shortHorizontal(capture: CommandCapture): boolean {
-        // Bounded selection sets and bounded native rows; longer contexts keep cooperative scans.
+        // Small selection sets on short rows can complete in the key handler.
         if (capture.selectionSet.ranges.length > commandBudget.inlineRanges) return false;
         const buffer = capture.buffer, folds = view.folding.getSnapshot().index, lines = new Set<number>();
         for (const range of capture.selectionSet.ranges) {
@@ -835,7 +834,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         navigationPreparationMs = win.performance.now() - began;
         eachRange(capture, "grapheme", (range, done) => {
             const point = navigation.horizontalPoint(capture.buffer, range, direction, extend);
-            if (point) { visualMoves++; done(moved(range, point.offset, extend, point.affinity)); return; }
+            if (point) {
+                done(moved(range, point.offset, extend, point.affinity));
+                return;
+            }
             if (!extend && range.anchor !== range.head) { done(moved(range, direction < 0 ? Math.min(range.anchor, range.head) : Math.max(range.anchor, range.head), false)); return; }
             withGraphemes(capture, range.head, direction, "grapheme", at => done(moved(range, direction < 0 ? at.preceding ?? range.head : at.following ?? range.head, extend)), navigationTurn);
         }, ranges => finishRanges(capture, ranges), { validLayout: () => navigationLayout() === layout, navigation: true, inline });
@@ -1722,7 +1724,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state, options) => { const result = viewport.restoreView(state, options); if (result) refresh(); return result; },
         getDiagnostics: () => Object.freeze({ ...activity(), inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, maxQueuedInputTurnMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs,
-            dragScrollFrames, maxDragScrollStepMs, commits, conflicts, queuedInputUnits: inputQueue.pending?.units ?? 0, wordScanSteps, maxWordScanStepMs, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves }),
+            dragScrollFrames, maxDragScrollStepMs, commits, conflicts, queuedInputUnits: inputQueue.pending?.units ?? 0, wordScanSteps, maxWordScanStepMs, graphemeScanSteps, maxGraphemeScanStepMs }),
         dispose: () => {
             if (disposed) return;
             notifications.assertWritable(); disposed = true; activitySnapshot = undefined; editTransform = undefined;

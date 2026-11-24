@@ -176,7 +176,7 @@ Check `activity()` for the painted revision, selections, fold/alignment IDs, row
 frame and disposal. The immutable `ViewportActivity` is cached and reads no layout. Even with
 `pending: false`, compare the painted state with the model and view. Call `flush()` to paint pending
 work synchronously. `getDiagnostics()` returns `ViewportDiagnostics` with row and buffer-read counts,
-overscan bounds, navigation work and [render timings](README.md#glossary).
+overscan bounds and [render timings](README.md#glossary).
 
 Call `onRender(listener)` before the first frame to observe initial paint, and keep its unsubscribe
 function. A paint or scheduled render can notify even when rows stay the same. An idle `flush()` is

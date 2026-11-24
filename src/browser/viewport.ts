@@ -46,7 +46,8 @@ const emptyViewport: ViewportSnapshot = Object.freeze({ lineFrom: 0, lineTo: 0, 
 const geometryKeys = Object.keys(emptyViewport) as (keyof ViewportSnapshot)[];
 export type ViewportDiagnostics = ViewportActivity & Readonly<{ selection: Selection | null; renders: number; firstLine: number; lastLine: number;
     visibleLines: number; collapsedFolds: number; visualRows: number; paddingRows: number; naturalLineHeight: number;
-    rows: number; partialRows: number; textUnits: number; readUnits: number; navigationReadUnits: number; navigationRows: number; navigationBatches: number; navigationPreparedRows: number; maxNavigationBatchRows: number; lastRenderMs: number; scrollTop: number; scrollLeft: number; width: number; height: number; gutterWidth: number;
+    rows: number; partialRows: number; textUnits: number; readUnits: number; lastRenderMs: number;
+    scrollTop: number; scrollLeft: number; width: number; height: number; gutterWidth: number;
     lineHeight: number; columnWidth: number; verticalExtent: number; horizontalExtent: number;
     physicalHeight: number; physicalWidth: number }>;
 export type ViewportInputBinding = Readonly<{ setComposing: (active: boolean) => boolean;
@@ -269,7 +270,6 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     let renderedSelection: Selection | null = null;
     let renderedSelectionSet: SelectionSet | null = null;
     let renders = 0, firstLine = 0, lastLine = 0, partialRows = 0, textUnits = 0, readUnits = 0, lastRenderMs = 0;
-    let navigationReadUnits = 0, navigationRows = 0, navigationBatches = 0, maxNavigationBatchRows = 0;
     const commandMeasure = owner.createElement("div"), commandRow = owner.createElement("div");
     commandMeasure.className = "st-viewport-command-measure"; commandMeasure.setAttribute("aria-hidden", "true"); commandMeasure.append(commandRow);
     let commandGeometry: ReturnType<typeof rowGeometry> | undefined;
@@ -455,7 +455,6 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         if (reveal && reveal.foldGeneration !== folds.generation) reveal = undefined;
         horizontalAnchor = undefined; fragmentPlacement = undefined; schedule();
     };
-    const read = (buffer: TextBuffer, from: number, to: number): string => { readUnits += to - from; return buffer.slice(from, to); };
     const expose = (start: number, size: number, scroll: number, visible: number): number => {
         const margin = Math.min(padding, visible / 4);
         return start < scroll + margin ? Math.max(0, start - margin) : start + size > scroll + visible - margin ? Math.max(0, start + size - visible + margin) : scroll;
@@ -474,17 +473,20 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         return rangeScroll(left + (start.left - box.left) / box.zoom, left + (end.left - box.left) / box.zoom, left, width);
     };
     const row = (buffer: TextBuffer, line: number, scrollLeft = left, navigation = false): Row => {
-        const readRow = navigation ? (buffer: TextBuffer, from: number, to: number) => { navigationReadUnits += to - from; return buffer.slice(from, to); } : read;
+        const read = (from: number, to: number) => {
+            if (!navigation) readUnits += to - from;
+            return buffer.slice(from, to);
+        };
         const start = buffer.offsetAt(line), end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) - 1 : buffer.length;
-        const displayEnd = line + 1 < buffer.lineCount && end > start && readRow(buffer, end - 1, end) === "\r" ? end - 1 : end;
+        const displayEnd = line + 1 < buffer.lineCount && end > start && read(end - 1, end) === "\r" ? end - 1 : end;
         let from = Math.min(displayEnd, start + Math.max(0, Math.floor((scrollLeft - padding) / columnWidth) - overscanUnits));
         let to = Math.min(displayEnd, start + Math.max(0, Math.ceil((scrollLeft + width) / columnWidth) + overscanUnits));
         if (displayEnd - start <= 512) { from = start; to = displayEnd; }
         // Do not split a surrogate pair at the edges of the bounded text window.
-        if (from > start && from < displayEnd) { const pair = readRow(buffer, from - 1, from + 1); if (/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(pair)) from--; }
-        if (to > from && to < displayEnd) { const pair = readRow(buffer, to - 1, to + 1); if (/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(pair)) to++; }
+        if (from > start && from < displayEnd) { const pair = read(from - 1, from + 1); if (/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(pair)) from--; }
+        if (to > from && to < displayEnd) { const pair = read(to - 1, to + 1); if (/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(pair)) to++; }
         return { line, start, end: displayEnd, breakEnd: line + 1 < buffer.lineCount ? end + 1 : end,
-            from, to, text: readRow(buffer, from, to).replaceAll("\r", "␍"), left: padding + (from - start) * columnWidth - scrollLeft, complete: from === start && to === displayEnd, endsLine: to === displayEnd };
+            from, to, text: read(from, to).replaceAll("\r", "␍"), left: padding + (from - start) * columnWidth - scrollLeft, complete: from === start && to === displayEnd, endsLine: to === displayEnd };
     };
     const paintRow = (element: HTMLDivElement, item: Row, document: DocumentSnapshot, selectionSet: SelectionSet, highlightedLine?: number, index?: RowIndex): boolean => {
         element.dataset.line = String(item.line); element.dataset.from = String(item.from); element.dataset.to = String(item.to); element.dataset.complete = String(item.complete);
@@ -561,7 +563,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         // All writes precede native geometry reads. Keep the bounded batch across yielding turns;
         // the command owns its release, while document changes and destruction release eagerly.
         const batch = { revision: document.revision, selectionSet, element, rows: batchRows }; preparedRows = batch;
-        root.append(element); navigationRows += batchRows.size; navigationBatches++; maxNavigationBatchRows = Math.max(maxNavigationBatchRows, batchRows.size);
+        root.append(element);
         return () => { if (preparedRows === batch) clearPreparedRows(); };
     }
     function withRow<T>(line: number, scrollLeft: number, offset: number | undefined, work: (row: MeasuredRow) => T): T | undefined {
@@ -579,7 +581,9 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const item = row(document.buffer, line, scrollLeft, true);
         const selectionSet = view.getSnapshot().selectionSet;
         const changed = paintRow(commandRow, item, document, selectionSet, currentLine(document, selectionSet, renderedIndex));
-        commandRow.style.height = `${lineHeight}px`; commandRow.style.lineHeight = comparisonRows ? `${lineHeight}px` : ""; root.append(commandMeasure); navigationRows++;
+        commandRow.style.height = `${lineHeight}px`;
+        commandRow.style.lineHeight = comparisonRows ? `${lineHeight}px` : "";
+        root.append(commandMeasure);
         try {
             if (changed || !commandGeometry) commandGeometry = rowGeometry(commandRow, 0, document.revision, lineHeight * rectangle.zoom);
             return work(measuredRow({ item, element: commandRow, geometry: commandGeometry }, document.revision, rectangle));
@@ -1110,7 +1114,9 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
                 horizontal: "nearest", vertical: "nearest", affinity: "after" };
             schedule();
         },
-        getDiagnostics: () => Object.freeze({ ...activity(), selection: renderedSelection, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, visibleLines: previous ? view.folding.getSnapshot().index.visibleLineCount : 0, collapsedFolds: previous ? renderedIndex.collapsedCount : 0, visualRows: previous ? renderedIndex.visibleLineCount : 0, paddingRows: paddingRows.size, naturalLineHeight, navigationReadUnits, navigationRows, navigationBatches, navigationPreparedRows: preparedRows?.rows.size ?? 0, maxNavigationBatchRows, lastRenderMs,
+        getDiagnostics: () => Object.freeze({ ...activity(), selection: renderedSelection, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits,
+            visibleLines: previous ? view.folding.getSnapshot().index.visibleLineCount : 0, collapsedFolds: previous ? renderedIndex.collapsedCount : 0,
+            visualRows: previous ? renderedIndex.visibleLineCount : 0, paddingRows: paddingRows.size, naturalLineHeight, lastRenderMs,
             scrollTop: top, scrollLeft: left, width, height, gutterWidth, lineHeight, columnWidth, verticalExtent: y.extent, horizontalExtent: x.extent,
             physicalHeight: y.physicalExtent, physicalWidth: x.physicalExtent }),
         dispose: () => {
@@ -1122,9 +1128,9 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             minimap?.dispose(); minimap = undefined;
             observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); rowSources.clear(); rowSourceRevision = null; paddingRows.clear(); comparisonRows = undefined; renderedAlignmentId = null; geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             painted = undefined; commandGeometry = undefined; commandRow.replaceChildren(); commandMeasure.remove(); clearPreparedRows();
-            navigationBatches = 0; maxNavigationBatchRows = 0;
             renderedIndex = emptyIndex; renderedFoldGeneration = -1; lineNumbers.clear(); numbers.replaceChildren(); foldButtons.clear(); foldLayer.replaceChildren();
-            renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; navigationReadUnits = 0; navigationRows = 0; layer.replaceChildren(); root.replaceChildren(); root.remove();
+            renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0;
+            layer.replaceChildren(); root.replaceChildren(); root.remove();
             publishGeometry(emptyViewport);
             for (const stop of observationStops) stop();
             if (!options.view) view.dispose();
@@ -1142,7 +1148,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         if (span.to - span.from <= 512 || rows.get(line)?.dataset.complete === "true") return true;
         // Rows just above the short-line limit can fit in a wide viewport.
         const end = line + 1 === buffer.lineCount ? buffer.length : buffer.offsetAt(line + 1);
-        return end - span.from <= 514 && row(buffer, line).complete;
+        return end - span.from <= 514 && row(buffer, line, left, true).complete;
     }
     const navigation = Object.freeze<ViewportNavigation>({
         prepareNavigationRows,
