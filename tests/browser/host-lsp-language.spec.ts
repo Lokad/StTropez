@@ -72,7 +72,7 @@ test.describe("plain selected LSP features", () => {
     test("painted swatches open the clicked literal in its pane and refresh after typing", async ({ page }) => {
         const raw = 'const a = "#abc";\r\nconst b = "#f008";';
         await seed(page, raw, 2);
-        const source = field(page, "Secondary source"), marks = source.locator("..").locator(".host-inline-swatch");
+        const source = field(page, "Secondary source"), marks = source.locator("..").locator(".st-color-swatch");
         await expect(marks).toHaveCount(2);
         await expect(field(page)).toBeFocused();
         const before = await snapshot(page);
@@ -93,7 +93,7 @@ test.describe("plain selected LSP features", () => {
     });
     test("a late background color scan cannot repaint a newer revision or open its picker", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/documentColor"); await page.reload();
-        const marks = field(page).locator("..").locator(".host-inline-swatch");
+        const marks = field(page).locator("..").locator(".st-color-swatch");
         await seed(page, 'const a = "#abc";'); await expect(marks).toHaveCount(1);
         replies.hold();
         await field(page).press("Control+End"); await page.keyboard.insertText(' const b = "#ff0000";');
@@ -111,7 +111,7 @@ test.describe("plain selected LSP features", () => {
         await page.evaluate(fault => window.hostFixture.faultLinksNext(fault), fault); await button(page, "Discover module links").click(); await settledColorsAndLinks(page);
         expect((await snapshot(page)).bindings.links.state.status).toBe("failed"); await expect(links.locator("li")).toHaveCount(0);
         await page.evaluate(fault => window.hostFixture.faultColorsNext(fault), fault); await discoverColors();
-        expect((await snapshot(page)).bindings.colors.state.status).toBe("failed"); await expect(colors.locator("li")).toHaveCount(0); expect((await snapshot(page)).bindings.colors.decoratedViews).toBe(0);
+        expect((await snapshot(page)).bindings.colors.state.status).toBe("failed"); await expect(colors.locator("li")).toHaveCount(0); await expect(page.locator(".st-color-swatch")).toHaveCount(0);
         await discoverColors(); await expect(colors.getByRole("button")).toHaveCount(1); await page.evaluate(fault => window.hostFixture.faultColorsNext(fault), fault); await preview();
         expect((await snapshot(page)).bindings.colors.state).toMatchObject({ status: "failed", choices: [], canApply: false }); await expect(apply).toBeDisabled();
         await expect(button(page, "Reconnect color provider")).toBeEnabled();
@@ -157,6 +157,8 @@ test.describe("plain selected LSP features", () => {
         const completionStatus = page.getByLabel("Language status", { exact: true });
         await expect(completionStatus).toContainText("provider disconnected");
         expect(await page.evaluate(() => window.hostFixture.providerState())).toMatchObject({ connected: false, pending: false, choices: [] });
+        const swatches = field(page).locator("..").locator(".st-color-swatch");
+        await expect(swatches).toHaveCount(0);
         await expect(popup).toBeHidden(); await settledColorsAndLinks(page);
         await expect(apply).toBeDisabled(); await expect(links.locator("li")).toHaveCount(0);
         expect((await snapshot(page)).bindings.links.state.connected).toBe(false); expect((await snapshot(page)).bindings.colors.state.choices).toHaveLength(0);
@@ -166,6 +168,7 @@ test.describe("plain selected LSP features", () => {
         expect((await snapshot(page)).bindings.lsp!.created).toBe(connected.bindings.lsp!.created);
         await button(page, "Reconnect signature provider").click();
         await expect(completionStatus).toContainText("provider connected");
+        await expect(swatches.first()).toBeVisible();
         await page.evaluate(at => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: at, head: at }]); }, raw.indexOf(")"));
         await signature(); await expect(popup).toBeVisible(); await button(page, "Discover module links").click(); await settledColorsAndLinks(page); await expect(links.getByRole("button")).toHaveCount(1);
         await discoverColors(); await preview(); await expect(apply).toBeEnabled(); await exact(page, raw + "H");
@@ -236,7 +239,7 @@ test.describe("plain selected LSP features", () => {
         await expect(button(page, "Next document colors")).toBeDisabled(); await colors.getByRole("button").last().click();
         await expect(button(page, "Preview color presentations")).toBeEnabled();
         expect(await page.locator(".st-document-color").count()).toBeGreaterThan(0); expect(await page.locator(".st-document-color").count()).toBeLessThan(150);
-        await expect(page.locator('.host-inline-swatch[data-ornament="before"]').first()).toHaveCSS("background-color", "rgb(170, 187, 204)");
+        await expect(page.locator('.st-color-swatch[data-ornament="before"]').first()).toHaveCSS("background-color", "rgb(170, 187, 204)");
         const previews = (await snapshot(page)).bindings.colors.previews, presentations = methods.filter(method => method === "textDocument/colorPresentation").length;
         await field(page, "Proposed color").fill('url("https://invalid.example/")'); await expect(button(page, "Preview color presentations")).toBeDisabled(); await expect(button(page, "Apply captured color")).toBeDisabled();
         await page.evaluate(() => window.hostFixture.previewColor()); await page.evaluate(() => window.hostFixture.providerCustom("fixture/state", {}));
@@ -248,7 +251,7 @@ test.describe("plain selected LSP features", () => {
         expect((await snapshot(page)).bindings.links.state.status).toBe("failed"); await expect(page.getByLabel("Locations status", { exact: true })).toContainText("limit");
         await button(page, "Discover document colors").click(); await settledColorsAndLinks(page); await expect(colors.getByRole("listitem")).toHaveCount(0);
         expect((await snapshot(page)).bindings.colors.state.status).toBe("failed"); await expect(page.getByLabel("Document color status", { exact: true })).toContainText("limit");
-        expect((await snapshot(page)).bindings.colors.decoratedViews).toBe(0); await exact(page, oversized);
+        await expect(page.locator(".st-color-swatch")).toHaveCount(0); await exact(page, oversized);
         expect((await snapshot(page)).history).toEqual(overflow.history); expect((await snapshot(page)).source.revision).toBe(overflow.source.revision);
     });
     test("secondary-resource color edits and explicit reveal keep primary Save and Run identity", async ({ page }) => {
@@ -323,7 +326,7 @@ test.describe("plain selected LSP features", () => {
         expect(unchanged.bindings.colors).toMatchObject({ unchanged: 1, applied: 0 });
         const openChanges = page.getByRole("button", { name: /^Open color changes in / });
         await expect(openChanges).toBeHidden();
-        await expect(field(page).locator("..").locator(".host-inline-swatch")).toHaveCount(1);
+        await expect(field(page).locator("..").locator(".st-color-swatch")).toHaveCount(1);
         await button(page, "Discover document colors").click(); await settledColorsAndLinks(page);
         await proposed.fill("rgba(1, 2, 3, 0.5)"); await button(page, "Preview color presentations").click(); await expect(button(page, "Apply captured color")).toBeEnabled();
         await expect(page.getByLabel("Proposed color edits", { exact: true }).getByRole("listitem")).toHaveCount(2);

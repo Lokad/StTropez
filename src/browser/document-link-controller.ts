@@ -1,6 +1,5 @@
 import { documentLinkMethod } from "../protocol/lsp-methods.ts";
-import { controllerObservable } from "./controller-observable.ts";
-import { Store } from "../core/observable.ts";
+import { languageReview } from "./language-review.ts";
 import type { Observable } from "../core/observable.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
@@ -8,7 +7,6 @@ import type { LspDocumentLink } from "../protocol/lsp-features.ts";
 import { createLspLinkClient, type LspLinkClient } from "../protocol/lsp-language.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
-import { requireLanguageView, captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainDocuments } from "./retained-documents.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -30,7 +28,7 @@ export type DocumentLinkController = Observable<DocumentLinkSnapshot> & Readonly
     linkAt: (offset: number) => DocumentLinkChoice | undefined;
 }>;
 type Job = {
-    client: LspLinkClient; project: ReturnType<typeof retainDocuments>; capture?: CapturedViewRequest<TextEditor["tab"]>;
+    client: LspLinkClient; project: ReturnType<typeof retainDocuments>; source?: CapturedViewRequest<TextEditor["tab"]>;
     reply?: Awaited<ReturnType<LspLinkClient["run"]>["result"]>; connection?: ReturnType<LspWorkspace["getSnapshot"]>;
     invalid: boolean; timer?: number; failure?: ReturnType<typeof failed>;
 };
@@ -40,27 +38,15 @@ const idle: DocumentLinkSnapshot = Object.freeze({ status: "idle", links: empty,
 /** Discover links for one editor. Only a current user action hands an opaque target to the host. */
 export function createDocumentLinkController(editor: TextEditor, provider: LspWorkspace, options: DocumentLinkControllerOptions = {}): DocumentLinkController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
-    requireLanguageView(editor);
-    const scope = workspace.createNotificationScope(), state = new Store(idle, scope), events = new AbortController();
-    let job: Job | undefined;
-    const available = (id: DocumentId) => !events.signal.aborted && editorReadyForRequest(editor)
-        && (options.canCapture?.(id) ?? true);
-    const capture = () => captureViewRequest(workspace, tab, view, { available: () => available(view.documentId) });
+    const { scope, state, signal, active, available, capture, release, expire, mount } =
+        languageReview<Job, DocumentLinkSnapshot>(editor, "Document link", idle, options.canCapture,
+            status => publish(status));
     function publish(status: DocumentLinkSnapshot["status"], links = empty, message = "") {
         scope.publish(state, Object.freeze({ status, links, message }));
     }
-    function release() {
-        const previous = job; job = undefined;
-        if (previous) { win.clearTimeout(previous.timer); previous.capture?.cancel(); previous.project.dispose(); previous.client.dispose(); }
-    }
-    function expire(j: Job) {
-        if (job !== j || j.invalid) return;
-        j.invalid = true;
-        queueMicrotask(() => { if (job === j) { release(); publish("expired"); } });
-    }
     function captureCurrent(j: Job) {
-        if (job !== j || j.invalid || !workspace.ownsDocumentView(view, tab) || !available(view.documentId)
-            || j.capture && !j.capture.isCurrent()) return false;
+        if (active.job !== j || j.invalid || !workspace.ownsDocumentView(view, tab) || !available(view.documentId)
+            || j.source && !j.source.isCurrent()) return false;
         if (options.canCapture) for (const id of j.project.documents.keys()) if (!options.canCapture(id)) return false;
         return true;
     }
@@ -88,14 +74,14 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
         publish("failed", empty, error instanceof Error ? error.message : "Document link request failed.");
         return failure;
     }
-    function bindCapture(j: Job, source: NonNullable<Job["capture"]>) {
-        j.capture = source;
-        source.signal.addEventListener("abort", () => { if (j.capture === source) expire(j); }, { once: true });
+    function bindCapture(j: Job, source: NonNullable<Job["source"]>) {
+        j.source = source;
+        source.signal.addEventListener("abort", () => { if (j.source === source) expire(j); }, { once: true });
         j.timer = win.setTimeout(() => fail(j, new Error("Document link request timed out.")), 30000);
     }
     function finishCapture(j: Job) {
         win.clearTimeout(j.timer);
-        const source = j.capture; delete j.capture; source?.cancel();
+        const source = j.source; delete j.source; source?.cancel();
     }
     function choice(item: LspDocumentLink, index: number): DocumentLinkChoice {
         // A retained row only knows its identity and slot. It cannot open a later row at that slot.
@@ -106,7 +92,7 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
     }
     async function open(selected: DocumentLinkChoice, index: number, present: (uri: string) => void): Promise<Outcome<string>> {
         scope.assertWritable();
-        const j = job, before = state.get();
+        const j = active.job, before = state.get();
         if (!j?.reply || before.links[index] !== selected) return stale;
         let target = selected.target;
         try {
@@ -133,9 +119,9 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
     }
     async function request(): Promise<Outcome<readonly DocumentLinkChoice[]>> {
         scope.assertWritable();
-        if (events.signal.aborted) return stale;
+        if (signal.aborted) return stale;
         release();
-        let pending: Job | undefined, source: Job["capture"];
+        let pending: Job | undefined, source: Job["source"];
         try {
             source = capture();
             if (!source) {
@@ -144,7 +130,7 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
             }
             const client = createLspLinkClient(provider);
             const j: Job = { client, project: retainDocuments(workspace, available, () => expire(j)), invalid: false };
-            job = pending = j;
+            active.job = pending = j;
             bindCapture(j, source);
             j.project.include(source.document);
             for (const doc of options.documents?.() ?? []) j.project.include(doc);
@@ -161,24 +147,16 @@ export function createDocumentLinkController(editor: TextEditor, provider: LspWo
             return fail(pending, error);
         }
     }
-    function cancel() { scope.assertWritable(); if (!events.signal.aborted) { release(); publish("idle"); } }
     const stop = provider.subscribe(() => {
-        const j = job;
+        const j = active.job;
         // A malformed resolve reply invalidates the protocol result before its rejection reaches open().
-        if (j?.reply && !j.reply.isCurrent() && (!j.capture || providerChanged(j))) expire(j);
+        if (j?.reply && !j.reply.isCurrent() && (!j.source || providerChanged(j))) expire(j);
     });
-    editor.onEditIntent(() => { if (job) cancel(); }, events.signal);
-    function dispose() {
-        if (events.signal.aborted) return;
-        scope.assertWritable(); events.abort(); stop(); release(); editor.signal.removeEventListener("abort", dispose);
-        publish("disposed");
-        state.clearSnapshotListeners();
-    }
-    editor.signal.addEventListener("abort", dispose, { once: true });
+    const controls = mount(stop);
     function linkAt(offset: number) {
         const snapshot = state.get();
-        if (!Number.isSafeInteger(offset) || !job || snapshot.status !== "ready" || !current(job)) return;
+        if (!Number.isSafeInteger(offset) || !active.job || snapshot.status !== "ready" || !current(active.job)) return;
         return snapshot.links.find(link => link.from <= offset && offset < link.to);
     }
-    return Object.freeze({ request, cancel, dispose, linkAt, ...controllerObservable(state, "Document link", () => events.signal.aborted) });
+    return Object.freeze({ ...controls, request, linkAt });
 }

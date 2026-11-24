@@ -1,3 +1,4 @@
+import { mountSwatches } from "../src/browser/document-color-swatches.ts";
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import {
@@ -317,6 +318,72 @@ test("color choices belong to the presentation request that returned them", { ti
     assert.ok(f.workspace.undo({ documentId: before.id, expectedRevision: f.document().revision }).applied);
     assert.equal(f.document().buffer.text(), before.buffer.text());
     language.dispose();
+});
+
+test("background swatches recover on the next edit after the provider scope limit clears", { timeout: 5000 }, async t => {
+    const f = clientFixture(t, undefined, undefined, { maxScopes: 1 });
+    await f.provider.connect();
+    const occupied = f.provider.createScope();
+    const color = { red: 1, green: 0, blue: 0, alpha: 1 };
+    f.peer.onRequest("textDocument/documentColor", () => [{ color,
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } } }]);
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    let painted!: (revision: number) => void;
+    const revision = new Promise<number>(resolve => { painted = resolve; });
+    const layer = { set: (value: number) => { painted(value); return true; }, clear() {}, dispose() {} };
+    const editor = { workspace: f.workspace, view: { documentId: f.source.documentId },
+        decorations: { add: () => layer } } as unknown as TextEditor;
+    const swatches = mountSwatches(editor, f.provider, f.provider);
+    try {
+        t.mock.timers.tick(200);
+        await settled();
+        assert.equal(f.sent("textDocument/documentColor").length, 0);
+        assert.equal(swatches.at(0), undefined);
+        t.mock.timers.reset();
+        occupied.dispose();
+        f.edit();
+        assert.equal(await revision, f.document().revision);
+        assert.deepEqual(swatches.at(0), { from: 0, to: 3, color });
+    } finally { swatches.dispose(); occupied.dispose(); }
+});
+
+test("a second pane takes over a shared color scan when the first pane closes", { timeout: 5000 }, async t => {
+    const f = await fixture(t);
+    const method = "textDocument/documentColor";
+    const red = { red: 1, green: 0, blue: 0, alpha: 1 };
+    const green = { ...red, red: 0, green: 1 };
+    const old = holdReply(f, method, [{ range, color: red }]);
+    const painted = latch<void>();
+    const initial = f.provider.snapshot().scopes;
+    const secondView = f.workspace.createDocumentView(f.source.documentId);
+    const firstLayers = createDecorationLayers(f.document, () => {}, () => true);
+    const secondLayers = createDecorationLayers(f.document, () => painted.resolve(), () => true);
+    const first = attachEditorLanguage({ ...f.editor, decorations: firstLayers.handle }, f.provider, { colors: { swatches: true } });
+    const second = attachEditorLanguage({ ...f.editor, view: secondView, decorations: secondLayers.handle }, f.provider, { colors: { swatches: true } });
+    try {
+        await old.received;
+        f.select();
+        second.colors.cancel();
+        assert.equal(f.sent(method).length, 1);
+        assert.equal(f.provider.snapshot().scopes, initial + 2);
+        f.peer.onRequest(method, () => [{ range, color: green }]);
+        first.dispose();
+        await painted.promise;
+        old.send();
+        await f.flush();
+        assert.equal(f.sent(method).length, 2);
+        assert.deepEqual(second.colors.colorAt(1)?.color, green);
+        assert.equal(second.colors.colorAt(0.5), undefined);
+        assert.equal(first.colors.colorAt(1), undefined);
+    } finally {
+        old.send();
+        first.dispose();
+        second.dispose();
+        firstLayers.dispose();
+        secondLayers.dispose();
+        secondView.dispose();
+    }
+    assert.equal(f.provider.snapshot().scopes, initial);
 });
 
 const linkChanges = {

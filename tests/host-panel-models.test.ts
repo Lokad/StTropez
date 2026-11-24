@@ -16,40 +16,12 @@ import type { ActionsSnapshot } from "../examples/hosts/code-actions.ts";
 import { documentColorsPanelModel } from "../examples/hosts/document-colors-panel.ts";
 import { documentLinksPanelModel } from "../examples/hosts/document-links-panel.ts";
 import type { DocumentColorsSnapshot } from "../examples/hosts/document-colors.ts";
-import { watchColorSwatches } from "../examples/hosts/color-swatches.ts";
-import { clientFixture, settled } from "./helpers/lsp-client.ts";
 import type { DocumentLinksSnapshot } from "../examples/hosts/document-links.ts";
 import { languagePanelModel } from "../examples/hosts/language-panel.ts";
 import { domainPanelModel } from "../examples/hosts/domain-panel.ts";
 import type { DomainSnapshot } from "../examples/hosts/domain.ts";
 
 const noop = () => {};
-
-test("background swatches recover on the next edit after the provider scope limit clears", { timeout: 5000 }, async t => {
-    const f = clientFixture(t, undefined, undefined, { maxScopes: 1 });
-    await f.provider.connect();
-    const occupied = f.provider.createScope();
-    const color = { red: 1, green: 0, blue: 0, alpha: 1 };
-    f.peer.onRequest("textDocument/documentColor", () => [{ color,
-        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } } }]);
-    t.mock.timers.enable({ apis: ["setTimeout"] });
-    const swatches = watchColorSwatches(f.workspace.observeDocument(f.source.documentId), f.provider, true);
-    let painted!: (revision: number) => void;
-    const revision = new Promise<number>(resolve => { painted = resolve; });
-    const layer = { set: (value: number) => { painted(value); return true; }, clear: noop, dispose: noop };
-    swatches.add(layer);
-    try {
-        t.mock.timers.tick(200);
-        await settled();
-        assert.equal(f.sent("textDocument/documentColor").length, 0);
-        assert.equal(swatches.current(), undefined);
-        t.mock.timers.reset();
-        occupied.dispose();
-        f.edit();
-        assert.equal(await revision, f.document().revision);
-        assert.deepEqual(swatches.current()?.colors, [{ from: 0, to: 3, color }]);
-    } finally { swatches.remove(layer); occupied.dispose(); }
-});
 
 test("scene identity ignores modal/review traffic while readiness and captured tab generations govern mounting", async () => {
     const host = new HostController();

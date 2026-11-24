@@ -378,11 +378,14 @@ export class LspWorkspace {
             }) }); pending.add(tracked); void tracked.result.then(() => pending.delete(tracked), () => pending.delete(tracked)); return tracked as C;
         };
         const unwrap = (document: LspDocument) => { const entry = handles.get(document); if (!scope.active || !entry?.active) throw stale(); return entry.binding; };
+        const scopedCapture = (document: LspDocument, entry: DocumentEntry, value: LspDocumentCapture, generation: number): LspDocumentCapture =>
+            Object.freeze({ ...value,
+                isBindingCurrent: () => current(generation) && handles.has(document) && this.bindingCurrent(entry) && (value.isBindingCurrent?.() ?? value.isCurrent()),
+                isCurrent: () => current(generation) && handles.has(document) && this.live(entry) && value.isCurrent() });
         const capture = (document: LspDocument, method?: Parameters<LspSession["synchronized"]>[1]): LspDocumentCapture | undefined => {
             const entry = handles.get(document); if (!scope.active || !entry || !this.live(entry)) return;
-            const value = this.session.synchronized(unwrap(document), method); if (!value) return; const generation = scope.generation;
-            return Object.freeze({ ...value, isBindingCurrent: () => current(generation) && handles.has(document) && this.bindingCurrent(entry) && (value.isBindingCurrent?.() ?? value.isCurrent()),
-                isCurrent: () => current(generation) && handles.has(document) && this.live(entry) && value.isCurrent() });
+            const value = this.session.synchronized(unwrap(document), method);
+            return value && scopedCapture(document, entry, value, scope.generation);
         };
         const attach = (id: DocumentId): LspDocument => {
             writable(); const entry = this.document(id), existing = documents.get(id);
@@ -509,10 +512,8 @@ export class LspWorkspace {
             commandNames: () => scope.active ? this.session.commandNames() : Object.freeze([]),
             requestDocument: (method: Parameters<LspSession["requestDocument"]>[0], document: LspDocument, params: Parameters<LspSession["requestDocument"]>[2]) => {
                 writable(); const generation = scope.generation, entry = handles.get(document); if (!entry) throw stale(); this.synchronize(entry);
-                const raw = this.session.requestDocument(method, unwrap(document), (index, snapshot, captured) => {
-                    const value = Object.freeze({ ...captured, isBindingCurrent: () => current(generation) && handles.has(document) && this.bindingCurrent(entry) && (captured.isBindingCurrent?.() ?? captured.isCurrent()),
-                        isCurrent: () => current(generation) && handles.has(document) && this.live(entry) && captured.isCurrent() }); return params(index, snapshot, value);
-                });
+                const raw = this.session.requestDocument(method, unwrap(document), (index, snapshot, captured) =>
+                    params(index, snapshot, scopedCapture(document, entry, captured, generation)));
                 const call = track({ ...raw, result: raw.result.then(value => { if (!handles.has(document) || !this.live(entry)) throw stale(); return value; }) });
                 const calls = documentCalls.get(document) ?? new Set(); documentCalls.set(document, calls); calls.add(call);
                 const settled = () => { calls.delete(call); if (!calls.size) documentCalls.delete(document); }; void call.result.then(settled, settled); return call;

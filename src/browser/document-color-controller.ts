@@ -1,6 +1,5 @@
 import { colorPresentationMethod } from "../protocol/lsp-methods.ts";
-import { controllerObservable } from "./controller-observable.ts";
-import { Store } from "../core/observable.ts";
+import { languageReview } from "./language-review.ts";
 import { reviewApplied, reviewFailed, reviewRefused, type ReviewEditResult } from "./review-edit.ts";
 import type { Observable } from "../core/observable.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
@@ -12,10 +11,10 @@ import { colorClient, type LspColorClient } from "../protocol/lsp-language.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
-import { requireLanguageView, captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainDocuments } from "./retained-documents.ts";
 import { writableDocument } from "./edit-project.ts";
+import { mountSwatches } from "./document-color-swatches.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 export type DocumentColorChoice = LspDocumentColor & Readonly<{
@@ -33,16 +32,19 @@ export type DocumentColorSnapshot = Readonly<{
     message: string; changed: boolean;
 }>;
 export type DocumentColorControllerOptions = Readonly<{
+    swatches?: boolean | ((item: LspDocumentColor) => void);
     canCapture?: () => boolean; prepareRequest?: (kind: "discovery" | "presentation") => LspPrepare | undefined;
 }>;
 export type DocumentColorController = Observable<DocumentColorSnapshot> & Readonly<{
+    colorAt: (offset: number) => LspDocumentColor | undefined;
+    setSwatches: (enabled: boolean) => void;
     request: () => Promise<Outcome<readonly DocumentColorChoice[]>>;
     dismissPreview: () => void; cancel: () => void; dispose: () => void;
 }>;
 type Capture = CapturedViewRequest<TextEditor["tab"]>;
 type TimedRequest = { timeout?: ReturnType<typeof failed> };
 type Preview = TimedRequest & { capture: Capture; reference: DocumentColorChoice; proposed: LspColor; result?: readonly LspColorPresentation[] };
-type Job = TimedRequest & { client: LspColorClient; documents: ReturnType<typeof retainDocuments>; source: Capture; invalid: boolean; timer?: number;
+type Job = TimedRequest & { client: LspColorClient; project: ReturnType<typeof retainDocuments>; source: Capture; invalid: boolean; timer?: number;
     reply?: Awaited<ReturnType<LspColorClient["run"]>["result"]>; registration?: number; preview?: Preview };
 const empty = Object.freeze([]);
 const idle: DocumentColorSnapshot = Object.freeze({ status: "idle", colors: empty, presentations: empty, review: null, message: "", changed: false });
@@ -54,47 +56,46 @@ export const createDocumentColorController: (editor: TextEditor, provider: LspWo
 export function mountDocumentColors(editor: TextEditor, provider: LspWorkspace, options: DocumentColorControllerOptions = {},
     shared?: LspDocumentOwner): DocumentColorController {
     const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
-    requireLanguageView(editor);
-    const scope = workspace.createNotificationScope(), state = new Store(idle, scope), events = new AbortController();
-    let job: Job | undefined;
-    function available() {
-        return !events.signal.aborted && editorReadyForRequest(editor) && (options.canCapture?.() ?? true);
+    const { scope, state, signal, active, available, capture, release, expire, mount } =
+        languageReview<Job, DocumentColorSnapshot>(editor, "Document color", idle, options.canCapture,
+            status => publish(status), j => j.preview?.capture.cancel());
+    let swatches: ReturnType<typeof mountSwatches> | undefined;
+    function setSwatches(enabled: boolean) {
+        scope.assertWritable();
+        if (signal.aborted || enabled === !!swatches) return;
+        if (enabled) {
+            const activate = typeof options.swatches === "function" ? options.swatches : undefined;
+            swatches = mountSwatches(editor, provider, shared ?? provider, activate);
+        } else {
+            swatches?.dispose();
+            swatches = undefined;
+        }
     }
-    const capture = () => captureViewRequest(workspace, tab, view, { available });
     const writable = () => writableDocument(editor, view.documentId);
     function publish(status: DocumentColorSnapshot["status"], patch: Partial<Omit<DocumentColorSnapshot, "status">> = {}) {
         scope.publish(state, Object.freeze({ ...idle, status, ...patch }));
     }
-    function release() {
-        const j = job; job = undefined;
-        if (!j) return;
-        win.clearTimeout(j.timer); j.preview?.capture.cancel(); j.source.cancel(); j.documents.dispose(); j.client.dispose();
-    }
-    function expire(j: Job) {
-        if (job !== j || j.invalid) return;
-        j.invalid = true;
-        queueMicrotask(() => { if (job === j) { release(); publish("expired"); } });
-    }
     function fail(error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         release();
+        swatches?.clear();
         publish("failed", { message });
         return failed(error);
     }
     function current(j: Job) {
-        return job === j && !j.invalid && available() && workspace.ownsDocumentView(view, tab) && (j.reply?.isCurrent() ?? j.source.isCurrent());
+        return active.job === j && !j.invalid && available(view.documentId) && workspace.ownsDocumentView(view, tab) && (j.reply?.isCurrent() ?? j.source.isCurrent());
     }
     function startTimer(j: Job, call: TimedRequest) {
         win.clearTimeout(j.timer);
         j.timer = win.setTimeout(() => {
-            if (job === j && !j.invalid && (call === j || j.preview === call)) {
+            if (active.job === j && !j.invalid && (call === j || j.preview === call)) {
                 call.timeout = fail(new Error("Color provider request timed out."));
             }
         }, 30000);
     }
     function dismissPreview() {
         scope.assertWritable();
-        const j = job, p = j?.preview;
+        const j = active.job, p = j?.preview;
         if (!j || !p) return;
         delete j.preview; win.clearTimeout(j.timer); p.capture.cancel();
         if (current(j)) publish("ready", { colors: state.get().colors });
@@ -102,7 +103,7 @@ export function mountDocumentColors(editor: TextEditor, provider: LspWorkspace, 
     }
     function apply(review: ColorPresentationReview): ReviewEditResult {
         scope.assertWritable();
-        const j = job, p = j?.preview;
+        const j = active.job, p = j?.preview;
         if (state.get().review !== review || !j || !p || !current(j)) return reviewRefused("expired");
         if (!review.canApply || !writable()) return reviewRefused("not-writable");
         const { document, selectionSet } = p.capture;
@@ -117,14 +118,14 @@ export function mountDocumentColors(editor: TextEditor, provider: LspWorkspace, 
             const changed = workspace.document(document.id).revision !== document.revision;
             release(); publish("applied", { changed }); return reviewApplied;
         } catch (error) {
-            if (job !== j || j.invalid) return reviewRefused("expired");
+            if (active.job !== j || j.invalid) return reviewRefused("expired");
             fail(error);
             return reviewFailed(state.get().message);
         }
     }
     function select(choice: ColorPresentationChoice, index: number, presentations = state.get().presentations) {
         scope.assertWritable();
-        const j = job, p = j?.preview, result = p?.result?.[index];
+        const j = active.job, p = j?.preview, result = p?.result?.[index];
         if (!j || !p || !result || presentations[index] !== choice || !current(j) || !p.capture.isCurrent()) return;
         const selected = state.get().review;
         if (selected?.choice === choice) return selected;
@@ -140,7 +141,7 @@ export function mountDocumentColors(editor: TextEditor, provider: LspWorkspace, 
     }
     async function preview(reference: DocumentColorChoice, index: number, value: LspColor): Promise<Outcome<readonly ColorPresentationChoice[]>> {
         scope.assertWritable();
-        const j = job, { colors } = state.get();
+        const j = active.job, { colors } = state.get();
         if (!j?.reply || colors[index] !== reference) return stale;
         let p: Preview | undefined;
         try {
@@ -158,7 +159,7 @@ export function mountDocumentColors(editor: TextEditor, provider: LspWorkspace, 
             }
             p = j.preview = { capture: source, reference, proposed };
             source.signal.addEventListener("abort", () => {
-                queueMicrotask(() => { if (job === j && j.preview === p && !j.invalid) dismissPreview(); });
+                queueMicrotask(() => { if (active.job === j && j.preview === p && !j.invalid) dismissPreview(); });
             }, { once: true });
             startTimer(j, p);
             publish("previewing", { colors });
@@ -183,7 +184,7 @@ export function mountDocumentColors(editor: TextEditor, provider: LspWorkspace, 
             return done(choices);
         } catch (error) {
             if (p?.timeout) return p.timeout;
-            if (job !== j || j.invalid || p && (j.preview !== p || p.capture.signal.aborted)) return stale;
+            if (active.job !== j || j.invalid || p && (j.preview !== p || p.capture.signal.aborted)) return stale;
             if (isStaleRequest(error)) {
                 dismissPreview();
                 return stale;
@@ -196,7 +197,7 @@ export function mountDocumentColors(editor: TextEditor, provider: LspWorkspace, 
     }
     async function request(): Promise<Outcome<readonly DocumentColorChoice[]>> {
         scope.assertWritable();
-        if (events.signal.aborted) return stale;
+        if (signal.aborted) return stale;
         release();
         let source: Capture | undefined;
         let pending: Job | undefined;
@@ -208,9 +209,9 @@ export function mountDocumentColors(editor: TextEditor, provider: LspWorkspace, 
             }
             const client = colorClient(shared ?? provider);
             const j: Job = { source, client, invalid: false,
-                documents: retainDocuments(workspace, available, () => expire(j)) };
-            pending = job = j;
-            j.documents.include(source.document);
+                project: retainDocuments(workspace, available, () => expire(j)) };
+            pending = active.job = j;
+            j.project.include(source.document);
             source.signal.addEventListener("abort", () => { if (!j.reply) expire(j); }, { once: true });
             startTimer(j, j);
             publish("discovering");
@@ -224,33 +225,31 @@ export function mountDocumentColors(editor: TextEditor, provider: LspWorkspace, 
             source.cancel();
             win.clearTimeout(j.timer);
             const colors = Object.freeze(reply.items.map((item, index) => reference(item, index, j.source.document.revision)));
+            swatches?.accept(j.source.document, reply.items);
             publish("ready", { colors });
             return done(colors);
         } catch (error) {
             if (pending?.timeout) return pending.timeout;
             if (!pending) source?.cancel();
-            else if (job !== pending || pending.invalid || isStaleRequest(error)) {
+            else if (active.job !== pending || pending.invalid || isStaleRequest(error)) {
                 expire(pending);
                 return stale;
             }
             return fail(error);
         }
     }
-    function cancel() { scope.assertWritable(); if (!events.signal.aborted) { release(); publish("idle"); } }
     const stop = provider.subscribe(() => {
-        const j = job;
+        const j = active.job;
         if (!j?.reply || j.reply.isCurrent()) return;
         const connection = provider.getSnapshot();
         // A pending decoder reports its own error. Disconnects and withdrawn capabilities cancel the request immediately.
         if (!j.preview || j.preview.result || connection.phase !== "ready" || connection.registrationVersion(colorPresentationMethod) !== j.registration) expire(j);
     });
-    editor.onEditIntent(() => { if (job) cancel(); }, events.signal);
-    function dispose() {
-        if (events.signal.aborted) return;
-        scope.assertWritable(); events.abort(); stop(); release(); editor.signal.removeEventListener("abort", dispose);
-        publish("disposed");
-        state.clearSnapshotListeners();
-    }
-    editor.signal.addEventListener("abort", dispose, { once: true });
-    return Object.freeze({ request, dismissPreview, cancel, dispose, ...controllerObservable(state, "Document color", () => events.signal.aborted) });
+    const controls = mount(() => {
+        stop();
+        swatches?.dispose();
+        swatches = undefined;
+    });
+    try { setSwatches(!!options.swatches); } catch (error) { controls.dispose(); throw error; }
+    return Object.freeze({ ...controls, request, dismissPreview, setSwatches, colorAt: (offset: number) => swatches?.at(offset) });
 }

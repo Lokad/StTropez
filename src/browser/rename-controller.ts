@@ -1,5 +1,4 @@
-import { controllerObservable } from "./controller-observable.ts";
-import { Store } from "../core/observable.ts";
+import { languageReview } from "./language-review.ts";
 import { changedTextEdits } from "../core/changes.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import { reviewApplied, reviewFailed, reviewRefused, type ReviewEditResult } from "./review-edit.ts";
@@ -11,7 +10,6 @@ import type { LspWorkspaceEdit } from "../protocol/lsp-features.ts";
 import { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../protocol/lsp-workspace-edit.ts";
 import type { LspWorkspaceEditPreview } from "../protocol/lsp-workspace-edit.ts";
 import type { LspPrepare, LspWorkspace } from "../protocol/lsp-workspace.ts";
-import { requireLanguageView, captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainEditProject, writableEdit } from "./edit-project.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -39,26 +37,13 @@ const idle: RenameSnapshot = Object.freeze({ name: "", status: "idle", message: 
 
 /** Review and confirm one provider rename from the captured caret and project. */
 export function createRenameController(editor: TextEditor, provider: LspWorkspace, options: RenameControllerOptions = {}): RenameController {
-    const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
-    requireLanguageView(editor);
-    const scope = workspace.createNotificationScope(), cell = new Store(idle, scope), events = new AbortController();
-    let job: Job | undefined;
-    const available = (id: DocumentId) => !events.signal.aborted && editorReadyForRequest(editor)
-        && (options.canCapture?.(id) ?? true);
+    const { workspace, view } = editor, win = editor.element.ownerDocument.defaultView!;
+    const { scope, state: cell, signal, active, available, capture, release, expire, mount } =
+        languageReview<Job, RenameSnapshot>(editor, "Rename", idle, options.canCapture,
+            status => publish({ status, ...(status === "expired" && { message: "The captured source or target changed." }) }));
     const publish = (patch: Partial<RenameSnapshot>) => scope.publish(cell, Object.freeze({ ...idle, name: cell.get().name, ...patch }));
-    function release() {
-        const old = job; job = undefined;
-        if (!old) return;
-        win.clearTimeout(old.timer); old.source.cancel(); old.project.dispose(); old.client.dispose();
-    }
-    function expire(j: Job) {
-        if (j !== job || j.invalid) return;
-        j.invalid = true;
-        // A resource observer latches expiry immediately. Its leases are released after delivery.
-        queueMicrotask(() => { if (job === j) { release(); publish({ status: "expired", message: "The captured source or target changed." }); } });
-    }
     function current(j: Job) {
-        if (job !== j || j.invalid || !j.source.isCurrent() || j.edit && !j.edit.isCurrent()) return false;
+        if (active.job !== j || j.invalid || !j.source.isCurrent() || j.edit && !j.edit.isCurrent()) return false;
         if (options.canCapture) for (const id of j.project.documents.keys()) if (!options.canCapture(id)) return false;
         return true;
     }
@@ -71,11 +56,11 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
     function makePreview(name: string, count: number, canApply: boolean): RenamePreview {
         // A retained button keeps the identity of its preview, never the project's old buffers.
         const preview: RenamePreview = Object.freeze({ name, count, canApply, readPage(page = 0) {
-            const j = job;
+            const j = active.job;
             if (cell.get().preview !== preview || !j?.review || !current(j)) return;
             return previewLspWorkspaceEdit(j.review, id => j.project.documents.get(id as DocumentId)!.title, page);
         }, confirm() {
-            scope.assertWritable(); const j = job, edit = j?.edit;
+            scope.assertWritable(); const j = active.job, edit = j?.edit;
             if (cell.get().preview !== preview || !j || !edit || !current(j)) return reviewRefused("expired");
             if (!count) return reviewRefused("no-changes");
             if (!canApply || !writableEdit(editor, edit)) return reviewRefused("not-writable");
@@ -89,17 +74,17 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
                     changes: Object.freeze(changed.map(doc => Object.freeze({ document: doc.id, title: doc.title }))) });
                 return reviewApplied;
             } catch (error) {
-                return job === j ? reviewFailed(reportFailure(name, error)) : reviewRefused("expired");
+                return active.job === j ? reviewFailed(reportFailure(name, error)) : reviewRefused("expired");
             }
         } });
         return preview;
     }
     function setName(name: string) {
-        scope.assertWritable(); if (events.signal.aborted || name === cell.get().name) return;
+        scope.assertWritable(); if (signal.aborted || name === cell.get().name) return;
         release(); publish({ name });
     }
     async function prepare(name: string): Promise<Outcome<RenamePreview>> {
-        if (events.signal.aborted) return stale;
+        if (signal.aborted) return stale;
         release();
         if (!name.length) {
             publish({ name, message: "Enter a new name." });
@@ -109,14 +94,14 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
         let pending: Job | undefined;
         let timedOut = false;
         try {
-            source = captureViewRequest(workspace, tab, view, { available: () => available(view.documentId) });
+            source = capture();
             if (!source) {
                 publish({ name, status: "expired", message: "Finish pending input before requesting a rename." });
                 return refused("unavailable-view");
             }
             const client = createLspRenameClient(provider);
             const j: Job = { source, client, project: retainEditProject(editor, available, () => expire(j)), invalid: false };
-            job = pending = j;
+            active.job = pending = j;
             j.project.include(source.document);
             for (const doc of options.documents?.() ?? []) j.project.include(doc);
             source.signal.addEventListener("abort", () => expire(j), { once: true });
@@ -146,7 +131,7 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
                     : `Review ${count} ${count === 1 ? "change" : "changes"}.` });
             return done(preview);
         } catch (cause) {
-            if (pending && pending !== job) return stale;
+            if (pending && pending !== active.job) return stale;
             let error = timedOut ? new Error("Rename request timed out.") : cause;
             if (pending) {
                 try {
@@ -165,15 +150,7 @@ export function createRenameController(editor: TextEditor, provider: LspWorkspac
         scope.assertWritable();
         return prepare(name);
     }
-    function cancel() { scope.assertWritable(); if (!events.signal.aborted) { release(); publish({}); } }
-    const stop = provider.subscribe(() => { const j = job; if (j?.edit && !j.edit.isCurrent()) expire(j); });
-    editor.onEditIntent(() => { if (job) cancel(); }, events.signal);
-    function dispose() {
-        if (events.signal.aborted) return;
-        scope.assertWritable(); events.abort(); stop(); release(); editor.signal.removeEventListener("abort", dispose);
-        publish({ status: "disposed" });
-        cell.clearSnapshotListeners();
-    }
-    editor.signal.addEventListener("abort", dispose, { once: true });
-    return Object.freeze({ request, setName, cancel, dispose, ...controllerObservable(cell, "Rename", () => events.signal.aborted) });
+    const stop = provider.subscribe(() => { const j = active.job; if (j?.edit && !j.edit.isCurrent()) expire(j); });
+    const controls = mount(stop);
+    return Object.freeze({ ...controls, request, setName });
 }

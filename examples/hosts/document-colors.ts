@@ -1,6 +1,5 @@
 import { fixtureRequests, type FixturePolicy } from "../shared/language/fixture-requests.ts";
 import { createReviewKey, panelPaging, type PanelPaging } from "./panel-actions.ts";
-import { bindSwatchPicker, watchColorSwatches } from "./color-swatches.ts";
 import { formatEditNote } from "./edit-review.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
@@ -8,7 +7,7 @@ import { focusSourceCaret, onSourceFocus } from "./source-focus.ts";
 import { openChangedFile, type ChangedFile, type LanguageHost } from "./language-host.ts";
 import type { DocumentId, DocumentSnapshot, TabId } from "../../src/index.ts";
 import { createDocumentColorController } from "../../src/browser/index.ts";
-import type { ColorPresentationChoice, DecorationLayer, DocumentColorChoice, DocumentColorController, ReviewEditResult, TextEditor } from "../../src/browser/index.ts";
+import type { ColorPresentationChoice, DocumentColorChoice, DocumentColorController, ReviewEditResult, TextEditor } from "../../src/browser/index.ts";
 import type { LspDocumentColor, LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
 import { colorLimits, parseColor, rgbaColor, sameColor } from "../../fixtures/language/colors.ts";
 import type { ColorFault, ColorReference } from "../../fixtures/language/colors.ts";
@@ -16,7 +15,7 @@ import { HostCell } from "../shared/observable.ts";
 
 export type ColorHostOptions = Readonly<{ provider: LspWorkspace;
     prepare: (kind: "discovery" | "presentation", policy: FixturePolicy<ColorFault>) => LspPrepare }>;
-type Session = { id: string; editor: TextEditor; controller: DocumentColorController; swatches: ReturnType<typeof watchColorSwatches> };
+type Session = { id: string; editor: TextEditor; controller: DocumentColorController };
 export type ColorNote = ColorReference & Readonly<{ ordinal: number; line: number; column: number; css: string; inspect: () => void }>;
 function colorReference(document: DocumentSnapshot, { from, to, color }: LspDocumentColor): ColorReference {
     const text = document.buffer.slice(from, Math.min(to, from + colorLimits.literal));
@@ -31,7 +30,7 @@ const initial: DocumentColorsSnapshot = { available: false, connected: false, di
     status: "idle", message: "Focus a source to discover colors.", count: 0, page: 0, paging: null, colors: [], selected: -1, value: "", css: null,
     presentation: "", choices: Object.freeze([]), edits: Object.freeze([]), canPreview: false, canApply: false, reviewKey: null, apply: null, changed: null };
 
-/** The host owns the picker, swatches, preview list and focus after confirmation. */
+/** The host owns the picker, preview list and focus after confirmation. */
 export class HostDocumentColors {
     private readonly sessions = new Map<Session, () => void>();
     private readonly reviewKey;
@@ -69,8 +68,6 @@ export class HostDocumentColors {
         if (!doc) { this.owner = undefined; this.publish({ ...initial, status: "expired", message: "The source closed." }); return; }
         if (state.status === "failed" || state.status === "expired" || state.status === "disposed" || state.status === "idle" || state.status === "applied") {
             this.owner = undefined;
-            if (state.status === "failed") s.swatches.clear();
-            else if (state.status === "expired" || state.status === "idle") s.swatches.resume();
             const applied = state.status === "applied";
             if (applied) {
                 if (state.changed) this.metrics.applied++; else this.metrics.unchanged++;
@@ -88,7 +85,6 @@ export class HostDocumentColors {
             return;
         }
         if (state.status === "discovering") { this.publish({ ...initial, value: this.value, status: "scan", pending: true, message: "Discovering document colors…" }); return; }
-        if (fresh) s.swatches.accept(doc.revision, state.colors);
         const head = s.editor.view.getSnapshot().selection.head;
         const target = this.selectedSwatch; this.selectedSwatch = undefined;
         const selected = patch.selected ?? (target ? state.colors.findIndex(c => c.from === target.from && c.to === target.to && sameColor(c.color, target.color))
@@ -121,11 +117,15 @@ export class HostDocumentColors {
     readonly cancel = () => {
         this.stopApplied?.(); this.stopApplied = undefined;
         const owner = this.owner; this.owner = undefined; this.selectedSwatch = undefined; this.displayed = undefined; this.value = ""; owner?.controller.cancel();
-        owner?.swatches.resume();
         this.publish({ ...initial, message: "Color preview dismissed." });
     };
-    readonly disconnect = () => { this.disconnected = true; this.cancel(); for (const s of this.sessions.keys()) s.swatches.setEnabled(false); };
-    readonly reconnect = () => { this.disconnected = false; this.cancel(); this.host.reconnect?.(); for (const s of this.sessions.keys()) s.swatches.setEnabled(true); };
+    readonly disconnect = () => { this.disconnected = true; this.cancel(); for (const s of this.sessions.keys()) s.controller.setSwatches(false); };
+    readonly reconnect = () => {
+        this.disconnected = false;
+        this.cancel();
+        this.host.reconnect?.();
+        for (const s of this.sessions.keys()) s.controller.setSwatches(this.host.workspace.document(s.editor.view.documentId).key.variant === "working");
+    };
     readonly bindList = this.colorList.bind;
     readonly bindValue = this.valueField.bind;
     setValue(value: string) {
@@ -136,17 +136,14 @@ export class HostDocumentColors {
     }
     attach(id: string, _tab: TabId, editor: TextEditor) {
         if (this.disposed) throw new Error("Color panel is disposed.");
-        const controller = createDocumentColorController(editor, this.options.provider, { canCapture: () => this.host.canCapture(editor.view.documentId),
+        const working = this.host.workspace.document(editor.view.documentId).key.variant === "working";
+        const controller = createDocumentColorController(editor, this.options.provider, {
+            swatches: working && ((item: LspDocumentColor) => { this.active = s; this.start(false, item); }),
+            canCapture: () => this.host.canCapture(editor.view.documentId),
             prepareRequest: kind => this.options.prepare(kind, this.fixture.take()) });
-        let layer: DecorationLayer;
-        try { layer = editor.decorations.add({ name: "document colors", order: 35 }); }
-        catch (error) { controller.dispose(); throw error; }
-        const swatches = [...this.sessions.keys()].find(s => s.editor.view.documentId === editor.view.documentId)?.swatches
-            ?? watchColorSwatches(this.host.workspace.observeDocument(editor.view.documentId), this.options.provider, !this.disconnected);
-        const s: Session = { id, editor, controller, swatches };
+        const s: Session = { id, editor, controller };
         return attachPanelSession(this.sessions, s, (signal, register) => {
-            swatches.add(layer);
-            bindSwatchPicker(editor, swatches, item => { this.active = s; this.start(false, item); }, signal);
+            if (this.disconnected) controller.setSwatches(false);
             controller.subscribe(() => this.render(s));
             register({ id: "colors.discover", label: "Discover document colors", enabled: () => !this.disconnected,
                 run: () => { this.active = s; this.start(true); } }, { keys: ["F6"] });
@@ -161,11 +158,9 @@ export class HostDocumentColors {
                 if (this.owner?.editor.view.documentId === editor.view.documentId) this.cancel();
             }, signal);
         }, () => {
-            try {
-                if (this.active === s) this.active = undefined;
-                if (this.owner === s) this.cancel();
-                else this.publish();
-            } finally { swatches.remove(layer); layer.dispose(); }
+            if (this.active === s) this.active = undefined;
+            if (this.owner === s) this.cancel();
+            else this.publish();
         });
     }
     readonly discover = () => this.start(false);
@@ -185,7 +180,7 @@ export class HostDocumentColors {
             if (index >= 0) { this.inspect(s, index, state.colors[index]!); return; }
         }
         this.cancel(); this.owner = s; this.metrics.requested++;
-        s.swatches.cancel(); this.selectedSwatch = swatch;
+        this.selectedSwatch = swatch;
         if (swatch) this.value = colorReference(this.host.workspace.document(s.editor.view.documentId), swatch).label;
         void s.controller.request().then(result => {
             if (keyboard && result.status === "done" && this.owner === s && s.editor.getSnapshot().focused
@@ -202,7 +197,6 @@ export class HostDocumentColors {
         if (this.disposed || this.owner || this.cell.get().changed?.document !== id) return;
         this.publish({ message: openChangedFile(this.host, id, this.sessions.keys()) });
     };
-    debug() { return { ...this.metrics, state: this.cell.get(), sessions: this.sessions.size, subscriptions: this.cell.count(),
-        decoratedViews: [...this.sessions.keys()].filter(s => s.swatches.current()?.colors.length).length, disposed: this.disposed }; }
+    debug() { return { ...this.metrics, state: this.cell.get(), sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
     dispose() { if (!this.disposed) { this.disposed = true; this.cancel(); this.colorList.dispose(); this.valueField.dispose(); for (const detach of this.sessions.values()) detach(); } }
 }
