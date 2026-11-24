@@ -10,9 +10,8 @@ import type { ProjectCommand, ProjectCommandKind } from "../../fixtures/language
 import { HostCell } from "../shared/observable.ts";
 import type { LspApplyEdit, LspCommandScope, LspRequestContext, LspWorkspace } from "../../src/protocol/index.ts";
 import type { LspProjectClient, LspProjectFactory } from "../shared/language/lsp-project-client.ts";
-import { previewLspWorkspaceEdit } from "../../src/protocol/index.ts";
-import type { LspWorkspaceEditPreview } from "../../src/protocol/index.ts";
-import { editPaging } from "./edit-review.ts";
+import { readLspEditNotes } from "../../src/protocol/index.ts";
+import { editPaging, readEditPage, type EditPage } from "./edit-review.ts";
 import type { PanelPaging } from "./panel-actions.ts";
 type Session = { token: number; id: string; target: TabTarget; editor: TextEditor };
 type Participant = Readonly<{ document: DocumentSnapshot; authority: string }>;
@@ -20,8 +19,8 @@ type Job = { origin: Session; documents: Map<string, Participant>;
     leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; capture: CapturedViewRequest;
     providerCurrent?: () => boolean };
 type Review = { key: number; request: LspApplyEdit; canApply: () => boolean; decide: (approved: boolean) => void;
-    page: LspWorkspaceEditPreview; readPage: (index: number) => LspWorkspaceEditPreview };
-export type ProjectReview = LspWorkspaceEditPreview & Readonly<{ key: number; apply: () => void; decline: () => void; paging: PanelPaging | null; label: string; canApply: boolean }>;
+    page: EditPage; readPage: (index: number) => EditPage };
+export type ProjectReview = EditPage & Readonly<{ key: number; apply: () => void; decline: () => void; paging: PanelPaging | null; label: string; canApply: boolean }>;
 export type ProjectSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; registered: boolean; pending: boolean;
     status: "idle" | "pending" | "ready" | "rejected" | "failed" | "cancelled"; message: string; view: string | null; changes: readonly ChangedFile[]; review: ProjectReview | null }>;
 /** Local protocol owner. Server edits use the workspace's existing atomic shared-history transaction. */
@@ -154,8 +153,9 @@ export class HostProjectTools {
         this.metrics.serverRequests++;
         if (this.review || !context.isCurrent()) return Promise.resolve(false);
         return new Promise(resolve => {
-            const readPage = (index: number) => previewLspWorkspaceEdit(request.edit,
-                id => this.host.workspace.document(id as DocumentId).title, index);
+            const title = (id: string) => this.host.workspace.document(id as DocumentId).title;
+            const read = (first: number, end: number) => readLspEditNotes(request.edit, title, first, end);
+            const readPage = (index: number) => readEditPage(read, index);
             const review: Review = { key: this.host.workspace.allocateIdentity(), request, canApply, readPage,
                 page: readPage(0), decide: approved => {
                     if (this.review !== review) return;

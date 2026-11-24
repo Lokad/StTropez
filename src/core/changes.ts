@@ -4,9 +4,13 @@ import type { TextBuffer } from "./text-buffer.ts";
 /** Offsets are UTF-16 code units in the original document. Ranges are half-open. */
 export type TextEdit = Readonly<{ from: number; to: number; insert: string }>;
 
-/** Omit individual replacements that already match their validated source ranges. */
+/** Compare the replacement with its validated range in the source. */
+export function changesText(buffer: TextBuffer, edit: TextEdit): boolean {
+    return edit.to - edit.from !== edit.insert.length || buffer.slice(edit.from, edit.to) !== edit.insert;
+}
+
 export function changedTextEdits(buffer: TextBuffer, edits: readonly TextEdit[]): TextEdit[] {
-    return edits.filter(edit => edit.to - edit.from !== edit.insert.length || buffer.slice(edit.from, edit.to) !== edit.insert);
+    return edits.filter(edit => changesText(buffer, edit));
 }
 
 export function validateTextEdits(length: number, edits: readonly TextEdit[]): void {

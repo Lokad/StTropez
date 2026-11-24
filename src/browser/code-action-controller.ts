@@ -4,11 +4,11 @@ import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import type { DocumentId } from "../core/workspace.ts";
-import { type LspActionResult, previewLspWorkspaceEdit } from "../protocol/index.ts";
+import type { LspActionResult } from "../protocol/index.ts";
 import { actionClient } from "../protocol/lsp-actions.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
-import type { LspCodeAction, LspCommandPolicy, LspPrepare, LspWorkspaceEditPreview } from "../protocol/index.ts";
+import type { LspCodeAction, LspCommandPolicy, LspPrepare, LspEditNotes } from "../protocol/index.ts";
 import { captureEditCommand, commandTransaction, type CapturedCommand, type ChangedDocument, type LanguageCommandOptions } from "./language-command.ts";
 import { writableEdit } from "./edit-project.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -18,7 +18,7 @@ type SelectionResult = Outcome<CodeActionPreview | Changes>;
 export type CodeActionChoice = ReturnType<typeof actionChoice>;
 export type CodeActionPreview = Readonly<{
     title: string; command: string | null; disabled: string | null;
-    canApply: boolean; readPage: (page?: number) => LspWorkspaceEditPreview | undefined; apply: () => Promise<Outcome<readonly ChangedDocument[]>>;
+    canApply: boolean; readEdits: (first: number, end: number) => LspEditNotes | undefined; apply: () => Promise<Outcome<readonly ChangedDocument[]>>;
 }>;
 export type CodeActionSnapshot = Readonly<{
     status: "idle" | "pending" | "ready" | "resolving" | "executing" | "expired" | "failed" | "applied" | "executed";
@@ -158,12 +158,10 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
     }
     function makePreview(index: number, title: string, command: string | null, reason: string | null): CodeActionPreview {
         const preview: CodeActionPreview = Object.freeze({ title, command, disabled: reason, canApply: reason === null,
-            readPage: (page = 0) => {
+            readEdits: (first, end) => {
                 const j = job;
                 if (cell.get().preview !== preview || !j || !current(j)) return;
-                const edit = j.selection?.edit;
-                return edit ? previewLspWorkspaceEdit(edit, id => j.capture.project.documents.get(id as DocumentId)!.title, page)
-                    : Object.freeze({ page, count: 0, notes: emptyList });
+                return j.capture.project.readEdits(j.selection!.edit, first, end);
             },
             apply: () => apply(job, index, preview).catch(failed) });
         return preview;

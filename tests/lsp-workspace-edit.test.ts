@@ -3,7 +3,7 @@ import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { Workspace, TextBuffer } from "../src/index.ts";
 import type { DocumentSnapshot, TextEdit } from "../src/index.ts";
-import { applyLspWorkspaceEdit, previewLspWorkspaceEdit, LspLineIndex, RpcError } from "../src/protocol/index.ts";
+import { applyLspWorkspaceEdit, readLspEditNotes, LspLineIndex, RpcError } from "../src/protocol/index.ts";
 import type { LspWorkspaceEdit } from "../src/protocol/index.ts";
 
 function fixture(t: TestContext, text = "alpha\nbeta") {
@@ -91,21 +91,25 @@ test("workspace-edit preflight and core validation refuse a bad last target with
     assert.deepEqual(applyLspWorkspaceEdit(f.workspace, same, options), []); unchanged();
 });
 
-test("workspace-edit preview pages bound wide replacements and only read on-page captured buffers", async t => {
+test("workspace edit notes read only the requested ordinals and bound wide replacement excerpts", async t => {
     const f = fixture(t, "abcdefghij\n".repeat(1_000));
     const edits = Array.from({ length: 66 }, (_, i) => ({ from: i * 11, to: i * 11 + 1, insert: "X" }));
     const plan = await capture(f.documents, [edits, [{ from: 0, to: f.documents[1]!.buffer.length, insert: "Y".repeat(16_000) }]]);
     const titles: string[] = [], title = (id: string) => { titles.push(id); return "T".repeat(200); };
-    const first = previewLspWorkspaceEdit(plan, title);
-    assert.equal(first.count, 67); assert.equal(first.notes.length, 64); assert.deepEqual(titles, [f.documents[0]!.id]);
+    const first = readLspEditNotes(plan, title, 2, 11);
+    assert.equal(first.total, 67); assert.equal(first.notes.length, 9); assert.deepEqual(titles, [f.documents[0]!.id]);
     titles.length = 0;
-    const second = previewLspWorkspaceEdit(plan, title, 1);
-    assert.equal(second.count, 67); assert.equal(second.notes.length, 3); assert.deepEqual(titles, f.documents.map(doc => doc.id));
+    const second = readLspEditNotes(plan, title, 64, 72);
+    assert.equal(second.total, 67); assert.equal(second.notes.length, 3); assert.deepEqual(titles, f.documents.map(doc => doc.id));
     assert.equal(second.notes[0]!.from, 64 * 11);
     const wide = second.notes[2]!;
     assert.equal(wide.title.length, 128); assert.equal(wide.before.length, 257); assert.equal(wide.insert.length, 256);
     assert.equal(wide.insertUnits, 16_000); assert.ok(wide.context.length <= 193); assert.equal(wide.to, f.documents[1]!.buffer.length);
     assert.ok(Object.isFrozen(second) && Object.isFrozen(second.notes) && second.notes.every(Object.isFrozen));
-    titles.length = 0; assert.deepEqual(previewLspWorkspaceEdit(plan, title, 2).notes, []); assert.deepEqual(titles, []);
-    assert.throws(() => previewLspWorkspaceEdit(plan, title, -1), RangeError);
+    titles.length = 0;
+    assert.deepEqual(readLspEditNotes(plan, title, 12, 12), { total: 67, notes: [] });
+    assert.deepEqual(readLspEditNotes(plan, title, 80, 81).notes, []);
+    assert.deepEqual(titles, []);
+    assert.throws(() => readLspEditNotes(plan, title, -1, 4), RangeError);
+    assert.throws(() => readLspEditNotes(plan, title, 3, 2), RangeError);
 });

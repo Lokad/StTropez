@@ -192,7 +192,7 @@ test("a rename request returns its preview, refusal or provider error", async t 
     const done = await latest;
     assert.equal(done.status, "done");
     assert.equal(done.value, rename.getSnapshot().preview);
-    assert.equal(done.value.count, 1);
+    assert.deepEqual(done.value.readEdits(0, 0), { total: 1, notes: [] });
     assert.equal(f.document(), before);
     assert.deepEqual(done.value.apply(), { status: "done", value: [{ document: before.id, title: before.title }] });
     assert.equal(f.document().buffer.slice(0, 4), "next");

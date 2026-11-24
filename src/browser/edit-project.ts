@@ -1,5 +1,6 @@
 import type { DocumentId } from "../core/workspace.ts";
 import type { LspWorkspaceEdit } from "../protocol/lsp-features.ts";
+import { readLspEditNotes } from "../protocol/lsp-workspace-edit.ts";
 import { retainDocuments } from "./retained-documents.ts";
 import { staleRequest } from "../protocol/wire.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -13,7 +14,9 @@ export function retainEditProject(editor: TextEditor, available: (id: DocumentId
             project.include(change.target.document);
         }
     }
-    return { ...project, includeEdit };
+    const title = (id: string) => project.documents.get(id as DocumentId)!.title;
+    const readEdits = (edit: LspWorkspaceEdit | null, first: number, end: number) => readLspEditNotes(edit, title, first, end);
+    return { ...project, includeEdit, readEdits };
 }
 
 export function writableEdit(editor: TextEditor, edit: LspWorkspaceEdit | null) {

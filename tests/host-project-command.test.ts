@@ -86,6 +86,7 @@ test("an advertised direct command leaves a pending action preview usable when i
         assert.equal(language.codeActions.getSnapshot().preview, preview);
         assert.equal((await preview.apply()).status, "done");
         assert.equal(f.document().buffer.slice(0, 9), "inserted ");
+        assert.equal(preview.readEdits(0, 1), undefined);
     } finally {
         language.dispose();
         f.dispose();

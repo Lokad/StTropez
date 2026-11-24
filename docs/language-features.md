@@ -523,11 +523,10 @@ that the provider can rename. `await language.rename.request(name)` applies the 
 captured caret. On success, `value` lists the changed documents. Undo from any one of those
 documents restores the whole rename.
 
-Pass `{ review: true }` to inspect the edit first. The preview's `count` and `readPage(index)`
-omit replacements that already match the captured text. Pages hold up to 64 edits. Keep the
-same Apply button while paging. Bind it to that preview's `apply` so a late click can only act
-on the edit the user saw. Call `rename.cancel()` when the user changes the proposed name or
-dismisses a pending request.
+Pass `{ review: true }` to inspect the rename first. Use `preview.readEdits(first, end)` to read
+the notes in that half-open range and the total number of changed edits. Replacements that
+already match the source are omitted. Bind Apply to the captured preview and call
+`rename.cancel()` when the user changes the name or dismisses the request.
 
 ```ts
 import type { RenameController } from "sttropez/browser";
@@ -538,7 +537,7 @@ export async function renameButton(rename: RenameController, name: string) {
     const preview = result.value;
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = `Apply ${preview.count} edits`;
+    button.textContent = "Apply rename";
     button.disabled = !preview.canApply;
     button.onclick = () => preview.apply();
     return button;
@@ -549,7 +548,7 @@ Direct rename and a preview's synchronous `apply()` check every original target.
 `done` with the changed files, `stale` for an expired capture, or `failed` with the error.
 A `refused` result gives the reason `not-writable` for a locked or read-only target and
 `no-changes` for an empty or text-identical edit. A request can also refuse `empty-name` or
-`unavailable-view`. Once a preview expires, `readPage()` returns `undefined`.
+`unavailable-view`. Once a preview expires, `readEdits(first, end)` returns `undefined`.
 
 Call `createLspRenameClient(provider).run({ document, project, offset, newName }).result` for a
 workspace edit plan. A null reply gives an empty plan. The server checks language naming rules. Your
@@ -563,10 +562,10 @@ Edits sort stably in original coordinates, preserving provider order for equal-p
 No newline normalization is performed. There are no extra decoder quotas on document/edit counts
 or inserted text; session/transport bounds and direct-call input policy apply.
 
-Use `previewLspWorkspaceEdit(edit, titleForDocumentId, page)` to show a page of proposed changes. It
-reads bounded notes for that page from the captured buffers and reports counts and insertion sizes for
-the entire edit. Let the user reach every page. Apply only after they approve the full edit, including
-files on other pages.
+Use `readLspEditNotes(edit, titleForDocumentId, first, end)` to read `notes` in provider order.
+The bounds are zero-based edit ordinals. Each note contains a bounded excerpt and the full
+insertion length. `total` counts edits across all files. An empty range reads no excerpts.
+The host chooses its page size and asks for approval of the full edit.
 
 `applyLspWorkspaceEdit(workspace, edit, options)` rechecks captures and applies one atomic shared
 history transaction. `origin` is required; `requiredOrigins` adds host permission requirements;
@@ -586,7 +585,7 @@ capture return `stale`. An unavailable view returns `refused` with reason `unava
 A provider error or timeout returns `failed` with the error.
 Call `await choice.select()` to resolve and apply the action. The result contains the changed
 documents. An edit-only action has one Undo step across its files. Pass `{ review: true }` to
-receive a preview with `readPage()` and `apply()`. Each page contains up to 64 edits.
+receive a preview with `readEdits(first, end)` and `apply()`. Read an empty range for the total alone.
 Choosing another action retires the pending choice. Repeated selections of the same pending
 action share its provider request. Only the latest selection can apply or return a preview.
 
@@ -600,7 +599,7 @@ export function attachFixes(editor: TextEditor, provider: LspWorkspace) {
         const { choices, preview } = actions.getSnapshot();
         // Bind each button to this choice or preview, including across a later render.
         renderFixes(choices.map(choice => ({ title: choice.title, select: () => choice.select({ review: true }) })),
-            preview?.readPage()?.count ?? 0, preview?.canApply ? preview.apply : undefined);
+            preview?.readEdits(0, 0)?.total ?? 0, preview?.canApply ? preview.apply : undefined);
     });
     return { request: actions.request, dispose() { stop(); dispose(); } };
 }

@@ -1,6 +1,6 @@
 import { fixtureRequests, type FixturePolicy } from "../shared/language/fixture-requests.ts";
 import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
-import { editPageSize, editPaging } from "./edit-review.ts";
+import { editPageSize, editPaging, readEditPage } from "./edit-review.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
 import { attachPanelSession } from "../shared/editor-attachment.ts";
 import { focusSourceCaret, onSourceFocus } from "./source-focus.ts";
@@ -46,7 +46,9 @@ export class HostRenameTools {
             connected: !this.disconnected && this.options.provider.getSnapshot().phase === "ready", disconnected: this.disconnected });
     }
     private render(state: RenameSnapshot, page = 0) {
-        const preview = state.preview, notes = preview?.readPage(page)?.notes ?? [];
+        const preview = state.preview;
+        const slice = preview && readEditPage(preview.readEdits, page);
+        const notes = slice?.notes ?? [], count = slice?.count ?? 0;
         const locations = notes.map(({ insert, insertUnits, ...at }, i) => {
             const { line, column } = this.host.workspace.document(at.document as DocumentId).buffer.positionAt(at.from);
             return { ...at, ordinal: page * editPageSize + i, line, column,
@@ -55,12 +57,13 @@ export class HostRenameTools {
         });
         if (state.status === "expired" && this.options.provider.getSnapshot().phase === "disconnected") this.disconnected = true;
         const reviewKey = this.reviewKey(preview);
-        const paging = preview && reviewKey !== null ? editPaging(reviewKey, page, preview.count, next => {
+        const paging = preview && reviewKey !== null ? editPaging(reviewKey, page, count, next => {
             const current = this.owner?.controller.getSnapshot();
             if (current?.preview === preview && this.cell.get().locations === locations) this.render(current, next);
         }) : null;
-        this.publish({ status: state.status, message: state.message, preview, reviewKey, paging, pending: state.status === "pending",
-            canApply: preview?.canApply ?? false, count: preview?.count ?? 0, page, locations, ...(state.status === "applied" ? { changes: state.changes } : {}) });
+        const message = preview?.canApply ? `Review ${count} ${count === 1 ? "change" : "changes"}.` : state.message;
+        this.publish({ status: state.status, message, preview, reviewKey, paging, pending: state.status === "pending",
+            canApply: preview?.canApply ?? false, count, page, locations, ...(state.status === "applied" ? { changes: state.changes } : {}) });
     }
     readonly cancel = () => {
         const owner = this.owner; this.owner = undefined; owner?.controller.cancel();

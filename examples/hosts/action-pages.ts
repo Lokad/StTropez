@@ -1,7 +1,6 @@
 import type { CodeActionController, CodeActionPreview } from "../../src/browser/index.ts";
-import type { LspWorkspaceEditPreview } from "../../src/protocol/index.ts";
 import { panelPaging, type createReviewKey } from "./panel-actions.ts";
-import { editPaging } from "./edit-review.ts";
+import { editPaging, readEditPage, type EditPage } from "./edit-review.ts";
 
 export const actionChoicePageSize = 16;
 
@@ -16,12 +15,13 @@ export async function requestActionsForReview(controller: CodeActionController) 
 /** Keep the list page across choices, and start each edit preview on its first page. */
 export function createActionPages(controller: CodeActionController, key: ReturnType<typeof createReviewKey>, changed: () => void) {
     let choices = controller.getSnapshot().choices, choicePage = 0;
-    let shown: CodeActionPreview | null = null, edits: LspWorkspaceEditPreview | undefined;
+    let shown: CodeActionPreview | null = null, edits: EditPage | undefined;
     return () => {
         const state = controller.getSnapshot(), { preview } = state;
         if (choices !== state.choices) { choices = state.choices; choicePage = 0; }
         if (shown !== preview) {
-            shown = preview; edits = preview?.readPage();
+            shown = preview;
+            edits = preview ? readEditPage(preview.readEdits) : undefined;
             if (state.choice !== null) choicePage = Math.floor(state.choice / actionChoicePageSize);
         }
         const from = choicePage, page = edits;
@@ -35,7 +35,7 @@ export function createActionPages(controller: CodeActionController, key: ReturnT
             ? editPaging(key(preview)!, page.page, page.count, next => {
                 const current = controller.getSnapshot();
                 if (current.status !== "ready" || current.preview !== preview || edits !== page) return;
-                const result = preview.readPage(next);
+                const result = readEditPage(preview.readEdits, next);
                 if (result) { edits = result; changed(); }
             }) : null;
         return { choicePage, choicePaging, editPaging: editControls, edits };

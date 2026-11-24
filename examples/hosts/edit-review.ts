@@ -1,9 +1,19 @@
-import type { LspWorkspaceEditNote } from "../../src/protocol/index.ts";
+import type { LspEditNotes, LspWorkspaceEditNote } from "../../src/protocol/index.ts";
 import type { DocumentId } from "../../src/index.ts";
 import type { ChangedFile } from "./language-host.ts";
 import { panelPaging } from "./panel-actions.ts";
 
 export const editPageSize = 64;
+export type EditPage = Readonly<{ page: number; count: number; notes: readonly LspWorkspaceEditNote[] }>;
+type ReadNotes<T> = (first: number, end: number) => T;
+export function readEditPage(read: ReadNotes<LspEditNotes>, page?: number): EditPage;
+export function readEditPage(read: ReadNotes<LspEditNotes | undefined>, page?: number): EditPage | undefined;
+export function readEditPage(read: ReadNotes<LspEditNotes | undefined>, page = 0) {
+    const first = page * editPageSize;
+    const slice = read(first, first + editPageSize);
+    return slice && Object.freeze({ page, count: slice.total, notes: slice.notes });
+}
+
 export function editPaging(key: number, page: number, count: number, show: (page: number) => void) {
     return count > editPageSize ? panelPaging(key, page, count, editPageSize, show) : null;
 }

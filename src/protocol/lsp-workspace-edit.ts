@@ -1,5 +1,5 @@
 import { emptyList } from "../core/empty-list.ts";
-import { isNonNegativeInteger } from "../core/bounds.ts";
+import { isOffsetRange } from "../core/bounds.ts";
 import { wireLimits, staleRequest } from "./wire.ts";
 import type { DocumentId, DocumentSnapshot, DocumentView, EditOrigin, EditRequest, Workspace } from "../core/workspace.ts";
 import type { EditKind } from "../core/history.ts";
@@ -58,7 +58,7 @@ export type LspWorkspaceEditNote = Readonly<{
     document: string; resource: string; title: string; revision: number;
     from: number; to: number; before: string; insert: string; insertUnits: number; context: string;
 }>;
-export type LspWorkspaceEditPreview = Readonly<{ count: number; page: number; notes: readonly LspWorkspaceEditNote[] }>;
+export type LspEditNotes = Readonly<{ total: number; notes: readonly LspWorkspaceEditNote[] }>;
 
 export function describeLspEdit(source: Pick<LspDocumentSnapshot, "buffer" | "resourceId" | "revision">, document: string, title: string, edit: TextEdit): LspWorkspaceEditNote {
     const { from, to, insert } = edit, { buffer } = source;
@@ -71,21 +71,18 @@ export function describeLspEdit(source: Pick<LspDocumentSnapshot, "buffer" | "re
     });
 }
 
-/**
- * Build a 64-edit review page from captured buffers, without exporting complete text or
- * materializing off-page edits. Titles come from the host's captured resource inventory.
- * Previewing does not establish currentness or grant edit authority.
- */
-export function previewLspWorkspaceEdit(edit: LspWorkspaceEdit, title: (documentId: string) => string, page = 0): LspWorkspaceEditPreview {
-    if (!isNonNegativeInteger(page) || !Number.isSafeInteger((page + 1) * wireLimits.editPreviewSize)) throw new RangeError("Invalid LSP edit preview page.");
-    const first = page * wireLimits.editPreviewSize, last = first + wireLimits.editPreviewSize, notes: LspWorkspaceEditNote[] = [];
+/** Read notes for [first, end) across the edit's documents in provider order. */
+export function readLspEditNotes(edit: LspWorkspaceEdit | null, title: (documentId: string) => string,
+    first: number, end: number): LspEditNotes {
+    if (!isOffsetRange(first, end)) throw new RangeError("Invalid edit note range.");
+    const notes: LspWorkspaceEditNote[] = [];
     let count = 0;
-    for (const change of edit.documents) {
-        const from = Math.max(0, first - count), to = Math.min(change.edits.length, last - count);
+    for (const change of edit?.documents ?? emptyList) {
+        const from = Math.max(0, first - count), to = Math.min(change.edits.length, end - count);
         count += change.edits.length;
         if (from >= to) continue;
         const doc = change.target.document, label = title(doc.documentId);
         for (let i = from; i < to; i++) notes.push(describeLspEdit(doc, doc.documentId, label, change.edits[i]!));
     }
-    return Object.freeze({ count, page, notes: Object.freeze(notes) });
+    return Object.freeze({ total: count, notes: Object.freeze(notes) });
 }

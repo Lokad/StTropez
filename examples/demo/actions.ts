@@ -57,10 +57,10 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
         const result = await choice.select({ review: true });
         if (result.status !== "done" || !result.value.canApply || result.value.command) return;
         if (choice.kind !== "quickfix" && !choice.kind?.startsWith("quickfix.")) return;
-        const page = result.value.readPage();
-        if (!page || !page.count || page.count > 4) return;
-        if (page.notes.every(edit => edit.document === file.resource.documentId)
-            && page.notes.reduce((units, edit) => units + edit.to - edit.from + edit.insertUnits, 0) <= 256) {
+        const edits = result.value.readEdits(0, 4);
+        if (!edits || !edits.total || edits.total > 4) return;
+        if (edits.notes.every(edit => edit.document === file.resource.documentId)
+            && edits.notes.reduce((units, edit) => units + edit.to - edit.from + edit.insertUnits, 0) <= 256) {
             await result.value.apply();
         }
     }

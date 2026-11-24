@@ -113,7 +113,7 @@ test.describe(`plain LSP rename host`, () => {
         const retired = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.rename.state.preview!);
         await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
         await select(page, raw.indexOf("catalogue") + 2); await preview(page); await expect(button(page, "Apply captured rename")).toBeEnabled();
-        expect(await retired.evaluate(p => [p.apply(), p.readPage() === undefined])).toEqual([{ status: "stale" }, true]); await retired.dispose();
+        expect(await retired.evaluate(p => [p.apply(), p.readEdits(0, 1) === undefined])).toEqual([{ status: "stale" }, true]); await retired.dispose();
         await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
         await name(page).fill("inventory");
         replies.hold();
