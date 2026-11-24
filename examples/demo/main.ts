@@ -28,6 +28,7 @@ import "./style.css";
 const element = (id: string) => document.getElementById(id)!;
 const field = (id: string) => element(id) as HTMLInputElement;
 const findBar = element("find-bar");
+const replaceResult = element("replace-result");
 const findQuery = element("find-query") as HTMLTextAreaElement, replacement = element("replacement") as HTMLTextAreaElement;
 const button = (id: string) => element(id) as HTMLButtonElement;
 const codeMenu = element("code-menu") as HTMLDetailsElement;
@@ -293,6 +294,7 @@ function mountFile(file: DemoFile, focus = false): void {
     if (!project || disposed || editor?.getSnapshot().composing) return;
     const viewState = editor?.captureView();
     const previous = active;
+    if (previous && previous !== file) replaceResult.hidden = true;
     if (previous && viewState) savedViews.set(previous.view, viewState);
     detachView(); active = file; activeFiles.set(project.sample.id, file.name);
     initializeDemoFolds(project, file);
@@ -436,6 +438,7 @@ async function openSample(id: SampleId): Promise<void> {
     stopRecovery?.(); stopRecovery = undefined;
     stopLanguage?.(); stopLanguage = undefined;
     if (active && editor) savedViews.set(active.view, editor.captureView());
+    replaceResult.hidden = true;
     detachView(); project?.language.suspend(); active = undefined; project = next;
     selectSample(id); sample.disabled = false;
     indentation.options[0]!.textContent = `Sample default (${next.sample.indentSize ?? 2} spaces)`;
@@ -506,8 +509,10 @@ function bindPaneCommands(target: TextEditor): void {
 }
 function releaseFind(): void {
     pendingPanel = undefined;
-    if (find?.getSnapshot().status === "replacing") scheduleMetadata();
-    stopFind?.(); stopFind = undefined; find?.dispose(); find = undefined;
+    find?.dispose();
+    stopFind?.();
+    stopFind = undefined;
+    find = undefined;
 }
 function setActivePane(target: TextEditor, repeat = false): void {
     if (activePane === target && find) return;
@@ -524,16 +529,26 @@ function setActivePane(target: TextEditor, repeat = false): void {
     element("find-target").textContent = readOnly ? `${label} · read-only` : "";
     const status = element("find-status"), previous = button("find-previous"), next = button("find-next");
     const replace = button("replace-current"), all = button("replace-all");
+    let awaitingOutcome = false;
     let replacing = false;
     const render = () => {
         const snapshot = current.getSnapshot();
         const wasReplacing = replacing;
         replacing = snapshot.status === "replacing";
+        if (replacing) {
+            awaitingOutcome = true;
+            replaceResult.hidden = true;
+        } else if (awaitingOutcome && snapshot.reason) {
+            awaitingOutcome = false;
+            replaceResult.textContent = label + " · " + snapshot.message;
+            replaceResult.hidden = false;
+            const requested = pendingPanel;
+            if (snapshot.reason !== "replaced") pendingPanel = undefined;
+            else if (requested) queueMicrotask(() => {
+                if (current === find && pendingPanel === requested) setPanel(requested);
+            });
+        }
         if (replacing !== wasReplacing) scheduleMetadata();
-        const requested = pendingPanel;
-        if (requested && !replacing) queueMicrotask(() => {
-            if (current === find && pendingPanel === requested) setPanel(requested);
-        });
         const searching = snapshot.status === "searching", ready = snapshot.status === "ready", matches = snapshot.count > 0;
         const message = findStatus(snapshot);
         status.textContent = message;
@@ -579,6 +594,7 @@ function selectedFindQuery(source: TextEditor, regex: boolean): string | undefin
 }
 function openFind(replace = false): void {
     if (!activePane) return;
+    replaceResult.hidden = true;
     const { anchor, head } = activePane.view.getSnapshot().selection;
     const focusReplacement = replace && (!!findQuery.value || anchor !== head);
     if (findBar.hidden || activePane.getSnapshot().focused) {
@@ -722,6 +738,7 @@ on("reset", () => {
 });
 async function save(reviewed = false): Promise<void> {
     const captured = project; if (!captured || editor?.getSnapshot().composing) return;
+    replaceResult.hidden = true;
     await captured.save(renderMetadata, reviewed);
     if (!disposed && project === captured && comparison && active) {
         const ticket = comparison.controller.beginRefresh(); ticket.complete(captured.baseline(active));
@@ -780,6 +797,7 @@ for (const strip of [element("files"), element("panels")]) {
     }, { signal: listeners.signal });
 }
 findQuery.addEventListener("input", () => {
+    replaceResult.hidden = true;
     sizeFindField(findQuery); find?.setQuery(findQuery.value, { preview: true });
     if (!findQuery.value) revealFindCaret();
 }, { signal: listeners.signal });

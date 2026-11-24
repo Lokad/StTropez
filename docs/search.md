@@ -121,13 +121,13 @@ edit permission.
 | `search-failed` | Search construction, matching or result validation failed. For invalid regex syntax, the worker reports the engine's reason in the message. |
 | `replacement-failed` | Replacement planning or plan validation failed |
 | `view-unavailable` | The captured target or editor view is unavailable |
-| `cancelled` | The host explicitly cancelled find |
+| `cancelled` | The host cancelled Find, or a new selection, edit, query, flag change or teardown interrupted replacement planning |
 | `replaced` | A replacement transaction was accepted, including a no-op |
 | An `EditResult` refusal reason | The workspace rejected the final transaction; its reason is forwarded unchanged |
 
 Use `reason` for decisions. A backend can send the same error text for a failed search and a failed
-replacement. A new or restarted query, changed flags, successful navigation, a queued replacement or
-disposal clears the notice. Scan progress, completion and unchanged flags leave it in place. If you
+replacement. Starting another replacement or navigating to a match clears the notice. Changing a query
+or disposing Find clears it unless that action interrupts a replacement. Scan progress and unchanged flags leave it in place. If you
 cancel and then edit, the cancellation notice stays. Late replies to obsolete requests cannot change
 it.
 

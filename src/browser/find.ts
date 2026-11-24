@@ -67,9 +67,12 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     const viewSnapshot = () => editor.view.getSnapshot();
     const currentSelection = () => viewSnapshot().selectionSet;
     const readDocument = () => workspace.document(documentId);
+    const documentChanges = workspace.observeDocument(documentId);
     const scope = workspace.createNotificationScope(), initial = readDocument();
+    const noNotice = { reason: null, message: "" };
     const store = new Store<FindSnapshot>(Object.freeze({ query: "", wholeWord: false, matchCase: true, regularExpression: false, revision: initial.revision, status: "idle", count: 0, scanned: 0, length: initial.buffer.length,
-        retained: false, current: null, wrappedTo: null, matchesVersion: 0, reason: null, message: "" }), scope);
+        retained: false, current: null, wrappedTo: null, matchesVersion: 0, ...noNotice }), scope);
+    const cancelledReplacement = { reason: "cancelled", message: "Replacement cancelled." } as const;
     const runner = createCooperativeRunner(win);
     let disposed = false, cursor: FindSearchCursor | undefined, planCursor: FindPlanCursor | undefined, generation = 0, focusGeneration = 0;
     let navigatedMatch: Readonly<{ index: number; selectionSet: SelectionSet }> | undefined;
@@ -91,7 +94,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     let scanMaximum = 0, replaceTransactionMs = 0;
     const sameOwner = (a: DocumentSnapshot, b: DocumentSnapshot) => a.id === b.id && a.resourceId === b.resourceId && a.key === b.key;
     const valid = () => !disposed && lease.active() && workspace.ownsDocumentView(editor.view, target)
-        && workspace.observeDocument(documentId).getSnapshot() !== undefined && !editor.activity().disposed;
+        && documentChanges.getSnapshot() !== undefined && !editor.activity().disposed;
     const publish = (patch: FindPatch) => {
         const previous = store.get(), next = Object.freeze({ ...previous, ...patch });
         scope.publish(store, next);
@@ -151,9 +154,15 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             ...(selected?.from === range.from && selected.to === range.to && { properties: { "--st-search-border": "var(--st-search-current-border, #ffe494)" } }) }));
     } });
     const canEdit = () => { const state = resource.getSnapshot(); return editor.getSnapshot().readOnlyReason === null && state.state === "ready" && state.metadata.capabilities.edit.includes("human") && state.metadata.editLock === null; };
+    function cancelUnavailablePlan(reason: "composition-active" | "editing-unavailable") {
+        stop();
+        const message = reason === "composition-active" ? "Replacement cancelled for composition."
+            : "Replacement cancelled because editing became unavailable.";
+        publish({ status: "ready", reason, message });
+    }
     const observePlanAuthority = (token: number) => { stopPlanAuthority = resource.metadata.subscribe(() => {
         if (token !== generation || canEdit()) return;
-        stop(); publish({ status: "ready", reason: "editing-unavailable", message: "Replacement cancelled because editing became unavailable." });
+        cancelUnavailablePlan("editing-unavailable");
     }); };
     const capture = (query: string, wholeWord: boolean, matchCase: boolean): FindQueryCapture => {
         const document = readDocument(); return Object.freeze({ documentId, revision: document.revision, buffer: document.buffer, query, wholeWord, matchCase });
@@ -168,9 +177,12 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         disposeBackends(); reset({ status: "expired", reason: "view-unavailable", message: "View is unavailable." });
     };
     function restart(query: string, wholeWord = store.get().wholeWord, matchCase = store.get().matchCase, regularExpression = store.get().regularExpression, retain = false): void {
+        // A committing plan releases its cursor before the document publishes the edit.
+        const notice = planCursor ? cancelledReplacement : noNotice;
         stop();
         if (!valid()) { expire(); return; }
         const document = readDocument(), token = generation;
+        const patch = { query, wholeWord, matchCase, regularExpression, revision: document.revision, length: document.buffer.length, ...notice };
         scanMaximum = 0;
         let repair: LiteralFindRepair | undefined;
         if (retain && literal && !regularExpression && literal.query === query && literal.wholeWord === wholeWord && literal.matchCase === matchCase
@@ -181,8 +193,8 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             if (proof) {
                 if (document.buffer === literal.document.buffer) {
                     matches = literal.index; count = matches.count; literal.document = document; edges = undefined; observed = document; navigationTo = document.buffer.length;
-                    publish({ revision: document.revision, length: document.buffer.length, retained: false, status: "ready", count, scanned: document.buffer.length,
-                        matchesVersion: store.get().matchesVersion + 1, current: null, wrappedTo: null, reason: null, message: "" }); return;
+                    publish({ ...patch, retained: false, status: "ready", count, scanned: patch.length,
+                        matchesVersion: store.get().matchesVersion + 1, current: null, wrappedTo: null }); return;
                 }
                 const prefix = Math.min(edges?.prefix ?? proof.prefix, proof.prefix, literal.document.buffer.length, document.buffer.length);
                 edges = { prefix, suffix: Math.min(edges?.suffix ?? proof.suffix, proof.suffix, literal.document.buffer.length - prefix, document.buffer.length - prefix) };
@@ -190,7 +202,6 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             }
         }
         observed = document;
-        const patch = { query, wholeWord, matchCase, regularExpression, revision: document.revision, length: document.buffer.length, reason: null, message: "" };
         if (repair) {
             pendingRepair = repair;
             matches = repair.index; count = matches.count; navigationTo = repair.start;
@@ -322,7 +333,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             if (!editor.view.setSelection(store.get().revision, { anchor: from, head: to })) return false;
             previewed = undefined;
             navigatedMatch = { index, selectionSet: currentSelection() }; replacedZero = undefined;
-            publish({ current: index, wrappedTo, ...(clearNotice && { reason: null, message: "" }) });
+            publish({ current: index, wrappedTo, ...(clearNotice && noNotice) });
             return true;
         });
         if (!selected) return false;
@@ -407,7 +418,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         if (!immediate) stop();
         captureFocus();
         const token = generation, focusToken = focusGeneration; let committed = false;
-        if (!immediate) { observePlanAuthority(token); publish({ status: "replacing", reason: null, message: "" }); }
+        if (!immediate) { observePlanAuthority(token); publish({ status: "replacing", ...noNotice }); }
         if (token !== generation) return false;
         try { const created = selectedBackend.replace(request, replacement, range); if (token !== generation) { created.dispose(); return false; } planCursor = created; }
         catch (error) { failed(error, token, true); return false; }
@@ -415,7 +426,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             if (token !== generation) return false;
             if (!valid() || readDocument().revision !== state.revision || currentSelection() !== selectionSet) { restart(state.query); return false; }
             const reason = !canEdit() ? "editing-unavailable" : editor.activity().composing ? "composition-active" : null;
-            if (reason) { stop(); publish({ status: "ready", reason, message: "Replacement cancelled because editing became unavailable." }); return false; }
+            if (reason) { cancelUnavailablePlan(reason); return false; }
             return true;
         };
         const receive = (result: FindPlanStep) => {
@@ -495,7 +506,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     const compositionStarted = () => {
         cancelNavigation();
         if (store.get().status !== "replacing") return;
-        stop(); publish({ status: "ready", reason: "composition-active", message: "Replacement cancelled for composition." });
+        cancelUnavailablePlan("composition-active");
     };
     const editIntent = editor.onEditIntent(kind => { if (kind === "compositionstart") compositionStarted(); });
     const folds = editor.view.folding;
@@ -514,13 +525,19 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         lastSelection = view.selectionSet;
         if (navigatedMatch?.selectionSet === lastSelection) return;
         cancelPreview(); previewed = undefined;
-        if (state.status !== "ready" || state.revision !== view.revision) return;
+        if (state.revision !== view.revision) return;
+        if (planCursor && state.status === "replacing") {
+            stop();
+            publish({ status: "ready", current: selectionIndex(), wrappedTo: null, ...cancelledReplacement });
+            return;
+        }
+        if (state.status !== "ready") return;
         const current = selectionIndex();
         if (current !== state.current || state.wrappedTo) publish({ current, wrappedTo: null });
     });
     const subscriptions = [stopSelection, () => owner.removeEventListener("focusin", focusChanged), () => window?.removeEventListener("blur", focusChanged),
-        () => focusOrigin?.removeEventListener("blur", originBlurred), editIntent.dispose, stopFolds, workspace.observeDocument(documentId).subscribe(() => {
-        const current = workspace.observeDocument(documentId).getSnapshot();
+        () => focusOrigin?.removeEventListener("blur", originBlurred), editIntent.dispose, stopFolds, documentChanges.subscribe(() => {
+        const current = documentChanges.getSnapshot();
         if (current && sameOwner(observed, current) && current.revision === observed.revision && current.buffer === observed.buffer) return;
         if (store.get().status === "cancelled" && valid()) { observed = readDocument(); publish({ revision: observed.revision, length: observed.buffer.length }); }
         else { const state = store.get(); restart(state.query, state.wholeWord, state.matchCase, state.regularExpression, true); }
@@ -531,9 +548,10 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         scope.assertWritable();
         disposed = true;
         editor.signal?.removeEventListener("abort", dispose);
+        const notice = planCursor ? cancelledReplacement : noNotice;
         stop(); disposeBackends(); subscriptions.forEach(unsubscribe => unsubscribe());
         layer?.dispose(); lease.release();
-        reset({ status: "disposed", query: "", length: 0, reason: null, message: "" });
+        reset({ status: "disposed", query: "", length: 0, ...notice });
     };
     editor.signal?.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ ...store.observable, getDiagnostics: () => Object.freeze({ maxScanStepMs: scanMaximum, replaceTransactionMs }), matchesIn,

@@ -152,8 +152,8 @@ test("partial async regex plans respect selection, revision, composition, author
             assert.equal(f.text(), change === "revision" ? "cat cat human" : change === "focus" ? "dog dog" : "cat cat", change);
             assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, change === "revision" || change === "focus" ? 1 : 0, change);
             assert.equal(f.focused(), beforeFocus, change); assert.equal(f.plans[0]!.disposed, true, change);
-            assert.equal(f.find.getSnapshot().reason, { selection: null, revision: null, composition: "composition-active",
-                authority: "editing-unavailable", options: null, view: "view-unavailable", focus: "replaced" }[change], change);
+            assert.equal(f.find.getSnapshot().reason, { selection: "cancelled", revision: "cancelled", composition: "composition-active",
+                authority: "editing-unavailable", options: "cancelled", view: "view-unavailable", focus: "replaced" }[change], change);
             if (change === "composition") {
                 assert.equal(f.find.next(), false); assert.equal(f.find.getSnapshot().reason, "composition-active");
                 assert.equal(f.find.replaceCurrent("dog"), false); assert.equal(f.find.getSnapshot().reason, "composition-active");

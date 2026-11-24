@@ -51,7 +51,8 @@ for (const arm of ["stay", "form", "interrupt"] as const)
             await field.click(); await page.keyboard.press("End"); await page.keyboard.type(".during");
             expect((await snapshot(page)).source.revision).toBe(before.source.revision);
         } else if (arm === "interrupt") { await primary(page).focus(); await page.keyboard.type("!"); }
-        await expect(status).toHaveText(arm === "interrupt" ? "50000 matches · ready" : "Replaced 50000 matches."); await ready(page);
+        await expect(status).toHaveText(arm === "interrupt" ? "Replacement cancelled." : "Replaced 50000 matches.");
+        await ready(page);
         const expected = arm === "interrupt" ? "!" + original : changed, settled = await snapshot(page);
         await exact(page, expected); expect(settled.history.undoDepth).toBe(before.history.undoDepth + 1);
         expect(settled.pendingSaves).toEqual(before.pendingSaves);

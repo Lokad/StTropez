@@ -632,12 +632,14 @@ test("opening Changes during Replace all reviews the committed edit and a file s
     const panes = review.locator(".st-comparison-panes > section");
     await expect(panes.last().locator('.st-viewport-row[data-line="0"]')).toContainText("reviewTotal");
     await expect(panes.first().locator('.st-viewport-row[data-line="0"]')).toContainText("calculateTotal");
+    await expect(page.locator("#replace-result")).toHaveText("main.ts · Replaced 2 matches.");
     await panes.last().getByRole("textbox").press("Control+z");
     await expect(review.locator(".st-comparison-controls output")).toHaveText("No changes");
 
     await gate.setHolding(true); await replace.click(); await expect.poll(gate.waiting).toBe(1);
     await page.locator('[data-panel="javascript"]').click();
     await page.locator('#files [data-file="pricing.ts"]').click(); await gate.release();
+    await expect(page.locator("#replace-result")).toHaveText("main.ts · Replacement cancelled.");
     await expect(page.locator('[data-panel="changes"]')).toHaveAttribute("aria-pressed", "true");
     await expect(review.locator(".st-comparison-controls output")).toHaveText("No changes");
     await page.locator('#files [data-file="main.ts"]').click();
@@ -663,9 +665,46 @@ test("cancelling a replacement makes a reviewed save conflict actionable again",
     await page.locator("#find-regex").click(); await page.locator("#find-query").fill("Local");
     await page.locator("#replacement").fill("Cancelled"); await page.locator("#replace-all").click();
     await expect.poll(gate.waiting).toBe(1); await expect(take).toBeDisabled(); await expect(save).toBeDisabled();
-    await page.locator("#find-close").click(); await gate.release();
+    await page.locator("#replacement").press("Escape"); await gate.release();
+    await expect(page.locator("#replace-result")).toHaveText("main.ts · Replacement cancelled.");
+    await expect(page.locator("#replace-result")).toBeVisible();
     await expect(save).toBeEnabled(); await expect(working).toHaveValue(/^\/\/ Local edit/);
     await take.click(); await expect(working).toHaveValue("// Peer save");
+});
+
+test("moving or typing during Replace all cancels it and leaves the source ready for a retry", async ({ page, baseURL }) => {
+    const gate = await holdRegexReply(page, "regex-edits");
+    await page.goto(browserDemo(baseURL!));
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    const outcome = page.locator("#replace-result"), replace = page.locator("#replace-all");
+    await source.press("Control+a");
+    await page.keyboard.insertText("old old");
+    await source.press("Control+Home");
+    await source.press("Control+h");
+    await page.locator("#find-regex").click();
+    await page.locator("#find-query").fill("old");
+    await page.locator("#replacement").fill("new");
+    for (const interruption of ["selection", "typing"]) {
+        await replace.click();
+        await expect.poll(gate.waiting).toBe(1);
+        await page.locator("#compare").click();
+        if (interruption === "selection") await source.press("End");
+        else {
+            await source.focus();
+            await page.keyboard.type("x");
+        }
+        await expect(outcome).toHaveText("main.ts · Replacement cancelled.");
+        await expect(outcome).toBeVisible();
+        await expect(source).toBeFocused();
+        await expect(replace).toBeEnabled();
+        await gate.release();
+        await expect(source).toHaveValue(interruption === "selection" ? "old old" : "old oldx");
+        await gate.setHolding(true);
+    }
+    await gate.setHolding(false);
+    await replace.click();
+    await expect(source).toHaveValue("new newx");
+    await expect(outcome).toHaveText("main.ts · Replaced 2 matches.");
 });
 
 for (const interrupt of ["folding", "a focus round trip in a shadow root"] as const) {
