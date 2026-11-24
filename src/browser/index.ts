@@ -54,5 +54,3 @@ export type { RegexFindBackendOptions } from "./regex-find.ts";
 export { mountTextComparison } from "./comparison.ts";
 export type { TextComparison, TextComparisonHunk, TextComparisonOptions, TextComparisonSnapshot, TextComparisonDiagnostics } from "./comparison.ts";
 export type { ComparisonAlignmentSnapshot } from "./comparison-alignment.ts";
-export { createFontAssetController } from "./font-asset.ts";
-export type { FontAssetController, FontAssetSnapshot, FontAssetVersion, FontLoadOperation, FontLoadResult } from "./font-asset.ts";

@@ -1,5 +1,4 @@
 import type { DocumentSnapshot, DocumentView, Observable, ResourceHandle, ResourceSnapshot, SaveSubmission } from "../src/index.ts";
-import type { FontAssetSnapshot } from "../src/browser/index.ts";
 import type { JsonValue, LspDocument, LspWorkspaceScope } from "../src/protocol/index.ts";
 import type { JsonRpcConnection, LspSession } from "../src/kernels/index.ts";
 
@@ -16,18 +15,6 @@ export function graphemeReadContract(index: GraphemeIndex, progress: GraphemePro
     // @ts-expect-error Ready-only progress is immutable.
     progress.result = null;
 }
-
-export function fontReadContract(state: FontAssetSnapshot): void {
-    if (state.current) {
-        // @ts-expect-error Native font versions retain their captured generation.
-        state.current.generation = 0;
-    }
-}
-
-
-
-
-
 
 type Form = { nested: { enabled: boolean }; fields: string[] };
 /** Compile-only consumer contract; these attempted writes must remain type errors. */

@@ -1,6 +1,6 @@
 /** Original rectangles, mappings and binary fixture data. No third-party font or implementation. */
 class FontBytes {
-    readonly data: Uint8Array;
+    readonly data: Uint8Array<ArrayBuffer>;
     readonly view: DataView;
     constructor(length: number) { this.data = new Uint8Array(length); this.view = new DataView(this.data.buffer); }
     u8(at: number, value: number): this { this.view.setUint8(at, value); return this; }
@@ -14,7 +14,7 @@ class FontBytes {
 function fontChecksum(data: Uint8Array): number {
     let sum = 0; for (let i = 0; i < data.length; i += 4) sum = (sum + ((data[i] ?? 0) * 0x1000000 + (data[i + 1] ?? 0) * 65536 + (data[i + 2] ?? 0) * 256 + (data[i + 3] ?? 0))) >>> 0; return sum;
 }
-function assembleFont(tables: ReadonlyMap<string, Uint8Array>, signature = 0x10000): Uint8Array {
+function assembleFont(tables: ReadonlyMap<string, Uint8Array>, signature = 0x10000): Uint8Array<ArrayBuffer> {
     const sorted = [...tables].sort(([a], [b]) => a < b ? -1 : 1), count = sorted.length, power = 2 ** Math.floor(Math.log2(count));
     let length = 12 + count * 16; for (const [, data] of sorted) length += Math.ceil(data.length / 4) * 4;
     const b = new FontBytes(length).u32(0, signature).u16(4, count).u16(6, power * 16).u16(8, Math.log2(power)).u16(10, count * 16 - power * 16);
@@ -57,9 +57,9 @@ function ligatureTable(): Uint8Array {
         .u16(70, 1).u16(72, 4).u16(74, 6).u16(76, 2).u16(78, 5).data; // LigatureSet: fi
 }
 
-export function fontFixture(options: Readonly<{ advanceA?: number; ligatures?: boolean }> = {}): Uint8Array {
+export function fontFixture(options: Readonly<{ ligatures?: boolean }> = {}): Uint8Array<ArrayBuffer> {
     const head = new FontBytes(54).u32(0, 0x10000).u32(4, 0x10000).u32(12, 0x5f0f3cf5).u16(16, 3).u16(18, 1000).i16(40, 1000).i16(42, 850).u16(46, 8).i16(48, 2).i16(50, 1);
-    const widths = [500, 250, options.advanceA ?? 600, 700, 400, 200, 500, 1000, 900, 0], metricCount = widths.length;
+    const widths = [500, 250, 600, 700, 400, 200, 500, 1000, 900, 0], metricCount = widths.length;
     const hhea = new FontBytes(36).u32(0, 0x10000).i16(4, 800).i16(6, -200).u16(10, 1000).i16(16, 1000).i16(18, 1).u16(34, metricCount);
     const hmtx = new FontBytes(metricCount * 4 + (10 - metricCount) * 2); for (let i = 0; i < metricCount; i++) hmtx.u16(i * 4, widths[i]!);
     const maxp = new FontBytes(32).u32(0, 0x10000).u16(4, 10).u16(6, 4).u16(8, 1).u16(14, 2);

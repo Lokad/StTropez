@@ -1,5 +1,5 @@
 import { Workspace } from "sttropez";
-import { createFindController, createFontAssetController, createRegexFindBackend, mountTextEditor } from "sttropez/browser";
+import { createFindController, createRegexFindBackend, mountTextEditor } from "sttropez/browser";
 import "sttropez/protocol";
 import "sttropez/kernels";
 import { fontFixture } from "./font-fixture.js";
@@ -22,13 +22,11 @@ find.subscribe(() => {
 find.setFlags({ regularExpression: true });
 find.setQuery("sm.ke");
 
-const font = createFontAssetController(document, "smoke-font");
-const load = font.request(0, fontFixture());
-if (!load) throw new Error("Font request was rejected");
-const result = await load.settled;
-document.querySelector<HTMLOutputElement>("#font")!.value = result.status;
+const font = await new FontFace("ConsumerFixture", fontFixture()).load();
+document.fonts.add(font);
+editor.element.style.setProperty("--st-font", font.family);
 window.addEventListener("pagehide", () => {
     find.dispose();
     editor.dispose();
-    font.dispose();
+    document.fonts.delete(font);
 }, { once: true });

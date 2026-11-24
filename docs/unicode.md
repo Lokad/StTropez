@@ -53,30 +53,6 @@ export function inspectCharacters(buffer: TextBuffer, from: number, to: number) 
 }
 ```
 
-The host loads the font, selects its family in CSS and disposes the controller with the view.
-
-```ts
-import { createFontAssetController } from "sttropez/browser";
-
-export function hostFont(owner: Document, applyFamily: (family: string) => void) {
-    const asset = createFontAssetController(owner, "editor-font");
-    return {
-        async load(bytes: Uint8Array): Promise<boolean> {
-            const operation = asset.request(asset.getSnapshot().generation, bytes);
-            if (!operation) return false;
-            const result = await operation.settled;
-            if (result.status !== "ready" || !asset.isCurrent(result.generation)) return false;
-            const current = asset.getSnapshot().current;
-            if (!current) return false;
-            applyFamily(current.family);
-            return true;
-        },
-        cancel: () => asset.cancel(),
-        dispose: () => asset.dispose()
-    };
-}
-```
-
 ## Contract
 
 ### Cooperative cursor lifetime
@@ -173,21 +149,6 @@ Markers inspect only the presented fragments. Each marker covers a grapheme. A q
 exact code point. Markers preserve source text, syntax color and selection backgrounds. Style them
 with `--st-character-warning-background` and `--st-character-warning-border`.
 
-### Native font registration
-
-`createFontAssetController(ownerDocument, fontId)` owns one registered `FontFace`. It requires
-a nonempty identity and native font-loading APIs. `request(expectedGeneration, bytes)` copies
-the bytes and returns `{ generation, settled }`; a stale expected generation returns `null`.
-The new face is registered before the controller removes its preceding face. The immutable
-snapshot's `current` records `{ fontId, generation, family }`. Failed decoding or registration
-preserves the preceding current face and publishes a failure message.
-
-If a second request supersedes the first, the old font cannot register later. Cancellation and
-disposal also stop late registration. `cancel()` keeps the current face. `dispose()` removes the
-controller’s face, clears `current` and is safe to repeat. Use `isCurrent(generation)` to check which
-face is registered, including after a later load fails. You supply the bytes and choose which views
-use the returned CSS family. The browser decodes, shapes and measures the font.
-
 ### Limits
 
 | Operation | Bound or validation |
@@ -209,9 +170,10 @@ Capture identity and revision before scheduling, yield between advances and disp
 cursors. Recheck the capture before updating a live view. Give each segmentation range enough
 context. Use bounded queries when you need only part of the index.
 
-Choose warning policies, font sources and CSS. Reset the selected font before disposing its face.
-Use the editor’s presentation APIs when changing styles or fonts so cached geometry follows the
-change.
+Choose warning policies and font sources. Set the host's CSS variable `--st-font` to the
+desired family. For bundled web fonts, use `@font-face`. For fonts supplied as bytes, load
+a `FontFace` and add it to the editor document's `fonts` set. The host owns that registration
+and removes it when its views have finished using it.
 
 Unicode data and development fixtures carry the [Unicode License V3](../licenses/Unicode-3.0.txt).
 The [regeneration workflow](testing.md#unicode-regeneration) uses reviewed local inputs, pins their

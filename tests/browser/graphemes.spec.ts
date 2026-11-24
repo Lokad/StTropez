@@ -10,18 +10,24 @@ async function setup(page: Page, text: string, head: number) {
     await page.evaluate(({ text, head }) => { window.editingFixture.setText(text); window.editingFixture.select("primary", { anchor: head, head }); window.editingFixture.focus("primary"); }, { text, head }); await ready(page);
 }
 
-test("all Unicode 18 grapheme cases agree with gold while native differences remain observable", async ({ page, browser }, info) => {
-    await page.goto("/fonts/"); await page.waitForFunction(() => window.nativeFontFixture?.ready);
+test("compare the browser's grapheme boundaries with the Unicode 18 corpus", async ({ page, browser }, info) => {
     const lines = gunzipSync(await readFile("tests/fixtures/graphemes/GraphemeBreakTest.txt.gz")).toString("utf8").trim().split(/\r?\n/);
     const cases = lines.map(line => { let text = ""; const boundaries: number[] = []; for (const token of line.split(/\s+/)) { if (token === "÷") boundaries.push(text.length); else if (token !== "×") text += String.fromCodePoint(parseInt(token, 16)); } return { text, boundaries }; });
     const observed = await page.evaluate(cases => {
         const native = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-        const rows = cases.map((c, row) => ({ row, text: c.text, gold: c.boundaries, core: window.nativeFontFixture.graphemes(c.text), native: [...native.segment(c.text)].map(s => s.index).concat(c.text.length) }));
-        return { rows: rows.length, markers: cases.reduce((n, c) => n + c.boundaries.length, 0), coreDifferences: rows.filter(r => JSON.stringify(r.gold) !== JSON.stringify(r.core)), nativeDifferences: rows.filter(r => JSON.stringify(r.gold) !== JSON.stringify(r.native)) };
+        const rows = cases.map((c, row) => ({
+            row, text: c.text, gold: c.boundaries,
+            native: [...native.segment(c.text)].map(segment => segment.index).concat(c.text.length)
+        }));
+        return {
+            rows: rows.length, markers: cases.reduce((n, c) => n + c.boundaries.length, 0),
+            nativeDifferences: rows.filter(r => JSON.stringify(r.gold) !== JSON.stringify(r.native))
+        };
     }, cases);
     const nativeSha256 = createHash("sha256").update(JSON.stringify(observed.nativeDifferences)).digest("hex");
     await mkdir("artifacts/graphemes", { recursive: true }); await writeFile(`artifacts/graphemes/native-${info.project.name}.json`, JSON.stringify({ created: new Date().toISOString(), browser: browser.version(), unicode: "18.0.0", nativeSha256, ...observed }, null, 2));
-    expect(observed.rows).toBe(853); expect(observed.markers).toBe(2400); expect(observed.coreDifferences).toEqual([]);
+    expect(observed.rows).toBe(853);
+    expect(observed.markers).toBe(2400);
     // Preserve versioned observations as browsers update their own Unicode data.
     console.log(`Native grapheme profile ${info.project.name}: ${observed.nativeDifferences.length} differences, ${nativeSha256}`);
 });

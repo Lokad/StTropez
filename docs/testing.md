@@ -84,7 +84,6 @@ archive. Add another host or engine when it exercises a different behavior.
 | Caret, grapheme boundaries, scroll, focus and drag | Geometry-independent and Unicode models | Viewport/geometry/paint, zoom, grapheme, pointer/drag and shadow-focus suites |
 | Host conversion, source annotations and forms | Table paste, text transfer and host rules | [Table paste](../tests/browser/host-table-paste.spec.ts), domain examples and transfers through the form |
 | Framework mount/disposal and surrounding UI | Host controller/policy models | Plain/React attachment, Strict Mode, queued-work disposal and error recovery |
-| Font registration lifetime | The browser's font decoder | [Register, measure and release a font](../tests/browser/fonts.spec.ts). |
 | Compiled assets and installation | Manifest/hash/dependency/export checks | One restored consumer smoke test in CI |
 
 Tests in `tests/integration/` start real servers and processes on temporary loopback ports. Each

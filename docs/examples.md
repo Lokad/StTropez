@@ -35,7 +35,6 @@ For a single feature or host workflow, open its route on the
 | `/comparison/` | Working/reference comparison and hunk commands | [Comparison fixture](../examples/comparison/main.ts) |
 | `/comparison/?mode=revisions` | Read-only comparison of two saved revisions | [Comparison fixture](../examples/comparison/main.ts) |
 | `/protocol/` | JSON-RPC/WebSocket transport interoperability | [Protocol fixture](../examples/protocol/main.ts) |
-| `/fonts/` | Registered-font rendering and geometry | [Font fixture](../tests/fixtures/fonts/main.ts) |
 | `/hosts/plain/` | Two source views, forms, review and deferred services | [Plain host](../examples/hosts/plain-main.ts) |
 | `/hosts/react/` | The same controller and workflows with React rendering | [React host](../examples/hosts/react-main.tsx) |
 

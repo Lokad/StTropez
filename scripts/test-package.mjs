@@ -76,7 +76,7 @@ async function smoke() {
             const errors = [];
             page.on("pageerror", error => errors.push(error.message));
             await page.goto(site.url);
-            await expect(page.locator("#font")).toHaveText("ready");
+            await expect(page.locator(".st-viewport")).toHaveCSS("font-family", "ConsumerFixture");
             await expect(page.locator("#matches")).toHaveText("1");
             await expect(page.locator(".st-viewport")).toHaveCSS("background-color", "rgb(19, 27, 39)");
             await page.getByRole("textbox", { name: "Sample" }).press("Home");
