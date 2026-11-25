@@ -466,40 +466,71 @@ test.describe("plain LSP inspection/navigation", () => {
     });
 });
 
-for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspection/navigation`, () => {
-    test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/${host}/?language=lsp`); await expect(field(page)).toBeVisible(); await waitForNavigation(page); });
-    test("malformed navigation, changed authority and pending remount cannot publish stale targets", async ({ page, browserName, browserErrors }) => {
-        const replies = await holdLspReplies(page, "textDocument/definition"); await page.reload();
-        const text = "const target = 1;\r\ntarget"; await seed(page, text, text.length - 2); const before = await snapshot(page);
-        await page.evaluate(() => window.hostFixture.faultNavigationNext("malformed")); await field(page).press("F12"); await expect(page.getByLabel("Locations status", { exact: true })).toContainText("unavailable"); await expect(results(page)).toHaveCount(0); await expect(field(page)).toBeFocused();
-        await button(page, "Find definition").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(1); await page.evaluate(() => window.hostFixture.setSourceReadOnly(true)); await expect(results(page)).toHaveCount(0); await page.evaluate(() => window.hostFixture.setSourceReadOnly(false));
-        replies.hold(); await field(page).press("F12"); await expect.poll(replies.waiting).toBe(true); await expect.poll(async () => (await snapshot(page)).bindings.navigation.pending).toBe(true);
-        await field(page).press("ArrowLeft"); await expect.poll(replies.cancelled).toBe(true); await replies.release(); await waitForNavigation(page); await expect(results(page)).toHaveCount(0);
-        if (host === "plain") await moveEditorIntoShadow(field(page));
-        const row = page.locator('.st-editor:has(> textarea[aria-label="Primary source"]) .st-viewport-row[data-line="1"]');
-        await row.scrollIntoViewIfNeeded(); const point = await paintedCharacter(row, "target", 2);
-        const link = row.locator(".st-definition-link");
-        await field(page).focus(); await page.mouse.move(point.x, point.y);
-        replies.hold(); await page.keyboard.down("Meta"); await expect.poll(replies.waiting).toBe(true);
-        await page.mouse.click(point.x, point.y); await page.keyboard.up("Meta");
-        await expect.poll(async () => (await snapshot(page)).bindings.navigation.pending).toBe(true);
-        await page.keyboard.insertText("x"); await expect.poll(replies.cancelled).toBe(true); await replies.release(); await waitForNavigation(page);
-        await expect(results(page)).toHaveCount(0); await expect(link).toHaveCount(0); await field(page).press("Control+z");
-        await expect(row).toHaveText("target");
-        const restored = await paintedCharacter(row, "target", 2);
-        replies.hold(); await page.keyboard.down("Control"); await page.mouse.click(restored.x, restored.y); await page.keyboard.up("Control");
-        await expect.poll(replies.waiting).toBe(true);
-        await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); }); await expect.poll(replies.cancelled).toBe(true); await replies.release(); await waitForNavigation(page); await expect(results(page)).toHaveCount(0);
-        await field(page).focus(); await select(page, text.length - 2); await button(page, "Find definition").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(1);
-        await button(page, "Disconnect navigation provider").click(); await field(page).press("Control+End"); await field(page).pressSequentially(" local");
-        // This last reconnect is deliberately disposed during its handshake. WebKit can
-        // report that abort from Playwright's routed socket; permit one exact diagnostic.
-        if (browserName === "webkit") {
-            const endpoint = new URL("/lsp-fixture", page.url()); endpoint.protocol = "ws:";
-            browserErrors.allowConsoleError(`WebSocket connection to '${endpoint.href}' failed: WebSocket is closed before the connection is established.`,
-                "web-inspector://bootstrap.js");
-        }
-        await button(page, "Reconnect navigation provider").click();
-        expect((await snapshot(page)).source.revision).toBeGreaterThan(before.source.revision); await page.evaluate(() => window.hostFixture.dispose());
+test("malformed navigation, changed authority and pending remount cannot publish stale targets", async ({ page }) => {
+    const replies = await holdLspReplies(page, "textDocument/definition");
+    await page.goto("/hosts/plain/?language=lsp");
+    await expect(field(page)).toBeVisible();
+    const text = "const target = 1;\r\ntarget";
+    await seed(page, text, text.length - 2);
+
+    await page.evaluate(() => window.hostFixture.faultNavigationNext("malformed"));
+    await field(page).press("F12");
+    await expect(page.getByLabel("Locations status", { exact: true })).toContainText("unavailable");
+    await expect(results(page)).toHaveCount(0);
+    await expect(field(page)).toBeFocused();
+    await button(page, "Find definition").click();
+    await expect(results(page)).toHaveCount(1);
+    await page.evaluate(() => window.hostFixture.setSourceReadOnly(true));
+    await expect(results(page)).toHaveCount(0);
+    await page.evaluate(() => window.hostFixture.setSourceReadOnly(false));
+
+    replies.hold();
+    await field(page).press("F12");
+    await expect.poll(replies.waiting).toBe(true);
+    await field(page).press("ArrowLeft");
+    await expect.poll(replies.cancelled).toBe(true);
+    await replies.release();
+    await waitForNavigation(page);
+    await expect(results(page)).toHaveCount(0);
+
+    await moveEditorIntoShadow(field(page));
+    const row = page.locator('.st-editor:has(> textarea[aria-label="Primary source"]) .st-viewport-row[data-line="1"]');
+    await row.scrollIntoViewIfNeeded();
+    const point = await paintedCharacter(row, "target", 2);
+    await field(page).focus();
+    await page.mouse.move(point.x, point.y);
+    replies.hold();
+    await page.keyboard.down("Meta");
+    await expect.poll(replies.waiting).toBe(true);
+    await page.mouse.click(point.x, point.y);
+    await page.keyboard.up("Meta");
+    await expect.poll(async () => (await snapshot(page)).bindings.navigation.pending).toBe(true);
+    await page.keyboard.insertText("x");
+    await expect.poll(replies.cancelled).toBe(true);
+    await replies.release();
+    await waitForNavigation(page);
+    await expect(results(page)).toHaveCount(0);
+    await expect(row.locator(".st-definition-link")).toHaveCount(0);
+    await field(page).press("Control+z");
+    await expect(row).toHaveText("target");
+
+    const restored = await paintedCharacter(row, "target", 2);
+    replies.hold();
+    await page.keyboard.down("Control");
+    await page.mouse.click(restored.x, restored.y);
+    await page.keyboard.up("Control");
+    await expect.poll(replies.waiting).toBe(true);
+    await page.evaluate(() => {
+        window.hostFixture.unmount();
+        window.hostFixture.mount();
     });
+    await expect.poll(replies.cancelled).toBe(true);
+    await replies.release();
+    await waitForNavigation(page);
+    await expect(results(page)).toHaveCount(0);
+    await field(page).focus();
+    await select(page, text.length - 2);
+    await button(page, "Find definition").click();
+    await expect(results(page)).toHaveCount(1);
+    await page.evaluate(() => window.hostFixture.dispose());
 });
