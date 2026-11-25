@@ -26,6 +26,8 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
     reducedMotion.addEventListener("change", schedule);
     let caretLayout: Readonly<{ state: ViewportSnapshot; activity: ViewportActivity; visible: boolean; focused: boolean }> | undefined;
     function positionCaret(): void {
+        // A host edit can queue the viewport behind this frame. Paint its rows before measuring the focused caret.
+        if (!disposed && isFocused(input) && viewport.activity().pending) viewport.flush();
         frame = undefined;
         if (disposed) return;
         const composing = isComposing();
@@ -35,8 +37,9 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
         let rectangle = clientBox(root, viewport.settings().minimap);
         const currentDocument = readDocument();
         let state = viewport.getSnapshot(), activity = viewport.activity(), point = viewport.coordsAt(offset, affinity);
-        let visible = point && point.left >= rectangle.left + state.gutterWidth * rectangle.zoom && point.left < rectangle.right
+        const pointVisible = () => point && point.left >= rectangle.left + state.gutterWidth * rectangle.zoom && point.left < rectangle.right
             && point.top + point.height > rectangle.top && point.top < rectangle.bottom;
+        let visible = pointVisible();
         const prior = caretLayout;
         // Reuse bounded reveal after layout changes hide a previously visible focused head.
         // Explicit scrolling, new selections/revisions and inactive views retain their own positions.
@@ -51,7 +54,7 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
             viewport.flush();
             rectangle = clientBox(root, viewport.settings().minimap);
             state = viewport.getSnapshot(); activity = viewport.activity(); point = viewport.coordsAt(selected.head, selected.headAffinity);
-            visible = point && point.left >= rectangle.left + state.gutterWidth * rectangle.zoom && point.left < rectangle.right && point.top + point.height > rectangle.top && point.top < rectangle.bottom;
+            visible = pointVisible();
         }
         // DOM layout can advance before ResizeObserver queues a render. Retain the last valid
         // placement until measured metrics arrive, then attempt reveal once even if no point exists.

@@ -49,6 +49,21 @@ test("a click during a host edit places the next character in the clicked text",
     });
     await page.mouse.click(point.x, point.y);
     expect(await page.evaluate(() => window.editingFixture.selectionSet().ranges[0]?.head)).toBe(17);
+    await ready(page);
+    const placement = await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(async input => {
+        // Queue caret placement first, then change the document before that frame paints.
+        input.blur();
+        input.focus();
+        window.editingFixture.edit([{ from: 0, to: 0, insert: "x" }]);
+        await new Promise(requestAnimationFrame);
+        const root = input.closest(".st-editor")!;
+        const caret = root.querySelector<HTMLElement>(".st-input-caret")!;
+        const row = root.querySelector('.st-viewport-row[data-line="1"]')!.getBoundingClientRect();
+        const { top, height } = caret.getBoundingClientRect();
+        return { hidden: caret.hidden, caret: { top, height }, row: { top: row.top, height: row.height } };
+    });
+    expect(placement.hidden, JSON.stringify(placement)).toBe(false);
+    expectCaretOnRow(placement.caret, placement.row);
     await page.keyboard.type("!");
     await expect(page.locator('#primary .st-viewport-row[data-line="1"]')).toHaveText("sec!ond");
 });
