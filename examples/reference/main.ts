@@ -167,12 +167,13 @@ function save(review?: SaveReview) {
         }
         if (!current.comparison) switchView(true);
         showSaveState();
-        return;
+    } else {
+        competingText = undefined;
+        baseline = { buffer, version: String(ticket.revision) };
+        refreshBaseline();
+        saved.value = "Saved";
     }
-    competingText = undefined;
-    baseline = { buffer, version: String(ticket.revision) };
-    refreshBaseline();
-    saved.value = "Saved";
+    if (review) current.editor.focus();
 }
 document.querySelector("#source")!.addEventListener("click", () => switchView(false));
 document.querySelector("#changes")!.addEventListener("click", () => switchView(true));

@@ -232,6 +232,7 @@ test("two reference hosts review a competing save before replacing it", async ({
     await firstSource.press("Control+Home");
     await page.keyboard.insertText("// My draft\n");
     const draft = await firstSource.inputValue();
+    const caret = await firstSource.evaluate(node => (node as HTMLTextAreaElement).selectionStart);
     await secondSource.press("Control+Home");
     await page.keyboard.insertText("// Saved elsewhere\n");
     await secondSource.press("ControlOrMeta+s");
@@ -254,9 +255,16 @@ test("two reference hosts review a competing save before replacing it", async ({
     await expect(baseline).toHaveValue("");
     expect(await stored()).toBe("");
     await expect(working).toHaveValue(draft);
-    await overwrite.click();
+    await expect(working).toBeFocused();
+    await expect(overwrite).toBeEnabled();
+    await overwrite.focus();
+    await page.keyboard.press("Enter");
     await expect(overwrite).toBeHidden();
     await expect(page.locator("#saved")).toHaveText("Saved");
+    await expect(working).toBeFocused();
+    await page.keyboard.type("x");
+    await expect(working).toHaveValue(draft.slice(0, caret) + "x" + draft.slice(caret));
+    expect(await stored()).toBe(draft);
     await page.reload();
     await expect(firstSource).toHaveValue(draft);
 });
