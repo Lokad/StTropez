@@ -37,21 +37,10 @@ current change and total using the browser’s number format. The `ariaLabel` op
 `"Text comparison"`. Pass your working `DocumentView` through `view` to keep
 its selection and folds when you close the comparison. The mount disposes only views it creates.
 
-For your own toolbar, set `controls: false`. This gives you just the two panes. Put your controls
-outside their DOM subtree. The returned `TextComparison` exposes the working editor, baseline
-view, `controller` and the same commands the built-in toolbar uses.
-
-```ts
-import type { TextComparison } from "sttropez/browser";
-
-export function bindRestoreButton(button: HTMLButtonElement, comparison: TextComparison) {
-    const render = () => { button.disabled = !comparison.getSnapshot().canRevert; };
-    const restore = () => comparison.revertSelectedHunk();
-    const stop = comparison.subscribe(render);
-    button.addEventListener("click", restore); render();
-    return () => { stop(); button.removeEventListener("click", restore); };
-}
-```
+For a custom toolbar, set `controls: false` and mount your buttons outside the two panes.
+The host example returns pointer users to their active pane and leaves keyboard users on the
+navigation button. Its Restore button captures the selected change on press so a baseline
+refresh before release cannot redirect the edit. [Custom toolbar source](../examples/comparison/controls.ts)
 
 ## Contract
 

@@ -17,8 +17,12 @@ export function mountReviewControls(host: HTMLElement, comparison: TextCompariso
         alignment.setAttribute("aria-pressed", String(state.alignment.enabled)); linking.setAttribute("aria-pressed", String(state.scrollLinked));
         status.textContent = `${state.comparison.status}: ${position ? `change ${position}` : "no change selected"} · alignment ${state.alignment.status}`;
     }
-    previous.addEventListener("click", () => comparison.navigateHunk(-1), { signal: listeners.signal });
-    next.addEventListener("click", () => comparison.navigateHunk(1), { signal: listeners.signal });
+    const navigate = (direction: -1 | 1) => (event: MouseEvent) => {
+        const pane = comparison.activePane();
+        if (comparison.navigateHunk(direction) && event.detail > 0) pane.focus();
+    };
+    previous.addEventListener("click", navigate(-1), { signal: listeners.signal });
+    next.addEventListener("click", navigate(1), { signal: listeners.signal });
     let press: TextComparisonSnapshot | null | undefined;
     revert.addEventListener("pointerdown", () => { press = comparison.getSnapshot(); }, { signal: listeners.signal });
     revert.addEventListener("keydown", event => { if (!event.repeat && (event.key === " " || event.key === "Enter")) press = comparison.getSnapshot(); }, { signal: listeners.signal });

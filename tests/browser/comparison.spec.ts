@@ -438,7 +438,15 @@ test("custom host controls observe captured selection, alignment, authority and 
     const controls = page.getByRole("navigation", { name: "Custom review commands" });
     const later = controls.getByRole("button", { name: "Later change", exact: true });
     const restore = controls.getByRole("button", { name: "Restore selected change", exact: true });
-    await expect(restore).toBeDisabled(); await later.click(); await expect(restore).toBeEnabled();
+    const input = page.getByRole("textbox", { name: "Comparison working source", exact: true });
+    await expect(restore).toBeDisabled();
+    await input.press("ControlOrMeta+End");
+    await typeAfterClick(later, input, "Q");
+    const firstWorkingLine = page.locator(".st-comparison-panes section").last().locator('.st-viewport-row[data-line="0"]');
+    await expect(firstWorkingLine).toHaveText(/^Qconst title/);
+    await page.keyboard.press("ControlOrMeta+z");
+    await ready(page);
+    await expect(restore).toBeEnabled();
     const selected = await page.evaluateHandle(() => window.comparisonFixture.review.hunkAt(0)!);
     const capture = await page.evaluate(() => {
         const f = window.comparisonFixture, state = f.review.getSnapshot(); let rejected = false, calls = 0;
@@ -455,7 +463,6 @@ test("custom host controls observe captured selection, alignment, authority and 
     await controls.getByRole("button", { name: "Toggle linked scrolling", exact: true }).click();
     await expect(controls.getByRole("button", { name: "Toggle linked scrolling", exact: true })).toHaveAttribute("aria-pressed", "false");
     // Browser command guards also apply when a host invokes a captured action directly.
-    const input = page.getByRole("textbox", { name: "Comparison working source", exact: true });
     await input.focus();
     await input.dispatchEvent("compositionstart", { data: "" });
     await expect(later).toBeDisabled(); await expect(restore).toBeDisabled();
@@ -466,7 +473,9 @@ test("custom host controls observe captured selection, alignment, authority and 
     expect(await selected.evaluate(hunk => hunk.revert())).toBe(false);
     expect(await page.evaluate(() => window.comparisonFixture.review.getSnapshot().selectedHunk)).toBe(0);
     await expect(restore).toBeEnabled();
-    await later.click();
+    await later.focus();
+    await later.press("Enter");
+    await expect(later).toBeFocused();
     const beforeRefresh = await page.evaluateHandle(() => window.comparisonFixture.review.hunkAt(0)!);
     expect(await page.evaluate(() => {
         const f = window.comparisonFixture; f.begin("refresh"); f.finish("refresh");
