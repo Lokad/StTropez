@@ -13,19 +13,29 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     });
     const events = new AbortController();
     let intent = 0;
+    let offeredCommandVersion: number | undefined;
     let definitionFocus = 0;
     const leaveSource = () => { definitionFocus = 0; };
     editor.element.addEventListener("focusout", leaveSource, { signal: events.signal });
     window.addEventListener("blur", leaveSource, { signal: events.signal });
     function clear() {
+        offeredCommandVersion = undefined;
         choices.replaceChildren();
         result.value = "";
     }
+    const stopProvider = provider.subscribe(() => {
+        const state = provider.getSnapshot();
+        if (state.phase !== "ready" || offeredCommandVersion !== undefined
+            && state.registrationVersion("workspace/executeCommand") !== offeredCommandVersion) {
+            intent++;
+            clear();
+        }
+    });
     function button(label: string, invoke: () => void) {
         const item = document.createElement("button");
         item.textContent = label;
         item.onpointerdown = event => event.preventDefault();
-        item.onclick = invoke;
+        item.onclick = () => { if (item.isConnected) invoke(); };
         return item;
     }
     function beginCommand() {
@@ -98,6 +108,7 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
         });
     });
     command("command", request => {
+        offeredCommandVersion = provider.getSnapshot().registrationVersion("workspace/executeCommand");
         const names = provider.commandNames();
         if (!names.length) result.value = "No advertised commands.";
         for (const name of names) choices.append(button(name, async () => {
@@ -106,6 +117,7 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     });
     return () => {
         events.abort();
+        stopProvider();
         stopDiagnostics();
         stopRename();
         stopEdits();

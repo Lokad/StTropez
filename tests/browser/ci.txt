@@ -25,6 +25,7 @@ reference.spec.ts > the reference shortcut and toolbar review a captured code ac
 reference.spec.ts > the reference swatch reviews provider formats and preserves the source selection through Undo
 reference.spec.ts > Save and Changes preserve a pending edit in the reference host
 reference.spec.ts > two reference hosts review a competing save before replacing it
+reference.spec.ts > reconnecting the reference host requires a fresh server command choice
 reference.spec.ts > a rename reports success after changing the reference document and Undo clears the result
 comparison.spec.ts
 comparison-ownership.spec.ts

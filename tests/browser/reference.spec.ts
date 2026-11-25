@@ -217,6 +217,39 @@ test("a rename reports success after changing the reference document and Undo cl
     await expect(page.locator("#result")).toBeEmpty();
 });
 
+test("reconnecting the reference host requires a fresh server command choice", async ({ page }) => {
+    let session = 0;
+    let disconnect: () => void;
+    const executions: number[] = [];
+    await page.routeWebSocket("**/lsp-fixture", client => {
+        const connection = ++session;
+        const server = client.connectToServer();
+        disconnect = () => client.close({ code: 1011, reason: "Provider restart" });
+        server.onMessage(packet => client.send(packet));
+        client.onMessage(packet => {
+            if (JSON.parse(packet.toString()).method === "workspace/executeCommand") executions.push(connection);
+            server.send(packet);
+        });
+    });
+    await page.goto("/reference/");
+    const connect = page.getByRole("button", { name: "Connect language server" });
+    const run = page.getByRole("button", { name: "Run server command" });
+    const command = page.getByRole("button", { name: "fixture.status" });
+    await connect.click();
+    await run.click();
+    const previous = await command.elementHandle();
+    disconnect!();
+    await connect.click();
+    await expect(run).toBeVisible();
+    await expect(command).toHaveCount(0);
+    await previous!.evaluate(node => (node as HTMLButtonElement).click());
+    await previous!.dispose();
+    await run.click();
+    await command.click();
+    await expect(page.locator("#result")).toHaveText("Command completed");
+    expect(executions).toEqual([2]);
+});
+
 test("two reference hosts review a competing save before replacing it", async ({ page }) => {
     await page.goto("/reference/");
     await page.evaluate(() => {

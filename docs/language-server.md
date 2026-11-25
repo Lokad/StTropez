@@ -301,11 +301,13 @@ The provider retains the resource and checks its identity after loading. See [ta
 
 ### Commands and edit decisions
 
-The client advertises `workspace/executeCommand` by default. `provider.commandNames()` lists
-static and dynamically registered server commands while connected and ready. Otherwise it returns an empty list.
-Set `applyEdit: true` to accept incoming edits.
-A session advertising incoming edits requires a `workspace/applyEdit` handler before connecting;
-the workspace owner routes each edit to the command that reserved the connection.
+The client advertises `workspace/executeCommand` by default. `provider.commandNames()` returns
+static and dynamically registered commands when ready and an empty list otherwise. Clear a host
+command menu on disconnect or when the snapshot’s `registrationVersion("workspace/executeCommand")`
+changes. Ask the user to choose again from the new list.
+
+To accept incoming edits, set `applyEdit: true` and install a `workspace/applyEdit` handler
+before connecting. The workspace owner routes each edit to the command that reserved the connection.
 Use `createLspCommandRunner(scope)` with captured project snapshots, `isCurrent`, optional preparation
 and an explicit asynchronous review callback. Use `run` for advertised commands or `runAuthorized`
 with a host-approved exact invocation route. Advertisement alone does not authorize execution.
