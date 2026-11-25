@@ -1,7 +1,5 @@
 import { isNonNegativeInteger } from "./bounds.ts";
-import type { TextBuffer } from "./text-buffer.ts";
-import type { PositionMapping } from "./positions.ts";
-import { composePositionMapList, composePositionMaps } from "./positions.ts";
+import { appendStep, finishSteps, type StepRun, type TextStep } from "./text-transaction.ts";
 import type { SelectionSet } from "./selections.ts";
 export type { Selection } from "./selections.ts";
 
@@ -9,32 +7,19 @@ export type EditKind = "typing" | "delete" | "paste" | "composition" | "form" | 
 export type HistoryOptions = Readonly<{ maxGroups?: number; maxChanges?: number; maxChangedUnits?: number; maxSelectionRanges?: number }>;
 export type HistorySnapshot = Readonly<{ undoDepth: number; redoDepth: number }>;
 export type HistorySelection = Readonly<{ viewId: string; before: SelectionSet; after: SelectionSet }>;
-export type HistoryChange = Readonly<{ documentId: string; before: TextBuffer; after: TextBuffer;
-    mapping: PositionMapping; units: number; initiatingView: string | null; selections: readonly HistorySelection[] }>;
+export type HistoryChange = TextStep & Readonly<{ documentId: string;
+    units: number; initiatingView: string | null; selections: readonly HistorySelection[] }>;
 export type HistoryEntry = Readonly<{ id: number; origin: string; kind: EditKind; group: string | null;
     changes: readonly HistoryChange[]; steps: number; units: number }>;
 
 const selectionRanges = (change: HistoryChange): number => change.selections.reduce((sum, view) =>
     sum + view.before.ranges.length + view.after.ranges.length, 0);
 
-/** Equal-sized runs join once. A long group does not recompile its entire map on every key. */
-type MapRun = { size: number; map: PositionMapping; earlier?: MapRun };
-function appendMap(earlier: MapRun | undefined, map: PositionMapping): MapRun {
-    let size = 1;
-    while (earlier?.size === size) {
-        map = composePositionMaps(earlier.map, map);
-        size *= 2; earlier = earlier.earlier;
-    }
-    return earlier ? { size, map, earlier } : { size, map };
-}
-function groupMap(run: MapRun): PositionMapping {
-    if (!run.earlier) return run.map;
-    const maps: PositionMapping[] = [];
-    for (let part: MapRun | undefined = run; part; part = part.earlier) maps.push(part.map);
-    return composePositionMapList(maps.reverse());
+function textStep({ before, after, mapping, parts }: HistoryChange): TextStep {
+    return { before, after, mapping, parts };
 }
 
-type StoredEntry = HistoryEntry & { run?: MapRun };
+type StoredEntry = HistoryEntry & { run?: StepRun };
 type Slot = { entry: StoredEntry; units: number; selections: number };
 class DocumentHistory {
     // [start, cursor) can be undone. [cursor, start + slots.size) can be redone.
@@ -117,9 +102,11 @@ export class TextHistory {
             && first.selections.length === old.selections.length && first.selections.every((view, i) => view.viewId === old.selections[i]!.viewId)
             && previous.steps < this.limits.changes && previous.units + first.units <= this.limits.units
             && old.selections.reduce((sum, view, i) => sum + view.before.ranges.length + first.selections[i]!.after.ranges.length, 0) <= this.limits.selections) {
-            const run = appendMap(previous.run ?? { size: 1, map: old.mapping }, first.mapping);
-            let mapping: PositionMapping | undefined;
-            const change = Object.freeze({ ...first, before: old.before, get mapping() { return mapping ??= groupMap(run); },
+            const run = appendStep(previous.run ?? { size: 1, step: textStep(old) }, textStep(first));
+            let joined: TextStep | undefined;
+            const step = () => joined ??= finishSteps(run);
+            const change = Object.freeze({ ...first, before: old.before,
+                get mapping() { return step().mapping; }, get parts() { return step().parts; },
                 units: old.units + first.units, selections: Object.freeze(old.selections.map((view, i) => Object.freeze({ ...view, after: first.selections[i]!.after }))) });
             entry = Object.freeze({ ...previous, id: ++this.nextId, changes: Object.freeze([change]), steps: previous.steps + 1, units: change.units, run });
             this.discard(doc.remove(--doc.cursor));

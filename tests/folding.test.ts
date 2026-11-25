@@ -40,6 +40,73 @@ function fixture() {
     return { model, source, view, peer, text, finish: () => { view.dispose(); peer.dispose(); model.releaseResource(source.id, true); assert.equal(model.diagnostics().views, 0); assert.equal(model.diagnostics().leases, 0); assert.equal(model.diagnostics().subscriptions, 0); } };
 }
 
+test("composed host edits replay folded moves in order and preserve later fold choices", () => {
+    const workspace = new Workspace();
+    const source = workspace.createTextResource({ scope: "fold", resource: "group", variant: "text" }, "Outline", {
+        value: "a\n  A\nb\n  B\nc\n  C\ntail"
+    });
+    const id = source.documentId;
+    const view = workspace.createDocumentView(id);
+    const document = () => workspace.document(id);
+    const snapshot = () => view.folding.getSnapshot();
+    const state = () => snapshot().regions.map(r => [r.id, r.lineFrom, r.collapsed]);
+    const history = { kind: "refactor", group: "reorder" } as const;
+    try {
+        const { buffer } = document();
+        view.folding.setRanges(snapshot(), ["a", "b", "c"].map((id, i) => ({
+            id, from: buffer.offsetAt(2 * i), to: buffer.offsetAt(2 * i + 2), collapsed: true
+        })));
+        // A named host action can combine ordinary edits and several line moves into one Undo.
+        const append = () => {
+            const { revision, buffer } = document();
+            assert.ok(workspace.edit({ documentId: id, expectedRevision: revision, origin: "host", history, view,
+                edits: [{ from: buffer.length, to: buffer.length, insert: "!" }] }).applied);
+        };
+        append();
+        for (let i = 0; i < 2; i++) {
+            const { revision, buffer } = document();
+            const planner = planLanguageEdit(buffer, view.getSnapshot().selectionSet, "move-line-down",
+                resolveLanguageConfiguration(), snapshot().index);
+            const plan = structuredClone(planner.next(4096).result!);
+            planner.dispose();
+            assert.ok(workspace.edit({ documentId: id, expectedRevision: revision, origin: "host", history, view,
+                edits: plan.edits, selectionSet: plan.selectionSet }).applied);
+        }
+        append();
+        view.folding.setCollapsed(snapshot(), "b", false);
+        const moved = [["b", 0, false], ["c", 2, true], ["a", 4, true]];
+        assert.deepEqual(state(), moved);
+        assert.equal(workspace.observeHistory(id).getSnapshot().undoDepth, 1);
+        assert.ok(workspace.undo({ documentId: id, expectedRevision: document().revision }).applied);
+        assert.equal(document().buffer.text(), buffer.text());
+        assert.deepEqual(state(), [["a", 0, true], ["b", 2, false], ["c", 4, true]]);
+        assert.ok(workspace.redo({ documentId: id, expectedRevision: document().revision }).applied);
+        assert.equal(document().buffer.text(), "b\n  B\nc\n  C\na\n  A\ntail!!");
+        assert.deepEqual(state(), moved);
+
+        // A synchronous transaction can stage the same kind of move before a second edit.
+        assert.ok(workspace.undo({ documentId: id, expectedRevision: document().revision }).applied);
+        view.folding.setCollapsed(snapshot(), "b", true);
+        const planner = planLanguageEdit(buffer, view.getSnapshot().selectionSet, "move-line-down",
+            resolveLanguageConfiguration(), snapshot().index);
+        const move = planner.next(4096).result!.edits;
+        planner.dispose();
+        workspace.transact(id, document().revision, tx => {
+            tx.edit(move);
+            tx.edit([{ from: tx.buffer.length, to: tx.buffer.length, insert: "!" }]);
+        }, { origin: "host", history: "record", kind: "refactor" });
+        const swapped = [["b", 0, true], ["a", 2, true], ["c", 4, true]];
+        assert.deepEqual(state(), swapped);
+        assert.ok(workspace.undo({ documentId: id, expectedRevision: document().revision }).applied);
+        assert.deepEqual(state(), [["a", 0, true], ["b", 2, true], ["c", 4, true]]);
+        assert.ok(workspace.redo({ documentId: id, expectedRevision: document().revision }).applied);
+        assert.deepEqual(state(), swapped);
+    } finally {
+        view.dispose();
+        workspace.releaseResource(source.id, true);
+    }
+});
+
 test("copied line moves carry each view's folds through undo and redo", () => {
     const workspace = new Workspace();
     const source = workspace.createTextResource({ scope: "fold", resource: "move", variant: "text" }, "Move", {

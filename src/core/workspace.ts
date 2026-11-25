@@ -6,8 +6,7 @@ import type { WorkspaceTabs } from "./workspace-tabs.ts";
 import type { TextEdit } from "./changes.ts";
 import { compactDocumentEdit, replacementSpan, textDifference } from "./changes.ts";
 import { documentChange } from "./document-change.ts";
-import { stageTextTransaction } from "./text-transaction.ts";
-import type { TextTransaction } from "./text-transaction.ts";
+import { stageTextTransaction, type StagedText, type TextTransaction } from "./text-transaction.ts";
 import { TextBuffer } from "./text-buffer.ts";
 import type { PositionMapping } from "./positions.ts";
 import { replacementMap } from "./positions.ts";
@@ -17,11 +16,10 @@ import { createSelectionSet, mapSelectionSet, mapWholeTextSelections, sameSelect
 import type { SelectionSet } from "./selections.ts";
 import { NotificationScope, Store } from "./observable.ts";
 import type { AfterDelivery, Observable } from "./observable.ts";
-import { collapseFoldRegions, createFoldRegions, foldingSnapshot, mapFoldIndex, replayDeletedFolds,
+import { collapseFoldRegions, createFoldRegions, foldingSnapshot, projectFolds,
     revealIndexRange, revealIndexSelection, snapshotFromIndex } from "./folding.ts";
 import { lineContentEnd } from "./newlines.ts";
 import type { DocumentFolding, FoldIndex, FoldRegion, FoldingSnapshot, FoldVersion } from "./folding.ts";
-import { lineSwaps } from "./line-moves.ts";
 import { equalValue, snapshotValue } from "./values.ts";
 import type { Immutable, SnapshotValue } from "./values.ts";
 
@@ -119,15 +117,21 @@ export type TextTransactionOptions = Readonly<{
     origin: EditOrigin; source?: string; lease?: EditLease; view?: DocumentView;
     history: "record" | "reset"; kind?: EditKind;
 }>;
-export type TextWriteResult = Readonly<{ applied: true; changed: boolean; revision: number }> | Extract<ChangeResult, { applied: false }>;
-export type ChangeResult = Readonly<{ applied: true; revision: number } | { applied: false;
+type EditRefusal = Readonly<{ applied: false;
     reason: "missing-resource" | "missing-document" | "stale-revision" | "not-ready" | "read-only" | "edit-locked" | "history-empty" | "history-blocked" }>;
+export type TextWriteResult = Readonly<{ applied: true; changed: boolean; revision: number }> | EditRefusal;
+export type ChangeResult = Readonly<{ applied: true; revision: number }> | EditRefusal;
 export type EditResult = ChangeResult;
-export type BatchEditResult = Readonly<{ applied: true; revisions: readonly Readonly<{ documentId: DocumentId; revision: number }>[] }
-    | { applied: false; reason: Extract<ChangeResult, { applied: false }>["reason"] }>;
+export type BatchEditResult = Readonly<{ applied: true; revisions: readonly Readonly<{ documentId: DocumentId; revision: number }>[] }> | EditRefusal;
 export type HistoryRequest = Readonly<{ documentId: DocumentId; expectedRevision: number; origin?: EditOrigin; source?: string; lease?: EditLease }>;
 export type WorkspaceOptions = Readonly<{ onListenerError?: (error: unknown) => void; history?: HistoryOptions }>;
 
+function refuseEdit(reason: EditRefusal["reason"]): EditRefusal {
+    return { applied: false, reason };
+}
+function singleRevision(result: BatchEditResult): EditResult {
+    return result.applied ? { applied: true, revision: result.revisions[0]!.revision } : result;
+}
 function textWriteRequest(documentId: DocumentId, expectedRevision: number, options: TextTransactionOptions): Omit<EditRequest, "edits"> {
     const { history, kind = "replace", origin, source, lease, view } = options;
     if (history !== "record" && history !== "reset") throw new TypeError("Invalid text history policy.");
@@ -144,11 +148,13 @@ function replaceDocumentBuffer(before: TextBuffer, text: string | TextBuffer) {
 type ViewRecord = { handle: DocumentView; state: Store<DocumentViewSnapshot>; folds: Store<FoldingSnapshot>;
     deleted?: WeakMap<PositionMapping, readonly FoldRegion[]> };
 type PreparedView = Readonly<{ view: ViewRecord; state: DocumentViewSnapshot; folds: FoldingSnapshot }>;
-type PreparedText = Readonly<{ record: ResourceRecord; buffer: TextBuffer; mapping: PositionMapping;
+type PreparedText = Readonly<{ record: ResourceRecord; buffer: TextBuffer; mapping: PositionMapping; parts?: HistoryChange["parts"];
     state: ResourceSnapshot<SnapshotValue>; views: readonly PreparedView[] }>;
-function historySelections(text: PreparedText): HistoryChange["selections"] {
-    return Object.freeze(text.views.map(({ view, state }) => Object.freeze({ viewId: view.handle.id,
+function historyChange(text: PreparedText, units: number, initiatingView: string | null = null): HistoryChange {
+    const selections = Object.freeze(text.views.map(({ view, state }) => Object.freeze({ viewId: view.handle.id,
         before: view.state.get().selectionSet, after: state.selectionSet })));
+    return Object.freeze({ documentId: text.record.documentId!, before: text.record.buffer!, after: text.buffer,
+        mapping: text.mapping, parts: text.parts, units, initiatingView, selections });
 }
 type ResourceRecord = {
     handle: ResourceHandle<SnapshotValue>; documentId: DocumentId | null; language: DocumentLanguage | null;
@@ -176,15 +182,13 @@ function documentLanguage(value: DocumentLanguage | null | undefined): DocumentL
 /** Tuple encoding preserves exact string components, including delimiters and empty values. */
 function resourceKeyIdentity(key: ResourceKey): string { return JSON.stringify([key.scope, key.resource, key.variant]); }
 function readySnapshot(metadata: ResourceMetadata, revision: number, value: SnapshotValue | TextBuffer): ResourceSnapshot<SnapshotValue> {
-    if (!(value instanceof TextBuffer)) return Object.freeze({ state: "ready", revision, metadata, value: () => value });
-    // History retains buffers, not these closures or their optional whole-text exports.
     let exported: string | undefined;
-    return Object.freeze({ state: "ready", revision, metadata, value: () => { exported ??= value.text(); return exported; } });
+    const read = value instanceof TextBuffer ? () => exported ??= value.text() : () => value;
+    return Object.freeze({ state: "ready", revision, metadata, value: read });
 }
 /** Metadata changes retain the captured value reader and its optional cached export. */
 function withMetadata(state: ResourceSnapshot<SnapshotValue>, metadata: ResourceMetadata): ResourceSnapshot<SnapshotValue> {
-    if (state.metadata === metadata) return Object.freeze(state);
-    return Object.freeze({ ...state, metadata });
+    return Object.freeze(state.metadata === metadata ? state : { ...state, metadata });
 }
 function viewSnapshot(documentId: DocumentId, revision: number, selectionSet: SelectionSet): DocumentViewSnapshot {
     return Object.freeze({ documentId, revision, selection: selectionSet.ranges[selectionSet.primary]!, selectionSet });
@@ -434,19 +438,18 @@ export class Workspace {
     updateResource<T extends SnapshotValue>(handle: ResourceHandle<T>, request: Readonly<{ expectedRevision: number; value: T; origin: EditOrigin; lease?: EditLease }>): ChangeResult {
         this.scope.assertWritable();
         const record = this.handles.get(handle);
-        if (!record || record.state.get().state === "released") return { applied: false, reason: "missing-resource" };
+        if (!record || record.state.get().state === "released") return refuseEdit("missing-resource");
         if (record.documentId !== null) throw new Error("Text resources require range transactions.");
         const refusal = this.validateEdit(record, request.expectedRevision, request.origin, request.lease);
         if (refusal) return refusal;
         return this.changeValue(record, snapshotValue(request.value));
     }
     edit(request: EditRequest): EditResult {
-        const result = this.editDocuments([request]);
-        return result.applied ? { applied: true, revision: result.revisions[0]!.revision } : result;
+        return singleRevision(this.editDocuments([request]));
     }
     replaceText(id: DocumentId, text: string | TextBuffer, options: TextTransactionOptions & Readonly<{ expectedRevision?: number }>): TextWriteResult {
         const expectedRevision = options.expectedRevision ?? this.documents.get(id)?.state.get().revision;
-        if (expectedRevision === undefined) return { applied: false, reason: "missing-document" };
+        if (expectedRevision === undefined) return refuseEdit("missing-document");
         const result = this.editDocuments([{ ...textWriteRequest(id, expectedRevision, options), text }]);
         if (!result.applied) return result;
         const revision = result.revisions[0]!.revision;
@@ -455,8 +458,7 @@ export class Workspace {
     transact(id: DocumentId, expectedRevision: number, action: (tx: TextTransaction) => void, options: TextTransactionOptions): EditResult {
         if (typeof action !== "function") throw new TypeError("Expected a synchronous text transaction callback.");
         const request = textWriteRequest(id, expectedRevision, options);
-        const result = this.applyDocuments([{ ...request, edits: [] }], action);
-        return result.applied ? { applied: true, revision: result.revisions[0]!.revision } : result;
+        return singleRevision(this.applyDocuments([{ ...request, edits: [] }], action));
     }
     /** Validate every document, permission, view and range before changing any observable. */
     editDocuments(requests: readonly DocumentEditRequest[]): BatchEditResult {
@@ -478,31 +480,30 @@ export class Workspace {
             if (request.origin !== first.origin || (policy?.kind ?? "replace") !== kind || policy?.group !== group
                 || (policy?.reset ?? false) !== reset) throw new Error("A text transaction has one origin and history policy.");
             const record = this.documents.get(request.documentId);
-            if (!record) return { applied: false, reason: "missing-document" };
+            if (!record) return refuseEdit("missing-document");
             const refusal = this.validateEdit(record, request.expectedRevision, request.origin, request.lease); if (refusal) return refusal;
             const view = request.view === undefined ? undefined : record.views.get(request.view.id);
             if ((request.view && view?.handle !== request.view) || ((request.selection || request.selectionSet) && !view)) throw new Error("Selection target must be a live view of this document.");
             if (request.selection && request.selectionSet) throw new Error("Choose a single selection or a selection set.");
             if ("text" in request && "edits" in request) throw new TypeError("Supply replacement text or range edits.");
             const before = record.buffer!;
-            const result = action ? this.scope.read(() => stageTextTransaction(before, action))
+            const result: StagedText = action ? this.scope.read(() => stageTextTransaction(before, action))
                 : "text" in request ? replaceDocumentBuffer(before, request.text) : before.apply(compactDocumentEdit(before, request.edits));
             const afterSelections = request.selectionSet ? createSelectionSet(result.buffer.length, request.selectionSet.ranges, request.selectionSet.primary)
                 : request.selection ? createSelectionSet(result.buffer.length, [request.selection]) : undefined;
             const text = result.buffer !== before ? this.prepareText(record, result.buffer, result.mapping, {
+                parts: result.parts,
                 wholeText: "text" in request, selectionFor: target => target === view ? afterSelections : undefined }) : undefined;
             const selection = !text && view && afterSelections
                 ? this.prepareView(view, request.documentId, record.state.get().revision, before, afterSelections, view.folds.get().index) : undefined;
-            prepared.push({ request, record, before, after: result.buffer, mapping: result.mapping, units: result.changedUnits, view, text, selection });
+            prepared.push({ request, record, units: result.changedUnits, view, text, selection });
         }
-        const actual = prepared.filter(change => change.before !== change.after);
+        const actual = prepared.filter(change => change.text);
         if (reset) {
             // Equal text also invalidates commands from before the host's restore.
             for (const id of ids) this.history.forget(id);
         } else if (actual.length) {
-            const changes: HistoryChange[] = actual.map(change => Object.freeze({ documentId: change.request.documentId, before: change.before, after: change.after,
-                mapping: change.mapping, units: change.units,
-                initiatingView: change.view?.handle.id ?? null, selections: historySelections(change.text!) }));
+            const changes = actual.map(change => historyChange(change.text!, change.units, change.view?.handle.id));
             this.history.record(changes, first.origin, kind, requests.length === 1 ? group : undefined);
         }
         const changed = new Set<Store<unknown>>(), transactionId = actual.length ? ++this.nextTransaction : 0;
@@ -526,14 +527,14 @@ export class Workspace {
         this.scope.assertWritable();
         if (request.source !== undefined && typeof request.source !== "string") throw new TypeError("Edit source must be a string.");
         const record = this.documents.get(request.documentId), origin = request.origin ?? "human";
-        if (!record) return { applied: false, reason: "missing-document" };
+        if (!record) return refuseEdit("missing-document");
         const refusal = this.validateEdit(record, request.expectedRevision, origin, request.lease); if (refusal) return refusal;
         const entry = this.history.peek(request.documentId, direction);
-        if (!entry) return { applied: false, reason: "history-empty" };
-        if (!this.history.available(entry, direction)) return { applied: false, reason: "history-blocked" };
+        if (!entry) return refuseEdit("history-empty");
+        if (!this.history.available(entry, direction)) return refuseEdit("history-blocked");
         for (const change of entry.changes) {
             const participant = this.documents.get(change.documentId as DocumentId);
-            if (!participant || participant.buffer !== (direction === "undo" ? change.after : change.before)) return { applied: false, reason: "history-blocked" };
+            if (!participant || participant.buffer !== (direction === "undo" ? change.after : change.before)) return refuseEdit("history-blocked");
             const denied = this.validateEdit(participant, participant.state.get().revision, origin, participant === record ? request.lease : undefined); if (denied) return denied;
         }
         const prepared = entry.changes.map(change => {
@@ -541,7 +542,8 @@ export class Workspace {
             const selections = new Map(change.selections.map(view => [view.viewId, direction === "undo" ? view.before : view.after]));
             const mapping = direction === "undo" ? forward.invert() : forward;
             return this.prepareText(participant, direction === "undo" ? change.before : change.after, mapping,
-                { selectionFor: view => selections.get(view.handle.id), undo: direction === "undo" ? forward : undefined });
+                { selectionFor: view => selections.get(view.handle.id), undo: direction === "undo" ? forward : undefined,
+                    parts: change.parts });
         });
         this.history.move(entry, direction);
         const changed = new Set<Store<unknown>>(), transactionId = ++this.nextTransaction, revisions = [];
@@ -554,22 +556,18 @@ export class Workspace {
     /** Prepare every projection before history, resource or view mutation, including linked documents. */
     private prepareText(record: ResourceRecord, buffer: TextBuffer, mapping: PositionMapping,
         options: { selectionFor?: (view: ViewRecord) => SelectionSet | undefined; wholeText?: boolean;
-            undo?: PositionMapping | undefined; adopted?: ResourceMetadata } = {}): PreparedText {
+            undo?: PositionMapping | undefined; parts?: HistoryChange["parts"]; adopted?: ResourceMetadata } = {}): PreparedText {
         const current = record.state.get(), revision = current.revision + 1, before = record.buffer!;
         const state = readySnapshot(options.adopted ?? { ...current.metadata, dirty: record.savedBuffer === null || !buffer.equals(record.savedBuffer) }, revision, buffer), views = [];
-        const shared = record.views.size > 1 ? new Map<FoldIndex, FoldIndex>() : undefined;
-        const swaps = lineSwaps(before, buffer, mapping);
+        const project = projectFolds(before, buffer, mapping, record.views.size > 1, options.undo, options.parts);
         for (const view of record.views.values()) {
             const previous = view.state.get().selectionSet;
             const selections = options.selectionFor?.(view) ?? (options.wholeText
                 ? mapWholeTextSelections(mapping, buffer, previous) : mapSelectionSet(mapping, previous));
             const prior = view.folds.get().index;
-            let mapped = shared?.get(prior);
-            if (!mapped) { mapped = mapFoldIndex(buffer, mapping, before, prior, swaps); shared?.set(prior, mapped); }
-            const folds = replayDeletedFolds(view, prior, mapped, mapping, options.undo);
-            views.push(this.prepareView(view, record.documentId!, revision, buffer, selections, folds));
+            views.push(this.prepareView(view, record.documentId!, revision, buffer, selections, project(view, prior)));
         }
-        return { record, buffer, mapping, state, views };
+        return { record, buffer, mapping, parts: options.parts, state, views };
     }
     private prepareView(view: ViewRecord, documentId: DocumentId, revision: number, buffer: TextBuffer,
         selections: SelectionSet, mapped: FoldIndex): PreparedView {
@@ -596,17 +594,17 @@ export class Workspace {
             if (previous.undoDepth !== next.undoDepth || previous.redoDepth !== next.redoDepth) record.history.set(next, changed);
         }
     }
-    private validateEdit(record: ResourceRecord, revision: number, origin: EditOrigin, lease?: EditLease): Extract<ChangeResult, { applied: false }> | undefined {
+    private validateEdit(record: ResourceRecord, revision: number, origin: EditOrigin, lease?: EditLease): EditRefusal | undefined {
         const state = record.state.get();
-        if (state.state !== "ready") return { applied: false, reason: "not-ready" };
-        if (!state.metadata.capabilities.edit.includes(origin)) return { applied: false, reason: "read-only" };
-        if (record.editLease !== null && (record.editLease !== lease || lease.origin !== origin)) return { applied: false, reason: "edit-locked" };
-        if (state.revision !== revision) return { applied: false, reason: "stale-revision" };
+        if (state.state !== "ready") return refuseEdit("not-ready");
+        if (!state.metadata.capabilities.edit.includes(origin)) return refuseEdit("read-only");
+        if (record.editLease !== null && (record.editLease !== lease || lease.origin !== origin)) return refuseEdit("edit-locked");
+        if (state.revision !== revision) return refuseEdit("stale-revision");
         return undefined;
     }
     private changeValue(record: ResourceRecord, value: SnapshotValue): ChangeResult {
         const current = record.state.get();
-        if (current.state !== "ready") return { applied: false, reason: "not-ready" };
+        if (current.state !== "ready") return refuseEdit("not-ready");
         if (equalValue(current.value(), value)) return { applied: true, revision: current.revision };
         this.commitRecord(record, readySnapshot({ ...current.metadata, dirty: record.saved === undefined || !equalValue(record.saved, value) }, current.revision + 1, value));
         return { applied: true, revision: current.revision + 1 };
@@ -733,14 +731,14 @@ export class Workspace {
         const prepared: (PreparedText | Pick<PreparedText, "record" | "buffer" | "state">)[] = [];
         for (const version of versions) {
             const record = this.records.get(version.resourceId);
-            if (!record?.documentId) return { applied: false, reason: "missing-document" };
+            if (!record?.documentId) return refuseEdit("missing-document");
             if (documents.has(record.documentId)) throw new Error("A saved document may appear only once.");
             documents.add(record.documentId);
             const state = record.state.get();
-            if (!record.buffer || state.state !== "ready" || record.saveReservations || record.reloadReservations) return { applied: false, reason: "not-ready" };
-            if (version.expectedRevision !== undefined && version.expectedRevision !== state.revision) return { applied: false, reason: "stale-revision" };
-            if (record.editLease) return { applied: false, reason: "edit-locked" };
-            if (state.metadata.dirty && !state.metadata.capabilities.edit.includes("host")) return { applied: false, reason: "read-only" };
+            if (!record.buffer || state.state !== "ready" || record.saveReservations || record.reloadReservations) return refuseEdit("not-ready");
+            if (version.expectedRevision !== undefined && version.expectedRevision !== state.revision) return refuseEdit("stale-revision");
+            if (record.editLease) return refuseEdit("edit-locked");
+            if (state.metadata.dirty && !state.metadata.capabilities.edit.includes("host")) return refuseEdit("read-only");
             if (version.serverVersion !== null && typeof version.serverVersion !== "string") throw new TypeError("Invalid saved text version.");
             const before = record.buffer, { buffer, mapping, changedUnits: units } = replaceDocumentBuffer(before, version.text);
             const metadata: ResourceMetadata = { ...state.metadata, serverVersion: version.serverVersion, dirty: false, saveStatus: "idle", failure: null };
@@ -750,8 +748,7 @@ export class Workspace {
             }
             const text = this.prepareText(record, buffer, mapping, { wholeText: true, adopted: metadata });
             prepared.push(text);
-            if (options.history === "record") history.push({ documentId: record.documentId, before, after: buffer, mapping, units,
-                initiatingView: null, selections: historySelections(text) });
+            if (options.history === "record") history.push(historyChange(text, units));
         }
         for (const id of documents) { if (options.history === "reset") this.history.forget(id); else this.history.seal(id); }
         if (history.length) this.history.record(history, "host", "canonical");
@@ -814,20 +811,19 @@ export class Workspace {
                 && (savedBuffer ? !record.buffer!.equals(savedBuffer) : !equalValue(current.value(), savedValue));
             const canonical = savedBuffer && canonicalApplied ? record.buffer!.apply([textDifference(current.value() as string, savedValue as string)!]) : undefined;
             const text = canonical ? this.prepareText(record, canonical.buffer, canonical.mapping, { wholeText: true }) : undefined;
-            if (canonical && text) this.history.record([Object.freeze({ documentId: record.documentId!, before: record.buffer!, after: canonical.buffer,
-                mapping: canonical.mapping, units: canonical.changedUnits, initiatingView: null, selections: historySelections(text) })], "host", "canonical");
+            if (canonical && text) this.history.record([historyChange(text, canonical.changedUnits)], "host", "canonical");
             record.saved = savedBuffer ? undefined : savedValue; record.savedBuffer = savedBuffer; settled = true;
             const receipt = Object.freeze({ submission: submitted, savedValue, serverVersion: response.serverVersion, canonicalApplied });
             const changed = new Set<Store<unknown>>();
+            const saved = { serverVersion: response.serverVersion, saveStatus: record.saveReservations > 1 ? "saving" : "idle" } as const;
             if (savedBuffer) {
                 if (text) this.commitText(text, "host", "canonical", ++this.nextTransaction, changed);
                 const next = record.state.get();
-                this.setRecord(record, withMetadata(next, { ...next.metadata, serverVersion: response.serverVersion,
-                    dirty: !record.buffer!.equals(savedBuffer), saveStatus: record.saveReservations > 1 ? "saving" : "idle" }), changed);
+                this.setRecord(record, withMetadata(next, { ...next.metadata, ...saved, dirty: !record.buffer!.equals(savedBuffer) }), changed);
             } else {
                 const nextValue = canonicalApplied ? savedValue : current.value();
-                this.setRecord(record, readySnapshot({ ...current.metadata, serverVersion: response.serverVersion, dirty: !equalValue(nextValue, savedValue),
-                    saveStatus: record.saveReservations > 1 ? "saving" : "idle" }, current.revision + (canonicalApplied ? 1 : 0), nextValue), changed);
+                this.setRecord(record, readySnapshot({ ...current.metadata, ...saved, dirty: !equalValue(nextValue, savedValue) },
+                    current.revision + (canonicalApplied ? 1 : 0), nextValue), changed);
             }
             if (record.documentId !== null) this.history.seal(record.documentId); this.syncHistory(changed);
             this.publish(changed); return receipt;

@@ -7,7 +7,8 @@ import type { Observable } from "./observable.ts";
 import { partitionPoint } from "./bound-search.ts";
 import { appendNestedFold } from "./fold-nesting.ts";
 import { lineBoundary, lineContentEnd } from "./newlines.ts";
-import type { LineSwap } from "./line-moves.ts";
+import { lineSwaps, type LineSwap } from "./line-moves.ts";
+import type { TextStep } from "./text-transaction.ts";
 
 /** Host-owned raw anchors include a visible header and at least one complete body row. */
 export type FoldRange = Readonly<{ id: string; from: number; to: number; collapsed?: boolean; group?: string }>;
@@ -45,6 +46,13 @@ function region(buffer: TextBuffer, id: string, from: number, to: number, collap
 export function sameFoldRegions(a: readonly FoldRegion[], b: readonly FoldRegion[]): boolean {
     return a === b || a.length === b.length && a.every((r, i) => { const s = b[i]!; return r.id === s.id && r.from === s.from && r.to === s.to && r.collapsed === s.collapsed && r.lineFrom === s.lineFrom && r.lineTo === s.lineTo && r.group === s.group; });
 }
+function shiftRegion(r: FoldRegion, units: number, lines: number): FoldRegion {
+    return Object.freeze({ ...r, from: r.from + units, to: r.to + units,
+        lineFrom: r.lineFrom + lines, lineTo: r.lineTo + lines });
+}
+function compareRegions(a: FoldRegion, b: FoldRegion): number {
+    return a.lineFrom - b.lineFrom || b.lineTo - a.lineTo;
+}
 export function createFoldRegions(buffer: TextBuffer, ranges: readonly FoldRange[], previous: readonly FoldRegion[] = empty): readonly FoldRegion[] {
     const prepared = resolved.get(buffer)?.get(ranges);
     if (prepared === ranges) return owned.has(previous) && sameFoldRegions(previous, prepared) ? previous : prepared;
@@ -64,7 +72,7 @@ export function createFoldRegions(buffer: TextBuffer, ranges: readonly FoldRange
         if (!value) throw new RangeError("A fold needs a header and at least one body row."); return value;
     });
     if (!prepared) {
-        regions.sort((a, b) => a.lineFrom - b.lineFrom || b.lineTo - a.lineTo);
+        regions.sort(compareRegions);
         const stack: FoldRegion[] = [];
         for (let i = 0; i < regions.length; i++) {
             const r = regions[i]!;
@@ -113,8 +121,7 @@ export function mapFoldRegions(buffer: TextBuffer, mapping: PositionMapping, reg
         if (moved !== undefined) { if (moved) reordered!.push(moved); continue; }
         let next: FoldRegion | undefined;
         if (edges && r.to <= edges.prefix) next = r;
-        else if (edges && r.from >= suffix) next = units === 0 && lines === 0 ? r
-            : Object.freeze({ ...r, from: r.from + units, to: r.to + units, lineFrom: r.lineFrom + lines, lineTo: r.lineTo + lines });
+        else if (edges && r.from >= suffix) next = units === 0 && lines === 0 ? r : shiftRegion(r, units, lines);
         else {
             const from = mapping.map(r.from, "after"), to = mapping.map(r.to, "before");
             if (from.offset < to.offset) {
@@ -134,7 +141,7 @@ export function mapFoldRegions(buffer: TextBuffer, mapping: PositionMapping, reg
         if (!next) continue;
         if (reordered) reordered.push(next); else append(next);
     }
-    if (reordered) for (const next of reordered.sort((a, b) => a.lineFrom - b.lineFrom || b.lineTo - a.lineTo)) append(next);
+    if (reordered) for (const next of reordered.sort(compareRegions)) append(next);
     return sameFoldRegions(regions, mapped) ? regions : mapped.length ? retain(mapped) : empty;
 }
 /** Internal state-only change; geometry was validated when the regions were installed. */
@@ -192,8 +199,7 @@ function projectedRegion(layout: FoldLayout, r: FoldRegion): FoldRegion {
     if (!layout.units && !layout.lines) return r;
     const cache = layout.translated ??= new WeakMap(), cached = cache.get(r);
     if (cached) return cached;
-    const value = Object.freeze({ ...r, from: r.from + layout.units, to: r.to + layout.units,
-        lineFrom: r.lineFrom + layout.lines, lineTo: r.lineTo + layout.lines });
+    const value = shiftRegion(r, layout.units, layout.lines);
     cache.set(r, value); return value;
 }
 
@@ -286,8 +292,30 @@ function indexFor(lineCount: number, regions: readonly FoldRegion[]): FoldIndex 
 
 type FoldHistory = { deleted?: WeakMap<PositionMapping, readonly FoldRegion[]> };
 
+type FoldProjection = (view: FoldHistory, index: FoldIndex) => FoldIndex;
+export function projectFolds(before: TextBuffer, after: TextBuffer, mapping: PositionMapping, share: boolean,
+    undo?: PositionMapping, parts?: readonly TextStep[]): FoldProjection {
+    if (parts) {
+        const projections = parts.map(part => undo
+            ? projectFolds(part.after, part.before, part.mapping.invert(), share, part.mapping, part.parts)
+            : projectFolds(part.before, part.after, part.mapping, share, undefined, part.parts));
+        if (undo) projections.reverse();
+        return (view, index) => projections.reduce((current, project) => project(view, current), index);
+    }
+    const swaps = lineSwaps(before, after, mapping);
+    const shared = share ? new Map<FoldIndex, FoldIndex>() : undefined;
+    return (view, prior) => {
+        let mapped = shared?.get(prior);
+        if (!mapped) {
+            mapped = mapFoldIndex(after, mapping, before, prior, swaps);
+            shared?.set(prior, mapped);
+        }
+        return replayDeletedFolds(view, prior, mapped, mapping, undo);
+    };
+}
+
 /** Only ranges erased by this edit travel back with Undo. Surviving ranges belong to the live view. */
-export function replayDeletedFolds(view: FoldHistory, prior: FoldIndex, mapped: FoldIndex,
+function replayDeletedFolds(view: FoldHistory, prior: FoldIndex, mapped: FoldIndex,
     mapping: PositionMapping, undo?: PositionMapping): FoldIndex {
     if (!undo) {
         if (mapped.lineCount < prior.lineCount && layouts.get(mapped)!.regions.length < layouts.get(prior)!.regions.length) {
