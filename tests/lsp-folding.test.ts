@@ -1,4 +1,4 @@
-import { decodeLspFoldingRanges } from "../src/kernels/index.ts";
+import { decodeLspFoldingRanges } from "../src/protocol/lsp-folding.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { clientFixture, protocol, settled } from "./helpers/lsp-client.ts";

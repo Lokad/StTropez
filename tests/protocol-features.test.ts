@@ -5,12 +5,14 @@ import type { ApplyWorkspaceEditParams, CodeAction, Command, CompletionList, Pub
 import { TextBuffer } from "../src/core/text-buffer.ts";
 import { Workspace, createSelectionSet } from "../src/index.ts";
 import {
-    composePositionMaps, planSnippetEdit, planSnippetChoice, snippetChoiceText, decodeLspCompletions,
-    decodeLspResolvedCompletion, decodeLspDiagnostics, decodeLspHover, decodeLspLocations,
-    decodeLspWorkspaceEdit, decodeLspApplyEdit, decodeLspCodeActions, decodeLspResolvedCodeAction,
-    decodeLspSignatureHelp, decodeLspDocumentLinks, decodeLspResolvedDocumentLink, decodeLspColor,
-    decodeLspDocumentColors, decodeLspColorPresentations, JsonRpcConnection,
+    composePositionMaps, planSnippetEdit, planSnippetChoice, snippetChoiceText, decodeLspDiagnostics, JsonRpcConnection,
 } from "../src/kernels/index.ts";
+import {
+    decodeLspCompletions, decodeLspResolvedCompletion, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit,
+    decodeLspApplyEdit, decodeLspSignatureHelp, decodeLspDocumentLinks, decodeLspResolvedDocumentLink, decodeLspColor,
+    decodeLspDocumentColors, decodeLspColorPresentations,
+} from "../src/protocol/lsp-features.ts";
+import { decodeLspCodeActions, decodeLspResolvedCodeAction } from "../src/protocol/lsp-code-actions.ts";
 import type { JsonValue, LspDocumentCapture, RpcTransport } from "../src/protocol/index.ts";
 
 import { ProtocolDecodeError, LspLineIndex, UnsupportedLspSnippetError, rebaseLspCompletion, lspCompletionPlan, lspRangeOffsets, RpcError } from "../src/protocol/index.ts";

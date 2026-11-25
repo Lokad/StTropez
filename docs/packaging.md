@@ -74,7 +74,7 @@ Paths are relative to the restored `assets/` folder or the staged directory.
 | `sttropez/editor.css` | `editor.css` | — |
 | `sttropez/regex-worker.js` | `browser/regex-worker.js` | — |
 
-Use `sttropez/kernels` for standalone text algorithms, position maps, JSON-RPC connections, LSP sessions and raw response decoders. The editor and language clients load their own implementations.
+Use `sttropez/kernels` for standalone text algorithms, position maps, JSON-RPC connections, LSP sessions and diagnostic decoding. The editor and language clients load their own implementations.
 
 The package declares these exports, the ESM module format and the MIT license in `package.json`.
 Private `.d.ts` files describe types used by the public API. Only the paths in the exports map

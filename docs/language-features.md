@@ -171,7 +171,7 @@ Read `completionAt(index)` from the snapshot that supplied the labels. Only rend
 need handles. `select()` and `accept(mode)` act on that item. Filtering the list expires its
 handles. Diagnostics, selection and detail updates retain the same `choices` array.
 
-`decodeLspCompletions` accepts arrays, CompletionList or null, including defaults for edit ranges,
+Completion accepts arrays, CompletionList or null, including defaults for edit ranges,
 insertion format/mode, commit characters and opaque data. It checks the primary and additional
 same-document edits. A server-supplied range overrides the browser’s bounded Unicode word range.
 Choices sort stably by `sortText` and filter by case-insensitive `filterText` prefix. If the prior
@@ -192,7 +192,7 @@ Incomplete lists retrigger with context kind 3 while compatible choices stay vis
 `completionIncomplete` preserves provider partial-list status independently of client filtering.
 
 When the provider advertises resolution, the selected item can resolve `detail`, `documentation`,
-`additionalTextEdits`, `insertText` and `textEdit`. `decodeLspResolvedCompletion` requires the exact
+`additionalTextEdits`, `insertText` and `textEdit`. Resolution requires the exact
 captured snapshot and preserves label, filtering/sorting fields, format and opaque identity.
 Primary content may change only within the captured insertion/replacement ranges. Additional
 ranges belong to the resolve request's snapshot. Failed or malformed resolution dismisses the
@@ -329,7 +329,7 @@ provider refreshes. Blur, composition and `cancel()` dismiss help. A host
 can move focus to its own field while rendering a signature. Disposing the editor also disposes
 the controller. If attachment fails, the host can retry with a live provider on the same editor.
 
-`decodeLspSignatureHelp` returns literal labels/documentation plus structured content, UTF-16
+Signature help returns literal labels and documentation plus structured content, UTF-16
 parameter offsets, active indices and immutable wire context. String parameter labels must occur
 inside the signature label; tuple offsets must fit it. A signature's active parameter overrides
 the batch value. Missing or out-of-range nonnegative indices select the first available entry;
@@ -389,7 +389,7 @@ Navigation loads up to four distinct missing URIs at once and returns locations 
 original order. Repeated locations share a load. If the host declines a URI, the lookup fails and
 releases the other targets, including any that finish after cancellation.
 
-`decodeLspLocations` accepts Location, Location[] or LocationLink[] for definitions and
+Navigation accepts Location, Location[] or LocationLink[] for definitions and
 Location[] for references; null yields an empty result. Mixed location/link arrays are refused.
 Every target URI must resolve to an exact captured buffer/index/resource/document/revision.
 Unknown targets reject the whole batch. A LocationLink selection must fit its target range after
@@ -472,7 +472,7 @@ A `refused` result gives the reason `not-writable` for a locked or read-only tar
 
 The server checks language naming rules. The host sets the name field’s input limits.
 
-`decodeLspWorkspaceEdit` accepts `changes` maps and versioned `documentChanges` text edits.
+Workspace edits accept `changes` maps and versioned `documentChanges` text edits.
 When both are supplied, `documentChanges` takes precedence. Numeric versions must match captured
 wire versions; absent/null versions require current captured buffers too. Unknown URIs, repeated
 document identities, invalid ranges, overlap or malformed final entries refuse the entire batch.
@@ -549,13 +549,13 @@ before offering another command.
 Action requests include the selected range and overlapping diagnostics for the captured revision.
 The provider can resolve a choice after the user selects it.
 
-`decodeLspCodeActions` accepts a complete array or null, including CodeAction and Command literals,
+The code-action controller accepts a complete array or null, including CodeAction and Command literals,
 disabled reasons, preferred flags, open kind strings, workspace edits and opaque data. Titles and
 reasons are literal text. Disabled choices also undergo full metadata/target validation. Malformed
 final items and partial-list envelopes reject the batch. An unresolved choice without an edit or
 command can resolve when matching provider options advertise `resolveProvider`.
 
-`decodeLspResolvedCodeAction` accepts only the advertised addition of `edit`. All other attributes and
+Resolving an action accepts only the advertised addition of `edit`. All other attributes and
 data must match, irrespective of JSON key order. A changed title, new command, missing edit or stale
 capture rejects the reply. Browsing and resolving actions leave the files untouched.
 
@@ -583,7 +583,7 @@ host policy changes during a request, call `codeActions.cancel()`. Denying a com
 the entire choice, including its initial edit. Earlier approved batches remain undoable if a
 later batch fails. [Command permissions and reconnect](language-server.md#commands-and-edit-decisions)
 
-`decodeLspApplyEdit` checks the optional literal label and every text edit. Return an
+An incoming edit request checks the optional literal label and every text edit. Return an
 `LspApplyEditResult` for each decision. To decline, return `applied: false` and an optional failure
 reason. Cancellation uses the usual request path. Set a review deadline. If the connection closes
 after commit, report the uncertain delivery and leave the edit in history.
@@ -624,9 +624,8 @@ link from the snapshot for a fresh click.
 
 Caret movement cancels an explicit lookup or pending navigation. The automatic scan and completed list survive caret movement.
 An edit or authority change in a captured document, a new request, cancellation or editor
-disposal invalidates its actions. An expired action returns `stale`. `decodeLspDocumentLinks`
-checks ranges and bounds the URI, tooltip and opaque data. `decodeLspResolvedDocumentLink` allows
-a new target and tooltip while requiring the original range and identity.
+disposal invalidates its actions. An expired action returns `stale`. The controller checks each range and bounds the URI, tooltip and opaque data. A resolved link
+may change its target and tooltip. Its range and identity must match the original link.
 
 ### Document colors
 
@@ -658,7 +657,7 @@ replaced literals and groups all edits into one Undo. Matching text preserves re
 
 Color discovery validates every range and requires finite RGBA channels in `[0, 1]`.
 
-`decodeLspColorPresentations` validates complete primary/additional edit plans. A missing primary
+The color controller validates complete primary/additional edit plans. A missing primary
 edit uses the literal presentation label at the captured color range. An invalid final choice,
 overlap or out-of-document edit rejects the batch. Empty choices are unavailable for application.
 Labels need not be color literals; the proposed-color input grammar belongs to the host.
@@ -687,7 +686,7 @@ pane’s folds alone. [Whole-line ranges and provider groups](folding.md#languag
 ### Limits
 
 Sizes below count UTF-16 units. The client validates the whole list before you page it for display.
-Set input limits yourself if you call a decoder directly. Most features rely on the
+Most features rely on the
 [session, transport and JSON limits](language-server.md#limits-and-failures) to bound incoming data.
 
 | Feature boundary | Limit or policy |

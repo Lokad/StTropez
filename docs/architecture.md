@@ -69,7 +69,7 @@ workspace transaction with the revision the analysis read. [Transactions](worksp
 | --- | --- | --- |
 | `src/core` | Buffers, edits, selections, history, resources and transactions. Runs without a browser. | Other core modules. No DOM, React, Node, network or storage APIs. |
 | `src/protocol` | JSON-RPC/LSP sessions and the regex worker's private protocol. Validates messages. | Core and protocol modules. The caller supplies transport and scheduling through interfaces. |
-| `src/kernels` | Public entry for text algorithms and protocol decoders | Re-exports core and protocol modules. |
+| `src/kernels` | Public entry for text algorithms, JSON-RPC, LSP sessions and diagnostic decoding | Re-exports core and protocol modules. |
 | `src/browser` | Editor DOM, native input, caret geometry, drawing and browser adapters | Browser APIs and all three library layers |
 | Host application | Storage, authentication, service endpoints, file routing, framework state, forms and controls | Public package entries and the application's dependencies |
 | Development tools and fixtures | Builds, servers, test providers, hooks and measurement | Development dependencies. These tools aren't part of the shipped runtime. |

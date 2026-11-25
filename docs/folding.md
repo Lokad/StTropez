@@ -142,7 +142,7 @@ Snapshots also give the revision, counts and available groups.
 cancellable call. Its `result` resolves to the captured revision, ranges and an `isCurrent` guard. The server must provide `textDocument/foldingRange`. Preserve the guard when returning a batch to the folding controller. Dispose the client with its host
 attachment. Capability registration and reconnect use the shared provider session.
 
-The client advertises complete-line folds. `decodeLspFoldingRanges` from `sttropez/kernels` converts inclusive LSP end
+The client advertises complete-line folds and converts inclusive LSP end
 lines to exclusive raw offsets using the captured LSP line index. Optional character positions
 and collapsed text are ignored. Out-of-document or degenerate ranges are skipped; malformed
 response shapes reject the whole batch. Bare CR is an LSP line break, but a range covering no

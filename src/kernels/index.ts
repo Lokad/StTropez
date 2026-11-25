@@ -11,11 +11,4 @@ export { parseSnippet, offsetSnippetStops, planSnippetEdit, snippetChoiceText, p
 export { JsonRpcConnection } from "../protocol/json-rpc.ts";
 export { LspSession } from "../protocol/lsp-session.ts";
 
-export {
-    decodeLspApplyEdit, decodeLspColor, decodeLspColorPresentations, decodeLspCompletions, decodeLspDiagnostics,
-    decodeLspDocumentColors, decodeLspDocumentLinks, decodeLspHover, decodeLspLocations, decodeLspResolvedCompletion,
-    decodeLspResolvedDocumentLink, decodeLspSignatureHelp, decodeLspWorkspaceEdit,
-} from "../protocol/lsp-features.ts";
-export { decodeLspCodeActions, decodeLspResolvedCodeAction } from "../protocol/lsp-code-actions.ts";
-export { decodeLspFoldingRanges } from "../protocol/lsp-folding.ts";
-export { decodeLspDocumentHighlights } from "../protocol/lsp-highlights.ts";
+export { decodeLspDiagnostics } from "../protocol/lsp-features.ts";
