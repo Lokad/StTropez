@@ -31,7 +31,10 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, edit
     document.body.append(popup);
     const locationsOverlay = mountAnchoredOverlay(editor, popup, {
         dismissOn: ["focus-leave"],
-        onHide(reason) { if (reason === "focus-leave" || reason === "expired") cancelNavigation(); },
+        onHide(reason, hadFocus) {
+            if (hadFocus && (reason === "clipped" || reason === "expired")) editor.focus();
+            if (reason === "focus-leave" || reason === "expired") cancelNavigation();
+        },
     });
     scope.defer(locationsOverlay.dispose);
     type Query = { kind: "definition" | "references"; message: string; offset: number; revision: number;

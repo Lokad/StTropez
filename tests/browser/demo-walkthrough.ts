@@ -1120,6 +1120,7 @@ export async function runDemoProjectResults(page: Page, url = "/") {
             return !!box && (Math.abs(box.y - line.bottom) <= 6 || Math.abs(box.y + box.height - line.top) <= 6);
         }).toBe(true);
     }
+    await locations.locator('[data-chosen="true"]').focus();
     await scrollAwayAndBack(locations, 0);
     await expect(locations.locator('[data-chosen="true"]')).toHaveAttribute("data-location", "1200");
     await expect(locations.locator("[data-location]")).toHaveCount(49); await source.press("Enter");
