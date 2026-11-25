@@ -96,12 +96,13 @@ for (const [cause, interrupt] of Object.entries(sourceChanges)) {
         assert.equal(f.document(), source);
     });
 
-    test(`a delayed direct rename cannot edit after ${cause}`, { timeout: 5000 }, async t => {
+    const review = cause === "typing";
+    test(`a delayed rename ${review ? "preview" : "edit"} expires after ${cause}`, { timeout: 5000 }, async t => {
         const f = await fixture(t);
         const rename = attachEditorLanguage(f.editor, f.provider, { rename: {} }).rename;
         const edit = { changes: { "generic:source": [{ range, newText: "replacement" }] } };
         const held = holdReply(f, "textDocument/rename", edit);
-        const pending = rename.request("replacement");
+        const pending = rename.request("replacement", { review });
         await held.received;
         interrupt(f);
         assert.deepEqual(await pending, { status: "stale" });
@@ -111,6 +112,10 @@ for (const [cause, interrupt] of Object.entries(sourceChanges)) {
         await f.flush();
         assert.equal(rename.getSnapshot().preview, null);
         assert.equal(f.document(), source);
+        if (review) {
+            assert.equal(f.sent("textDocument/prepareRename").length, 0);
+            assert.equal(source.buffer.slice(0, source.buffer.length), "prefix alpha beta");
+        }
     });
 }
 

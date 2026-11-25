@@ -213,36 +213,6 @@ test("F2 accepts immediate typing and retires a pending rename when focus leaves
     await expect(dialog).toBeHidden(); await expect(page.locator("#language-command-status")).toBeHidden();
 });
 
-test("typing invalidates a held rename preview while retaining the actual edit", async ({ page }) => {
-    let held = false, prepared = false, release: (() => void) | undefined;
-    await page.routeWebSocket("**/demo-provider/*", client => {
-        const server = client.connectToServer(), ids = new Set<number>();
-        client.onMessage(message => {
-            const value = JSON.parse(message.toString());
-            if (value.method === "textDocument/prepareRename") prepared = true;
-            if (value.method === "textDocument/rename") ids.add(value.id);
-            server.send(message);
-        });
-        server.onMessage(message => {
-            const value = JSON.parse(message.toString());
-            if (value.result?.capabilities?.renameProvider) {
-                value.result.capabilities.renameProvider = true; client.send(JSON.stringify(value));
-            } else if (!held && ids.has(value.id)) { held = true; release = () => client.send(message); }
-            else client.send(message);
-        });
-    });
-    await openDemo(page); const source = await symbol(page); await source.press("F2");
-    const dialog = page.getByRole("dialog", { name: "Rename symbol", exact: true });
-    await dialog.getByRole("textbox", { name: "New name", exact: true }).fill("cartTotal");
-    await dialog.getByRole("button", { name: "Preview rename", exact: true }).click(); await expect.poll(() => held).toBe(true);
-    await expect(dialog.getByLabel("New name")).toBeFocused();
-    expect(prepared).toBe(false);
-    await source.press("Control+Home"); await source.pressSequentially("// Actual edit\n"); release!();
-    await expect(dialog).toBeHidden(); await expect(source).toBeFocused();
-    await expect(page.locator("#editor")).toContainText("// Actual edit"); await expect(page.locator("#editor")).toContainText("calculateTotal(cart, 0.1)");
-    await expect(page.locator("#editor")).not.toContainText("cartTotal");
-});
-
 test("real provider restart cancels a rename and resynchronizes edits without remounting the input", async ({ page }) => {
     let held = false, disconnect: (() => void) | undefined;
     await page.routeWebSocket("**/demo-provider/*", client => {
