@@ -1,5 +1,24 @@
 import { test, expect } from "./fixtures.ts";
 
+test("the reference host highlights the completion that Enter inserts", async ({ page }) => {
+    await page.goto("/reference/");
+    await page.getByRole("button", { name: "Connect language server" }).click();
+    await expect(page.getByRole("button", { name: "Resolve this placeholder." })).toBeVisible();
+    const source = page.getByRole("textbox", { name: "quote.ts" });
+    await source.press("ControlOrMeta+End");
+    await source.press("ControlOrMeta+Space");
+    const list = page.locator("#completions");
+    const current = list.locator('[aria-current="true"]');
+    await expect(current).toHaveText("sample");
+    await source.press("ArrowDown");
+    await expect(current).toHaveText("sampleWithImport");
+    const other = list.getByRole("button", { name: "sample", exact: true });
+    const border = await other.evaluate(button => getComputedStyle(button).borderColor);
+    await expect(current).not.toHaveCSS("border-color", border);
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#pane .st-viewport-row").last()).toHaveText("sampleValue");
+});
+
 test("a rename reports success after changing the reference document and Undo clears the result", async ({ page }) => {
     await page.goto("/reference/");
     await page.getByRole("button", { name: "Connect language server" }).click();

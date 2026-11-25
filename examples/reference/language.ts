@@ -40,12 +40,22 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
         else if (outcome.status === "failed") result.value = String(outcome.error);
         else result.value = outcome.status === "stale" ? "The source changed. Try again." : outcome.reason;
     }
+    let displayed: readonly string[] | undefined;
+    let selected: Element | null = null;
     function renderCompletions() {
         const state = language.completion.getSnapshot();
-        completions.replaceChildren(...state.choices.map((label, index) => {
-            const item = state.completionAt(index)!;
-            return button(label, () => { item.accept("replace"); });
-        }));
+        if (displayed !== state.choices) {
+            displayed = state.choices;
+            completions.replaceChildren(...displayed.map((label, index) => {
+                const item = state.completionAt(index)!;
+                return button(label, () => { item.accept("replace"); });
+            }));
+        }
+        const current = completions.children.item(state.choiceIndex);
+        if (current === selected) return;
+        selected?.removeAttribute("aria-current");
+        current?.setAttribute("aria-current", "true");
+        selected = current;
     }
     function renderDiagnostics() {
         problems.replaceChildren(...language.diagnostics.getSnapshot().diagnostics.map(item =>
