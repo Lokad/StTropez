@@ -800,9 +800,13 @@ test("yielding multiline indentation publishes one reversible transaction", asyn
 });
 
 test("configured commands retain native ordering and expire on configuration changes", async ({ page }) => {
-    await page.evaluate(() => {
+    // Both interactions need an outstanding command, even when a planning slice runs quickly.
+    const rows = 65_536;
+    await page.evaluate(rows => {
         window.editingFixture.configure({ language: { tabSize: 2, lineComment: "//" } });
-        window.editingFixture.setText("x\n".repeat(4096)); window.editingFixture.select("primary", { anchor: 0, head: 8192 });
+        const source = "x\n".repeat(rows);
+        window.editingFixture.setText(source);
+        window.editingFixture.select("primary", { anchor: 0, head: source.length });
         window.editingFixture.focus("primary");
         window.editingFixture.command("line-comment");
         if (!window.editingFixture.snapshot().primary.pendingCommand) throw new Error("Expected deferred comment planning");
@@ -816,11 +820,13 @@ test("configured commands retain native ordering and expire on configuration cha
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
         const event = new InputEvent("beforeinput", { inputType: "insertText", data: "z", bubbles: true, cancelable: true });
         input.dispatchEvent(event); if (!event.defaultPrevented) throw new Error("Expected captured input");
-    });
+    }, rows);
     await expect.poll(async () => (await state(page)).primary.pendingInput).toBe(false);
     expect((await state(page)).conflicts).toEqual([]);
-    expect(await page.evaluate(() => window.editingFixture.range(20475, 20485))).toBe("// x\n(\n  z");
-    const rows = 65_536;
+    expect(await page.evaluate(rows => {
+        const f = window.editingFixture;
+        return f.range(0, f.snapshot().document!.length) === "// x\n".repeat(rows) + "(\n  z";
+    }, rows)).toBe(true);
     await page.evaluate(async rows => {
         const f = window.editingFixture;
         const source = "x\n".repeat(rows);

@@ -107,6 +107,20 @@ test("configured line indentation and comments preserve reversed selections, bla
     assert.deepEqual(result.result!.selectionSet.ranges, [{ anchor: 0, head: 0, anchorAffinity: "after", headAffinity: "after" }]);
 });
 
+test("line comments read a whole marker across a scan boundary", () => {
+    const config = { ...configuration, lineComment: "-->" };
+    const body = "x".repeat(1017);
+    const plain = body + "\r\n😀\r\n\t \r\n";
+    // The second marker starts at UTF-16 offset 1023.
+    const marked = "--> " + body + "\r\n--> 😀\r\n\t \r\n";
+    assert.equal(plan(plain, selection(plain.length, 0), "add-line-comment", config).text, marked);
+    for (const command of ["line-comment", "remove-line-comment"] as const) {
+        const result = plan(marked, selection(marked.length, 0), command, config);
+        assert.equal(result.text, plain);
+        assert.deepEqual(result.ranges, [[plain.length, 0]]);
+    }
+});
+
 test("line shifts step over visible blocks and keep the caret column, including at document edges", () => {
     const blocks = ["first", "alpha\ninside", "bravo\ninner\nleaf", "last\ntail"];
     const buffer = TextBuffer.from(blocks.join("\n")), config = resolveLanguageConfiguration();

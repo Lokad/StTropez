@@ -21,9 +21,16 @@ type Planning = Pick<LanguageEditProgress, "phase" | "workUnits" | "readUnits" |
 type MutablePlanning = { -readonly [K in keyof Planning]: Planning[K] };
 /** Bulk charges count helper input cardinality, not internal operations or elapsed time. */
 function bulk(state: MutablePlanning, units: number): void { state.workUnits += units; state.bulkWorkUnits += units; }
-function checkpoint(state: MutablePlanning): boolean {
+function checkpoint(state: MutablePlanning, workUnits = 0): boolean {
+    state.workUnits += workUnits;
     if (state.workUnits - state.checkpoint < 256) return false;
     state.checkpoint = state.workUnits; return true;
+}
+
+function plannedSelections(length: number, ranges: Selection[], primary: number, state: MutablePlanning) {
+    state.phase = "map";
+    bulk(state, ranges.length);
+    return createSelectionSet(length, ranges, primary);
 }
 
 type LineShift = "move-line-up" | "move-line-down" | "copy-line-up" | "copy-line-down";
@@ -64,17 +71,11 @@ function* closerIndent(buffer: TextBuffer, at: number, key: string, config: Reso
         }
     } finally { cursor.dispose(); }
 }
-/** At most tabSize characters; removing a complete tab stop preserves later tab alignment. */
-function outdentLength(prefix: string, tabSize: number): number {
-    let units = 0, column = 0;
-    while (units < prefix.length && column < tabSize) {
-        const unit = prefix[units];
-        if (unit === " ") column++;
-        else if (unit === "\t") column += tabSize - column % tabSize;
-        else break;
-        units++;
-    }
-    return units;
+/** A leading tab completes the first stop, including any spaces before it. */
+function outdentLength(indentation: string, tabSize: number): number {
+    const prefix = indentation.slice(0, tabSize);
+    const tab = prefix.indexOf("\t");
+    return tab < 0 ? prefix.length : tab + 1;
 }
 type LineColumns = { offset: number; column: number; previousStop: number; indentation: boolean };
 
@@ -109,8 +110,8 @@ export function lineColumnScanner(read: (from: number, to: number) => string, ta
 function* publish(edits: TextEdit[], selectionSet: SelectionSet, state: MutablePlanning): Generator<void, SelectionEditPlan> {
     state.phase = "publish";
     for (const edit of edits) {
-        Object.freeze(edit); state.workUnits++;
-        if (checkpoint(state)) yield;
+        Object.freeze(edit);
+        if (checkpoint(state, 1)) yield;
     }
     bulk(state, edits.length);
     const result = Object.freeze({ edits: Object.freeze(edits), selectionSet });
@@ -162,12 +163,14 @@ function* blockComments(buffer: TextBuffer, selections: SelectionSet, pair: Edit
             const start = yield* find(open, after, from + 1);
             if (start < 0) { after = from + 1; break; }
             if (allowPair && !allowPair({ buffer, from: start, to: start + open.length, pair, operation: "open" })) {
-                after = start + open.length; state.workUnits++; if (checkpoint(state)) yield; continue;
+                after = start + open.length;
+                if (checkpoint(state, 1)) yield;
+                continue;
             }
             const end = yield* find(close, start + open.length, buffer.length);
             if (end < 0) { after = buffer.length + 1; break; }
             enclosing = { from: start, to: end + close.length }; after = enclosing.to;
-            state.workUnits++; if (checkpoint(state)) yield;
+            if (checkpoint(state, 1)) yield;
         }
         if (enclosing && from >= enclosing.from && to <= enclosing.to && (to > from || from > enclosing.from && from < enclosing.to)
             && enclosing !== comments.at(-1)) {
@@ -177,7 +180,7 @@ function* blockComments(buffer: TextBuffer, selections: SelectionSet, pair: Edit
             if (innerFrom < innerTo && read(innerTo - 1, innerTo) === " ") innerTo--;
             edits.push({ from: enclosing.from, to: innerFrom, insert: "" }, { from: innerTo, to: enclosing.to, insert: "" });
         }
-        state.workUnits++; if (checkpoint(state)) yield;
+        if (checkpoint(state, 1)) yield;
     }
     bulk(state, edits.length);
     const removals = new PositionMap(buffer.length, edits), map = removals.createMapper();
@@ -198,15 +201,14 @@ function* blockComments(buffer: TextBuffer, selections: SelectionSet, pair: Edit
             inserted += opening.length + closing.length;
         }
         ranges.push(forward ? { anchor: low, head: high } : { anchor: high, head: low });
-        state.workUnits++; if (checkpoint(state)) yield;
+        if (checkpoint(state, 1)) yield;
     }
     state.phase = "map";
     if (comments.length && inserted) {
         bulk(state, edits.length);
         edits.sort((a, b) => a.from - b.from || a.to - b.to);
     }
-    bulk(state, ranges.length);
-    return yield* publish(edits, createSelectionSet(removals.newLength + inserted, ranges, selections.primary), state);
+    return yield* publish(edits, plannedSelections(removals.newLength + inserted, ranges, selections.primary, state), state);
 }
 
 function projectedLines(first: number, last: number, folds?: FoldIndex) {
@@ -226,7 +228,7 @@ function* lineGroups(buffer: TextBuffer, selections: SelectionSet, adjacent: boo
         if (previous && lines.first <= previous.last + Number(adjacent)) {
             previous.last = Math.max(previous.last, lines.last); previous.endRange = i + 1;
         } else groups.push({ ...lines, firstRange: i, endRange: i + 1 });
-        state.workUnits++; if (checkpoint(state)) yield;
+        if (checkpoint(state, 1)) yield;
     }
     return groups;
 }
@@ -234,32 +236,51 @@ function* lineGroups(buffer: TextBuffer, selections: SelectionSet, adjacent: boo
 function* lineComments(buffer: TextBuffer, selections: SelectionSet, command: "line-comment" | "add-line-comment" | "remove-line-comment",
     marker: string, tabSize: number, read: (from: number, to: number) => string, state: MutablePlanning, folds?: FoldIndex): Generator<void, SelectionEditPlan> {
     const edits: TextEdit[] = [];
-    const intervals = yield* lineGroups(buffer, selections, false, state, folds), scan = lineColumnScanner(read, tabSize);
-    const remove = (from: number) => {
-        const end = from + marker.length;
-        const space = read(end, Math.min(buffer.length, end + 1)) === " ";
-        edits.push({ from, to: end + Number(space), insert: "" });
-    };
-    for (const interval of intervals) {
-        const lines: { start: number; offset: number; column: number; blank: boolean }[] = [];
-        let minimum = Infinity, allCommented = true, start = buffer.offsetAt(interval.first);
+    for (const interval of yield* lineGroups(buffer, selections, false, state, folds)) {
+        const limit = lineBoundary(buffer, interval.last + 1);
+        let base = 0;
+        let window = "";
+        // A short row usually shares its read with several following rows.
+        function readAhead(from: number, to: number) {
+            if (from < base || to > base + window.length) {
+                base = from;
+                window = read(from, Math.min(limit, Math.max(from + 1024, to)));
+            }
+            return window.slice(from - base, to - base);
+        }
+        const scan = lineColumnScanner(readAhead, tabSize);
+        const lines: { start: number; offset: number; column: number; blank: boolean; markerEnd: number }[] = [];
+        let minimum = Infinity;
+        let allCommented = true;
+        let start = buffer.offsetAt(interval.first);
         for (let line = interval.first; line <= interval.last; line++) {
-            const end = lineBoundary(buffer, line + 1);
-            const { offset, column } = yield* scan(start, end, true), next = read(offset, Math.min(end, offset + marker.length));
-            const blank = !next || /^[\r\n]/.test(next), commented = next === marker;
+            const first = readAhead(start, start + 1);
+            const newline = window.indexOf("\n", start - base);
+            const end = newline < 0 ? lineBoundary(buffer, line + 1) : base + newline + 1;
+            let offset = start;
+            let column = 0;
+            if (first === " " || first === "\t") {
+                ({ offset, column } = yield* scan(start, end, true));
+            }
+            const next = readAhead(offset, Math.min(end, offset + marker.length + 1));
+            const markerEnd = next.startsWith(marker) ? offset + marker.length + Number(next[marker.length] === " ") : 0;
+            const blank = !next || /^[\r\n]/.test(next);
             if (command === "remove-line-comment") {
-                if (commented) remove(offset);
+                if (markerEnd) edits.push({ from: offset, to: markerEnd, insert: "" });
             } else {
-                if (!blank) { minimum = Math.min(minimum, column); allCommented &&= commented; }
-                lines.push({ start, offset, column, blank });
+                if (!blank) {
+                    minimum = Math.min(minimum, column);
+                    allCommented &&= !!markerEnd;
+                }
+                lines.push({ start, offset, column, blank, markerEnd });
             }
             start = end;
-            state.workUnits++; if (checkpoint(state)) yield;
+            if (checkpoint(state, 1)) yield;
         }
         const uncomment = command === "line-comment" && minimum !== Infinity && allCommented;
         let common = minimum;
         if (!uncomment && minimum > 0 && minimum !== Infinity) for (const line of lines) {
-            state.workUnits++; if (checkpoint(state)) yield;
+            if (checkpoint(state, 1)) yield;
             if (line.blank || line.column === minimum) continue;
             if (line.offset - line.start === line.column) { line.offset = line.start + minimum; line.column = minimum; }
             else {
@@ -268,9 +289,9 @@ function* lineComments(buffer: TextBuffer, selections: SelectionSet, command: "l
             }
         }
         for (const line of lines) {
-            state.workUnits++; if (checkpoint(state)) yield;
+            if (checkpoint(state, 1)) yield;
             if (line.blank && minimum !== Infinity) continue;
-            if (uncomment) remove(line.offset);
+            if (uncomment) edits.push({ from: line.offset, to: line.markerEnd, insert: "" });
             else {
                 // If a tab straddled the minimum, every column back to its start lies
                 // in this same tab stop. Only literal spaces need to be stepped over.
@@ -330,11 +351,10 @@ function* insertOrDeleteLines(buffer: TextBuffer, selections: SelectionSet, comm
             const previous = selections.ranges[i]!.head;
             const column = rowLength ? Math.min(rowLength, previous - buffer.offsetAt(buffer.lineAt(previous))) : 0;
             ranges.push({ anchor: rowStart + column, head: rowStart + column });
-            state.workUnits++; if (checkpoint(state)) yield;
+            if (checkpoint(state, 1)) yield;
         }
     }
-    state.phase = "map"; bulk(state, ranges.length);
-    return yield* publish(edits, createSelectionSet(buffer.length + delta, ranges, selections.primary), state);
+    return yield* publish(edits, plannedSelections(buffer.length + delta, ranges, selections.primary, state), state);
 }
 
 function* blockText(read: (from: number, to: number) => string, state: MutablePlanning, from: number, to: number): Generator<void, string> {
@@ -391,11 +411,10 @@ function* shiftLines(buffer: TextBuffer, selections: SelectionSet, command: Line
         for (let i = group.firstRange; i < group.endRange; i++) {
             const range = selections.ranges[i]!;
             ranges.push({ ...range, anchor: offset(range.anchor), head: offset(range.head) });
-            state.workUnits++; if (checkpoint(state)) yield;
+            if (checkpoint(state, 1)) yield;
         }
     }
-    state.phase = "map"; bulk(state, ranges.length);
-    return yield* publish(edits, createSelectionSet(buffer.length + delta, ranges, selections.primary), state);
+    return yield* publish(edits, plannedSelections(buffer.length + delta, ranges, selections.primary, state), state);
 }
 
 function* indent(buffer: TextBuffer, selections: SelectionSet, command: "indent" | "indent-lines" | "outdent", config: ResolvedLanguageConfiguration,
@@ -406,7 +425,7 @@ function* indent(buffer: TextBuffer, selections: SelectionSet, command: "indent"
     const replacements = new Map<TextEdit, number>();
     let lastIndented = -1;
     for (const [index, range] of selections.ranges.entries()) {
-        state.workUnits++; if (checkpoint(state)) yield;
+        if (checkpoint(state, 1)) yield;
         const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
         const first = buffer.lineAt(from), last = buffer.lineAt(to), start = buffer.offsetAt(first), end = lineContentEnd(reader, first);
         const through = first !== last && to === buffer.offsetAt(last) ? last - 1 : last;
@@ -422,8 +441,7 @@ function* indent(buffer: TextBuffer, selections: SelectionSet, command: "indent"
                         edits.push({ from: prefix.previousStop, to: prefix.offset, insert: "" });
                     }
                 }
-                state.workUnits++;
-                if (checkpoint(state)) yield;
+                if (checkpoint(state, 1)) yield;
             }
             lastIndented = lines.last;
             continue;
@@ -459,7 +477,7 @@ function* indent(buffer: TextBuffer, selections: SelectionSet, command: "indent"
     const ranges: Selection[] = new Array(selections.ranges.length);
     let delta = 0, count = 0, consumed = 0;
     for (const edit of edits) {
-        state.workUnits++; if (checkpoint(state)) yield;
+        if (checkpoint(state, 1)) yield;
         // An inline selection can replace the very whitespace where a block shift would insert.
         if (edit.from < consumed) continue;
         edits[count++] = edit; consumed = edit.to;
@@ -479,11 +497,10 @@ function* indent(buffer: TextBuffer, selections: SelectionSet, command: "indent"
                 const endpoint = (at: number) => map(at, range.anchor !== range.head && buffer.offsetAt(buffer.lineAt(at)) === at ? "before" : "after").offset;
                 ranges[index] = { ...range, anchor: endpoint(range.anchor), head: endpoint(range.head) };
             }
-            state.workUnits++; if (checkpoint(state)) yield;
+            if (checkpoint(state, 1)) yield;
         }
     }
-    bulk(state, ranges.length);
-    return yield* publish(edits, createSelectionSet(buffer.length + delta, ranges, selections.primary), state);
+    return yield* publish(edits, plannedSelections(buffer.length + delta, ranges, selections.primary, state), state);
 }
 
 /** Lazy, DOM-free planning. Budgets count work, not milliseconds; only ready publishes a complete proposal. */
@@ -504,7 +521,7 @@ function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCom
     for (let index = 0; index < selections.ranges.length; index++) {
         const range = selections.ranges[index]!, expected = normalized.ranges[index]!;
         if (range.anchor !== expected.anchor || range.head !== expected.head) throw new RangeError("Language edits require normalized range order.");
-        state.workUnits++; if (checkpoint(state)) yield;
+        if (checkpoint(state, 1)) yield;
     }
     state.phase = "plan";
     const read = (from: number, to: number): string => {
@@ -554,10 +571,10 @@ function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCom
             bulk(state, insert.length);
             edits.push({ from, to, insert }); anchor = head = from + delta + first.length; delta += insert.length - (to - from);
         } else { anchor = range.anchor + delta; head = range.head + delta; }
-        ranges.push({ anchor, head }); state.workUnits++; if (checkpoint(state)) yield;
+        ranges.push({ anchor, head });
+        if (checkpoint(state, 1)) yield;
     }
-    state.phase = "map"; bulk(state, ranges.length);
-    const selectionSet = createSelectionSet(buffer.length + delta, ranges, selections.primary);
+    const selectionSet = plannedSelections(buffer.length + delta, ranges, selections.primary, state);
     if (checkpoint(state)) yield;
     return yield* publish(edits, selectionSet, state);
 }
