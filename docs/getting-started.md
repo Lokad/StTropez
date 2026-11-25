@@ -110,6 +110,18 @@ const button = (label, command) => {
     item.addEventListener("click", command, { signal: controls.signal });
     toolbar.append(item);
 };
+
+/** @param {(import("sttropez/browser").TextEditor | undefined)[]} panes */
+const editsReady = panes => {
+    for (const pane of panes) {
+        const state = pane?.activity();
+        if (state && (state.composing || state.pendingInput || state.pendingCommand)) {
+            output.textContent = "An edit is pending. Try again when it finishes.";
+            return false;
+        }
+    }
+    return true;
+};
 ```
 
 #### Switch and move tabs
@@ -170,7 +182,7 @@ button("Review close", () => {
     output.textContent = closing.dirty ? "Close notes and keep the draft?" : "Close notes?";
 });
 button("Close notes", () => {
-    if (!closing) return;
+    if (!closing || !editsReady([notesTab?.editor])) return;
     const closed = workspace.tabs.completeClose(closing, "close");
     closing = undefined;
     if (!closed) { output.textContent = "Notes changed. Review close again."; return; }
@@ -289,7 +301,8 @@ const stopDirty = file.metadata.subscribe(showDirty);
 showDirty();
 ```
 
-The example writes to session storage and keeps each successful save as a review baseline.
+Save checks every pane that can edit the checklist, including the working pane in a comparison.
+Once those edits commit, the host writes to session storage and keeps the text as its review baseline.
 `captureSave` fixes the text before the write starts. If the user keeps typing, the later edits stay
 unsaved. For shared storage, send `expectedServerVersion` with the write. Call `ticket.conflict()`
 if the server reports a competing version.
@@ -297,8 +310,12 @@ if the server reports a competing version.
 ```js file=app.js
 import { TextBuffer } from "sttropez";
 
+/** @type {import("sttropez/browser").TextComparison | undefined} */
+let review;
+const checklistReady = () => editsReady([editor, split, review?.panes.working]);
 let baseline = { buffer: TextBuffer.from(openedText), version: "opened" };
 button("Save", () => {
+    if (!checklistReady()) return;
     const ticket = workspace.captureSave(file);
     try {
         sessionStorage.setItem(name, ticket.start().value);
@@ -323,6 +340,7 @@ const rules = workspace.createResource(
     { scope: "checklist", resource: "rules", variant: "working" },
     "Checklist rules", { value: { marker: "- [ ] " } });
 button("Run", () => {
+    if (!checklistReady()) return;
     const draft = file.getSnapshot(), config = rules.getSnapshot();
     if (draft.state !== "ready" || config.state !== "ready") return;
     const marker = config.value().marker;
@@ -342,9 +360,8 @@ import { mountTextComparison } from "sttropez/browser";
 
 const reviewHost = document.getElementById("review");
 if (!reviewHost) throw new Error("Missing review container.");
-/** @type {import("sttropez/browser").TextComparison | undefined} */
-let review;
 button("Compare saved", () => {
+    if (!checklistReady()) return;
     review?.dispose();
     review = mountTextComparison(reviewHost, workspace, file.documentId, baseline);
 });
@@ -400,6 +417,7 @@ Close the attachments when the host closes this file. Ask before discarding edit
 
 ```js file=app.js
 button("Close", () => {
+    if (!checklistReady() || !editsReady([notesTab?.editor])) return;
     const dirty = file.metadata.getSnapshot().dirty || notes.metadata.getSnapshot().dirty;
     if (dirty && !window.confirm("Discard unsaved changes and close the workspace?")) return;
     controls.abort();

@@ -23,6 +23,7 @@ viewport-presentation.spec.ts
 comparison.spec.ts
 comparison-ownership.spec.ts
 save-conflicts.spec.ts
+getting-started.spec.ts
 hosts.spec.ts
 host-attachment.spec.ts
 host-lifecycle.spec.ts
