@@ -278,6 +278,9 @@ test("dynamic registrations validate atomically, select documents and withdraw c
     await session.flush(); await settled(); assert.equal(peer.documents.size, 2); assert.deepEqual(documents.map(doc => session.canRequest("textDocument/hover", doc)), [true, true, false, false, false]);
     const immutable = session.getSnapshot(); assert.equal(Object.isFrozen(immutable.registrations[0]?.registerOptions), true);
     await assert.rejects(peer.rpc.sendRequest(UnregistrationRequest.type, { unregisterations: [{ id: "hover", method: "textDocument/rename" }] }), error => error instanceof ResponseError && error.code === -32602);
+    await assert.rejects(peer.rpc.sendRequest(UnregistrationRequest.method, { unregisterations: [
+        { id: "hover", method: "textDocument/hover" }, { id: "unknown" },
+    ] }), error => error instanceof ResponseError && error.code === -32602);
     assert.equal(session.getSnapshot(), immutable);
     await peer.rpc.sendRequest(UnregistrationRequest.type, { unregisterations: [{ id: "hover", method: "textDocument/hover" }, { id: "change", method: "textDocument/didChange" }] }); await session.flush(); await settled();
     assert.equal(peer.documents.size, 0); assert.equal(session.canRequest("textDocument/hover", documents[0]!), false); assert.equal(immutable.registrations.length, 3);
