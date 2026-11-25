@@ -24,6 +24,7 @@ for (const arm of ["stay", "form", "interrupt"] as const)
     test(`plain 50000 replace all ${arm} preserves focus intent and captured work`, async ({ page }) => {
 
         const original = Array(50000).fill("sample").join("\r\n"), changed = original.replaceAll("sample", "changed");
+        await page.clock.install();
         await page.goto(`/hosts/plain/`); await expect(primary(page)).toBeVisible();
         await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot();
             f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]);
@@ -46,11 +47,14 @@ for (const arm of ["stay", "form", "interrupt"] as const)
                     label: element.getAttribute("aria-label") ?? element.labels?.[0]?.textContent ?? null, revision: window.hostFixture.snapshot().source.revision });
             }, true);
         });
+        // Hold the literal planner's next timer turn while trusted input changes focus.
+        await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 60_000)));
         await button(page, "Replace all").click(); await expect(status).toHaveText("50000 matches · replacing");
         if (arm === "form") {
             await field.click(); await page.keyboard.press("End"); await page.keyboard.type(".during");
             expect((await snapshot(page)).source.revision).toBe(before.source.revision);
         } else if (arm === "interrupt") { await primary(page).focus(); await page.keyboard.type("!"); }
+        await page.clock.resume();
         await expect(status).toHaveText(arm === "interrupt" ? "Replacement cancelled." : "Replaced 50000 matches.");
         await ready(page);
         const expected = arm === "interrupt" ? "!" + original : changed, settled = await snapshot(page);
