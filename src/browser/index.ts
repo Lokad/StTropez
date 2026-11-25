@@ -30,6 +30,7 @@ export type { SignaturePopupOptions } from "./signature-popup.ts";
 export type { HoverPopupOptions } from "./hover-popup.ts";
 export type { NavigationController, NavigationControllerOptions, NavigationPointerLink, NavigationSnapshot, NavigationResult, NavigationChoice, NavigationDestination } from "./navigation-controller.ts";
 export type { HoverController, HoverControllerOptions, HoverDiagnostics, HoverSnapshot } from "./hover-controller.ts";
+export type { CodeActionPopupOptions } from "./code-action-popup.ts";
 export type { CodeActionController, CodeActionControllerOptions, CodeActionSnapshot, CodeActionChoice, CodeActionPreview } from "./code-action-controller.ts";
 export type { DiagnosticController, DiagnosticControllerOptions, DiagnosticSnapshot, EditorDiagnostic } from "./diagnostic-controller.ts";
 export type { ChangedDocument, LanguageCommands, LanguageCommandOptions } from "./language-command.ts";

@@ -8,7 +8,7 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     const language = attachEditorLanguage(editor, provider, {
         completion: { autoConnect: false, automatic: false, list: true }, diagnostics: { autoConnect: false },
         hover: { popup: true }, signature: { popup: true }, navigation: {}, occurrences: {}, links: { paint: true },
-        colors: { swatches: true }, rename: { popup: { onNotice: message => { result.value = message; } } }, codeActions: {}, commands: {},
+        colors: { swatches: true }, rename: { popup: { onNotice: message => { result.value = message; } } }, codeActions: { popup: true }, commands: {},
     });
     const events = new AbortController();
     let intent = 0;
@@ -76,19 +76,7 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
         });
     });
     command("rename", () => { editor.commands.run("rename.start"); });
-    command("actions", async request => {
-        display(request, await language.codeActions.request(), actions => {
-            if (!actions.length) result.value = "No code actions here.";
-            for (const action of actions) {
-                const item = button(action.title, async () => {
-                    display(request, await action.select(), () => { clear(); editor.focus(); });
-                });
-                item.disabled = action.disabled !== null;
-                item.title = action.disabled ?? "";
-                choices.append(item);
-            }
-        });
-    });
+    command("actions", () => { editor.commands.run("quickfix.show"); });
     command("links", async request => {
         display(request, await language.links.request(), links => {
             if (!links.length) result.value = "No document links.";

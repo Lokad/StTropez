@@ -71,7 +71,7 @@ test("language mounting releases partial owners, preserves failures and rejects 
             const { resources, documents, tabs, views, leases, subscriptions } = project.workspace.diagnostics();
             return { resources, documents, tabs, views, leases, subscriptions };
         };
-        const panels = [".st-completion", ".st-signature", ".demo-snippet", ".st-hover", ".demo-symbols", ".st-rename", ".demo-actions"];
+        const panels = [".st-completion", ".st-signature", ".demo-snippet", ".st-hover", ".demo-symbols", ".st-rename", ".st-code-actions"];
         const panelCounts = () => panels.map(selector => ({ selector, count: document.querySelectorAll(selector).length }));
         const results = [], feedback = document.createElement("output");
         try {
@@ -86,8 +86,8 @@ test("language mounting releases partial owners, preserves failures and rejects 
                 if (point === "late") delayed.prepare = () => new Promise(resolve => { release = resolve; });
                 Element.prototype.append = function (...nodes) {
                     append.apply(this, nodes);
-                    const marker = point === "sync" ? "demo-snippet" : "demo-actions";
-                    if (point !== "late" && !injected && this === document.body && nodes.some(node => node instanceof Element && node.classList.contains(marker))) {
+                    const marker = point === "sync" ? "demo-snippet" : "st-code-actions";
+                    if (point !== "late" && !injected && nodes.some(node => node instanceof Element && node.classList.contains(marker))) {
                         injected = true; throw failure;
                     }
                 };

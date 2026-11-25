@@ -1,5 +1,5 @@
 import { identifierAt } from "../core/identifier.ts";
-import type { DocumentId } from "../core/workspace.ts";
+import { editPreview, reviewElements } from "./review-controls.ts";
 import { lspRangeOffsets } from "../protocol/lsp-features.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { renameMethod } from "../protocol/lsp-methods.ts";
@@ -21,7 +21,6 @@ type Review = Observable<RenameSnapshot> & {
     preview(name: string): void;
 };
 const nameLimit = 256;
-const pageSize = 64;
 
 async function preparedName(owner: LspDocumentOwner, source: Source, offset: number, fallback: string) {
     const { scope, binding } = owner;
@@ -54,7 +53,8 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
     const win = doc.defaultView!;
     const listen = listenUntil(signal);
     const text = options.text ?? (label => label);
-    const node = <K extends keyof HTMLElementTagNameMap>(tag: K) => doc.createElement(tag);
+    const ui = reviewElements(doc, text);
+    const { node, button } = ui;
     const panel = node("section");
     panel.className = "st-rename";
     panel.setAttribute("role", "dialog");
@@ -72,20 +72,12 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
     list.setAttribute("aria-label", text("Rename edits"));
     panel.append(label, status, controls, pages, list);
     panel.hidden = true;
-    function button(parent: HTMLElement, label: string, action: () => void) {
-        const control = node("button");
-        control.type = "button";
-        control.textContent = text(label);
-        control.onclick = action;
-        parent.append(control);
-        return control;
-    }
+    const showEdits = editPreview(editor, ui, list, pages);
     let source: Source | undefined;
     let checking = false;
     let edited = false;
     let submitted = false;
     let shown: RenamePreview | null = null;
-    let first = 0;
     const preview = button(controls, "Preview rename", () => { name.focus(); prepare(); });
     let apply = button(controls, "Apply rename", () => {});
     button(controls, "Cancel rename", () => close(true));
@@ -102,45 +94,6 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
         hide(focus);
         review.cancel();
     }
-    function excerpt(value: string, length: number) {
-        return value + (length > value.length ? `… (${length} UTF-16 units)` : "");
-    }
-    function page(result: RenamePreview | null, offset: number) {
-        const focus = pages.querySelector(":focus")?.textContent;
-        pages.replaceChildren();
-        list.replaceChildren();
-        first = offset;
-        list.start = offset + 1;
-        const batch = result?.readEdits(offset, offset + pageSize);
-        if (!batch) return;
-        const { total, notes } = batch;
-        if (result?.canApply) status.textContent = text(`Review ${total} ${total === 1 ? "change" : "changes"}.`);
-        if (total > pageSize) {
-            for (const [label, next] of [["Previous edits", offset - pageSize], ["Next edits", offset + pageSize]] as const) {
-                const item = button(pages, label, () => {
-                    if (shown === result && first === offset && item.isConnected) page(result, next);
-                });
-                item.disabled = next < 0 || next >= total;
-            }
-            if (focus) {
-                const enabled = [...pages.querySelectorAll("button:enabled")] as HTMLButtonElement[];
-                (enabled.find(item => item.textContent === focus) ?? enabled[0])?.focus({ preventScroll: true });
-            }
-        }
-        for (const note of notes) {
-            const { line, column } = editor.workspace.document(note.document as DocumentId).buffer.positionAt(note.from);
-            const row = node("li");
-            const code = node("code");
-            const before = node("del");
-            const after = node("ins");
-            before.textContent = excerpt(note.before, note.to - note.from);
-            after.textContent = excerpt(note.insert, note.insertUnits);
-            code.append(before, " → ", after);
-            row.append(`${note.title} · ${line + 1}:${column + 1} `, code);
-            list.append(row);
-        }
-        list.scrollTop = 0;
-    }
     function render() {
         const state = review.getSnapshot();
         const result = state.preview;
@@ -151,7 +104,8 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
             const replacement = button(controls, "Apply rename", () => result?.apply());
             apply.replaceWith(replacement);
             apply = replacement;
-            page(result, 0);
+            const total = showEdits(result);
+            if (result?.canApply) status.textContent = text(`Review ${total} ${total === 1 ? "change" : "changes"}.`);
         }
         apply.disabled = !result?.canApply;
     }

@@ -41,7 +41,7 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
                 case "rename": symbols?.rename(); break;
                 case "definition": symbols?.definition(); break;
                 case "references": symbols?.references(); break;
-                case "quickfix": actions?.request(); break;
+                case "quickfix": editor.commands.run("quickfix.show"); break;
             }
         }, reportError);
         const valid = () => !disposed && editor.element.isConnected && !editor.activity().disposed && workspace.tabs.resolve(target)?.surface.kind === "text";
@@ -76,7 +76,11 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
                     return valid() && !activity.composing && !activity.pendingInput && !activity.pendingCommand;
                 };
                 const tools = attachEditorLanguage(editor, provider, {
-                    codeActions: demoActionPolicy(workspace, file, language, idle), occurrences: {},
+                    codeActions: demoActionPolicy(workspace, file, language, idle, () => {
+                        if (!idle()) return false;
+                        controller?.cancel(); dismissInspection(); symbols?.dismiss();
+                        return true;
+                    }), occurrences: {},
                     completion: { autoConnect: false, filterManualCompletions: true, canCapture: valid, list: true },
                     signature: { popup: links, canCapture: valid, beforeRequest: () => {
                         hover?.cancel();
@@ -105,7 +109,7 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
                     else if (state.status === "ready") commands.feedback("signature", "", true);
                 }));
                 symbols = mountDemoSymbols(scope, project, editor, provider, valid, () => { controller?.cancel(); dismissInspection(); actions?.dismiss(); }, open, commands.notice);
-                actions = mountDemoActions(scope, workspace, file, editor, tools.codeActions, provider, idle, () => { controller?.cancel(); dismissInspection(); symbols?.dismiss(); });
+                actions = mountDemoActions(scope, editor, tools.codeActions, idle);
                 scope.defer(controller.subscribe(render));
                 const ready = () => { if (valid()) { controller!.connect(); render(); commands.ready(); } };
                 if (provider.getSnapshot().phase === "ready") ready();

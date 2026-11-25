@@ -87,7 +87,7 @@ export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, o
     for (const command of Object.keys(shortcuts) as Command[]) {
         const [label, ...keys] = shortcuts[command];
         scope.defer(editor.commands.register({ id: "demo.language." + command, label,
-            enabled: from => phase === "starting" || phase === "ready" && (from === "menu" || command !== "rename" && command !== "inspect"),
+            enabled: from => phase === "starting" || phase === "ready" && (from === "menu" || command !== "rename" && command !== "inspect" && command !== "quickfix"),
             run: from => run(command, from === "menu") }, { keys, priority: 50 }).dispose);
     }
     scope.defer(editor.commands.register({ id: "demo.language.dismiss", label: "Dismiss language request",

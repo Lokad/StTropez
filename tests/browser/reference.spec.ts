@@ -43,6 +43,32 @@ test("the reference host highlights the completion that Enter inserts", async ({
     await expect(page.locator("#pane .st-viewport-row").last()).toHaveText("sampleValue");
 });
 
+test("the reference shortcut and toolbar review a captured code action at the source", async ({ page }) => {
+    await page.goto("/reference/");
+    await page.getByRole("button", { name: "Connect language server" }).click();
+    await page.getByRole("button", { name: "Resolve this placeholder." }).click();
+    const source = page.getByRole("textbox", { name: "quote.ts" });
+    const panel = page.locator("#pane").getByRole("region", { name: "Quick fixes" });
+    await source.press("ControlOrMeta+.");
+    const unavailable = panel.getByRole("button", { name: "Unavailable context example" });
+    await expect(unavailable).toBeDisabled();
+    await expect(unavailable).toHaveAttribute("title", "The fixture requires another context.");
+    await source.press("Escape");
+    await expect(panel).toBeHidden();
+    await page.getByRole("button", { name: "Code actions", exact: true }).click();
+    const edit = panel.getByRole("button", { name: 'Insert module "sample-utils"' });
+    await edit.click();
+    await expect(panel.getByLabel("Quick-fix edits")).toContainText("sample-utils");
+    const code = page.locator("#pane .st-viewport-row").filter({ hasText: "sample-utils" });
+    await expect(code).toHaveCount(0);
+    await panel.getByRole("button", { name: "Apply fix" }).click();
+    await expect(panel).toBeHidden();
+    await expect(code).toBeVisible();
+    await expect(source).toBeFocused();
+    await source.press("ControlOrMeta+z");
+    await expect(code).toHaveCount(0);
+});
+
 test("a rename reports success after changing the reference document and Undo clears the result", async ({ page }) => {
     await page.goto("/reference/");
     await page.getByRole("button", { name: "Connect language server" }).click();

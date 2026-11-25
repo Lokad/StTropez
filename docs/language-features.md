@@ -469,8 +469,16 @@ on refusal. An empty edit creates no Undo entry. Use `readLspEditNotes` to show 
 
 Enable `codeActions` on the attachment. `actions.request()` sends the primary selection and
 its overlapping diagnostics to the provider. Supply `documents` for edits to other project files.
-Present the returned choices, including disabled reasons. Bind the menu to the choice objects so
-a later selection or editor replacement cannot redirect an old click.
+Set `codeActions: { popup: true }` for an anchored review. Ctrl+. (Cmd+. on macOS) and
+`editor.commands.run("quickfix.show")` open the same list. Arrow keys choose an action,
+Enter applies the preview and Escape closes it. Hover over a disabled choice to see its reason.
+Pass the choices returned by `request()` as the command argument to open a diagnostic's
+current list without another request.
+
+The popup asks for confirmation by default. Supply `popup.quickApply(choice, preview)` to
+apply selected edits on click. Commands always require confirmation. `popup.beforeOpen` can
+dismiss competing controls or return false to keep the list closed. `popup.text` supplies labels.
+For a custom menu, bind each button to its returned choice so a later edit cannot redirect it.
 
 ```ts
 import type { CodeActionChoice, CodeActionController } from "sttropez/browser";

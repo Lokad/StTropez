@@ -12,6 +12,8 @@ import { captureEditCommand, commandTransaction, type CapturedCommand, type Chan
 import { writableEdit } from "./edit-project.ts";
 import type { TextEditor } from "./text-editor.ts";
 
+import { mountCodeActionPopup, type CodeActionPopupOptions } from "./code-action-popup.ts";
+
 type Changes = readonly ChangedDocument[];
 type SelectionResult = Outcome<CodeActionPreview | Changes>;
 export type CodeActionChoice = ReturnType<typeof actionChoice>;
@@ -25,6 +27,7 @@ export type CodeActionSnapshot = Readonly<{
     preview: CodeActionPreview | null; changes: readonly ChangedDocument[];
 }>;
 export type CodeActionControllerOptions = LanguageCommandOptions & Readonly<{
+    popup?: boolean | CodeActionPopupOptions;
     prepareRequest?: LspPrepare; prepareResolve?: LspPrepare; commandPolicy?: LspCommandPolicy;
     canRunCommand?: () => boolean;
     onError?: (error: unknown) => void;
@@ -258,5 +261,9 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
         scope.assertWritable(); cancel(); disposed = true; events.abort(); stopClient(); client.dispose();
         cell.clearSnapshotListeners();
     }
-    return Object.freeze({ request, cancel, dispose, ...controllerObservable(cell, "Code action", () => disposed, scope) });
+    const controller = Object.freeze({ request, cancel, dispose, ...controllerObservable(cell, "Code action", () => disposed, scope) });
+    try {
+        if (options.popup) mountCodeActionPopup(editor, owner, controller, events.signal, options.popup === true ? {} : options.popup);
+        return controller;
+    } catch (error) { dispose(); throw error; }
 }
