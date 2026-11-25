@@ -240,6 +240,10 @@ export class LspSession {
         const rpc = new JsonRpcConnection(transport, { ...this.#options.rpc, schedule: this.#options.schedule, onError: error => this.#report(error),
             notifyCancellation: () => this.#current(epoch) && this.#phase !== "stopping",
             onClose: error => { void Promise.resolve().then(() => { if (this.#current(epoch)) this.#drop(error); }); } });
+        if (!this.#current(epoch)) {
+            rpc.dispose();
+            throw closed();
+        }
         this.#rpc = rpc;
         const params = this.#initializeParams();
         this.#install(rpc, epoch); this.#publish("initializing");

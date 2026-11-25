@@ -91,11 +91,11 @@ test.describe(`plain LSP synchronization host`, () => {
         expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1); await field(page, "Secondary source").press("Control+z"); await ready(page); expect(await source(page)).toBe(typed);
         await button(page, "Close source review").click(); await ready(page); const counts = await sync();
         expect(counts.initialize).toBe(1); expect(counts.failures).toEqual([]); expect(counts.documents.length).toBeGreaterThanOrEqual(2);
-        expect(counts.documents.every(doc => doc.open === 1 && doc.close === 0)).toBe(true); expect((await snapshot(page)).bindings.lsp).toMatchObject({ created: 1, terminated: 0 });
+        expect(counts.documents.every(doc => doc.open === 1 && doc.close === 0)).toBe(true);
         for (const method of ["textDocument/completion", "textDocument/hover", "textDocument/definition", "workspace/executeCommand"]) expect(methods).toContain(method);
         const history = (await snapshot(page)).history; await field(page).focus(); await button(page, "Reconnect provider").click(); await expect.poll(async () => (await provider(page)).connected).toBe(true);
         const reopened = await sync(); expect(reopened.initialize).toBe(1); expect(reopened.documents.every(doc => doc.open === 1 && doc.change === 0)).toBe(true);
         expect((await snapshot(page)).history).toEqual(history); expect(await source(page)).toBe(typed); expect(methods.filter(method => method === "initialize")).toHaveLength(2);
-        await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 2, terminated: 2 });
+        await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).bindings.lsp).toMatchObject({ scopes: 0, documents: 0, disposed: true });
     });
 });

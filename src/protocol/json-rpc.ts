@@ -51,9 +51,14 @@ export class JsonRpcConnection {
         this.#transport = transport; this.#options = options;
         this.#timeoutMs = options.timeoutMs ?? wireLimits.timeoutMs; this.#maxPending = options.maxPending ?? wireLimits.pendingRequests; this.#maxMessageUnits = options.maxMessageUnits ?? wireLimits.messageUnits;
         this.#maxJsonNodes = options.maxJsonNodes ?? this.#maxMessageUnits;
-        if (![this.#timeoutMs, this.#maxPending, this.#maxMessageUnits, this.#maxJsonNodes].every(isPositiveInteger)) throw new RangeError("Invalid RPC limits.");
-        this.#stopListening = transport.subscribe({ message: message => this.#receive(message), close: reason => this.dispose(reason) });
-        if (this.#disposed) this.#stopListening();
+        try {
+            if (![this.#timeoutMs, this.#maxPending, this.#maxMessageUnits, this.#maxJsonNodes].every(isPositiveInteger)) throw new RangeError("Invalid RPC limits.");
+            this.#stopListening = transport.subscribe({ message: message => this.#receive(message), close: reason => this.dispose(reason) });
+        } catch (error) {
+            this.dispose(error instanceof Error ? error : closedConnection());
+            throw error;
+        }
+        if (this.#disposed) this.#release(this.#stopListening);
     }
     #report(error: Error): void { try { this.#options.onError?.(error); } catch { /* Host diagnostics cannot interrupt protocol cleanup. */ } }
     #release(stop: () => void): void { try { stop(); } catch (error) { this.#report(error instanceof Error ? error : new Error("RPC cleanup failed.")); } }

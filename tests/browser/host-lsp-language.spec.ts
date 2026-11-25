@@ -158,7 +158,7 @@ test.describe("plain selected LSP features", () => {
         await expect(links.getByRole("button")).toHaveCount(1);
         await discoverColors(); await preview(); await expect(apply).toBeEnabled();
         await signature(); await expect(popup.getByLabel("Active signature parameter", { exact: true })).toHaveText("fallback?: string");
-        const connected = await snapshot(page); dropCompletion = true;
+        dropCompletion = true;
         await page.evaluate(() => window.hostFixture.requestProvider());
         await expect.poll(async () => (await snapshot(page)).bindings.signature.presentation.connected).toBe(false);
         const completionStatus = page.getByLabel("Language status", { exact: true });
@@ -174,7 +174,7 @@ test.describe("plain selected LSP features", () => {
         await expect(button(page, "Reconnect color provider")).toBeEnabled();
         await field(page).press("Control+End"); await field(page).pressSequentially("H"); await ready(page); await exact(page, raw + "H");
         await expect(completionStatus).toContainText("provider disconnected");
-        expect((await snapshot(page)).bindings.lsp!.created).toBe(connected.bindings.lsp!.created);
+        expect(methods.filter(method => method === "initialize")).toHaveLength(1);
         await button(page, "Reconnect signature provider").click();
         await expect(completionStatus).toContainText("provider connected");
         await expect(swatches.first()).toBeVisible();
@@ -187,7 +187,7 @@ test.describe("plain selected LSP features", () => {
         await field(page).press("Control+End"); await field(page).pressSequentially("X"); await field(page).press("Control+Shift+Space"); await field(page).press("F4"); await field(page).press("F6"); await ready(page);
         expect(methods.filter(method => /^(textDocument\/(signatureHelp|documentLink|documentColor|colorPresentation))$/.test(method))).toEqual(requests); await exact(page, raw + "HX");
         await page.evaluate(() => window.hostFixture.dispose());
-        const final = await snapshot(page); expect(final.bindings.lsp!.created).toBe(final.bindings.lsp!.terminated);
+        expect((await snapshot(page)).bindings.lsp?.disposed).toBe(true);
     });
     test("paged links and colors keep unresolved targets and invalid form values inert and reject oversized lists", async ({ page }) => {
         const methods: string[] = [];
@@ -822,7 +822,7 @@ test.describe("plain selected LSP features", () => {
         expect((await snapshot(page)).history).toEqual(before.history); await exact(page, raw);
         await page.evaluate(() => window.hostFixture.dispose()); const final = await snapshot(page);
         expect(final.bindings.signature).toMatchObject({ pending: false, sessions: 0, subscriptions: 0, capture: null });
-        expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
+        expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, disposed: true });
     });
 
 });

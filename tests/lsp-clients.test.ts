@@ -225,7 +225,7 @@ test("cancelling delayed connection settles the feature without disconnecting an
     call.cancel(); await settled(); assert.ok(cancelled(result)); assert.equal(f.provider.snapshot().documentParticipants, 2);
     client.dispose(); assert.equal(f.provider.snapshot().documentParticipants, 1);
     opening.resolve(); await control.ensureConnected(); await observed;
-    assert.equal(f.provider.snapshot().created, 1); assert.equal(control.synchronized(control.attachDocument(f.source.documentId))!.isCurrent(), true);
+    assert.equal(control.synchronized(control.attachDocument(f.source.documentId))!.isCurrent(), true);
 });
 test("a document edit during delayed connection rejects the original position before dispatch", async t => {
     const opening = latch<void>(), f = clientFixture(t, () => opening.promise), client = hoverClient(f.provider); t.after(() => { opening.resolve(); client.dispose(); });

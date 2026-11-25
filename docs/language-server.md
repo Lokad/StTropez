@@ -135,7 +135,8 @@ Raw `request`, `requestDocument` and `requestCommand` calls return immutable `Js
 including on session and workspace scopes. Validate the result for the method you called. A feature
 client does this in its decoder. A generic type argument cannot supply that check.
 
-Remove a handler with its removal function. Dispose the connection to release its transport, pending
+Remove a handler with its removal function. The connection owns its transport from construction and
+closes it even if validation or subscription fails. Disposing the connection also releases pending
 calls and deadlines. If `notifyCancellation` suppresses a cancellation message, the call rejects
 locally and releases its deadline. If the policy throws, `onError` receives the error and the
 connection skips the message.

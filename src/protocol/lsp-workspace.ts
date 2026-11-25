@@ -141,8 +141,6 @@ export class LspWorkspace {
     #notificationQueued = false;
     #changed = new Set<Store<unknown>>();
     #disposed = false;
-    #created = 0;
-    #terminated = 0;
     #command: CommandIntent | undefined;
     #quarantinedEpoch: number | undefined;
     readonly getSnapshot: Observable<LspWorkspaceSnapshot>["getSnapshot"];
@@ -152,12 +150,7 @@ export class LspWorkspace {
         this.#workspace = workspace; this.#options = options;
         if (!isPositiveInteger(options.maxScopes ?? wireLimits.scopes)) throw new RangeError("Invalid provider scope limit.");
         this.#notifications = workspace.createNotificationScope(error => this.#report(error));
-        this.#session = new LspSession({ ...options, connect: async context => {
-            const transport = await options.connect(context); this.#created++; let released = false;
-            return { send: text => transport.send(text), subscribe: listener => transport.subscribe(listener), dispose: () => {
-                if (released) return; released = true; this.#terminated++; transport.dispose();
-            } };
-        } });
+        this.#session = new LspSession({ ...options, connect: context => options.connect(context) });
         this.#store = new Store(this.#snapshotState(), this.#notifications);
         this.getSnapshot = this.#store.observable.getSnapshot;
         this.subscribe = listener => {
@@ -573,7 +566,7 @@ export class LspWorkspace {
     }
     snapshot() {
         return Object.freeze({ disposed: this.#disposed, scopes: this.#scopes.size, documents: this.#documents.size,
-            documentParticipants: [...this.#documents.values()].reduce((sum, entry) => sum + entry.users.size, 0), created: this.#created, terminated: this.#terminated,
+            documentParticipants: [...this.#documents.values()].reduce((sum, entry) => sum + entry.users.size, 0),
             commandPending: !!this.#command, commandQuarantined: this.#quarantinedEpoch === this.getSnapshot().epoch, protocol: this.#session.snapshotOwnership() });
     }
     dispose(): void {

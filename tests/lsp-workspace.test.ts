@@ -368,7 +368,8 @@ test("provider scopes share one initialize, binding and incremental stream while
     assert.equal(b.isDocumentCurrent(right, identity), false);
     assert.equal(f.provider.snapshot().documents, 1); f.provider.dispose(); await settled();
     assert.equal(f.workspace.diagnostics().leases, 0); assert.equal(f.workspace.diagnostics().subscriptions, 0); assert.equal(f.provider.snapshot().scopes, 0);
-    assert.equal(f.provider.snapshot().created, 1); assert.equal(f.provider.snapshot().terminated, 1); assert.equal(f.provider.snapshot().protocol.pendingRequests, 0); assert.deepEqual(f.errors, []);
+    assert.throws(() => peer.transport.send("{}"), /Closed transport/);
+    assert.equal(f.provider.snapshot().protocol.pendingRequests, 0); assert.deepEqual(f.errors, []);
 });
 
 test("closing one feature cancels only its pending request and leaves the other view/provider usable", async t => {
@@ -378,7 +379,7 @@ test("closing one feature cancels only its pending request and leaves the other 
     const request = hover.requestDocument("textDocument/hover", a, index => ({ position: index.at(1) })), rejected = assert.rejects(request.result, error => error instanceof RpcError && error.code === -32800);
     await entered.promise; hover.dispose(); await rejected;
     assert.deepEqual(await navigation.requestDocument("textDocument/definition", b, index => ({ position: index.at(1) })).result, []);
-    answer.resolve({ contents: "late" }); await settled(); assert.equal(f.provider.snapshot().created, 1); assert.equal(f.provider.snapshot().terminated, 0);
+    answer.resolve({ contents: "late" }); await settled();
     assert.equal(f.provider.getSnapshot().phase, "ready"); assert.equal(f.provider.snapshot().documents, 1); assert.deepEqual(f.errors, []);
 });
 
@@ -395,7 +396,7 @@ test("scope cancellation retains handlers and participation while expiring only 
     assert.equal(await peer.rpc.sendRequest("host/retained"), "still registered");
     await b.request("test/barrier").result; await a.request("test/barrier").result;
     a.dispose(); a.dispose(); a.cancel(); assert.equal(f.provider.snapshot().documentParticipants, 1);
-    assert.throws(() => a.attachDocument(f.source.documentId), RpcError); assert.equal(f.provider.snapshot().terminated, 0);
+    assert.throws(() => a.attachDocument(f.source.documentId), RpcError); await b.request("test/barrier").result;
 });
 
 test("owner shutdown flushes latest text, retains participation and silences cancellation after shutdown", async t => {
@@ -418,7 +419,7 @@ test("owner shutdown flushes latest text, retains participation and silences can
     await a.ensureConnected(); const next = f.peers[1]!; await a.request("test/barrier").result;
     assert.equal(next.documents.get(doc.getSnapshot().uri)!.getText(), "a😀\r\nsource!offline"); assert.ok(a.synchronized(doc)!.isCurrent());
     assert.equal(next.events.filter(event => event.method === "open").length, 1); assert.equal(next.sent.includes("workspace/executeCommand"), false);
-    commandAnswer.resolve("late"); await settled(); assert.equal(f.provider.snapshot().created, 2); assert.equal(f.provider.snapshot().terminated, 1);
+    commandAnswer.resolve("late"); await settled(); await a.request("test/barrier").result;
     a.dispose(); await settled(); assert.equal(f.workspace.diagnostics().leases, 0);
 });
 
@@ -431,7 +432,8 @@ test("owner shutdown failure and disposal cannot close a replacement connection"
     f.peers[1]!.rpc.onRequest("shutdown", () => { entered.resolve(); return late.promise; });
     const shutdown = f.provider.shutdown(), rejected = assert.rejects(shutdown, RpcError); await entered.promise;
     await f.provider.reconnect(); await rejected; late.resolve(null); await settled();
-    assert.equal(f.provider.getSnapshot().phase, "ready"); assert.equal(f.provider.snapshot().terminated, 2);
+    assert.equal(f.provider.getSnapshot().phase, "ready");
+    for (const previous of f.peers.slice(0, 2)) assert.throws(() => previous.transport.send("{}"), /Closed transport/);
     assert.equal(f.peers[2]!.sent.includes("exit"), false); await scope.request("test/barrier").result;
     const disposing = latch<void>(); f.peers[2]!.rpc.onRequest("shutdown", () => { disposing.resolve(); return new Promise(() => {}); });
     const pending = f.provider.shutdown(), cancelled = assert.rejects(pending, RpcError); await disposing.promise; f.provider.dispose(); await cancelled; await settled();
@@ -461,7 +463,7 @@ test("one reconnect reopens latest shared snapshots once and invalidates old cap
     assert.equal(peer.events.filter(e => e.method === "initialize").length, 1); assert.equal(peer.events.filter(e => e.method === "open").length, 2);
     assert.equal(peer.events.filter(e => e.method === "change").length, 0); assert.equal(peer.documents.get(doc.getSnapshot().uri)!.getText(), "a😀\r\nsource!");
     assert.equal(peer.documents.get(companion.getSnapshot().uri)!.getText(), "companion!");
-    assert.ok(a.synchronized(doc)!.isCurrent()); assert.equal(f.provider.snapshot().created, 2); assert.equal(f.provider.snapshot().terminated, 1);
+    assert.ok(a.synchronized(doc)!.isCurrent());
 });
 
 test("command review is exclusive and cancellation quarantines uncorrelated edits without disconnecting readers", async t => {
@@ -477,7 +479,7 @@ test("command review is exclusive and cancellation quarantines uncorrelated edit
     call.cancel(); await rejected; await cancelled.promise; assert.equal(context!.isCurrent(), false); decision.resolve({ applied: false }); await settled();
     assert.equal(f.provider.snapshot().commandQuarantined, true); assert.equal(f.provider.getSnapshot().commandRequiresReconnect, true); assert.equal(f.provider.getSnapshot().commandAvailable, false); assert.throws(() => b.requestCommand("test.edit"), RpcError);
     assert.deepEqual(await peer.rpc.sendRequest("workspace/applyEdit", { edit: { changes: {} } }), { applied: false, failureReason: "No available captured command review intent." });
-    assert.equal(f.provider.getSnapshot().phase, "ready"); assert.equal(f.provider.snapshot().terminated, 0);
+    assert.equal(f.provider.getSnapshot().phase, "ready");
     assert.ok(b.synchronized(b.attachDocument(f.source.documentId))!.isCurrent()); assert.equal(doc.getSnapshot().buffer.length, "a😀\r\nsource".length);
     await f.provider.reconnect(); assert.equal(f.provider.snapshot().commandQuarantined, false); assert.equal(f.provider.getSnapshot().commandAvailable, true);
     f.peers[1]!.rpc.onRequest("workspace/executeCommand", () => "done"); const next = b.requestCommand("test.edit"); assert.equal(await next.result, "done"); assert.equal(next.isCurrent(), true);
@@ -624,5 +626,5 @@ test("disposing a custom-request scope expires its context and settles a hanging
     await entered.promise; assert.equal(context!.isCurrent(), true); a.dispose(); await rejected; await notice.promise;
     assert.equal(context!.isCurrent(), false); assert.equal(context!.cancelled, true); answer.resolve("late"); await settled();
     assert.deepEqual(await b.requestDocument("textDocument/definition", document, index => ({ position: index.at(0) })).result, []);
-    assert.equal(f.provider.snapshot().protocol.incomingRequests, 0); assert.equal(f.provider.snapshot().terminated, 0); assert.deepEqual(f.errors, []);
+    assert.equal(f.provider.snapshot().protocol.incomingRequests, 0); assert.deepEqual(f.errors, []);
 });

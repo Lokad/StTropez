@@ -432,6 +432,41 @@ test("opening cancellation owns late transports and failed UTF-16/full-sync nego
     }
 });
 
+test("a failed or superseded subscription releases its transport before the next session opens the document", async t => {
+    for (const failure of ["refused", "disconnect"] as const) {
+        const host = fixture(t), refused = new Error("Subscription refused"), sent: string[] = [];
+        let disposals = 0, unsubscribed = false, first = true;
+        const session = new LspSession({ schedule: host.schedule, connect: async context => {
+            if (!first) {
+                assert.equal(disposals, 1);
+                return host.connect(context);
+            }
+            first = false;
+            return {
+                subscribe() {
+                    if (failure === "refused") throw refused;
+                    session.disconnect();
+                    return () => { unsubscribed = true; };
+                },
+                send(message) { sent.push(message); },
+                dispose() { disposals++; },
+            };
+        } });
+        t.after(() => session.dispose());
+        const source = input("current document");
+        session.bindDocument(source);
+        await assert.rejects(session.connect(), error => failure === "refused"
+            ? error === refused : error instanceof RpcError && error.code === -32097);
+        assert.equal(session.getSnapshot().phase, "disconnected");
+        assert.deepEqual(sent, []);
+        assert.equal(unsubscribed, failure === "disconnect");
+        await session.connect();
+        await settled();
+        assert.deepEqual(host.peers[0]!.events, ["initialize", "initialized", "open"]);
+        assert.equal(host.peers[0]!.documents.get(source.uri)?.getText(), "current document");
+    }
+});
+
 test("shutdown ordering, listener isolation and explicit disposal release all session ownership", async t => {
     const errors: Error[] = [], host = fixture(t), session = new LspSession({ ...host, onError: error => { errors.push(error); } });
     session.subscribe(() => { assert.throws(() => session.bindDocument(input()), /Reentrant/); throw new Error("Listener failure"); }); session.subscribe(() => {});

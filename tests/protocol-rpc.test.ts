@@ -85,7 +85,11 @@ test("over-budget response envelopes reject their known calls immediately withou
         { jsonrpc: "2.0", method: "host/work", id: "incoming", params: Array(100).fill(0) }]); await flush();
     assert.equal(failures.length, 1); assert.equal(wire.sent.length, sent + 1);
     assert.deepEqual(wire.sent.at(-1), [{ jsonrpc: "2.0", id: "incoming", error: { code: -32600, message: "RPC JSON structure exceeds the configured node limit or nesting limit." } }]);
-    for (const maxJsonNodes of [0, -1, NaN, Infinity, 1.5]) assert.throws(() => new JsonRpcConnection(raw().port, { schedule: timer.schedule, maxJsonNodes }), /Invalid RPC limits/);
+    for (const maxJsonNodes of [0, -1, NaN, Infinity, 1.5]) {
+        const invalid = raw();
+        assert.throws(() => new JsonRpcConnection(invalid.port, { schedule: timer.schedule, maxJsonNodes }), /Invalid RPC limits/);
+        assert.equal(invalid.disposed(), 1);
+    }
     const excessBatch = rpc.request("batch"), closed = assert.rejects(excessBatch.result, /batch exceeds/);
     wire.receive(Array(129).fill({ jsonrpc: "2.0", id: excessBatch.id, result: null })); await closed;
     assert.equal(timer.count(), 0); assert.equal(rpc.snapshot().disposed, true);

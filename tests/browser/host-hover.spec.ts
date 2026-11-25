@@ -103,7 +103,7 @@ test(`plain keyboard hover keeps complete selections, safe text, input focus and
     await page.getByRole("heading", { level: 1 }).click();
     await expect(tooltip(page)).toBeHidden();
     await page.evaluate(() => window.hostFixture.dispose()); const final = await snapshot(page);
-    expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
+    expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, disposed: true });
 });
 test(`plain pointer hover preserves host focus and refuses stale replies across edits and remount`, async ({ page }) => {
     test.setTimeout(90000); const replies = await holdLspReplies(page, "textDocument/hover"); await page.goto(`/hosts/plain/?language=lsp`);
@@ -129,5 +129,5 @@ test(`plain pointer hover preserves host focus and refuses stale replies across 
     await primary(page).press("Control+k"); await primary(page).press("Control+i"); await expect(tooltip(page)).toContainText("Declares a constant binding.");
     expect(await page.evaluate(() => window.hostFixture.range(0, 5))).toBe("human");
     await page.evaluate(() => window.hostFixture.dispose()); const final = await snapshot(page);
-    expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
+    expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, disposed: true });
 });
