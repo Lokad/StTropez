@@ -7,7 +7,8 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     const problems = document.querySelector<HTMLElement>("#diagnostics")!;
     const language = attachEditorLanguage(editor, provider, {
         completion: { autoConnect: false, automatic: false, list: true }, diagnostics: { autoConnect: false },
-        hover: { popup: true }, signature: { popup: true }, navigation: {}, occurrences: {}, links: { paint: true },
+        hover: { popup: true }, signature: { popup: true }, occurrences: {}, links: { paint: true },
+        navigation: { onDefinition: offset => { void definition(beginCommand(), offset); } },
         colors: { picker: true }, rename: { popup: { onNotice: message => { result.value = message; } } }, codeActions: { popup: true }, commands: {},
     });
     const events = new AbortController();
@@ -27,14 +28,15 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
         item.onclick = invoke;
         return item;
     }
+    function beginCommand() {
+        clear();
+        editor.focus();
+        return ++intent;
+    }
     function command(id: string, run: (request: number) => void) {
         const control = document.getElementById(id)!;
         control.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });
-        control.addEventListener("click", () => {
-            clear();
-            editor.focus();
-            run(++intent);
-        }, { signal: events.signal });
+        control.addEventListener("click", () => run(beginCommand()), { signal: events.signal });
     }
     function display<T>(request: number, outcome: Outcome<T>, render: (value: T) => void) {
         if (request !== intent || events.signal.aborted) return;
@@ -67,9 +69,9 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     command("signature", async request => {
         display(request, await language.signature.request(), help => { if (!help.signature) result.value = "No signature."; });
     });
-    command("definition", async request => {
+    async function definition(request: number, offset?: number): Promise<void> {
         definitionFocus = request;
-        const outcome = await language.navigation.request("definition");
+        const outcome = await language.navigation.request("definition", offset);
         if (definitionFocus !== request) return;
         display(request, outcome, locations => {
             const choice = locations.locationAt(0);
@@ -81,7 +83,8 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
                 } else result.value = place.document.uri;
             });
         });
-    });
+    }
+    command("definition", definition);
     command("rename", () => { editor.commands.run("rename.start"); });
     command("actions", () => { editor.commands.run("quickfix.show"); });
     command("links", async request => {

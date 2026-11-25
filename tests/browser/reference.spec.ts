@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures.ts";
+import { paintedCharacter } from "../helpers/painted-character.ts";
 
 test("the reference Find replaces the selected word, reports wrapping and returns focus for Undo", async ({ page }) => {
     await page.goto("/reference/");
@@ -26,6 +27,7 @@ test("the reference Find replaces the selected word, reports wrapping and return
 
 test("a late definition leaves typing in the reference Find bar", async ({ page }) => {
     let release: (() => void) | undefined;
+    let hold = true;
     await page.routeWebSocket("**/lsp-fixture", client => {
         const server = client.connectToServer();
         server.onMessage(packet => client.send(packet));
@@ -33,13 +35,14 @@ test("a late definition leaves typing in the reference Find bar", async ({ page 
             const request = JSON.parse(packet.toString());
             if (request.method !== "textDocument/definition") return server.send(packet);
             const uri = request.params.textDocument.uri;
-            const range = { start: { line: 0, character: 13 }, end: { line: 0, character: 19 } };
+            const range = { start: { line: 2, character: 16 }, end: { line: 2, character: 21 } };
             release = () => {
                 client.send(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { uri, range } }));
                 // The diagnostic appears after the held reply on the same connection.
                 client.send(JSON.stringify({ jsonrpc: "2.0", method: "textDocument/publishDiagnostics",
                     params: { uri, diagnostics: [{ range, message: "Definition delivered" }] } }));
             };
+            if (!hold) release();
         });
     });
     await page.goto("/reference/");
@@ -56,6 +59,19 @@ test("a late definition leaves typing in the reference Find bar", async ({ page 
     await page.keyboard.type("q");
     await expect(query).toHaveValue("q");
     await expect(page.locator("#pane .st-viewport-row").first()).toContainText("export const accent");
+    hold = false;
+    await query.press("Escape");
+    await source.press("Control+End");
+    const call = page.locator("#pane .st-viewport-row").filter({ hasText: "quote(24, 3)" });
+    const point = await paintedCharacter(call, "quote", 2);
+    await page.mouse.move(point.x, point.y);
+    await page.keyboard.down("Control");
+    await expect(call.locator(".st-definition-link")).toHaveText("quote");
+    await page.mouse.click(point.x, point.y);
+    await page.keyboard.up("Control");
+    const at = (await source.inputValue()).indexOf("function quote") + "function ".length;
+    await expect.poll(() => source.evaluate((field: HTMLTextAreaElement) => [field.selectionStart, field.selectionEnd]))
+        .toEqual([at, at + "quote".length]);
 });
 
 test("the reference host highlights the completion that Enter inserts", async ({ page }) => {
