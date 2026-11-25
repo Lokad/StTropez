@@ -102,7 +102,8 @@ Replace All, initial searches and regex navigation wait for a complete scan.
 
 `status` is `idle`, `searching`, `ready`, `replacing`, `failed`, `cancelled`, `expired` or `disposed`.
 A missing backend or failed worker sets a message. Expired or disposed controllers cannot target
-replacement tabs.
+replacement tabs. Disposing Find delivers its final snapshot and releases its listeners.
+Subscribing to that snapshot later returns an inert disposer.
 
 Use `getDiagnostics()` for the current search’s `FindDiagnostics.maxScanStepMs` and the last
 replacement’s `FindDiagnostics.replaceTransactionMs`, including after disposal. Timing alone leaves

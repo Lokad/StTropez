@@ -113,9 +113,12 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         navigatedMatch = undefined; replacedZero = undefined; advanceAfterReplace = undefined;
         cancelPreview(); previewed = undefined; pendingNext = undefined;
         active?.dispose(); plan?.dispose(); authority?.(); };
+    function publishNewIndex(patch: FindPatch): void {
+        publish({ ...patch, current: null, wrappedTo: null, matchesVersion: store.get().matchesVersion + 1 });
+    }
     const reset = (patch: FindPatch) => {
         matches = new FindIndex(); count = 0; literal = undefined; edges = undefined; navigationTo = 0;
-        publish({ ...patch, retained: false, count: 0, scanned: 0, current: null, wrappedTo: null, matchesVersion: store.get().matchesVersion + 1 });
+        publishNewIndex({ ...patch, retained: false, count: 0, scanned: 0 });
     };
     const later = (work: () => void, delay = 0) => { runner.schedule(work, delay); };
     const offsetAt = (index: number) => matches.at(index).from;
@@ -179,7 +182,8 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     const expire = () => {
         backend?.dispose(); reset({ status: "expired", reason: "view-unavailable", message: "View is unavailable." });
     };
-    function restart(query: string, wholeWord = store.get().wholeWord, matchCase = store.get().matchCase, regularExpression = store.get().regularExpression, retain = false): void {
+    function restart(query: string, flags: Required<FindFlags> = store.get(), retain = false): void {
+        const { wholeWord, matchCase, regularExpression } = flags;
         // A committing plan releases its cursor before the document publishes the edit.
         const notice = planCursor ? cancelledReplacement : noNotice;
         stop();
@@ -196,8 +200,8 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             if (proof) {
                 if (document.buffer === literal.document.buffer) {
                     matches = literal.index; count = matches.count; literal.document = document; edges = undefined; observed = document; navigationTo = document.buffer.length;
-                    publish({ ...patch, retained: false, status: "ready", count, scanned: patch.length,
-                        matchesVersion: store.get().matchesVersion + 1, current: null, wrappedTo: null }); return;
+                    publishNewIndex({ ...patch, retained: false, status: "ready", count, scanned: patch.length });
+                    return;
                 }
                 const prefix = Math.min(edges?.prefix ?? proof.prefix, proof.prefix, literal.document.buffer.length, document.buffer.length);
                 edges = { prefix, suffix: Math.min(edges?.suffix ?? proof.suffix, proof.suffix, literal.document.buffer.length - prefix, document.buffer.length - prefix) };
@@ -208,7 +212,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         if (repair) {
             pendingRepair = repair;
             matches = repair.index; count = matches.count; navigationTo = repair.start;
-            publish({ ...patch, status: "searching", retained: true, count, scanned: repair.start, current: null, wrappedTo: null, matchesVersion: store.get().matchesVersion + 1 });
+            publishNewIndex({ ...patch, status: "searching", retained: true, count, scanned: repair.start });
         } else reset({ ...patch, status: query ? "searching" : "idle" });
         if (!query) return;
         const initialSelection = currentSelection();
@@ -567,7 +571,10 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const current = documentChanges.getSnapshot();
         if (current && sameOwner(observed, current) && current.revision === observed.revision && current.buffer === observed.buffer) return;
         if (store.get().status === "cancelled" && valid()) { observed = readDocument(); publish({ revision: observed.revision, length: observed.buffer.length }); }
-        else { const state = store.get(); restart(state.query, state.wholeWord, state.matchCase, state.regularExpression, true); }
+        else {
+            const state = store.get();
+            restart(state.query, state, true);
+        }
     })];
     if (target) subscriptions.push(workspace.tabs.subscribe(() => { if (!valid()) { stop(); expire(); } }));
     const dispose = () => {
@@ -579,9 +586,12 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         stop(); backend?.dispose(); subscriptions.forEach(unsubscribe => unsubscribe());
         layer?.dispose(); lease.release();
         reset({ status: "disposed", query: "", length: 0, ...notice });
+        store.clearSnapshotListeners();
     };
     editor.signal?.addEventListener("abort", dispose, { once: true });
-    return Object.freeze({ ...store.observable, getDiagnostics: () => Object.freeze({ maxScanStepMs: scanMaximum, replaceTransactionMs }), matchesIn,
+    return Object.freeze({ getSnapshot: store.observable.getSnapshot,
+        subscribe: (listener: () => void) => disposed ? () => {} : store.observable.subscribe(listener),
+        getDiagnostics: () => Object.freeze({ maxScanStepMs: scanMaximum, replaceTransactionMs }), matchesIn,
         setQuery: (query, queryOptions) => {
             scope.assertWritable(); if (disposed) return;
             const previous = store.get().query;
@@ -609,7 +619,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             if (disposed || wholeWord === state.wholeWord && matchCase === state.matchCase && regularExpression === state.regularExpression) return;
             const preview = pendingPreview ?? previewed;
             const refresh = preview && preview.selection === currentSelection();
-            restart(state.query, wholeWord, matchCase, regularExpression);
+            restart(state.query, { wholeWord, matchCase, regularExpression });
             if (refresh) capturePreview();
         },
         acceptPreview, next, replaceCurrent, replaceAll, cancel: () => { scope.assertWritable(); if (!disposed) { stop(); reset({ status: "cancelled", reason: "cancelled", message: "Search cancelled." }); } },

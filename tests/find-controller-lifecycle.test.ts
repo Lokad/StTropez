@@ -6,7 +6,7 @@ import { TextBuffer, Workspace } from "../src/index.ts";
 import { findForView } from "../src/browser/find.ts";
 import type { FindHost } from "../src/browser/find.ts";
 
-test("controller and workspace notifications reject cross-owner writes through nested delivery", () => {
+test("controller and workspace notifications reject cross-owner writes through nested delivery", t => {
     const errors: unknown[] = [], workspace = new Workspace({ onListenerError: error => errors.push(error) });
     const documentId = workspace.createDocument({ scope: "find", resource: "notifications", variant: "working" }, "Source", "cat");
     const tab = workspace.tabs.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>();
@@ -15,7 +15,11 @@ test("controller and workspace notifications reject cross-owner writes through n
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, ...editorState(), activity: () => ({ composing: false, disposed: false }),
         viewport: { revealRange: () => {} }, focus: () => {} } satisfies FindHost;
-    const find = findForView(workspace, workspace.tabs.capture(tab), editor), comparison = compareText(workspace, tab, { buffer: TextBuffer.from("cat"), version: "one" });
+    const scope = workspace.createNotificationScope();
+    const observe = t.mock.method(workspace, "createNotificationScope", () => scope);
+    const find = findForView(workspace, workspace.tabs.capture(tab), editor);
+    observe.mock.restore();
+    const comparison = compareText(workspace, tab, { buffer: TextBuffer.from("cat"), version: "one" });
     const other = new Workspace(), independent = other.createDocument({ scope: "find", resource: "other", variant: "working" }, "Other", "a");
     const write = () => workspace.edit({ documentId, expectedRevision: workspace.document(documentId).revision, origin: "human", edits: [{ from: 0, to: 0, insert: "x" }] });
     const rejected: string[] = [], attempt = (name: string, command: () => unknown) => { try { command(); } catch (error) { if (error instanceof Error && /Reentrant mutation/.test(error.message)) rejected.push(name); else errors.push(error); } };
@@ -37,6 +41,11 @@ test("controller and workspace notifications reject cross-owner writes through n
         assert.equal(find.getSnapshot().status, "searching"); assert.equal(workspace.document(documentId).text(), "xcat");
         find.cancel(); assert.equal(find.getSnapshot().status, "cancelled"); assert.equal(comparison.advance().status, "ready");
         assert.deepEqual(errors, []);
+        find.dispose();
+        assert.equal(scope.subscriptionCount(), 0);
+        const stopLate = find.subscribe(() => assert.fail("Disposed Find published again"));
+        assert.equal(scope.subscriptionCount(), 0);
+        stopLate();
     } finally {
         stops.forEach(stop => stop()); find.dispose(); comparison.dispose(); view.dispose(); workspace.tabs.close(tab);
         assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().subscriptions, 0); assert.equal(workspace.diagnostics().leases, 0);
