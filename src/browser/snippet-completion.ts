@@ -1,6 +1,6 @@
 import { createSelectionSet, type SelectionSet } from "../core/selections.ts";
 import { planLinkedFieldEdit, type SnippetEditPlan, type SnippetStop } from "../core/snippets.ts";
-import { lspCompletionPlan, type LspCompletion } from "../protocol/index.ts";
+import { lspCompletionPlan, type LspCompletion } from "../protocol/lsp-features.ts";
 
 /** Expand the accepted text at the linked field and keep the enclosing template's Tab order. */
 export function planFieldCompletion(item: LspCompletion, mode: "insert" | "replace", character: string | undefined,

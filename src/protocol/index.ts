@@ -5,8 +5,8 @@ export type { RpcId, RpcTransport, RpcScheduler, RpcOptions, RpcCall, RpcRequest
 export { LspLineIndex } from "./lsp-positions.ts";
 export type { LspPosition, LspRange, LspTextChange, LspCooperate, LspChangeHint } from "./lsp-positions.ts";
 export type { LspFeature, LspClientFeature, LspDocumentFeature, LspCommandAuthorization, LspCommandCall, LspDocumentSnapshot, LspDocument, LspDocumentCapture, LspCall, LspConnectContext, LspRequestContext, LspRegistration, LspSessionSnapshot, LspSessionOptions } from "./lsp-session.ts";
-export { UnsupportedLspSnippetError, lspRangeOffsets, rebaseLspCompletion, lspCompletionPlan } from "./lsp-features.ts";
-export type { LspDiagnostic, LspDiagnostics, LspCompletionPlan, LspCompletionSelectionPlan, LspCompletion, LspCompletionOptions, LspCompletions, LspCompletionFallback, LspHover, LspLocationTarget, LspLocation, LspEditTarget, LspDocumentEdits, LspWorkspaceEdit, LspApplyEdit, LspApplyEditResult } from "./lsp-features.ts";
+export { lspRangeOffsets } from "./lsp-features.ts";
+export type { LspDiagnostic, LspDiagnostics, LspCompletionPlan, LspCompletion, LspCompletionOptions, LspCompletions, LspCompletionFallback, LspHover, LspLocationTarget, LspLocation, LspEditTarget, LspDocumentEdits, LspWorkspaceEdit, LspApplyEdit, LspApplyEditResult } from "./lsp-features.ts";
 export type { LspCodeAction, LspCodeActions } from "./lsp-code-actions.ts";
 export type { LspCommand } from "./lsp-command-value.ts";
 export { LspWorkspace } from "./lsp-workspace.ts";

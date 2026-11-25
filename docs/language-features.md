@@ -178,8 +178,8 @@ Choices sort stably by `sortText` and filter by case-insensitive `filterText` pr
 choice disappears, `preselect` applies. Manual requests initially show all choices. Set
 `filterManualCompletions: true` to filter them by the captured prefix too.
 
-`rebaseLspCompletion` maps an item across a single typing insertion or backward deletion inside
-its primary insert range. Core supplies the exact edit. With automatic completion enabled, Backspace
+An open completion follows a typed insertion or backward deletion inside its primary insert range.
+With automatic completion enabled, Backspace
 refilters an open list and keeps the selected item when it matches the shorter word. Erasing the word
 prefix dismisses the list. Deleting past the provider's original request position with a word prefix
 remaining requests fresh choices. The browser requires matching selections, fold
@@ -207,8 +207,7 @@ the character normally and closes the list. Once ready, the item and its commit 
 transaction. If the provider also advertises the character as a completion trigger, automatic
 completion requests the next list at the resulting caret. Commit characters must be one UTF-16 unit.
 
-`lspCompletionPlan(item, mode, commitCharacter?, capturedSelections?)` returns edits and the resulting
-`selectionSet`. For multiple carets, each selection must be collapsed and ordered. The primary must
+For multiple carets, each selection must be collapsed and ordered. The primary must
 match the captured offset. Each mapped replacement must fit its caret’s line and cover the same text
 as the primary. Insertions use local line context, and additional edits apply once. Overlap or one
 incompatible caret rejects the batch. Request completion explicitly for multiple carets. Automatic
@@ -221,9 +220,8 @@ intersecting replacements invalidate the completion. Other views’ selections f
 
 Completion uses the [snippet grammar and planners](text-model.md#snippet-planning). Unsupported
 snippet choices and choices requiring a follow-up command are omitted individually, with reasons
-in `omittedCompletions` (`omitted` in the pure decoder). Their edits and command data are validated
-first, so malformed data cannot hide behind an omission. Lazy unsupported snippets report
-`UnsupportedLspSnippetError`. Completion acceptance never executes a command.
+in `omittedCompletions`. This includes snippets whose unsupported syntax becomes known during resolution.
+The controller validates edits and command data before omitting a choice.
 
 `insertTextMode: 1` preserves supplied text; mode 2 adjusts subsequent lines to the insertion
 line's indentation and newline convention. Mode 2 is the default. Decoder indentation defaults

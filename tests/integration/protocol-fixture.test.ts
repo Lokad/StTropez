@@ -6,8 +6,8 @@ import { withProtocolFixture } from "../helpers/protocol-fixture.ts";
 import { reviewHeader, reviewFooter } from "../../fixtures/language/project-commands.ts";
 import { Workspace } from "../../src/index.ts";
 import { openWebSocketTransport } from "../../src/browser/index.ts";
-import { LspWorkspace, RpcError, lspCompletionPlan } from "../../src/protocol/index.ts";
-import { decodeLspCompletions, decodeLspResolvedCompletion } from "../../src/protocol/lsp-features.ts";
+import { LspWorkspace, RpcError } from "../../src/protocol/index.ts";
+import { decodeLspCompletions, decodeLspResolvedCompletion, lspCompletionPlan } from "../../src/protocol/lsp-features.ts";
 import type { LspDocumentCapture, LspCommandScope, LspWorkspaceEdit } from "../../src/protocol/index.ts";
 
 test("fixture diagnostics address the requested URI and reject missing, unknown or closed targets", { timeout: 15000 }, async () => withProtocolFixture(async ({ url, defer }) => {

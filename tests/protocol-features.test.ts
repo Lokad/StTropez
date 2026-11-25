@@ -10,12 +10,12 @@ import {
 import {
     decodeLspCompletions, decodeLspResolvedCompletion, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit,
     decodeLspApplyEdit, decodeLspSignatureHelp, decodeLspDocumentLinks, decodeLspResolvedDocumentLink, decodeLspColor,
-    decodeLspDocumentColors, decodeLspColorPresentations,
+    decodeLspDocumentColors, decodeLspColorPresentations, lspCompletionPlan, rebaseLspCompletion, UnsupportedLspSnippetError,
 } from "../src/protocol/lsp-features.ts";
 import { decodeLspCodeActions, decodeLspResolvedCodeAction } from "../src/protocol/lsp-code-actions.ts";
 import type { JsonValue, LspDocumentCapture, RpcTransport } from "../src/protocol/index.ts";
 
-import { ProtocolDecodeError, LspLineIndex, UnsupportedLspSnippetError, rebaseLspCompletion, lspCompletionPlan, lspRangeOffsets, RpcError } from "../src/protocol/index.ts";
+import { ProtocolDecodeError, LspLineIndex, lspRangeOffsets, RpcError } from "../src/protocol/index.ts";
 async function captured(text = "// header\r\nconst saMORE = 1; // TODO\rb\n") {
     const buffer = TextBuffer.from(text), index = await LspLineIndex.create(buffer, async () => {}); let active = true;
     const capture: LspDocumentCapture = Object.freeze({ document: Object.freeze({ uri: "host+fixture:source", languageId: "fixture", resourceId: "resource", documentId: "working", revision: 70, buffer }), index, version: 3, epoch: 2, registrationGeneration: 4, isCurrent: () => active });

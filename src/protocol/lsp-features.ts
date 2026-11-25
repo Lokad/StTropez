@@ -23,7 +23,7 @@ export type LspDiagnostic = Readonly<{ range: LspRange; placement: "placed" | "o
     relatedInformation?: readonly Readonly<{ location: Readonly<{ uri: string; range: LspRange }>; message: string }>[]; data?: JsonValue }>;
 export type LspDiagnostics = Readonly<{ uri: string; version: number | null; revision: number | null; snapshotRevision: number; freshness: "versioned" | "unversioned"; items: readonly LspDiagnostic[] }>;
 export type LspCompletionPlan = Readonly<{ edits: readonly TextEdit[]; head: number; snippet: readonly SnippetStop[] | null }>;
-export type LspCompletionSelectionPlan = LspCompletionPlan & Readonly<{ selectionSet: SelectionSet }>;
+type LspCompletionSelectionPlan = LspCompletionPlan & Readonly<{ selectionSet: SelectionSet }>;
 export type LspCompletion = Readonly<{ label: string; detail: string; documentation: string; filterText: string; sortText: string; preselect: boolean;
     commitCharacters: readonly string[]; source: LspDocumentSnapshot; offset: number; primary: Readonly<{ from: number; insertTo: number; replaceTo: number; text: string }>;
     /** Raw expanded primary text/stops are retained; plans use this captured formatting policy. */
