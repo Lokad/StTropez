@@ -4,6 +4,22 @@ import { captureBrowserErrors } from "../helpers/browser-errors.ts";
 
 export { expect };
 
+/** Keep zero-delay command continuations beyond the clock's paused tick. */
+export async function pauseBetweenCommandTurns(page: Page) {
+    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 1000)));
+    const restore = await page.evaluateHandle(() => {
+        const host: Window = window;
+        const schedule = host.setTimeout;
+        host.setTimeout = (callback, delay = 0, ...args) => schedule(callback, Math.max(1, delay), ...args);
+        return () => { host.setTimeout = schedule; };
+    });
+    return async () => {
+        await restore.evaluate(reset => reset());
+        await restore.dispose();
+        await page.clock.resume();
+    };
+}
+
 export async function expectPanelKeyReserved(control: Locator, key: "Escape" | "Enter" | "ArrowRight") {
     const consumed = await control.evaluate((node, key) => [
         { keyCode: 229 }, { modifierAltGraph: true }, { isComposing: true }, { shiftKey: true },

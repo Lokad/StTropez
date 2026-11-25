@@ -1,7 +1,7 @@
 import { demoSample } from "../../examples/demo/samples.ts";
 import { latch } from "../helpers/latch.ts";
 import { moveEditorIntoShadow } from "../helpers/shadow-editor.ts";
-import { expect, expectPanelKeyReserved, test } from "./fixtures.ts";
+import { expect, expectPanelKeyReserved, pauseBetweenCommandTurns, test } from "./fixtures.ts";
 import { dragBundleScrollbars, hoverString, selectInsideString } from "./demo-minified.ts";
 import { checkDemoLigatures } from "./demo-ligatures.ts";
 import { paintedCharacter } from "../helpers/painted-character.ts";
@@ -747,7 +747,7 @@ test("switching views during a source edit preserves the command and its Undo", 
     await source.press("Control+a");
     await page.keyboard.insertText("0\n".repeat(40_000));
     await source.press("Control+a");
-    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 1000)));
+    const resume = await pauseBetweenCommandTurns(page);
     await page.keyboard.press("Control+/");
     await changes.click({ force: true });
     await pricing.click({ force: true });
@@ -761,7 +761,7 @@ test("switching views during a source edit preserves the command and its Undo", 
     expect(await changes.getAttribute("aria-pressed")).toBe("false");
     expect(await pricing.getAttribute("aria-pressed")).toBe("false");
     expect(await sample.inputValue()).toBe("pricing");
-    await page.clock.resume();
+    await resume();
     await expect(page.locator("#editor .st-viewport-row").first()).toHaveText("// 0");
     expect(confirmations).toBe(0);
     await changes.click();

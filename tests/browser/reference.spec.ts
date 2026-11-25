@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.ts";
+import { test, expect, pauseBetweenCommandTurns } from "./fixtures.ts";
 import { paintedCharacter } from "../helpers/painted-character.ts";
 
 test("the reference Find replaces the selected word, reports wrapping and returns focus for Undo", async ({ page }) => {
@@ -228,14 +228,14 @@ test("Save and Changes preserve a pending edit in the reference host", async ({ 
     await source.press("Control+a");
     await page.keyboard.insertText(text);
     await source.press("Control+a");
-    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 1000)));
+    const resume = await pauseBetweenCommandTurns(page);
     await page.keyboard.press("Control+/");
     await page.keyboard.press("ControlOrMeta+s");
     expect(await page.locator("#saved").innerText()).toBe("An edit is pending. Try again when it finishes.");
     expect(await page.evaluate(() => sessionStorage.getItem("sttropez.reference.quote"))).toBeNull();
     await changes.click({ force: true });
     expect(await changes.getAttribute("aria-pressed")).toBe("false");
-    await page.clock.resume();
+    await resume();
     await expect(page.locator("#pane .st-viewport-row").first()).toHaveText("// 0");
     await expect(page.locator("#saved")).toHaveText("Unsaved changes");
     await save.click();
