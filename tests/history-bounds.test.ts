@@ -3,7 +3,8 @@ import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { TextHistory } from "../src/core/history.ts";
 import type { EditKind, HistoryChange, HistoryEntry, HistoryOptions } from "../src/core/history.ts";
-import { TextBuffer, createSelectionSet } from "../src/index.ts";
+import { TextBuffer } from "../src/index.ts";
+import { createSelectionSet } from "../src/core/selections.ts";
 
 type Change = Omit<HistoryChange, "mapping">;
 type Row = Omit<HistoryEntry, "changes"> & { changes: readonly Change[]; direction: "undo" | "redo"; stamp: number };

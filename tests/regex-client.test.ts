@@ -1,7 +1,8 @@
 import { bufferReads } from "./buffer-reads.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { TextBuffer, applyTextEdits } from "../src/index.ts";
+import { TextBuffer } from "../src/index.ts";
+import { applyTextEdits } from "../src/core/changes.ts";
 import type { TextEdit } from "../src/index.ts";
 import { createRegexClient } from "../src/browser/regex-client.ts";
 import { createRegexFindBackend } from "../src/browser/regex-find.ts";

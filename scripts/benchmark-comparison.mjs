@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
-import { applyTextEdits, TextBuffer } from "../src/index.ts";
+import { TextBuffer } from "../src/index.ts";
+import { applyTextEdits } from "../src/core/changes.ts";
 import { TextDiff } from "../src/kernels/index.ts";
 import { corpus } from "../fixtures/workloads.ts";
 import { openHarness } from "./browser-harness.mjs";

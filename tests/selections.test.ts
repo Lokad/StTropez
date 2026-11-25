@@ -1,8 +1,8 @@
-import { mapReplacementSelections } from "../src/core/selections.ts";
+import { createSelectionSet, mapReplacementSelections } from "../src/core/selections.ts";
 import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
-import { Workspace, TextBuffer, createSelectionSet } from "../src/index.ts";
+import { Workspace, TextBuffer } from "../src/index.ts";
 import { PositionMap, mapSelectionSet, planSelectionEdits } from "../src/kernels/index.ts";
 import type { Selection, SelectionSet } from "../src/index.ts";
 

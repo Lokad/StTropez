@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyTextEdits, textDifference } from "../src/index.ts";
+import { textDifference } from "../src/index.ts";
+import { applyTextEdits } from "../src/core/changes.ts";
 import type { TextEdit } from "../src/index.ts";
 
 test("whole-text differences preserve exact shared UTF-16 boundaries in one immutable replacement", () => {

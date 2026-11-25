@@ -1,4 +1,4 @@
-export { applyTextEdits, textDifference } from "./core/changes.ts";
+export { textDifference } from "./core/changes.ts";
 export type { TextEdit } from "./core/changes.ts";
 export { anchoredRange } from "./core/positions.ts";
 export type { Affinity, AnchoredRange, MappedPosition, PositionMapping } from "./core/positions.ts";
@@ -19,7 +19,6 @@ export type { DiffHunk, DiffProgress, DiffRange } from "./core/diff.ts";
 export { createComparisonController } from "./core/comparison.ts";
 export type { ComparisonBaseline, ComparisonCapture, ComparisonController, ComparisonHunk, ComparisonSnapshot, ComparisonTicket, ComparisonReversion } from "./core/comparison.ts";
 export type { EditKind, HistoryOptions, HistorySnapshot, Selection } from "./core/history.ts";
-export { createSelectionSet } from "./core/selections.ts";
 export type { SelectionSet, SelectionEditPlan } from "./core/selections.ts";
 export { resolveLanguageConfiguration, planLanguageEdit } from "./core/language-edits.ts";
 export type { LanguageConfiguration, ResolvedLanguageConfiguration, EditingCommand, EditingPair, LanguageEditContext, PairingContext, EnterIndent, LanguageEditProgress, LanguageEditCursor } from "./core/language-edits.ts";

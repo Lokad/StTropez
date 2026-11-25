@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { copyCaretLines, planClipboardPaste } from "../src/core/clipboard-edits.ts";
-import { createSelectionSet, TextBuffer } from "../src/index.ts";
+import { TextBuffer } from "../src/index.ts";
+import { createSelectionSet } from "../src/core/selections.ts";
 
 test("a cut ending at EOF takes the separator before the last group, including a trailing empty row", () => {
     for (const [source, offsets, copied, remainder] of [

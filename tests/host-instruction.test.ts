@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyTextEdits } from "../src/index.ts";
+import { applyTextEdits } from "../src/core/changes.ts";
 import { HostController } from "../examples/hosts/controller.ts";
 import { instructionEdit, parseInstruction } from "../examples/hosts/instruction-syntax.ts";
 

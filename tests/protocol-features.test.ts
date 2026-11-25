@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { TextDocument } from "vscode-languageserver-protocol/node.js";
 import type { ApplyWorkspaceEditParams, CodeAction, Command, CompletionList, PublishDiagnosticsParams, WorkspaceEdit } from "vscode-languageserver-protocol/node.js";
 import { TextBuffer } from "../src/core/text-buffer.ts";
-import { Workspace, createSelectionSet } from "../src/index.ts";
+import { Workspace } from "../src/index.ts";
+import { createSelectionSet } from "../src/core/selections.ts";
 import {
     composePositionMaps, planSnippetEdit, planSnippetChoice, snippetChoiceText, decodeLspDiagnostics, JsonRpcConnection,
 } from "../src/kernels/index.ts";

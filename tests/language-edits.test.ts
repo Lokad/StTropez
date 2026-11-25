@@ -2,7 +2,8 @@ import { bufferReads } from "./buffer-reads.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { FoldIndex } from "../src/core/folding.ts";
-import { TextBuffer, createFoldRegions, createSelectionSet, resolveLanguageConfiguration, planLanguageEdit, Workspace } from "../src/index.ts";
+import { TextBuffer, createFoldRegions, resolveLanguageConfiguration, planLanguageEdit, Workspace } from "../src/index.ts";
+import { createSelectionSet } from "../src/core/selections.ts";
 import { nextSeed } from "../fixtures/workloads.ts";
 import type { LanguageConfiguration, LanguageEditProgress, Selection } from "../src/index.ts";
 

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
-import { Workspace, TextBuffer, createSelectionSet, planLanguageEdit, resolveLanguageConfiguration } from "../src/index.ts";
+import { Workspace, TextBuffer, planLanguageEdit, resolveLanguageConfiguration } from "../src/index.ts";
+import { createSelectionSet } from "../src/core/selections.ts";
 import { corpus, corpusIds, editLog, workloadSeed, workspaceWorkload } from "../fixtures/workloads.ts";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
 

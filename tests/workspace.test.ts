@@ -1,7 +1,8 @@
 import { bufferReads } from "./buffer-reads.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Workspace, applyTextEdits } from "../src/index.ts";
+import { Workspace } from "../src/index.ts";
+import { applyTextEdits } from "../src/core/changes.ts";
 import type { DocumentChange } from "../src/index.ts";
 
 function fixture() {

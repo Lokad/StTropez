@@ -64,7 +64,6 @@ fragmentation.
 sorted, non-overlapping and in bounds; `insert` must be a string. Same-position insertions retain
 array order. Providers can check a batch before submission with `validateTextEdits(length, edits)`
 from `sttropez/kernels`.
-`applyTextEdits(text, edits)` supplies the corresponding whole-string operation.
 
 `buffer.apply(edits)` returns an immutable `BufferChange` with `buffer`, `mapping` and `changedUnits`.
 It drops replacements that would insert the same text before building the map. If the batch leaves the
@@ -109,9 +108,10 @@ this method.
 ### Selection sets
 
 `Selection` contains `anchor`, `head` and optional endpoint affinities. `SelectionSet` contains
-immutable `ranges` and a `primary` index. `createSelectionSet(length, ranges, primary?)` requires
-at least one range, validates endpoints, sorts by source range and merges overlaps, duplicate
-carets and carets on occupied ranges. Adjacent nonempty ranges stay distinct. A merged range
+immutable `ranges` and a `primary` index. Pass one or more ranges to
+`view.setSelections(revision, ranges, primary?)`. The view validates their endpoints, sorts them
+and merges overlaps, duplicate carets and carets on occupied ranges. Read the normalized set
+from `view.getSnapshot().selectionSet`. Adjacent nonempty ranges stay distinct. A merged range
 keeps the primary member's direction/affinities, or the first supplied member's otherwise.
 
 Default affinities exclude insertion at a nonempty selection's outer edges; a collapsed caret

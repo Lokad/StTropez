@@ -1,7 +1,8 @@
 import { bufferReads } from "./buffer-reads.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Workspace, applyTextEdits, anchoredRange } from "../src/index.ts";
+import { Workspace, anchoredRange } from "../src/index.ts";
+import { applyTextEdits } from "../src/core/changes.ts";
 import { HostSaveQueue } from "../examples/shared/save-queue.ts";
 import type { DocumentId, EditKind, HistoryOptions, Selection } from "../src/index.ts";
 import { corpus, editLog } from "../fixtures/workloads.ts";
