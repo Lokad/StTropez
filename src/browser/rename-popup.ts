@@ -4,7 +4,7 @@ import { lspRangeOffsets } from "../protocol/lsp-features.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { renameMethod } from "../protocol/lsp-methods.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
-import { listenUntil, onAbort } from "./listen.ts";
+import { listenUntil, onAbort, stopPopupPropagation } from "./listen.ts";
 import type { RenamePreview, RenameSnapshot } from "./rename-controller.ts";
 import type { TextEditor } from "./text-editor.ts";
 import type { Observable } from "../core/observable.ts";
@@ -86,6 +86,12 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
         hide(focus);
         review.cancel();
     }
+    function accept(result: RenamePreview | null) {
+        const target = source;
+        if (result?.canApply && result.apply().status === "done" && source === target) {
+            hide(panel.matches(":focus-within") || doc.activeElement === doc.body);
+        }
+    }
     function render() {
         const state = review.getSnapshot();
         const result = state.preview;
@@ -93,7 +99,7 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
         status.textContent = text(checking ? "Checking rename target…" : state.message || "Enter a name, then preview its changes.");
         if (shown !== result) {
             shown = result;
-            apply = button(controls, "Apply rename", () => result?.apply(), apply);
+            apply = button(controls, "Apply rename", () => accept(result), apply);
             const total = showEdits(result);
             if (result?.canApply) status.textContent = text(`Review ${total} ${total === 1 ? "change" : "changes"}.`);
         }
@@ -158,11 +164,8 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
     });
     listen(panel, "keydown", event => {
         if (event.target === name || event.key === "Escape") editor.keymap.handle(event);
-        event.stopPropagation();
     });
-    for (const type of ["pointerdown", "pointermove", "dblclick", "wheel", "dragstart", "dragenter", "dragover", "drop"]) {
-        listen(panel, type, event => event.stopPropagation());
-    }
+    stopPopupPropagation(panel, listen);
     listen(panel, "focusout", event => {
         if (checking && !panel.contains(event.relatedTarget as Node | null)) close(false);
     });
@@ -177,7 +180,7 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
     bind("rename.start", "Rename symbol", "F2", () => editor.getSnapshot().readOnlyReason === null, open, 9);
     bind("rename.dismiss", "Dismiss rename", "Escape", () => !!source, arg => close(arg !== false), 39);
     bind("rename.submit", "Preview or apply rename", "Enter", () => name.matches(":focus"), () => {
-        if (shown) { if (shown.canApply) shown.apply(); }
+        if (shown) accept(shown);
         else if (review.getSnapshot().status !== "pending") prepare();
     }, 33);
     element.querySelector(".st-viewport-surface")!.append(panel);

@@ -146,13 +146,13 @@ test("a rename reports success after changing the reference document and Undo cl
     })).toBe(true);
     await expect(field).toBeFocused();
     await pane.evaluate((element, value) => { element.style.height = value; }, height);
-    await field.press("Enter");
+    await rename.getByRole("button", { name: "Apply rename" }).click();
     await expect(rename).toBeHidden();
     await expect(source).toBeFocused();
     const code = page.locator("#pane .st-viewport-row");
     await expect(code.filter({ hasText: "export const highlight" })).toBeVisible();
     await expect(page.locator("#result")).toHaveText("Renamed");
-    await source.press("ControlOrMeta+z");
+    await page.keyboard.press("ControlOrMeta+z");
     await expect(code.filter({ hasText: "export const accent" })).toBeVisible();
     await expect(page.locator("#result")).toBeEmpty();
 });

@@ -1,4 +1,4 @@
-import { listenUntil, onAbort } from "./listen.ts";
+import { listenUntil, onAbort, stopPopupPropagation } from "./listen.ts";
 import { isOffsetRange } from "../core/bounds.ts";
 import type { Affinity } from "../core/positions.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
@@ -195,12 +195,7 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
             events = new AbortController();
             const signal = events.signal;
             const listen = listenUntil(signal);
-            if (scoped) {
-                // Popup controls own their native editing, pointer and drag gestures.
-                for (const type of ["keydown", "pointerdown", "pointermove", "dblclick", "wheel", "dragstart", "dragenter", "dragover", "drop"]) {
-                    listen(element, type, event => event.stopPropagation());
-                }
-            }
+            if (scoped) stopPopupPropagation(element, listen);
             if (dismissOn.has("focus-leave")) {
                 const left = (event: FocusEvent) => {
                     // WebKit can run a microtask between focusout and focusin, with body temporarily active.

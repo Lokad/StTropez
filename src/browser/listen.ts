@@ -10,6 +10,13 @@ export function listenUntil(signal: AbortSignal) {
     };
 }
 
+/** Keep native popup input from reaching the surrounding editor. */
+export function stopPopupPropagation(element: HTMLElement, listen: ReturnType<typeof listenUntil>): void {
+    for (const type of ["keydown", "pointerdown", "pointermove", "dblclick", "wheel", "dragstart", "dragenter", "dragover", "drop"]) {
+        listen(element, type, event => event.stopPropagation());
+    }
+}
+
 /** Run a cleanup once when its signal aborts. */
 export function onAbort(signal: AbortSignal | undefined, cleanup: () => void): void {
     signal?.addEventListener("abort", cleanup, { once: true });
