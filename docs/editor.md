@@ -357,35 +357,27 @@ and frozen; callbacks receive the exact immutable buffer and source endpoints.
 
 ### Running and binding commands
 
-Pass a built-in `TextEditorCommand`
-or a registered host command ID to `editor.commands.run(id)`.
-`undo` and `redo` use the document’s shared history. Their entries are disabled in a read-only
-pane or when the corresponding history stack is empty.
-The arrow keys run `move-left`, `move-right`, `move-up` and `move-down`.
-`move-page-up` and `move-page-down` move the caret by a visible page.
-Their `select-` variants extend from each anchor. These commands also work in saved comparisons.
-Use `move-to-line-start`, `move-to-line-end`, `move-to-document-start` and
-`move-to-document-end` in any text pane. Their `select-to-` variants extend each
-selection from its anchor. Line start moves to the first nonblank character, then to
-column one on a second press.
-Use `move-word-backward` and `move-word-forward` to navigate by word, or
-`select-word-backward` and `select-word-forward` to extend each selection.
-`delete-backward` and `delete-forward` follow the Backspace and Delete rules above.
-These and `delete-word-backward` and `delete-word-forward` require an editable pane.
-Rebinding a shortcut leaves native deletion input available.
-For a non-cancellable native deletion, the input event must match the captured deletion
-unit, direction, revision and selections. A mismatch preserves the document and reports a conflict.
-Tab runs `indent`, Shift+Tab runs `outdent`, and Enter or Shift+Enter runs `newline`.
-Unbinding Tab allows normal focus traversal. Unbinding Enter suppresses that keystroke.
-Native `insertLineBreak` input works independently of these bindings.
-The view commands `select-all`, `select-line`, `select-next-occurrence`, `select-all-occurrences`, `add-caret-above`, `add-caret-below`, `undo-caret`,
-`jump-to-bracket`, `scroll-line-up`, `scroll-line-down`, `scroll-page-up` and
-`scroll-page-down` also work in read-only editors. The text-editing commands are
-`indent`, `indent-lines`, `outdent`, `line-comment`, `add-line-comment`, `remove-line-comment`,
-`block-comment`, `newline`, `move-line-up`, `move-line-down`, `copy-line-up`, `copy-line-down`,
-`delete-lines`, `insert-line-above` or `insert-line-below`. It returns `false` when the view
-cannot edit, is composing/disposed, or lacks the requested comment rule. Long plans yield, then
-commit once after validating the captured target; intermediate planning publishes no text.
+Use `editor.commands.get(id)` when opening a menu. Its label and enabled state belong to that
+pane. `run(id)` checks availability again when the user activates the command.
+
+```ts
+import type { TextEditor } from "sttropez/browser";
+
+export function undoMenuItem(editor: TextEditor) {
+    const undo = editor.commands.get("undo");
+    if (!undo) return;
+    return { label: undo.label, enabled: undo.enabled, run: () => editor.commands.run(undo.id) };
+}
+```
+
+Navigation, selection and scrolling work in read-only panes. Undo and Redo need an editable
+pane and an entry in the document’s shared history. Editing commands return `false` during
+composition, after disposal or when the required comment rule is missing. A long edit can
+yield while it plans, then commits once if its target is current. [Default shortcuts](#shortcuts)
+
+Unbinding Tab restores focus traversal. Unbinding Enter suppresses that keystroke. Native line
+break and deletion events work independently of those bindings. For a non-cancellable deletion, the unit,
+direction, revision and selections must match the captured input or the editor reports a conflict.
 
 Add line comment adds one marker to each selected line of code, including existing comments.
 Remove peels off one marker and its optional space. Markers align at the indentation of the
@@ -400,17 +392,16 @@ The editor matches the configured delimiters as text. A host can reject an infer
 string or other context through `allowPair`. Explicitly selected wrappers toggle directly.
 All affected selections share one undo step.
 
-`editor.commands.list()` returns immutable entries with an ID, label, owner, category and current enabled state.
-Built-ins use owner `"editor"`. A registration can supply an owner and category for a host palette.
-They default to `"host"` and `"General"`.
-`commands.get(id, argument?)` looks up one entry and checks availability for that argument.
-An unknown ID returns `undefined`. `commands.run(id, argument?)` passes the same value to
-the registered `enabled` and `run` callbacks, followed by the editor that received the command.
-For shortcuts and `list()`, the first argument is `undefined`.
-`register({ id, label, run, enabled })` adds a command to this mount. An optional second argument
-such as `{ keys: ["Escape"], priority: 10 }` installs its shortcuts together. A conflict rolls back
-the registration. Duplicate IDs throw.
-Disposing a registration removes its bindings. Disposing the editor retires the registry.
+`editor.commands.list()` returns immutable entries with an ID, label, owner, category and
+enabled state. Built-ins use owner `"editor"`. Host commands default to owner `"host"` and
+category `"General"`. For a command that takes an argument, pass it to both `get` and `run`.
+The registered callbacks receive the argument and the receiving editor. Shortcuts and `list()`
+use `undefined` for the argument. An unknown ID returns `undefined` from `get`.
+
+`commands.register({ id, label, run, enabled }, { keys: ["Escape"], priority: 10 })` installs
+a command and its shortcuts together. A duplicate ID or conflicting binding throws and leaves
+the registry unchanged. Disposing the registration removes its bindings. Disposing the editor
+retires the registry.
 
 `editor.keymap.bind("Mod+k Mod+i", id)` binds a two-stroke chord. A single stroke uses the
 same API. `Mod` means Meta on Apple platforms and Ctrl elsewhere. `Ctrl`, `Meta`, `Shift`
