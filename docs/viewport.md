@@ -40,16 +40,25 @@ workspace and document.
 | --- | --- |
 | `ariaLabel` | Document title when omitted |
 | `view` | A new independent document view when omitted |
-| `settings` | Initial presentation settings, all optional |
+| `settings` | Optional [viewport settings](#viewport-settings) |
 
-| Setting | Default and validation |
-| --- | --- |
-| `columnRulers` | Empty; at most 128 positive safe integers, copied, sorted and deduplicated |
-| `highlightCurrentLine` | `false`; boolean |
-| `gutter` | `true`; boolean |
-| `fontLigatures` | `false`; boolean |
-| `minimap` | `false`; boolean |
-| `scrollBeyondLastLine` | `false`; boolean |
+### Theme the editor
+
+Set CSS custom properties on the element you mount into. A class on a comparison host styles both panes.
+
+```css
+.source-pane {
+    --st-background: #18212c;
+    --st-foreground: #eef2f7;
+    --st-gutter-foreground: #abb9c8;
+    --st-selection: #345578;
+    --st-font: Consolas, monospace;
+    --st-font-size: 15px;
+    --st-line-height: 24px;
+}
+```
+
+After a theme or layout change, call `viewport.invalidate()` to refresh text measurements and the minimap.
 
 ### Decoration layers
 
@@ -60,7 +69,7 @@ color swatches or annotations. Publish absolute UTF-16 offsets against the revis
 import type { TextEditor } from "sttropez/browser";
 
 export function markColor(editor: TextEditor, revision: number, from: number, to: number) {
-    const layer = editor.decorations.add({ order: 30 });
+    const layer = editor.decorations.add({ order: 32 });
     layer.set(revision, [{ from, to, className: "color-literal", before: "color-swatch",
         properties: { "--swatch-color": "#7494ad" }, afterLine: "Accent color" }]);
     return layer;
@@ -89,20 +98,35 @@ token stream. Give each layer a finite `order`. Layers paint in ascending order,
 order breaking ties. A later layer can override an earlier CSS custom property. The stylesheet
 controls precedence between classes.
 
+Choose an order between the features your marks should overlap. The example uses 32 to place the
+host's color marker after document links and before built-in color swatches.
+
+| Order | Built-in decoration |
+| ---: | --- |
+| 10 | Comparison changes |
+| 20 | Symbol occurrences |
+| 25 | Snippet fields |
+| 30 | Document links |
+| 35 | Color swatches |
+| 40 | Diagnostics |
+| 60 | Find matches |
+| 100 | Matching brackets |
+| 110 | Character warnings and definition links |
+
 ### Viewport settings
 
 Call `viewport.configure({ columnRulers: [80], minimap: true })` to change several settings together.
 `viewport.settings()` returns their immutable values. Invalid settings leave the previous values intact.
 An unchanged viewport setting schedules no paint. Configuration returns `false` after disposal.
 
-| Setting | Effect |
-| --- | --- |
-| `columnRulers` | Guides at measured monospace cells from the left text origin |
-| `gutter` | Shows line numbers and fold controls. Turning it off gives their width back to the text. |
-| `highlightCurrentLine` | Emphasizes the line number at the head of each selection or caret. A head inside a fold marks its header. |
-| `fontLigatures` | Native common and contextual font ligatures. Changes invalidate font and caret measurements. |
-| `minimap` | A document overview with a draggable visible-region marker |
-| `scrollBeyondLastLine` | Space to scroll the last visible row to the top text padding |
+| Setting | Default | Effect |
+| --- | --- | --- |
+| `columnRulers` | `[]` | Draw guides at monospace columns from the left text edge. Supply up to 128 positive safe integers. The viewport copies, sorts and deduplicates them. |
+| `gutter` | `true` | Show line numbers and fold controls. Hiding the gutter gives its width back to the text. |
+| `highlightCurrentLine` | `false` | Emphasize the line number at each selection head or caret. A head inside a fold marks its header. |
+| `fontLigatures` | `false` | Enable common and contextual font ligatures. Changing this setting refreshes font and caret measurements. |
+| `minimap` | `false` | Show a document overview with a draggable visible-region marker. |
+| `scrollBeyondLastLine` | `false` | Allow the last visible row to scroll to the top text padding. |
 
 The gutter reserves four digits and grows for longer line numbers, up to a third of the viewport width.
 Both comparison panes size their gutters for the longer document. Hiding the gutter preserves folds and keyboard commands.
@@ -118,7 +142,7 @@ The minimap draws short files at their miniature height. For long files, it samp
 across the folded or aligned document to fit the track. Decoration layers supply glyph colors and
 row backgrounds, including in read-only views. Pass `minimap: false` when adding a transient layer
 to leave it out of the overview. Folded lines disappear and alignment gaps stay blank. The previous
-image stays visible until its replacement is complete. Call `viewport.invalidate()` after changing the theme or layout.
+image stays visible until its replacement is complete.
 
 Hover for a line number and text. Click outside the marker to center that location, or drag the
 marker to scroll. Both preserve focus, horizontal position and all selections. The marker covers a
