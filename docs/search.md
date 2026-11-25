@@ -127,19 +127,20 @@ edit permission.
 | `replacement-failed` | Replacement planning or plan validation failed |
 | `view-unavailable` | The captured target or editor view is unavailable |
 | `cancelled` | The host cancelled Find, or a new selection, edit, query, flag change or teardown interrupted replacement planning |
-| `replaced` | A replacement transaction was accepted, including a no-op |
+| `replaced` | `replacedCount` gives the number of matches in the accepted replacement, including matches whose text stayed the same. `count` tracks the current search results. |
 | An `EditResult` refusal reason | The workspace rejected the final transaction; its reason is forwarded unchanged |
 
 Use `reason` for decisions. A backend can send the same error text for a failed search and a failed
 replacement. Starting another replacement or navigating to a match clears the notice. Changing a query
 or disposing Find clears it unless that action interrupts a replacement. Scan progress and unchanged flags leave it in place. If you
 cancel and then edit, the cancellation notice stays. Late replies to obsolete requests cannot change
-it.
+it. When another notice takes its place or the notice clears, `replacedCount` returns to zero.
 
 ```ts
 import type { FindSnapshot } from "sttropez/browser";
 
 export function findNotice(state: FindSnapshot): string {
+    if (state.reason === "replaced") return `Matches replaced: ${state.replacedCount.toLocaleString()}`;
     if (state.reason === "composition-active") return "Finish text composition first.";
     if (state.reason === "edit-locked") return "Try again after the other edit finishes.";
     return state.message || `${state.count} matches`;

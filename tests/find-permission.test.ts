@@ -38,8 +38,15 @@ for (const change of ["permission", "lease", "read-only"] as const) test(`queued
         editor.setReadOnly(false);
         find.replaceAll("dog"); assert.equal(find.getSnapshot().reason, null); drain(); assert.equal(workspace.document(source.documentId).buffer.slice(0, 7), "dog dog");
         assert.equal(find.getSnapshot().reason, "replaced");
+        assert.equal(find.getSnapshot().replacedCount, 2);
+        assert.equal(find.getSnapshot().count, 0);
         assert.equal(workspace.observeHistory(source.documentId).getSnapshot().undoDepth, history.undoDepth + 1); assert.equal(workspace.diagnostics().subscriptions, idleSubscriptions);
-        find.setQuery("dog"); drain(); find.replaceAll("dog"); drain();
+        find.setQuery("dog");
+        assert.equal(find.getSnapshot().replacedCount, 0);
+        drain();
+        find.replaceAll("dog");
+        drain();
+        assert.equal(find.getSnapshot().replacedCount, 2);
         assert.equal(workspace.diagnostics().subscriptions, idleSubscriptions); assert.equal(workspace.observeHistory(source.documentId).getSnapshot().undoDepth, history.undoDepth + 1);
     } finally { find.dispose(); view.dispose(); workspace.tabs.close(tab); assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().subscriptions, 0); assert.equal(workspace.diagnostics().leases, 0); }
 });

@@ -5,7 +5,7 @@ import { discoverIndentationFolds } from "../../src/index.ts";
 import { DemoProject } from "./project.ts";
 import { linePrompt } from "../shared/line-prompt.ts";
 import { bindFindCommands } from "../shared/find-commands.ts";
-import { findStatus } from "../shared/find-status.ts";
+import { findNotice, findStatus } from "../shared/find-status.ts";
 import { selectDemoProvider } from "./provider.ts";
 import type { DemoFile } from "./project.ts";
 import { DemoPresentation } from "./presentation.ts";
@@ -599,7 +599,7 @@ function setActivePane(target: TextEditor, repeat = false): void {
             replaceResult.hidden = true;
         } else if (awaitingOutcome && snapshot.reason) {
             awaitingOutcome = false;
-            replaceResult.textContent = label + " · " + snapshot.message;
+            replaceResult.textContent = label + " · " + findNotice(snapshot);
             replaceResult.hidden = false;
             const requested = pendingPanel;
             if (snapshot.reason !== "replaced") pendingPanel = undefined;

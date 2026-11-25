@@ -46,8 +46,23 @@ export type FindHost = Readonly<{
 /** Stable cause of the last published notice, independent of its display message. */
 export type FindReason = ReplacementRefusal | "backend-unavailable" | "search-failed"
     | "replacement-failed" | "view-unavailable" | "cancelled" | "replaced";
-export type FindSnapshot = Readonly<{ highlightMatches: boolean; query: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean; revision: number; status: "idle" | "searching" | "ready" | "replacing" | "failed" | "cancelled" | "expired" | "disposed";
-    count: number; scanned: number; length: number; retained: boolean; current: number | null; wrappedTo: "start" | "end" | null; matchesVersion: number; reason: FindReason | null; message: string }>;
+type FindNotice = Readonly<{ reason: FindReason | null; message: string; replacedCount: number }>;
+export type FindSnapshot = FindNotice & Readonly<{
+    highlightMatches: boolean;
+    query: string;
+    wholeWord: boolean;
+    matchCase: boolean;
+    regularExpression: boolean;
+    revision: number;
+    status: "idle" | "searching" | "ready" | "replacing" | "failed" | "cancelled" | "expired" | "disposed";
+    count: number;
+    scanned: number;
+    length: number;
+    retained: boolean;
+    current: number | null;
+    wrappedTo: "start" | "end" | null;
+    matchesVersion: number;
+}>;
 export type FindDiagnostics = Readonly<{ maxScanStepMs: number; replaceTransactionMs: number }>;
 export type FindController = Observable<FindSnapshot> & Readonly<{
     getDiagnostics: () => FindDiagnostics;
@@ -58,9 +73,12 @@ export type FindController = Observable<FindSnapshot> & Readonly<{
     acceptPreview: () => boolean;
     next: (direction?: 1 | -1, options?: Readonly<{ whenReady?: boolean }>) => boolean;
     replaceCurrent: (replacement: string) => boolean; replaceAll: (replacement: string, options?: Readonly<{ focusEditor?: boolean }>) => void; cancel: () => void; dispose: () => void }>;
-// A notice is replaced atomically; progress-only patches retain both fields.
-type FindPatch = Partial<Omit<FindSnapshot, "reason" | "message">> &
-    (Pick<FindSnapshot, "reason" | "message"> | { reason?: never; message?: never });
+// A progress update retains the entire previous notice.
+type FindPatch = Partial<Omit<FindSnapshot, keyof FindNotice>> &
+    (FindNotice | { [K in keyof FindNotice]?: never });
+function notice(reason: FindReason | null, message: string, replacedCount = 0): FindNotice {
+    return { reason, message, replacedCount };
+}
 function isAsync<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
     return typeof (value as PromiseLike<T> | null)?.then === "function";
 }
@@ -81,10 +99,10 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     const readDocument = () => workspace.document(documentId);
     const documentChanges = workspace.observeDocument(documentId);
     const scope = workspace.createNotificationScope(), initial = readDocument();
-    const noNotice = { reason: null, message: "" };
+    const noNotice = notice(null, "");
+    const cancelledReplacement = notice("cancelled", "Replacement cancelled.");
     const store = new Store<FindSnapshot>(Object.freeze({ highlightMatches: options.highlightMatches !== false, query: "", wholeWord: false, matchCase: true, regularExpression: false, revision: initial.revision, status: "idle", count: 0, scanned: 0, length: initial.buffer.length,
         retained: false, current: null, wrappedTo: null, matchesVersion: 0, ...noNotice }), scope);
-    const cancelledReplacement = { reason: "cancelled", message: "Replacement cancelled." } as const;
     const runner = createCooperativeRunner(win);
     let disposed = false, cursor: FindSearchCursor | undefined, planCursor: FindPlanCursor | undefined, generation = 0, focusGeneration = 0;
     let navigatedMatch: Readonly<{ index: number; selectionSet: SelectionSet }> | undefined;
@@ -171,8 +189,8 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const message = replacementMessages[reason] ?? "Could not apply the replacement.";
         if (planning) {
             stop();
-            publish({ status: "ready", reason, message: "Replacement cancelled. " + message });
-        } else publish({ reason, message });
+            publish({ status: "ready", ...notice(reason, "Replacement cancelled. " + message) });
+        } else publish(notice(reason, message));
         return false;
     }
     function replacementAllowed(planning = false): boolean {
@@ -190,11 +208,12 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     const failed = (error: unknown, token: number, planning = false, reason: FindReason = planning ? "replacement-failed" : "search-failed") => {
         if (token !== generation || disposed) return;
         stop(); const message = error instanceof Error && error.message.length <= 256 ? error.message : "Search is unavailable; editing remains available.";
-        if (planning) publish({ status: "ready", reason, message });
-        else reset({ status: "failed", reason, message });
+        const failure = notice(reason, message);
+        if (planning) publish({ status: "ready", ...failure });
+        else reset({ status: "failed", ...failure });
     };
     const expire = () => {
-        backend?.dispose(); reset({ status: "expired", reason: "view-unavailable", message: "View is unavailable." });
+        backend?.dispose(); reset({ status: "expired", ...notice("view-unavailable", "View is unavailable.") });
     };
     function restart(query: string, flags: Required<FindFlags> = store.get(), retain = false): void {
         const { wholeWord, matchCase, regularExpression } = flags;
@@ -428,7 +447,10 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         scope.assertWritable();
         pendingNext = undefined;
         if (!valid()) return false;
-        if (editor.activity().composing) { publish({ reason: "composition-active", message: "Finish composition before navigating." }); return false; }
+        if (editor.activity().composing) {
+            publish(notice("composition-active", "Finish composition before navigating."));
+            return false;
+        }
         const match = nextMatch(direction);
         if (!match && options?.whenReady && store.get().status === "searching") {
             pendingNext = { direction, selection: currentSelection(), origin: captureFocus() };
@@ -487,7 +509,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             if (range && range.from === range.to && store.get().query === state.query && store.get().regularExpression && valid()) {
                 replacedZero = { revision: readDocument().revision, head: head!, selectionSet: currentSelection() };
             }
-            publish({ reason: "replaced", message: `Replaced ${total} ${total === 1 ? "match" : "matches"}.` });
+            publish(notice("replaced", `Replaced ${total} ${total === 1 ? "match" : "matches"}.`, total));
             if (valid() && focusGeneration === focusToken) {
                 if (head !== undefined) {
                     advanceAfterReplace = currentSelection();
@@ -632,6 +654,11 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             restart(state.query, { wholeWord, matchCase, regularExpression });
             if (refresh) capturePreview();
         },
-        acceptPreview, next, replaceCurrent, replaceAll, cancel: () => { scope.assertWritable(); if (!disposed) { stop(); reset({ status: "cancelled", reason: "cancelled", message: "Search cancelled." }); } },
+        acceptPreview, next, replaceCurrent, replaceAll, cancel: () => {
+            scope.assertWritable();
+            if (disposed) return;
+            stop();
+            reset({ status: "cancelled", ...notice("cancelled", "Search cancelled.") });
+        },
         dispose });
 }
