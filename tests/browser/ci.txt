@@ -21,6 +21,7 @@ viewport-presentation.spec.ts
 
 # Review, save and host lifecycle
 reference.spec.ts > the reference Find replaces the selected word, reports wrapping and returns focus for Undo
+reference.spec.ts > a rename reports success after changing the reference document and Undo clears the result
 comparison.spec.ts
 comparison-ownership.spec.ts
 save-conflicts.spec.ts

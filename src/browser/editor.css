@@ -46,7 +46,7 @@
 .st-minimap-preview strong { font-size: 11px; margin-bottom: 3px; }
 .st-minimap-preview span { opacity: .65; }
 .st-minimap-preview .st-minimap-preview-line { opacity: 1; }
-.st-viewport-layer { position: absolute; inset: 0 0 0 var(--st-gutter-width); overflow: hidden; contain: strict; pointer-events: auto; }
+.st-viewport-layer { position: absolute; inset: 0 var(--st-minimap-width, 0px) 0 var(--st-gutter-width); overflow: hidden; contain: strict; pointer-events: auto; }
 .st-column-rulers { position: absolute; inset: 0; pointer-events: none; z-index: -1; }
 .st-column-ruler { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--st-column-ruler, #71849c40); }
 .st-current-line-background { position: absolute; left: var(--st-gutter-width); right: 0; pointer-events: none;
@@ -105,7 +105,7 @@
 .st-viewport-row .st-selected-line-break { display: inline-block; width: 0; height: 1lh; vertical-align: top; }
 .st-viewport-row .st-selected-line-break[data-ornament="point"]::after { height: 100%; width: 1ch; border: 0; background: var(--st-selection, #24496b); }
 .st-editor { cursor: text; }
-.st-editor > .st-viewport-surface { user-select: none; }
+.st-editor .st-viewport-layer { user-select: none; }
 .st-input-context { position: absolute; width: 1px; min-height: 1px; box-sizing: border-box; padding: 0; margin: 0; border: 0; resize: none; overflow: hidden;
     font: inherit; line-height: inherit; tab-size: inherit; direction: ltr; opacity: 0; }
 .st-composing .st-input-caret:not(:empty) { width: 1ch; overflow: hidden; white-space: pre; text-decoration: underline; background: var(--st-background, #131b27); }
@@ -195,9 +195,10 @@
 .st-completion button[aria-selected="true"] { background: var(--st-completion-selected, #365474); color: #e2fff6; }
 .st-completion pre { flex: none; margin: 0; padding: 10px 12px; border-top: 1px solid #40536e; font: 12px/1.5 var(--st-font, monospace); color: #abc5d9; white-space: pre-wrap; max-height: 100px; overflow: auto; }
 
-.st-rename-dock { position: sticky; top: 0; left: 0; height: 0; z-index: 4; cursor: auto; }
-.st-rename { position: absolute; inset: 8px 8px auto auto; display: flex; flex-direction: column;
-    box-sizing: border-box; width: min(28rem, calc(100% - 16px)); max-height: min(28rem, 55vh);
+.st-rename[hidden] { display: none; }
+.st-rename { position: absolute; top: 8px; right: calc(8px + var(--st-minimap-width, 0px)); z-index: 4;
+    cursor: auto; pointer-events: auto; display: flex; flex-direction: column; overflow: auto; overscroll-behavior: contain;
+    box-sizing: border-box; width: min(28rem, calc(100% - var(--st-minimap-width, 0px) - 16px)); max-height: min(28rem, calc(100% - 16px));
     padding: 12px; border: 1px solid var(--st-minimap-border, #70849b); border-radius: 7px;
     background: var(--st-background, #1b283c); color: var(--st-foreground, #e1e7ef); box-shadow: 0 8px 28px #0007;
     font: 13px/1.4 system-ui, sans-serif; }

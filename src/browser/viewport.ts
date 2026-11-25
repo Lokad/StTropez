@@ -817,7 +817,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         // Keep old rows at their document Y until the next render replaces them.
         surface.style.transform = `translateY(${physicalTop}px)`;
         surface.style.setProperty("--st-gutter-width", `${gutterWidth}px`);
-        layer.style.right = `${mapWidth}px`;
+        surface.style.setProperty("--st-minimap-width", `${mapWidth}px`);
         layer.style.setProperty("--st-text-area-width", `${width}px`);
         gutter.toggleAttribute("data-scrolled", left > 0);
         const highlightedTop = highlightedLine === undefined ? undefined : padding + index.rowAt(highlightedLine) * lineHeight - top;

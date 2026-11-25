@@ -43,6 +43,9 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
             button(item.message, () => { item.select(); })));
     }
     const stopDiagnostics = language.diagnostics.subscribe(renderDiagnostics);
+    const stopRename = language.rename.subscribe(() => {
+        if (language.rename.getSnapshot().status === "applied") result.value = "Renamed";
+    });
     const stopEdits = editor.workspace.onDocumentChange(editor.view.documentId, change => {
         // The language command reports its outcome after its refactor reaches this listener.
         if (change.origin !== "host" || change.kind !== "refactor") intent++;
@@ -109,6 +112,7 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     return () => {
         events.abort();
         stopDiagnostics();
+        stopRename();
         stopEdits();
         language.dispose();
         clear();

@@ -55,8 +55,6 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
     const listen = listenUntil(signal);
     const text = options.text ?? (label => label);
     const node = <K extends keyof HTMLElementTagNameMap>(tag: K) => doc.createElement(tag);
-    const dock = node("div");
-    dock.className = "st-rename-dock";
     const panel = node("section");
     panel.className = "st-rename";
     panel.setAttribute("role", "dialog");
@@ -73,8 +71,7 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
     list.tabIndex = 0;
     list.setAttribute("aria-label", text("Rename edits"));
     panel.append(label, status, controls, pages, list);
-    dock.append(panel);
-    dock.hidden = true;
+    panel.hidden = true;
     function button(parent: HTMLElement, label: string, action: () => void) {
         const control = node("button");
         control.type = "button";
@@ -97,7 +94,7 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
         const previous = source;
         source = undefined;
         checking = false;
-        dock.hidden = true;
+        panel.hidden = true;
         previous.cancel();
         if (focus && !signal.aborted && element.isConnected) editor.focus();
     }
@@ -176,7 +173,7 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
         name.value = identifierAt(target.document.buffer, offset, nameLimit) ?? "";
         edited = submitted = false;
         checking = owner.provider.queryFeatureOptions(renameMethod, target.document).some(o => o.prepareProvider === true);
-        dock.hidden = false;
+        panel.hidden = false;
         render();
         name.focus({ preventScroll: true });
         name.select();
@@ -227,7 +224,7 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
     });
     listen(win, "blur", () => { if (checking) close(false); });
     editor.onEditIntent(() => { if (source) close(false); }, signal);
-    onAbort(signal, () => { hide(false); dock.remove(); });
+    onAbort(signal, () => { hide(false); panel.remove(); });
     onAbort(signal, review.subscribe(render));
     function bind(id: string, label: string, key: string, enabled: () => boolean, run: (arg: unknown) => boolean | void, priority: number) {
         onAbort(signal, commands.register({ id, label: text(label), owner: "editor", category: "Rename", enabled, run },
@@ -239,6 +236,6 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
         if (shown) { if (shown.canApply) shown.apply(); }
         else if (review.getSnapshot().status !== "pending") prepare();
     }, 33);
-    element.prepend(dock);
+    element.querySelector(".st-viewport-surface")!.append(panel);
     return () => hide(false);
 }
