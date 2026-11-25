@@ -244,9 +244,20 @@ test("reconnecting the reference host requires a fresh server command choice", a
     await expect(command).toHaveCount(0);
     await previous!.evaluate(node => (node as HTMLButtonElement).click());
     await previous!.dispose();
-    await run.click();
-    await command.click();
+    await page.getByRole("button", { name: "Changes", exact: true }).click();
+    const working = page.getByRole("textbox", { name: "Comparison working source" });
+    await working.press("Control+End");
+    const original = await working.inputValue();
+    await run.focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Tab");
+    await expect(command).toBeFocused();
+    await page.keyboard.press("Enter");
     await expect(page.locator("#result")).toHaveText("Command completed");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("X");
+    await expect(working).toHaveValue(original + "\nX");
+    await expect(page.getByRole("textbox", { name: "Comparison baseline source" })).toHaveValue(original);
     expect(executions).toEqual([2]);
 });
 

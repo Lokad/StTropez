@@ -38,9 +38,9 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
         item.onclick = () => { if (item.isConnected) invoke(); };
         return item;
     }
-    function beginCommand() {
+    function beginCommand(target: HTMLElement | TextEditor = editor) {
         clear();
-        editor.focus();
+        target.focus();
         return ++intent;
     }
     function command(id: string, run: (request: number) => void) {
@@ -107,14 +107,17 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
             }
         });
     });
-    command("command", request => {
+    const runCommand = document.getElementById("command")!;
+    runCommand.addEventListener("click", () => {
+        beginCommand(runCommand);
         offeredCommandVersion = provider.getSnapshot().registrationVersion("workspace/executeCommand");
         const names = provider.commandNames();
         if (!names.length) result.value = "No advertised commands.";
         for (const name of names) choices.append(button(name, async () => {
+            const request = beginCommand();
             display(request, await language.commands.run(name), () => { result.value = "Command completed"; });
         }));
-    });
+    }, { signal: events.signal });
     return () => {
         events.abort();
         stopProvider();
