@@ -163,7 +163,7 @@ type ResourceRecord = {
     buffer: TextBuffer | null; savedBuffer: TextBuffer | null; change: DocumentChange | null; history: Store<HistorySnapshot>;
     views: Map<ViewId, ViewRecord>; beforeLoad?: ResourceSnapshot<SnapshotValue>;
     leases: Set<symbol>;
-    saveReservations: number; reloadReservations: number; saving: symbol | null; editLease: EditLease | null;
+    saveReservations: number; reloadReservations: number; saving: string | null; editLease: EditLease | null;
 };
 const loadLane = Symbol("resource load");
 const defaultCapabilities: Capabilities = { edit: ["human", "agent", "host"], save: true };
@@ -774,7 +774,7 @@ export class Workspace {
             if (!review.target || this.resolveResource(review.target) !== handle) throw new Error("Reviewed save belongs to another resource or workspace.");
             if (initial.revision !== review.expectedRevision || record.saveReservations !== 0) throw new Error("Reviewed save has changed or another save is pending.");
         }
-        const lease = this.acquire(handle.id), target = this.captureResource(handle.id), marker = Symbol("save");
+        const lease = this.acquire(handle.id), target = this.captureResource(handle.id);
         if (record.documentId !== null) this.history.seal(record.documentId);
         const value = initial.value() as Immutable<T>, revision = initial.revision, id = `save-${++this.nextId}`;
         const capturedBuffer = record.buffer;
@@ -782,7 +782,7 @@ export class Workspace {
         record.saveReservations++;
         const requireStarted = () => {
             this.scope.assertWritable();
-            if (finished || settled || record.saving !== marker || !submission) throw new Error("Save ticket is not active.");
+            if (settled || record.saving !== id || !submission) throw new Error("Save ticket is not active.");
             return submission;
         };
         const status = (saveStatus: ResourceMetadata["saveStatus"]) => {
@@ -792,10 +792,10 @@ export class Workspace {
         return Object.freeze({ target, revision, value, start: () => {
             this.scope.assertWritable();
             const current = record.state.get();
-            if (finished || submission || record.saving !== null) throw new Error("Serialize resource saves before starting another write.");
+            if (finished || settled || record.saving !== null) throw new Error("Save ticket is closed or a write is in progress.");
             if (current.state !== "ready" || !current.metadata.capabilities.save || record.editLease) throw new Error("Save capability or edit lease has changed.");
             if (reviewedVersion !== undefined && current.metadata.serverVersion !== initial.metadata.serverVersion) throw new Error("Saved baseline changed after review capture.");
-            record.saving = marker;
+            record.saving = id;
             submission = Object.freeze({ id, target, key: initial.metadata.key, revision, value,
                 expectedServerVersion: reviewedVersion ?? current.metadata.serverVersion });
             status("saving"); return submission;
@@ -828,11 +828,18 @@ export class Workspace {
             if (record.documentId !== null) this.history.seal(record.documentId); this.syncHistory(changed);
             this.publish(changed); return receipt;
         }, conflict: () => { requireStarted(); settled = true; status("conflict"); },
-        fail: () => { this.scope.assertWritable(); if (!finished && !settled) { settled = true; status("failed"); } },
+        fail: () => {
+            this.scope.assertWritable();
+            if (finished || settled) return;
+            settled = true;
+            if (submission) status("failed");
+        },
         finish: () => {
             this.scope.assertWritable();
             if (finished) return;
-            finished = true; record.saveReservations--; if (record.saving === marker) record.saving = null;
+            finished = true;
+            record.saveReservations--;
+            if (record.saving === id) record.saving = null;
             lease.release();
             if (!record.saveReservations && record.metadata.get().saveStatus === "saving") status("idle");
         } });

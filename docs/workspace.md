@@ -441,8 +441,9 @@ export async function saveFile(
 }
 ```
 
-Only one ticket can submit a write to a resource at a time. A conflict or service failure
-preserves its working text and saved baseline.
+Only one ticket can submit a write to a resource at a time. Calling `fail()` before submission
+closes that ticket to future writes and preserves the resource's current save status. After
+`start()`, the ticket can report a conflict or failure. Both preserve the working text and saved baseline.
 
 A `SaveReceipt` records the submission, canonical saved value, new server version and whether the
 working copy adopted that value. The saved baseline advances on success. Replacing working text

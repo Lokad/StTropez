@@ -381,6 +381,24 @@ test("capabilities reject all edit origins and prevent stale refresh from erasin
     assert.equal(workspace.document(source.documentId).text(), "new work");
 });
 
+test("failing an unstarted save leaves the submitted write in control of its status", () => {
+    const { workspace, source, edit } = fixture();
+    edit("unsaved");
+    const writing = workspace.captureSave(source);
+    const queued = workspace.captureSave(source);
+    writing.start();
+    assert.throws(() => queued.start());
+    queued.fail();
+    assert.equal(source.metadata.getSnapshot().saveStatus, "saving");
+    writing.conflict();
+    writing.finish();
+    assert.throws(() => queued.start());
+    queued.finish();
+    assert.equal(source.metadata.getSnapshot().saveStatus, "conflict");
+    assert.equal(source.metadata.getSnapshot().serverVersion, "v0");
+    assert.equal(workspace.document(source.documentId).text(), "unsaved");
+});
+
 test("two queued saves capture exact contents; canonical replies and close/reopen never overwrite later typing", async () => {
     const { workspace, source, tab, edit } = fixture();
     const commands = new HostSaveQueue(workspace), responses = [deferred<SaveResponse<string>>(), deferred<SaveResponse<string>>()];
