@@ -397,9 +397,6 @@ acknowledges a write. Undo back to the saved text and the file is clean again.
 ## Host responsibilities
 
 Close the attachments when the host closes this file. Ask before discarding edits.
-To keep selections and folds across a remount, retain a
-`DocumentView` for each pane. In React, mount through a stable ref and dispose on detach.
-[Document views](workspace.md#document-views)
 
 ```js
 button("Close", () => {
@@ -421,6 +418,34 @@ button("Close", () => {
     toolbar.replaceChildren();
 });
 ```
+
+### Mount an editor in React
+
+Create one view and one callback ref per pane when the host opens the document. Pass that same
+ref on each render. React calls it with the element on mount and with `null` on detach.
+
+```tsx
+import type { DocumentView, Workspace } from "sttropez";
+import { mountTextEditor, type TextEditor } from "sttropez/browser";
+
+export function createEditorRef(workspace: Workspace, view: DocumentView) {
+    let editor: TextEditor | undefined;
+    return (element: HTMLDivElement | null) => {
+        editor?.dispose();
+        editor = element ? mountTextEditor(element, workspace, view.documentId, { view }) : undefined;
+    };
+}
+
+export function EditorPane({ bind }: { bind: ReturnType<typeof createEditorRef> }) {
+    return <div ref={bind} style={{ height: "20rem" }} />;
+}
+```
+
+The host creates `view` with `workspace.createDocumentView(file.documentId)` and passes
+`bind = createEditorRef(workspace, view)` to `<EditorPane bind={bind} />`. Unmounting releases
+the editor. The view keeps its selection and folds for the next mount, including Strict Mode's
+development replay. Call `view.dispose()` when the host retires the pane.
+[Document views](workspace.md#document-views) · [Two-pane React host](../examples/hosts/react-main.tsx)
 
 ## Not covered
 

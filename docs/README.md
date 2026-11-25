@@ -6,6 +6,7 @@ as soon as you serve the page, then add the features you need.
 ## Choose a task
 
 - [Move a tab or close it without losing the draft](getting-started.md#switch-and-move-tabs)
+- [Mount an editor in React](getting-started.md#mount-an-editor-in-react)
 - [Color source text with your own tokenizer](getting-started.md#plug-in-a-standalone-tokenizer)
 - [Look up a keyboard or pointer command](editor.md#shortcuts)
 - [Save a file while the user keeps typing](workspace.md#save-and-conflicts)
@@ -56,6 +57,18 @@ text, selections, undo/redo, services and local save. Each browser decides wheth
 page. Repeat the check on the browsers and devices you support.
 
 ## Glossary
+
+### API conventions
+
+Text offsets count UTF-16 code units. A range `[from, to)` starts at `from` and ends just before
+`to`. An insertion has equal endpoints. [Text positions](text-model.md)
+
+Read observable state with `getSnapshot()`. Treat the snapshot as immutable. In a `subscribe`
+callback, read again for the latest value. Call the returned function to stop listening.
+[Workspace observables](workspace.md#observables)
+
+Call `dispose()` on a mounted editor or feature when its host detaches it. The workspace retains
+the document and its undo history across editor mounts. [Mounting an editor](getting-started.md#open-the-first-editor)
 
 ### Editing
 

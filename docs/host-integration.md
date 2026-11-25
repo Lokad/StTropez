@@ -228,7 +228,7 @@ handles.
 In a shadow root, mount both the editor and its CSS inside that root. Input and caret handling use the
 local focus tree, even in nested or closed roots. Dispose dependent controllers, then the editor,
 before removing their nodes. Keep project-level document and recovery services across view remounts.
-[Mounting in React](getting-started.md#host-responsibilities)
+[Mounting in React](getting-started.md#mount-an-editor-in-react)
 
 ### Edit intent
 
