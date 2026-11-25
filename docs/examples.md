@@ -1,270 +1,58 @@
 # Examples
 
-Use the TypeScript demo to edit a project, inspect the emitted JavaScript and review what changed. To
-try a save conflict or finish a delayed request by hand, open one of the development hosts. The
-examples provide their own compiler, React components and storage.
+Open the [TypeScript demo](https://lokad.github.io/StTropez/) to edit a project, inspect its JavaScript and review changes. To embed the editor in your own app, start with the [one-file reference host](../examples/reference/main.ts).
 
-## Use
+## Development routes
 
-With Node 24 or later, run:
+With Node 24 or later, run
 
 ```sh
 npm ci
 npm run demo
 ```
 
-Open `http://127.0.0.1:4173/` in your browser. The loopback server watches the source files.
-Set `STTROPEZ_PORT` to use another port. The
-[published demo](https://lokad.github.io/StTropez/) needs no local server.
+Open `http://127.0.0.1:4173/`. Set `STTROPEZ_PORT` to choose another port.
 
-Use `?sample=host` to open the paste example directly, or choose another ID from the
-[sample catalogue](../examples/demo/samples.ts). An unknown ID opens Shopping cart. The
-[browser IDE walkthrough](getting-started.md#add-features-to-a-browser-ide) pairs each example
-with the public APIs it uses.
-
-### Development routes
-
-For a single feature or host workflow, open its route on the
-[development server](../scripts/serve.mjs).
-
-| Route | Purpose | Entry source |
-| --- | --- | --- |
-| `/` | TypeScript editing, language tools, JavaScript output, Problems, Changes and local save/recovery | [Demo](../examples/demo/main.ts) |
-| `/reference/` | A one-file host with folding, Find, optional language tools and an editable comparison against its saved text | [Reference integration](../examples/reference/main.ts) |
-| `/editing/` | Bounded input, selections, commands and local highlighting | [Editing fixture](../examples/editing/main.ts) |
-| `/viewport/` | Read-only virtualized text and geometry | [Viewport fixture](../examples/viewport/main.ts) |
-| `/comparison/` | Working/reference comparison and hunk commands | [Comparison fixture](../examples/comparison/main.ts) |
-| `/comparison/?mode=revisions` | Read-only comparison of two saved revisions | [Comparison fixture](../examples/comparison/main.ts) |
-| `/protocol/` | JSON-RPC/WebSocket transport interoperability | [Protocol fixture](../examples/protocol/main.ts) |
-| `/hosts/plain/` | Two source views, forms, review and deferred services | [Plain host](../examples/hosts/plain-main.ts) |
-| `/hosts/react/` | The same controller and workflows with React rendering | [React host](../examples/hosts/react-main.tsx) |
-
-Both hosts mount `mountTextEditor` for their source views and use it in comparison panes.
-Their development language service runs at `/lsp-fixture`.
+| Route | What to try |
+| --- | --- |
+| `/` | The TypeScript demo with editing, language tools and local saves. |
+| `/reference/` | Mount an editor, find text, fold code and compare edits with the saved file. |
+| `/hosts/plain/`, `/hosts/react/` | Two views of one document with deferred saves, conflicts and remounts. Both hosts use the same [controller](../examples/hosts/controller.ts). |
+| `/editing/`, `/viewport/` | Input and selection in the editor, or scrolling and layout in a read-only view. |
+| `/comparison/` | Edit the working pane or add `?mode=revisions` to compare two read-only revisions. |
+| `/protocol/` | Exercise the JSON-RPC connection to a local WebSocket server. |
 
 ## TypeScript demo
 
-Open **Shopping cart** or **Fix a type error**. Edit the source, inspect JavaScript or Problems,
-then open Changes to compare against the saved file. Save writes to this browser. The demo compiles
-TypeScript without executing it. The Code menu contains language, indentation and folding commands.
-Enter and Tab follow the sample’s indentation. Choose spaces or tabs under Code → Indentation to
-override it across samples, or select Sample default to switch back.
+1. In **Shopping cart**, change a quantity in `main.ts`. **JavaScript** shows the emitted code. **Changes** shows your edit beside the saved copy. Ctrl+S (Cmd+S on macOS) saves the sample in this browser. The demo compiles the source without running it.
+2. Open **Fix a type error**. Select a row in **Problems** to jump to its source. Press Ctrl+. to request a code action. In **Unopened files & navigation**, use F12 on a symbol to follow its definition across files or F2 to preview a rename.
+3. In **Large file**, turn on **View → Minimap**, drag to the middle and edit a line. Check the diff in **Changes**, then undo. To try folding on nested rules, choose **Host outline**. [Sample catalogue](../examples/demo/samples.ts)
 
-Click in **JavaScript** to select and copy the emitted code. Ctrl+A (Cmd+A on macOS) selects the
-entire output, including lines outside the viewport. Edit the TypeScript pane to change the output.
+To try regex replacement in Shopping cart, find `quantity:\s*(\d+)`, enable **Use regular expression** and replace all with `quantity: $1 + 1`. One Undo restores both quantities.
 
-The demo serves Fira Code 6.2 under the SIL Open Font License. In Shopping cart, toggle
-**View → Font ligatures** to compare the arrow and comparisons in `readyToShip`. The glyphs
-change while the underlying characters stay editable. The font ships with the demo.
-[Font and attribution](../examples/demo/fonts/FiraCode-LICENSE.txt)
-
-In **Shipping quotes**, enable **View → Minimap**. Locate the rate table or calculation, hover to
-preview a line, then click to jump. Dragging the marker preserves the selection. The minimap also
-works in generated JavaScript and both Changes panes.
-
-In Shopping cart, open **Find** and enter `quantity:\s*(\d+)`. Choose **Use regular expression**
-(`.*`) to highlight both quantities in `main.ts`. Enter and Shift+Enter navigate the matches.
-Under **Replace…**, use `quantity: $1 + 1` and choose **Replace all**, then **Changes**. The panel
-waits for the replacement and shows both edits. One Undo restores both quantities. Closing Find,
-changing the selection, typing or switching files cancels a pending replacement and panel switch.
-The footer names the affected file and reports the outcome.
-**Match case** and **Match whole word** work with
-literal text and regular expressions. Clicking a navigation arrow keeps the active Find field
-ready for typing. Clicking **Replace** returns focus to the replacement field. The query and
-search options follow the active file while Find is open.
-Paste multiple lines into either field, or press Ctrl/Cmd+Enter to replace the selected field text
-with a line break. Enter in the replacement field replaces the current match. Holding Enter
-in either field performs its action once.
-In regex replacements, `\n` starts a new line and `\\` inserts one backslash.
-Opening Find uses the selected text or the word at the caret and escapes it in regex mode.
-Select different text in the editor and press Ctrl/Cmd+F again to search for it.
-Literal Find accepts selected text with LF or CRLF endings. Regex mode keeps each ending exact
-and can also seed a query from a bare carriage return. Find keeps the previous query when there
-is no word or selection, or the query exceeds 4,096 UTF-16 units. Typing a query previews a match
-while focus stays in Find. Enter selects it.
-Escape selects a completed preview and returns to the editor. The counter shows
-the active match and total, including when you reopen Find on a selected match or change flags.
-It reports when navigation wraps. With no matches or a failed search,
-the arrows are disabled. Hover over a disabled Replace button to see why it is unavailable.
-Choose **Find** after focusing generated JavaScript or the saved copy to search that pane.
-The bar names the read-only target. Escape returns focus to it. Focusing the working source
-while the bar is open searches the same query there and enables replacement for matches.
-Ctrl/Cmd+F and Ctrl/Cmd+H open Find and Replace from the panes, Find fields and toolbar.
-With focus on the page background, both shortcuts use the last active pane.
-Replace focuses the query when it is empty. With a query in an editable pane, it focuses the replacement.
-The bar opens below the workspace. In short windows it uses the top of the window to keep code visible.
-Escape returns to the search pane. F3 and Shift+F3 continue the last query with the bar closed.
-
-### Language tools and samples
-
-The Code menu follows the last focused editor. The saved copy and generated JavaScript
-offer **Go to line**. Editing commands are disabled in both read-only panes.
-Open **Code** to see command shortcuts. Up and Down move between commands and checkboxes.
-Use Tab to reach a select box, then use its arrow keys to change the setting. Escape returns
-to the text field or editor you were using.
-**Go to line** accepts a whole line number from 1 to the last line. Invalid input stays in the
-prompt for correction. Ctrl/Cmd+G selects the entry again. Escape or a click outside the prompt
-returns to the original caret.
-
-| Action | Workflow |
-| --- | --- |
-| Completion | Type an identifier or member prefix, press Ctrl+Space or choose **Show completions**. Arrows select a result. Enter, Tab or a click accepts it. Escape closes the list. |
-| Type inspection | Hover over a symbol, or use **Inspect type** / Ctrl+K, Ctrl+I at the caret. Select tooltip text to copy it or follow a help link. After selecting text from the editor's tooltip, typing resumes at the editor selections. A plain click returns focus to the previous control. Escape closes the tooltip. Keyboard inspection also closes when focus leaves both the editor and the tooltip. |
-| Signature help | Type a provider trigger or use **Show signature help** / Ctrl+Shift+Space. Moving between arguments updates the active parameter. The overload controls choose another signature. |
-| Definition and references | F12 puts the caret at the start of the definition. Shift+F12 lists references with file, line, column and source excerpt. Arrows select a row, PageUp/PageDown change pages and Enter selects that reference in the editor. **Back to previous location** restores the source selection and view. With one caret, Back from a Ctrl/Cmd+click returns to the clicked character. Alt+Left also returns on Windows and Linux. Option+Left moves by word on Apple platforms. |
-| Rename | Press F2 and type the new name. Enter previews the edits as soon as the provider confirms the target. A quoted property can be renamed. An ordinary string or a keyword beside a declaration returns focus to the source. Changing the name requires a fresh preview. Apply creates one undo step across the changed files. |
-| Quick fix | Select a problem to see whether it has a fix. A review button appears on that row when the provider returns an available action. Ctrl+. checks the caret directly. Moving the caret or editing dismisses the preview. Clicking an edit-only fix applies it directly for up to four edits and 256 changed UTF-16 units in the current file. Other fixes need confirmation. |
-| Problems | Choose a diagnostic or related location to select its source. The editor centers an offscreen range and keeps a visible one in place. Next and Previous page through long lists. Help links open on click and must match the demo’s HTTPS TypeScript-documentation policy. |
-| Occurrences | Place the caret on a symbol to shade its occurrences. Browser-provider writes also have an outline; the pinned local server reports reads for the sample's variable declarations and assignments. |
-
-While TypeScript starts, the footer shows the last language command you requested.
-Editing, moving the caret, switching panes or pressing Escape cancels it. Otherwise it runs
-when the service is ready. An empty completion or signature result appears in the footer.
-Switching files clears that feedback, even if the previous file replies later.
-
-Moving focus to JavaScript output during a definition lookup cancels the jump and preserves Back history.
-In the references and quick-fix lists, Up and Down move the choice, including from a
-focused result button. Enter in the source opens the chosen location or confirms a ready
-fix. Escape from either list returns focus to the source.
-
-The Example picker loads samples on demand. You can keep using the arrow keys while a sample
-opens. The last choice appears, and returning to a sample keeps its edits. [Sample catalogue](../examples/demo/samples.ts)
-
-- **Large file · 10,000 lines** — Scroll to the middle, edit a row, search and undo. Both source
-  and output render visible rows.
-- **Completion catalogue · 1,200 fields** — Type `catalogue.` and press Up for the final member,
-  or type `item119` to filter. Scroll the full list and click a member to insert it. Arrow keys
-  bring the keyboard choice back into view. The popup keeps up to 16 rows in the DOM and shows
-  the selected member’s detail below them.
-- **Project-wide results · 1,200 uses** — Browse 300 type errors and 1,201 symbol locations in
-  pages of 64. Rename applies the entire validated edit.
-- **Unopened files & navigation** — From `main.ts`, follow a definition into `labels.ts` or
-  read-only `contracts.d.ts`. Rename `LabelOptions` to edit an unopened target. The custom
-  `sttropez/readDocument` reads known sample files. Save and recovery include editable unopened
-  files and exclude declarations marked read-only.
-- **Documentation & help links** and **Diagnostic details** — Inspect JSDoc or a handbook link,
-  then compare a compiler error and a host warning. The static provider displays JSDoc link labels
-  in prose and preserves tags inside code examples. Related locations page in groups of 16. Opaque
-  provider data stays hidden and is never executed.
-- **Snippets & lazy completion** — In `templates.ts`, press Ctrl+End, then Ctrl+Space. Tab through
-  linked fields, use Alt+Up/Down for choices and Escape to keep the text. Field controls appear above
-  the file tabs in both the source editor and Changes. Resolution supplies the
-  declaration and import. The demo explains omitted unsupported variables. See
-  [completion](language-features.md#completion).
-- **Project actions** — Review a two-file edit, a note or a refactor with a project check.
-  **Run action** calls only handlers registered for the captured URI and mode. If the check fails,
-  the edit is undoable and a retry needs a fresh capture.
-- **Host outline · indentation folding** and **Host integrations · paste & notes** — Fold nested
-  regions, edit colored rules or CSV, paste a table and follow a source note. Both samples work
-  without a language provider.
-
-Three consecutive import declarations form a fold. Blank lines and comments between them do not
-count toward three. A multiline import can also fold on its own. Folds hide complete body rows only.
-Closing delimiters on their own line, and lines shared with the next branch, statement or comment,
-stay visible.
-
-The footer shows the caret position in the last focused editor, including generated JavaScript
-and the saved copy. On narrow screens the output sits below the source. Use **Hide** to give
-the editor more room, or choose **JavaScript**, **Problems** or **Changes** to open that panel.
-In short windows the description and footer scroll so the source and output can each show a code row.
-In the file and panel button strips, Left and Right move focus. Enter or Space opens the choice.
-
-On narrow screens, **Changes** shows the saved copy above the working file, with a caption above each pane.
-**Hide** leaves the working file open for editing.
-**Show** returns to the same review. Typing while the saved copy is hidden updates the diff,
-and saving locally compares against the new saved copy. Each pane has its own syntax coloring and folds. The saved file
-has its own compiler worker. The Code menu targets the last source pane you clicked or focused. Hidden-line
-counts distinguish folds from alignment gaps. Find and navigation reveal hidden targets. See
-[folding](folding.md) and [comparison](comparison.md).
+To try a save conflict, open the same sample in two tabs. Edit both and save one. In the other, choose **Review saved copy** to compare before saving your version or accepting the saved files. Reloading a tab with an unsaved checkpoint offers recovery for that sample.
 
 <a id="provider-ownership-and-adaptations"></a>
 
-### How the browser and local providers differ
+The published demo runs the TypeScript language service in a browser worker. The development server defaults to a language server over WebSocket. Add `?provider=browser` locally to try the published configuration. [Language server integration](language-server.md)
 
-Choose a provider in the URL before opening the page.
-[Provider selector](../examples/demo/provider.ts)
+## Host workflows
 
-| Selection | Execution and transport | Availability |
-| --- | --- | --- |
-| `?provider=browser` | Example-owned worker, public JSON-RPC clients and TypeScript 5.9.3 language service | Default for the published/static HTML; also available locally |
-| `?provider=server` | Development WebSocket bridge to typescript-language-server 5.1.3 over stdio, using TypeScript 5.9.3 | Default for development HTML; requires the development server |
+In either development host, edit **Primary source** and undo from **Secondary source**. Each pane keeps its selection. Edit again, then use **Toggle views** twice to detach and remount the editors.
 
-Reload to change providers. Sample switches and retries keep the selected provider. The Node bridge
-uses canonical file URIs. The browser worker reads the sample inventory and pinned standard
-libraries. Neither loads arbitrary projects or installs packages.
+For a conflict, edit the source, choose **Simulate external source change**, save, then choose **Finish save**. Select **Review remote source** and **Finish remote review** to compare. Use **Save reviewed source** to keep your edits.
 
-Both providers use the [public LSP clients](language-server.md). The
-[browser session](../examples/demo/language-session.ts) queues up to 256 compiler actions and runs one
-per task. Cancellation removes queued work. A running compiler call finishes synchronously. If the
-queue fills or a document notification fails, Retry starts a new session with the current files.
+### Draft checkpoints
 
-Replace All sends edits from the end of the file toward the start. Both providers reuse the
-line index across those ranges. For batches over 256 changes, the development bridge sends the
-compiler one ranged replacement covering the file.
+Choose **Keep recovery draft**, reload, then **Restore source draft**. The host also offers separate restores for the configuration and transfer form.
 
-When comparing results from the two providers, keep these differences in mind.
+### Table conversion
 
-- Both providers return standard diagnostics in a custom `sttropez/diagnostics` response. The demo
-  requests syntactic and semantic diagnostics for a captured project, then checks each binding and the
-  project generation before drawing markers. It does not use LSP diagnostic pull or draw current
-  markers from an unversioned push. Quick fixes request fresh diagnostics for the same range and
-  project.
-- The local bridge drops the pinned server’s empty-title `_typescript.applyCodeActionCommand` only
-  when its nested commands are missing or empty. It keeps completion data when the server replaces its
-  cache key and drops edit ranges that miss the requested caret. Other values go through the public
-  decoders.
-- The development refactoring profile allows `_typescript.applyRefactoring` for a known project file.
-  The host reviews incoming edits. Acknowledging `_typescript.rename` opens no rename dialog. The
-  ordinary demo accepts no arbitrary server commands.
-  [Provider policy](../examples/demo/provider-server.ts)
-- Enter, comments, indentation and pairing use the demo’s TypeScript rules. For quotes and brackets,
-  the host checks the classified line start and nearby text. In an uncertain multiline string, regex
-  or template, it inserts the typed character literally. Display colors alone never trigger a paired
-  edit.
-- The browser provider keeps completion keys for the latest two lists. Navigation opens known sample
-  files. Compiler library definitions stay outside the editable project. The demo does not load
-  external projects, install packages or perform file operations.
+In the demo’s **Host integrations · paste & notes** sample, open **Code → Paste format** and choose **Insert example table**. Undo removes the inserted CSV. In a development host, enable **Paste tables as CSV** to try an HTML or tab-separated table.
 
-### Analysis, saving and recovery
+### Source-backed transfer form
 
-The [syntax worker](../examples/demo/syntax-worker.ts) reads the full source once and applies later
-edits when their chunks arrive. It classifies the whole file. Open the JavaScript pane to request
-output. Reopening it reuses unchanged source, and late replies from cancelled jobs are ignored.
-
-After an edit, colors and diagnostic markers follow surviving text, and the last compiled output stays
-visible. Problems shows **Awaiting recheck** and disables navigation. Deleted ranges or missing
-revision history drop the old markers. Syntax checks reuse unchanged files. Semantic checks include
-every loaded file because changing an export can break an importer. The footer shows when checks
-finish. [Visible continuity](testing.md#readiness-and-visible-continuity)
-
-Retry **Language service unavailable** to reconnect with the current files. Retry **Language
-controls unavailable** to reattach controls to the connected provider. You can edit, compare, undo
-and save during either failure. Switching samples suspends the inactive provider. Closing the
-project releases it and, for a local server, stops its process and deletes its temporary workspace.
-Idle local allocations expire after two minutes.
-
-Press Ctrl+S or Cmd+S to save the whole sample in IndexedDB, including files you haven’t opened.
-Holding the shortcut submits one save. An input field can handle the shortcut itself. Saving keeps the
-current tabs and selection. If you save while a replacement is pending, the footer asks you to save
-again when the edit finishes. If you type during a save, the footer reports that the later edits
-are unsaved. Save, Restore draft and Keep current files return
-keyboard focus to the source editor or the last active comparison pane as soon as you activate them.
-Recovery and conflict actions appear below the editor. **Reset sample** restores the open sample’s original
-text in one undoable edit. You can keep typing while a recovery offer is open. The demo checkpoints
-your edits alongside the offered draft. After reload, choose a version to restore or download.
-On reload, the tab offers its last checkpoint. In a different tab, **Review draft** opens the offer.
-**Review draft** puts the keyboard on **Keep current files**. Press Escape inside the offer to return to the editor.
-You can reopen the offer or restore one version and keep the others.
-**Discard offered drafts** removes the offered versions and checkpoints any unsaved current files in the same write.
-Reopening clears drafts identical to saved data. Clearing a local draft leaves a conflict with another page open for review.
-When another tab saves, the demo offers **Review saved copy** and keeps your working text and selection.
-If a newer save arrives during review, the reference pane keeps the version you saw until you review again. **Save my reviewed version**
-writes your working files. **Use reviewed saved files** takes the other page’s version across the
-sample. If any text changes, one Undo restores it. A later local edit or peer save requires a fresh review.
-
-If a saved copy is unreadable, the demo leaves it in storage and opens the sample. Save checks the
-captured token. A failed sample switch releases partial resources and keeps the open project usable.
-Disposal waits for storage writes. [Development-host checkpoints](#draft-checkpoints)
+In a development host, choose **Insert transfer instruction** or **Anchor instruction at caret** on an existing instruction. Change a form field and undo from the editor to see the corresponding source edit. [Host integration](host-integration.md#tokenization-annotations-and-forms)
 
 ## Static build and deployment
 
@@ -273,280 +61,4 @@ npm run build:demo
 npm run preview:demo
 ```
 
-Open `http://127.0.0.1:4174/StTropez/` or set `STTROPEZ_DEMO_PORT`. The
-[preview server](../scripts/serve-demo.mjs) serves manifest-listed files. Relative URLs let modules,
-workers and library data load below the repository path. Only the root demo is published.
-
-`build:demo` compiles the library. The [site builder](../scripts/build-demo.mjs) resolves compiled
-public entries and rejects private source imports. The site ships its compiler, standard libraries
-and licenses separately from [NuGet](packaging.md). Source analysis runs locally in the browser.
-
-`npm run test:demo` exercises the static build in Chromium, Firefox and WebKit. Set
-`STTROPEZ_DEMO_URL` to check a deployed site. The tests cover asset paths, browser-only operation,
-provider retry, edits, recovery and visible updates. See [testing](testing.md).
-
-The [Pages workflow](../.github/workflows/pages.yml) checks types, docs and models, builds the
-library and demo, and runs Chromium tests. Pull requests run the checks. Successful pushes to
-`master` or `main` and eligible manual runs deploy. Only the deployment job receives Pages-write and
-identity-token permissions.
-
-## Host workflows
-
-Open either host. Try editing the same file in two panes, changing
-configuration or reviewing a saved version. The hosts share a
-[controller](../examples/hosts/controller.ts). **Finish save**, **Finish run** and
-**Finish remote review** let you choose when the simulated service replies. Reload resets the service.
-Recovery checkpoints survive it.
-
-In **Find source**, Enter selects the next match and Shift+Enter selects the previous one.
-Enter in **Replacement** replaces the current match once per press. Escape returns to the source pane.
-
-### Editing, review and captured services
-
-Choose **Editor commands** after focusing a source or comparison pane, or press Ctrl+K then
-Ctrl+P in the pane (Cmd+K then Cmd+P on macOS). Filter by command name or ID. The list shows
-the pane’s registered shortcuts and disables unavailable commands. Enter runs the selected
-command. Escape returns to the pane. Replacing the originating view closes the palette.
-
-1. Edit **Primary source** and undo from **Secondary source**. Both views share text and history
-   but keep their own selections and scroll positions. Press Escape, then Tab or Shift+Tab, to
-   reach host controls.
-2. **Open source review**, edit **Comparison working source** and choose **Use baseline**. Undo
-   restores the edit. You can select, copy and search the reference. **Link review scrolling**
-   links vertical positions. **Align review rows** pads unequal blocks.
-3. **Keep draft version**, choose a saved, server, draft or historical **Review version**, then
-   **Finish version load**. You can type during the load. **Discard reviewed changes** needs
-   confirmation. Changing the text, reference or owner expires it.
-4. Press Ctrl/Cmd+S in the source, reference or its Find/language controls. Type, then
-   **Finish save**. The reply trims trailing whitespace on the captured revision. Later typing
-   stays unsaved. **Fail save** lets you try recovery. The failure message clears when the retry starts.
-5. **Simulate external source change**, save, then **Finish save**. Choose
-   **Review remote source** and **Finish remote review**. Edit the working source and
-   **Save reviewed source**. A further remote write conflicts again. A failed save preserves local
-   edits.
-6. **Preview proposal**, then **Apply proposal** for one whole-document edit. Typing after preview
-   requires a fresh preview. Correct the result in either working view, save it and
-   **Finish save**. **Run captured inputs** captures source and form values separately.
-   **Finish run** or **Fail run** settles that request.
-7. Edit **Configuration path** and save. Use **Finish configuration save** or
-   **Fail configuration save**. New form input survives an older reply. A blank path blocks
-   configuration Save and Run. Source and transfer settings each have a separate save operation.
-   External-change and review controls use the configuration version.
-8. Try **Move primary view** and **Toggle views**. **Reopen loaded source** recovers a dirty
-   temporary document. Discard checks its revision. A clean temporary source is released when its
-   last tab, view and operation detach.
-
-Ctrl/Cmd+F/H opens Find/Replace in the editor’s tool region. F3/Shift+F3 or Enter/Shift+Enter in
-Find navigate. During a search, moving the caret, changing the visible folds or leaving the
-originating control cancels a waiting Find or Replace Current command. A fresh keypress uses the
-finished search. Escape returns to the editor that opened Find. Reference Find is read-only. See [search](search.md).
-
-Try entering a blank batch size. The transfer field keeps the raw input so it survives editing and
-recovery. A valid size is a decimal integer from 1 to 100,000. Run creates a read-only record of the
-source, connection and transfer inputs, including identities, versions and values. Progress adds
-linked immutable log records. **Inspect Run** and current-input inspection open separate tabs. Each
-source preview shows up to 512 UTF-16 units and changes only on inspection or refresh. Run and log
-history last for the fixture session. The fixture records a transfer without executing it.
-
-### Draft checkpoints
-
-**Keep recovery draft** saves a checkpoint in one application-wide IndexedDB slot. Confirm before
-replacing it. Choose which inputs or rejected edits to inspect or restore. Take another checkpoint
-to cover edits made during a write. A storage failure leaves live inputs intact.
-
-After reload, **Restore source draft**, **Restore configuration draft**, **Restore transfer
-draft** and **Restore loaded-source draft** operate on the named resource or slot. Loaded-source
-restore preserves an existing slot's baseline/history or uses the fixture baseline for a new
-slot. Transfer restore preserves invalid raw batch input and unknown fields. A changed resource,
-new save receipt or expired slot generation can invalidate a prepared restore.
-
-Use **Inspect stored draft** for a bounded preview or **Discard stored draft** to remove the stored
-copy. Discard leaves open files alone. A storage token prevents an old discard or replacement from
-overwriting another page’s newer draft. Finish composition before capturing or restoring.
-
-The [checkpoint decoder](../examples/hosts/draft-recovery.ts) validates transfer data before offering a draft. A null loaded-source entry leaves that restore option unavailable. An unsupported
-record stays in storage until you replace or discard it, with no restore choices. A draft includes
-inputs and recovery context. Undo, Run and log history, simulated server state and pending requests
-end with the session.
-
-Navigation protection covers unsaved inputs without a current checkpoint, pending input and
-unsettled services. Settled covered inputs need no prompt. View remounts retain the recovery
-owner; final disposal settles storage and releases observers. Input-conflict recovery retains
-attempted text separately, with inspection limited to 4,096 characters, without automatic
-source replacement. See [host recovery ownership](host-integration.md#input-conflict-recovery).
-
-### LSP fixture and host lifecycle
-
-Both hosts use the [generic fixture server](../fixtures/protocol/fixture-server.ts) for the
-[LSP subset](language-server.md). It speaks LSP 3.17 over WebSocket with JSON-RPC 2.0 and UTF-16
-positions. The development and test reference package is version 3.17.5.
-
-Completion, hover, F12/Shift+F12, F2, Ctrl/Cmd+., signature help, links and colors use the shared
-provider. Closing an editor releases its language shortcuts. You can mount another editor in
-the same pane immediately. Detaching a feature from an open editor also releases its shortcuts.
-
-Select an action and review it before choosing **Apply captured action** or
-**Execute captured action**. If its command was never advertised, the whole choice is disabled.
-Changing actions or preparing another rename while its confirmation button is held requires a fresh click.
-While a preview is open, **Preview module action** and Enter in **Action module** request
-another preview from the same pane. Holding Enter sends one request.
-Escape dismisses the preview and returns focus to the source editor.
-
-After applying a code action, rename, color change or provider edit, use **Open** to focus the changed file.
-The result survives hiding and showing the source views. If no pane is available, show the
-views or finish the pending input and click **Open** again. Opening a color change reveals the caret.
-The color panel offers that link until the edited document changes again, including through Undo.
-If the color result changes while **Open** is pressed, click the new result to open its file.
-
-Closing the review keeps F12 and Shift+F12 requests from the primary editor usable.
-A request made in the review itself expires when that pane closes.
-If you leave the source while F12 is pending, choose the destination in the results panel to open it.
-The Locations region below the editors reports the latest symbol or module lookup,
-including a missing import. **Show symbol results** and **Show module links** switch back
-to the retained page of an earlier lookup. Focus returns to the last row you used on that page.
-If the row was replaced or disabled, the first available row takes focus. Symbol results show the file, line, column
-and a short excerpt around the match. The navigation panel shows
-a waiting indicator during a definition or reference request. If a jump moves the caret while
-module discovery is pending, press F4 at the new location to refresh the links.
-Shift+F12 focuses the first reference. F12 jumps to a single definition or focuses the
-first of several. Use Up and Down to choose a result, Enter to open it, and Escape to
-return to the source. Leaving the editor during a lookup keeps focus where you put it.
-For declarations loaded by a host URI resolver, the result uses the text and revision of the returned document.
-Closing a pane outside the language project leaves a pending definition lookup active.
-Opening another result in the same destination reuses its editor. If the host cannot open the
-pane, the panel shows the error. You can retry the same result. Alt+Left retraces successful
-definition, reference and module visits to open views, restoring selections and scroll.
-On Apple keyboards, use **Return to navigation origin** to keep Option+Left available for word movement.
-F12 can open a file in the same secondary pane that requested it. The caret moves to the
-start of the definition. The heading identifies the file. **Show original source**
-reopens the secondary pane’s original document with its selection and scroll position.
-**Return to navigation origin** skips the replaced tab.
-If a result list or review page changes while you hold Next or Previous, releasing the button
-leaves the new page in place. Next keeps focus until it reaches the last page, then Previous
-takes focus. Paging back to the first page returns focus to Next. Rename, code actions and
-provider workspace edits show up to 64 edits per page. Choosing a different code action starts
-its edit preview on page one.
-
-Press F12 inside an import path to open its module. F4 focuses the module link at
-the caret, or the first available link on the page.
-Use Up and Down to choose a link and Enter to open it. Closing another view of the source keeps those links available.
-When a module link lookup overlaps a definition or reference lookup, only the latest request
-can move focus. You can open either result from its panel.
-Escape dismisses the list and returns focus to its mounted source,
-including while a link resolves. If you Tab away, the resolved link stays in the list until you
-open it. If the destination pane is busy with a paste or fails to open, the panel shows the
-reason. Click the link again to retry. Editing the destination clears the old links.
-Shift+F4 restores the original document, selections and scroll position if the source is unchanged.
-Changing result pages during a press requires a fresh click to open a link on the new page.
-Press F2 on the symbol to rename. Its name is selected, so typing replaces it.
-Enter and **Prepare rename preview** both use that pane,
-even if you focus another pane before requesting the preview. Press Enter in the name field
-again or choose **Apply captured rename** to apply the reviewed edits. Focus returns to the
-pane that requested the rename, where Undo reverses the changes across all affected files.
-Color swatches appear after the provider scans the open file and refresh after typing pauses.
-Click a swatch to edit that literal, or press F6 to list the provider’s colors, including colors
-at the same source position. The value field keeps the source spelling when it matches the provider's
-color. Press Enter to preview it. **Apply captured color** applies
-the reviewed format. Changing formats during a press requires a fresh click.
-
-An action’s initial edit gets its own undo step. For later edits, open **Workspace provider** and
-choose **Apply captured provider edits** or **Decline captured provider edits**. If another review
-arrives while a button is held, it takes a fresh press to decide that review. One Undo restores
-every file in an applied batch, including a companion first resolved during the command. The initial
-edit stays in history if the command fails or reconnects. The panel also manages review command
-registration and workspace status.
-[Code actions and commands](language-features.md#code-actions-and-commands)
-
-Remounting keeps selection and scroll by resource. React uses stable controller observables and refs.
-A failed mount unwinds in reverse order. After a render failure, choose **Recover views** to reopen
-the retained document. Closing the host releases views, captures, services and storage in that order.
-[Embedding](getting-started.md) · [Ownership](architecture.md)
-
-## Serverless host examples
-
-These examples use the public [host integration hooks](host-integration.md). Their syntax,
-converters and forms are application policies, independent of the language provider.
-
-### Table conversion
-
-Enable **Paste tables as CSV** in a development host. In the demo, open
-**Host integrations · paste & notes**, then **Code → Paste format**. Choose **Insert example table**
-to try it without reading the clipboard. Conversion starts off. When enabled, it uses an HTML table if
-present, otherwise TSV. The same quoted CSV replaces every captured selection in one undo step.
-Escape, **Cancel table paste** or another paste cancels unfinished conversion.
-
-Every CSV cell is quoted, with doubled internal quotes and CRLF between records. TSV can contain
-quoted multiline cells. HTML parsing keeps text, character references and basic line and paragraph
-breaks. It skips scripts, styles, templates and embedded documents and never mounts parsed nodes. A
-merged cell’s text goes in its upper-left corner. Row spans stay in their group. Nested or multiple
-tables, overlapping spans and ragged rows reject the whole paste.
-
-| Table fixture limit | Maximum |
-| --- | --- |
-| Plain text / HTML | 1,048,576 / 262,144 UTF-16 units |
-| Rows / columns / cells | 10,000 / 1,024 / 100,000 |
-| Aggregate inserted text / resulting source | 4,194,304 / 33,554,432 UTF-16 units |
-
-### Source-backed transfer form
-
-In either development host, place the caret on a line such as:
-
-```text
-// @transfer { "destination": "target.csv", "batchSize": "1000", "extra": { "n": -0 } }
-```
-
-Choose **Anchor instruction at caret**, or **Insert transfer instruction** to add an example.
-The form accepts one JSON object on a physical line of at most 4,096 UTF-16 units. Destination
-and batch size are strings. Invalid JSON, duplicate known fields or oversized lines suspend
-form editing; missing/invalid field values stay editable.
-
-Change a field, then undo from the source editor. Each field edit replaces just the known value.
-Unknown members, number spelling, whitespace, order and unchanged escapes survive. Ctrl/Cmd+S saves
-the source. Plain Escape returns focus to it after composition ends. The form follows its rendered row, hides when that row is
-folded or offscreen and suspends in a narrow layout. Field values and selections survive a remount.
-Stale input goes to recovery.
-
-Choose **Capture instruction copy**, edit the source, then **Finish instruction copy**. The copy uses
-the captured values and checks the transfer resource’s revision, save state and permissions. Editing
-the destination in the meantime expires the copy. Unknown transfer fields survive. Save and Run are
-separate controls. [Source-backed forms](host-integration.md#tokenization-annotations-and-forms)
-
-### Domain regions and imports
-
-**Discover domain regions**, **Collapse domain regions** and **Insert catalogue import** work
-from source or comparison working views. The [local cooperative provider](../fixtures/language/domain.ts)
-recognizes `// #region stable-id Label` paired with `// #endregion stable-id`. Identities are unique,
-nested pairs must match, and labels are literal text. Discovery publishes view folds and notes
-without source/history edits. Imports add `import "catalogue";` after a leading BOM, preserving
-the first LF/CRLF ending (LF when absent); an exact existing import is a no-op.
-
-Each scan turn reads up to 16,384 UTF-16 units and keeps a 512-unit line prefix. Limits are 4,096
-regions, 128 nesting levels, 256-unit labels and 65,536 units of reply text. The panel and visible
-annotations show up to 64 indexed entries plus the total. Refresh keeps collapse choices and
-independent manual folds. Conflicting ranges reject the entire refresh. Change a provider fold’s
-bounds to make it manual. Collapsing domain regions preserves selected text. An insertion caret
-hidden by the collapse moves to the end of the visible header. **Expand all folds** opens manual
-and provider folds in the active view. Text edits map folds and clear stale notes. Import insertion
-captures the requesting view and commits the provider's edits against its original revision. A source edit,
-read-only transition or remount cancels a pending import. A successful insertion adds one shared
-undo step.
-
-## Server-free editing fixtures
-
-`/editing/` colors keywords, numbers and comments with a local tokenizer. It caches up to 128
-visible fragments. Its typing, selection, history and Find tests run without a language server.
-Ctrl/Cmd+F and Ctrl/Cmd+H switch between the search fields. Escape returns to the primary
-editor. F3 and Shift+F3 resume the last query and show the selected match’s position.
-
-Use the development hosts for the synthetic provider or the [root demo](#typescript-demo) for
-TypeScript.
-
-## Contributor responsibilities
-
-Keep compilers, storage and fixture syntax in the examples. Build static and restored hosts against
-public entries. Update affected routes, controls and limits here and run their [tests](testing.md).
-
-## Not covered
-
-See the [support matrix](README.md#support-matrix) for library and device coverage and the
-[glossary](README.md#glossary) for timing definitions.
+Open `http://127.0.0.1:4174/StTropez/` or set `STTROPEZ_DEMO_PORT`. Run `npm run test:demo` to check the static build. The [Pages workflow](../.github/workflows/pages.yml) publishes the root demo after CI passes. The site bundles its compiler separately from the [NuGet package](packaging.md).
