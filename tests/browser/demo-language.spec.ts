@@ -70,19 +70,19 @@ test("real provider retains the 1200-field catalogue through filtering, acceptan
     await runDemoCompletionCatalogue(page);
 });
 
-test("real TypeScript diagnostics select the captured error and clear after correction", async ({ page }) => {
-
-    await page.goto("/"); await page.locator("#sample").selectOption("errors");
+test("the type error sample offers a spelling fix from Problems and shows the correction in Changes", async ({ page }) => {
+    await page.goto("/?provider=browser&sample=errors");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
     await page.locator('[data-panel="problems"]').click();
-    const problem = page.getByRole("button", { name: /main\.ts:\d+:\d+ · TS2345:/ });
-    await expect(problem).toContainText("not assignable"); await problem.click();
-    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
-    await expect(source).toBeFocused(); await source.pressSequentially("0.1");
-    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
+    await page.getByRole("button", { name: /TS2551:.*quanity/ }).click();
+    await page.locator(".demo-problem").getByRole("button", { name: /^Review .*fix/ }).click();
+    const popup = page.getByRole("region", { name: "Quick fixes", exact: true });
+    await popup.getByRole("button", { name: "Change spelling to 'quantity'", exact: true }).click();
     await expect(page.locator("#panel-content")).toHaveText("No problems in this project.");
-    await expect(page.locator("#editor")).toContainText("calculateTotal(cart, 0.1)");
-
+    await page.getByRole("button", { name: "Changes", exact: true }).click();
+    const panes = page.locator(".st-comparison-panes > section");
+    await expect(panes.first()).toContainText("item.quanity >= 1");
+    await expect(panes.last()).toContainText("item.quantity >= 1");
 });
 
 test("real member completion preserves provider punctuation, resolves, applies once and undoes", async ({ page }) => {
@@ -137,7 +137,7 @@ test("late real diagnostic responses cannot annotate a newer project or follow l
         });
         provider.onMessage(message => {
             const value = JSON.parse(message.toString());
-            if (!held && requests.has(value.id) && value.result?.body?.some((problem: { code: number }) => problem.code === 2345)) {
+            if (!held && requests.has(value.id) && value.result?.body?.some((problem: { code: number }) => problem.code === 2551)) {
                 held = true; release = () => client.send(message); return;
             }
             client.send(message);
@@ -147,10 +147,10 @@ test("late real diagnostic responses cannot annotate a newer project or follow l
     armed = true; await page.locator("#sample").selectOption("errors");
     await expect.poll(() => held, { timeout: 30_000 }).toBe(true);
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
-    await source.press("Control+f"); await page.getByRole("textbox", { name: "Find text", exact: true }).fill('"10%"');
+    await source.press("Control+f"); await page.getByRole("textbox", { name: "Find text", exact: true }).fill("quanity");
     await expect(page.locator(".st-find-status")).toHaveText("1 of 1");
     await page.locator(".st-find-next").click();
-    await page.getByRole("button", { name: "Close", exact: true }).click(); await source.pressSequentially("0.1");
+    await page.getByRole("button", { name: "Close", exact: true }).click(); await source.pressSequentially("quantity");
     await page.getByRole("button", { name: "pricing.ts", exact: true }).click();
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 }); release!();
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));

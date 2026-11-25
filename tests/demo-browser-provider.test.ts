@@ -131,11 +131,11 @@ test("browser TypeScript provider preserves raw UTF-16/CRLF changes and confines
         });
         const diagnostics = provider.request("sttropez/diagnostics", { uri, kind: "semantic" }) as { success: boolean; body: { code: number; range: { start: { line: number; character: number }; end: { line: number; character: number } } }[] };
         assert.equal(diagnostics.success, true);
-        const error = diagnostics.body.find(error => error.code === 2345); assert.ok(error);
-        const doc = TextDocument.create(uri, "typescript", 1, text), from = text.indexOf('"10%"');
-        assert.equal(text.slice(doc.offsetAt(error.range.start), doc.offsetAt(error.range.end)), '"10%"');
+        const error = diagnostics.body.find(error => error.code === 2551); assert.ok(error);
+        const doc = TextDocument.create(uri, "typescript", 1, text);
+        assert.equal(text.slice(doc.offsetAt(error.range.start), doc.offsetAt(error.range.end)), "quanity");
         provider.notify("textDocument/didChange", { textDocument: { uri, version: 2 }, contentChanges: [
-            { range: { start: doc.positionAt(from), end: doc.positionAt(from + 5) }, text: "0.2" },
+            { range: error.range, text: "quantity" },
         ] });
         assert.deepEqual((provider.request("sttropez/diagnostics", { uri, kind: "semantic" }) as typeof diagnostics).body, []);
         assert.throws(() => provider.notify("textDocument/didChange", { textDocument: { uri, version: 2 }, contentChanges: [{ text: "stale" }] }), /synchronization/);

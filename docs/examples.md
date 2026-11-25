@@ -30,7 +30,7 @@ The development server also serves these test fixtures.
 ## TypeScript demo
 
 1. In **Shopping cart**, change a quantity in `main.ts`. **JavaScript** shows the emitted code. **Changes** shows your edit beside the saved copy. Ctrl+S (Cmd+S on macOS) saves the sample in this browser. The demo compiles the source without running it.
-2. Open **Fix a type error**. Select a row in **Problems** to jump to its source. Press Ctrl+. to request a code action. In **Unopened files & navigation**, use F12 on a symbol to follow its definition across files or F2 to preview a rename.
+2. In **Fix a type error**, select the misspelled property in **Problems**, review the fixes and choose **Change spelling to 'quantity'**. Open **Changes** to see the correction beside the original. In **Unopened files & navigation**, use F12 on a symbol to follow its definition across files or F2 to preview a rename.
 3. In **Large file**, turn on **View → Minimap**, drag to the middle and edit a line. Check the diff in **Changes**, then undo. To try folding on nested rules, choose **Host outline**. [Sample catalogue](../examples/demo/samples.ts)
 
 To try regex replacement in Shopping cart, find `quantity:\s*(\d+)`, enable **Use regular expression** and replace all with `quantity: $1 + 1`. One Undo restores both quantities.

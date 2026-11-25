@@ -48,6 +48,7 @@ host-lsp-sync.spec.ts
 lsp-interop.spec.ts
 
 # One end-to-end case per workflow
+demo-language.spec.ts > the type error sample offers a spelling fix from Problems and shows the correction in Changes
 demo-language.spec.ts > real member completion preserves provider punctuation, resolves, applies once and undoes
 host-find-regex.spec.ts > plain regex worker captures Unicode replacements through comparison, save and remount
 host-lsp-language.spec.ts > plain selected LSP features > a failed color preview keeps swatches available for retry in another pane
