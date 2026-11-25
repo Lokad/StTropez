@@ -752,11 +752,18 @@ test("switching views during a source edit preserves the command and its Undo", 
     await changes.click({ force: true });
     await pricing.click({ force: true });
     await sample.selectOption("results", { force: true });
+    let confirmations = 0;
+    page.on("dialog", async dialog => {
+        confirmations++;
+        await dialog.accept();
+    });
+    await page.locator("#reset").click({ force: true });
     expect(await changes.getAttribute("aria-pressed")).toBe("false");
     expect(await pricing.getAttribute("aria-pressed")).toBe("false");
     expect(await sample.inputValue()).toBe("pricing");
     await page.clock.resume();
     await expect(page.locator("#editor .st-viewport-row").first()).toHaveText("// 0");
+    expect(confirmations).toBe(0);
     await changes.click();
     const working = page.locator(".st-comparison .st-editor").last();
     await expect(working.locator(".st-viewport-row").first()).toHaveText("// 0");
@@ -795,11 +802,24 @@ test("cancelling a replacement makes a reviewed save conflict actionable again",
         await remote.press("Control+a"); await peer.keyboard.insertText("// Peer save"); await remote.press("Control+s");
         await expect(peer.locator("#status")).toHaveText("Saved in this browser.");
     } finally { await peer.close(); }
-    await source.press("Control+s"); await page.locator("#conflict-review").click();
+    await source.press("Control+s");
+    await source.press("Control+h");
+    await page.locator("#find-regex").click();
+    await page.locator("#find-query").fill("Local");
+    await page.locator("#replacement").fill("Cancelled");
+    await page.locator("#replace-all").click();
+    await expect.poll(gate.waiting).toBe(1);
+    await page.locator("#conflict-review").click();
+    await page.locator("#replacement").press("Escape");
+    await gate.release();
+    await expect(page.getByRole("textbox", { name: "main.ts", exact: true })).toBeVisible();
+    await expect(page.locator("#conflict-take")).toBeDisabled();
+    await page.locator("#conflict-review").click();
     const take = page.locator("#conflict-take"), save = page.locator("#conflict-save");
     const working = page.getByRole("textbox", { name: "Comparison working source", exact: true });
     await expect(take).toBeEnabled(); await working.press("Control+h");
-    await page.locator("#find-regex").click(); await page.locator("#find-query").fill("Local");
+    await gate.setHolding(true);
+    await page.locator("#find-query").fill("Local");
     await page.locator("#replacement").fill("Cancelled"); await page.locator("#replace-all").click();
     await expect.poll(gate.waiting).toBe(1); await expect(take).toBeDisabled(); await expect(save).toBeDisabled();
     await page.locator("#replacement").press("Escape"); await gate.release();

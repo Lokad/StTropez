@@ -303,14 +303,17 @@ function editorBusy(): boolean {
     const activity = editor?.activity();
     return !!activity && (activity.composing || activity.pendingInput || activity.pendingCommand);
 }
-function canSwitchView(): boolean {
-    if (!editorBusy()) return true;
-    project?.setEditRefusal("An edit is pending. Try switching views when it finishes.");
+function projectBusy(): boolean {
+    return editorBusy() || find?.getSnapshot().status === "replacing";
+}
+function refusePendingEdit(pending = editorBusy()): boolean {
+    if (!pending) return false;
+    project?.setEditRefusal("An edit is pending. Try again when it finishes.");
     scheduleMetadata();
-    return false;
+    return true;
 }
 function mountFile(file: DemoFile, focus = false): void {
-    if (!project || disposed || !canSwitchView()) return;
+    if (!project || disposed || refusePendingEdit()) return;
     const viewState = editor?.captureView();
     const previous = active;
     if (previous && previous !== file) replaceResult.hidden = true;
@@ -409,7 +412,7 @@ function loadProject(id: SampleId): Promise<DemoProject> {
     const pending = pendingProjects.get(id);
     if (pending) return pending;
     const load = DemoProject.open(id, () => {
-        return project?.sample.id !== id || !editorBusy() && find?.getSnapshot().status !== "replacing";
+        return project?.sample.id !== id || !projectBusy();
     }, openProvider, { peerChanged: changed => {
         if (changed === project && !disposed) scheduleMetadata();
     } }).then(next => {
@@ -422,7 +425,7 @@ function loadProject(id: SampleId): Promise<DemoProject> {
 }
 async function openSample(id: SampleId): Promise<void> {
     const generation = ++opening;
-    if (!canSwitchView()) { selectSample(project!.sample.id); return; }
+    if (refusePendingEdit()) { selectSample(project!.sample.id); return; }
     pendingPanel = undefined;
     selectSample(id);
     if (id === "host") {
@@ -447,7 +450,7 @@ async function openSample(id: SampleId): Promise<void> {
     }
     if (disposed || generation !== opening) return;
     // The user can start editing while the next sample loads.
-    if (!canSwitchView()) { selectSample(project!.sample.id); sample.disabled = false; return; }
+    if (refusePendingEdit()) { selectSample(project!.sample.id); sample.disabled = false; return; }
     stopWorkspace?.(); stopWorkspace = undefined;
     stopRecovery?.(); stopRecovery = undefined;
     stopLanguage?.(); stopLanguage = undefined;
@@ -471,7 +474,7 @@ async function openSample(id: SampleId): Promise<void> {
 }
 function setPanel(next: DemoPanel): void {
     pendingPanel = undefined;
-    if (!active || !canSwitchView()) return;
+    if (!active || refusePendingEdit()) return;
     // Remounting this file would dispose Find before its replacement commits.
     if (find?.getSnapshot().status === "replacing") { pendingPanel = next; return; }
     const samePanel = panel === next; panel = next;
@@ -802,8 +805,11 @@ on("panel-collapse", () => {
 });
 on("walkthrough-toggle", () => { element("walkthrough").hidden = !element("walkthrough").hidden; });
 on("reset", () => {
-    if (!project || project.sample.id !== sample.value || editor?.getSnapshot().composing || !window.confirm(`Restore the original files in “${project.sample.title}”? You can undo this change. Other samples and recovery drafts are kept. The saved copy changes only when you save locally.`)) return;
-    project.reset(); renderMetadata(); editor?.focus();
+    if (!project || project.sample.id !== sample.value || refusePendingEdit(projectBusy())) return;
+    if (!window.confirm(`Restore the original files in “${project.sample.title}”? You can undo this change. Other samples and recovery drafts are kept. The saved copy changes only when you save locally.`)) return;
+    project.reset();
+    renderMetadata();
+    editor?.focus();
 });
 async function save(reviewed = false): Promise<void> {
     const captured = project; if (!captured || editor?.getSnapshot().composing) return;
@@ -819,7 +825,11 @@ function onFileAction(id: string, action: () => void): void {
     on(id, () => { (comparison?.activePane() ?? editor)?.focus(); action(); });
 }
 onFileAction("save", () => { void save(); });
-on("conflict-review", () => { if (project?.reviewConflict()) { setPanel("changes"); renderMetadata(); } });
+on("conflict-review", () => {
+    if (refusePendingEdit(projectBusy()) || !project?.reviewConflict()) return;
+    setPanel("changes");
+    renderMetadata();
+});
 onFileAction("conflict-save", () => { void save(true); });
 onFileAction("conflict-take", () => {
     const captured = project, view = editor, generation = opening;
