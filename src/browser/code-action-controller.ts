@@ -230,6 +230,7 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
             const source = capture.first.signal;
             const j: Job = { capture, invalid: false };
             job = pending = j;
+            capture.collectDocuments();
             const { document, selectionSet } = capture.first;
             const range = selectionSet.ranges[selectionSet.primary]!;
             timeout(j);

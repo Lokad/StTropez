@@ -45,9 +45,8 @@ export function mountRename(editor: TextEditor, owner: LspDocumentOwner, options
             status => publish({ status, ...(status === "expired" && { message: "The captured source or target changed." }) }));
     const publish = (patch: Partial<RenameSnapshot>) => scope.publish(cell, Object.freeze({ ...idle, ...patch }));
     function current(j: Job) {
-        if (active.job !== j || j.invalid || !j.source.isCurrent() || j.edit && !j.edit.isCurrent()) return false;
-        if (options.canCapture) for (const id of j.project.documents.keys()) if (!options.canCapture(id)) return false;
-        return true;
+        return active.job === j && !j.invalid && j.source.isCurrent() && (!j.edit || j.edit.isCurrent())
+            && j.project.allows(options);
     }
     function reportFailure(error: unknown) {
         release();
@@ -121,8 +120,7 @@ export function mountRename(editor: TextEditor, owner: LspDocumentOwner, options
             const client = renameClient(owner);
             const j: Job = { source, client, project: retainEditProject(editor, available, () => expire(j)), invalid: false };
             active.job = pending = j;
-            j.project.include(source.document);
-            for (const doc of options.documents?.() ?? []) j.project.include(doc);
+            j.project.capture(source.document, options.documents?.());
             onAbort(source.signal, () => expire(j));
             j.timer = win.setTimeout(() => {
                 timedOut = true;

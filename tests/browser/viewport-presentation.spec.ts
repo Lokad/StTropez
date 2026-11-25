@@ -129,8 +129,18 @@ test("definition lookup uses its attached scope and recovers from a refused moun
         } catch (error) { refusal = String(error); }
         const after = ownership();
         occupied.dispose();
+        let cancelFirstLookup = true;
         const language = attachEditorLanguage(editor, provider, {
-            navigation: { linkAt() { pointerHits++; return undefined; } },
+            navigation: {
+                linkAt() { pointerHits++; return undefined; },
+                documents() {
+                    if (cancelFirstLookup) {
+                        cancelFirstLookup = false;
+                        navigation.cancel();
+                    }
+                    return [workspace.document(source.documentId)];
+                },
+            },
         });
         const sibling = attachEditorLanguage(editor, provider, { rename: {} });
         sibling.dispose();
@@ -146,6 +156,7 @@ test("definition lookup uses its attached scope and recovers from a refused moun
     });
     expect(await fixture.evaluate(f => f.refusal)).toContain("scope limit");
     expect(await fixture.evaluate(f => f.after)).toEqual(await fixture.evaluate(f => f.before));
+    expect(await fixture.evaluate(f => f.lookup())).toBe("stale");
     const row = page.locator(".st-viewport-row").filter({ hasText: "const catalogue" });
     await expect(row).toBeVisible();
     const point = await paintedCharacter(row, "catalogue", 2);

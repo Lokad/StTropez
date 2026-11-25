@@ -454,7 +454,8 @@ on refusal. An empty edit creates no Undo entry. Use `readLspEditNotes` to show 
 ### Code actions and commands
 
 Enable `codeActions` on the attachment. `actions.request()` sends the primary selection and
-its overlapping diagnostics to the provider. Supply `documents` for edits to other project files.
+its overlapping diagnostics to the provider. Supply current snapshots in `documents()` for edits
+to other project files. A superseded snapshot returns `stale` before discovery starts.
 Set `codeActions: { popup: true }` for an anchored review. Ctrl+. (Cmd+. on macOS) and
 `editor.commands.run("quickfix.show")` bring the caret into view and open the list. Arrow keys choose an action,
 Enter applies the preview and Escape closes it. Hover over a disabled choice to see its reason.
@@ -506,10 +507,11 @@ Cancel an open request if host policy changes. [Command permissions, review dead
 
 ### Document links
 
-Use the attachment's `links` option to discover links in the mounted document. Pass a `documents`
-callback for any project documents whose revision or edit permissions affect your URI mapping.
-`await links.request()` returns `done` with the list published to `getSnapshot().links`,
-`stale` if the request expires, `refused` for an unavailable view, or `failed` with the error.
+Use the attachment's `links` option to discover links in the mounted document. If URI mapping
+depends on other documents, return their current snapshots from `documents()`. An outdated
+snapshot returns `stale` before the provider is contacted. A request that expires in flight
+also returns `stale`. On success, `await links.request()` returns `done` with the list published
+to `getSnapshot().links`. An unavailable view returns `refused`, and errors return `failed`.
 Each choice carries its range, tooltip, optional target and an `open` action.
 
 Use `attachEditorLanguage(editor, provider, { links: { paint: true } })` to underline links

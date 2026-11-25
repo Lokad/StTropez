@@ -56,10 +56,9 @@ export function mountDocumentLinks(editor: TextEditor, owner: LspDocumentOwner, 
         scope.publish(state, Object.freeze({ status, links, message }));
     }
     function captureCurrent(j: Job) {
-        if (active.job !== j || j.invalid || !workspace.ownsDocumentView(view, tab) || !available(view.documentId)
-            || j.watched && !j.watched.isCurrent() || j.source && !j.source.isCurrent()) return false;
-        if (options.canCapture) for (const id of j.project.documents.keys()) if (!options.canCapture(id)) return false;
-        return true;
+        return active.job === j && !j.invalid && workspace.ownsDocumentView(view, tab) && available(view.documentId)
+            && (!j.watched || j.watched.isCurrent()) && (!j.source || j.source.isCurrent())
+            && j.project.allows(options);
     }
     function current(j: Job) { return captureCurrent(j) && (!j.reply || j.reply.isCurrent()); }
     function providerChanged(j: Job) {
@@ -97,20 +96,22 @@ export function mountDocumentLinks(editor: TextEditor, owner: LspDocumentOwner, 
     function start(watched?: Watched) {
         release();
         const source = capture();
-        if (!source) return;
+        if (!source) {
+            publish("expired");
+            return refused("unavailable-view");
+        }
+        let pending: Job | undefined;
         try {
             const client = linkClient(owner, watched);
             const j: Job = { client, watched, invalid: false,
                 project: retainDocuments(workspace, available, () => expire(j)) };
-            active.job = j;
+            pending = active.job = j;
             bindCapture(j, source);
-            j.project.include(source.document);
-            for (const doc of options.documents?.() ?? []) j.project.include(doc);
+            j.project.capture(source.document, options.documents?.());
             return j;
         } catch (error) {
-            source.cancel();
-            release();
-            throw error;
+            if (!pending) source.cancel();
+            return fail(pending, error);
         }
     }
     function choice(item: LspDocumentLink, index: number, watched?: Watched): DocumentLinkChoice {
@@ -130,8 +131,9 @@ export function mountDocumentLinks(editor: TextEditor, owner: LspDocumentOwner, 
             if (watched) {
                 if (!watched.isCurrent()) return stale;
                 if (beforeJob?.watched === watched && before.status === "resolving") return refused("resolving");
-                j = start(watched);
-                if (!j) return refused("unavailable-view");
+                const job = start(watched);
+                if ("status" in job) return job;
+                j = job;
                 j.connection = provider.getSnapshot();
             } else {
                 j = beforeJob;
@@ -170,11 +172,9 @@ export function mountDocumentLinks(editor: TextEditor, owner: LspDocumentOwner, 
         if (signal.aborted) return stale;
         let pending: Job | undefined;
         try {
-            const j = pending = start();
-            if (!j) {
-                publish("expired");
-                return refused("unavailable-view");
-            }
+            const j = start();
+            if ("status" in j) return j;
+            pending = j;
             publish("pending");
             j.reply = await j.client.run({ document: j.source!.document, prepare: options.prepareRequest?.() }).result;
             if (!current(j)) { expire(j); return stale; }

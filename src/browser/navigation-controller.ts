@@ -151,6 +151,7 @@ export function mountNavigation(editor: TextEditor, owner: LspDocumentOwner, opt
         job.stops.push(() => source.signal.removeEventListener("abort", abort));
         try {
             const documents = project(source);
+            if (explicit !== job) return stale;
             if (tab) job.stops.push(workspace.tabs.subscribe(() => { if (!workspace.ownsDocumentView(view, tab)) expire(job); }));
             for (const doc of documents) {
                 const handle = workspace.observeDocument(doc.id), metadata = workspace.resourceForDocument(doc.id).metadata;

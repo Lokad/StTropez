@@ -59,20 +59,14 @@ export function captureEditCommand(editor: TextEditor, options: LanguageCommandO
         project.dispose();
         source.cancel();
     }
-    try {
-        watch(first);
-        project.include(first.document);
-        for (const doc of options.documents?.() ?? []) project.include(doc);
-    } catch (error) {
-        dispose();
-        throw error;
-    }
+    watch(first);
     return {
         first, project, dispose,
+        collectDocuments() {
+            project.capture(first.document, options.documents?.());
+        },
         current() {
-            if (!valid || !source.isCurrent()) return false;
-            if (options.canCapture) for (const id of project.documents.keys()) if (!options.canCapture(id)) return false;
-            return true;
+            return valid && source.isCurrent() && project.allows(options);
         },
         renew() {
             const previous = source;
@@ -158,6 +152,7 @@ export function mountLanguageCommands(editor: TextEditor, owner: LspDocumentOwne
             }));
             if (!captured) return refused("unavailable-view");
             active = captured;
+            captured.collectDocuments();
             publish(emptyList);
             const transaction = commandTransaction(editor, captured, captured.current, options.reviewCommandEdit, true, scope, "server-command", publish);
             const receipt = await runner.run(name, args, transaction.scope);

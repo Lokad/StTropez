@@ -299,15 +299,24 @@ for (const method of ["textDocument/codeAction", "textDocument/rename", "textDoc
     });
 }
 
-test("rename rejects an obsolete project capture before sending it to the provider", async t => {
+test("requests expire an obsolete project capture before contacting the provider", async t => {
     const f = await fixture(t);
     const other = f.workspace.document(f.other.documentId);
-    const rename = attachEditorLanguage(f.editor, f.provider, { rename: { documents: () => [other] } }).rename;
+    const project = { documents: () => [other] };
+    const { rename, links, codeActions } = attachEditorLanguage(f.editor, f.provider, {
+        rename: project, links: project, codeActions: project,
+    });
     f.workspace.edit({ documentId: other.id, expectedRevision: other.revision,
         edits: [{ from: 0, to: 0, insert: "new " }], origin: "human" });
     assert.deepEqual(await rename.request("next"), { status: "stale" });
     assert.equal(rename.getSnapshot().status, "expired");
     assert.equal(f.sent("textDocument/rename").length, 0);
+    assert.deepEqual(await links.request(), { status: "stale" });
+    assert.equal(links.getSnapshot().status, "expired");
+    assert.equal(f.sent("textDocument/documentLink").length, 0);
+    assert.deepEqual(await codeActions.request(), { status: "stale" });
+    assert.equal(codeActions.getSnapshot().status, "expired");
+    assert.equal(f.sent("textDocument/codeAction").length, 0);
 });
 
 const colorChanges = {
@@ -538,6 +547,27 @@ test("a captured link cannot open a replacement at the same range", { timeout: 5
     assert.deepEqual(visits, []);
     assert.deepEqual(await next.value[0]!.open(visit), { status: "done", value: "generic:new" });
     assert.deepEqual(visits, ["generic:new"]);
+});
+
+test("cancelling while collecting link targets releases the project and permits a fresh lookup", async t => {
+    const f = await fixture(t);
+    let cancel = true;
+    const { links } = attachEditorLanguage(f.editor, f.provider, { links: {
+        documents() {
+            if (cancel) links.cancel();
+            return [f.workspace.document(f.other.documentId)];
+        },
+    } });
+    f.peer.onRequest("textDocument/documentLink", () => [{ range, target: "generic:other" }]);
+    const leases = f.workspace.diagnostics().leases;
+    assert.deepEqual(await links.request(), { status: "stale" });
+    assert.equal(f.workspace.diagnostics().leases, leases);
+    assert.equal(links.getSnapshot().status, "idle");
+    assert.equal(f.sent("textDocument/documentLink").length, 0);
+    cancel = false;
+    const next = await links.request();
+    assert.equal(next.status, "done");
+    assert.equal(next.value[0]?.target, "generic:other");
 });
 
 test("a diagnostic tracks its text through an edit and a fresh push replaces the selectable range", async t => {
