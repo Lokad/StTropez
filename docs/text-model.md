@@ -114,10 +114,10 @@ and merges overlaps, duplicate carets and carets on occupied ranges. Read the no
 from `view.getSnapshot().selectionSet`. Adjacent nonempty ranges stay distinct. A merged range
 keeps the primary member's direction/affinities, or the first supplied member's otherwise.
 
-Default affinities exclude insertion at a nonempty selection's outer edges; a collapsed caret
-defaults to `"after"` at both endpoints. `mapSelectionSet(mapping, set)` maps every endpoint,
-then normalizes any new overlaps. The primary index refers to the normalized array and is not
-a durable view or resource identity.
+Default affinities exclude insertions at a nonempty selection's outer edges. A collapsed caret
+defaults to `"after"` at both ends. `mapSelectionSet(mapping, set)` maps each endpoint and merges
+new overlaps. The result is immutable even for an identity map and caller-owned ranges.
+Its primary index refers to the normalized array.
 
 To replace several selections in one edit, call
 `planSelectionEdits(length, normalizedSet, textOrTexts)`. The returned `SelectionEditPlan` contains

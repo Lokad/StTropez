@@ -36,7 +36,12 @@ test("mapping coalesces deleted carets while retaining primary identity and indi
     const after = mapSelectionSet(map, before);
     assert.deepEqual(endpoints(after), [[3, 3], [6, 9]]); assert.equal(after.primary, 0);
     assert.equal(after.ranges[1]!.anchorAffinity, "before"); assert.equal(after.ranges[1]!.headAffinity, "before");
-    assert.strictEqual(mapSelectionSet(new PositionMap(12, []), before), before);
+    const identity = new PositionMap(12, []);
+    assert.strictEqual(mapSelectionSet(identity, before), before);
+    const raw = { ranges: before.ranges.map(range => ({ ...range })), primary: before.primary };
+    const saved = mapSelectionSet(identity, raw);
+    raw.ranges[0]!.head = 0;
+    assert.deepEqual(saved, before);
     assert.deepEqual(endpoints(before), [[3, 3], [4, 4], [8, 10]]);
     // Different affinities inside one replacement can reverse the output order.
     const opposite = createSelectionSet(10, [

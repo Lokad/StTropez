@@ -451,33 +451,25 @@ edit in the view removes it if the selection has left that line. Undo restores i
 Pairing, comments and cancellable non-composing line-break input
 use the same transaction/transform path. Composition and noncancellable input use literal capture.
 
-For headless planning, use `resolveLanguageConfiguration` and `planLanguageEdit`. Pass the
-view’s current fold index as the fifth argument for line commands, including indentation and line comments.
-Each collapsed block counts as one line. Pass the full edit batch to the workspace at the captured
-revision. A copy keeps the same fold behavior if it preserves the planner's `lineMove` markers.
-Omit the index to plan in source lines. A character
-command can supply `canOvertype(offset)` to identify closers the caller inserted. Without it,
-typing a closer inserts the character. Advance the lazy
-cursor with `next(workBudget?)` or inspect it with `snapshot()`. Frozen progress gives `status`
-(`running`, `ready`, `failed`, `disposed`), `phase` (`validate`, `plan`, `map`, `publish`), counters,
-`result` and `failure`. Only `ready` gives a complete `SelectionEditPlan` to apply. An error records
-its message and rethrows. `dispose()` frees unfinished work and the cursor’s result reference. A plan
-you already hold stays valid for its capture. Calling `next()` or `dispose()` during an advance
-throws.
+`planLanguageEdit` takes a buffer, selections, a command and a resolved language configuration.
+Line commands work on source lines. Pass the view's fold index as the fifth argument to treat each
+collapsed block as one line. Character commands insert a typed closer unless `canOvertype(offset)`
+identifies one to skip.
 
-Use `readUnits` for UTF-16 units the planner reads, including rereads. A host callback’s own reads
-fall outside this count. `workUnits` also counts visits to ranges, rows, comment records and output
-edits, attempts at pair rules, and `bulkWorkUnits`. Bulk charges estimate the input size for
-normalization, position mapping, pair lookup, freezing output arrays, large reads and building newline
-strings. They count once toward work. Large reads also count toward reads. The normalizer can reuse an
-editor-owned selection set. If you pass raw ranges, supply them in normalized order. The cursor checks
-the order as it advances.
+The first `next()` captures the selections. It reuses editor-owned ranges and checks raw ranges
+for bounds, overlap and order. You can then reuse your input array. Keep the configuration
+immutable until planning finishes. `snapshot()` reports the status, phase, counters, result
+and failure. When the status is `ready`, apply the full batch at the captured revision. Keep any
+`lineMove` markers when copying edits. An error records its message and rethrows. `dispose()`
+releases the cursor and leaves a completed plan usable. Calling `next()` or `dispose()` during
+an advance throws.
 
-Call `next()` with a safe integer of at least 256 work units (default 4,096). It handles validation
-through final mapping. The planner checks the budget at scan, range and row boundaries roughly every
-256 units. A whitespace read can span 4,096 units. A delimiter read, bulk operation or host callback
-can run past the budget. Schedule the next call yourself and keep selections and configuration
-immutable between calls. The example releases the planner if you cancel.
+Schedule each advance with `next(workBudget?)`. The budget is a safe integer of at least 256,
+default 4,096. The planner checks it roughly every 256 work units. A whitespace read can span
+4,096 UTF-16 units. Delimiter reads, bulk operations and host callbacks can exceed a slice.
+`readUnits` counts the planner's reads, including rereads. `workUnits` includes scans, visits to
+ranges and edits, pair checks and `bulkWorkUnits`. Bulk charges estimate the input sizes for
+normalization, mapping, pair lookup, array freezing, large reads and newline construction.
 
 ```ts
 import { planLanguageEdit, resolveLanguageConfiguration } from "sttropez";

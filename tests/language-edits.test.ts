@@ -408,6 +408,21 @@ test("language cursor charges reads, blank comment records and final assembly wi
     }
 });
 
+test("a no-op language plan keeps its raw selections across advances and after disposal", () => {
+    const ranges = Array.from({ length: 300 }, (_, i) => ({ anchor: 2 * i + 1, head: 2 * i }));
+    const input = { ranges, primary: 1 };
+    const cursor = planLanguageEdit(TextBuffer.from("ab".repeat(300)), input, "remove-line-comment", resolveLanguageConfiguration());
+    assert.equal(cursor.next(256).status, "running");
+    input.primary = 0;
+    const plan = cursor.next().result!;
+    cursor.dispose();
+    ranges[1]!.head = 0;
+    assert.deepEqual(plan.edits, []);
+    assert.equal(plan.selectionSet.primary, 1);
+    assert.deepEqual(plan.selectionSet.ranges[1], { anchor: 3, head: 2 });
+    assert.ok(Object.isFrozen(plan.selectionSet.ranges[1]));
+});
+
 test("language cursor releases cancelled planning and records validation or host callback failure", () => {
     const buffer = TextBuffer.from("x\n".repeat(2048)), selections = createSelectionSet(buffer.length, [{ anchor: 0, head: buffer.length }]);
     for (const advance of [false, true]) {

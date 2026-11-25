@@ -11,16 +11,18 @@ export type SelectionEditPlan = Readonly<{ edits: readonly TextEdit[]; selection
 // Only our deeply frozen output arrays qualify; caller-owned/frozen lookalikes are validated.
 const normalizedSets = new WeakMap<readonly Selection[], SelectionSet>();
 
-function normalizeSelection(length: number, value: Selection): Readonly<Required<Selection>> {
-    if (![value.anchor, value.head].every(offset => isOffset(offset, length))) throw new RangeError("Selection is outside the document.");
-    const anchorAffinity = value.anchorAffinity ?? (value.anchor <= value.head ? "after" : "before");
-    const headAffinity = value.headAffinity ?? (value.anchor === value.head ? anchorAffinity : value.anchor < value.head ? "before" : "after");
-
-    return Object.freeze({ anchor: value.anchor, head: value.head, anchorAffinity, headAffinity });
+function checkEndpoints(length: number, anchor: number, head: number) {
+    if (!isOffset(anchor, length) || !isOffset(head, length)) throw new RangeError("Selection is outside the document.");
 }
 
-/** Sort and merge overlaps/occupied carets. Adjacent nonempty ranges remain independent. */
-export function createSelectionSet(length: number, ranges: readonly Selection[], primary = 0): SelectionSet {
+function normalizeSelection(length: number, { anchor, head, anchorAffinity, headAffinity }: Selection): Readonly<Required<Selection>> {
+    checkEndpoints(length, anchor, head);
+    anchorAffinity ??= anchor <= head ? "after" : "before";
+    headAffinity ??= anchor === head ? anchorAffinity : anchor < head ? "before" : "after";
+    return Object.freeze({ anchor, head, anchorAffinity, headAffinity });
+}
+
+function knownSelectionSet(length: number, ranges: readonly Selection[], primary: number) {
     if (!isNonNegativeInteger(length)) throw new RangeError("Invalid document length.");
     if (!ranges.length || !isIndex(primary, ranges.length)) throw new RangeError("A selection set needs ranges and a valid primary index.");
     const known = normalizedSets.get(ranges);
@@ -29,6 +31,16 @@ export function createSelectionSet(length: number, ranges: readonly Selection[],
         if (Math.max(last.anchor, last.head) > length) throw new RangeError("Selection is outside the document.");
         return known;
     }
+}
+
+function overlaps(previousFrom: number, previousTo: number, from: number, to: number) {
+    return from < previousTo || from === previousTo && (from === to || previousFrom === previousTo);
+}
+
+/** Sort and merge overlaps/occupied carets. Adjacent nonempty ranges remain independent. */
+export function createSelectionSet(length: number, ranges: readonly Selection[], primary = 0): SelectionSet {
+    const known = knownSelectionSet(length, ranges, primary);
+    if (known) return known;
     const sorted = ranges.map((range, index) => { const value = normalizeSelection(length, range);
         return { value, index, from: Math.min(value.anchor, value.head), to: Math.max(value.anchor, value.head) }; });
     const compare = (a: typeof sorted[number], b: typeof sorted[number]) => a.from - b.from || a.to - b.to || a.index - b.index;
@@ -37,7 +49,7 @@ export function createSelectionSet(length: number, ranges: readonly Selection[],
     const groups: { from: number; to: number; owner: Item; primary: boolean }[] = [];
     for (const item of sorted) {
         const previous = groups.at(-1);
-        if (previous && (item.from < previous.to || item.from === previous.to && (item.from === item.to || previous.from === previous.to))) {
+        if (previous && overlaps(previous.from, previous.to, item.from, item.to)) {
             previous.to = Math.max(previous.to, item.to);
             if (item.index === primary || !previous.primary && item.index < previous.owner.index) previous.owner = item;
             previous.primary ||= item.index === primary;
@@ -64,7 +76,7 @@ export function sameSelectionSet(a: SelectionSet, b: SelectionSet): boolean {
 export function mapSelectionSet(mapping: PositionMapping, value: SelectionSet): SelectionSet {
     const before = createSelectionSet(mapping.oldLength, value.ranges, value.primary);
     const after = mapSelectionRanges(mapping, before);
-    return sameSelectionSet(value, after) ? value : after;
+    return sameSelectionSet(before, after) ? before : after;
 }
 
 /** @internal Map validated ranges; language commands override mapping sides, retaining stored affinities. */
@@ -118,11 +130,30 @@ export function mapReplacementSelections(length: number, selections: SelectionSe
     return mapEndpoints(newLength, selections, map);
 }
 
+/** Capture caller-owned ranges before planning edits in their supplied order. */
+export function orderedSelections(length: number, { ranges, primary }: SelectionSet): SelectionSet {
+    const known = knownSelectionSet(length, ranges, primary);
+    if (known) return known;
+    let previousFrom = -1;
+    let previousTo = -1;
+    const captured = Array.from(ranges, ({ anchor, head, anchorAffinity, headAffinity }) => {
+        checkEndpoints(length, anchor, head);
+        const from = Math.min(anchor, head);
+        const to = Math.max(anchor, head);
+        if (overlaps(previousFrom, previousTo, from, to)) {
+            throw new RangeError("Selection edits require normalized range order.");
+        }
+        previousFrom = from;
+        previousTo = to;
+        return Object.freeze({ anchor, head, ...(anchorAffinity !== undefined && { anchorAffinity }),
+            ...(headAffinity !== undefined && { headAffinity }) });
+    });
+    return Object.freeze({ ranges: Object.freeze(captured), primary });
+}
+
 /** Plan one original-coordinate replacement per normalized range; text may differ per range. */
 export function planSelectionEdits(length: number, selections: SelectionSet, replacement: string | readonly string[]): SelectionEditPlan {
-    const value = createSelectionSet(length, selections.ranges, selections.primary);
-    if (value.primary !== selections.primary || value.ranges.length !== selections.ranges.length
-        || value.ranges.some((range, index) => range.anchor !== selections.ranges[index]!.anchor || range.head !== selections.ranges[index]!.head)) throw new RangeError("Selection edits require normalized range order.");
+    const value = orderedSelections(length, selections);
     if (typeof replacement !== "string" && replacement.length !== value.ranges.length) throw new TypeError("Expected replacement text for every selection.");
     let delta = 0;
     const carets: Selection[] = [], edits = value.ranges.map((range, index) => {

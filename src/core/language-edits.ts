@@ -6,7 +6,7 @@ import type { TextBuffer } from "./text-buffer.ts";
 import type { TextEdit } from "./changes.ts";
 import type { Selection } from "./history.ts";
 import { PositionMap } from "./positions.ts";
-import { createSelectionSet, mapReplacementSelections } from "./selections.ts";
+import { createSelectionSet, mapReplacementSelections, orderedSelections } from "./selections.ts";
 import type { SelectionSet, SelectionEditPlan } from "./selections.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
 import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
@@ -511,18 +511,12 @@ export function planLanguageEdit(buffer: TextBuffer, selections: SelectionSet, c
         (status, result, failure) => Object.freeze({ status, phase: state.phase, workUnits: state.workUnits,
             readUnits: state.readUnits, bulkWorkUnits: state.bulkWorkUnits, result, failure }), "Language edit");
 }
-function* plan(buffer: TextBuffer, selections: SelectionSet, command: EditingCommand | TypedCharacter,
+function* plan(buffer: TextBuffer, input: SelectionSet, command: EditingCommand | TypedCharacter,
     config: ResolvedLanguageConfiguration, state: MutablePlanning, folds?: FoldIndex): Generator<void, SelectionEditPlan> {
     if (folds && folds.lineCount !== buffer.lineCount) throw new RangeError("Fold index must cover the planning buffer.");
-    bulk(state, selections.ranges.length);
-    const normalized = createSelectionSet(buffer.length, selections.ranges, selections.primary);
+    const selections = orderedSelections(buffer.length, input);
+    bulk(state, selections.ranges === input.ranges ? 1 : input.ranges.length);
     if (checkpoint(state)) yield;
-    if (normalized.primary !== selections.primary || normalized.ranges.length !== selections.ranges.length) throw new RangeError("Language edits require normalized range order.");
-    for (let index = 0; index < selections.ranges.length; index++) {
-        const range = selections.ranges[index]!, expected = normalized.ranges[index]!;
-        if (range.anchor !== expected.anchor || range.head !== expected.head) throw new RangeError("Language edits require normalized range order.");
-        if (checkpoint(state, 1)) yield;
-    }
     state.phase = "plan";
     const read = (from: number, to: number): string => {
         const text = buffer.slice(from, to); state.readUnits += text.length;
