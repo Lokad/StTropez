@@ -120,33 +120,21 @@ For delayed host work, retain the original document, revision and selections wit
 
 ### What happens when you type during a command
 
-The textarea holds the selection and nearby text, using LF for native input. A large selection appears
-in the textarea as one selected placeholder. Type over it and the editor replaces the full source
-range. Enter uses the surrounding line ending. Editing elsewhere preserves the original CRLF.
+Move one word to the right in a long line and start typing immediately. The text lands at the new
+caret, even when the keystroke arrived before the move finished. A plain-text paste follows any
+queued typing. Undo removes the paste first. Queued keys keep their original modifiers and typing
+groups. A command can finish before the editor paints.
 
-`beforeinput` captures the intended replacement range, document revision and all selections. On
-`input`, the editor uses that range if the native value and caret agree. For other supported rewrites,
-it compares the bounded text around the edit. Typing the same text over a selection can collapse it
-without changing the revision. When the editor mirrors a selection into the textarea, matching
-endpoints keep their affinities.
+Escape, composition, copy, cut or a clipboard event cancelled by the host can interrupt a command.
+An edit, selection change, permission change or remount can also invalidate queued input. Listen
+for `inputConflictEvent` on the original editor to recover text it could not apply. A command error
+includes the reason `command-failed` and its cause. [Input recovery](host-integration.md#input-conflict-recovery)
 
-A dead key can start a composition in the primary input. The editor displays the pending character
-at the start of the selection. Committing replaces the selection in one undo step. Cancelling
-preserves the selected text. Starting composition cancels queued commands. If the revision,
-selection, permission or target changes before commit, the editor sends stale input to host recovery.
-
-Undo and Redo keep a fully visible caret row in place. If the restored caret is off screen, the
-editor centers its row vertically so you can read the surrounding code and continue typing there.
-
-Navigation, deletion, word selection and language planning can take several turns. Type during a move
-and the text goes at its destination. The editor replays queued input in order, preserving modifiers,
-key meaning and event-time undo groups. It checks permission again. Paste and structural commands keep
-separate undo steps. Short moves can finish synchronously. A command can return before paint.
-
-Pending input belongs to the captured revision, selections, view and, for a tab mount, its generation. Escape,
-composition, copy/cut, host-handled paste, detach or a change in that capture or permission cancels
-replay. Only unapplied text goes to [input recovery](host-integration.md#input-conflict-recovery). On
-failure the editor releases scans, rows and timers and reports `command-failed` with its cause.
+Typing replaces the full selection, even when the native textarea represents it with a single
+placeholder. Typing identical text can collapse the selection without changing the revision.
+Enter uses the surrounding line ending and leaves other line endings intact. A dead key previews
+the character at the selection start. Committing it takes one undo step. Cancelling preserves the
+selected text. [Keyboard and device support](README.md#support-matrix)
 
 ### Selections and history
 
@@ -169,6 +157,8 @@ A run of two or more spaces forms its own step. Pausing mid-word keeps the group
 Consecutive deletes in the same direction can share a step. A command, newline, composition, paste,
 replacement, focus loss, caret movement or an edit from another origin starts a new step. Undo
 from either editable view. [Shared history and save boundaries](workspace.md#transactions-and-history)
+
+Undo and Redo leave a visible caret row in place and center the restored caret if it was off screen.
 
 ### Selecting lines in the gutter
 
