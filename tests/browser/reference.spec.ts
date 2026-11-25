@@ -272,6 +272,7 @@ test("two reference hosts review a competing save before replacing it", async ({
     const other = page.frameLocator('iframe[title="Second host"]');
     const firstSource = page.getByRole("textbox", { name: "quote.ts" });
     const secondSource = other.getByRole("textbox", { name: "quote.ts" });
+    const secondSave = other.getByRole("button", { name: "Save for this tab" });
     const stored = () => page.evaluate(() => sessionStorage.getItem("sttropez.reference.quote"));
     await firstSource.press("Control+Home");
     await page.keyboard.insertText("// My draft\n");
@@ -279,9 +280,11 @@ test("two reference hosts review a competing save before replacing it", async ({
     const caret = await firstSource.evaluate(node => (node as HTMLTextAreaElement).selectionStart);
     await secondSource.press("Control+Home");
     await page.keyboard.insertText("// Saved elsewhere\n");
-    await secondSource.press("ControlOrMeta+s");
+    await secondSave.click();
     const competing = await stored();
     expect(competing).toMatch(/^\/\/ Saved elsewhere/);
+    await page.keyboard.type("x");
+    await expect(secondSource).toHaveValue(/^\/\/ Saved elsewhere\nx/);
 
     await firstSource.press("ControlOrMeta+s");
     const baseline = page.getByRole("textbox", { name: "Comparison baseline source" });
@@ -294,7 +297,13 @@ test("two reference hosts review a competing save before replacing it", async ({
 
     await secondSource.press("Control+a");
     await secondSource.press("Backspace");
-    await secondSource.press("ControlOrMeta+s");
+    await other.getByRole("button", { name: "Changes", exact: true }).click();
+    const secondBaseline = other.getByRole("textbox", { name: "Comparison baseline source" });
+    await secondBaseline.focus();
+    await secondSave.press("Enter");
+    await expect(secondBaseline).toBeFocused();
+    await page.keyboard.type("x");
+    await expect(other.getByRole("textbox", { name: "Comparison working source" })).toHaveValue("");
     await overwrite.click();
     await expect(baseline).toHaveValue("");
     expect(await stored()).toBe("");

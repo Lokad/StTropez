@@ -56,7 +56,7 @@ function mount(review: boolean) {
     if (review) comparison = mountTextComparison(pane, workspace, file.documentId, baseline, { view, settings });
     const editor = comparison?.panes.working
         ?? mountTextEditor(pane, workspace, file.documentId, { ariaLabel: name, view, settings });
-    (comparison ?? editor).commands.register({ id: "source.save", label: "Save for this tab", run: () => save() },
+    (comparison ?? editor).commands.register({ id: "source.save", label: "Save for this tab", run() { save(); } },
         { keys: ["Mod+s"], repeat: false });
     function showReviewSave() {
         saveReviewed.hidden = !comparison || competingText === undefined;
@@ -118,6 +118,9 @@ function readyForHostAction() {
     if (saved.value === pendingNotice) showSaveState();
     return true;
 }
+function focusActivePane() {
+    (current.comparison?.activePane() ?? current.editor).focus();
+}
 function switchView(review: boolean) {
     if (Boolean(current.comparison) !== review) {
         if (!readyForHostAction()) return;
@@ -128,7 +131,7 @@ function switchView(review: boolean) {
     }
     document.querySelector("#source")!.setAttribute("aria-pressed", String(!review));
     document.querySelector("#changes")!.setAttribute("aria-pressed", String(review));
-    (current.comparison?.activePane() ?? current.editor).focus();
+    focusActivePane();
 }
 function refreshBaseline() {
     const refresh = current.comparison?.controller.beginRefresh();
@@ -137,8 +140,8 @@ function refreshBaseline() {
     }
 }
 const stopDirty = workspace.onDocumentChange(file.documentId, showSaveState);
-function save(review?: SaveReview) {
-    if (!readyForHostAction()) return;
+function save(review?: SaveReview): boolean {
+    if (!readyForHostAction()) return false;
     const ticket = workspace.captureSave(file, review);
     const buffer = workspace.document(file.documentId).buffer;
     let conflict: string | undefined;
@@ -155,7 +158,7 @@ function save(review?: SaveReview) {
     } catch (error) {
         ticket.fail();
         saved.value = error instanceof Error ? error.message : "Save failed";
-        return;
+        return false;
     } finally {
         ticket.finish();
     }
@@ -174,10 +177,13 @@ function save(review?: SaveReview) {
         saved.value = "Saved";
     }
     if (review) current.editor.focus();
+    return conflict === undefined;
 }
 document.querySelector("#source")!.addEventListener("click", () => switchView(false));
 document.querySelector("#changes")!.addEventListener("click", () => switchView(true));
-document.querySelector("#save")!.addEventListener("click", () => save());
+document.querySelector("#save")!.addEventListener("click", () => {
+    if (save()) focusActivePane();
+});
 saveReviewed.addEventListener("click", () => {
     const state = current.comparison?.controller.getSnapshot();
     if (competingText !== undefined && state?.status === "ready" && state.working && state.baseline?.buffer === baseline.buffer) {
